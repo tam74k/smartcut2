@@ -221,6 +221,34 @@ export interface ServiceItem {
   isActive: boolean;
   type: 'service' | 'product'; 
   barcode?: string; 
+  isPriority?: boolean; // أولوية الظهور في الكاشير ونقطة البيع
+  cardColor?: string; // لون البطاقة المخصص للخدمة في شاشة الكاشير
+  priorityOrder?: number; // ترتيب أسبقية الظهور
+}
+
+export interface WorkShift {
+  id: string;
+  salonId?: string;
+  branchId?: string;
+  shiftDate: string; // YYYY-MM-DD
+  openedAt: string; // ISO String
+  closedAt?: string; // ISO String
+  openedByUserId?: string;
+  openedByUserName?: string;
+  openedByRole?: string;
+  closedByUserId?: string;
+  closedByUserName?: string;
+  initialCash: number; // العهدة الافتتاحية
+  expectedCash?: number; // الكاش المتوقع في الدرج عند الإغلاق
+  actualCash?: number; // الكاش الفعلي المعدود في الدرج
+  cashDifference?: number; // العجز أو الزيادة
+  totalSales?: number;
+  totalCashSales?: number;
+  totalCardSales?: number;
+  totalExpenses?: number;
+  status: 'open' | 'closed';
+  notes?: string;
+  createdAt?: string;
 }
 
 export interface SalaryHistoryEntry {

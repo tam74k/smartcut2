@@ -33,8 +33,6 @@ import { ProductsScreen } from './components/ProductsScreen';
 import { PermissionsScreen } from './components/PermissionsScreen';
 import { EmployeeAnalyticsScreen } from './components/EmployeeAnalyticsScreen';
 import { WarehouseScreen } from './components/WarehouseScreen';
-import { AIAssistantScreen } from './components/AIAssistantScreen';
-import { AIFloatingChat } from './components/AIFloatingChat';
 import { SaaSSubscriptionsScreen } from './components/SaaSSubscriptionsScreen';
 import { SaaSProgrammerPortal } from './components/SaaSProgrammerPortal';
 import { PartnersScreen } from './components/PartnersScreen';
@@ -56,7 +54,7 @@ import { transactions as initialTransactions, bookings as initialBookings, invoi
 import { 
   AppSettings, Transaction, Booking, Invoice, ServiceItem, Category, Employee, Product, AppUser, 
   SaaSSubscription, Branch, Partner, PartnerTransaction, PromoCode, PromoCodeUsage, TipRecord, 
-  EmployeeCustody, FingerprintLog 
+  EmployeeCustody, FingerprintLog, WorkShift 
 } from './types';
 
 
@@ -370,16 +368,47 @@ export default function App() {
     }
   }, [isReservationRoute]);
 
-  // 1. Shift State scoped per active branch
-  const [branchShifts, setBranchShifts] = useState<Record<string, { isOpen: boolean, date: string, initialCash: number }>>({});
+  // 1. Shift State scoped per active branch & persisted in localStorage + Supabase
+  const [branchShifts, setBranchShifts] = useState<Record<string, { isOpen: boolean, date: string, initialCash: number, shiftId?: string }>>(() => {
+    try {
+      const saved = localStorage.getItem('smartcut_work_shifts_state');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return {};
+  });
   const shiftData = branchShifts[activeBranchId] || { isOpen: false, date: '', initialCash: 0 };
   const setShiftData = (updater: any) => {
     setBranchShifts(prev => {
       const current = prev[activeBranchId] || { isOpen: false, date: '', initialCash: 0 };
       const next = typeof updater === 'function' ? updater(current) : updater;
-      return { ...prev, [activeBranchId]: next };
+      const updated = { ...prev, [activeBranchId]: next };
+      try { localStorage.setItem('smartcut_work_shifts_state', JSON.stringify(updated)); } catch (e) {}
+      return updated;
     });
   };
+
+  // Synchronize active shift with DB on salon/branch change
+  useEffect(() => {
+    const sId = settings.salonId;
+    if (!sId || !activeBranchId) return;
+    DB.getActiveWorkShift(sId, activeBranchId).then(activeShift => {
+      if (activeShift && activeShift.status === 'open') {
+        setBranchShifts(prev => {
+          const updated = {
+            ...prev,
+            [activeBranchId]: {
+              isOpen: true,
+              date: activeShift.shiftDate,
+              initialCash: Number(activeShift.initialCash) || 0,
+              shiftId: activeShift.id
+            }
+          };
+          try { localStorage.setItem('smartcut_work_shifts_state', JSON.stringify(updated)); } catch (e) {}
+          return updated;
+        });
+      }
+    }).catch(err => console.warn('Could not query active shift:', err));
+  }, [settings.salonId, activeBranchId]);
 
   const [showOpenModal, setShowOpenModal] = useState(false);
   const [showCloseModal, setShowCloseModal] = useState(false);
@@ -550,10 +579,12 @@ export default function App() {
             }
           }
         }
-        const cloudBranches = await DB.fetchBranches();
+        const targetSalonId = settings.salonId || (cloudSalons && cloudSalons[0]?.id);
+        const cloudBranches = await DB.fetchBranches(targetSalonId);
         if (cloudBranches && cloudBranches.length > 0) {
           SubscriptionService.saveBranches(cloudBranches);
-          setBranches(cloudBranches);
+          const salonOnly = targetSalonId ? cloudBranches.filter(b => b.salonId === targetSalonId) : cloudBranches;
+          setBranches(salonOnly);
         }
       } catch (e) {
         console.error('Failed to sync cloud salons:', e);
@@ -994,6 +1025,9 @@ export default function App() {
   const handleOpenShift = () => {
     if (checkReadOnlyAndWarn()) return;
     const activeBranch = branches.find(b => b.id === activeBranchId) || branches[0];
+    const shiftId = 'SHIFT-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+    const nowIso = new Date().toISOString();
+
     if (openShiftForm.initialCash > 0) {
       const cashTreasury = settings.treasuries.find(t => t.id === 'cash') || settings.treasuries[0];
       const newTrx: Transaction = {
@@ -1013,7 +1047,23 @@ export default function App() {
       };
       handleSetTransactions(prev => [...prev, newTrx]);
     }
-    setShiftData({ isOpen: true, date: openShiftForm.date, initialCash: openShiftForm.initialCash });
+
+    const newWorkShift: WorkShift = {
+      id: shiftId,
+      salonId: settings.salonId,
+      branchId: activeBranchId,
+      shiftDate: openShiftForm.date,
+      openedAt: nowIso,
+      openedByUserId: currentUser?.id,
+      openedByUserName: currentUser?.name || 'الكاشير',
+      openedByRole: currentUser?.role || 'cashier',
+      initialCash: Number(openShiftForm.initialCash) || 0,
+      status: 'open',
+      createdAt: nowIso
+    };
+
+    DB.saveWorkShift(newWorkShift);
+    setShiftData({ isOpen: true, date: openShiftForm.date, initialCash: openShiftForm.initialCash, shiftId });
     setShowOpenModal(false);
   };
 
@@ -1067,6 +1117,35 @@ export default function App() {
     if (newTransactions.length > 0) {
       handleSetTransactions(prev => [...prev, ...newTransactions]);
     }
+
+    // Persist shift closure in DB
+    const shiftInvoices = branchInvoices.filter(i => i.date.startsWith(shiftData.date));
+    const totalSales = shiftInvoices.reduce((s, i) => s + (i.total || 0), 0);
+    const totalCashSales = shiftInvoices.reduce((s, i) => {
+      const cashSplit = i.paymentMethods?.find(pm => pm.treasuryId === 'cash' || pm.treasuryId.includes('cash'))?.amount;
+      return s + (cashSplit || 0);
+    }, 0);
+    const totalCardSales = Math.max(0, totalSales - totalCashSales);
+    const shiftExpenses = branchTransactions.filter(t => t.date.startsWith(shiftData.date) && (t.type === 'out' || t.category === 'expense')).reduce((s, t) => s + t.amount, 0);
+    const expectedCash = shiftData.initialCash + totalCashSales - shiftExpenses;
+
+    const closedShift: Partial<WorkShift> = {
+      id: (shiftData as any).shiftId || ('SHIFT-' + Math.random().toString(36).substr(2, 9).toUpperCase()),
+      salonId: settings.salonId,
+      branchId: activeBranchId,
+      shiftDate: shiftData.date,
+      closedAt: now,
+      closedByUserId: currentUser?.id,
+      closedByUserName: currentUser?.name || 'الكاشير',
+      initialCash: shiftData.initialCash,
+      expectedCash,
+      totalSales,
+      totalCashSales,
+      totalCardSales,
+      totalExpenses: shiftExpenses,
+      status: 'closed'
+    };
+    DB.saveWorkShift(closedShift);
     
     setShiftData({ isOpen: false, date: '', initialCash: 0 });
     setShowCloseModal(false);
@@ -1593,30 +1672,6 @@ export default function App() {
           />
 
         );
-      case 'ai_assistant': return (
-        <AIAssistantScreen
-          settings={settings}
-          setSettings={setSettings}
-          employees={branchEmployees}
-          setEmployees={handleSetEmployees}
-          invoices={branchInvoices}
-          bookings={branchBookings}
-          setBookings={handleSetBookings}
-          transactions={branchTransactions}
-          setTransactions={handleSetTransactions}
-          clients={branchClients}
-          setClients={handleSetClients}
-          services={branchServices}
-          setServices={handleSetServices}
-          products={branchProducts}
-          onNavigateScreen={(screenName) => setActiveTab(screenName)}
-          onToPOS={(booking) => {
-            setActiveBookingForPOS(booking);
-            setActiveTab('pos');
-          }}
-          currentUser={currentUser}
-        />
-      );
       case 'owner_portal': return (
         <OwnerExecutivePortal
           settings={settings}
@@ -1645,7 +1700,7 @@ export default function App() {
   };
 
   const menuItems = [
-    ...(currentUser?.role === 'owner' || currentUser?.role === 'admin' || currentUser?.role === 'programmer' ? [
+    ...(currentUser?.role === 'owner' ? [
       { id: 'owner_portal', icon: Smartphone, label: '📱 نبض المالك (تنفيذي)' }
     ] : []),
     { id: 'dashboard', icon: LayoutDashboard, label: 'لوحة التحكم' },
@@ -1665,9 +1720,6 @@ export default function App() {
       { id: 'partners', icon: Briefcase, label: 'الشركاء والأرباح' }
     ] : []),
     { id: 'reports', icon: FileText, label: 'التقارير الشاملة' },
-    ...(settings.aiAssistantEnabled !== false ? [
-      { id: 'ai_assistant', icon: Bot, label: 'المساعد الذكي ✦' }
-    ] : []),
     { id: 'permissions', icon: Shield, label: 'الصلاحيات والمستخدمين' },
     ...(currentUser?.role === 'programmer' ? [
       { id: 'saas_subscriptions', icon: Sparkles, label: '👑 إدارة اشتراكات SaaS' }
@@ -2097,6 +2149,23 @@ export default function App() {
                 </button>
               )}
 
+              {/* Owner Return Button - Top Header Only (Non-floating) */}
+              {(currentUser?.role === 'owner' || ownerWantsFullApp) && (
+                <button
+                  onClick={() => {
+                    localStorage.removeItem('smartcut_owner_full_app');
+                    setOwnerWantsFullApp(false);
+                    setActiveTab('owner_portal');
+                  }}
+                  className="flex items-center gap-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black px-3 py-1.5 rounded-xl text-xs shadow-xs transition-all active:scale-95 cursor-pointer border border-amber-400/60"
+                  title="العودة لشاشة المالك التنفيذية"
+                >
+                  <Smartphone size={14} />
+                  <span className="font-extrabold hidden sm:inline">العودة لشاشة المالك</span>
+                  <span>👑</span>
+                </button>
+              )}
+
               <div className="hidden sm:block w-px h-5 bg-slate-200 mx-1"></div>
 
               {/* User Avatar */}
@@ -2228,45 +2297,6 @@ export default function App() {
             </div>
           </div>
         </div>
-      )}
-
-      {/* 4. FLOATING SMART AI ASSISTANT WIDGET */}
-      {activeTab !== 'ai_assistant' && (
-        <AIFloatingChat
-          settings={settings}
-          employees={employees}
-          setEmployees={setEmployees}
-          invoices={invoices}
-          bookings={bookings}
-          setBookings={setBookings}
-          transactions={transactions}
-          setTransactions={setTransactions}
-          clients={clients}
-          services={services}
-          products={products}
-          onNavigateScreen={(screenName) => setActiveTab(screenName)}
-          onToPOS={(booking) => {
-            setActiveBookingForPOS(booking);
-            setActiveTab('pos');
-          }}
-          currentUser={currentUser}
-        />
-      )}
-
-      {/* 5. FLOATING OWNER RETURN PILL */}
-      {(currentUser?.role === 'owner' || ownerWantsFullApp) && (
-        <button
-          onClick={() => {
-            localStorage.removeItem('smartcut_owner_full_app');
-            setOwnerWantsFullApp(false);
-            setActiveTab('owner_portal');
-          }}
-          className="fixed bottom-5 left-5 z-40 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-black px-4 py-2.5 rounded-2xl shadow-2xl shadow-amber-500/40 flex items-center gap-2 border-2 border-amber-300/80 transition-all active:scale-95 cursor-pointer hover:scale-105"
-          title="العودة لشاشة المالك التنفيذية (Executive Portal)"
-        >
-          <Smartphone size={18} />
-          <span className="text-xs font-black">العودة لشاشة المالك 👑</span>
-        </button>
       )}
 
     </div>

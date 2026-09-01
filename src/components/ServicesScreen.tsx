@@ -24,6 +24,17 @@ export function ServicesScreen({
     return { base, tax };
   };
 
+  const COLOR_PRESETS = [
+    { name: 'زمردي فاخر', value: '#10b981' },
+    { name: 'أزرق كلاسيكي', value: '#3b82f6' },
+    { name: 'بنفسجي ملكي', value: '#8b5cf6' },
+    { name: 'عنبري دافئ', value: '#f59e0b' },
+    { name: 'وردي أنيق', value: '#ec4899' },
+    { name: 'سماوي بحري', value: '#06b6d4' },
+    { name: 'أحمر قرمزي', value: '#ef4444' },
+    { name: 'كحلي داكن', value: '#1e293b' }
+  ];
+
   const [activeTab, setActiveTab] = useState<'services' | 'categories'>('services');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('all');
@@ -41,7 +52,7 @@ export function ServicesScreen({
   const [newCategoryInlineName, setNewCategoryInlineName] = useState('');
   
   const [serviceFormData, setServiceFormData] = useState<Partial<ServiceItem>>({
-    name: '', price: 0, categoryId: '', isActive: true, type: 'service'
+    name: '', price: 0, categoryId: '', isActive: true, type: 'service', isPriority: false, cardColor: '#10b981'
   });
 
   // Category Form State
@@ -391,7 +402,20 @@ export function ServicesScreen({
                     })
                     .map(service => (
                     <tr key={service.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-4 py-4 font-bold text-slate-800">{service.name}</td>
+                      <td className="px-4 py-4 font-bold text-slate-800">
+                        <div className="flex items-center gap-2">
+                          {service.cardColor && (
+                            <span className="w-2.5 h-2.5 rounded-full shrink-0 shadow-2xs" style={{ backgroundColor: service.cardColor }} />
+                          )}
+                          <span>{service.name}</span>
+                          {service.isPriority && (
+                            <span className="text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300 px-1.5 py-0.5 rounded-md flex items-center gap-0.5 shadow-2xs">
+                              <span>⭐</span>
+                              <span>أولوية POS</span>
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="px-4 py-4">
                         <span className="bg-indigo-50 text-indigo-700 font-bold px-2.5 py-1 rounded-lg text-xs border border-indigo-100 inline-block">
                           {categories.find(c => c.id === service.categoryId || c.name === service.categoryId)?.name || service.categoryId || 'خدمات عامة'}
@@ -709,6 +733,57 @@ export function ServicesScreen({
                     />
                   </div>
                 </div>
+              </div>
+
+              {/* 3. Priority & POS Card Styling */}
+              <div className="p-3.5 bg-gradient-to-r from-amber-50/80 to-orange-50/80 border border-amber-200/90 rounded-2xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={serviceFormData.isPriority || false}
+                      onChange={e => setServiceFormData({ ...serviceFormData, isPriority: e.target.checked })}
+                      className="w-4 h-4 text-amber-600 accent-amber-600 rounded cursor-pointer"
+                    />
+                    <span className="text-xs font-black text-slate-800 flex items-center gap-1">
+                      <span>⭐ خدمة ذات أولوية في نقطة البيع (POS)</span>
+                    </span>
+                  </label>
+                  <span className="text-[10px] font-bold bg-amber-200/80 text-amber-900 px-2 py-0.5 rounded-full">
+                    تظهر في المقدمة ⚡
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-600 leading-relaxed">
+                  تظهر هذه الخدمة في أول شاشة الكاشير لسرعة الاختيار بنقرة واحدة من قِبل الكاشير دون الحاجة للبحث.
+                </p>
+
+                {serviceFormData.isPriority && (
+                  <div className="space-y-1.5 pt-2 border-t border-amber-200/60">
+                    <label className="block text-[11px] font-bold text-slate-700">
+                      اختر لوناً مميزاً لبطاقة الخدمة في الكاشير:
+                    </label>
+                    <div className="grid grid-cols-4 gap-2 pt-1">
+                      {COLOR_PRESETS.map((color) => {
+                        const isSelected = (serviceFormData.cardColor || '#10b981') === color.value;
+                        return (
+                          <button
+                            key={color.value}
+                            type="button"
+                            onClick={() => setServiceFormData({ ...serviceFormData, cardColor: color.value })}
+                            className={`flex items-center gap-1.5 px-2 py-1.5 rounded-xl border text-[11px] font-bold transition-all ${
+                              isSelected
+                                ? 'border-slate-900 bg-white shadow-sm ring-2 ring-slate-900/10 scale-105'
+                                : 'border-slate-200 bg-white/80 hover:bg-white text-slate-600'
+                            }`}
+                          >
+                            <span className="w-3.5 h-3.5 rounded-full shrink-0 shadow-2xs" style={{ backgroundColor: color.value }} />
+                            <span className="truncate">{color.name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <label className="flex items-center gap-3 p-3 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50">

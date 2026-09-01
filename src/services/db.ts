@@ -123,6 +123,22 @@ export async function ensureCoreSchema(): Promise<void> {
       ensureColumn('employees', 'custom_overtime_rate', 'NUMERIC(10,2)'),
       ensureColumn('employees', 'late_deduction_rules', 'JSONB'),
       ensureColumn('employees', 'permissions_limit', 'INT'),
+      ensureColumn('services', 'is_priority', 'BOOLEAN'),
+      ensureColumn('services', 'card_color', 'VARCHAR(50)'),
+      ensureColumn('services', 'priority_order', 'INT'),
+      ensureColumn('work_shifts', 'salon_id', 'UUID'),
+      ensureColumn('work_shifts', 'branch_id', 'VARCHAR(100)'),
+      ensureColumn('work_shifts', 'shift_date', 'VARCHAR(50)'),
+      ensureColumn('work_shifts', 'opened_at', 'TIMESTAMPTZ'),
+      ensureColumn('work_shifts', 'closed_at', 'TIMESTAMPTZ'),
+      ensureColumn('work_shifts', 'opened_by_user_id', 'VARCHAR(100)'),
+      ensureColumn('work_shifts', 'opened_by_user_name', 'VARCHAR(255)'),
+      ensureColumn('work_shifts', 'opened_by_role', 'VARCHAR(100)'),
+      ensureColumn('work_shifts', 'initial_cash', 'NUMERIC(12,2)'),
+      ensureColumn('work_shifts', 'expected_cash', 'NUMERIC(12,2)'),
+      ensureColumn('work_shifts', 'actual_cash', 'NUMERIC(12,2)'),
+      ensureColumn('work_shifts', 'cash_difference', 'NUMERIC(12,2)'),
+      ensureColumn('work_shifts', 'status', 'VARCHAR(50)'),
       ensureColumn('app_settings', 'overtime_settings', 'JSONB'),
       ensureColumn('app_settings', 'attendance_settings', 'JSONB'),
       ensureColumn('app_settings', 'commission_settings', 'JSONB'),
@@ -1044,6 +1060,71 @@ export const DB = {
     } catch (e) { console.error('DB.deleteInvoice exception:', e); return false; }
   },
 
+  // ---- الورديات ومتابعة العهدة (Work Shifts & Custody) ----
+  async fetchWorkShifts(salonId?: string, branchId?: string) {
+    const client = sb();
+    if (!client) return [];
+    try {
+      let q = client.from('work_shifts').select('*');
+      const sId = salonId || getSalonId();
+      if (sId) q = q.eq('salon_id', toSalonUUID(sId));
+      if (branchId && branchId !== 'all') q = q.eq('branch_id', toBranchUUID(branchId));
+      const { data, error } = await q.order('opened_at', { ascending: false });
+      if (error) { console.error('DB.fetchWorkShifts:', error.message); return []; }
+      return (data || []).map(toCamel);
+    } catch (e) { return []; }
+  },
+
+  async getActiveWorkShift(salonId?: string, branchId?: string) {
+    const client = sb();
+    if (!client) return null;
+    try {
+      let q = client.from('work_shifts').select('*').eq('status', 'open');
+      const sId = salonId || getSalonId();
+      if (sId) q = q.eq('salon_id', toSalonUUID(sId));
+      if (branchId && branchId !== 'all') q = q.eq('branch_id', toBranchUUID(branchId));
+      const { data, error } = await q.order('opened_at', { ascending: false }).limit(1).maybeSingle();
+      if (error) return null;
+      return data ? toCamel(data) : null;
+    } catch (e) { return null; }
+  },
+
+  async saveWorkShift(ws: any): Promise<boolean> {
+    const client = sb();
+    if (!client || !ws) return false;
+    try {
+      const validSalonId = toSalonUUID(ws.salonId || getSalonId());
+      const validBranchId = toBranchUUID(ws.branchId);
+      const snap: any = {
+        id: ws.id,
+        salon_id: validSalonId,
+        branch_id: validBranchId,
+        shift_date: ws.shiftDate,
+        opened_at: ws.openedAt || new Date().toISOString(),
+        closed_at: ws.closedAt || null,
+        opened_by_user_id: ws.openedByUserId || null,
+        opened_by_user_name: ws.openedByUserName || null,
+        opened_by_role: ws.openedByRole || null,
+        closed_by_user_id: ws.closedByUserId || null,
+        closed_by_user_name: ws.closedByUserName || null,
+        initial_cash: Number(ws.initialCash) || 0,
+        expected_cash: ws.expectedCash !== undefined ? Number(ws.expectedCash) : null,
+        actual_cash: ws.actualCash !== undefined ? Number(ws.actualCash) : null,
+        cash_difference: ws.cashDifference !== undefined ? Number(ws.cashDifference) : null,
+        total_sales: ws.totalSales !== undefined ? Number(ws.totalSales) : null,
+        total_cash_sales: ws.totalCashSales !== undefined ? Number(ws.totalCashSales) : null,
+        total_card_sales: ws.totalCardSales !== undefined ? Number(ws.totalCardSales) : null,
+        total_expenses: ws.totalExpenses !== undefined ? Number(ws.totalExpenses) : null,
+        status: ws.status || 'open',
+        notes: ws.notes || null,
+        created_at: ws.createdAt || new Date().toISOString()
+      };
+      const { error } = await client.from('work_shifts').upsert(snap, { onConflict: 'id' });
+      if (error) { console.error('DB.saveWorkShift error:', error.message); return false; }
+      return true;
+    } catch (e) { console.error('DB.saveWorkShift exception:', e); return false; }
+  },
+
   // ---- الشركاء ورأس المال (Partners & Equity) ----
   async fetchPartners(salonId?: string) {
     return DB.fetchAll<any>('partners', undefined, salonId);
@@ -1356,7 +1437,10 @@ export function dbServiceToApp(row: any) {
     durationMinutes: row.durationMinutes ?? 30, 
     barcode: row.barcode || '',
     isActive: row.isActive !== false, 
-    type: row.type || 'service'
+    type: row.type || 'service',
+    isPriority: row.isPriority ?? row.is_priority ?? false,
+    cardColor: row.cardColor || row.card_color || '',
+    priorityOrder: row.priorityOrder ?? row.priority_order ?? 0
   };
 }
 

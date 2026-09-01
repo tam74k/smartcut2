@@ -1358,22 +1358,6 @@ export function SettingsScreen({
               </label>
             </div>
 
-            {/* AI Assistant Toggle Switch */}
-            <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl p-3.5">
-              <div>
-                <p className="text-sm font-extrabold text-slate-800">تفعيل المساعد الذكي ✦ (AI Assistant)</p>
-                <p className="text-xs text-slate-500 mt-0.5">إظهار شاشة ومحادثة المساعد الذكي في القائمة الجانبية والشاشات لمساعدة الكادر الإداري</p>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input 
-                  type="checkbox" 
-                  className="sr-only peer"
-                  checked={settings.aiAssistantEnabled !== false}
-                  onChange={(e) => handleChange('aiAssistantEnabled', e.target.checked)}
-                />
-                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
-              </label>
-            </div>
           </div>
         </div>
 

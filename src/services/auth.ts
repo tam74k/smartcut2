@@ -513,6 +513,11 @@ export class AuthService {
       return u.role === 'programmer';
     }
 
+    // Owner Executive Portal (نبض المالك) is EXCLUSIVELY for the Owner role ONLY
+    if (screen === 'owner_portal') {
+      return u.role === 'owner';
+    }
+
     if (u.role === 'programmer') return true;
     if (u.role === 'admin' || u.role === 'owner') return true;
     if (u.screens?.includes('*')) return true;

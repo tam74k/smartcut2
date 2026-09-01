@@ -802,6 +802,19 @@ export function POSScreen({
         i.name.includes(searchQuery) || (i.barcode && i.barcode === searchQuery)
       );
     }
+
+    // ترتيب الخدمات بحيث تكون الخدمات ذات الأولوية (isPriority) في المقدمة دائماً
+    if (itemTypeFilter === 'service') {
+      filtered = [...filtered].sort((a: any, b: any) => {
+        const aPri = a.isPriority ? 1 : 0;
+        const bPri = b.isPriority ? 1 : 0;
+        if (aPri !== bPri) return bPri - aPri;
+        const aOrder = a.priorityOrder ?? 0;
+        const bOrder = b.priorityOrder ?? 0;
+        return aOrder - bOrder;
+      });
+    }
+
     return filtered.map(i => {
       const isProduct = itemTypeFilter === 'product';
       const originalPrice = isProduct ? (Number(i.sellPrice) || 0) : (Number(i.price) || 0);
@@ -941,29 +954,54 @@ export function POSScreen({
         {/* Items Grid */}
         <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
           <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-            {filteredItems.map(item => (
-              <button 
-                key={item.id}
-                onClick={() => addToCart(item)}
-                className="bg-white rounded-2xl p-4 flex flex-col items-center justify-center text-center gap-3 border border-slate-100 shadow-sm hover:shadow-md hover:border-primary/30 transition-all active:scale-95 group"
-              >
-                <div className="w-14 h-14 rounded-full bg-slate-50 flex items-center justify-center text-primary group-hover:bg-primary/10 transition-colors">
-                  {item._isProduct ? <Package size={24} /> : <Scissors size={24} />}
-                </div>
-                <div>
-                  <h4 className="font-bold text-slate-800 text-sm mb-1 leading-tight">{item.name}</h4>
-                  {item.hasDiscount ? (
-                    <div className="flex flex-col items-center">
-                      <p className="text-emerald-600 font-black text-sm">{item.discountPrice} {settings.currency}</p>
-                      <p className="text-slate-400 text-xs line-through">{item.originalPrice} {settings.currency}</p>
+            {filteredItems.map(item => {
+              const isPriority = !item._isProduct && item.isPriority;
+              const customColor = item.cardColor || '#10b981';
+
+              return (
+                <button 
+                  key={item.id}
+                  onClick={() => addToCart(item)}
+                  style={isPriority ? { borderColor: `${customColor}80` } : undefined}
+                  className={`relative rounded-2xl p-4 flex flex-col items-center justify-center text-center gap-2.5 transition-all active:scale-95 group cursor-pointer ${
+                    isPriority 
+                      ? 'bg-gradient-to-b from-white via-white to-slate-50 border-2 shadow-md hover:shadow-lg hover:scale-[1.02]' 
+                      : 'bg-white border border-slate-200/80 shadow-xs hover:shadow-md hover:border-primary/30'
+                  }`}
+                >
+                  {isPriority && (
+                    <div 
+                      className="absolute -top-2.5 right-2 px-2 py-0.5 rounded-full text-[10px] font-black text-white flex items-center gap-0.5 shadow-xs"
+                      style={{ backgroundColor: customColor }}
+                    >
+                      <span>⭐</span>
+                      <span>سريعة</span>
                     </div>
-                  ) : (
-                    <p className="text-secondary font-bold text-sm">{item.originalPrice} {settings.currency}</p>
                   )}
 
-                </div>
-              </button>
-            ))}
+                  <div 
+                    className="w-13 h-13 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110 shadow-2xs"
+                    style={isPriority ? { backgroundColor: `${customColor}15`, color: customColor } : { backgroundColor: '#f1f5f9', color: '#0f766e' }}
+                  >
+                    {item._isProduct ? <Package size={22} /> : <Scissors size={22} />}
+                  </div>
+
+                  <div className="w-full">
+                    <h4 className="font-extrabold text-slate-800 text-xs mb-1 leading-tight line-clamp-2">{item.name}</h4>
+                    {item.hasDiscount ? (
+                      <div className="flex flex-col items-center">
+                        <p className="text-emerald-600 font-black text-xs font-mono">{item.discountPrice} {settings.currency}</p>
+                        <p className="text-slate-400 text-[10px] line-through font-mono">{item.originalPrice} {settings.currency}</p>
+                      </div>
+                    ) : (
+                      <p className="font-extrabold text-xs font-mono" style={isPriority ? { color: customColor } : { color: '#0f766e' }}>
+                        {item.originalPrice} {settings.currency}
+                      </p>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>

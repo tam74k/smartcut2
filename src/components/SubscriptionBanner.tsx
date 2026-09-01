@@ -31,9 +31,11 @@ export function SubscriptionBanner({
   const isOwnerOrProgrammer = currentUser?.role === 'programmer' || currentUser?.role === 'owner' || (currentUser?.role === 'admin' && !currentUser?.branchId);
   const canSwitchBranches = isOwnerOrProgrammer;
 
-  const effectiveBranches = (branches && branches.length > 0)
-    ? branches
-    : (subscription.salonId ? SubscriptionService.getBranches(subscription.salonId) : SubscriptionService.getBranches());
+  const currentSalonId = subscription.salonId || currentUser?.salonId;
+  const filteredBranches = (branches && branches.length > 0)
+    ? branches.filter(b => !currentSalonId || b.salonId === currentSalonId || !b.salonId)
+    : (currentSalonId ? SubscriptionService.getBranches(currentSalonId) : []);
+  const effectiveBranches = filteredBranches.length > 0 ? filteredBranches : (branches || []);
 
   const activeBranch = effectiveBranches.find(b => b.id === activeBranchId) || effectiveBranches[0];
   const nowMidnight = new Date();
@@ -168,14 +170,14 @@ export function SubscriptionBanner({
           </div>
         )}
 
-        {onOpenOwnerPortal && (currentUser?.role === 'owner' || isOwnerOrProgrammer) && (
+        {onOpenOwnerPortal && currentUser?.role === 'owner' && (
           <button
             onClick={onOpenOwnerPortal}
             title="الانتقال إلى شاشة المالك التنفيذية (نبض المالك)"
             className="flex items-center gap-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black px-2.5 py-1 rounded-lg text-xs transition-all shadow-md shadow-amber-500/20 cursor-pointer active:scale-95"
           >
             <Smartphone size={13} />
-            <span className="hidden sm:inline">شاشة المالك</span>
+            <span className="hidden sm:inline">العودة لشاشة المالك</span>
             <span>👑</span>
           </button>
         )}
