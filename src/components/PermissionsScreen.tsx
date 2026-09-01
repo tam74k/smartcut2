@@ -21,7 +21,7 @@ export function PermissionsScreen({
   branches?: Branch[];
   currentUser?: AppUser | null;
 }) {
-  const currentSalonId = settings.salonId || currentUser?.salonId || '00000000-0000-0000-0000-000000000001';
+  const currentSalonId = settings.salonId || currentUser?.salonId || '';
 
   const [activeTab, setActiveTab] = useState<'users' | 'roles' | 'matrix'>('users');
   const [users, setUsers] = useState<AppUser[]>(() => AuthService.getUsers(currentSalonId));

@@ -113,7 +113,13 @@ export async function ensureCoreSchema(): Promise<void> {
     await Promise.allSettled([
       ensureColumn('platform_settings', 'logo_url', 'TEXT'),
       ensureColumn('salons', 'salon_type', 'VARCHAR(20)'),
+      ensureColumn('salons', 'evolution_instance_name', 'VARCHAR(100)'),
+      ensureColumn('salons', 'evolution_api_key', 'TEXT'),
+      ensureColumn('salons', 'evolution_api_url', 'TEXT'),
       ensureColumn('app_settings', 'salon_type', 'VARCHAR(20)'),
+      ensureColumn('app_settings', 'evolution_instance_name', 'VARCHAR(100)'),
+      ensureColumn('app_settings', 'evolution_api_key', 'TEXT'),
+      ensureColumn('app_settings', 'evolution_api_url', 'TEXT'),
       ensureColumn('employees', 'custom_overtime_rate', 'NUMERIC(10,2)'),
       ensureColumn('employees', 'late_deduction_rules', 'JSONB'),
       ensureColumn('employees', 'permissions_limit', 'INT'),
@@ -428,6 +434,9 @@ export const DB = {
         trial_days: s.trialDays || 7,
         max_branches: s.maxBranches || 3,
         max_users: s.maxUsers || 10,
+        evolution_instance_name: s.evolutionInstanceName ?? s.waInstantName ?? null,
+        evolution_api_key: s.evolutionApiKey ?? s.waApiKey ?? null,
+        evolution_api_url: s.evolutionApiUrl ?? null,
         updated_at: new Date().toISOString()
       };
       const { error } = await client.from('salons').upsert(snap, { onConflict: 'id' });
@@ -661,10 +670,10 @@ export const DB = {
         paper_size: settings.paperSize || '80mm',
         print_automatically: settings.printAutomatically ?? false,
         evolution_api_url: settings.evolutionApiUrl || null,
-        evolution_api_key: settings.evolutionApiKey || null,
-        evolution_instance_name: settings.evolutionInstanceName || null,
-        wa_instant_name: settings.waInstantName || null,
-        wa_api_key: settings.waApiKey || null,
+        evolution_api_key: settings.evolutionApiKey || settings.waApiKey || null,
+        evolution_instance_name: settings.evolutionInstanceName || settings.waInstantName || null,
+        wa_instant_name: settings.evolutionInstanceName || settings.waInstantName || null,
+        wa_api_key: settings.evolutionApiKey || settings.waApiKey || null,
         evolution_branch_instances: settings.evolutionBranchInstances || {},
         supabase_url: settings.supabaseUrl || null,
         supabase_anon_key: settings.supabaseAnonKey || null,

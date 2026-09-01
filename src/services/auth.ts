@@ -231,7 +231,7 @@ export class AuthService {
   public static getUsers(salonId?: string): AppUser[] {
     const all = this.initUsers().filter(u => u.role !== 'programmer' && u.username !== 'programmer');
     if (!salonId) return all;
-    return all.filter(u => !u.salonId || u.salonId === salonId || u.salonId === '00000000-0000-0000-0000-000000000001');
+    return all.filter(u => !u.salonId || u.salonId === salonId);
   }
 
   public static isUsernameTaken(username: string, excludeUserId?: string, salonId?: string): boolean {
@@ -350,8 +350,6 @@ export class AuthService {
       MASTER_PROGRAMMER_USER.password = clean;
       await DB.saveUser({
         id: '00000000-0000-0000-0000-000000000099',
-        salonId: '00000000-0000-0000-0000-000000000001',
-        branchId: '00000000-0000-0000-0000-000000000002',
         username: 'programmer',
         name: 'المبرمج والمطور الرئيسي (Master Programmer)',
         password: clean,

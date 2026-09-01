@@ -33,13 +33,29 @@ export function formatWhatsAppNumber(phone: string, defaultCountry: string = 'ا
 
 export const EvolutionApiService = {
   /**
+   * Resolves the Evolution API server URL (from salon settings, platform settings, or fallback)
+   */
+  getBaseUrl(settings: AppSettings): string {
+    if (settings.evolutionApiUrl && settings.evolutionApiUrl.trim()) {
+      return settings.evolutionApiUrl.trim().replace(/\/+$/, '');
+    }
+    try {
+      const savedPlatformUrl = localStorage.getItem('smartcut_platform_evolution_url');
+      if (savedPlatformUrl && savedPlatformUrl.trim()) {
+        return savedPlatformUrl.trim().replace(/\/+$/, '');
+      }
+    } catch (e) {}
+    return 'http://localhost:8080';
+  },
+
+  /**
    * Resolves the active instance name for a salon and specific branch
    */
   getInstanceName(settings: AppSettings, branchId?: string): string | null {
     if (branchId && settings.evolutionBranchInstances && settings.evolutionBranchInstances[branchId]) {
       return settings.evolutionBranchInstances[branchId];
     }
-    return settings.evolutionInstanceName || null;
+    return settings.evolutionInstanceName || settings.waInstantName || null;
   },
 
   /**
@@ -61,7 +77,7 @@ export const EvolutionApiService = {
 
     const instance = this.getInstanceName(settings, branchId)!;
     const apiKey = settings.evolutionApiKey || settings.waApiKey || '';
-    const baseUrl = (settings.evolutionApiUrl || 'http://localhost:8080').replace(/\/+$/, '');
+    const baseUrl = this.getBaseUrl(settings);
 
     try {
       const res = await fetch(`${baseUrl}/instance/connectionState/${instance}`, {
@@ -101,7 +117,7 @@ export const EvolutionApiService = {
 
     const instance = this.getInstanceName(settings, branchId)!;
     const apiKey = settings.evolutionApiKey || settings.waApiKey || '';
-    const baseUrl = (settings.evolutionApiUrl || 'http://localhost:8080').replace(/\/+$/, '');
+    const baseUrl = this.getBaseUrl(settings);
     const formattedPhone = formatWhatsAppNumber(phone, settings.country);
 
     try {
@@ -109,7 +125,7 @@ export const EvolutionApiService = {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'apikey': settings.evolutionApiKey!
+          'apikey': apiKey
         },
         body: JSON.stringify({
           number: formattedPhone,

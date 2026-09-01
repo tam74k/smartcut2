@@ -86,10 +86,25 @@ export function SaaSSubscriptionsScreen({ onSwitchSalon }: SaaSSubscriptionsScre
     loadAllData();
   }, []);
 
-  const loadAllData = () => {
+  const loadAllData = async () => {
     setSalons(SubscriptionService.getSalons());
     setBranches(SubscriptionService.getBranches());
     setPayments(SubscriptionService.getPayments());
+
+    try {
+      const cloudSalons = await DB.fetchSalons();
+      if (cloudSalons && cloudSalons.length > 0) {
+        SubscriptionService.saveSalons(cloudSalons);
+        setSalons(cloudSalons);
+      }
+      const cloudBranches = await DB.fetchBranches();
+      if (cloudBranches && cloudBranches.length > 0) {
+        SubscriptionService.saveBranches(cloudBranches);
+        setBranches(cloudBranches);
+      }
+    } catch (e) {
+      console.error('Failed to fetch salons from cloud:', e);
+    }
   };
 
   // Check days remaining helper

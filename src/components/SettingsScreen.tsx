@@ -296,8 +296,8 @@ export function SettingsScreen({
 
   const handleCreateBranch = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newBranchData.name.trim()) return;
-    const res = SubscriptionService.addBranch(settings.salonId || '00000000-0000-0000-0000-000000000001', newBranchData);
+    const targetSalonId = settings.salonId || (SubscriptionService.getSalons()[0]?.id || '');
+    const res = SubscriptionService.addBranch(targetSalonId, newBranchData);
     if (res.success) {
       loadSalonBranches();
       setShowAddBranchModal(false);
@@ -377,12 +377,18 @@ export function SettingsScreen({
       try {
         localStorage.setItem('smartcut_app_settings', JSON.stringify(updated));
         if (updated.salonId) {
+          const instName = updated.evolutionInstanceName || updated.waInstantName;
+          const apiKeyVal = updated.evolutionApiKey || updated.waApiKey;
           SubscriptionService.updateSalon(updated.salonId, {
             name: updated.salonName,
+            salonType: updated.salonType,
             phone: updated.phone,
             country: updated.country,
-            currency: updated.currency
+            currency: updated.currency,
+            evolutionInstanceName: instName,
+            evolutionApiKey: apiKeyVal
           });
+          DB.saveSettings(updated.salonId, updated);
         }
       } catch (e) {
         console.error(e);
@@ -549,12 +555,18 @@ export function SettingsScreen({
     try {
       localStorage.setItem('smartcut_app_settings', JSON.stringify(settings));
       if (settings.salonId) {
+        const instName = settings.evolutionInstanceName || settings.waInstantName;
+        const apiKeyVal = settings.evolutionApiKey || settings.waApiKey;
         SubscriptionService.updateSalon(settings.salonId, {
           name: settings.salonName,
+          salonType: settings.salonType,
           phone: settings.phone,
           country: settings.country,
-          currency: settings.currency
+          currency: settings.currency,
+          evolutionInstanceName: instName,
+          evolutionApiKey: apiKeyVal
         });
+        DB.saveSettings(settings.salonId, settings);
       }
     } catch (e) {
       console.error(e);
@@ -2544,7 +2556,7 @@ export function SettingsScreen({
             </span>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">اسم الجلسة (Instance Name) *</label>
               <input 
@@ -2576,18 +2588,6 @@ export function SettingsScreen({
                   });
                 }}
                 placeholder="••••••••••••••••"
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono focus:border-emerald-600 outline-none"
-                dir="ltr"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">رابط سيرفر Evolution API (اختياري)</label>
-              <input 
-                type="text" 
-                value={settings.evolutionApiUrl || ''}
-                onChange={(e) => handleChange('evolutionApiUrl', e.target.value)}
-                placeholder="http://localhost:8080 أو الرابط السحابي"
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono focus:border-emerald-600 outline-none"
                 dir="ltr"
               />

@@ -529,6 +529,7 @@ export const SubscriptionService = {
 
     salons[idx] = { ...salons[idx], ...updates };
     this.saveSalons(salons);
+    DB.saveSalon(salons[idx]);
     return salons[idx];
   },
 

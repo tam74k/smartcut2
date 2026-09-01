@@ -528,21 +528,44 @@ export default function App() {
       });
     } catch (e) {}
 
-    // مزامنة فورية لأي صالونات أو فروع أو إعدادات مسجلة محلياً لضمان وجودها في قاعدة البيانات السحابية
-    try {
-      const localSalons = SubscriptionService.getSalons();
-      localSalons.forEach(s => DB.saveSalon(s));
-      const localBranches = SubscriptionService.getBranches();
-      localBranches.forEach(b => DB.saveBranch(b));
-      if (settings.salonId) {
-        DB.saveSettings(settings.salonId, settings);
+    // تحميل ومزامنة الصالونات والفروع مباشرة من Supabase (Source of Truth)
+    const syncFromCloud = async () => {
+      try {
+        const cloudSalons = await DB.fetchSalons();
+        if (cloudSalons && cloudSalons.length > 0) {
+          SubscriptionService.saveSalons(cloudSalons);
+          if (settings.salonId) {
+            const activeCloudSalon = cloudSalons.find(s => s.id === settings.salonId);
+            if (activeCloudSalon) {
+              setSettings(prev => ({
+                ...prev,
+                salonName: activeCloudSalon.name || prev.salonName,
+                salonType: activeCloudSalon.salonType || (activeCloudSalon as any).salon_type || prev.salonType,
+                phone: activeCloudSalon.phone || prev.phone,
+                country: activeCloudSalon.country || prev.country,
+                currency: activeCloudSalon.currency || prev.currency,
+                evolutionInstanceName: activeCloudSalon.evolutionInstanceName || prev.evolutionInstanceName,
+                evolutionApiKey: activeCloudSalon.evolutionApiKey || prev.evolutionApiKey
+              }));
+            }
+          }
+        }
+        const cloudBranches = await DB.fetchBranches();
+        if (cloudBranches && cloudBranches.length > 0) {
+          SubscriptionService.saveBranches(cloudBranches);
+          setBranches(cloudBranches);
+        }
+      } catch (e) {
+        console.error('Failed to sync cloud salons:', e);
       }
-    } catch (e) {}
+    };
+    syncFromCloud();
 
     const loadDataForSalon = async (targetSalonId?: string) => {
       const client = SupabaseService.getClient();
       if (!client) return;
-      const sId = targetSalonId || settings.salonId || '00000000-0000-0000-0000-000000000001';
+      const sId = targetSalonId || settings.salonId;
+      if (!sId) return;
 
       setIsDbLoading(true);
       try {
@@ -609,7 +632,7 @@ export default function App() {
     }
   };
 
-  const currentSalonId = settings.salonId || currentUser?.salonId || '00000000-0000-0000-0000-000000000001';
+  const currentSalonId = settings.salonId || currentUser?.salonId || (SubscriptionService.getSalons()[0]?.id || '');
 
 
   // 3. Autonomous Branch Isolation Filter & Helpers
@@ -960,8 +983,10 @@ export default function App() {
       } else {
         localStorage.setItem('smartcut_app_settings', JSON.stringify(next));
       }
-      const salonId = next.salonId || '00000000-0000-0000-0000-000000000001';
-      DB.saveSettings(salonId, next);
+      const salonId = next.salonId || settings.salonId || (SubscriptionService.getSalons()[0]?.id || '');
+      if (salonId) {
+        DB.saveSettings(salonId, next);
+      }
       return next;
     });
   };
