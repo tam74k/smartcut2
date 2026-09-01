@@ -7,7 +7,7 @@ import {
   Smartphone, DollarSign, Users, Calendar, Clock, CheckCircle2, AlertTriangle, 
   XCircle, UserCheck, UserX, Plus, RefreshCw, Send, ChevronDown, ArrowUpRight, 
   TrendingUp, TrendingDown, Wallet, CreditCard, Banknote, Building2, Shield, Eye, Lock,
-  Receipt, Sparkles, Check, X, Phone, User, Store, Filter, Award, ChevronRight,
+  Receipt, Sparkles, Check, X, Phone, User, Store, Filter, Award, ChevronRight, ArrowRight,
   PieChart, BarChart3, Activity, Percent, Crown, Briefcase, FileBarChart, Layers, Edit2, Trash2, ArrowDownRight
 } from 'lucide-react';
 
