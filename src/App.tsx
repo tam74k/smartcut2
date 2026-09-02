@@ -50,11 +50,10 @@ import { AuthService, ROLE_LABELS } from './services/auth';
 import { SupabaseService } from './services/supabase';
 import { DB, dbClientToApp, dbEmployeeToApp, dbServiceToApp } from './services/db';
 import { SubscriptionService } from './services/subscriptionService';
-import { transactions as initialTransactions, bookings as initialBookings, invoices as initialInvoices, clients as initialClients, items as initialServices, categories as initialCategories, initialEmployees } from './data/mockData';
 import { 
   AppSettings, Transaction, Booking, Invoice, ServiceItem, Category, Employee, Product, AppUser, 
   SaaSSubscription, Branch, Partner, PartnerTransaction, PromoCode, PromoCodeUsage, TipRecord, 
-  EmployeeCustody, FingerprintLog, WorkShift 
+  EmployeeCustody, FingerprintLog, WorkShift, Client 
 } from './types';
 
 
@@ -496,13 +495,13 @@ export default function App() {
   });
 
   // 2. Global In-Memory Stores
-  const [transactions, setTransactions] = useState<Transaction[]>(initialTransactions);
-  const [bookings, setBookings] = useState<Booking[]>(initialBookings);
-  const [invoices, setInvoices] = useState<Invoice[]>(initialInvoices);
-  const [clients, setClients] = useState(initialClients);
-  const [services, setServices] = useState<ServiceItem[]>(initialServices);
-  const [categories, setCategories] = useState<Category[]>(initialCategories);
-  const [employees, setEmployees] = useState<Employee[]>(initialEmployees);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [services, setServices] = useState<ServiceItem[]>([]);
+  const [categories, setCategories] = useState<Category[]>([{ id: 'all', name: 'الكل' }]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [activeBookingForPOS, setActiveBookingForPOS] = useState<Booking | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [suppliers, setSuppliers] = useState<any[]>([]);

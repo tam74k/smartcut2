@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Sparkles, Building2, Cloud, CloudOff, CheckCircle2, ChevronDown, X, Smartphone, Lock } from 'lucide-react';
 import { SaaSSubscription, Branch, AppUser } from '../types';
-import { SubscriptionService } from '../services/subscriptionService';
 
 interface SubscriptionBannerProps {
   subscription: SaaSSubscription;
@@ -34,7 +33,7 @@ export function SubscriptionBanner({
   const currentSalonId = subscription.salonId || currentUser?.salonId;
   const filteredBranches = (branches && branches.length > 0)
     ? branches.filter(b => !currentSalonId || b.salonId === currentSalonId || !b.salonId)
-    : (currentSalonId ? SubscriptionService.getBranches(currentSalonId) : []);
+    : [];
   const effectiveBranches = filteredBranches.length > 0 ? filteredBranches : (branches || []);
 
   const activeBranch = effectiveBranches.find(b => b.id === activeBranchId) || effectiveBranches[0];
