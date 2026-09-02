@@ -367,52 +367,7 @@ export default function App() {
     }
   }, [isReservationRoute]);
 
-  // 1. Shift State scoped per active branch & persisted in localStorage + Supabase
-  const [branchShifts, setBranchShifts] = useState<Record<string, { isOpen: boolean, date: string, initialCash: number, shiftId?: string }>>(() => {
-    try {
-      const saved = localStorage.getItem('smartcut_work_shifts_state');
-      if (saved) return JSON.parse(saved);
-    } catch (e) {}
-    return {};
-  });
-  const shiftData = branchShifts[activeBranchId] || { isOpen: false, date: '', initialCash: 0 };
-  const setShiftData = (updater: any) => {
-    setBranchShifts(prev => {
-      const current = prev[activeBranchId] || { isOpen: false, date: '', initialCash: 0 };
-      const next = typeof updater === 'function' ? updater(current) : updater;
-      const updated = { ...prev, [activeBranchId]: next };
-      try { localStorage.setItem('smartcut_work_shifts_state', JSON.stringify(updated)); } catch (e) {}
-      return updated;
-    });
-  };
-
-  // Synchronize active shift with DB on salon/branch change
-  useEffect(() => {
-    const sId = settings.salonId;
-    if (!sId || !activeBranchId) return;
-    DB.getActiveWorkShift(sId, activeBranchId).then(activeShift => {
-      if (activeShift && activeShift.status === 'open') {
-        setBranchShifts(prev => {
-          const updated = {
-            ...prev,
-            [activeBranchId]: {
-              isOpen: true,
-              date: activeShift.shiftDate,
-              initialCash: Number(activeShift.initialCash) || 0,
-              shiftId: activeShift.id
-            }
-          };
-          try { localStorage.setItem('smartcut_work_shifts_state', JSON.stringify(updated)); } catch (e) {}
-          return updated;
-        });
-      }
-    }).catch(err => console.warn('Could not query active shift:', err));
-  }, [settings.salonId, activeBranchId]);
-
-  const [showOpenModal, setShowOpenModal] = useState(false);
-  const [showCloseModal, setShowCloseModal] = useState(false);
-  const [openShiftForm, setOpenShiftForm] = useState({ date: new Date().toISOString().split('T')[0], initialCash: 0 });
-  
+  // 1. App Settings State
   const [settings, setSettings] = useState<AppSettings>(() => {
     try {
       const saved = localStorage.getItem('smartcut_app_settings');
@@ -493,6 +448,52 @@ export default function App() {
       ]
     };
   });
+
+  // 2. Shift State scoped per active branch & persisted in localStorage + Supabase
+  const [branchShifts, setBranchShifts] = useState<Record<string, { isOpen: boolean, date: string, initialCash: number, shiftId?: string }>>(() => {
+    try {
+      const saved = localStorage.getItem('smartcut_work_shifts_state');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return {};
+  });
+  const shiftData = branchShifts[activeBranchId] || { isOpen: false, date: '', initialCash: 0 };
+  const setShiftData = (updater: any) => {
+    setBranchShifts(prev => {
+      const current = prev[activeBranchId] || { isOpen: false, date: '', initialCash: 0 };
+      const next = typeof updater === 'function' ? updater(current) : updater;
+      const updated = { ...prev, [activeBranchId]: next };
+      try { localStorage.setItem('smartcut_work_shifts_state', JSON.stringify(updated)); } catch (e) {}
+      return updated;
+    });
+  };
+
+  const [showOpenModal, setShowOpenModal] = useState(false);
+  const [showCloseModal, setShowCloseModal] = useState(false);
+  const [openShiftForm, setOpenShiftForm] = useState({ date: new Date().toISOString().split('T')[0], initialCash: 0 });
+
+  // Synchronize active shift with DB on salon/branch change
+  useEffect(() => {
+    const sId = settings.salonId;
+    if (!sId || !activeBranchId) return;
+    DB.getActiveWorkShift(sId, activeBranchId).then(activeShift => {
+      if (activeShift && activeShift.status === 'open') {
+        setBranchShifts(prev => {
+          const updated = {
+            ...prev,
+            [activeBranchId]: {
+              isOpen: true,
+              date: activeShift.shiftDate,
+              initialCash: Number(activeShift.initialCash) || 0,
+              shiftId: activeShift.id
+            }
+          };
+          try { localStorage.setItem('smartcut_work_shifts_state', JSON.stringify(updated)); } catch (e) {}
+          return updated;
+        });
+      }
+    }).catch(err => console.warn('Could not query active shift:', err));
+  }, [settings.salonId, activeBranchId]);
 
   // 2. Global In-Memory Stores
   const [transactions, setTransactions] = useState<Transaction[]>([]);
