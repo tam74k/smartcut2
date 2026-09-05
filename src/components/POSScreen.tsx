@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   Search, Plus, Minus, Trash2, User, CreditCard, Banknote, Scissors, 
   Tag, X, Package, Clock, UserCog, Calendar, CheckCircle2, Image as ImageIcon,
@@ -66,8 +66,66 @@ export function POSScreen({
   const [itemTypeFilter, setItemTypeFilter] = useState<'service' | 'product'>('service');
   const [clientSearch, setClientSearch] = useState('');
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
   const [showAddClientModal, setShowAddClientModal] = useState(false);
   const [newClientForm, setNewClientForm] = useState({ name: '', phone: '', referredByPhone: '', dobDay: '', dobMonth: '' });
+
+  // تصفية عملاء الصالون الحالي فقط (بما يشمل كافة فروعه دون أي صالونات أخرى)
+  const currentSalonId = settings?.salonId;
+  const currentSalonClients = useMemo(() => {
+    return (clients || []).filter(c => !c.salonId || !currentSalonId || c.salonId === currentSalonId);
+  }, [clients, currentSalonId]);
+
+  // قائمة الاقتراحات والإكمال التلقائي لأرقام وأسماء العملاء مع كتابة كل رقم
+  const phoneSuggestions = useMemo(() => {
+    const rawQuery = clientSearch.trim();
+    if (!rawQuery) return [];
+
+    const digitsQuery = rawQuery.replace(/\D/g, '');
+    const textQuery = rawQuery.toLowerCase();
+
+    return currentSalonClients.filter(client => {
+      const phoneDigits = (client.phone || '').replace(/\D/g, '');
+      // البحث ببادئة الرقم (مثال: كتابة 0 تظهر كل ما يبدأ بـ 0، ثم 01 تظهر ما يبدأ بـ 01 وهكذا)
+      const isPrefixMatch = digitsQuery.length > 0 && phoneDigits.startsWith(digitsQuery);
+      // أو احتواء الرقم
+      const isPhoneContains = digitsQuery.length >= 2 && phoneDigits.includes(digitsQuery);
+      // أو البحث بالاسم
+      const isNameMatch = client.name && client.name.toLowerCase().includes(textQuery);
+
+      return isPrefixMatch || isPhoneContains || isNameMatch;
+    }).sort((a, b) => {
+      const phoneA = (a.phone || '').replace(/\D/g, '');
+      const phoneB = (b.phone || '').replace(/\D/g, '');
+      if (digitsQuery.length > 0) {
+        const aStarts = phoneA.startsWith(digitsQuery);
+        const bStarts = phoneB.startsWith(digitsQuery);
+        if (aStarts && !bStarts) return -1;
+        if (!aStarts && bStarts) return 1;
+      }
+      return (a.name || '').localeCompare(b.name || '', 'ar');
+    }).slice(0, 10);
+  }, [clientSearch, currentSalonClients]);
+
+  // إغلاق قائمة الاقتراحات عند النقر خارج حقل البحث
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleSelectClient = (client: Client) => {
+    setSelectedClient(client);
+    setClientSearch('');
+    setShowSuggestions(false);
+    setHighlightedIndex(-1);
+  };
 
   // Permissions
   const canViewClientFinancials = !currentUser || currentUser.role === 'admin' || currentUser.role === 'owner' || currentUser.role === 'programmer' || currentUser.actions?.includes('view_client_financials') || currentUser.actions?.includes('*');
@@ -980,10 +1038,14 @@ export function POSScreen({
                   )}
 
                   <div 
-                    className="w-13 h-13 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110 shadow-2xs"
+                    className="w-13 h-13 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110 shadow-2xs overflow-hidden"
                     style={isPriority ? { backgroundColor: `${customColor}15`, color: customColor } : { backgroundColor: '#f1f5f9', color: '#0f766e' }}
                   >
-                    {item._isProduct ? <Package size={22} /> : <Scissors size={22} />}
+                    {item.imageUrl ? (
+                      <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover rounded-2xl" />
+                    ) : (
+                      item._isProduct ? <Package size={22} /> : <Scissors size={22} />
+                    )}
                   </div>
 
                   <div className="w-full">
@@ -1054,17 +1116,130 @@ export function POSScreen({
         <div className="p-3 border-b border-slate-100 bg-slate-50/80 shrink-0">
           <div className="flex items-center gap-2">
             {!selectedClient ? (
-              <div className="relative flex-1 flex gap-2">
+              <div ref={searchContainerRef} className="relative flex-1 flex gap-2">
                 <div className="relative flex-1">
                   <User className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                   <input 
                     type="text"
                     placeholder="رقم العميل للبحث أو الإضافة..."
-                    className="w-full bg-white border border-slate-200 rounded-xl pr-9 pl-3 py-1.5 text-xs font-bold focus:outline-none focus:border-primary transition-colors"
+                    className="w-full bg-white border border-slate-200 rounded-xl pr-9 pl-3 py-1.5 text-xs font-bold focus:outline-none focus:border-primary transition-colors font-mono"
                     value={clientSearch}
-                    onChange={(e) => setClientSearch(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') handleClientSearch(); }}
+                    onFocus={() => setShowSuggestions(true)}
+                    onChange={(e) => {
+                      setClientSearch(e.target.value);
+                      setShowSuggestions(true);
+                      setHighlightedIndex(-1);
+                    }}
+                    onKeyDown={(e) => {
+                      if (showSuggestions && phoneSuggestions.length > 0) {
+                        if (e.key === 'ArrowDown') {
+                          e.preventDefault();
+                          setHighlightedIndex(prev => (prev < phoneSuggestions.length - 1 ? prev + 1 : 0));
+                          return;
+                        }
+                        if (e.key === 'ArrowUp') {
+                          e.preventDefault();
+                          setHighlightedIndex(prev => (prev > 0 ? prev - 1 : phoneSuggestions.length - 1));
+                          return;
+                        }
+                        if (e.key === 'Enter' && highlightedIndex >= 0 && phoneSuggestions[highlightedIndex]) {
+                          e.preventDefault();
+                          handleSelectClient(phoneSuggestions[highlightedIndex]);
+                          return;
+                        }
+                        if (e.key === 'Escape') {
+                          setShowSuggestions(false);
+                          return;
+                        }
+                      }
+                      if (e.key === 'Enter') {
+                        handleClientSearch();
+                      }
+                    }}
                   />
+
+                  {/* القائمة المنسدلة للإكمال التلقائي لأرقام العملاء */}
+                  {showSuggestions && clientSearch.trim().length > 0 && (
+                    <div className="absolute top-full right-0 left-0 mt-1.5 bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 overflow-hidden max-h-72 flex flex-col animate-in fade-in-50 slide-in-from-top-2 duration-150">
+                      <div className="p-2 bg-slate-50 border-b border-slate-100 flex items-center justify-between text-[11px] font-bold text-slate-500">
+                        <span className="flex items-center gap-1">
+                          <span>⚡</span>
+                          <span>عملاء الصالون المطابقون:</span>
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-700 font-mono text-[10px]">
+                          {phoneSuggestions.length}
+                        </span>
+                      </div>
+
+                      <div className="overflow-y-auto divide-y divide-slate-100 max-h-56 custom-scrollbar">
+                        {phoneSuggestions.map((client, idx) => {
+                          const isHighlighted = idx === highlightedIndex;
+                          const tier = getClientTier(client.loyaltyPoints || 0, settings);
+                          const cashbackVal = client.cashback !== undefined ? client.cashback : (client.loyaltyPoints || 0);
+
+                          return (
+                            <button
+                              key={client.id}
+                              type="button"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                handleSelectClient(client);
+                              }}
+                              onMouseEnter={() => setHighlightedIndex(idx)}
+                              className={`w-full text-right p-2.5 flex items-center justify-between gap-2 transition-colors cursor-pointer ${
+                                isHighlighted ? 'bg-primary/10 text-primary' : 'hover:bg-slate-50'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <div className="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center font-bold text-xs text-slate-700 shrink-0">
+                                  {tier?.icon || client.name.charAt(0) || '👤'}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-extrabold text-xs text-slate-900 truncate">{client.name}</span>
+                                    {tier && (
+                                      <span className={`text-[8px] font-black px-1.5 py-0.2 rounded-md ${tier.badgeBg} ${tier.badgeText} shrink-0`}>
+                                        {tier.name}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-[11px] font-mono font-bold text-slate-600 flex items-center gap-1" dir="ltr">
+                                    <span>{client.phone}</span>
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="text-left shrink-0">
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-purple-50 text-purple-700 border border-purple-100 font-mono block">
+                                  كاش باك: {cashbackVal.toFixed(0)} {settings.currency}
+                                </span>
+                              </div>
+                            </button>
+                          );
+                        })}
+
+                        {/* خيار تسجيل عميل جديد بالرقم المكتوب */}
+                        <button
+                          type="button"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            setShowSuggestions(false);
+                            setNewClientForm(prev => ({ ...prev, phone: clientSearch.replace(/[^0-9]/g, '') }));
+                            setShowAddClientModal(true);
+                          }}
+                          className="w-full text-right p-2.5 bg-emerald-50/70 hover:bg-emerald-100/80 text-emerald-800 flex items-center justify-between gap-2 transition-colors cursor-pointer text-xs font-bold"
+                        >
+                          <span className="flex items-center gap-1.5">
+                            <Plus size={14} className="text-emerald-600" />
+                            <span>إضافة عميل جديد بالرقم: <strong className="font-mono" dir="ltr">{clientSearch}</strong></span>
+                          </span>
+                          <span className="text-[10px] bg-emerald-200/80 text-emerald-900 px-2 py-0.5 rounded-full font-bold">
+                            تسجيل جديد +
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <button onClick={handleClientSearch} className="bg-primary hover:bg-primary-dark text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-colors">
                   بحث

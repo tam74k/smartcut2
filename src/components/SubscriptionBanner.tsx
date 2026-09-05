@@ -30,11 +30,11 @@ export function SubscriptionBanner({
   const isOwnerOrProgrammer = currentUser?.role === 'programmer' || currentUser?.role === 'owner' || (currentUser?.role === 'admin' && !currentUser?.branchId);
   const canSwitchBranches = isOwnerOrProgrammer;
 
-  const currentSalonId = subscription.salonId || currentUser?.salonId;
+  const currentSalonId = currentUser?.salonId || subscription.salonId;
   const filteredBranches = (branches && branches.length > 0)
-    ? branches.filter(b => !currentSalonId || b.salonId === currentSalonId || !b.salonId)
+    ? (currentSalonId ? branches.filter(b => b.salonId === currentSalonId) : branches)
     : [];
-  const effectiveBranches = filteredBranches.length > 0 ? filteredBranches : (branches || []);
+  const effectiveBranches = filteredBranches;
 
   const activeBranch = effectiveBranches.find(b => b.id === activeBranchId) || effectiveBranches[0];
   const nowMidnight = new Date();

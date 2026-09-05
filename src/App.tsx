@@ -233,65 +233,76 @@ export default function App() {
   });
 
   useEffect(() => {
-    const user = AuthService.getCurrentUser();
-    if (user) {
-      setCurrentUser(user);
-      const salons = SubscriptionService.getSalons();
-      const salon = user.salonId ? salons.find(s => s.id === user.salonId) : (salons.find(s => s.email === user.email) || null);
-      if (salon) {
-        setSettings(prev => {
-          const updated: AppSettings = {
-            ...prev,
+    const restoreSession = async () => {
+      const user = AuthService.getCurrentUser();
+      if (user) {
+        setCurrentUser(user);
+        const dbSalons = await DB.fetchSalons();
+        const salons = (dbSalons && dbSalons.length > 0) ? dbSalons : SubscriptionService.getSalons();
+        const salon = user.salonId 
+          ? (salons.find(s => s.id === user.salonId || s.code === (user as any).salonCode) || (user.salonId ? { id: user.salonId, name: (user as any).salonName || 'صالون', code: (user as any).salonCode || 'SC-01', phone: user.phone || '', country: 'المملكة العربية السعودية', currency: 'SAR', isActive: true } as any : null))
+          : (salons.find(s => user.email && s.email === user.email) || null);
+        if (salon) {
+          const dbSettings = await DB.fetchSettings(salon.id);
+          setSettings(prev => {
+            const updated: AppSettings = {
+              ...prev,
+              ...(dbSettings || {}),
+              salonId: salon.id,
+              salonCode: salon.code,
+              salonName: dbSettings?.salonName || salon.name,
+              phone: salon.phone,
+              country: salon.country,
+              currency: salon.currency,
+              ownerEmail: salon.email,
+              evolutionInstanceName: salon.evolutionInstanceName
+            };
+            try {
+              localStorage.setItem('smartcut_app_settings', JSON.stringify(updated));
+            } catch (e) {}
+            return updated;
+          });
+          setSubscription({
+            id: salon.id,
             salonId: salon.id,
             salonCode: salon.code,
-            salonName: salon.name,
+            organizationName: salon.name,
+            ownerEmail: salon.email,
             phone: salon.phone,
             country: salon.country,
-            currency: salon.currency,
-            ownerEmail: salon.email,
-            evolutionInstanceName: salon.evolutionInstanceName
-          };
-          try {
-            localStorage.setItem('smartcut_app_settings', JSON.stringify(updated));
-          } catch (e) {}
-          return updated;
-        });
-        setSubscription({
-          id: salon.id,
-          salonId: salon.id,
-          salonCode: salon.code,
-          organizationName: salon.name,
-          ownerEmail: salon.email,
-          phone: salon.phone,
-          country: salon.country,
-          plan: salon.subscriptionPlan || 'pro',
-          status: salon.subscriptionStatus || 'trial',
-          isActive: salon.isActive !== false,
-          startDate: salon.subscriptionStartDate,
-          endDate: salon.subscriptionEndDate,
-          maxBranches: salon.maxBranches || 3,
-          maxUsers: salon.maxUsers || 10,
-          trialDays: salon.trialDays || 7
-        });
-        const salonBranches = SubscriptionService.getBranches(salon.id);
-        setBranches(salonBranches.length > 0 ? salonBranches : [
-          { id: 'b-main', name: `الفرع الرئيسي (${salon.name})`, code: 'B01', isMain: true, phone: salon.phone, address: salon.country, isActive: true, status: 'active' }
-        ]);
-        if (user.branchId) {
+            plan: salon.subscriptionPlan || 'pro',
+            status: salon.subscriptionStatus || 'trial',
+            isActive: salon.isActive !== false,
+            startDate: salon.subscriptionStartDate,
+            endDate: salon.subscriptionEndDate,
+            maxBranches: salon.maxBranches || 3,
+            maxUsers: salon.maxUsers || 10,
+            trialDays: salon.trialDays || 7
+          });
+          const dbBranches = await DB.fetchBranches(salon.id);
+          const salonBranches = (dbBranches && dbBranches.length > 0) ? dbBranches : (salon.id ? SubscriptionService.getBranches(salon.id) : []);
+          setBranches(salonBranches.length > 0 ? salonBranches : [
+            { id: 'b-main', salonId: salon.id, name: `الفرع الرئيسي (${salon.name})`, code: 'B01', isMain: true, phone: salon.phone, address: salon.country, isActive: true, status: 'active' }
+          ]);
+          if (user.branchId) {
+            setActiveBranchId(user.branchId);
+          } else if (salonBranches.length > 0) {
+            setActiveBranchId(salonBranches[0].id);
+          }
+        } else if (user.branchId) {
           setActiveBranchId(user.branchId);
         }
-      } else if (user.branchId) {
-        setActiveBranchId(user.branchId);
+        if (!AuthService.canAccess(activeTab, user)) {
+          setActiveTab(user.screens?.includes('*') ? 'dashboard' : (user.screens?.[0] || 'pos'));
+        }
       }
-      if (!AuthService.canAccess(activeTab, user)) {
-        setActiveTab(user.screens?.includes('*') ? 'dashboard' : (user.screens?.[0] || 'pos'));
-      }
-    }
 
-    // Check cloud connection
-    SupabaseService.testConnection().then(res => {
-      setIsCloudConnected(res.success);
-    });
+      // Check cloud connection
+      SupabaseService.testConnection().then(res => {
+        setIsCloudConnected(res.success);
+      });
+    };
+    restoreSession();
   }, []);
 
   // Dynamically resolve salon from URL query parameter (?code=... or ?salon=...) for Client Reservation Portal
@@ -557,17 +568,21 @@ export default function App() {
       });
     } catch (e) {}
 
+    const effectiveSalonId = currentUser?.salonId || settings.salonId;
+
     // تحميل ومزامنة الصالونات والفروع مباشرة من Supabase (Source of Truth)
     const syncFromCloud = async () => {
       try {
         const cloudSalons = await DB.fetchSalons();
         if (cloudSalons && cloudSalons.length > 0) {
           SubscriptionService.saveSalons(cloudSalons);
-          if (settings.salonId) {
-            const activeCloudSalon = cloudSalons.find(s => s.id === settings.salonId);
+          if (effectiveSalonId) {
+            const activeCloudSalon = cloudSalons.find(s => s.id === effectiveSalonId);
             if (activeCloudSalon) {
               setSettings(prev => ({
                 ...prev,
+                salonId: activeCloudSalon.id,
+                salonCode: activeCloudSalon.code || prev.salonCode,
                 salonName: activeCloudSalon.name || prev.salonName,
                 salonType: activeCloudSalon.salonType || (activeCloudSalon as any).salon_type || prev.salonType,
                 phone: activeCloudSalon.phone || prev.phone,
@@ -579,12 +594,13 @@ export default function App() {
             }
           }
         }
-        const targetSalonId = settings.salonId || (cloudSalons && cloudSalons[0]?.id);
-        const cloudBranches = await DB.fetchBranches(targetSalonId);
-        if (cloudBranches && cloudBranches.length > 0) {
-          SubscriptionService.saveBranches(cloudBranches);
-          const salonOnly = targetSalonId ? cloudBranches.filter(b => b.salonId === targetSalonId) : cloudBranches;
-          setBranches(salonOnly);
+        if (effectiveSalonId) {
+          const cloudBranches = await DB.fetchBranches(effectiveSalonId);
+          if (cloudBranches && cloudBranches.length > 0) {
+            SubscriptionService.saveBranches(cloudBranches);
+            const salonOnly = cloudBranches.filter(b => b.salonId === effectiveSalonId);
+            setBranches(salonOnly.length > 0 ? salonOnly : cloudBranches);
+          }
         }
       } catch (e) {
         console.error('Failed to sync cloud salons:', e);
@@ -595,7 +611,7 @@ export default function App() {
     const loadDataForSalon = async (targetSalonId?: string) => {
       const client = SupabaseService.getClient();
       if (!client) return;
-      const sId = targetSalonId || settings.salonId;
+      const sId = targetSalonId || effectiveSalonId;
       if (!sId) return;
 
       setIsDbLoading(true);
@@ -652,8 +668,10 @@ export default function App() {
         setIsDbLoading(false);
       }
     };
-    loadDataForSalon(settings.salonId);
-  }, [settings.salonId]);
+    if (effectiveSalonId) {
+      loadDataForSalon(effectiveSalonId);
+    }
+  }, [currentUser?.salonId, settings.salonId]);
   // ─────────────────────────────────────────────────────────────────────────
 
   const handleLogout = () => {
@@ -663,7 +681,7 @@ export default function App() {
     }
   };
 
-  const currentSalonId = settings.salonId || currentUser?.salonId || (SubscriptionService.getSalons()[0]?.id || '');
+  const currentSalonId = currentUser?.salonId || settings.salonId || '';
 
 
   // 3. Autonomous Branch Isolation Filter & Helpers
@@ -1729,10 +1747,14 @@ export default function App() {
 
 
   // Helper login state handler
-  const handleApplyLoginSuccess = (u: AppUser, customSettings?: AppSettings, selectedBranch?: Branch) => {
+  const handleApplyLoginSuccess = async (u: AppUser, customSettings?: AppSettings, selectedBranch?: Branch) => {
     setCurrentUser(u);
-    const salons = SubscriptionService.getSalons();
-    const salon = u.salonId ? salons.find(s => s.id === u.salonId) : (salons.find(s => s.email === u.email) || null);
+    const dbSalons = await DB.fetchSalons();
+    const salons = (dbSalons && dbSalons.length > 0) ? dbSalons : SubscriptionService.getSalons();
+    const salon = u.salonId 
+      ? (salons.find(s => s.id === u.salonId || s.code === (u as any).salonCode) || (u.salonId ? { id: u.salonId, name: (u as any).salonName || 'صالون', code: (u as any).salonCode || 'SC-01', phone: u.phone || '', country: 'المملكة العربية السعودية', currency: 'SAR', isActive: true } as any : null))
+      : (salons.find(s => (u.email && s.email === u.email)) || null);
+
     if (salon) {
       setSubscription({
         id: salon.id,
@@ -1751,9 +1773,10 @@ export default function App() {
         maxUsers: salon.maxUsers || 10,
         trialDays: salon.trialDays || 7
       });
-      const salonBranches = SubscriptionService.getBranches(salon.id);
+      const dbBranches = await DB.fetchBranches(salon.id);
+      const salonBranches = (dbBranches && dbBranches.length > 0) ? dbBranches : (salon.id ? SubscriptionService.getBranches(salon.id) : []);
       setBranches(salonBranches.length > 0 ? salonBranches : [
-        { id: 'b-main', name: `الفرع الرئيسي (${salon.name})`, code: 'B01', isMain: true, phone: salon.phone, address: salon.country, isActive: true, status: 'active' }
+        { id: 'b-main', salonId: salon.id, name: `الفرع الرئيسي (${salon.name})`, code: 'B01', isMain: true, phone: salon.phone, address: salon.country, isActive: true, status: 'active' }
       ]);
       if (u.branchId) {
         setActiveBranchId(u.branchId);
@@ -1771,12 +1794,14 @@ export default function App() {
         localStorage.setItem('smartcut_app_settings', JSON.stringify(customSettings));
       } catch (e) {}
     } else if (salon) {
+      const dbSettings = await DB.fetchSettings(salon.id);
       setSettings(prev => {
         const updated: AppSettings = {
           ...prev,
+          ...(dbSettings || {}),
           salonId: salon.id,
           salonCode: salon.code,
-          salonName: salon.name,
+          salonName: dbSettings?.salonName || salon.name,
           phone: salon.phone,
           country: salon.country,
           currency: salon.currency,

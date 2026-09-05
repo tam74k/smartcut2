@@ -221,6 +221,7 @@ export interface ServiceItem {
   isActive: boolean;
   type: 'service' | 'product'; 
   barcode?: string; 
+  imageUrl?: string; // رابط صورة الخدمة المخزنة في Bucket services
   isPriority?: boolean; // أولوية الظهور في الكاشير ونقطة البيع
   cardColor?: string; // لون البطاقة المخصص للخدمة في شاشة الكاشير
   priorityOrder?: number; // ترتيب أسبقية الظهور

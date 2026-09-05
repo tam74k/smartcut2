@@ -1,4 +1,5 @@
 import { SupabaseService } from './supabase';
+import { dataUrlToBlob } from '../utils/imageUpload';
 
 // ============================================================
 // 🗄️ SmartCut DB Service — طبقة البيانات الموحدة
@@ -12,11 +13,15 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 export function toSalonUUID(id?: string | null): string {
   if (id && UUID_REGEX.test(id)) return id;
   try {
+    const session = localStorage.getItem('smartcut_session');
+    if (session) {
+      const parsedSession = JSON.parse(session);
+      const user = parsedSession?.user || parsedSession;
+      if (user?.salonId && UUID_REGEX.test(user.salonId)) return user.salonId;
+    }
     const s = localStorage.getItem('smartcut_app_settings');
     const parsed = s ? JSON.parse(s).salonId : null;
     if (parsed && UUID_REGEX.test(parsed)) return parsed;
-    const salons = JSON.parse(localStorage.getItem('smartcut_salons') || '[]');
-    if (salons.length > 0 && salons[0].id && UUID_REGEX.test(salons[0].id)) return salons[0].id;
   } catch (e) {}
   return id || '';
 }
@@ -107,10 +112,33 @@ export async function ensureColumn(table: string, column: string, type: string =
   return false;
 }
 
+// فحص وإنشاء Bucket في Supabase Storage إذا لم يكن موجوداً
+export async function ensureStorageBucket(bucketName: string = 'services'): Promise<boolean> {
+  const client = sb();
+  if (!client) return false;
+  try {
+    const { data: buckets } = await client.storage.listBuckets();
+    const exists = buckets?.some(b => b.name === bucketName || b.id === bucketName);
+    if (!exists) {
+      const { error } = await client.storage.createBucket(bucketName, {
+        public: true,
+        fileSizeLimit: 2097152 // 2MB max per service image
+      });
+      if (error && !error.message?.includes('already exists')) {
+        console.warn(`Could not create bucket ${bucketName}:`, error.message);
+      }
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // فحص واستباق إنشاء الأعمدة الأساسية الحديثة في قاعدة البيانات
 export async function ensureCoreSchema(): Promise<void> {
   try {
     await Promise.allSettled([
+      ensureStorageBucket('services'),
       ensureColumn('platform_settings', 'logo_url', 'TEXT'),
       ensureColumn('salons', 'salon_type', 'VARCHAR(20)'),
       ensureColumn('salons', 'evolution_instance_name', 'VARCHAR(100)'),
@@ -123,6 +151,7 @@ export async function ensureCoreSchema(): Promise<void> {
       ensureColumn('employees', 'custom_overtime_rate', 'NUMERIC(10,2)'),
       ensureColumn('employees', 'late_deduction_rules', 'JSONB'),
       ensureColumn('employees', 'permissions_limit', 'INT'),
+      ensureColumn('services', 'image_url', 'TEXT'),
       ensureColumn('services', 'is_priority', 'BOOLEAN'),
       ensureColumn('services', 'card_color', 'VARCHAR(50)'),
       ensureColumn('services', 'priority_order', 'INT'),
@@ -898,8 +927,12 @@ export const DB = {
     const validSalonId = toSalonUUID(s.salonId || getSalonId());
     try {
       const snap: any = {
-        id: s.id, salon_id: validSalonId, category_id: s.categoryId || null, name: s.name,
-        price: s.price ?? 0, discount_price: s.discountPrice ?? 0,
+        id: s.id, 
+        salon_id: validSalonId, 
+        category_id: s.categoryId || null, 
+        name: s.name,
+        price: s.price ?? 0, 
+        discount_price: s.discountPrice ?? 0,
         employee_commission_percentage: s.employeeCommissionPercentage ?? 0,
         employee_commission_amount: s.employeeCommissionAmount ?? 0,
         referral_commission_type: s.referralCommissionType || 'percentage',
@@ -907,8 +940,14 @@ export const DB = {
         cashback_percentage: s.cashbackPercentage ?? 0,
         client_referral_cashback_type: s.clientReferralCashbackType || 'percentage',
         client_referral_cashback_amount: s.clientReferralCashbackAmount ?? 0,
-        duration_minutes: s.durationMinutes ?? 30, barcode: s.barcode || null,
-        is_active: s.isActive !== false, type: s.type || 'service'
+        duration_minutes: s.durationMinutes ?? 30, 
+        barcode: s.barcode || null,
+        image_url: s.imageUrl || s.image_url || null,
+        is_priority: s.isPriority ?? s.is_priority ?? false,
+        card_color: s.cardColor || s.card_color || null,
+        priority_order: s.priorityOrder ?? s.priority_order ?? 0,
+        is_active: s.isActive !== false, 
+        type: s.type || 'service'
       };
       const { error } = await client.from('services').upsert(snap, { onConflict: 'id' });
       if (error) { console.error('DB.saveService error:', error.message); return null; }
@@ -916,6 +955,98 @@ export const DB = {
     } catch (e) { console.error('DB.saveService exception:', e); return null; }
   },
   async saveServices(list: any[]) { for (const s of list) await DB.saveService(s); return true; },
+
+  // ---- رفع وحذف صور الخدمات في Supabase Storage (Bucket: services) ----
+  async uploadServiceImage(fileOrBlob: File | Blob | string, serviceId: string, oldImageUrl?: string): Promise<string> {
+    const client = sb();
+    if (!client) {
+      return typeof fileOrBlob === 'string' ? fileOrBlob : '';
+    }
+
+    try {
+      await ensureStorageBucket('services');
+
+      // 1. حذف الصورة القديمة للخدمة من الـ Bucket إن وجدت
+      if (oldImageUrl) {
+        await DB.deleteServiceImage(oldImageUrl);
+      }
+
+      let blob: Blob;
+      let fileExt = 'webp';
+
+      if (typeof fileOrBlob === 'string') {
+        if (!fileOrBlob.startsWith('data:')) return fileOrBlob;
+        blob = dataUrlToBlob(fileOrBlob);
+        fileExt = fileOrBlob.includes('image/webp') ? 'webp' : 'jpg';
+      } else {
+        blob = fileOrBlob;
+        if (fileOrBlob.type.includes('webp')) fileExt = 'webp';
+        else if (fileOrBlob.type.includes('png')) fileExt = 'png';
+        else fileExt = 'jpg';
+      }
+
+      // 2. رفع الصورة الجديدة باسم فريد
+      const cleanId = (serviceId || 'srv').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const fileName = `service_${cleanId}_${Date.now()}.${fileExt}`;
+      const filePath = fileName;
+
+      const { error } = await client.storage.from('services').upload(filePath, blob, {
+        contentType: blob.type || `image/${fileExt}`,
+        cacheControl: '3600',
+        upsert: true
+      });
+
+      if (error) {
+        console.error('DB.uploadServiceImage storage error:', error.message);
+        return typeof fileOrBlob === 'string' ? fileOrBlob : '';
+      }
+
+      // 3. الحصول على الرابط العام المباشر للصورة
+      const { data: publicUrlData } = client.storage.from('services').getPublicUrl(filePath);
+      return publicUrlData.publicUrl;
+    } catch (err) {
+      console.error('DB.uploadServiceImage exception:', err);
+      return typeof fileOrBlob === 'string' ? fileOrBlob : '';
+    }
+  },
+
+  async deleteServiceImage(imageUrl?: string): Promise<boolean> {
+    if (!imageUrl || typeof imageUrl !== 'string') return true;
+    const client = sb();
+    if (!client) return false;
+
+    try {
+      let filePath = imageUrl;
+      if (imageUrl.includes('/storage/v1/object/public/services/')) {
+        filePath = imageUrl.split('/storage/v1/object/public/services/')[1];
+      } else if (imageUrl.includes('/services/')) {
+        filePath = imageUrl.split('/services/')[1];
+      } else if (imageUrl.startsWith('http')) {
+        const parts = imageUrl.split('/');
+        filePath = parts[parts.length - 1];
+      }
+
+      if (filePath && !filePath.startsWith('data:')) {
+        const cleanPath = filePath.split('?')[0];
+        const { error } = await client.storage.from('services').remove([cleanPath]);
+        if (error) {
+          console.warn('DB.deleteServiceImage warning:', error.message);
+        }
+        return true;
+      }
+      return true;
+    } catch (e) {
+      console.error('DB.deleteServiceImage exception:', e);
+      return false;
+    }
+  },
+
+  async deleteService(serviceId: string, imageUrl?: string): Promise<boolean> {
+    if (imageUrl) {
+      await DB.deleteServiceImage(imageUrl);
+    }
+    return DB.remove('services', serviceId);
+  },
 
   // ---- التصنيفات ----
   async fetchCategories() { return DB.fetchAll<any>('categories'); },
@@ -1436,6 +1567,7 @@ export function dbServiceToApp(row: any) {
     clientReferralCashbackAmount: row.clientReferralCashbackAmount ?? 0,
     durationMinutes: row.durationMinutes ?? 30, 
     barcode: row.barcode || '',
+    imageUrl: row.imageUrl || row.image_url || '',
     isActive: row.isActive !== false, 
     type: row.type || 'service',
     isPriority: row.isPriority ?? row.is_priority ?? false,
@@ -1456,7 +1588,7 @@ export function dbUserToApp(row: any): any {
     salonCode: c.salonCode,
     branchCode: c.branchCode,
     username: (c.username || '').trim().toLowerCase(),
-    password: c.password || c.passwordHash || row.password_hash || '123456',
+    password: c.password || c.passwordHash || row.password_hash || '',
     name: c.name || c.username || 'مستخدم',
     email: c.email || '',
     phone: c.phone || '',

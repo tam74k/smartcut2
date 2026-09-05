@@ -1,7 +1,9 @@
 import { useState, useMemo } from 'react';
 import { Category, ServiceItem } from '../types';
-import { Plus, Edit, Trash2, X, Check, Search, FileSpreadsheet, Download, Upload, AlertCircle, Sparkles } from 'lucide-react';
+import { Plus, Edit, Trash2, X, Check, Search, FileSpreadsheet, Download, Upload, AlertCircle, Sparkles, Image as ImageIcon, Camera, Loader2, Scissors } from 'lucide-react';
 import { downloadServicesTemplate, readExcelFile } from '../utils/excelHelper';
+import { compressServiceImage } from '../utils/imageUpload';
+import { DB } from '../services/db';
 
 export function ServicesScreen({ 
   settings, 
@@ -51,8 +53,15 @@ export function ServicesScreen({
   const [showAddCategoryInline, setShowAddCategoryInline] = useState(false);
   const [newCategoryInlineName, setNewCategoryInlineName] = useState('');
   
+  // Image Upload State
+  const [isCompressingImage, setIsCompressingImage] = useState(false);
+  const [isSavingService, setIsSavingService] = useState(false);
+  const [serviceImageFile, setServiceImageFile] = useState<File | null>(null);
+  const [serviceImagePreview, setServiceImagePreview] = useState<string>('');
+  const [serviceImageSizeKb, setServiceImageSizeKb] = useState<number>(0);
+
   const [serviceFormData, setServiceFormData] = useState<Partial<ServiceItem>>({
-    name: '', price: 0, categoryId: '', isActive: true, type: 'service', isPriority: false, cardColor: '#10b981'
+    name: '', price: 0, categoryId: '', isActive: true, type: 'service', isPriority: false, cardColor: '#10b981', imageUrl: ''
   });
 
   // Category Form State
@@ -68,6 +77,9 @@ export function ServicesScreen({
   // Helper to open Add Service modal with a valid default category
   const handleOpenAddService = () => {
     setEditingService(null);
+    setServiceImageFile(null);
+    setServiceImagePreview('');
+    setServiceImageSizeKb(0);
     let defaultCatId = validServiceCategories[0]?.id || '';
     if (!defaultCatId) {
       // If no category exists yet, create default one
@@ -86,7 +98,10 @@ export function ServicesScreen({
       isActive: true, 
       type: 'service',
       durationMinutes: 30,
-      cashbackPercentage: 0
+      cashbackPercentage: 0,
+      imageUrl: '',
+      isPriority: false,
+      cardColor: '#10b981'
     });
     setShowAddCategoryInline(false);
     setNewCategoryInlineName('');
@@ -96,16 +111,52 @@ export function ServicesScreen({
   // Helper to open Edit Service modal with resolved category
   const handleOpenEditService = (service: ServiceItem) => {
     setEditingService(service);
+    setServiceImageFile(null);
+    setServiceImagePreview(service.imageUrl || '');
+    setServiceImageSizeKb(0);
     // Find matching category by ID or Name
     const matchedCat = categories.find(c => c.id === service.categoryId || c.name === service.categoryId);
     const resolvedCatId = matchedCat?.id || service.categoryId || validServiceCategories[0]?.id || '';
     setServiceFormData({
       ...service,
-      categoryId: resolvedCatId
+      categoryId: resolvedCatId,
+      imageUrl: service.imageUrl || ''
     });
     setShowAddCategoryInline(false);
     setNewCategoryInlineName('');
     setShowServiceModal(true);
+  };
+
+  // Handle service image selection & auto-compression
+  const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setIsCompressingImage(true);
+      const res = await compressServiceImage(file);
+      if (res.error) {
+        alert(res.error);
+        return;
+      }
+      setServiceImageFile(file);
+      setServiceImagePreview(res.dataUrl);
+      setServiceImageSizeKb(res.fileSizeKb);
+      setServiceFormData(prev => ({ ...prev, imageUrl: res.dataUrl }));
+    } catch (err: any) {
+      console.error('Compression error:', err);
+      alert('خطأ أثناء معالجة وضغط الصورة: ' + (err.message || ''));
+    } finally {
+      setIsCompressingImage(false);
+    }
+  };
+
+  // Handle removing the service image
+  const handleRemoveImage = () => {
+    setServiceImageFile(null);
+    setServiceImagePreview('');
+    setServiceImageSizeKb(0);
+    setServiceFormData(prev => ({ ...prev, imageUrl: '' }));
   };
 
   // Inline Category Creator inside Service Modal
@@ -209,7 +260,7 @@ export function ServicesScreen({
     alert(`تم استيراد ${newServices.length} خدمة بنجاح!`);
   };
 
-  const handleSaveService = () => {
+  const handleSaveService = async () => {
     if (!serviceFormData.name || serviceFormData.price === undefined || serviceFormData.price < 0) {
       alert('الرجاء إدخال اسم الخدمة وسعرها بشكل صحيح.');
       return;
@@ -231,24 +282,56 @@ export function ServicesScreen({
       }
     }
 
-    if (editingService) {
-      setServices(services.map(s => s.id === editingService.id ? { 
-        ...editingService, 
-        ...serviceFormData, 
-        categoryId: targetCatId 
-      } as ServiceItem : s));
-    } else {
-      const newService: ServiceItem = {
-        ...serviceFormData as ServiceItem,
-        categoryId: targetCatId,
-        id: 'S-' + Math.random().toString(36).substr(2, 9),
-      };
-      setServices([...services, newService]);
-    }
-    setShowServiceModal(false);
-    setEditingService(null);
-  };
+    setIsSavingService(true);
+    try {
+      const serviceId = editingService ? editingService.id : ('S-' + Math.random().toString(36).substr(2, 9));
+      let finalImageUrl = serviceFormData.imageUrl || '';
 
+      // 1. إذا كان المستخدم رفع صورة جديدة (dataUrl) نرفعها لـ Supabase Storage (Bucket: services)
+      if (serviceImagePreview && serviceImagePreview.startsWith('data:')) {
+        const uploadedUrl = await DB.uploadServiceImage(
+          serviceImagePreview,
+          serviceId,
+          editingService?.imageUrl
+        );
+        if (uploadedUrl) {
+          finalImageUrl = uploadedUrl;
+        }
+      } else if (!serviceImagePreview && editingService?.imageUrl) {
+        // 2. إذا تم حذف الصورة يدوياً من النموذج نقوم بحذفها من Bucket services
+        await DB.deleteServiceImage(editingService.imageUrl);
+        finalImageUrl = '';
+      }
+
+      const savedServiceObj: ServiceItem = {
+        ...(editingService || {}),
+        ...serviceFormData,
+        id: serviceId,
+        categoryId: targetCatId,
+        imageUrl: finalImageUrl,
+        isPriority: serviceFormData.isPriority ?? false,
+        cardColor: serviceFormData.cardColor || '#10b981',
+        priorityOrder: serviceFormData.priorityOrder ?? 0,
+        price: Number(serviceFormData.price) || 0,
+        isActive: serviceFormData.isActive !== false,
+        type: 'service'
+      };
+
+      if (editingService) {
+        setServices(services.map(s => s.id === editingService.id ? savedServiceObj : s));
+      } else {
+        setServices([...services, savedServiceObj]);
+      }
+
+      setShowServiceModal(false);
+      setEditingService(null);
+    } catch (err: any) {
+      console.error('Error saving service:', err);
+      alert('حدث خطأ أثناء حفظ الخدمة: ' + (err.message || ''));
+    } finally {
+      setIsSavingService(false);
+    }
+  };
 
   const handleSaveCategory = () => {
     if (!categoryFormData.name) {
@@ -270,8 +353,15 @@ export function ServicesScreen({
     setEditingCategory(null);
   };
 
-  const handleDeleteService = (id: string) => {
-    if (true) {
+  const handleDeleteService = async (id: string) => {
+    const serviceToDelete = services.find(s => s.id === id);
+    if (!serviceToDelete) return;
+
+    if (window.confirm(`هل أنت متأكد من رغبتك في حذف خدمة "${serviceToDelete.name}" نهائياً؟`)) {
+      if (serviceToDelete.imageUrl) {
+        await DB.deleteServiceImage(serviceToDelete.imageUrl);
+      }
+      await DB.deleteService(id, serviceToDelete.imageUrl);
       setServices(services.filter(s => s.id !== id));
     }
   };
@@ -402,18 +492,39 @@ export function ServicesScreen({
                     })
                     .map(service => (
                     <tr key={service.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-4 py-4 font-bold text-slate-800">
-                        <div className="flex items-center gap-2">
-                          {service.cardColor && (
-                            <span className="w-2.5 h-2.5 rounded-full shrink-0 shadow-2xs" style={{ backgroundColor: service.cardColor }} />
+                      <td className="px-4 py-3 font-bold text-slate-800">
+                        <div className="flex items-center gap-3">
+                          {service.imageUrl ? (
+                            <img 
+                              src={service.imageUrl} 
+                              alt={service.name} 
+                              className="w-10 h-10 rounded-xl object-cover border border-slate-200 shadow-2xs shrink-0 bg-slate-100" 
+                            />
+                          ) : (
+                            <div 
+                              className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-2xs border border-slate-200/80"
+                              style={{ backgroundColor: service.cardColor ? `${service.cardColor}15` : '#f1f5f9', color: service.cardColor || '#0f766e' }}
+                            >
+                              <Scissors size={18} />
+                            </div>
                           )}
-                          <span>{service.name}</span>
-                          {service.isPriority && (
-                            <span className="text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300 px-1.5 py-0.5 rounded-md flex items-center gap-0.5 shadow-2xs">
-                              <span>⭐</span>
-                              <span>أولوية POS</span>
-                            </span>
-                          )}
+                          <div>
+                            <div className="flex items-center gap-1.5">
+                              {service.cardColor && (
+                                <span className="w-2.5 h-2.5 rounded-full shrink-0 shadow-2xs" style={{ backgroundColor: service.cardColor }} />
+                              )}
+                              <span className="font-extrabold">{service.name}</span>
+                              {service.isPriority && (
+                                <span className="text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300 px-1.5 py-0.5 rounded-md flex items-center gap-0.5 shadow-2xs">
+                                  <span>⭐</span>
+                                  <span>أولوية POS</span>
+                                </span>
+                              )}
+                            </div>
+                            {service.durationMinutes && (
+                              <span className="text-[10px] text-slate-400 font-medium">⏱️ {service.durationMinutes} دقيقة</span>
+                            )}
+                          </div>
                         </div>
                       </td>
                       <td className="px-4 py-4">
@@ -553,6 +664,79 @@ export function ServicesScreen({
               <button onClick={() => setShowServiceModal(false)} className="text-slate-400 hover:text-red-500"><X size={20}/></button>
             </div>
             <div className="p-6 overflow-y-auto space-y-4">
+              {/* Image Upload & Preview Section */}
+              <div className="p-4 bg-slate-50 border border-slate-200/90 rounded-2xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                    <ImageIcon size={16} className="text-emerald-600" />
+                    <span>صورة الخدمة</span>
+                  </label>
+                </div>
+
+                <div className="flex items-center gap-4">
+                  {/* Thumbnail / Placeholder */}
+                  <div className="relative w-20 h-20 rounded-2xl border-2 border-dashed border-slate-300 bg-white overflow-hidden flex items-center justify-center shrink-0 shadow-xs group">
+                    {isCompressingImage ? (
+                      <div className="flex flex-col items-center justify-center text-primary gap-1">
+                        <Loader2 size={22} className="animate-spin" />
+                        <span className="text-[9px] font-bold">جاري المعالجة...</span>
+                      </div>
+                    ) : serviceImagePreview ? (
+                      <>
+                        <img src={serviceImagePreview} alt="معاينة" className="w-full h-full object-cover rounded-2xl" />
+                        <button
+                          type="button"
+                          onClick={handleRemoveImage}
+                          title="إزالة الصورة"
+                          className="absolute inset-0 bg-red-600/80 text-white opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1 cursor-pointer text-[10px] font-bold"
+                        >
+                          <Trash2 size={16} />
+                          <span>إزالة</span>
+                        </button>
+                      </>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center text-slate-400 gap-1">
+                        <Camera size={22} className="text-slate-400" />
+                        <span className="text-[9px] font-bold">لا توجد صورة</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Upload Controls */}
+                  <div className="flex-1 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <label className="bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer">
+                        <Upload size={14} />
+                        <span>{serviceImagePreview ? 'استبدال الصورة' : 'اختيار صورة'}</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleImageSelect}
+                          className="sr-only"
+                          disabled={isCompressingImage || isSavingService}
+                        />
+                      </label>
+
+                      {serviceImagePreview && (
+                        <button
+                          type="button"
+                          onClick={handleRemoveImage}
+                          disabled={isCompressingImage || isSavingService}
+                          className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                        >
+                          <Trash2 size={14} />
+                          <span>إزالة</span>
+                        </button>
+                      )}
+                    </div>
+
+                    <p className="text-[11px] text-slate-500 leading-tight">
+                      إضافة صورة مخصصة للخدمة لتسهيل التعرف عليها في نقطة البيع والحجوزات.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               <div>
                 <label className="block text-sm font-bold text-slate-700 mb-1">اسم الخدمة *</label>
                 <input 
@@ -797,9 +981,31 @@ export function ServicesScreen({
               </label>
             </div>
             <div className="p-4 bg-slate-50 border-t border-slate-100 flex gap-3">
-              <button onClick={() => setShowServiceModal(false)} className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-3 rounded-xl transition-colors">إلغاء</button>
-              <button onClick={handleSaveService} className="flex-1 bg-primary hover:bg-primary-dark text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2">
-                <Check size={18} /> حفظ الخدمة
+              <button 
+                type="button"
+                disabled={isSavingService || isCompressingImage}
+                onClick={() => setShowServiceModal(false)} 
+                className="flex-1 bg-slate-200 hover:bg-slate-300 disabled:opacity-50 text-slate-800 font-bold py-3 rounded-xl transition-colors cursor-pointer"
+              >
+                إلغاء
+              </button>
+              <button 
+                type="button"
+                disabled={isSavingService || isCompressingImage}
+                onClick={handleSaveService} 
+                className="flex-1 bg-primary hover:bg-primary-dark disabled:opacity-50 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+              >
+                {isSavingService ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" />
+                    <span>جاري حفظ الخدمة والصورة...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check size={18} />
+                    <span>حفظ الخدمة</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

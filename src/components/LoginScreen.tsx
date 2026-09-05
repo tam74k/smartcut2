@@ -114,16 +114,16 @@ export function LoginScreen({ onLoginSuccess, settings, onOpenSaaSAdmin }: Login
         const dbSalons = await DB.fetchSalons();
         const salons = (dbSalons && dbSalons.length > 0) ? dbSalons : SubscriptionService.getSalons();
         const salon = user.salonId 
-          ? (salons.find(s => s.id === user.salonId || s.code === (user as any).salonCode) || salons[0])
+          ? (salons.find(s => s.id === user.salonId || s.code === (user as any).salonCode) || (user.salonId ? { id: user.salonId, name: (user as any).salonName || 'صالون', code: (user as any).salonCode || 'SC-01', phone: user.phone || '', country: 'المملكة العربية السعودية', currency: 'SAR', isActive: true } as any : null))
           : (salons.find(s => 
-              s.email?.toLowerCase() === user.email?.toLowerCase() || 
+              (user.email && s.email?.toLowerCase() === user.email?.toLowerCase()) || 
               (user.phone && s.phone && s.phone.replace(/\D/g, '') === user.phone.replace(/\D/g, '')) ||
               (s.name && user.name && s.name.toLowerCase().includes(user.name.toLowerCase()))
-            ) || salons[0]);
+            ) || null);
         
         const dbBranches = salon?.id ? await DB.fetchBranches(salon.id) : [];
-        const sBranches = (dbBranches && dbBranches.length > 0) ? dbBranches : SubscriptionService.getBranches(salon?.id);
-        const chosenBranch = (user.branchId && sBranches.find(b => b.id === user.branchId)) || sBranches.find(b => b.isMain) || sBranches[0];
+        const sBranches = (dbBranches && dbBranches.length > 0) ? dbBranches : (salon?.id ? SubscriptionService.getBranches(salon.id) : []);
+        const chosenBranch = (user.branchId && sBranches.find(b => b.id === user.branchId)) || sBranches.find(b => b.isMain) || sBranches[0] || (user.branchId ? { id: user.branchId, salonId: salon?.id, name: 'الفرع الرئيسي', code: 'B01', isMain: true, isActive: true, status: 'active' } as any : undefined);
 
         let customSettings: AppSettings | undefined = undefined;
         if (salon) {
