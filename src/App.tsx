@@ -2442,7 +2442,7 @@ export default function App() {
         isOpen={showSubscriptionModal}
         onClose={() => setShowSubscriptionModal(false)}
         settings={settings}
-        currentSalon={salons.find(s => s.id === currentSalonId) || { id: currentSalonId, name: settings.salonName }}
+        currentSalon={allSalons.find((s: any) => s.id === currentSalonId) || { id: currentSalonId, name: settings.salonName }}
         onSubscriptionUpdated={() => {
           setShowSubscriptionModal(false);
           window.location.reload();
