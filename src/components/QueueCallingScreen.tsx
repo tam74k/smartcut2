@@ -381,7 +381,7 @@ export function QueueCallingScreen({
   }, [tickets, statusFilter, searchQuery]);
 
   return (
-    <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto">
+    <div className="flex-1 h-full w-full overflow-y-auto p-4 sm:p-6 space-y-6 max-w-7xl mx-auto custom-scrollbar pb-16">
       
       {/* ── TOP HEADER BAR ── */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-xl text-white">
@@ -590,17 +590,17 @@ export function QueueCallingScreen({
             <p className="text-xs text-slate-500 mt-1">تأكد من فتح شاشة الكيوسك أو تسجيل العملاء الواصلين.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-right text-xs">
-              <thead>
-                <tr className="border-b border-slate-800 text-slate-400 font-black">
-                  <th className="py-3.5 px-4">رقم الدور</th>
-                  <th className="py-3.5 px-4">العميل والهاتف</th>
-                  <th className="py-3.5 px-4">وقت الوصول</th>
-                  <th className="py-3.5 px-4">المصدر</th>
-                  <th className="py-3.5 px-4">الموظف المسكن معه</th>
-                  <th className="py-3.5 px-4">الحالة الحالية</th>
-                  <th className="py-3.5 px-4 text-center">إجراءات المتابعة والمناداة</th>
+          <div className="overflow-x-auto max-h-[600px] overflow-y-auto custom-scrollbar">
+            <table className="w-full text-right text-xs min-w-[820px]">
+              <thead className="sticky top-0 bg-slate-900 z-10 shadow-sm">
+                <tr className="border-b border-slate-800 text-slate-400 font-black bg-slate-900">
+                  <th className="py-3.5 px-4 bg-slate-900">رقم الدور</th>
+                  <th className="py-3.5 px-4 bg-slate-900">العميل والهاتف</th>
+                  <th className="py-3.5 px-4 bg-slate-900">وقت الوصول</th>
+                  <th className="py-3.5 px-4 bg-slate-900">المصدر</th>
+                  <th className="py-3.5 px-4 bg-slate-900">الموظف المسكن معه</th>
+                  <th className="py-3.5 px-4 bg-slate-900">الحالة الحالية</th>
+                  <th className="py-3.5 px-4 text-center bg-slate-900">إجراءات المتابعة والمناداة</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
@@ -686,7 +686,7 @@ export function QueueCallingScreen({
 
                       {/* Actions */}
                       <td className="py-3.5 px-4">
-                        <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                        <div className="flex items-center justify-center gap-1.5 flex-nowrap shrink-0">
                           
                           {/* Call / Re-call Button */}
                           {!isDone && !isNoShow && (
@@ -779,8 +779,8 @@ export function QueueCallingScreen({
 
       {/* ── ASSIGN EMPLOYEE MODAL ── */}
       {assigningTicket && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-50 p-4 animate-in fade-in">
-          <div className="bg-slate-900 border border-slate-700 rounded-3xl p-6 max-w-md w-full shadow-2xl text-slate-100">
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-50 p-4 overflow-y-auto animate-in fade-in">
+          <div className="bg-slate-900 border border-slate-700 rounded-3xl p-6 max-w-md w-full shadow-2xl text-slate-100 my-auto max-h-[92vh] overflow-y-auto custom-scrollbar">
             <h3 className="font-black text-sm text-white mb-2 flex items-center gap-2">
               <Scissors size={16} className="text-amber-400" />
               <span>تسكين العميل مع الموظف / بدء الخدمة</span>
@@ -877,8 +877,8 @@ export function QueueCallingScreen({
 
       {/* ── MANUAL ADD WALK-IN MODAL ── */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-50 p-4 animate-in fade-in">
-          <div className="bg-slate-900 border border-slate-700 rounded-3xl p-6 max-w-sm w-full shadow-2xl text-slate-100">
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-50 p-4 overflow-y-auto animate-in fade-in">
+          <div className="bg-slate-900 border border-slate-700 rounded-3xl p-6 max-w-sm w-full shadow-2xl text-slate-100 my-auto max-h-[92vh] overflow-y-auto custom-scrollbar">
             <h3 className="font-black text-sm text-white mb-2 flex items-center gap-2">
               <Plus size={16} className="text-amber-400" />
               <span>إضافة عميل يدوياً في طابور الانتظار</span>
