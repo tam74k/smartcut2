@@ -220,7 +220,16 @@ export async function ensureCoreSchema(): Promise<void> {
       ensureColumn('custom_roles', 'actions', 'JSONB'),
       ensureColumn('custom_roles', 'is_system', 'BOOLEAN'),
       ensureColumn('purchase_invoices', 'paid_amount', 'NUMERIC(12,2)'),
-      ensureColumn('purchase_invoices', 'remaining_amount', 'NUMERIC(12,2)')
+      ensureColumn('purchase_invoices', 'remaining_amount', 'NUMERIC(12,2)'),
+      ensureColumn('partners', 'salon_id', 'UUID'),
+      ensureColumn('partners', 'tenant_id', 'TEXT'),
+      ensureColumn('partners', 'status', 'VARCHAR(50)'),
+      ensureColumn('partners', 'max_drawings_cap', 'NUMERIC(15,2)'),
+      ensureColumn('partners', 'debit_balance', 'NUMERIC(15,2)'),
+      ensureColumn('partners', 'total_withdrawn', 'NUMERIC(15,2)'),
+      ensureColumn('partners', 'total_profit_received', 'NUMERIC(15,2)'),
+      ensureColumn('partners', 'opening_balance', 'NUMERIC(15,2)'),
+      ensureColumn('partners', 'exit_date', 'DATE')
     ]);
   } catch { /* Silent fail */ }
 }
@@ -1503,11 +1512,24 @@ export const DB = {
     const validSalonId = toSalonUUID(p.salonId || getSalonId());
     try {
       const snap: any = {
-        id: p.id, salon_id: validSalonId, name: p.name,
-        phone: p.phone, id_number: p.idNumber || null,
-        capital_share: p.capitalShare ?? 0, share_percentage: p.sharePercentage ?? 0,
+        id: p.id,
+        salon_id: validSalonId,
+        tenant_id: validSalonId,
+        name: p.name,
+        phone: p.phone,
+        id_number: p.idNumber || null,
+        status: p.status || (p.isActive !== false ? 'active' : 'suspended'),
+        capital_share: p.capitalShare ?? 0,
+        share_percentage: p.sharePercentage ?? 0,
+        max_drawings_cap: p.maxDrawingsCap ?? 0,
+        debit_balance: p.debitBalance ?? 0,
+        total_withdrawn: p.totalWithdrawn ?? 0,
+        total_profit_received: p.totalProfitReceived ?? 0,
+        opening_balance: p.openingBalance ?? 0,
         join_date: toDateOrNull(p.joinDate) || new Date().toISOString().split('T')[0],
-        notes: p.notes || null, is_active: p.isActive !== false,
+        exit_date: toDateOrNull(p.exitDate) || null,
+        notes: p.notes || null,
+        is_active: p.status !== 'exited' && p.status !== 'suspended' && p.isActive !== false,
         updated_at: new Date().toISOString()
       };
       const { error } = await client.from('partners').upsert(snap, { onConflict: 'id' });
@@ -1528,15 +1550,161 @@ export const DB = {
     const validSalonId = toSalonUUID(pt.salonId || getSalonId());
     try {
       const snap: any = {
-        id: pt.id, salon_id: validSalonId, partner_id: pt.partnerId,
-        partner_name: pt.partnerName, type: pt.type, amount: pt.amount ?? 0,
-        date: pt.date, treasury_id: pt.treasuryId, description: pt.description,
+        id: pt.id,
+        salon_id: validSalonId,
+        tenant_id: validSalonId,
+        partner_id: pt.partnerId,
+        partner_name: pt.partnerName,
+        type: pt.type,
+        amount: pt.amount ?? 0,
+        date: pt.date,
+        treasury_id: pt.treasuryId,
+        description: pt.description,
         created_by: pt.createdBy || null
       };
       const { error } = await client.from('partner_transactions').upsert(snap, { onConflict: 'id' });
       if (error) { console.error('DB.savePartnerTransaction error:', error.message); return null; }
       return pt;
     } catch (e) { console.error('DB.savePartnerTransaction exception:', e); return null; }
+  },
+
+  // ---- سحوبات الشركاء (Partner Drawings) ----
+  async fetchPartnerDrawings(salonId?: string) {
+    return DB.fetchAll<any>('partner_drawings', undefined, salonId);
+  },
+  async savePartnerDrawing(d: any) {
+    const client = sb(); if (!client || !d) return null;
+    const validSalonId = toSalonUUID(d.salonId || getSalonId());
+    try {
+      const snap: any = {
+        id: d.id,
+        tenant_id: validSalonId,
+        salon_id: validSalonId,
+        partner_id: d.partnerId,
+        amount: d.amount ?? 0,
+        drawing_date: d.drawingDate || new Date().toISOString(),
+        drawing_type: d.drawingType || 'profit_advance',
+        treasury_id: d.treasuryId || null,
+        treasury_name: d.treasuryName || null,
+        notes: d.notes || null,
+        created_by: d.createdBy || null,
+        is_settled: d.isSettled || false,
+        settlement_id: d.settlementId || null
+      };
+      const { error } = await client.from('partner_drawings').upsert(snap, { onConflict: 'id' });
+      if (error) { console.error('DB.savePartnerDrawing error:', error.message); return null; }
+      return d;
+    } catch (e) { console.error('DB.savePartnerDrawing exception:', e); return null; }
+  },
+
+  // ---- توزيعات الأرباح والتسويات السنوية (Profit Distributions) ----
+  async fetchProfitDistributions(salonId?: string) {
+    return DB.fetchAll<any>('profit_distributions', undefined, salonId);
+  },
+  async saveProfitDistribution(pd: any) {
+    const client = sb(); if (!client || !pd) return null;
+    const validSalonId = toSalonUUID(pd.salonId || getSalonId());
+    try {
+      const snap: any = {
+        id: pd.id,
+        tenant_id: validSalonId,
+        salon_id: validSalonId,
+        partner_id: pd.partnerId,
+        period_start: pd.periodStart,
+        period_end: pd.periodEnd,
+        period_label: pd.periodLabel,
+        distributable_profit_pool: pd.distributableProfitPool ?? 0,
+        partner_share_percentage: pd.partnerSharePercentage ?? 0,
+        gross_profit_share: pd.grossProfitShare ?? 0,
+        drawings_deducted: pd.drawingsDeducted ?? 0,
+        prior_debit_deducted: pd.priorDebitDeducted ?? 0,
+        net_payable_amount: pd.netPayableAmount ?? 0,
+        carried_debit_balance: pd.carriedDebitBalance ?? 0,
+        status: pd.status || 'approved',
+        distribution_date: pd.distributionDate || new Date().toISOString().split('T')[0],
+        approved_by: pd.approvedBy || null,
+        notes: pd.notes || null
+      };
+      const { error } = await client.from('profit_distributions').upsert(snap, { onConflict: 'id' });
+      if (error) { console.error('DB.saveProfitDistribution error:', error.message); return null; }
+      return pd;
+    } catch (e) { console.error('DB.saveProfitDistribution exception:', e); return null; }
+  },
+
+  // ---- أقساط التخارج (Partner Exit Installments) ----
+  async fetchPartnerExitInstallments(salonId?: string) {
+    return DB.fetchAll<any>('partner_exit_installments', undefined, salonId);
+  },
+  async savePartnerExitInstallment(inst: any) {
+    const client = sb(); if (!client || !inst) return null;
+    const validSalonId = toSalonUUID(inst.salonId || getSalonId());
+    try {
+      const snap: any = {
+        id: inst.id,
+        tenant_id: validSalonId,
+        salon_id: validSalonId,
+        partner_id: inst.partnerId,
+        installment_number: inst.installmentNumber,
+        due_date: inst.dueDate,
+        amount: inst.amount ?? 0,
+        status: inst.status || 'pending',
+        paid_at: inst.paidAt || null,
+        treasury_id: inst.treasuryId || null,
+        payment_reference: inst.paymentReference || null,
+        notes: inst.notes || null
+      };
+      const { error } = await client.from('partner_exit_installments').upsert(snap, { onConflict: 'id' });
+      if (error) { console.error('DB.savePartnerExitInstallment error:', error.message); return null; }
+      return inst;
+    } catch (e) { console.error('DB.savePartnerExitInstallment exception:', e); return null; }
+  },
+
+  // استدعاء دالة الإقفال والتسوية السنوية في Supabase RPC
+  async executeAnnualSettlementRPC(params: {
+    tenantId: string;
+    periodStart: string;
+    periodEnd: string;
+    periodLabel: string;
+    distributableProfit: number;
+    approvedBy: string;
+  }) {
+    const client = sb(); if (!client) return null;
+    try {
+      const { data, error } = await client.rpc('rpc_execute_annual_profit_settlement', {
+        p_tenant_id: toSalonUUID(params.tenantId),
+        p_period_start: params.periodStart,
+        p_period_end: params.periodEnd,
+        p_period_label: params.periodLabel,
+        p_distributable_profit: params.distributableProfit,
+        p_approved_by: params.approvedBy
+      });
+      if (error) { console.error('DB.executeAnnualSettlementRPC error:', error.message); return null; }
+      return data;
+    } catch (e) { console.error('DB.executeAnnualSettlementRPC exception:', e); return null; }
+  },
+
+  // استدعاء دالة جدولة التخارج في Supabase RPC
+  async schedulePartnerExitRPC(params: {
+    tenantId: string;
+    partnerId: string;
+    exitValuation: number;
+    installmentsCount: number;
+    firstDueDate: string;
+    notes?: string;
+  }) {
+    const client = sb(); if (!client) return null;
+    try {
+      const { data, error } = await client.rpc('rpc_schedule_partner_exit', {
+        p_tenant_id: toSalonUUID(params.tenantId),
+        p_partner_id: params.partnerId,
+        p_exit_valuation: params.exitValuation,
+        p_installments_count: params.installmentsCount,
+        p_first_due_date: params.firstDueDate,
+        p_notes: params.notes || 'تخارج شريك مجدول'
+      });
+      if (error) { console.error('DB.schedulePartnerExitRPC error:', error.message); return null; }
+      return data;
+    } catch (e) { console.error('DB.schedulePartnerExitRPC exception:', e); return null; }
   },
 
   // ---- البرومو كود (Promo Codes) ----
@@ -1671,6 +1839,230 @@ export const DB = {
     } catch (e) { console.error('DB.deleteFingerprintLog exception:', e); return false; }
   },
 
+  // ---- الباقات والفوترة والاشتراكات (Subscription & Billing Module) ----
+  async fetchSubscriptionPlans(): Promise<any[]> {
+    const client = sb();
+    if (client) {
+      try {
+        const { data, error } = await client.from('subscription_plans').select('*').eq('is_active', true).order('display_order', { ascending: true });
+        if (!error && data && data.length > 0) {
+          return data.map(toCamel);
+        }
+      } catch (e) {
+        console.warn('Could not fetch subscription_plans from DB, using fallback defaults');
+      }
+    }
+    // Fallback default plans
+    return [
+      {
+        id: 'starter',
+        planNameAr: 'باقة البداية',
+        planNameEn: 'Starter Plan',
+        descriptionAr: 'مثالية للصالونات الناشئة والصغيرة ذات الفريق المحدود',
+        minEmployees: 2,
+        maxEmployees: 5,
+        priceEgp1m: 450,
+        priceEgp3m: 1250,
+        priceEgp6m: 2300,
+        priceEgp12m: 4200,
+        priceUsd1m: 15,
+        priceUsd3m: 40,
+        priceUsd6m: 75,
+        priceUsd12m: 140,
+        features: [
+          'من 2 إلى 5 موظفين',
+          'نقطة بيع سريعة POS وفواتير غير محدودة',
+          'إدارة الحجوزات والمواعيد والعملاء',
+          'سندات المصروفات والخزائن النقدية',
+          'تقارير مالية تفصيلية وإغلاق الوردية Z-Report',
+          'دعم فني وتحديثات مستمرة'
+        ],
+        isPopular: false,
+        isActive: true,
+        displayOrder: 1
+      },
+      {
+        id: 'growth',
+        planNameAr: 'باقة التوسع',
+        planNameEn: 'Growth Plan',
+        descriptionAr: 'الخيار الأكثر طلباً للصالونات المتنامية التي تحتاج ميزات احترافية متكاملة',
+        minEmployees: 6,
+        maxEmployees: 10,
+        priceEgp1m: 750,
+        priceEgp3m: 2100,
+        priceEgp6m: 3900,
+        priceEgp12m: 6900,
+        priceUsd1m: 25,
+        priceUsd3m: 70,
+        priceUsd6m: 130,
+        priceUsd12m: 230,
+        features: [
+          'من 6 إلى 10 موظفين',
+          'كافة ميزات باقة البداية',
+          'إدارة المخازن والمستودع الشامل وحركة الأصناف',
+          'حساب عمولات الموظفين والسلف والمسير الذكي',
+          'برنامج ولاء ونقاط العملاء وكوبونات الخصم',
+          'ربط واتساب وإشعارات تذكير المواعيد'
+        ],
+        isPopular: true,
+        isActive: true,
+        displayOrder: 2
+      },
+      {
+        id: 'enterprise',
+        planNameAr: 'باقة الأعمال',
+        planNameEn: 'Enterprise Plan',
+        descriptionAr: 'حل متكامل للمنشآت والمراكز الكبرى مع قدرات غير محدودة وتوسع كامل',
+        minEmployees: 11,
+        maxEmployees: 9999,
+        priceEgp1m: 1250,
+        priceEgp3m: 3500,
+        priceEgp6m: 6500,
+        priceEgp12m: 11500,
+        priceUsd1m: 40,
+        priceUsd3m: 110,
+        priceUsd6m: 210,
+        priceUsd12m: 380,
+        features: [
+          '11 موظفاً فأكثر (سعة غير محدودة)',
+          'كافة ميزات باقة التوسع',
+          'إدارة الشركاء والمستثمرين والتسويات السنوية',
+          'الذكاء الاصطناعي والمساعد المتقدم لتحليل العمليات',
+          'دعم أجهزة الحضور والانصراف والبصمة المتعددة',
+          'أولوية قصوى في الدعم الفني وتخصيص الصلاحيات'
+        ],
+        isPopular: false,
+        isActive: true,
+        displayOrder: 3
+      }
+    ];
+  },
+
+  async fetchSubscriptionAddons(): Promise<any[]> {
+    const client = sb();
+    if (client) {
+      try {
+        const { data, error } = await client.from('subscription_addons').select('*').eq('is_active', true);
+        if (!error && data && data.length > 0) {
+          return data.map(toCamel);
+        }
+      } catch (e) {
+        console.warn('Could not fetch subscription_addons from DB, using fallback defaults');
+      }
+    }
+    return [
+      {
+        id: 'branch_license',
+        addonName: 'Additional Branch License',
+        addonNameAr: 'رخصة فرع إضافي',
+        addonType: 'branch_license',
+        maxEmployeesPerBranch: 5,
+        priceEgp1m: 300,
+        priceEgp3m: 800,
+        priceEgp6m: 1500,
+        priceEgp12m: 2700,
+        priceUsd1m: 10,
+        priceUsd3m: 27,
+        priceUsd6m: 50,
+        priceUsd12m: 90,
+        descriptionAr: 'رخصة لربط وتشغيل فرع إضافي جديد تحت نفس المنشأة بحد أقصى 5 موظفين للفرع'
+      }
+    ];
+  },
+
+  async fetchTenantSubscription(salonId?: string): Promise<any | null> {
+    const client = sb(); if (!client) return null;
+    const validSalonId = toSalonUUID(salonId || getSalonId());
+    try {
+      const { data, error } = await client
+        .from('tenant_subscriptions')
+        .select('*')
+        .or(`salon_id.eq.${validSalonId},tenant_id.eq.${validSalonId}`)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) return null;
+      return data ? toCamel(data) : null;
+    } catch (e) {
+      return null;
+    }
+  },
+
+  async calculateBranchProrationRPC(tenantId: string, additionalBranches: number, currency: string = 'EGP') {
+    const client = sb();
+    if (client) {
+      try {
+        const { data, error } = await client.rpc('rpc_calculate_branch_addon_proration', {
+          p_tenant_id: toSalonUUID(tenantId),
+          p_additional_branches: additionalBranches,
+          p_currency: currency
+        });
+        if (!error && data && data.success) {
+          return data;
+        }
+      } catch (e) {}
+    }
+    // Frontend fallback proration calculation
+    const monthlyRate = currency.toUpperCase() === 'USD' ? 10 : 300;
+    const dailyRate = monthlyRate / 30;
+    const daysRemaining = 30;
+    const proratedAmount = Math.round(dailyRate * daysRemaining * additionalBranches * 100) / 100;
+    return {
+      success: true,
+      daysRemaining,
+      monthlyRatePerBranch: monthlyRate,
+      proratedAmount,
+      currency
+    };
+  },
+
+  async activateOrRenewSubscriptionRPC(params: {
+    tenantId: string;
+    planId: string;
+    billingCycle: string;
+    additionalBranches?: number;
+    currency?: string;
+    paidAmount?: number;
+    paymentMethod?: string;
+    notes?: string;
+  }) {
+    const client = sb();
+    const validSalonId = toSalonUUID(params.tenantId || getSalonId());
+    if (client) {
+      try {
+        const { data, error } = await client.rpc('rpc_activate_or_renew_subscription', {
+          p_tenant_id: validSalonId,
+          p_plan_id: params.planId,
+          p_billing_cycle: params.billingCycle,
+          p_additional_branches: params.additionalBranches || 0,
+          p_currency: params.currency || 'EGP',
+          p_paid_amount: params.paidAmount || 0,
+          p_payment_method: params.paymentMethod || 'bank_transfer',
+          p_notes: params.notes || null
+        });
+        if (!error && data) return data;
+      } catch (e) {
+        console.warn('RPC rpc_activate_or_renew_subscription failed, using client fallback', e);
+      }
+    }
+    // Fallback: update salons table directly
+    try {
+      const months = params.billingCycle === '1m' ? 1 : params.billingCycle === '3m' ? 3 : params.billingCycle === '12m' ? 12 : 6;
+      const end = new Date(Date.now() + months * 30 * 86400000).toISOString().split('T')[0];
+      if (client) {
+        await client.from('salons').update({
+          subscription_status: 'active',
+          subscription_plan: params.planId,
+          subscription_start_date: new Date().toISOString().split('T')[0],
+          subscription_end_date: end,
+          is_active: true
+        }).eq('id', validSalonId);
+      }
+      return { success: true, status: 'active', endDate: end };
+    } catch (e) {
+      return { success: false, error: e };
+    }
+  },
 
   // ============================================================
   // تحميل البيانات الأساسية فقط (Auth, Settings, POS Catalog) بسرعة خارقة

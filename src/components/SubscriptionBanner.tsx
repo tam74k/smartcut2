@@ -12,6 +12,7 @@ interface SubscriptionBannerProps {
   currentUser?: AppUser | null;
   allSalons?: any[];
   onSelectSalon?: (salonId: string) => void;
+  onOpenPricingModal?: () => void;
 }
 
 export function SubscriptionBanner({ 
@@ -23,7 +24,8 @@ export function SubscriptionBanner({
   salonName,
   currentUser,
   allSalons = [],
-  onSelectSalon
+  onSelectSalon,
+  onOpenPricingModal
 }: SubscriptionBannerProps) {
   const [showBranchesMenu, setShowBranchesMenu] = useState(false);
   const [showSalonsMenu, setShowSalonsMenu] = useState(false);
@@ -60,9 +62,13 @@ export function SubscriptionBanner({
             <span className="w-2.5 h-2.5 rounded-full bg-white animate-ping"></span>
             <span>⛔ تنبيه هام: لقد انتهت فترة اشتراك هذا الصالون (أو الحساب موقوف مؤقتاً). المنظومة تعمل الآن بوضع <strong>الاطلاع فقط (Read-Only)</strong> ولا يمكن حفظ فواتير أو تعديلات جديدة.</span>
           </div>
-          <span className="bg-white/20 text-white px-3 py-1 rounded-lg text-[11px] font-black">
-            يرجى التجديد 🛡️
-          </span>
+          <button
+            onClick={onOpenPricingModal || (() => setShowPlanModal(true))}
+            className="bg-white text-rose-700 hover:bg-rose-50 px-3 py-1 rounded-lg text-[11px] font-black shadow-sm transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shrink-0"
+          >
+            <Sparkles size={12} className="text-rose-600" />
+            <span>تجديد / ترقية الباقة الآن 💳</span>
+          </button>
         </div>
       )}
 
@@ -125,13 +131,14 @@ export function SubscriptionBanner({
               <span className="text-emerald-400 font-extrabold">{displaySalonName}</span>
             )}
             <button 
-              onClick={() => setShowPlanModal(true)}
+              onClick={onOpenPricingModal || (() => setShowPlanModal(true))}
               className={`inline-flex items-center gap-1 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow hover:brightness-110 transition-all cursor-pointer ${
                 isTrial ? 'bg-gradient-to-r from-amber-500 to-orange-500' : 'bg-gradient-to-r from-emerald-500 to-teal-500'
               }`}
+              title="انقر لترقية أو تجديد الباقة"
             >
               <Sparkles size={10} />
-              <span>{isTrial ? `تجريبي (${Math.max(0, daysLeft)} يوم متبقي)` : `باقة ${subscription.plan.toUpperCase()}`}</span>
+              <span>{isTrial ? `تجريبي (${Math.max(0, daysLeft)} يوم متبقي) - ترقية ✨` : `باقة ${subscription.plan.toUpperCase()}`}</span>
             </button>
           </div>
 
@@ -255,12 +262,24 @@ export function SubscriptionBanner({
               </div>
             </div>
 
-            <button
-              onClick={() => setShowPlanModal(false)}
-              className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-2.5 rounded-xl text-xs transition-colors"
-            >
-              إغلاق
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  setShowPlanModal(false);
+                  if (onOpenPricingModal) onOpenPricingModal();
+                }}
+                className="flex-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-extrabold py-2.5 rounded-xl text-xs transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+              >
+                <Sparkles size={14} />
+                <span>ترقية / تجديد الباقة 💳</span>
+              </button>
+              <button
+                onClick={() => setShowPlanModal(false)}
+                className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors"
+              >
+                إغلاق
+              </button>
+            </div>
           </div>
         </div>
       )}

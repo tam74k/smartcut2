@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { AppSettings, Transaction, Treasury, Branch, AppUser } from '../types';
-import { Wallet, ArrowDownRight, ArrowUpRight, ArrowRightLeft, XCircle, Download, Building2, Trash2 } from 'lucide-react';
+import { Wallet, ArrowDownRight, ArrowUpRight, ArrowRightLeft, XCircle, Download, Building2, Trash2, Loader2 } from 'lucide-react';
 import { exportToExcel } from '../utils/exportExcel';
 import { AuthService } from '../services/auth';
 import { DB } from '../services/db';
@@ -120,6 +120,93 @@ export function TreasuryScreen({
     }
     
     setModalType(null);
+  };
+
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const handleDeleteTransaction = async (trx: Transaction) => {
+    // 1. فحص الصلاحيات
+    const isAuthorized = !currentUser || 
+      currentUser.role === 'admin' || 
+      currentUser.role === 'owner' || 
+      currentUser.role === 'programmer' || 
+      currentUser.actions?.includes('manage_treasury_delete') || 
+      currentUser.actions?.includes('delete_transactions') ||
+      currentUser.actions?.includes('*') ||
+      AuthService.canDo('pos_void', currentUser);
+
+    if (!isAuthorized) {
+      alert('⛔ عذراً، حذف الحركات المالية يتطلب صلاحية الإدارة (الأدمن أو المالك).');
+      return;
+    }
+
+    // 2. فحص نوع الحركة وتقديم إيضاح للمستخدم
+    const isSales = trx.category === 'sales' || trx.category === 'مبيعات' || (trx as any).invoiceId;
+    const isCustody = trx.category === 'عهدة افتتاحية' || trx.category === 'initial_cash';
+    const isTransfer = trx.category === 'transfer' || trx.id.includes('TRF');
+
+    let warningMsg = '';
+    if (isSales) {
+      warningMsg = '\n\n⚠️ ملاحظة: هذه الحركة ناتجة عن فاتورة مبيعات. لحذف الفاتورة بالكامل وإلغاء خدماتها وتعديل المخزون وعمولات الموظفين، يرجى حذفها من شاشة الفواتير.';
+    } else if (isCustody) {
+      warningMsg = '\n\n⚠️ تحذير: هذه الحركة تمثل عهدة افتتاحية للوردية، وحذفها سيؤثر على مطابقة رصيد الوردية والخزينة.';
+    }
+
+    // فحص ما إذا كان هناك طرف مقابل لعملية التحويل بين الخزائن
+    let pairedTrx: Transaction | undefined;
+    if (isTransfer) {
+      pairedTrx = transactions.find(t => 
+        t.id !== trx.id && 
+        (t.category === 'transfer' || t.id.includes('TRF')) && 
+        t.amount === trx.amount && 
+        t.date === trx.date &&
+        t.type !== trx.type
+      );
+    }
+
+    let confirmText = `هل أنت متأكد من حذف هذه الحركة المالية نهائياً؟\n` +
+      `----------------------------------------\n` +
+      `• رقم الحركة: ${trx.id}\n` +
+      `• التاريخ: ${new Date(trx.date).toLocaleString('ar-SA')}\n` +
+      `• الخزينة: ${settings.treasuries.find(t => t.id === trx.treasury)?.name || trx.treasury}\n` +
+      `• المبلغ: ${trx.type === 'in' ? '+' : '-'}${trx.amount.toFixed(2)} ${settings.currency}\n` +
+      `• البيان: ${trx.description || '-'}` +
+      warningMsg;
+
+    let deletePairToo = false;
+    if (pairedTrx) {
+      confirmText += `\n\n🔄 تم العثور على الطرف المقابل لعملية التحويل (الخزينة الأخرى: ${settings.treasuries.find(t => t.id === pairedTrx?.treasury)?.name || pairedTrx.treasury}).\nهل تريد حذف طرفي التحويل معاً لإبقاء الخزينتين متوازنتين؟`;
+    }
+
+    if (!window.confirm(confirmText)) return;
+
+    if (pairedTrx) {
+      deletePairToo = window.confirm(`هل نؤكد حذف طرفي التحويل معاً (${trx.id} و ${pairedTrx.id})؟\n• انقر "موافق" لحذف الطرفين معاً.\n• انقر "إلغاء" لحذف هذا الطرف فقط.`);
+    }
+
+    try {
+      setDeletingId(trx.id);
+
+      // 1. حذف من قاعدة البيانات Supabase
+      await DB.deleteTransaction(trx.id);
+      await DB.remove('transactions', trx.id);
+
+      if (deletePairToo && pairedTrx) {
+        await DB.deleteTransaction(pairedTrx.id);
+        await DB.remove('transactions', pairedTrx.id);
+      }
+
+      // 2. تحديث الحالة في الواجهة المحلية
+      const idsToDelete = new Set([trx.id, ...(deletePairToo && pairedTrx ? [pairedTrx.id] : [])]);
+      setTransactions(transactions.filter(t => !idsToDelete.has(t.id)));
+
+      alert(deletePairToo ? '✅ تم حذف طرفي عملية التحويل بنجاح.' : '✅ تم حذف الحركة المالية بنجاح.');
+    } catch (err: any) {
+      console.error('Error deleting transaction:', err);
+      alert('❌ حدث خطأ أثناء الحذف: ' + (err?.message || 'يرجى المحاولة مجدداً'));
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   const [categoryFilter, setCategoryFilter] = useState<'all' | 'custody' | 'sales' | 'expense'>('all');
@@ -480,10 +567,17 @@ export function TreasuryScreen({
                     <td className="py-3.5 px-4 text-center">
                       <button
                         onClick={() => handleDeleteTransaction(trx)}
-                        className="text-slate-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition-all cursor-pointer"
+                        disabled={deletingId === trx.id}
+                        className={`text-slate-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition-all cursor-pointer ${
+                          deletingId === trx.id ? 'opacity-50 pointer-events-none' : ''
+                        }`}
                         title="حذف الحركة المالية"
                       >
-                        <Trash2 size={15} />
+                        {deletingId === trx.id ? (
+                          <Loader2 size={15} className="animate-spin text-red-600" />
+                        ) : (
+                          <Trash2 size={15} />
+                        )}
                       </button>
                     </td>
                   </tr>

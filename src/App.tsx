@@ -43,6 +43,7 @@ import { LoginScreen } from './components/LoginScreen';
 import { BarberLoginScreen } from './components/BarberLoginScreen';
 import { BarberPortalScreen } from './components/BarberPortalScreen';
 import { ClientReservationPortal } from './components/ClientReservationPortal';
+import { SubscriptionPlansModal } from './components/SubscriptionPlansModal';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { SubscriptionBanner } from './components/SubscriptionBanner';
 import { AuthService, ROLE_LABELS } from './services/auth';
@@ -282,6 +283,7 @@ export default function App() {
 
   const [showOpenModal, setShowOpenModal] = useState(false);
   const [showCloseModal, setShowCloseModal] = useState(false);
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const [openShiftForm, setOpenShiftForm] = useState({ date: new Date().toISOString().split('T')[0], initialCash: 0 });
 
   // Global In-Memory Stores
@@ -878,7 +880,9 @@ export default function App() {
 
   const checkReadOnlyAndWarn = () => {
     if (isSubscriptionBlocked && currentUser?.role !== 'programmer') {
-      alert('⛔ تم إيقاف تفعيل الصالون (أو الفرع): جميع الجداول والشاشات أصبحت للقراءة فقط (Read-Only) ولا يُسمح بإجراء أي تعديل أو إضافة أو حذف للبيانات.');
+      if (window.confirm('⛔ تم إيقاف تفعيل الصالون (أو الفرع): جميع الجداول والشاشات أصبحت للقراءة فقط (Read-Only) نظراً لانتهاء الاشتراك أو الفترة التجريبية.\n\nهل ترغب في فتح قائمة الباقات للاشتراك وتفعيل الحساب فوراً؟')) {
+        setShowSubscriptionModal(true);
+      }
       return true;
     }
     return false;
@@ -2105,6 +2109,7 @@ export default function App() {
         currentUser={currentUser}
         allSalons={allSalons}
         onSelectSalon={handleSwitchSalon}
+        onOpenPricingModal={() => setShowSubscriptionModal(true)}
       />
 
       <div className="flex flex-1 overflow-hidden relative">
@@ -2249,6 +2254,28 @@ export default function App() {
             </div>
             
             <div className="flex items-center gap-2 sm:gap-3">
+              {/* Subscription / Plan Badge Button */}
+              <button
+                onClick={() => setShowSubscriptionModal(true)}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-xl font-extrabold text-[11px] transition-all cursor-pointer shadow-xs active:scale-95 ${
+                  isSubscriptionBlocked
+                    ? 'bg-rose-100 text-rose-800 border border-rose-300 hover:bg-rose-200'
+                    : subscription.status === 'trial'
+                    ? 'bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-200'
+                    : 'bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100'
+                }`}
+                title="عرض وتجديد باقات الاشتراك"
+              >
+                <Sparkles size={13} className={isSubscriptionBlocked ? 'text-rose-600' : 'text-amber-600'} />
+                <span>
+                  {isSubscriptionBlocked
+                    ? 'انتهى الاشتراك (تجديد ⚡)'
+                    : subscription.status === 'trial'
+                    ? 'فترة تجريبية (ترقية الباقة ✨)'
+                    : 'باقات الاشتراك 💳'}
+                </span>
+              </button>
+
               {/* Shift Status Pill */}
               <div className={`hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-xl font-extrabold text-[11px] ${
                 shiftData.isOpen ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'
@@ -2286,16 +2313,25 @@ export default function App() {
           {/* Main Body */}
           <div className="flex-1 overflow-hidden flex flex-col bg-slate-100 relative">
             {isSubscriptionBlocked && (
-              <div className="bg-gradient-to-r from-rose-900 via-rose-800 to-rose-900 text-white px-4 py-2 flex items-center justify-between text-xs font-bold border-b border-rose-950 z-30 shrink-0 shadow-md animate-in fade-in" dir="rtl">
+              <div className="bg-gradient-to-r from-rose-900 via-rose-800 to-rose-900 text-white px-4 py-2 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs font-bold border-b border-rose-950 z-30 shrink-0 shadow-md animate-in fade-in" dir="rtl">
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-white animate-ping"></span>
                   <span>
-                    🔒 <strong>وضع القراءة فقط (Read-Only Mode):</strong> تم إيقاف تفعيل حساب الصالون (أو الفرع). جميع الجداول والشاشات أصبحت للقراءة فقط ولا يُسمح بإجراء أي إضافة أو تعديل أو حفظ، مع إمكانية استعراض وتصفح كافة البيانات والتقارير.
+                    🔒 <strong>وضع القراءة فقط (Read-Only Mode):</strong> تم إيقاف تفعيل حساب الصالون (أو الفرع) نظراً لانتهاء الاشتراك. جميع الجداول والشاشات أصبحت للقراءة فقط ولا يُسمح بإجراء أي إضافة أو تعديل أو حفظ.
                   </span>
                 </div>
-                <span className="bg-white/20 text-white px-2.5 py-0.5 rounded-md text-[11px] font-black shrink-0">
-                  مغلق للتعديل ⛔
-                </span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => setShowSubscriptionModal(true)}
+                    className="bg-amber-400 hover:bg-amber-300 text-slate-950 px-3 py-1 rounded-xl text-xs font-black shadow-md transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 animate-pulse"
+                  >
+                    <Sparkles size={14} className="text-slate-900" />
+                    <span>تجديد / ترقية الباقة الآن 💳</span>
+                  </button>
+                  <span className="bg-white/20 text-white px-2.5 py-0.5 rounded-md text-[11px] font-black shrink-0">
+                    مغلق للتعديل ⛔
+                  </span>
+                </div>
               </div>
             )}
             {renderScreen()}
@@ -2400,6 +2436,18 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* 7. SUBSCRIPTION & BILLING PRICING MODAL */}
+      <SubscriptionPlansModal
+        isOpen={showSubscriptionModal}
+        onClose={() => setShowSubscriptionModal(false)}
+        settings={settings}
+        currentSalon={salons.find(s => s.id === currentSalonId) || { id: currentSalonId, name: settings.salonName }}
+        onSubscriptionUpdated={() => {
+          setShowSubscriptionModal(false);
+          window.location.reload();
+        }}
+      />
 
     </div>
   );

@@ -2,13 +2,14 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { 
   AppSettings, Employee, Invoice, Transaction, Booking, ServiceItem, Product, 
   HRSettings, FingerprintLog, SalaryHistoryEntry, ShiftScheduleEntry, EmployeeFinancialRecord,
-  EmployeeLeaveRecord 
+  EmployeeLeaveRecord, EmployeePermissionRecord 
 } from '../types';
 import { 
   Calendar, Clock, CheckCircle, AlertTriangle, Printer, User, Filter, 
   RotateCcw, Sparkles, Plus, CheckSquare, Square, FileText, Ban, ShieldAlert,
   ChevronLeft, ChevronRight, Download, DollarSign, Award, ArrowUpRight, Check, X, Wallet,
-  Edit, Trash2, TrendingUp, History, Percent, Coins, Palmtree, RefreshCw
+  Edit, Trash2, TrendingUp, History, Percent, Coins, Palmtree, RefreshCw, DoorOpen, Timer,
+  ShieldCheck, Briefcase
 } from 'lucide-react';
 
 import { ThermalSalarySlip, SalarySlipSummary } from './ThermalSalarySlip';
@@ -66,18 +67,20 @@ export interface DayTimesheetRow {
   dailyRate: number;
   checkIn: string | null;
   checkOut: string | null;
-  status: 'regular' | 'absent' | 'weekly_off' | 'paid_leave' | 'unpaid_leave' | 'terminated';
+  status: 'regular' | 'absent' | 'weekly_off' | 'paid_leave' | 'unpaid_leave' | 'terminated' | 'mission';
   statusLabel: string;
   hasManualOrDeviceLog?: boolean;
   permissionStart?: string;
   permissionEnd?: string;
+  permissionType?: 'shift_start' | 'mid_shift' | 'official_mission';
   permissionMinutes: number;
   permissionExcusedMinutes?: number;
   permissionDeductedMinutes?: number;
   permissionDeduction: number;
+  administrativeAction?: 'none' | 'warning' | 'penalty';
+  administrativeNotes?: string;
   workedHoursFormatted: string;
   delayMinutes: number;
-
   delayDeduction: number;
   overtimeMinutes: number;
   overtimeAmount: number;
@@ -486,28 +489,53 @@ export function HRScreen({
         const leave = emp.leaveRecords?.find(l => dateStr >= l.startDate && dateStr <= l.endDate);
         const isWeeklyOff = (shiftSchedule.weeklyDaysOff || emp.weeklyDaysOff || ['Friday']).includes(dayNameEn);
 
-        // 3. Permissions on this date & Monthly Accumulator
-        const permission = emp.permissionRecords?.find(p => p.date === dateStr);
-        const permissionMinutes = permission ? (Number(permission.durationMinutes) || 0) : 0;
+        // 3. Permissions on this date & Setup (7 Business Rules Cases)
+        const dayPermissions = (emp.permissionRecords || []).filter(p => p.date === dateStr);
+        const permission = dayPermissions[0];
+        let permissionMinutes = 0;
         let permissionExcusedMinutes = 0;
         let permissionDeductedMinutes = 0;
         let permissionDeduction = 0;
+        let administrativeAction: 'none' | 'warning' | 'penalty' = 'none';
+        let administrativeNotes: string | undefined = undefined;
 
-        if (permissionMinutes > 0) {
-          if (permission?.isExcused) {
-            permissionExcusedMinutes = permissionMinutes;
-            permissionDeductedMinutes = 0;
-            permissionDeduction = 0;
-          } else {
-            const remainingFreeMinutes = Math.max(0, maxMonthlyPermissionMinutes - accumulatedPermissionMinutes);
-            permissionExcusedMinutes = Math.min(permissionMinutes, remainingFreeMinutes);
-            permissionDeductedMinutes = Math.max(0, permissionMinutes - permissionExcusedMinutes);
-            accumulatedPermissionMinutes += permissionMinutes;
+        const minuteRate = baseDailyRate > 0 ? (baseDailyRate / 8) / 60 : 0;
 
-            if (permissionDeductedMinutes > 0 && baseDailyRate > 0) {
-              // Rate per minute based on 8-hour workday
-              const minuteRate = (baseDailyRate / 8) / 60;
-              permissionDeduction = permissionDeductedMinutes * minuteRate;
+        // Check for official mission (الحالة 7)
+        const isOfficialMission = dayPermissions.some(p => p.type === 'official_mission');
+
+        // Total daily permission duration (excluding official missions)
+        const totalDayPermissionMinutes = dayPermissions
+          .filter(p => p.type !== 'official_mission')
+          .reduce((sum, p) => sum + (Number(p.durationMinutes) || 0), 0);
+
+        const maxDailyMinutes = (hrConfig.maxDailyPermissionHours ?? 4) * 60;
+        const isExceededDailyLimit = totalDayPermissionMinutes > maxDailyMinutes;
+
+        // Shift schedule times in minutes
+        const schedParts = scheduledCheckIn.split(':').map(Number);
+        const totalSchedMin = schedParts[0] * 60 + (schedParts[1] || 0);
+        const delayGrace = hrConfig.delayGraceMinutes ?? 15;
+
+        // Identify Shift Start Permission (الحالات 1، 2، 3، 4)
+        let shiftStartPermission: EmployeePermissionRecord | undefined = undefined;
+        let effectiveSchedInMin = totalSchedMin;
+
+        for (const p of dayPermissions) {
+          if (p.type === 'official_mission') continue;
+          if (!p.startTime || !p.endTime) continue;
+          const pStartParts = p.startTime.split(':').map(Number);
+          const pStartMin = pStartParts[0] * 60 + (pStartParts[1] || 0);
+          const pEndParts = p.endTime.split(':').map(Number);
+          const pEndMin = pEndParts[0] * 60 + (pEndParts[1] || 0);
+
+          const isExplicitStart = p.type === 'shift_start';
+          const isTimeMatchStart = pStartMin <= (totalSchedMin + delayGrace) && pEndMin > totalSchedMin;
+
+          if (isExplicitStart || isTimeMatchStart) {
+            shiftStartPermission = p;
+            if (pEndMin > effectiveSchedInMin) {
+              effectiveSchedInMin = pEndMin;
             }
           }
         }
@@ -614,6 +642,11 @@ export function HRScreen({
         const isWeeklyOffPaid = hrConfig.weeklyOffPaidType ? (hrConfig.weeklyOffPaidType === 'paid') : (hrConfig.weeklyOffPaid !== false);
         const absenceMultiplier = typeof hrConfig.absenceDeductionDays === 'number' ? hrConfig.absenceDeductionDays : 1;
 
+        // Check for mid-shift exit without return (الحالة 6)
+        const hasMidShiftPerm = dayPermissions.some(p => p.type === 'mid_shift');
+        const hasNoReturnFromPermission = hasMidShiftPerm && checkOutLogs.length > 0 && checkInLogs.length <= 1;
+        const isPermissionOverstayOrNoReturn = isExceededDailyLimit || hasNoReturnFromPermission;
+
         if (isTerminated) {
           status = 'terminated';
           statusLabel = 'إنهاء خدمة';
@@ -626,6 +659,35 @@ export function HRScreen({
             statusLabel = 'إجازة بدون راتب';
             absenceDeduction = 0;
           }
+        } else if (isOfficialMission) {
+          // الحالة 7: مأموريات العمل الخارجية (Official Missions)
+          // استثناء كامل من خصم رصيد الأذونات، واحتساب اليوم كدوام كامل مدفوع الأجر
+          status = 'mission';
+          statusLabel = 'مأمورية عمل رسمية 💼';
+          workedHoursFormatted = '08:00:00';
+          earnedDaily = dailyRate;
+          delayMinutes = 0;
+          delayDeduction = 0;
+          absenceDeduction = 0;
+          permissionDeduction = 0;
+          checkIn = checkInLog ? `${extractTime(checkInLog.timestamp)}:00` : `${scheduledCheckIn}:00`;
+          checkOut = checkOutLog ? `${extractTime(checkOutLog.timestamp)}:00` : `${scheduledCheckOut}:00`;
+        } else if (isPermissionOverstayOrNoReturn) {
+          // الحالة 6: تجاوز الحد الأقصى اليومي (4 ساعات) أو عدم العودة بالبصمة
+          permissionMinutes = totalDayPermissionMinutes;
+          if (hrConfig.permissionOverstayAction === 'annual_leave' && (emp.availableVacations || 0) > 0) {
+            status = 'paid_leave';
+            statusLabel = isExceededDailyLimit ? 'إجازة اعتيادية (تجاوز 4س إذن)' : 'إجازة اعتيادية (عدم عودة من الإذن)';
+            earnedDaily = dailyRate;
+            absenceDeduction = 0;
+          } else {
+            status = 'absent';
+            statusLabel = isExceededDailyLimit ? 'غياب بدون أجر (تجاوز حد الاستئذان اليومي)' : 'غياب بدون أجر (عدم عودة من الإذن)';
+            absenceDeduction = dailyRate * absenceMultiplier;
+            earnedDaily = 0;
+          }
+          if (checkInLog) checkIn = `${extractTime(checkInLog.timestamp)}:00`;
+          if (checkOutLog) checkOut = `${extractTime(checkOutLog.timestamp)}:00`;
         } else if (isWeeklyOff && !hasManualOrDeviceLog) {
           status = 'weekly_off';
           statusLabel = 'عطلة أسبوعية';
@@ -643,44 +705,161 @@ export function HRScreen({
           const outTimeStr = extractTime(checkOutLog?.timestamp);
 
           // Scheduled vs Actual check in
-          const schedParts = scheduledCheckIn.split(':').map(Number);
-          const totalSchedMin = schedParts[0] * 60 + (schedParts[1] || 0);
-
           const inParts = inTimeStr.split(':').map(Number);
           const actualInMin = inParts[0] * 60 + (inParts[1] || 0);
 
-          // Delay calculation based on customized HR settings
-          if (actualInMin > totalSchedMin) {
-            const rawDelay = actualInMin - totalSchedMin;
-            const delayGrace = hrConfig.delayGraceMinutes ?? 15;
-            const absenceThresholdMin = (hrConfig.delayAbsenceThresholdHours || 2) * 60;
-            const isDelayFixed = hrConfig.delayDeductionType === 'fixed_amount';
+          const remainingFreeMinutes = Math.max(0, maxMonthlyPermissionMinutes - accumulatedPermissionMinutes);
+          const isDelayFixed = hrConfig.delayDeductionType === 'fixed_amount';
+          const absenceThresholdMin = (hrConfig.delayAbsenceThresholdHours || 2) * 60;
 
-            if (rawDelay > delayGrace) {
-              delayMinutes = rawDelay;
-              if (delayMinutes >= absenceThresholdMin) {
-                status = 'absent';
-                statusLabel = `تأخير (${delayMinutes} د - غياب)`;
-                absenceDeduction = dailyRate * absenceMultiplier;
-              } else if (delayMinutes >= (hrConfig.delayTier4StartMin ?? 61)) {
-                const tierVal = hrConfig.delayTier4Deduction ?? 50;
-                delayDeduction = isDelayFixed ? tierVal : (dailyRate * tierVal / 100);
-                statusLabel = `تأخير (${delayMinutes} د)`;
-              } else if (delayMinutes >= (hrConfig.delayTier3StartMin ?? 46)) {
-                const tierVal = hrConfig.delayTier3Deduction ?? 25;
-                delayDeduction = isDelayFixed ? tierVal : (dailyRate * tierVal / 100);
-                statusLabel = `تأخير (${delayMinutes} د)`;
-              } else if (delayMinutes >= (hrConfig.delayTier2StartMin ?? 31)) {
-                const tierVal = hrConfig.delayTier2Deduction ?? 15;
-                delayDeduction = isDelayFixed ? tierVal : (dailyRate * tierVal / 100);
-                statusLabel = `تأخير (${delayMinutes} د)`;
-              } else if (delayMinutes >= (hrConfig.delayTier1StartMin ?? 15)) {
-                const tierVal = hrConfig.delayTier1Deduction ?? 5;
-                delayDeduction = isDelayFixed ? tierVal : (dailyRate * tierVal / 100);
-                statusLabel = `تأخير (${delayMinutes} د)`;
+          // معالجة إذن بداية الدوام (الحالات 1، 2، 3، 4)
+          if (shiftStartPermission) {
+            const permDur = Number(shiftStartPermission.durationMinutes) || 0;
+            const pEndParts = shiftStartPermission.endTime.split(':').map(Number);
+            const permEndMin = pEndParts[0] * 60 + (pEndParts[1] || 0);
+            const isOnTime = actualInMin <= permEndMin;
+            const hasBalance = shiftStartPermission.isExcused || (remainingFreeMinutes >= permDur);
+
+            if (hasBalance && isOnTime) {
+              // الحالة 1: إذن ببداية الدوام مع توفر رصيد (حضور متوافق)
+              if (!shiftStartPermission.isExcused) accumulatedPermissionMinutes += permDur;
+              permissionMinutes += permDur;
+              permissionExcusedMinutes += permDur;
+              permissionDeduction = 0;
+              delayMinutes = 0;
+              delayDeduction = 0;
+              statusLabel = 'حضور (إذن برصيد)';
+            } else if (hasBalance && !isOnTime) {
+              // الحالة 2: إذن ببداية الدوام مع توفر رصيد (حضور متأخر)
+              if (!shiftStartPermission.isExcused) accumulatedPermissionMinutes += permDur;
+              permissionMinutes += permDur;
+              permissionExcusedMinutes += permDur;
+              permissionDeduction = 0;
+
+              const rawDelay = actualInMin - permEndMin;
+              if (rawDelay > delayGrace) {
+                delayMinutes = rawDelay;
+                if (delayMinutes >= absenceThresholdMin) {
+                  status = 'absent';
+                  statusLabel = `تأخير بعد الإذن (${delayMinutes} د - غياب)`;
+                  absenceDeduction = dailyRate * absenceMultiplier;
+                } else if (delayMinutes >= (hrConfig.delayTier4StartMin ?? 61)) {
+                  const tierVal = hrConfig.delayTier4Deduction ?? 50;
+                  delayDeduction = isDelayFixed ? tierVal : (dailyRate * tierVal / 100);
+                  statusLabel = `تأخير بعد الإذن (${delayMinutes} د)`;
+                } else if (delayMinutes >= (hrConfig.delayTier3StartMin ?? 46)) {
+                  const tierVal = hrConfig.delayTier3Deduction ?? 25;
+                  delayDeduction = isDelayFixed ? tierVal : (dailyRate * tierVal / 100);
+                  statusLabel = `تأخير بعد الإذن (${delayMinutes} د)`;
+                } else if (delayMinutes >= (hrConfig.delayTier2StartMin ?? 31)) {
+                  const tierVal = hrConfig.delayTier2Deduction ?? 15;
+                  delayDeduction = isDelayFixed ? tierVal : (dailyRate * tierVal / 100);
+                  statusLabel = `تأخير بعد الإذن (${delayMinutes} د)`;
+                } else if (delayMinutes >= (hrConfig.delayTier1StartMin ?? 15)) {
+                  const tierVal = hrConfig.delayTier1Deduction ?? 5;
+                  delayDeduction = isDelayFixed ? tierVal : (dailyRate * tierVal / 100);
+                  statusLabel = `تأخير بعد الإذن (${delayMinutes} د)`;
+                }
+              }
+            } else if (!hasBalance && isOnTime) {
+              // الحالة 3: إذن ببداية الدوام بدون رصيد (حضور متوافق)
+              const freePart = Math.max(0, remainingFreeMinutes);
+              const unpaidPart = permDur - freePart;
+              accumulatedPermissionMinutes += freePart;
+              permissionMinutes += permDur;
+              permissionExcusedMinutes += freePart;
+              permissionDeductedMinutes += unpaidPart;
+              permissionDeduction += unpaidPart * minuteRate;
+              delayMinutes = 0;
+              delayDeduction = 0;
+              statusLabel = `إذن غير مدفوع (${unpaidPart} د)`;
+            } else {
+              // الحالة 4: إذن ببداية الدوام بدون رصيد (حضور متأخر)
+              const freePart = Math.max(0, remainingFreeMinutes);
+              const unpaidPart = permDur - freePart;
+              accumulatedPermissionMinutes += freePart;
+              permissionMinutes += permDur;
+              permissionExcusedMinutes += freePart;
+              permissionDeductedMinutes += unpaidPart;
+
+              const rawLate = actualInMin - permEndMin;
+              permissionDeduction += unpaidPart * minuteRate;
+
+              if (rawLate > delayGrace) {
+                delayMinutes = rawLate;
+                if (delayMinutes >= (hrConfig.delayTier4StartMin ?? 61)) {
+                  const tierVal = hrConfig.delayTier4Deduction ?? 50;
+                  delayDeduction = isDelayFixed ? tierVal : (dailyRate * tierVal / 100);
+                } else if (delayMinutes >= (hrConfig.delayTier3StartMin ?? 46)) {
+                  const tierVal = hrConfig.delayTier3Deduction ?? 25;
+                  delayDeduction = isDelayFixed ? tierVal : (dailyRate * tierVal / 100);
+                } else if (delayMinutes >= (hrConfig.delayTier2StartMin ?? 31)) {
+                  const tierVal = hrConfig.delayTier2Deduction ?? 15;
+                  delayDeduction = isDelayFixed ? tierVal : (dailyRate * tierVal / 100);
+                } else if (delayMinutes >= (hrConfig.delayTier1StartMin ?? 15)) {
+                  const tierVal = hrConfig.delayTier1Deduction ?? 5;
+                  delayDeduction = isDelayFixed ? tierVal : (dailyRate * tierVal / 100);
+                }
+              }
+
+              // تفعيل Trigger الجزاء الإداري
+              administrativeAction = 'warning';
+              administrativeNotes = `إنذار إداري: تأخر وتجاوز موعد الإذن (${rawLate} د) مع نفاد الرصيد`;
+              statusLabel = `تأخير وإذن بدون رصيد (${unpaidPart + delayMinutes} د - إنذار إداري)`;
+            }
+          } else {
+            // لا يوجد إذن بداية دوام: احتساب التأخير الاعتيادي
+            if (actualInMin > totalSchedMin) {
+              const rawDelay = actualInMin - totalSchedMin;
+              if (rawDelay > delayGrace) {
+                delayMinutes = rawDelay;
+                if (delayMinutes >= absenceThresholdMin) {
+                  status = 'absent';
+                  statusLabel = `تأخير (${delayMinutes} د - غياب)`;
+                  absenceDeduction = dailyRate * absenceMultiplier;
+                } else if (delayMinutes >= (hrConfig.delayTier4StartMin ?? 61)) {
+                  const tierVal = hrConfig.delayTier4Deduction ?? 50;
+                  delayDeduction = isDelayFixed ? tierVal : (dailyRate * tierVal / 100);
+                  statusLabel = `تأخير (${delayMinutes} د)`;
+                } else if (delayMinutes >= (hrConfig.delayTier3StartMin ?? 46)) {
+                  const tierVal = hrConfig.delayTier3Deduction ?? 25;
+                  delayDeduction = isDelayFixed ? tierVal : (dailyRate * tierVal / 100);
+                  statusLabel = `تأخير (${delayMinutes} د)`;
+                } else if (delayMinutes >= (hrConfig.delayTier2StartMin ?? 31)) {
+                  const tierVal = hrConfig.delayTier2Deduction ?? 15;
+                  delayDeduction = isDelayFixed ? tierVal : (dailyRate * tierVal / 100);
+                  statusLabel = `تأخير (${delayMinutes} د)`;
+                } else if (delayMinutes >= (hrConfig.delayTier1StartMin ?? 15)) {
+                  const tierVal = hrConfig.delayTier1Deduction ?? 5;
+                  delayDeduction = isDelayFixed ? tierVal : (dailyRate * tierVal / 100);
+                  statusLabel = `تأخير (${delayMinutes} د)`;
+                }
               }
             }
           }
+
+          // الحالة 5: إذن وسط الدوام (Mid-Shift Permissions)
+          const midShiftPerms = dayPermissions.filter(p => p !== shiftStartPermission && p.type !== 'official_mission');
+          midShiftPerms.forEach(p => {
+            const dur = Number(p.durationMinutes) || 0;
+            if (dur <= 0) return;
+            permissionMinutes += dur;
+
+            const currentRemFree = Math.max(0, maxMonthlyPermissionMinutes - accumulatedPermissionMinutes);
+            if (p.isExcused || currentRemFree >= dur) {
+              if (!p.isExcused) accumulatedPermissionMinutes += dur;
+              permissionExcusedMinutes += dur;
+              if (statusLabel === 'حضور') statusLabel = 'حضور (إذن وسط دوام)';
+            } else {
+              const freePart = Math.max(0, currentRemFree);
+              const partialAbsence = dur - freePart;
+              accumulatedPermissionMinutes += freePart;
+              permissionExcusedMinutes += freePart;
+              permissionDeductedMinutes += partialAbsence;
+              permissionDeduction += partialAbsence * minuteRate;
+              statusLabel += ` + غياب جزئي (${partialAbsence} د)`;
+            }
+          });
 
           // Check out & Overtime calculation based on customized HR settings
           const schedOutParts = scheduledCheckOut.split(':').map(Number);
@@ -795,12 +974,15 @@ export function HRScreen({
           checkOut,
           status,
           statusLabel,
-          permissionStart: permission?.startTime,
-          permissionEnd: permission?.endTime,
+          permissionStart: shiftStartPermission?.startTime || permission?.startTime,
+          permissionEnd: shiftStartPermission?.endTime || permission?.endTime,
+          permissionType: isOfficialMission ? 'official_mission' : (shiftStartPermission?.type || permission?.type),
           permissionMinutes,
           permissionExcusedMinutes,
           permissionDeductedMinutes,
           permissionDeduction,
+          administrativeAction,
+          administrativeNotes,
           workedHoursFormatted,
           delayMinutes,
           delayDeduction,
@@ -842,6 +1024,8 @@ export function HRScreen({
       workRevenueSum: acc.workRevenueSum + row.workRevenue,
       commissionSum: acc.commissionSum + row.commissionAmount,
       commissionPaidSum: acc.commissionPaidSum + (row.commissionPaid || 0),
+      administrativeWarningsCount: acc.administrativeWarningsCount + (row.administrativeAction === 'warning' ? 1 : 0),
+      officialMissionsCount: acc.officialMissionsCount + (row.status === 'mission' ? 1 : 0),
       netSum: acc.netSum + row.netDaily
     }), {
       dailyRateSum: 0,
@@ -858,6 +1042,8 @@ export function HRScreen({
       workRevenueSum: 0,
       commissionSum: 0,
       commissionPaidSum: 0,
+      administrativeWarningsCount: 0,
+      officialMissionsCount: 0,
       netSum: 0
     });
   }, [timesheetRows]);
@@ -1340,6 +1526,141 @@ export function HRScreen({
     }
   };
 
+  // Permission (إذن خروج مؤقت ومأموريات) State & Handlers
+  const [showPermissionModal, setShowPermissionModal] = useState(false);
+  const [showPermissionsListModal, setShowPermissionsListModal] = useState(false);
+  const [showPayrollAuditModal, setShowPayrollAuditModal] = useState(false);
+  const [permEmpId, setPermEmpId] = useState('');
+  const [permDate, setPermDate] = useState(now.toISOString().split('T')[0]);
+  const [permType, setPermType] = useState<'shift_start' | 'mid_shift' | 'official_mission'>('shift_start');
+  const [permStartTime, setPermStartTime] = useState('09:00');
+  const [permEndTime, setPermEndTime] = useState('11:00');
+  const [permIsExcused, setPermIsExcused] = useState(true);
+  const [permReason, setPermReason] = useState('إذن بداية الدوام لظرف خاص');
+  const [isSavingPermission, setIsSavingPermission] = useState(false);
+
+  const handleOpenPermissionModal = (targetEmpId?: string, targetDate?: string) => {
+    const defaultEmpId = targetEmpId || (viewMode === 'single_employee' && selectedEmpId) || activeEmployees[0]?.id || '';
+    setPermEmpId(defaultEmpId);
+    setPermDate(targetDate || (viewMode === 'single_day' && selectedSingleDay) || now.toISOString().split('T')[0]);
+    setPermType('shift_start');
+    setPermStartTime('09:00');
+    setPermEndTime('11:00');
+    setPermIsExcused(true);
+    setPermReason('إذن بداية الدوام لظرف خاص');
+    setShowPermissionModal(true);
+  };
+
+  const permDurationMinutes = useMemo(() => {
+    if (!permStartTime || !permEndTime) return 60;
+    const [startH, startM] = permStartTime.split(':').map(Number);
+    const [endH, endM] = permEndTime.split(':').map(Number);
+    let totalMinutes = (endH * 60 + endM) - (startH * 60 + startM);
+    if (totalMinutes <= 0) totalMinutes += 24 * 60; // Cross midnight
+    return Math.max(5, totalMinutes);
+  }, [permStartTime, permEndTime]);
+
+  const selectedPermEmp = useMemo(() => {
+    return employees.find(e => e.id === permEmpId);
+  }, [employees, permEmpId]);
+
+  // Dynamic monthly balance remaining for selected employee in modal
+  const permEmpRemainingBalance = useMemo(() => {
+    if (!permEmpId || !permDate) return (hrConfig.maxMonthlyPermissionHours ?? 2) * 60;
+    const emp = employees.find(e => e.id === permEmpId);
+    if (!emp) return (hrConfig.maxMonthlyPermissionHours ?? 2) * 60;
+    const targetMonthPrefix = permDate.substring(0, 7);
+    const maxFree = (hrConfig.maxMonthlyPermissionHours ?? 2) * 60;
+    let used = 0;
+    (emp.permissionRecords || []).forEach(p => {
+      if (p.date?.startsWith(targetMonthPrefix) && p.type !== 'official_mission' && !p.isExcused) {
+        used += Number(p.durationMinutes) || 0;
+      }
+    });
+    return Math.max(0, maxFree - used);
+  }, [employees, permEmpId, permDate, hrConfig]);
+
+  const handleSavePermission = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!permEmpId) {
+      alert('الرجاء اختيار الموظف');
+      return;
+    }
+    if (!permDate) {
+      alert('الرجاء تحديد تاريخ الإذن');
+      return;
+    }
+
+    const targetEmp = employees.find(e => e.id === permEmpId);
+    if (!targetEmp) {
+      alert('الموظف غير موجود');
+      return;
+    }
+
+    try {
+      setIsSavingPermission(true);
+
+      const newPermRecord: EmployeePermissionRecord = {
+        id: 'PRM-' + Math.random().toString(36).substring(2, 9).toUpperCase(),
+        date: permDate,
+        startTime: permStartTime,
+        endTime: permEndTime,
+        durationMinutes: permDurationMinutes,
+        type: permType,
+        isExcused: permType === 'official_mission' ? true : permIsExcused,
+        status: 'approved',
+        reason: permReason.trim() || (permType === 'official_mission' ? 'مأمورية عمل رسمية خارجية' : 'إذن خروج مؤقت'),
+        approvedBy: currentUser?.name || 'مدير النظام',
+        createdAt: new Date().toISOString()
+      };
+
+      const updatedEmp: Employee = {
+        ...targetEmp,
+        permissionRecords: [...(targetEmp.permissionRecords || []), newPermRecord]
+      };
+
+      if (DB.saveEmployee) {
+        await DB.saveEmployee(updatedEmp);
+      }
+
+      setEmployees(employees.map(e => e.id === targetEmp.id ? updatedEmp : e));
+      setShowPermissionModal(false);
+
+      const durationHours = (permDurationMinutes / 60).toFixed(1);
+      const typeLabel = permType === 'official_mission' ? '💼 مأمورية عمل رسمية خارجية' : (permType === 'shift_start' ? '🌅 إذن بداية الدوام' : '⏱️ إذن وسط الدوام');
+      alert(`✅ تم اعتماد وتسجيل الإذن بنجاح!\n• الموظف: ${targetEmp.name}\n• النوع: ${typeLabel}\n• التاريخ: ${permDate}\n• الفترة: من ${permStartTime} إلى ${permEndTime} (${permDurationMinutes} دقيقة / ${durationHours} ساعة)\n• المعاملة: ${permType === 'official_mission' ? 'مأمورية مدفوعة بدون استهلاك رصيد' : (permIsExcused ? 'مستثنى ومقبول (معفى من الخصم)' : 'يخضع لحساب الرصيد والخصومات')}\n• تم التحديث الفوري في التايم شيت.`);
+    } catch (err: any) {
+      console.error('Error saving permission:', err);
+      alert('حدث خطأ أثناء تسجيل الإذن: ' + (err?.message || 'خطأ غير معروف'));
+    } finally {
+      setIsSavingPermission(false);
+    }
+  };
+
+  const handleDeletePermission = async (empId: string, permId: string) => {
+    if (!confirm('هل أنت متأكد من حذف هذا الإذن؟ سيتم إلغاء أثره من التايم شيت فوراً.')) return;
+
+    const targetEmp = employees.find(e => e.id === empId);
+    if (!targetEmp) return;
+
+    try {
+      const updatedEmp: Employee = {
+        ...targetEmp,
+        permissionRecords: (targetEmp.permissionRecords || []).filter(p => p.id !== permId)
+      };
+
+      if (DB.saveEmployee) {
+        await DB.saveEmployee(updatedEmp);
+      }
+
+      setEmployees(employees.map(e => e.id === targetEmp.id ? updatedEmp : e));
+      alert('✅ تم حذف الإذن بنجاح وتحديث التايم شيت.');
+    } catch (err: any) {
+      console.error('Error deleting permission:', err);
+      alert('حدث خطأ أثناء حذف الإذن: ' + (err?.message || 'خطأ غير معروف'));
+    }
+  };
+
   // Batch Salary Disbursement State
   const [showDisbursementModal, setShowDisbursementModal] = useState(false);
   const [disbursementTreasuryId, setDisbursementTreasuryId] = useState(settings.treasuries[0]?.id || '');
@@ -1590,6 +1911,31 @@ export function HRScreen({
           </button>
 
           <button
+            onClick={() => handleOpenPermissionModal()}
+            className="bg-teal-600 hover:bg-teal-700 text-white px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md shadow-teal-600/20 transition-all cursor-pointer"
+          >
+            <Timer size={15} />
+            <span>تسجيل استئذان ⏱️</span>
+          </button>
+
+          <button
+            onClick={() => setShowPermissionsListModal(true)}
+            className="bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 px-3 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <DoorOpen size={15} className="text-teal-600" />
+            <span>سجل الاستئذانات 🚪</span>
+          </button>
+
+          <button
+            onClick={() => setShowPayrollAuditModal(true)}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md shadow-indigo-600/20 transition-all cursor-pointer"
+            title="مراجعة وتدقيق الاستقطاعات وأرصدة الأذونات قبل اعتماد المسير"
+          >
+            <ShieldCheck size={15} />
+            <span>تدقيق الاستقطاعات والمسير 📑</span>
+          </button>
+
+          <button
             onClick={() => handleOpenCommissionModal()}
             className="bg-amber-600 hover:bg-amber-700 text-white px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md shadow-amber-600/20 transition-all cursor-pointer"
           >
@@ -1720,12 +2066,14 @@ export function HRScreen({
                 const isAbsent = row.status === 'absent';
                 const isTerminated = row.status === 'terminated';
                 const isLeave = row.status === 'paid_leave' || row.status === 'unpaid_leave';
+                const isMission = row.status === 'mission';
 
                 return (
                   <tr 
                     key={idx}
                     className={`hover:bg-slate-50 transition-colors ${
                       isTerminated ? 'bg-slate-200/70 text-slate-500' :
+                      isMission ? 'bg-purple-50/50 text-purple-950' :
                       isOff ? 'bg-emerald-50/40 text-emerald-950' : 
                       isAbsent ? 'bg-rose-50/40' : 
                       isLeave ? 'bg-blue-50/40' : ''
@@ -1831,15 +2179,23 @@ export function HRScreen({
 
                     {/* 7. Status */}
                     <td className="p-2 border-l border-slate-200">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-black ${
-                        isTerminated ? 'bg-slate-400 text-white' :
-                        isOff ? 'bg-emerald-100 text-emerald-800' :
-                        isAbsent ? 'bg-rose-100 text-rose-800' :
-                        isLeave ? 'bg-blue-100 text-blue-800' :
-                        'bg-slate-100 text-slate-700'
-                      }`}>
-                        {row.statusLabel}
-                      </span>
+                      <div className="flex flex-col items-center gap-0.5">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-black ${
+                          isTerminated ? 'bg-slate-400 text-white' :
+                          isMission ? 'bg-purple-100 text-purple-800 border border-purple-200' :
+                          isOff ? 'bg-emerald-100 text-emerald-800' :
+                          isAbsent ? 'bg-rose-100 text-rose-800' :
+                          isLeave ? 'bg-blue-100 text-blue-800' :
+                          'bg-slate-100 text-slate-700'
+                        }`}>
+                          {row.statusLabel}
+                        </span>
+                        {row.administrativeAction === 'warning' && (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 border border-amber-300 text-[9px] font-black" title={row.administrativeNotes}>
+                            ⚠️ إنذار إداري
+                          </span>
+                        )}
+                      </div>
                     </td>
 
                     {/* 8. Permission Start */}
@@ -3418,6 +3774,538 @@ export function HRScreen({
               <button
                 type="button"
                 onClick={() => setShowLeavesListModal(false)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer"
+              >
+                إغلاق
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Permission Registration Modal (تسجيل استئذان خروج مؤقت) */}
+      {showPermissionModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-200" dir="rtl">
+          <div className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-slate-100 max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-5">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-teal-100 text-teal-700 flex items-center justify-center font-bold">
+                  <Timer size={22} />
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-800 text-base">تسجيل إذن خروج مؤقت</h3>
+                  <p className="text-xs text-slate-500">توثيق ساعات الاستئذان واحتساب الخصم في التايم شيت تلقائياً</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPermissionModal(false)}
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center cursor-pointer transition-colors"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSavePermission} className="space-y-4">
+              {/* Target Employee Selection */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">الموظف *</label>
+                <select
+                  value={permEmpId}
+                  onChange={e => setPermEmpId(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-teal-600"
+                  required
+                >
+                  <option value="">-- اختر الموظف --</option>
+                  {activeEmployees.map(emp => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.name} (كود: {emp.fingerprintCode || emp.id})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Monthly Balance Indicator */}
+              {selectedPermEmp && (
+                <div className="p-3 bg-indigo-50/70 border border-indigo-200 rounded-2xl flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck size={16} className="text-indigo-600" />
+                    <span className="font-bold text-indigo-950">رصيد الأذونات المتاح لهذا الشهر:</span>
+                  </div>
+                  <span className={`font-mono font-black px-2.5 py-1 rounded-xl border text-xs ${
+                    permEmpRemainingBalance > 0 ? 'bg-white text-indigo-700 border-indigo-200' : 'bg-rose-100 text-rose-700 border-rose-300'
+                  }`}>
+                    {permEmpRemainingBalance} دقيقة ({(permEmpRemainingBalance / 60).toFixed(1)} ساعة)
+                  </span>
+                </div>
+              )}
+
+              {/* Permission Type Selection */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">نوع الإذن / المأمورية *</label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPermType('shift_start');
+                      setPermStartTime('09:00');
+                      setPermEndTime('11:00');
+                    }}
+                    className={`p-2.5 rounded-xl text-xs font-black transition-all cursor-pointer flex flex-col items-center gap-1 text-center border ${
+                      permType === 'shift_start'
+                        ? 'bg-teal-600 text-white border-teal-600 shadow-xs'
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <span>🌅 بداية الدوام</span>
+                    <span className="text-[10px] font-normal opacity-90">تأخير مصرح به</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPermType('mid_shift');
+                      setPermStartTime('13:00');
+                      setPermEndTime('15:00');
+                    }}
+                    className={`p-2.5 rounded-xl text-xs font-black transition-all cursor-pointer flex flex-col items-center gap-1 text-center border ${
+                      permType === 'mid_shift'
+                        ? 'bg-sky-600 text-white border-sky-600 shadow-xs'
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <span>⏱️ وسط الدوام</span>
+                    <span className="text-[10px] font-normal opacity-90">خروج وعودة</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPermType('official_mission');
+                      setPermIsExcused(true);
+                      setPermReason('مأمورية عمل رسمية خارجية');
+                    }}
+                    className={`p-2.5 rounded-xl text-xs font-black transition-all cursor-pointer flex flex-col items-center gap-1 text-center border ${
+                      permType === 'official_mission'
+                        ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <span>💼 مأمورية رسمية</span>
+                    <span className="text-[10px] font-normal opacity-90">معفاة من الخصم</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Date */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">تاريخ الإذن *</label>
+                <input
+                  type="date"
+                  value={permDate}
+                  onChange={e => setPermDate(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-teal-600"
+                  required
+                />
+              </div>
+
+              {/* Time Range */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">وقت البدء (من) *</label>
+                  <input
+                    type="time"
+                    value={permStartTime}
+                    onChange={e => setPermStartTime(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-teal-600"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">وقت العودة (إلى) *</label>
+                  <input
+                    type="time"
+                    value={permEndTime}
+                    onChange={e => setPermEndTime(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-teal-600"
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Calculated Duration Badge & Warnings */}
+              <div className="space-y-2">
+                <div className="p-3 bg-teal-50 border border-teal-200 rounded-2xl flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Clock size={18} className="text-teal-600" />
+                    <span className="text-xs font-bold text-teal-950">مدة الإذن المحسوبة:</span>
+                  </div>
+                  <span className="text-sm font-black font-mono text-teal-700 bg-white px-3 py-1 rounded-xl border border-teal-100 shadow-2xs">
+                    {permDurationMinutes} دقيقة ({(permDurationMinutes / 60).toFixed(1)} ساعة)
+                  </span>
+                </div>
+
+                {/* Case 6: Warning if duration exceeds 4 hours (240 min) */}
+                {permDurationMinutes > 240 && permType !== 'official_mission' && (
+                  <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-[11px] font-bold flex items-start gap-2">
+                    <AlertTriangle size={16} className="text-rose-600 shrink-0 mt-0.5" />
+                    <span>⚠️ تنبيه لائحي (تجاوز 4 ساعات): تجاوز مدة الاستئذان 4 ساعات في اليوم يترتب عليه برمجياً تحويل اليوم إلى إجازة اعتيادية أو غياب كامل وفقاً للائحة العمل.</span>
+                  </div>
+                )}
+
+                {/* Case 7: Note for official mission */}
+                {permType === 'official_mission' && (
+                  <div className="p-2.5 bg-purple-50 border border-purple-200 rounded-xl text-purple-900 text-[11px] font-bold flex items-start gap-2">
+                    <Briefcase size={16} className="text-purple-600 shrink-0 mt-0.5" />
+                    <span>💼 مأمورية عمل رسمية: لن يتم خصم أي دقائق من رصيد الأذونات، ويُعتبر اليوم دواماً كاملاً مدفوع الأجر في قسيمة الراتب.</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Excused / Unexcused Option */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">حالة الإذن والمسامحة المالية *</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPermIsExcused(true)}
+                    className={`py-2.5 px-3 rounded-xl text-xs font-black transition-all cursor-pointer flex flex-col items-center gap-1 text-center ${
+                      permIsExcused
+                        ? 'bg-teal-600 text-white shadow-sm ring-2 ring-teal-600 ring-offset-1'
+                        : 'bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <span>مقبول ومستثنى (بدون خصم) 🟢</span>
+                    <span className="text-[10px] font-normal opacity-90">لا يتم خصم أي مبلغ من الراتب</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPermIsExcused(false)}
+                    className={`py-2.5 px-3 rounded-xl text-xs font-black transition-all cursor-pointer flex flex-col items-center gap-1 text-center ${
+                      !permIsExcused
+                        ? 'bg-amber-600 text-white shadow-sm ring-2 ring-amber-600 ring-offset-1'
+                        : 'bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <span>غير مستثنى (خاضع للخصم) 🟡</span>
+                    <span className="text-[10px] font-normal opacity-90">يخصم أجر الدقائق الزائدة</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Reason / Notes */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">السبب / الملاحظات</label>
+                <input
+                  type="text"
+                  value={permReason}
+                  onChange={e => setPermReason(e.target.value)}
+                  placeholder="مثال: مراجعة مستشفى / ظرف عائلي طارئ"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-teal-600"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowPermissionModal(false)}
+                  className="flex-1 py-2.5 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingPermission}
+                  className="flex-1 py-2.5 rounded-xl text-xs font-black text-white bg-teal-600 hover:bg-teal-700 flex items-center justify-center gap-1.5 shadow-md shadow-teal-600/20 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  <Timer size={14} />
+                  <span>{isSavingPermission ? 'جارٍ الحفظ...' : 'تأكيد واعتماد الإذن ⏱️'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Permissions History & Cancellation Modal (سجل الاستئذانات) */}
+      {showPermissionsListModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-200" dir="rtl">
+          <div className="bg-white rounded-3xl p-6 max-w-3xl w-full shadow-2xl border border-slate-100 max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-teal-100 text-teal-700 flex items-center justify-center font-bold">
+                  <DoorOpen size={22} />
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-800 text-base">سجل أذونات واستئذانات الموظفين</h3>
+                  <p className="text-xs text-slate-500">عرض جميع الاستئذانات المسجلة مع إمكانية الحذف والإلغاء</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPermissionsListModal(false)}
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center cursor-pointer transition-colors"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+              {(() => {
+                const allPermissions: { emp: Employee; perm: EmployeePermissionRecord }[] = [];
+                employees.forEach(e => {
+                  (e.permissionRecords || []).forEach(p => {
+                    allPermissions.push({ emp: e, perm: p });
+                  });
+                });
+
+                if (allPermissions.length === 0) {
+                  return (
+                    <div className="text-center py-12 text-slate-400">
+                      <DoorOpen size={48} className="mx-auto mb-2 opacity-30" />
+                      <p className="font-bold text-sm">لا توجد أي أذونات استئذان مسجلة حالياً</p>
+                      <p className="text-xs mt-1">يمكنك إضافة إذن جديد بالضغط على زر "تسجيل استئذان ⏱️"</p>
+                    </div>
+                  );
+                }
+
+                // Sort newest date first
+                allPermissions.sort((a, b) => b.perm.date.localeCompare(a.perm.date));
+
+                return allPermissions.map(({ emp, perm }) => (
+                  <div
+                    key={perm.id}
+                    className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 hover:bg-slate-100/70 transition-colors"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-black text-slate-900 text-sm">{emp.name}</span>
+                        <span className="text-[11px] font-mono text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200">
+                          كود: {emp.fingerprintCode || emp.id}
+                        </span>
+                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                          perm.type === 'official_mission' ? 'bg-purple-100 text-purple-800 border border-purple-200' :
+                          perm.type === 'shift_start' ? 'bg-teal-100 text-teal-800 border border-teal-200' :
+                          'bg-sky-100 text-sky-800 border border-sky-200'
+                        }`}>
+                          {perm.type === 'official_mission' ? '💼 مأمورية رسمية' : perm.type === 'shift_start' ? '🌅 بداية الدوام' : '⏱️ وسط الدوام'}
+                        </span>
+                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                          perm.isExcused ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                        }`}>
+                          {perm.isExcused ? 'مستثنى ومقبول' : 'خاضع للخصم'}
+                        </span>
+                      </div>
+
+                      <div className="text-xs text-slate-600 flex items-center gap-2 flex-wrap">
+                        <span className="font-bold">التاريخ:</span>
+                        <span className="font-mono text-slate-800 bg-white px-1.5 py-0.5 rounded border border-slate-200">
+                          {perm.date}
+                        </span>
+                        <span className="font-bold">الوقت:</span>
+                        <span className="font-mono text-slate-800 bg-white px-1.5 py-0.5 rounded border border-slate-200">
+                          {perm.startTime} إلى {perm.endTime}
+                        </span>
+                        <span className="font-bold text-teal-700 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-100">
+                          ({perm.durationMinutes} دقيقة)
+                        </span>
+                      </div>
+
+                      {perm.reason && (
+                        <div className="text-[11px] text-slate-500">
+                          <span className="font-semibold">السبب:</span> {perm.reason}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2 self-end sm:self-center">
+                      <button
+                        type="button"
+                        onClick={() => handleDeletePermission(emp.id, perm.id)}
+                        className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 border border-rose-200 rounded-xl px-3 py-1.5 text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                      >
+                        <Trash2 size={13} />
+                        <span>حذف الإذن</span>
+                      </button>
+                    </div>
+                  </div>
+                ));
+              })()}
+            </div>
+
+            <div className="pt-4 border-t border-slate-100 flex justify-between items-center mt-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPermissionsListModal(false);
+                  handleOpenPermissionModal();
+                }}
+                className="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+              >
+                <Plus size={14} />
+                <span>إضافة إذن جديد</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowPermissionsListModal(false)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer"
+              >
+                إغلاق
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Payroll Deductions & Permissions Audit Modal (لوحة تدقيق ومراجعة الاستقطاعات والمسير) */}
+      {showPayrollAuditModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-200" dir="rtl">
+          <div className="bg-white rounded-3xl p-6 max-w-5xl w-full shadow-2xl border border-slate-100 max-h-[92vh] flex flex-col">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold">
+                  <ShieldCheck size={22} />
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-800 text-base">لوحة تدقيق ومراجعة الاستقطاعات ومسير الرواتب</h3>
+                  <p className="text-xs text-slate-500">فحص وتدقيق استقطاعات الأذونات، التأخيرات، الغياب، والإنذارات الإدارية قبل اعتماد وإغلاق المسير</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPayrollAuditModal(false)}
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center cursor-pointer transition-colors"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Quick KPI Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4">
+              <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                <p className="text-[11px] font-bold text-slate-500">ساعات الأذونات</p>
+                <p className="text-base font-black text-teal-700 font-mono mt-0.5">
+                  {(totals.permissionMinutesSum / 60).toFixed(1)} س ({totals.permissionMinutesSum} د)
+                </p>
+              </div>
+
+              <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                <p className="text-[11px] font-bold text-slate-500">خصم الأذونات (بدون رصيد)</p>
+                <p className="text-base font-black text-rose-600 font-mono mt-0.5">
+                  {totals.permissionDeductionSum.toFixed(2)} {settings.currency}
+                </p>
+              </div>
+
+              <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                <p className="text-[11px] font-bold text-slate-500">خصم التأخيرات</p>
+                <p className="text-base font-black text-rose-600 font-mono mt-0.5">
+                  {totals.delayDeductionSum.toFixed(2)} {settings.currency}
+                </p>
+              </div>
+
+              <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                <p className="text-[11px] font-bold text-slate-500">خصم الغياب</p>
+                <p className="text-base font-black text-rose-700 font-mono mt-0.5">
+                  {totals.absenceDeductionSum.toFixed(2)} {settings.currency}
+                </p>
+              </div>
+
+              <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                <p className="text-[11px] font-bold text-slate-500">صافي المسير المستحق</p>
+                <p className="text-base font-black text-emerald-700 font-mono mt-0.5">
+                  {totals.netSum.toFixed(2)} {settings.currency}
+                </p>
+              </div>
+            </div>
+
+            {/* Audit Table */}
+            <div className="flex-1 overflow-y-auto border border-slate-200 rounded-2xl">
+              <table className="w-full text-center text-xs border-collapse">
+                <thead className="bg-slate-800 text-white font-black sticky top-0">
+                  <tr>
+                    <th className="p-2.5 border-l border-slate-700">الموظف</th>
+                    <th className="p-2.5 border-l border-slate-700">الراتب الأساسي</th>
+                    <th className="p-2.5 border-l border-slate-700">أيام الحضور</th>
+                    <th className="p-2.5 border-l border-slate-700">دقائق الإذن</th>
+                    <th className="p-2.5 border-l border-slate-700">خصم الإذن</th>
+                    <th className="p-2.5 border-l border-slate-700">خصم التأخير</th>
+                    <th className="p-2.5 border-l border-slate-700">خصم الغياب</th>
+                    <th className="p-2.5 border-l border-slate-700">إنذارات وجزاءات</th>
+                    <th className="p-2.5">الصافي المستحق</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {activeEmployees.map(emp => {
+                    const empRows = timesheetRows.filter(r => r.employee.id === emp.id);
+                    const presentCount = empRows.filter(r => r.status === 'regular' || r.status === 'mission').length;
+                    const permMins = empRows.reduce((sum, r) => sum + r.permissionMinutes, 0);
+                    const permDed = empRows.reduce((sum, r) => sum + r.permissionDeduction, 0);
+                    const delayDed = empRows.reduce((sum, r) => sum + r.delayDeduction, 0);
+                    const absenceDed = empRows.reduce((sum, r) => sum + r.absenceDeduction, 0);
+                    const warningsCount = empRows.filter(r => r.administrativeAction === 'warning').length;
+                    const netEmp = empRows.reduce((sum, r) => sum + r.netDaily, 0);
+
+                    return (
+                      <tr key={emp.id} className="hover:bg-slate-50 transition-colors font-medium">
+                        <td className="p-2 border-l border-slate-200 text-right pr-3 font-bold text-slate-900">
+                          {emp.name}
+                        </td>
+                        <td className="p-2 border-l border-slate-200 font-mono">
+                          {emp.baseSalary?.toFixed(2)}
+                        </td>
+                        <td className="p-2 border-l border-slate-200 font-bold text-emerald-700">
+                          {presentCount} يوم
+                        </td>
+                        <td className="p-2 border-l border-slate-200 font-mono text-teal-700">
+                          {permMins} د
+                        </td>
+                        <td className={`p-2 border-l border-slate-200 font-mono font-bold ${permDed > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
+                          {permDed > 0 ? `-${permDed.toFixed(2)}` : '-'}
+                        </td>
+                        <td className={`p-2 border-l border-slate-200 font-mono font-bold ${delayDed > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
+                          {delayDed > 0 ? `-${delayDed.toFixed(2)}` : '-'}
+                        </td>
+                        <td className={`p-2 border-l border-slate-200 font-mono font-bold ${absenceDed > 0 ? 'text-rose-700' : 'text-slate-400'}`}>
+                          {absenceDed > 0 ? `-${absenceDed.toFixed(2)}` : '-'}
+                        </td>
+                        <td className="p-2 border-l border-slate-200">
+                          {warningsCount > 0 ? (
+                            <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-black border border-amber-300">
+                              {warningsCount} إنذار
+                            </span>
+                          ) : (
+                            <span className="text-emerald-600 text-xs">لا يوجد</span>
+                          )}
+                        </td>
+                        <td className="p-2 font-mono font-black text-indigo-700 bg-indigo-50/40">
+                          {netEmp.toFixed(2)} {settings.currency}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Footer */}
+            <div className="pt-4 border-t border-slate-100 flex justify-between items-center mt-3">
+              <button
+                type="button"
+                onClick={() => {
+                  window.print();
+                }}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+              >
+                <Printer size={14} />
+                <span>طباعة تقرير التدقيق 🖨️</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowPayrollAuditModal(false)}
                 className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer"
               >
                 إغلاق

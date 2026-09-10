@@ -83,18 +83,69 @@ export function EmployeeAnalyticsScreen({
     return activeEmployees.map(emp => {
       let revenue = 0;
       let serviceCount = 0;
+      let invoiceExecutionCommission = 0;
+      let invoiceReferralCommission = 0;
 
       filteredInvoices.forEach(inv => {
+        const totalBeforeDiscount = (inv.items || []).reduce((s, item) => s + (Number(item.price || 0) * (item.quantity || 1)), 0);
+        const discount = Number(inv.discount) || 0;
+        const discountRatio = totalBeforeDiscount > 0 ? (discount / totalBeforeDiscount) : 0;
+
         inv.items?.forEach(item => {
+          const qty = item.quantity || 1;
+          const rawItemPrice = (Number(item.price) || 0) * qty;
+          const effectivePrice = Math.max(0, rawItemPrice - (rawItemPrice * discountRatio));
+
+          // A) Execution (تنفيذ الخدمة أو بيع المنتج)
           if (item.employeeId === emp.id || item.technicianName === emp.name) {
-            const qty = item.quantity || 1;
-            revenue += (item.price || 0) * qty;
+            revenue += effectivePrice;
             serviceCount += qty;
+
+            // In-line execution commission if explicitly specified on item
+            const itemExecComm = (item as any).employeeCommission || (item as any).commissionAmount || (item as any).commission || 0;
+            if (itemExecComm > 0) {
+              invoiceExecutionCommission += Number(itemExecComm) * qty;
+            }
+          }
+
+          // B) Referral / Opening job (فتح الشغل / إحالة الخدمة)
+          if (
+            (item.referralEmployeeId && item.referralEmployeeId === emp.id) ||
+            (!item.referralEmployeeId && item.referralEmployeeName && item.referralEmployeeName === emp.name)
+          ) {
+            const refComm = (item.referralCommissionAmount !== undefined && item.referralCommissionAmount > 0)
+              ? (Number(item.referralCommissionAmount) * qty)
+              : 0;
+            invoiceReferralCommission += refComm;
           }
         });
       });
 
-      const commissions = calculateEmployeeCommission(emp, revenue);
+      // Model-based calculation on net work revenue (if not already fully captured per-item)
+      const modelCommission = (emp.salaryType === 'commission_only' || emp.allowDualCommission || (emp.commissionRate && emp.commissionRate > 0) || emp.commissionModel === 'tiered_brackets' || emp.commissionModel === 'target_based' || emp.commissionModel === 'fixed_rate')
+        ? calculateEmployeeCommission(emp, revenue)
+        : 0;
+
+      // Base execution commission: higher of per-item sum or model-based calculation
+      const executionCommission = Math.max(invoiceExecutionCommission, modelCommission);
+
+      // Financial records (direct commissions, referral commissions recorded via financial_records)
+      let finDirectCommissions = 0;
+      let finReferralCommissions = 0;
+
+      emp.financialRecords?.filter(r => {
+        if (!r.date) return false;
+        const d = r.date.split('T')[0];
+        return d >= startDate && d <= endDate;
+      }).forEach(r => {
+        if (r.type === 'commission') finDirectCommissions += (r.amount || 0);
+        if (r.type === 'referral_commission') finReferralCommissions += (r.amount || 0);
+      });
+
+      // Avoid double-counting referral & execution commissions between invoice items and financial records
+      const totalReferralComm = Math.max(invoiceReferralCommission, finReferralCommissions);
+      const totalExecutionComm = Math.max(executionCommission, finDirectCommissions);
+      const totalCommissions = totalExecutionComm + totalReferralComm;
 
       // Advances (سلف)
       const advances = filteredTransactions
@@ -131,7 +182,10 @@ export function EmployeeAnalyticsScreen({
         revenue,
         serviceCount,
         commissionRate: emp.commissionRate || 0,
-        commissions,
+        commissionModel: emp.commissionModel || 'none',
+        executionCommission: totalExecutionComm,
+        referralCommission: totalReferralComm,
+        commissions: totalCommissions,
         totalAdvances,
         bookingsCount,
         delayMinutes,
@@ -198,12 +252,14 @@ export function EmployeeAnalyticsScreen({
 
           <button
             onClick={() => {
-              const headers = ['الموظف', 'المسمى الوظيفي', 'الراتب الأساسي', 'إجمالي الإيرادات', 'العمولات', 'السلف', 'الحجوزات'];
+              const headers = ['الموظف', 'المسمى الوظيفي', 'الراتب الأساسي', 'إجمالي الإيرادات', 'عمولة التنفيذ', 'عمولة الإحالة', 'إجمالي العمولات', 'السلف', 'الحجوزات'];
               const rows = staffPerformance.map(s => [
                 s.name,
                 s.role,
                 s.baseSalary,
                 s.revenue,
+                s.executionCommission,
+                s.referralCommission,
                 s.commissions,
                 s.totalAdvances,
                 s.bookingsCount
@@ -359,7 +415,14 @@ export function EmployeeAnalyticsScreen({
                     {/* Commission */}
                     <div className="space-y-1">
                       <div className="flex justify-between text-slate-600">
-                        <span>العمولات المستحقة:</span>
+                        <span className="flex items-center gap-1">
+                          <span>العمولات المستحقة:</span>
+                          {(emp.executionCommission > 0 || emp.referralCommission > 0) && (
+                            <span className="text-[10px] text-slate-400 font-normal">
+                              ({emp.executionCommission.toFixed(1)} تنفيذ {emp.referralCommission > 0 ? `+ ${emp.referralCommission.toFixed(1)} إحالة` : ''})
+                            </span>
+                          )}
+                        </span>
                         <span className="font-mono text-amber-600">{emp.commissions.toFixed(2)} {settings.currency}</span>
                       </div>
                       <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">

@@ -272,8 +272,18 @@ export interface EmployeePermissionRecord {
   startTime: string;
   endTime: string;
   durationMinutes: number;
-  isExcused?: boolean;
+  type?: 'shift_start' | 'mid_shift' | 'official_mission'; // نوع الإذن: بداية الدوام، وسط الدوام، مأمورية عمل
+  actualStartTime?: string; // وقت الخروج الفعلي بالبصمة
+  actualEndTime?: string; // وقت العودة الفعلي بالبصمة
+  actualDurationMinutes?: number; // المدة الفعلية المستغرقة بالدقائق
+  isExcused?: boolean; // إذن معفى/مقبول رسمي
   reason?: string;
+  status?: 'approved' | 'pending' | 'rejected' | 'auto_converted';
+  deductionAction?: 'balance_deducted' | 'unpaid_delay' | 'partial_absence' | 'converted_leave' | 'converted_absence' | 'mission_exempt';
+  administrativeAction?: 'none' | 'warning' | 'penalty';
+  administrativeNotes?: string;
+  approvedBy?: string;
+  createdAt?: string;
 }
 
 export interface EndOfServiceRecord {
@@ -334,6 +344,9 @@ export interface HRSettings {
   // Monthly Permissions Rules (قواعد ورصيد الاستئذان الشهري)
   maxMonthlyPermissions?: number; // الحد الأقصى لعدد الأذونات شهرياً
   maxMonthlyPermissionHours: number; // الحد الأقصى لساعات الاستئذان المسموح بها شهرياً بدون خصم (مثال: ساعتين)
+  maxDailyPermissionHours?: number; // الحد الأقصى اليومي المسموح به لساعات الاستئذان في اليوم الواحد (افتراضياً 4 ساعات)
+  permissionOverstayAction?: 'annual_leave' | 'unpaid_absence'; // الإجراء التلقائي عند تجاوز الحد اليومي أو عدم العودة
+  triggerAdministrativePenaltyOnDelayWithoutBalance?: boolean; // تفعيل جزاء إداري عند التأخر بدون رصيد
   permissionDeductionRate?: 'exact_minute_rate' | 'hourly_rate';
 
   weeklyOffPaid: boolean;
@@ -828,12 +841,20 @@ export interface Invoice {
 export interface Partner {
   id: string;
   salonId?: string;
+  tenantId?: string;
   name: string;
   phone: string;
   idNumber?: string;
-  capitalShare: number; // حصة رأس المال
-  sharePercentage: number; // النسبة المئوية من إجمالي رأس المال
+  status: 'active' | 'exiting' | 'exited' | 'suspended'; // حالة الشريك
+  capitalShare: number; // حصة رأس المال المدفوعة الفعلية
+  sharePercentage: number; // النسبة المئوية الدقيقة من إجمالي رأس المال %
+  maxDrawingsCap?: number; // سقف السحوبات المسموح كسلف على الأرباح
+  debitBalance?: number; // رصيد ذمم مدين مرحّل (مستحق السداد للصالون)
+  totalWithdrawn?: number; // إجمالي المسحوبات
+  totalProfitReceived?: number; // إجمالي الأرباح المستلمة
+  openingBalance?: number;
   joinDate: string;
+  exitDate?: string;
   notes?: string;
   isActive: boolean;
 }
@@ -841,6 +862,7 @@ export interface Partner {
 export interface PartnerTransaction {
   id: string;
   salonId?: string;
+  tenantId?: string;
   partnerId: string;
   partnerName: string;
   type: 'deposit' | 'withdrawal' | 'profit_share'; // إيداع رأس مال / مسحوبات شريك / توزيع أرباح
@@ -850,6 +872,61 @@ export interface PartnerTransaction {
   treasuryName?: string;
   description: string;
   createdBy?: string;
+}
+
+export interface PartnerDrawing {
+  id: string;
+  salonId?: string;
+  tenantId?: string;
+  partnerId: string;
+  partnerName?: string;
+  amount: number;
+  drawingDate: string;
+  drawingType: 'profit_advance' | 'personal_drawing' | 'emergency';
+  treasuryId?: string;
+  treasuryName?: string;
+  notes?: string;
+  createdBy?: string;
+  isSettled: boolean;
+  settlementId?: string;
+}
+
+export interface ProfitDistribution {
+  id: string;
+  salonId?: string;
+  tenantId?: string;
+  partnerId: string;
+  partnerName?: string;
+  periodStart: string;
+  periodEnd: string;
+  periodLabel: string;
+  distributableProfitPool: number;
+  partnerSharePercentage: number;
+  grossProfitShare: number;
+  drawingsDeducted: number;
+  priorDebitDeducted: number;
+  netPayableAmount: number;
+  carriedDebitBalance: number;
+  status: 'draft' | 'approved' | 'paid' | 'carried_forward';
+  distributionDate: string;
+  approvedBy?: string;
+  notes?: string;
+}
+
+export interface PartnerExitInstallment {
+  id: string;
+  salonId?: string;
+  tenantId?: string;
+  partnerId: string;
+  partnerName?: string;
+  installmentNumber: number;
+  dueDate: string;
+  amount: number;
+  status: 'pending' | 'paid' | 'overdue' | 'cancelled';
+  paidAt?: string;
+  treasuryId?: string;
+  paymentReference?: string;
+  notes?: string;
 }
 
 // ============================================================
@@ -1074,4 +1151,67 @@ export interface ItemMovement {
   quantityOut: number;
   balanceAfter: number;
   notes?: string;
+}
+
+// ==============================================================================
+// 💳 وحدة الاشتراكات والفوترة والباقات (Subscription & Billing Module)
+// ==============================================================================
+export type BillingCycle = '1m' | '3m' | '6m' | '12m';
+export type BillingCurrency = 'EGP' | 'USD';
+
+export interface SubscriptionPlan {
+  id: string; // 'starter' | 'growth' | 'enterprise'
+  planNameAr: string;
+  planNameEn: string;
+  descriptionAr?: string;
+  minEmployees: number;
+  maxEmployees: number; // 5, 10, 9999
+  priceEgp1m: number;
+  priceEgp3m: number;
+  priceEgp6m: number;
+  priceEgp12m: number;
+  priceUsd1m: number;
+  priceUsd3m: number;
+  priceUsd6m: number;
+  priceUsd12m: number;
+  features?: string[];
+  isPopular?: boolean;
+  isActive?: boolean;
+  displayOrder?: number;
+}
+
+export interface SubscriptionAddon {
+  id: string; // 'branch_license'
+  addonName: string;
+  addonNameAr: string;
+  addonType: string;
+  maxEmployeesPerBranch: number;
+  priceEgp1m: number;
+  priceEgp3m: number;
+  priceEgp6m: number;
+  priceEgp12m: number;
+  priceUsd1m: number;
+  priceUsd3m: number;
+  priceUsd6m: number;
+  priceUsd12m: number;
+  descriptionAr?: string;
+  isActive?: boolean;
+}
+
+export interface TenantSubscriptionRecord {
+  id?: string;
+  tenantId: string;
+  salonId?: string;
+  planId: string;
+  status: 'trial' | 'active' | 'expired' | 'suspended' | 'cancelled';
+  startDate: string;
+  endDate: string;
+  totalBranches: number;
+  totalEmployees: number;
+  billingCycle?: BillingCycle;
+  currency?: BillingCurrency;
+  paidAmount?: number;
+  paymentMethod?: string;
+  notes?: string;
+  updatedAt?: string;
 }
