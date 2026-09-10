@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SmartCut - مزامنة أجهزة البصمة (ZK & Hikvision)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Cairo', sans-serif; }
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen">
+  <div class="max-w-6xl mx-auto p-4 md:p-6 space-y-6">
+    
+    <!-- Header Banner -->
+    <header class="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center font-black text-2xl shadow-lg shadow-indigo-600/30">
+          ⏱️
+        </div>
+        <div>
+          <h1 class="text-xl font-black text-slate-900">برنامج مزامنة أجهزة البصمة - SmartCut Sync Agent</h1>
+          <p class="text-xs text-slate-500 mt-0.5">سحب بصمات ZKTeco و Hikvision وإرسالها آلياً إلى قاعدة بيانات سوبابيز بدون تكرار</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <span id="serviceStatusBadge" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black bg-emerald-50 text-emerald-700 border border-emerald-200">
+          <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          الخدمة قيد التشغيل في الخلفية
+        </span>
+      </div>
+    </header>
+
+    <!-- Main Grid -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+      <!-- Left Column: Settings Form -->
+      <div class="lg:col-span-2 space-y-6">
+        
+        <!-- 1. Salon & Branch Isolation -->
+        <section class="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-4">
+          <div class="border-b border-slate-100 pb-3">
+            <h2 class="font-black text-sm text-slate-900 flex items-center gap-2">
+              <span class="text-indigo-600">🏢</span> ربط الصالون والفرع (إدخال الأكواد الإلزامية)
+            </h2>
+            <p class="text-[11px] text-slate-500 mt-1">
+              انسخ هذه الأكواد من <strong>شاشة الإعدادات في نظام الصالون</strong> وضعها هنا مرة واحدة، وسيتم حفظها وإرسالها تلقائياً مع كل بصمة لمنع تداخل البيانات نهائياً.
+            </p>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">
+                كود الصالون الإلزامي (Salon ID) *
+              </label>
+              <input 
+                type="text" 
+                id="salonIdInput" 
+                placeholder="مثال: efe26426-934d-4607-9c0e-58c2eff24955" 
+                class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-mono font-bold text-slate-800 outline-none focus:border-indigo-600 focus:bg-white tracking-wide"
+                required
+              >
+              <span class="text-[10px] text-slate-400 mt-1 block">تحديده يضمن وصول البصمات إلى حساب صالونك فقط</span>
+            </div>
+
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">
+                كود الفرع (Branch ID) *
+              </label>
+              <input 
+                type="text" 
+                id="branchIdInput" 
+                placeholder="مثال: 2a56acf8-42ae-4c92-932f-31ea42db2817" 
+                class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-mono font-bold text-slate-800 outline-none focus:border-indigo-600 focus:bg-white tracking-wide"
+                required
+              >
+              <span class="text-[10px] text-slate-400 mt-1 block">كود الفرع الذي يتواجد به جهاز البصمة الفعلي</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- 2. Hardware Device Config -->
+        <section class="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-4">
+          <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+            <h2 class="font-black text-sm text-slate-900 flex items-center gap-2">
+              <span class="text-indigo-600">🔌</span> إعدادات جهاز البصمة (Hardware Device)
+            </h2>
+            <button onclick="testDeviceConnection()" type="button" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 transition-colors">
+              <span>فحص الاتصال بالجهاز ⚡</span>
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">نوع وموديل الجهاز:</label>
+              <select id="deviceBrand" onchange="toggleDeviceBrandFields()" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-indigo-600">
+                <option value="zkteco">ZKTeco (UDP/TCP Port 4370)</option>
+                <option value="hikvision">Hikvision (ISAPI Protocol)</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">عنوان الآي بي (IP Address):</label>
+              <input type="text" id="deviceIp" placeholder="192.168.1.201" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-800 outline-none focus:border-indigo-600 text-center">
+            </div>
+
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">رقم المنفذ (Port):</label>
+              <input type="number" id="devicePort" placeholder="4370" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-800 outline-none focus:border-indigo-600 text-center">
+            </div>
+
+            <!-- Hikvision Specific Fields -->
+            <div id="hikFieldsUser" class="hidden">
+              <label class="block text-xs font-bold text-slate-700 mb-1">اسم مستخدم الجهاز:</label>
+              <input type="text" id="deviceUsername" value="admin" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 outline-none focus:border-indigo-600">
+            </div>
+
+            <div id="hikFieldsPass" class="hidden">
+              <label class="block text-xs font-bold text-slate-700 mb-1">كلمة مرور الجهاز:</label>
+              <input type="password" id="devicePassword" placeholder="••••••••" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 outline-none focus:border-indigo-600">
+            </div>
+          </div>
+        </section>
+
+        <!-- 3. Smart Time-Window In/Out Classification (IMPORTANT FEATURE) -->
+        <section class="bg-amber-50/50 p-5 rounded-3xl border border-amber-200 shadow-xs space-y-4">
+          <div class="border-b border-amber-200/80 pb-3">
+            <h2 class="font-black text-sm text-amber-950 flex items-center gap-2">
+              <span>⏰</span> قاعدة التمييز التلقائي بين الحضور والانصراف (حسب ساعات الدوام)
+            </h2>
+            <p class="text-[11px] text-amber-800 mt-1">
+              حل مشكلة نسيان الموظفين لتغيير وضع الجهاز (In/Out): يتم تصنيف البصمة كـ <strong>حضور</strong> خلال ساعات معينة، و <strong>انصراف</strong> خلال باقي الساعات تلقائياً.
+            </p>
+          </div>
+
+          <div class="space-y-3">
+            <div class="flex items-center gap-2">
+              <input type="checkbox" id="useTimeWindowRules" checked class="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 border-amber-300">
+              <label for="useTimeWindowRules" class="text-xs font-black text-amber-950 cursor-pointer">
+                تفعيل قاعدة النطاق الزمني الذكي للتفريق بين الحضور والانصراف
+              </label>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white p-4 rounded-2xl border border-amber-200">
+              <div>
+                <label class="block text-xs font-bold text-slate-700 mb-1">بداية نافذة الحضور (صباحاً):</label>
+                <input type="time" id="checkInStartHour" value="07:00" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-800 text-center">
+                <span class="text-[10px] text-slate-400">مثال: من 07:00 ص تبدأ بصمات الحضور</span>
+              </div>
+
+              <div>
+                <label class="block text-xs font-bold text-slate-700 mb-1">نهاية نافذة الحضور (مساءً):</label>
+                <input type="time" id="checkInEndHour" value="19:00" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-800 text-center">
+                <span class="text-[10px] text-slate-400">مثال: حتى 07:00 م (بعد هذا الوقت يعتبر انصراف)</span>
+              </div>
+            </div>
+
+            <div class="p-3 bg-amber-100/60 rounded-xl text-xs text-amber-900 font-semibold leading-relaxed">
+              💡 <strong>كيف ستعمل البصمات وفق هذا الإعداد:</strong><br>
+              • أي بصمة بين <strong><span id="previewInStart">07:00 ص</span></strong> و <strong><span id="previewInEnd">07:00 م</span></strong> تُسجل تلقائياً <strong class="text-emerald-700">حضور (Check-In)</strong>.<br>
+              • أي بصمة بعد <strong><span id="previewOutStart">07:00 م</span></strong> وحتى الصباح تُسجل تلقائياً <strong class="text-rose-700">انصراف (Check-Out)</strong>.
+            </div>
+          </div>
+        </section>
+
+        <!-- 4. Sync Settings & Manual Sync Trigger -->
+        <section class="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-4">
+          <h2 class="font-black text-sm text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-3">
+            <span class="text-indigo-600">⚡</span> السحب اليدوي والمزامنة التلقائية
+          </h2>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">فترة المزامنة الدورية (بالدقائق):</label>
+              <input type="number" id="syncIntervalMinutes" min="1" max="1440" value="5" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-800 text-center">
+            </div>
+
+            <div class="flex items-center gap-2 pb-2">
+              <input type="checkbox" id="isAutoSyncEnabled" checked class="w-4 h-4 rounded text-indigo-600">
+              <label for="isAutoSyncEnabled" class="text-xs font-bold text-slate-800 cursor-pointer">
+                مزامنة تلقائية في الخلفية
+              </label>
+            </div>
+
+            <div>
+              <button onclick="saveAllSettings()" type="button" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs py-2.5 rounded-xl shadow-md shadow-indigo-600/20 transition-colors">
+                حفظ الإعدادات 💾
+              </button>
+            </div>
+          </div>
+
+          <!-- Manual Range Sync -->
+          <div class="pt-4 border-t border-slate-100 space-y-2">
+            <span class="text-xs font-bold text-slate-700 block">سحب يدوي مخصص لفترة تاريخية محددة:</span>
+            <div class="flex flex-wrap items-center gap-3">
+              <div class="flex items-center gap-1.5">
+                <span class="text-xs text-slate-500 font-bold">من:</span>
+                <input type="date" id="manualFromDate" class="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-mono font-bold text-slate-800">
+              </div>
+              <div class="flex items-center gap-1.5">
+                <span class="text-xs text-slate-500 font-bold">إلى:</span>
+                <input type="date" id="manualToDate" class="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-mono font-bold text-slate-800">
+              </div>
+              <button onclick="triggerManualSync()" type="button" id="syncBtn" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black px-5 py-2 rounded-xl shadow-md shadow-emerald-600/20 flex items-center gap-1.5 transition-colors cursor-pointer">
+                <span>سحب ومزامنة الآن 🚀</span>
+              </button>
+            </div>
+          </div>
+        </section>
+
+      </div>
+
+      <!-- Right Column: Live Status & Activity Logs -->
+      <div class="space-y-6">
+        
+        <!-- Live Status Card -->
+        <div class="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-3">
+          <h3 class="font-black text-sm text-slate-900 border-b border-slate-100 pb-2 flex items-center gap-2">
+            <span>📊</span> حالة النظام المباشرة
+          </h3>
+
+          <div class="space-y-2 text-xs">
+            <div class="flex justify-between py-1 border-b border-slate-50">
+              <span class="text-slate-500">آخر مزامنة:</span>
+              <span id="lastSyncTime" class="font-mono font-bold text-slate-800">لم تتم بعد</span>
+            </div>
+            <div class="flex justify-between py-1 border-b border-slate-50">
+              <span class="text-slate-500">حالة آخر عملية:</span>
+              <span id="lastSyncStatus" class="font-bold text-slate-700">جاهز</span>
+            </div>
+            <div class="flex justify-between py-1 border-b border-slate-50">
+              <span class="text-slate-500">منع التكرار:</span>
+              <span class="font-bold text-emerald-600">مفعّل بنسبة 100% 🛡️</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Live Activity Log -->
+        <div class="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-3">
+          <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+            <h3 class="font-black text-sm text-slate-900 flex items-center gap-2">
+              <span>📋</span> سجل العمليات الحي (Live Logs)
+            </h3>
+            <button onclick="refreshData()" class="text-[11px] font-bold text-indigo-600 hover:underline">
+              تحديث
+            </button>
+          </div>
+
+          <div id="logsContainer" class="h-96 overflow-y-auto custom-scrollbar space-y-2 text-xs font-mono">
+            <div class="p-2 text-slate-400 text-center">جاري تحميل السجلات...</div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+  <script>
+    let allSalons = [];
+    let allBranches = [];
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    document.getElementById('manualFromDate').value = todayStr;
+    document.getElementById('manualToDate').value = todayStr;
+
+    async function loadData() {
+      try {
+        const res = await fetch('/api/config');
+        const data = await res.json();
+        const cfg = data.config;
+
+        document.getElementById('salonIdInput').value = cfg.salonId || '';
+        document.getElementById('branchIdInput').value = cfg.branchId || '';
+        document.getElementById('deviceBrand').value = cfg.deviceBrand || 'zkteco';
+        document.getElementById('deviceIp').value = cfg.deviceIp || '192.168.1.201';
+        document.getElementById('devicePort').value = cfg.devicePort || 4370;
+        document.getElementById('deviceUsername').value = cfg.deviceUsername || 'admin';
+        document.getElementById('devicePassword').value = cfg.devicePassword || '';
+        document.getElementById('syncIntervalMinutes').value = cfg.syncIntervalMinutes || 5;
+        document.getElementById('isAutoSyncEnabled').checked = cfg.isAutoSyncEnabled !== false;
+
+        document.getElementById('useTimeWindowRules').checked = cfg.useTimeWindowRules !== false;
+        document.getElementById('checkInStartHour').value = cfg.checkInStartHour || '07:00';
+        document.getElementById('checkInEndHour').value = cfg.checkInEndHour || '19:00';
+
+        document.getElementById('lastSyncTime').innerText = cfg.lastSyncTime ? new Date(cfg.lastSyncTime).toLocaleTimeString('ar-EG') : 'لم تتم بعد';
+        document.getElementById('lastSyncStatus').innerText = cfg.lastSyncStatus || 'جاهز';
+
+        toggleDeviceBrandFields();
+        updateTimeWindowPreviews();
+        renderLogs(data.logs || []);
+      } catch (err) {
+        console.error('Error loading config:', err);
+      }
+    }
+
+    function toggleDeviceBrandFields() {
+      const brand = document.getElementById('deviceBrand').value;
+      const hikUser = document.getElementById('hikFieldsUser');
+      const hikPass = document.getElementById('hikFieldsPass');
+      const portInput = document.getElementById('devicePort');
+
+      if (brand === 'hikvision') {
+        hikUser.classList.remove('hidden');
+        hikPass.classList.remove('hidden');
+        if (portInput.value === '4370') portInput.value = '80';
+      } else {
+        hikUser.classList.add('hidden');
+        hikPass.classList.add('hidden');
+        if (portInput.value === '80') portInput.value = '4370';
+      }
+    }
+
+    function updateTimeWindowPreviews() {
+      const inStart = document.getElementById('checkInStartHour').value || '07:00';
+      const inEnd = document.getElementById('checkInEndHour').value || '19:00';
+      document.getElementById('previewInStart').innerText = inStart;
+      document.getElementById('previewInEnd').innerText = inEnd;
+      document.getElementById('previewOutStart').innerText = inEnd;
+    }
+
+    document.getElementById('checkInStartHour').addEventListener('change', updateTimeWindowPreviews);
+    document.getElementById('checkInEndHour').addEventListener('change', updateTimeWindowPreviews);
+
+    async function saveAllSettings() {
+      const payload = {
+        salonId: document.getElementById('salonIdInput').value.trim(),
+        branchId: document.getElementById('branchIdInput').value.trim(),
+        deviceBrand: document.getElementById('deviceBrand').value,
+        deviceIp: document.getElementById('deviceIp').value.trim(),
+        devicePort: Number(document.getElementById('devicePort').value),
+        deviceUsername: document.getElementById('deviceUsername').value.trim(),
+        devicePassword: document.getElementById('devicePassword').value,
+        syncIntervalMinutes: Number(document.getElementById('syncIntervalMinutes').value),
+        isAutoSyncEnabled: document.getElementById('isAutoSyncEnabled').checked,
+        useTimeWindowRules: document.getElementById('useTimeWindowRules').checked,
+        checkInStartHour: document.getElementById('checkInStartHour').value,
+        checkInEndHour: document.getElementById('checkInEndHour').value
+      };
+
+      try {
+        const res = await fetch('/api/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const d = await res.json();
+        if (d.success) {
+          alert('✅ تم حفظ الإعدادات بنجاح وتشغيل المزامنة بالبيانات الجديدة.');
+          refreshData();
+        }
+      } catch (e) {
+        alert('حدث خطأ أثناء حفظ الإعدادات: ' + e.message);
+      }
+    }
+
+    async function testDeviceConnection() {
+      const payload = {
+        deviceBrand: document.getElementById('deviceBrand').value,
+        deviceIp: document.getElementById('deviceIp').value.trim(),
+        devicePort: Number(document.getElementById('devicePort').value),
+        deviceUsername: document.getElementById('deviceUsername').value.trim(),
+        devicePassword: document.getElementById('devicePassword').value
+      };
+
+      try {
+        const res = await fetch('/api/test-device', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const d = await res.json();
+        if (d.success) {
+          alert(d.message);
+        } else {
+          alert('❌ فشل الاتصال: ' + d.message);
+        }
+      } catch (e) {
+        alert('❌ خطأ في الاتصال: ' + e.message);
+      }
+    }
+
+    async function triggerManualSync() {
+      const fromDate = document.getElementById('manualFromDate').value;
+      const toDate = document.getElementById('manualToDate').value;
+      const syncBtn = document.getElementById('syncBtn');
+
+      syncBtn.disabled = true;
+      syncBtn.innerText = 'جاري السحب... ⏳';
+
+      try {
+        const res = await fetch('/api/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fromDate, toDate })
+        });
+        const d = await res.json();
+        if (d.success) {
+          const r = d.result;
+          alert(`✅ تمت المزامنة بنجاح!\n\n• إجمالي البصمات المسحوبة من الجهاز: ${r.totalPulled}\n• بصمات جديدة رُفعت لسوبابيز: ${r.newUploaded}\n• بصمات مكررة تم تخطيها لمنع التكرار: ${r.duplicatesSkipped}`);
+          refreshData();
+        } else {
+          alert('❌ فشل المزامنة: ' + d.message);
+        }
+      } catch (e) {
+        alert('❌ خطأ أثناء المزامنة: ' + e.message);
+      } finally {
+        syncBtn.disabled = false;
+        syncBtn.innerText = 'سحب ومزامنة الآن 🚀';
+      }
+    }
+
+    async function refreshData() {
+      const res = await fetch('/api/config');
+      const data = await res.json();
+      const cfg = data.config;
+      document.getElementById('lastSyncTime').innerText = cfg.lastSyncTime ? new Date(cfg.lastSyncTime).toLocaleTimeString('ar-EG') : 'لم تتم بعد';
+      document.getElementById('lastSyncStatus').innerText = cfg.lastSyncStatus || 'جاهز';
+      renderLogs(data.logs || []);
+    }
+
+    function renderLogs(logs) {
+      const cont = document.getElementById('logsContainer');
+      if (!logs || logs.length === 0) {
+        cont.innerHTML = '<div class="p-3 text-slate-400 text-center">لا توجد سجلات بعد</div>';
+        return;
+      }
+      cont.innerHTML = logs.map(l => {
+        const bg = l.type === 'success' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
+                   l.type === 'error' ? 'bg-rose-50 text-rose-800 border-rose-200' :
+                   l.type === 'warn' ? 'bg-amber-50 text-amber-800 border-amber-200' :
+                   'bg-slate-50 text-slate-700 border-slate-200';
+        return `
+          <div class="p-2.5 rounded-xl border text-[11px] leading-relaxed ${bg}">
+            <div class="flex items-center justify-between text-[10px] opacity-70 mb-0.5">
+              <span>${l.time}</span>
+              <span>[${l.type.toUpperCase()}]</span>
+            </div>
+            <div>${l.message}</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // Auto-refresh logs every 10 seconds
+    setInterval(refreshData, 10000);
+    loadData();
+  </script>
+</body>
+</html>

@@ -117,8 +117,8 @@ export function IncomeReportReceipt({
   const tCount = treasuries.length;
 
   return (
-    <div className="w-[297mm] mx-auto bg-white text-black p-4 text-[9px] font-sans" id="print-income-receipt" style={{ direction: 'rtl' }}>
-      <div className="text-center border-b border-black pb-2 mb-2">
+    <div className="w-max min-w-full mx-auto bg-white text-black p-4 text-[9px] font-sans print:w-[297mm] print:min-w-0 print:p-0" id="print-income-receipt" style={{ direction: 'rtl' }}>
+      <div className="text-center border-b border-black pb-2 mb-3">
         {settings.logoUrl && (
           <img src={settings.logoUrl} alt="Logo" className="w-16 h-16 mx-auto mb-1 object-contain grayscale" />
         )}
@@ -128,8 +128,8 @@ export function IncomeReportReceipt({
         <p className="text-[10px]">المستخدم: {userName}</p>
       </div>
 
-      <div className="mb-2 overflow-hidden">
-        <table className="w-full text-center border-collapse border border-black text-[8px]">
+      <div className="mb-2 overflow-x-auto">
+        <table className="w-full text-center border-collapse border border-black text-[8px] whitespace-nowrap">
           <thead>
             <tr>
               <th className="border border-black p-1" rowSpan={2}>التاريخ</th>

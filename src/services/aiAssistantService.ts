@@ -2,7 +2,7 @@ import {
   AppSettings, Employee, Invoice, Booking, Transaction, Client, 
   ServiceItem, Product, AIChatMessage 
 } from '../types';
-import { calculateEmployeeCommission } from '../utils/commissionHelper';
+import { calculateEmployeeCommission, getCommissionModelLabel } from '../utils/commissionHelper';
 
 export interface SystemDataContext {
   settings: AppSettings;
@@ -460,7 +460,7 @@ export async function processAIChatMessage(
     const netSalary = Math.max(0, (baseSalary + commissions + bonuses) - (advances + penalties));
 
     return {
-      message: `💰 **كشف مستحقات وصافي راتب الموظف (${targetEmp.name}):**\n\n- **الفترة:** ${monthName} ${year}\n- **نظام الراتب:** ${targetEmp.salaryType === 'commission_only' ? 'بالعمولة فقط' : targetEmp.salaryType === 'salary_plus_commission' ? 'راتب + عمولة' : 'راتب أساسي ثابت'}\n\n💵 **تفاصيل البنود المالية:**\n- **الراتب الأساسي:** ${baseSalary.toFixed(2)} ${context.settings.currency}\n- **إجمالي المبيعات المحققة:** ${totalSales.toFixed(2)} ${context.settings.currency}\n- **العمولة المستحقة (${targetEmp.commissionModel === 'tiered_brackets' ? 'شرائح متدرجة' : `${targetEmp.commissionRate || 10}%`}):** +${commissions.toFixed(2)} ${context.settings.currency}\n- **المكافآت والبدلات:** +${bonuses.toFixed(2)} ${context.settings.currency}\n- **السلف والمسحوبات:** -${advances.toFixed(2)} ${context.settings.currency}\n- **الخصومات والجزاءات:** -${penalties.toFixed(2)} ${context.settings.currency}\n\n💎 **الصافي النهائي المستحق للصرف:** **${netSalary.toFixed(2)} ${context.settings.currency}**`,
+      message: `💰 **كشف مستحقات وصافي راتب الموظف (${targetEmp.name}):**\n\n- **الفترة:** ${monthName} ${year}\n- **نظام الراتب:** ${targetEmp.salaryType === 'commission_only' ? 'بالعمولة فقط' : targetEmp.salaryType === 'salary_plus_commission' ? 'راتب + عمولة' : 'راتب أساسي ثابت'}\n\n💵 **تفاصيل البنود المالية:**\n- **الراتب الأساسي:** ${baseSalary.toFixed(2)} ${context.settings.currency}\n- **إجمالي المبيعات المحققة:** ${totalSales.toFixed(2)} ${context.settings.currency}\n- **العمولة المستحقة (${getCommissionModelLabel(targetEmp)}):** +${commissions.toFixed(2)} ${context.settings.currency}\n- **المكافآت والبدلات:** +${bonuses.toFixed(2)} ${context.settings.currency}\n- **السلف والمسحوبات:** -${advances.toFixed(2)} ${context.settings.currency}\n- **الخصومات والجزاءات:** -${penalties.toFixed(2)} ${context.settings.currency}\n\n💎 **الصافي النهائي المستحق للصرف:** **${netSalary.toFixed(2)} ${context.settings.currency}**`,
       actionCard: {
         type: 'stats_summary',
         title: `صافي راتب ${targetEmp.name}: ${netSalary.toFixed(2)} ${context.settings.currency}`,
@@ -645,7 +645,7 @@ export async function processAIChatMessage(
     const totalEmpSales = empInvoices.reduce((s, i) => s + (i.finalTotal || i.total || 0), 0);
 
     return {
-      message: `👤 **ملف الموظف (${matchedEmp.name}):**\n\n- **المسمى الوظيفي:** ${matchedEmp.role}\n- **كود البصمة:** #${matchedEmp.fingerprintCode || matchedEmp.id}\n- **الراتب الأساسي:** ${matchedEmp.baseSalary?.toFixed(2) || '0.00'} ${context.settings.currency}\n- **نسبة / نظام العمولة:** ${matchedEmp.commissionModel === 'tiered_brackets' ? 'شرائح متدرجة' : `${matchedEmp.commissionRate || 10}%`}\n- **إجمالي المبيعات المحققة في النظام:** ${totalEmpSales.toFixed(2)} ${context.settings.currency}\n- **رصيد الإجازات المتبقي:** ${matchedEmp.availableVacations || 21} يوم\n\n💡 *يمكنك أن تسألني عن غياباته، راتب شهر محدد، أو حجوزاته القادمة!*`,
+      message: `👤 **ملف الموظف (${matchedEmp.name}):**\n\n- **المسمى الوظيفي:** ${matchedEmp.role}\n- **كود البصمة:** #${matchedEmp.fingerprintCode || matchedEmp.id}\n- **الراتب الأساسي:** ${matchedEmp.baseSalary?.toFixed(2) || '0.00'} ${context.settings.currency}\n- **نسبة / نظام العمولة:** ${getCommissionModelLabel(matchedEmp)}\n- **إجمالي المبيعات المحققة في النظام:** ${totalEmpSales.toFixed(2)} ${context.settings.currency}\n- **رصيد الإجازات المتبقي:** ${matchedEmp.availableVacations || 21} يوم\n\n💡 *يمكنك أن تسألني عن غياباته، راتب شهر محدد، أو حجوزاته القادمة!*`,
       actionCard: {
         type: 'stats_summary',
         title: `الموظف: ${matchedEmp.name}`,

@@ -96,6 +96,8 @@ export function SettingsScreen({
 
   // SaaS Online Booking Link & QR Code State
   const [copiedBookingLink, setCopiedBookingLink] = useState(false);
+  const [copiedSalonId, setCopiedSalonId] = useState(false);
+  const [copiedBranchId, setCopiedBranchId] = useState(false);
   const salonCode = settings.salonCode || settings.salonId || '10a5n';
 
   const generateNewSalonCode = () => {
@@ -369,6 +371,25 @@ export function SettingsScreen({
 
   useEffect(() => {
     setUsers(AuthService.getUsers());
+    const targetSalonId = settings.salonId || currentUser?.salonId;
+    if (targetSalonId) {
+      DB.fetchSettings(targetSalonId).then(dbSettings => {
+        if (dbSettings) {
+          setSettings(prev => ({
+            ...prev,
+            ...dbSettings,
+            salonId: targetSalonId,
+            treasuries: (Array.isArray(dbSettings.treasuries) && dbSettings.treasuries.length > 0) ? dbSettings.treasuries : prev.treasuries,
+            expenseCategories: (Array.isArray(dbSettings.expenseCategories) && dbSettings.expenseCategories.length > 0) ? dbSettings.expenseCategories : prev.expenseCategories
+          }));
+        }
+      });
+      DB.fetchCategories(targetSalonId).then(dbCats => {
+        if (dbCats && dbCats.length > 0) {
+          setCategories(dbCats);
+        }
+      });
+    }
   }, []);
 
   const handleUpdateSettings = (updates: Partial<AppSettings>) => {
@@ -551,13 +572,14 @@ export function SettingsScreen({
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     try {
       localStorage.setItem('smartcut_app_settings', JSON.stringify(settings));
-      if (settings.salonId) {
+      const targetSalonId = settings.salonId || currentUser?.salonId;
+      if (targetSalonId) {
         const instName = settings.evolutionInstanceName || settings.waInstantName;
         const apiKeyVal = settings.evolutionApiKey || settings.waApiKey;
-        SubscriptionService.updateSalon(settings.salonId, {
+        SubscriptionService.updateSalon(targetSalonId, {
           name: settings.salonName,
           salonType: settings.salonType,
           phone: settings.phone,
@@ -566,7 +588,15 @@ export function SettingsScreen({
           evolutionInstanceName: instName,
           evolutionApiKey: apiKeyVal
         });
-        DB.saveSettings(settings.salonId, settings);
+        await DB.saveSettings(targetSalonId, settings);
+        
+        // Save categories to Supabase
+        if (categories && categories.length > 0) {
+          const validCats = categories.filter(c => c.id !== 'all');
+          for (const c of validCats) {
+            await DB.saveCategory(c, targetSalonId);
+          }
+        }
       }
     } catch (e) {
       console.error(e);
@@ -575,16 +605,23 @@ export function SettingsScreen({
     setTimeout(() => setShowSuccess(false), 3000);
   };
 
-  
-  
-  const addCategory = () => {
+  const addCategory = async () => {
     if(!newCategoryName) return;
+    const targetSalonId = settings.salonId || currentUser?.salonId;
     if (editingCategoryId) {
-      setCategories(categories.map(c => c.id === editingCategoryId ? { ...c, name: newCategoryName, type: newCategoryType } : c));
+      const existing = categories.find(c => c.id === editingCategoryId);
+      const updatedCat: Category = { ...existing, id: editingCategoryId, name: newCategoryName, type: newCategoryType, salonId: targetSalonId } as Category;
+      setCategories(categories.map(c => c.id === editingCategoryId ? updatedCat : c));
+      if (targetSalonId) {
+        await DB.saveCategory(updatedCat, targetSalonId);
+      }
       setEditingCategoryId(null);
     } else {
-      const newC: Category = { id: 'CAT-' + Math.random().toString(36).substring(2,9), name: newCategoryName, type: newCategoryType };
+      const newC: Category = { id: 'CAT-' + Math.random().toString(36).substring(2,9), name: newCategoryName, type: newCategoryType, salonId: targetSalonId };
       setCategories([...categories, newC]);
+      if (targetSalonId) {
+        await DB.saveCategory(newC, targetSalonId);
+      }
     }
     setNewCategoryName('');
   };
@@ -595,19 +632,22 @@ export function SettingsScreen({
     setNewCategoryType(c.type || 'service');
   };
 
-  const deleteCategory = (id: string) => {
+  const deleteCategory = async (id: string) => {
     setCategories(categories.filter(c => c.id !== id));
+    await DB.deleteCategory(id);
   };
 
   const addTreasury = () => {
     if(!newTreasuryName) return;
     const newT: Treasury = { id: Math.random().toString(36).substring(2,9), name: newTreasuryName, isMain: false };
-    handleChange('treasuries', [...settings.treasuries, newT]);
+    const updatedTreasuries = [...settings.treasuries, newT];
+    handleChange('treasuries', updatedTreasuries);
     setNewTreasuryName('');
   };
 
   const deleteTreasury = (id: string) => {
-    handleChange('treasuries', settings.treasuries.filter(t => t.id !== id));
+    const updatedTreasuries = settings.treasuries.filter(t => t.id !== id);
+    handleChange('treasuries', updatedTreasuries);
   };
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -662,6 +702,108 @@ export function SettingsScreen({
       </div>
 
       <div className="grid gap-5">
+        {/* Salon ID & Branch ID Integration Card (For Attendance & External Sync) */}
+        {(() => {
+          const currentSalonId = settings.salonId || currentUser?.salonId || 'غير محدد';
+          const currentBranchId = activeBranchId || branches.find(b => b.isMain)?.id || branches[0]?.id || (settings as any).branchId || 'غير محدد';
+          const currentBranchName = branches.find(b => b.id === currentBranchId)?.name || 'الفرع الرئيسي';
+
+          return (
+            <div className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white rounded-2xl p-5 shadow-md border border-indigo-900/50">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-white/10 pb-3 mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 flex items-center justify-center font-black text-lg">
+                    🔑
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-white flex items-center gap-2">
+                      <span>أكواد الربط والمزامنة السحابية (Salon & Branch Sync IDs)</span>
+                      <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-500/30 font-bold">
+                        لأجهزة البصمة والخدمات الخارجية
+                      </span>
+                    </h3>
+                    <p className="text-[11px] text-slate-300 mt-0.5">
+                      استخدم هذه الأكواد في <strong>برنامج سحب البصمات (SmartCut Sync Agent)</strong> لربط الحضور مباشرة بالصالون والفرع بدون تداخل
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Salon ID */}
+                <div className="bg-white/5 border border-white/10 rounded-xl p-3.5 space-y-1.5">
+                  <div className="flex items-center justify-between text-xs font-bold text-slate-300">
+                    <span className="flex items-center gap-1.5">
+                      <span>🏢</span>
+                      <span>كود الصالون (Salon ID):</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (currentSalonId && currentSalonId !== 'غير محدد') {
+                          navigator.clipboard.writeText(currentSalonId);
+                          setCopiedSalonId(true);
+                          setTimeout(() => setCopiedSalonId(false), 2500);
+                        }
+                      }}
+                      className="text-[11px] bg-indigo-600 hover:bg-indigo-500 text-white px-2.5 py-1 rounded-lg font-bold transition-all flex items-center gap-1 cursor-pointer"
+                    >
+                      {copiedSalonId ? (
+                        <>
+                          <Check size={12} className="text-emerald-300" />
+                          <span>تم النسخ ✓</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>نسخ الكود 📋</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <div className="bg-black/30 px-3 py-2 rounded-lg font-mono text-xs text-indigo-200 select-all font-bold tracking-wider break-all border border-white/5">
+                    {currentSalonId}
+                  </div>
+                </div>
+
+                {/* Branch ID */}
+                <div className="bg-white/5 border border-white/10 rounded-xl p-3.5 space-y-1.5">
+                  <div className="flex items-center justify-between text-xs font-bold text-slate-300">
+                    <span className="flex items-center gap-1.5">
+                      <span>📍</span>
+                      <span>كود الفرع النشط ({currentBranchName}):</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (currentBranchId && currentBranchId !== 'غير محدد') {
+                          navigator.clipboard.writeText(currentBranchId);
+                          setCopiedBranchId(true);
+                          setTimeout(() => setCopiedBranchId(false), 2500);
+                        }
+                      }}
+                      className="text-[11px] bg-indigo-600 hover:bg-indigo-500 text-white px-2.5 py-1 rounded-lg font-bold transition-all flex items-center gap-1 cursor-pointer"
+                    >
+                      {copiedBranchId ? (
+                        <>
+                          <Check size={12} className="text-emerald-300" />
+                          <span>تم النسخ ✓</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>نسخ الكود 📋</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <div className="bg-black/30 px-3 py-2 rounded-lg font-mono text-xs text-indigo-200 select-all font-bold tracking-wider break-all border border-white/5">
+                    {currentBranchId}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
         {/* Basic Salon Info */}
         <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
           <div className="flex items-center gap-2 mb-4 border-b border-slate-100 pb-3">
@@ -1590,7 +1732,9 @@ export function SettingsScreen({
             delayAbsenceThresholdHours: 2,
             maxMonthlyPermissions: 2,
             maxMonthlyPermissionHours: 2,
-            weeklyOffPaid: true
+            weeklyOffPaid: true,
+            weeklyOffPaidType: 'paid',
+            absenceDeductionDays: 1
           };
 
           const updateHr = (key: string, value: any) => {
@@ -1926,22 +2070,6 @@ export function SettingsScreen({
                     </div>
                     <p className="text-[10px] text-slate-500 mt-1">عدد مرات الاستئذان المسموح بها في الشهر الواحد.</p>
                   </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      احتساب أجر العطلة الأسبوعية:
-                    </label>
-                    <label className="flex items-center gap-2 bg-white border border-slate-300 rounded-xl px-3.5 py-2 cursor-pointer mt-0.5">
-                      <input
-                        type="checkbox"
-                        checked={hr.weeklyOffPaid !== false}
-                        onChange={(e) => updateHr('weeklyOffPaid', e.target.checked)}
-                        className="w-4 h-4 accent-indigo-600 rounded cursor-pointer"
-                      />
-                      <span className="text-xs font-bold text-slate-800">يوم العطلة الأسبوعية مدفوع الأجر</span>
-                    </label>
-                    <p className="text-[10px] text-slate-500 mt-1">إذا تم إلغاء التحديد، يخصم أجر أيام العطلة من الراتب الأساسي.</p>
-                  </div>
                 </div>
 
                 <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-200 text-xs text-emerald-950 font-bold flex items-center gap-2">
@@ -1949,6 +2077,65 @@ export function SettingsScreen({
                   <span>
                     <strong>آلية الخصم عند تجاوز الحد الشهري:</strong> يتم احتساب الدقائق الزائدة عن رصيد الساعتين المسموح به شهرياً، وتخصم كل دقيقة إضافية بسعر الدقيقة الفعلي للموظف في ذلك اليوم (بناءً على راتبه الأساسي المعتمد في ذلك التاريخ مقسوماً على 8 ساعات و60 دقيقة).
                   </span>
+                </div>
+              </div>
+
+              {/* SECTION 4: ABSENCE & WEEKLY OFF RULES (قواعد خصم الغياب والإجازة الأسبوعية) */}
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80 space-y-4">
+                <div className="flex items-center gap-2 border-b border-slate-200/60 pb-2.5">
+                  <span className="text-sm font-black text-slate-800">🏖️ قواعد خصم الغياب والإجازة الأسبوعية (Absence & Weekly Off Rules)</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Absence Deduction Days */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      خصم غياب اليوم (عدد أيام الخصم عند الغياب) *:
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.5"
+                        value={hr.absenceDeductionDays ?? 1}
+                        onChange={(e) => updateHr('absenceDeductionDays', Number(e.target.value))}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono font-black text-slate-800 outline-none focus:border-indigo-600"
+                      />
+                      <span className="absolute left-3 top-2 text-xs font-bold text-slate-400">يوم خصم / يوم غياب</span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      <strong>الافتراضي (1):</strong> يخصم أجر اليوم فقط ويكون مستحق اليوم 0.
+                      <br />
+                      <strong>عند كتابة (2):</strong> يخصم اليوم ويخصم يوماً إضافياً كجزاء فيكون المستحق اليوم -1 يومية (مثال: إذا كانت اليومية 300 يخصم 600 ويصبح الصافي -300).
+                    </p>
+                  </div>
+
+                  {/* Weekly Off Type */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      نوع الإجازة / العطلة الأسبوعية:
+                    </label>
+                    <select
+                      value={hr.weeklyOffPaidType || (hr.weeklyOffPaid !== false ? 'paid' : 'unpaid')}
+                      onChange={(e) => {
+                        const val = e.target.value as 'paid' | 'unpaid';
+                        handleChange('hrSettings', {
+                          ...hr,
+                          weeklyOffPaidType: val,
+                          weeklyOffPaid: val === 'paid'
+                        });
+                      }}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-indigo-600"
+                    >
+                      <option value="paid">مدفوعة الأجر (على حساب الصالون / المحل)</option>
+                      <option value="unpaid">غير مدفوعة (تخصم من الراتب / لا يستحق أجر عنها)</option>
+                    </select>
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      {hr.weeklyOffPaidType === 'unpaid' 
+                        ? 'يوم العطلة الأسبوعية غير مدفوع وسيتم خصم أجر يوميته من إجمالي الراتب.' 
+                        : 'يوم العطلة الأسبوعية مدفوع بالكامل على حساب الصالون ويستحق الموظف أجر اليومية.'}
+                    </p>
+                  </div>
                 </div>
               </div>
 

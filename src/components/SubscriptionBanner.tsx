@@ -8,9 +8,10 @@ interface SubscriptionBannerProps {
   activeBranchId: string;
   onSelectBranch: (branchId: string) => void;
   isCloudConnected: boolean;
-  onOpenOwnerPortal?: () => void;
   salonName?: string;
   currentUser?: AppUser | null;
+  allSalons?: any[];
+  onSelectSalon?: (salonId: string) => void;
 }
 
 export function SubscriptionBanner({ 
@@ -19,22 +20,25 @@ export function SubscriptionBanner({
   activeBranchId, 
   onSelectBranch,
   isCloudConnected,
-  onOpenOwnerPortal,
   salonName,
-  currentUser
+  currentUser,
+  allSalons = [],
+  onSelectSalon
 }: SubscriptionBannerProps) {
   const [showBranchesMenu, setShowBranchesMenu] = useState(false);
+  const [showSalonsMenu, setShowSalonsMenu] = useState(false);
   const [showPlanModal, setShowPlanModal] = useState(false);
 
   // Can this user switch branches? ONLY Master Programmer OR Salon Owner (Admin with no branchId constraint)
   const isOwnerOrProgrammer = currentUser?.role === 'programmer' || currentUser?.role === 'owner' || (currentUser?.role === 'admin' && !currentUser?.branchId);
   const canSwitchBranches = isOwnerOrProgrammer;
+  const canSwitchSalons = allSalons && allSalons.length > 1;
 
-  const currentSalonId = subscription.salonId || currentUser?.salonId;
+  const currentSalonId = currentUser?.salonId || subscription.salonId;
   const filteredBranches = (branches && branches.length > 0)
-    ? branches.filter(b => !currentSalonId || b.salonId === currentSalonId || !b.salonId)
+    ? (currentSalonId ? branches.filter(b => b.salonId === currentSalonId) : branches)
     : [];
-  const effectiveBranches = filteredBranches.length > 0 ? filteredBranches : (branches || []);
+  const effectiveBranches = filteredBranches;
 
   const activeBranch = effectiveBranches.find(b => b.id === activeBranchId) || effectiveBranches[0];
   const nowMidnight = new Date();
@@ -79,7 +83,47 @@ export function SubscriptionBanner({
         {/* Left / Right Start: Organization & Plan */}
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5 font-bold">
-            <span className="text-emerald-400 font-extrabold">{displaySalonName}</span>
+            {canSwitchSalons ? (
+              <div className="relative">
+                <button
+                  onClick={() => setShowSalonsMenu(!showSalonsMenu)}
+                  className="flex items-center gap-1.5 text-emerald-400 hover:text-emerald-300 font-extrabold px-2 py-0.5 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+                  title="انقر للتبديل بين الصالونات المسجلة في السحابة"
+                >
+                  <span>🏠 {displaySalonName}</span>
+                  <ChevronDown size={13} className="text-emerald-500" />
+                </button>
+
+                {showSalonsMenu && (
+                  <div className="absolute right-0 mt-1.5 w-64 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl py-1 z-50 animate-in fade-in zoom-in-95">
+                    <div className="px-3 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-700 flex justify-between items-center">
+                      <span>تبديل الصالون</span>
+                      <span className="text-emerald-400 text-[9px] font-mono">Supabase Cloud</span>
+                    </div>
+                    {allSalons.map((s: any) => (
+                      <button
+                        key={s.id}
+                        onClick={() => {
+                          if (onSelectSalon) onSelectSalon(s.id);
+                          setShowSalonsMenu(false);
+                        }}
+                        className={`w-full text-right px-3 py-2 text-xs flex items-center justify-between hover:bg-slate-700 transition-colors cursor-pointer ${
+                          s.id === currentSalonId ? 'text-emerald-400 font-bold bg-slate-700/60' : 'text-slate-200'
+                        }`}
+                      >
+                        <div className="flex flex-col">
+                          <span className="font-bold">{s.name}</span>
+                          <span className="text-[10px] text-slate-400">{s.code} • {s.country || 'السعودية'}</span>
+                        </div>
+                        {s.id === currentSalonId && <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <span className="text-emerald-400 font-extrabold">{displaySalonName}</span>
+            )}
             <button 
               onClick={() => setShowPlanModal(true)}
               className={`inline-flex items-center gap-1 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow hover:brightness-110 transition-all cursor-pointer ${
@@ -167,18 +211,6 @@ export function SubscriptionBanner({
               <span>فرعك</span>
             </span>
           </div>
-        )}
-
-        {onOpenOwnerPortal && currentUser?.role === 'owner' && (
-          <button
-            onClick={onOpenOwnerPortal}
-            title="الانتقال إلى شاشة المالك التنفيذية (نبض المالك)"
-            className="flex items-center gap-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black px-2.5 py-1 rounded-lg text-xs transition-all shadow-md shadow-amber-500/20 cursor-pointer active:scale-95"
-          >
-            <Smartphone size={13} />
-            <span className="hidden sm:inline">العودة لشاشة المالك</span>
-            <span>👑</span>
-          </button>
         )}
       </div>
 

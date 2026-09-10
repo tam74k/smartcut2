@@ -37,11 +37,28 @@ export function ClientsScreen({
   const [clientForm, setClientForm] = useState({
     name: '',
     phone: '',
+    referredByPhone: '',
     dob: '',
     notes: '',
     loyaltyPoints: 0,
     isVip: false
   });
+
+  // العميل المرشِّح المستنتج من رقم الهاتف المدخل في نافذة إضافة عميل جديد
+  const referrerClientInModal = useMemo(() => {
+    const rawRef = (clientForm.referredByPhone || '').trim();
+    if (!rawRef) return null;
+    const digitsRef = rawRef.replace(/\D/g, '');
+    if (digitsRef.length < 3) return null;
+
+    return clients.find(c => {
+      const p = (c.phone || '').replace(/\D/g, '');
+      if (!p) return false;
+      if (p === digitsRef) return true;
+      if (digitsRef.length >= 7 && (p.endsWith(digitsRef) || digitsRef.endsWith(p))) return true;
+      return false;
+    }) || null;
+  }, [clientForm.referredByPhone, clients]);
 
   // Filtered Clients List
   const filteredClients = useMemo(() => {
@@ -131,12 +148,16 @@ export function ClientsScreen({
   // Save new client
   const handleSaveClient = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!clientForm.name.trim() || !clientForm.phone.trim()) return;
+    const cleanPhone = clientForm.phone.trim();
+    const cleanReferredBy = (clientForm.referredByPhone && clientForm.referredByPhone.trim() !== cleanPhone)
+      ? clientForm.referredByPhone.trim()
+      : undefined;
 
     const newClient: Client = {
       id: 'cli-' + Math.random().toString(36).substring(2, 9),
       name: clientForm.name.trim(),
-      phone: clientForm.phone.trim(),
+      phone: cleanPhone,
+      referredByPhone: cleanReferredBy,
       dob: clientForm.dob || undefined,
       notes: clientForm.notes || undefined,
       loyaltyPoints: Number(clientForm.loyaltyPoints) || 0,
@@ -150,7 +171,7 @@ export function ClientsScreen({
     setClients([...clients, newClient]);
     DB.saveClient(newClient);
     setShowAddModal(false);
-    setClientForm({ name: '', phone: '', dob: '', notes: '', loyaltyPoints: 0, isVip: false });
+    setClientForm({ name: '', phone: '', referredByPhone: '', dob: '', notes: '', loyaltyPoints: 0, isVip: false });
   };
 
   const vipThreshold = settings.vipSettings?.spendingThreshold || 1000;
@@ -963,6 +984,65 @@ export function ClientsScreen({
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-indigo-600 font-bold"
                   dir="ltr"
                 />
+              </div>
+
+              <div>
+                <label className="block font-bold text-amber-800 mb-1 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <span>🎁</span>
+                    <span>رقم جوال العميل الذي رشحه (اختياري)</span>
+                  </span>
+                  {referrerClientInModal && (
+                    <span className="text-[10px] text-emerald-700 font-extrabold bg-emerald-100/90 px-2 py-0.5 rounded-md">
+                      تم التعرف على العميل ✅
+                    </span>
+                  )}
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="رقم جوال العميل المرشِح..."
+                    value={clientForm.referredByPhone}
+                    onChange={e => setClientForm({ ...clientForm, referredByPhone: e.target.value })}
+                    className={`w-full border rounded-xl px-3 py-2 outline-none font-mono font-bold transition-all ${
+                      referrerClientInModal
+                        ? 'border-emerald-500 ring-2 ring-emerald-500/20 bg-emerald-50/40 text-emerald-950'
+                        : 'bg-amber-50/60 border-amber-200 focus:border-amber-500'
+                    }`}
+                    dir="ltr"
+                  />
+                  {clientForm.referredByPhone && (
+                    <button
+                      type="button"
+                      onClick={() => setClientForm({ ...clientForm, referredByPhone: '' })}
+                      className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 p-0.5 rounded-full transition-colors"
+                      title="مسح"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+
+                {clientForm.referredByPhone && clientForm.phone && clientForm.referredByPhone.trim().replace(/\D/g, '') === clientForm.phone.trim().replace(/\D/g, '') && (
+                  <p className="text-[11px] text-red-500 font-bold mt-1">⚠️ لا يمكن إدخال رقم العميل نفسه كمرشِح</p>
+                )}
+
+                {referrerClientInModal && (
+                  <div className="mt-1.5 p-2 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-300 rounded-xl flex items-center justify-between gap-2 text-emerald-950 shadow-2xs">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-6 h-6 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-bold text-[10px] shrink-0">
+                        <User size={13} />
+                      </div>
+                      <div className="min-w-0">
+                        <span className="text-[10px] text-emerald-700 block font-medium leading-none mb-0.5">المرشِّح:</span>
+                        <p className="text-xs font-black text-emerald-950 truncate leading-tight">{referrerClientInModal.name}</p>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-mono font-bold bg-white/90 border border-emerald-200 text-emerald-800 px-1.5 py-0.5 rounded" dir="ltr">
+                      {referrerClientInModal.phone}
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">

@@ -130,7 +130,7 @@ export function EmployeeAnalyticsScreen({
         baseSalary: emp.baseSalary || 0,
         revenue,
         serviceCount,
-        commissionRate,
+        commissionRate: emp.commissionRate || 0,
         commissions,
         totalAdvances,
         bookingsCount,

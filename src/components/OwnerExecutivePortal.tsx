@@ -473,7 +473,6 @@ interface OwnerExecutivePortalProps {
   currentUser: AppUser;
   standalone?: boolean;
   onLogout?: () => void;
-  onSwitchToMainApp?: () => void;
   expenses?: any[];
   purchases?: any[];
   supplierPayments?: any[];
@@ -498,7 +497,6 @@ export function OwnerExecutivePortal({
   onNavigateScreen,
   standalone = false,
   onLogout,
-  onSwitchToMainApp,
   expenses = [],
   purchases = [],
   supplierPayments = [],
@@ -600,14 +598,6 @@ export function OwnerExecutivePortal({
   const mainBranch = (branches && branches[0]) || { id: 'b-main', name: 'الفرع الرئيسي' };
   const mainBranchId = mainBranch.id;
   const isMainBranch = !activeBranchId || activeBranchId === mainBranchId || activeBranchId === 'b-main';
-
-  const handleOpenMainAppAsAdmin = (targetBranchId?: string) => {
-    const chosenBranchId = targetBranchId || (activeBranchId !== 'all' ? activeBranchId : (branches[0]?.id || 'b-main'));
-    onSelectBranch(chosenBranchId);
-    if (onSwitchToMainApp) {
-      onSwitchToMainApp();
-    }
-  };
 
   const matchesActiveBranch = (itemBranchId?: string) => {
     if (isAllBranches) return true;
@@ -1269,22 +1259,6 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
               </div>
             )}
 
-            {/* Switch to Full System (Admin Mode) */}
-            {onSwitchToMainApp && (
-              <button
-                onClick={() => handleOpenMainAppAsAdmin()}
-                title={`الدخول للنظام كأدمن وتشغيل ${activeBranchId !== 'all' ? activeBranch.name : 'الفرع المختار'}`}
-                className="bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-black px-3.5 py-1.5 rounded-xl text-xs flex items-center gap-1.5 shadow-lg shadow-amber-500/25 transition-all active:scale-95 cursor-pointer"
-              >
-                <Layers size={14} className="text-slate-950 shrink-0" />
-                <span className="hidden sm:inline">
-                  {activeBranchId !== 'all' ? `دخول (${activeBranch.name}) كأدمن` : 'دخول النظام كأدمن'}
-                </span>
-                <span className="sm:hidden">كأدمن</span>
-                <span>🚀</span>
-              </button>
-            )}
-
             {/* Refresh Button */}
             <button
               onClick={handleLiveRefresh}
@@ -1497,35 +1471,6 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
         {activeSubTab === 'overview' && (
           <div className="space-y-4 animate-in fade-in">
             
-            {/* Admin Full System Quick Switch Banner */}
-            {onSwitchToMainApp && (
-              <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 p-4 rounded-2xl border border-amber-500/40 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in">
-                <div className="flex items-center gap-3">
-                  <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 text-slate-950 flex items-center justify-center font-black shadow-md shrink-0">
-                    <Building2 size={22} />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h4 className="text-xs sm:text-sm font-black text-white">
-                        تشغيل ومعاينة {activeBranchId !== 'all' ? `(${activeBranch.name})` : 'فروع الصالون'} كأدمن للنظام
-                      </h4>
-                      <span className="bg-amber-500/20 text-amber-300 text-[10px] font-black px-2 py-0.5 rounded-md border border-amber-500/30">Admin Mode 👑</span>
-                    </div>
-                    <p className="text-[11px] text-slate-400 mt-0.5">
-                      فتح لوحة التحكم التشغيلية ومعاينة الكاشير (POS)، المواعيد، الفواتير، الموظفين، والمخازن للفرع المحدد، مع إمكانية العودة هنا بضغطة زر
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => handleOpenMainAppAsAdmin()}
-                  className="bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 px-4 py-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 shadow-md shadow-amber-500/20 transition-all active:scale-95 cursor-pointer shrink-0"
-                >
-                  <span>دخول التطبيق كأدمن {activeBranchId !== 'all' ? `(${activeBranch.name})` : ''} 🚀</span>
-                  <ArrowRight size={14} className="rotate-180" />
-                </button>
-              </div>
-            )}
-
             {/* Top 4 Quick Metric Cards */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               {/* 1. Total Revenue Today */}
@@ -1766,21 +1711,6 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                         <div style={{ width: `${Math.min(100, (b.grossRevenue / (revenueStats.totalRevenue || 1)) * 100)}%` }} className="bg-emerald-500 h-full"></div>
                         <div style={{ width: `${Math.min(100, (b.totalDeductions / (revenueStats.totalRevenue || 1)) * 100)}%` }} className="bg-rose-500 h-full"></div>
                       </div>
-
-                      {onSwitchToMainApp && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenMainAppAsAdmin(b.branch.id);
-                          }}
-                          className="w-full mt-3 bg-slate-700/60 hover:bg-amber-500 hover:text-slate-950 text-amber-300 border border-slate-600 hover:border-amber-400 py-1.5 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs"
-                        >
-                          <Building2 size={13} />
-                          <span>معاينة وتشغيل هذا الفرع كأدمن</span>
-                          <ArrowRight size={12} className="rotate-180" />
-                        </button>
-                      )}
                     </div>
                   ))}
                 </div>

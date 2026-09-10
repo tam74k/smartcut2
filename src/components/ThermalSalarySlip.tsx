@@ -21,6 +21,7 @@ export interface SalarySlipSummary {
   absenceDeduction: number;
   permissionDeduction: number;
   advancesDeduction: number;
+  commissionsPaid?: number;
   bonusesAdded: number;
   specialPenalties: number;
   netPayable: number;
@@ -173,6 +174,13 @@ export function ThermalSalarySlip({
           <div className="flex justify-between text-amber-700 font-bold">
             <span>السلف المسحوبة:</span>
             <span className="font-mono">-{summary.advancesDeduction.toFixed(2)} {settings.currency}</span>
+          </div>
+        )}
+
+        {summary.commissionsPaid !== undefined && summary.commissionsPaid > 0 && (
+          <div className="flex justify-between text-indigo-700 font-bold">
+            <span>عمولات مصروفة سابقة:</span>
+            <span className="font-mono font-bold">-{summary.commissionsPaid.toFixed(2)} {settings.currency}</span>
           </div>
         )}
 

@@ -1,58 +1,64 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 // ==============================================================================
-// 🔗 بيانات الاتصال بـ Supabase — SmartCut V2 Pro
-// لتغيير قاعدة البيانات: عدّل القيمتين أدناه أو ضعهما في ملف .env
+// 🔗 بيانات الاتصال بـ Supabase — SmartCut V2 Pro (Singleton REST Client Instance)
 // ==============================================================================
 const DEFAULT_SUPABASE_URL = 'https://api.101488.xyz';
 const DEFAULT_SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNjcyNTMxMjAwLCJleHAiOjE5ODgxNTA0MDB9.vW9qTGUVdfudKMLfAqHL78-QAtSMs58uNMlP-6dyySw';
 
+// Singleton instance created once outside of React component lifecycle
+const initialUrl =
+  (typeof window !== 'undefined' && localStorage.getItem('smartcut_supabase_url')) ||
+  (import.meta as any).env?.VITE_SUPABASE_URL ||
+  DEFAULT_SUPABASE_URL;
+
+const initialKey =
+  (typeof window !== 'undefined' && localStorage.getItem('smartcut_supabase_key')) ||
+  (import.meta as any).env?.VITE_SUPABASE_ANON_KEY ||
+  DEFAULT_SUPABASE_KEY;
+
 let supabaseClient: SupabaseClient | null = null;
+try {
+  supabaseClient = createClient(initialUrl, initialKey, {
+    auth: { persistSession: false }
+  });
+} catch (err) {
+  console.error('Failed to init singleton Supabase client:', err);
+}
 
 export const SupabaseService = {
   /**
-   * ترتيب أولوية الاتصال:
-   * 1. متغيرات البيئة (.env) — VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY
-   * 2. الإعدادات المحفوظة في localStorage (من شاشة الإعدادات)
-   * 3. القيم الثابتة الافتراضية أعلاه
+   * إرجاع النسخة الفريدة (Singleton) من عميل Supabase
    */
   getClient(url?: string, anonKey?: string): SupabaseClient | null {
-    if (supabaseClient) return supabaseClient;
-
-    const resolvedUrl =
-      url ||
-      (import.meta as any).env?.VITE_SUPABASE_URL ||
-      localStorage.getItem('smartcut_supabase_url') ||
-      DEFAULT_SUPABASE_URL;
-
-    const resolvedKey =
-      anonKey ||
-      (import.meta as any).env?.VITE_SUPABASE_ANON_KEY ||
-      localStorage.getItem('smartcut_supabase_key') ||
-      DEFAULT_SUPABASE_KEY;
-
-    if (resolvedUrl && resolvedKey) {
-      try {
-        supabaseClient = createClient(resolvedUrl, resolvedKey);
-      } catch (err) {
-        console.error('Failed to init Supabase client:', err);
-      }
+    if (supabaseClient && !url && !anonKey) {
+      return supabaseClient;
     }
+
+    if (url && anonKey) {
+      return this.updateConfig(url, anonKey) ? supabaseClient : null;
+    }
+
     return supabaseClient;
   },
 
-  /** إعادة ضبط الاتصال بإعدادات جديدة (من شاشة الإعدادات) */
+  /** إعادة ضبط الاتصال بإعدادات جديدة (من شاشة الإعدادات) مع الحفاظ على الـ Singleton */
   updateConfig(url: string, key: string): boolean {
     try {
-      supabaseClient = null;
       if (!url || !key) {
         localStorage.removeItem('smartcut_supabase_url');
         localStorage.removeItem('smartcut_supabase_key');
+        supabaseClient = createClient(DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_KEY, {
+          auth: { persistSession: false }
+        });
         return true;
       }
+
       localStorage.setItem('smartcut_supabase_url', url);
       localStorage.setItem('smartcut_supabase_key', key);
-      supabaseClient = createClient(url, key);
+      supabaseClient = createClient(url, key, {
+        auth: { persistSession: false }
+      });
       return true;
     } catch (e) {
       console.error('Supabase config error:', e);

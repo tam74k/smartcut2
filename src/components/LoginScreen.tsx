@@ -114,16 +114,16 @@ export function LoginScreen({ onLoginSuccess, settings, onOpenSaaSAdmin }: Login
         const dbSalons = await DB.fetchSalons();
         const salons = (dbSalons && dbSalons.length > 0) ? dbSalons : SubscriptionService.getSalons();
         const salon = user.salonId 
-          ? (salons.find(s => s.id === user.salonId || s.code === (user as any).salonCode) || salons[0])
+          ? (salons.find(s => s.id === user.salonId || s.code === (user as any).salonCode) || (user.salonId ? { id: user.salonId, name: (user as any).salonName || 'صالون', code: (user as any).salonCode || 'SC-01', phone: user.phone || '', country: 'المملكة العربية السعودية', currency: 'SAR', isActive: true } as any : null))
           : (salons.find(s => 
-              s.email?.toLowerCase() === user.email?.toLowerCase() || 
+              (user.email && s.email?.toLowerCase() === user.email?.toLowerCase()) || 
               (user.phone && s.phone && s.phone.replace(/\D/g, '') === user.phone.replace(/\D/g, '')) ||
               (s.name && user.name && s.name.toLowerCase().includes(user.name.toLowerCase()))
-            ) || salons[0]);
+            ) || null);
         
         const dbBranches = salon?.id ? await DB.fetchBranches(salon.id) : [];
-        const sBranches = (dbBranches && dbBranches.length > 0) ? dbBranches : SubscriptionService.getBranches(salon?.id);
-        const chosenBranch = (user.branchId && sBranches.find(b => b.id === user.branchId)) || sBranches.find(b => b.isMain) || sBranches[0];
+        const sBranches = (dbBranches && dbBranches.length > 0) ? dbBranches : (salon?.id ? SubscriptionService.getBranches(salon.id) : []);
+        const chosenBranch = (user.branchId && sBranches.find(b => b.id === user.branchId)) || sBranches.find(b => b.isMain) || sBranches[0] || (user.branchId ? { id: user.branchId, salonId: salon?.id, name: 'الفرع الرئيسي', code: 'B01', isMain: true, isActive: true, status: 'active' } as any : undefined);
 
         let customSettings: AppSettings | undefined = undefined;
         if (salon) {
@@ -222,7 +222,7 @@ export function LoginScreen({ onLoginSuccess, settings, onOpenSaaSAdmin }: Login
     setRegForm(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleRegisterSubmit = (e: React.FormEvent) => {
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
@@ -242,49 +242,52 @@ export function LoginScreen({ onLoginSuccess, settings, onOpenSaaSAdmin }: Login
       return;
     }
 
-    if (AuthService.isUsernameTaken(cleanUsername)) {
+    setIsLoading(true);
+
+    const isTaken = await AuthService.isUsernameTakenAsync(cleanUsername);
+    if (isTaken) {
+      setIsLoading(false);
       setError(`اسم المستخدم (${cleanUsername}) محجوز ومسجل مسبقاً في المنظومة، يرجى اختيار اسم مستخدم فريد آخر`);
       return;
     }
 
     if (regForm.password.length < 4) {
+      setIsLoading(false);
       setError('كلمة المرور يجب ألا تقل عن 4 خانات');
       return;
     }
 
     if (regForm.password !== regForm.confirmPassword) {
+      setIsLoading(false);
       setError('كلمتا المرور غير متطابقتين');
       return;
     }
 
-    setIsLoading(true);
-    setTimeout(() => {
-      try {
-        const result = SubscriptionService.registerNewSalon({
-          salonName: regForm.salonName.trim(),
-          salonType: regForm.salonType as 'men' | 'women' | 'mixed',
-          ownerName: regForm.ownerName.trim() || regForm.salonName.trim(),
-          username: cleanUsername,
-          email: regForm.email.trim(),
-          phone: regForm.phone.trim(),
-          country: regForm.country,
-          password: regForm.password,
-          customTrialDays: 7
-        });
+    try {
+      const result = await SubscriptionService.registerNewSalon({
+        salonName: regForm.salonName.trim(),
+        salonType: regForm.salonType as 'men' | 'women' | 'mixed',
+        ownerName: regForm.ownerName.trim() || regForm.salonName.trim(),
+        username: cleanUsername,
+        email: regForm.email.trim(),
+        phone: regForm.phone.trim(),
+        country: regForm.country,
+        password: regForm.password,
+        customTrialDays: 7
+      });
 
-        setIsLoading(false);
-        setRegSuccess(true);
+      setIsLoading(false);
+      setRegSuccess(true);
 
-        // Auto login the new salon admin after 1.2 seconds with their custom settings
-        setTimeout(() => {
-          onLoginSuccess(result.user, result.settings, result.branch);
-        }, 1200);
+      // Auto login the new salon admin/owner after 1.2 seconds with their custom settings
+      setTimeout(() => {
+        onLoginSuccess(result.user, result.settings, result.branch);
+      }, 1200);
 
-      } catch (err: any) {
-        setIsLoading(false);
-        setError(err?.message || 'حدث خطأ أثناء تسجيل الصالون، يرجى المحاولة لاحقاً');
-      }
-    }, 600);
+    } catch (err: any) {
+      setIsLoading(false);
+      setError(err?.message || 'حدث خطأ أثناء تسجيل الصالون، يرجى المحاولة لاحقاً');
+    }
   };
 
   return (

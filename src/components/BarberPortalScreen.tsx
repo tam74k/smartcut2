@@ -229,7 +229,7 @@ export function BarberPortalScreen({
         if (invDate >= currentMonthStart && invDate <= todayStr) {
           inv.items?.forEach((item: any) => {
             if (item.employeeId === currentEmployee.id || item.employeeName === currentEmployee.name) {
-              sum += item.commission || (item.price * (currentEmployee.commissionRate || 10)) / 100;
+              sum += item.commission || (item.price * (currentEmployee.commissionRate ?? 0)) / 100;
             }
           });
         }

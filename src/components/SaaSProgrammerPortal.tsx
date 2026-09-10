@@ -256,7 +256,7 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
       return;
     }
 
-    const res = SubscriptionService.registerNewSalon({
+    const res = await SubscriptionService.registerNewSalon({
       salonName: newSalonForm.salonName,
       ownerName: newSalonForm.ownerName || newSalonForm.salonName,
       email: newSalonForm.email,

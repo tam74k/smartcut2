@@ -1,4 +1,5 @@
 import { SupabaseService } from './supabase';
+import { dataUrlToBlob } from '../utils/imageUpload';
 
 // ============================================================
 // 🗄️ SmartCut DB Service — طبقة البيانات الموحدة
@@ -12,13 +13,42 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 export function toSalonUUID(id?: string | null): string {
   if (id && UUID_REGEX.test(id)) return id;
   try {
+    const active = localStorage.getItem('smartcut_active_salon_id');
+    if (active && UUID_REGEX.test(active)) return active;
+
+    const currentUser = localStorage.getItem('smartcut_current_user');
+    if (currentUser) {
+      const parsedUser = JSON.parse(currentUser);
+      if (parsedUser?.salonId && UUID_REGEX.test(parsedUser.salonId)) return parsedUser.salonId;
+      if (parsedUser?.salon_id && UUID_REGEX.test(parsedUser.salon_id)) return parsedUser.salon_id;
+    }
+
+    const session = localStorage.getItem('smartcut_session');
+    if (session) {
+      const parsedSession = JSON.parse(session);
+      const user = parsedSession?.user || parsedSession;
+      if (user?.salonId && UUID_REGEX.test(user.salonId)) return user.salonId;
+      if (user?.salon_id && UUID_REGEX.test(user.salon_id)) return user.salon_id;
+      if (parsedSession?.salonId && UUID_REGEX.test(parsedSession.salonId)) return parsedSession.salonId;
+    }
+
     const s = localStorage.getItem('smartcut_app_settings');
-    const parsed = s ? JSON.parse(s).salonId : null;
-    if (parsed && UUID_REGEX.test(parsed)) return parsed;
-    const salons = JSON.parse(localStorage.getItem('smartcut_salons') || '[]');
-    if (salons.length > 0 && salons[0].id && UUID_REGEX.test(salons[0].id)) return salons[0].id;
+    const parsed = s ? JSON.parse(s) : null;
+    if (parsed?.salonId && UUID_REGEX.test(parsed.salonId)) return parsed.salonId;
+    if (parsed?.salon_id && UUID_REGEX.test(parsed.salon_id)) return parsed.salon_id;
+
+    if (id) {
+      const storedSalons = localStorage.getItem('smartcut_salons');
+      if (storedSalons) {
+        const salonsList = JSON.parse(storedSalons);
+        if (Array.isArray(salonsList) && salonsList.length > 0) {
+          const match = salonsList.find((sl: any) => sl.id === id || sl.code?.toLowerCase() === id.toLowerCase() || sl.salonCode?.toLowerCase() === id.toLowerCase());
+          if (match && UUID_REGEX.test(match.id)) return match.id;
+        }
+      }
+    }
   } catch (e) {}
-  return id || '';
+  return (id && UUID_REGEX.test(id)) ? id : '';
 }
 
 export function toBranchUUID(id?: string | null): string | null {
@@ -62,9 +92,31 @@ export function toSnake(obj: any): any {
 // ---- تحديد معرف الصالون ----
 function getSalonId(): string {
   try {
+    const active = localStorage.getItem('smartcut_active_salon_id');
+    if (active && UUID_REGEX.test(active)) return active;
+
+    const currentUser = localStorage.getItem('smartcut_current_user');
+    if (currentUser) {
+      const parsedUser = JSON.parse(currentUser);
+      if (parsedUser?.salonId && UUID_REGEX.test(parsedUser.salonId)) return parsedUser.salonId;
+      if (parsedUser?.salon_id && UUID_REGEX.test(parsedUser.salon_id)) return parsedUser.salon_id;
+    }
+
+    const session = localStorage.getItem('smartcut_session');
+    if (session) {
+      const parsedSession = JSON.parse(session);
+      const user = parsedSession?.user || parsedSession;
+      if (user?.salonId && UUID_REGEX.test(user.salonId)) return user.salonId;
+      if (user?.salon_id && UUID_REGEX.test(user.salon_id)) return user.salon_id;
+      if (parsedSession?.salonId && UUID_REGEX.test(parsedSession.salonId)) return parsedSession.salonId;
+    }
+
     const s = localStorage.getItem('smartcut_app_settings');
-    const parsed = s ? JSON.parse(s).salonId : null;
-    return toSalonUUID(parsed);
+    const parsed = s ? JSON.parse(s) : null;
+    if (parsed?.salonId && UUID_REGEX.test(parsed.salonId)) return parsed.salonId;
+    if (parsed?.salon_id && UUID_REGEX.test(parsed.salon_id)) return parsed.salon_id;
+
+    return '';
   } catch { return ''; }
 }
 
@@ -107,6 +159,27 @@ export async function ensureColumn(table: string, column: string, type: string =
   return false;
 }
 
+// فحص واستخدام Bucket في Supabase Storage
+export async function ensureStorageBucket(bucketName: string = 'services'): Promise<boolean> {
+  const client = sb();
+  if (!client) return false;
+  try {
+    const { data: buckets } = await client.storage.listBuckets();
+    const exists = buckets?.some(b => b.name === bucketName || b.id === bucketName);
+    if (!exists) {
+      try {
+        await client.storage.createBucket(bucketName, {
+          public: true,
+          fileSizeLimit: 2097152 // 2MB max per service image
+        });
+      } catch {}
+    }
+    return true;
+  } catch {
+    return true;
+  }
+}
+
 // فحص واستباق إنشاء الأعمدة الأساسية الحديثة في قاعدة البيانات
 export async function ensureCoreSchema(): Promise<void> {
   try {
@@ -123,6 +196,7 @@ export async function ensureCoreSchema(): Promise<void> {
       ensureColumn('employees', 'custom_overtime_rate', 'NUMERIC(10,2)'),
       ensureColumn('employees', 'late_deduction_rules', 'JSONB'),
       ensureColumn('employees', 'permissions_limit', 'INT'),
+      ensureColumn('services', 'image_url', 'TEXT'),
       ensureColumn('services', 'is_priority', 'BOOLEAN'),
       ensureColumn('services', 'card_color', 'VARCHAR(50)'),
       ensureColumn('services', 'priority_order', 'INT'),
@@ -159,28 +233,100 @@ setTimeout(() => { ensureCoreSchema(); }, 1000);
 // ============================================================
 export const DB = {
 
+  // توليد UUID متوافق
+  generateUUID(): string {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      const r = (Math.random() * 16) | 0;
+      const v = c === 'x' ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
+  },
+
   // فحص وإنشاء عمود يدوياً
   async ensureColumn(table: string, column: string, type: string = 'TEXT'): Promise<boolean> {
     return ensureColumn(table, column, type);
   },
 
-  // --- جلب جميع سجلات جدول مع استعادة الحقول المحفوظة محلياً إن وجدت ----
-  async fetchAll<T>(table: string, extraFilters?: Record<string, string>, overrideSalonId?: string): Promise<T[]> {
+  // --- جلب سجلات جدول مع دعم التحديد المخصص للأعمدة والترقيم Pagination (.range) ----
+  async fetchPaginated<T>(table: string, options?: {
+    columns?: string;
+    from?: number;
+    to?: number;
+    extraFilters?: Record<string, string>;
+    overrideSalonId?: string;
+  }): Promise<T[]> {
     const client = sb();
     if (!client) return [];
     try {
-      const salonId = overrideSalonId || getSalonId();
-      let q = client.from(table).select('*');
-      if (salonId && table !== 'platform_settings' && table !== 'arab_countries' && table !== 'salons') {
-        q = q.eq('salon_id', toSalonUUID(salonId));
+      const rawSalonId = options?.overrideSalonId || getSalonId();
+      const validSalonId = rawSalonId ? toSalonUUID(rawSalonId) : '';
+      let q = client.from(table).select(options?.columns || '*');
+      if (validSalonId && table !== 'platform_settings' && table !== 'arab_countries' && table !== 'salons') {
+        q = q.eq('salon_id', validSalonId);
+      }
+      if (options?.extraFilters) {
+        Object.entries(options.extraFilters).forEach(([k, v]) => { q = q.eq(k, v); });
+      }
+      if (typeof options?.from === 'number' && typeof options?.to === 'number') {
+        q = q.range(options.from, options.to);
+      }
+
+      const { data, error } = await q;
+      if (error) {
+        console.error(`DB.fetchPaginated[${table}]:`, error.message);
+        return [];
+      }
+      if (!Array.isArray(data)) return [];
+
+      data.sort((a: any, b: any) => {
+        const timeA = a.created_at || a.date || a.used_at || a.id || '';
+        const timeB = b.created_at || b.date || b.used_at || b.id || '';
+        if (timeA > timeB) return -1;
+        if (timeA < timeB) return 1;
+        return 0;
+      });
+
+      return data.map(row => toCamel(row)) as T[];
+    } catch (e) { console.error(`DB.fetchPaginated[${table}] exception:`, e); return []; }
+  },
+
+  // --- جلب جميع سجلات جدول مع استعادة الحقول المحفوظة محلياً إن وجدت ----
+  async fetchAll<T>(table: string, extraFilters?: Record<string, string>, overrideSalonId?: string, columns: string = '*'): Promise<T[]> {
+    const client = sb();
+    if (!client) return [];
+    try {
+      const rawSalonId = overrideSalonId || getSalonId();
+      const validSalonId = rawSalonId ? toSalonUUID(rawSalonId) : '';
+      let q = client.from(table).select(columns);
+      if (validSalonId && table !== 'platform_settings' && table !== 'arab_countries' && table !== 'salons') {
+        q = q.eq('salon_id', validSalonId);
       }
       if (extraFilters) {
         Object.entries(extraFilters).forEach(([k, v]) => { q = q.eq(k, v); });
       }
-      const { data, error } = await q.order('created_at', { ascending: false });
-      if (error) { console.error(`DB.fetchAll[${table}]:`, error.message); return []; }
+
+      const { data, error } = await q;
+      if (error) {
+        console.error(`DB.fetchAll[${table}]:`, error.message);
+        return [];
+      }
+      if (!Array.isArray(data)) return [];
+
+      // Fast in-memory sort by created_at / date / timestamp
+      data.sort((a: any, b: any) => {
+        const timeA = a.created_at || a.date || a.used_at || a.id || '';
+        const timeB = b.created_at || b.date || b.used_at || b.id || '';
+        if (timeA > timeB) return -1;
+        if (timeA < timeB) return 1;
+        return 0;
+      });
+
+      let resultData = data;
       
-      return (data || []).map(row => {
+      return resultData.map(row => {
         const camel = toCamel(row);
         // Hydrate any local fallback properties if needed
         if (camel && camel.id) {
@@ -270,7 +416,7 @@ export const DB = {
       if (error) {
         // Fallback row-by-row with self-healing upsert
         for (const rec of records) {
-          await this.upsert<T>(table, rec);
+          await this.upsert(table, rec);
         }
       }
       return true;
@@ -344,8 +490,8 @@ export const DB = {
       } : null;
     }
     try {
-      const { data, error } = await client.from('platform_settings').select('*').limit(1).single();
-      if (error && error.code !== 'PGRST116') { console.error('DB.fetchPlatformSettings:', error.message); }
+      const { data, error } = await client.from('platform_settings').select('*').limit(1).maybeSingle();
+      if (error) { console.error('DB.fetchPlatformSettings:', error.message); }
       if (data) {
         const camel = toCamel(data);
         const resolvedLogo = camel.logoUrl || camel.platformLogoUrl || localLogo || '';
@@ -480,13 +626,29 @@ export const DB = {
     const client = sb();
     if (!client) return false;
     try {
-      const validBranchId = toBranchUUID(b.id) || b.id;
       const validSalonId = toSalonUUID(b.salonId);
+      const branchCode = b.code || 'BR-01';
+      let validBranchId: string | undefined;
+      
+      // If branch exists by salon_id and code, adopt its id to avoid duplicate key violation
+      if (validSalonId && branchCode) {
+        try {
+          const { data: existing } = await client.from('branches')
+            .select('id')
+            .eq('salon_id', validSalonId)
+            .eq('code', branchCode)
+            .maybeSingle();
+          if (existing?.id) {
+            validBranchId = existing.id;
+          }
+        } catch {}
+      }
+
       const snap: any = {
-        id: validBranchId,
+        ...(validBranchId ? { id: validBranchId } : (b.id ? { id: b.id } : {})),
         salon_id: validSalonId,
         salon_code: b.salonCode || 'SC-01',
-        code: b.code || 'BR-01',
+        code: branchCode,
         name: b.name,
         phone: b.phone || null,
         address: b.address || null,
@@ -503,8 +665,21 @@ export const DB = {
         evolution_instance_name: b.evolutionInstanceName || null,
         updated_at: new Date().toISOString()
       };
+
       const { error } = await client.from('branches').upsert(snap, { onConflict: 'id' });
-      if (error) { console.error('DB.saveBranch error:', error.message); return false; }
+      if (error) {
+        if (error.message?.includes('branches_salon_id_code_key')) {
+          // If code conflict occurs, update the existing branch record directly
+          const { id: _ignoreId, ...updateFields } = snap;
+          const { error: updateErr } = await client.from('branches')
+            .update(updateFields)
+            .eq('salon_id', validSalonId)
+            .eq('code', snap.code);
+          if (!updateErr) return true;
+        }
+        console.error('DB.saveBranch error:', error.message);
+        return false;
+      }
       return true;
     } catch (e) { console.error('DB.saveBranch exception:', e); return false; }
   },
@@ -531,8 +706,9 @@ export const DB = {
       const validSalonId = toSalonUUID(u.salonId);
       const validBranchId = toBranchUUID(u.branchId);
       const cleanUsername = (u.username || '').trim().toLowerCase();
+      const userUuid = u.id && u.id.includes('-') && u.id.length === 36 ? u.id : DB.generateUUID();
       const snap: any = {
-        id: u.id && u.id.includes('-') && u.id.length === 36 ? u.id : undefined,
+        id: userUuid,
         salon_id: validSalonId,
         branch_id: validBranchId,
         salon_code: u.salonCode || 'SC-01',
@@ -542,7 +718,7 @@ export const DB = {
         employee_id: u.employeeId || null,
         password_hash: u.password || u.passwordHash || '123456',
         name: u.name || cleanUsername,
-        role: u.role || 'admin',
+        role: u.role || 'owner',
         custom_role_id: u.customRoleId || null,
         phone: u.phone || null,
         active: u.active !== false,
@@ -552,9 +728,15 @@ export const DB = {
         updated_at: new Date().toISOString()
       };
       const { error } = await client.from('users').upsert(snap, { onConflict: 'username' });
-      if (error) { console.error('DB.saveUser error:', error.message); return false; }
+      if (error) { 
+        console.error('DB.saveUser error:', error.message); 
+        return false; 
+      }
       return true;
-    } catch (e) { console.error('DB.saveUser exception:', e); return false; }
+    } catch (e) { 
+      console.error('DB.saveUser exception:', e); 
+      return false; 
+    }
   },
 
   async deleteUser(userId: string) {
@@ -649,8 +831,8 @@ export const DB = {
     if (!client) return null;
     try {
       const validSalonId = toSalonUUID(salonId);
-      const { data, error } = await client.from('app_settings').select('*').eq('salon_id', validSalonId).limit(1).single();
-      if (error && error.code !== 'PGRST116') { console.error('DB.fetchSettings:', error.message); return null; }
+      const { data, error } = await client.from('app_settings').select('*').eq('salon_id', validSalonId).maybeSingle();
+      if (error) { console.error('DB.fetchSettings:', error.message); return null; }
       return data ? toCamel(data) : null;
     } catch (e) { return null; }
   },
@@ -665,6 +847,7 @@ export const DB = {
         salon_id: validSalonId,
         branch_id: validBranchId,
         salon_name: settings.salonName || 'صالون سمارت كت',
+        salon_type: settings.salonType || settings.salon_type || 'men',
         logo_url: settings.logoUrl || null,
         phone: settings.phone || '0500000000',
         address: settings.address || '',
@@ -705,19 +888,47 @@ export const DB = {
         ai_model: settings.aiModel || null,
         updated_at: new Date().toISOString()
       };
-      const { error } = await client.from('app_settings').upsert(snap, { onConflict: 'salon_id' });
-      if (error) { console.error('DB.saveSettings:', error.message); return false; }
+      // Check if existing record exists for this salon
+      const { data: existing } = await client
+        .from('app_settings')
+        .select('id')
+        .eq('salon_id', validSalonId)
+        .limit(1)
+        .maybeSingle();
+
+      let error: any = null;
+      if (existing && existing.id) {
+        const res = await client.from('app_settings').update(snap).eq('id', existing.id);
+        error = res.error;
+      } else {
+        const res = await client.from('app_settings').insert(snap);
+        error = res.error;
+      }
+      if (error) { console.error('DB.saveSettings error:', error.message); return false; }
+      
+      // Keep salons table synchronized as well
+      if (settings.salonType || settings.salonName || settings.phone) {
+        const salonUpdate: any = { updated_at: new Date().toISOString() };
+        if (settings.salonType) salonUpdate.salon_type = settings.salonType;
+        if (settings.salonName) salonUpdate.name = settings.salonName;
+        if (settings.phone) salonUpdate.phone = settings.phone;
+        if (settings.address) salonUpdate.address = settings.address;
+        if (settings.taxNumber) salonUpdate.tax_number = settings.taxNumber;
+        if (settings.commercialReg) salonUpdate.commercial_reg = settings.commercialReg;
+        await client.from('salons').update(salonUpdate).eq('id', validSalonId);
+      }
+
       return true;
     } catch (e) { return false; }
   },
 
   // ---- العملاء (Shared Across all Branches of the Same Salon) ----
-  async fetchClients() { return DB.fetchAll<any>('clients'); },
+  async fetchClients(salonId?: string) { return DB.fetchAll<any>('clients', undefined, salonId); },
   
-  async saveClient(c: any) {
+  async saveClient(c: any, salonId?: string) {
     const client = sb();
     if (!client || !c) return null;
-    const validSalonId = toSalonUUID(c.salonId || getSalonId());
+    const validSalonId = toSalonUUID(salonId || c.salonId || getSalonId());
     const validBranchId = toBranchUUID(c.branchId);
     try {
       const snap: any = {
@@ -759,19 +970,19 @@ export const DB = {
     }
   },
 
-  async saveClients(list: any[]) {
+  async saveClients(list: any[], salonId?: string) {
     if (!list || !list.length) return true;
     for (const c of list) {
-      await this.saveClient(c);
+      await this.saveClient(c, salonId);
     }
     return true;
   },
 
   // ---- الفواتير ----
-  async fetchInvoices() { return DB.fetchAll<any>('invoices'); },
-  async saveInvoice(inv: any) {
+  async fetchInvoices(salonId?: string) { return DB.fetchAll<any>('invoices', undefined, salonId); },
+  async saveInvoice(inv: any, salonId?: string) {
     const client = sb(); if (!client || !inv) return null;
-    const validSalonId = toSalonUUID(inv.salonId || getSalonId());
+    const validSalonId = toSalonUUID(salonId || inv.salonId || getSalonId());
     const validBranchId = toBranchUUID(inv.branchId);
     try {
       const snap: any = {
@@ -804,10 +1015,10 @@ export const DB = {
   },
 
   // ---- المعاملات المالية ----
-  async fetchTransactions() { return DB.fetchAll<any>('transactions'); },
-  async saveTransaction(t: any) {
+  async fetchTransactions(salonId?: string) { return DB.fetchAll<any>('transactions', undefined, salonId); },
+  async saveTransaction(t: any, salonId?: string) {
     const client = sb(); if (!client || !t) return null;
-    const validSalonId = toSalonUUID(t.salonId || getSalonId());
+    const validSalonId = toSalonUUID(salonId || t.salonId || getSalonId());
     const validBranchId = toBranchUUID((t as any).branchId);
     try {
       const snap: any = {
@@ -824,16 +1035,16 @@ export const DB = {
       return t;
     } catch (e) { console.error('DB.saveTransaction exception:', e); return null; }
   },
-  async saveTransactions(list: any[]) {
-    for (const t of list) await DB.saveTransaction(t);
+  async saveTransactions(list: any[], salonId?: string) {
+    for (const t of list) await DB.saveTransaction(t, salonId);
     return true;
   },
 
   // ---- الحجوزات ----
-  async fetchBookings() { return DB.fetchAll<any>('bookings'); },
-  async saveBooking(b: any) {
+  async fetchBookings(salonId?: string) { return DB.fetchAll<any>('bookings', undefined, salonId); },
+  async saveBooking(b: any, salonId?: string) {
     const client = sb(); if (!client || !b) return null;
-    const validSalonId = toSalonUUID(b.salonId || getSalonId());
+    const validSalonId = toSalonUUID(salonId || b.salonId || getSalonId());
     const validBranchId = toBranchUUID((b as any).branchId);
     try {
       const snap: any = {
@@ -853,28 +1064,52 @@ export const DB = {
   },
 
   // ---- الموظفون ----
-  async fetchEmployees() { return DB.fetchAll<any>('employees'); },
-  async saveEmployee(e: any) {
+  async fetchEmployees(salonId?: string) { 
+    const list = await DB.fetchAll<any>('employees', undefined, salonId);
+    return (list || []).map(emp => ({
+      ...emp,
+      commissionModel: emp.commissionModel || (emp.commissionRate === 0 ? 'none' : 'fixed_rate')
+    }));
+  },
+  async saveEmployee(e: any, salonId?: string) {
     const client = sb(); if (!client || !e) return null;
-    const validSalonId = toSalonUUID(e.salonId || getSalonId());
+    let validSalonId = toSalonUUID(salonId || e.salonId || getSalonId());
     const validBranchId = toBranchUUID(e.branchId);
+
+    // Map frontend 'none' to null so Postgres check constraint passes
+    const dbCommissionModel = (e.commissionModel === 'none' || e.commissionModel === null)
+      ? null
+      : (e.commissionModel || 'fixed_rate');
+
     try {
       const snap: any = {
-        id: e.id, salon_id: validSalonId, branch_id: validBranchId,
-        salon_code: e.salonCode || null, branch_code: e.branchCode || null,
-        name: e.name, email: e.email || null, avatar_url: e.avatarUrl || null,
-        public_bio: e.publicBio || null, has_online_account: e.hasOnlineAccount || false,
-        user_id: e.userId || null, role: e.role, base_salary: e.baseSalary ?? 0,
-        fingerprint_code: e.fingerprintCode || null, commission_rate: e.commissionRate ?? 0,
-        commission_model: e.commissionModel || 'fixed_rate',
+        id: e.id, 
+        salon_id: validSalonId || null, 
+        branch_id: validBranchId,
+        salon_code: e.salonCode || null, 
+        branch_code: e.branchCode || null,
+        name: e.name, 
+        email: e.email || null, 
+        avatar_url: e.avatarUrl || null,
+        public_bio: e.publicBio || null, 
+        has_online_account: e.hasOnlineAccount || false,
+        user_id: e.userId || null, 
+        role: e.role, 
+        base_salary: e.baseSalary ?? 0,
+        fingerprint_code: e.fingerprintCode || null, 
+        commission_rate: e.commissionRate !== undefined && e.commissionRate !== null ? Number(e.commissionRate) : 0,
+        commission_model: dbCommissionModel,
         commission_tiers: e.commissionTiers || [],
-        target: e.target ?? 5000, target_type: e.targetType || 'monthly',
+        target: e.target ?? 5000, 
+        target_type: e.targetType || 'monthly',
         available_vacations: e.availableVacations ?? 21,
         salary_type: e.salaryType || 'salary',
         allow_dual_commission: e.allowDualCommission || false,
-        check_in_time: e.checkInTime || '09:00', check_out_time: e.checkOutTime || '18:00',
+        check_in_time: e.checkInTime || '09:00', 
+        check_out_time: e.checkOutTime || '18:00',
         weekly_days_off: e.weeklyDaysOff || ['Friday'],
-        is_active: e.isActive !== false, is_blacklisted: e.isBlacklisted || false,
+        is_active: e.isActive !== false, 
+        is_blacklisted: e.isBlacklisted || false,
         blacklist_reason: e.blacklistReason || null,
         financial_records: e.financialRecords || [],
         leave_records: e.leaveRecords || [],
@@ -889,17 +1124,21 @@ export const DB = {
       return e;
     } catch (e2) { console.error('DB.saveEmployee exception:', e2); return null; }
   },
-  async saveEmployees(list: any[]) { for (const e of list) await DB.saveEmployee(e); return true; },
+  async saveEmployees(list: any[], salonId?: string) { for (const e of list) await DB.saveEmployee(e, salonId); return true; },
 
   // ---- الخدمات ----
-  async fetchServices() { return DB.fetchAll<any>('services'); },
-  async saveService(s: any) {
+  async fetchServices(salonId?: string) { return DB.fetchAll<any>('services', undefined, salonId); },
+  async saveService(s: any, salonId?: string) {
     const client = sb(); if (!client || !s) return null;
-    const validSalonId = toSalonUUID(s.salonId || getSalonId());
+    const validSalonId = toSalonUUID(salonId || s.salonId || getSalonId());
     try {
       const snap: any = {
-        id: s.id, salon_id: validSalonId, category_id: s.categoryId || null, name: s.name,
-        price: s.price ?? 0, discount_price: s.discountPrice ?? 0,
+        id: s.id, 
+        salon_id: validSalonId, 
+        category_id: s.categoryId || null, 
+        name: s.name,
+        price: s.price ?? 0, 
+        discount_price: s.discountPrice ?? 0,
         employee_commission_percentage: s.employeeCommissionPercentage ?? 0,
         employee_commission_amount: s.employeeCommissionAmount ?? 0,
         referral_commission_type: s.referralCommissionType || 'percentage',
@@ -907,21 +1146,119 @@ export const DB = {
         cashback_percentage: s.cashbackPercentage ?? 0,
         client_referral_cashback_type: s.clientReferralCashbackType || 'percentage',
         client_referral_cashback_amount: s.clientReferralCashbackAmount ?? 0,
-        duration_minutes: s.durationMinutes ?? 30, barcode: s.barcode || null,
-        is_active: s.isActive !== false, type: s.type || 'service'
+        duration_minutes: s.durationMinutes ?? 30, 
+        barcode: s.barcode || null,
+        image_url: s.imageUrl || s.image_url || null,
+        is_priority: s.isPriority ?? s.is_priority ?? false,
+        card_color: s.cardColor || s.card_color || null,
+        priority_order: s.priorityOrder ?? s.priority_order ?? 0,
+        is_active: s.isActive !== false, 
+        type: s.type || 'service'
       };
       const { error } = await client.from('services').upsert(snap, { onConflict: 'id' });
       if (error) { console.error('DB.saveService error:', error.message); return null; }
       return s;
     } catch (e) { console.error('DB.saveService exception:', e); return null; }
   },
-  async saveServices(list: any[]) { for (const s of list) await DB.saveService(s); return true; },
+  async saveServices(list: any[], salonId?: string) { for (const s of list) await DB.saveService(s, salonId); return true; },
+
+  // ---- رفع وحذف صور الخدمات في Supabase Storage (Bucket: services) ----
+  async uploadServiceImage(fileOrBlob: File | Blob | string, serviceId: string, oldImageUrl?: string): Promise<string> {
+    const client = sb();
+    if (!client) {
+      return typeof fileOrBlob === 'string' ? fileOrBlob : '';
+    }
+
+    try {
+      await ensureStorageBucket('services');
+
+      // 1. حذف الصورة القديمة للخدمة من الـ Bucket إن وجدت
+      if (oldImageUrl) {
+        await DB.deleteServiceImage(oldImageUrl);
+      }
+
+      let blob: Blob;
+      let fileExt = 'webp';
+
+      if (typeof fileOrBlob === 'string') {
+        if (!fileOrBlob.startsWith('data:')) return fileOrBlob;
+        blob = dataUrlToBlob(fileOrBlob);
+        fileExt = fileOrBlob.includes('image/webp') ? 'webp' : 'jpg';
+      } else {
+        blob = fileOrBlob;
+        if (fileOrBlob.type.includes('webp')) fileExt = 'webp';
+        else if (fileOrBlob.type.includes('png')) fileExt = 'png';
+        else fileExt = 'jpg';
+      }
+
+      // 2. رفع الصورة الجديدة باسم فريد
+      const cleanId = (serviceId || 'srv').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const fileName = `service_${cleanId}_${Date.now()}.${fileExt}`;
+      const filePath = fileName;
+
+      const { error } = await client.storage.from('services').upload(filePath, blob, {
+        contentType: blob.type || `image/${fileExt}`,
+        cacheControl: '3600',
+        upsert: true
+      });
+
+      if (error) {
+        console.error('DB.uploadServiceImage storage error:', error.message);
+        return typeof fileOrBlob === 'string' ? fileOrBlob : '';
+      }
+
+      // 3. الحصول على الرابط العام المباشر للصورة
+      const { data: publicUrlData } = client.storage.from('services').getPublicUrl(filePath);
+      return publicUrlData.publicUrl;
+    } catch (err) {
+      console.error('DB.uploadServiceImage exception:', err);
+      return typeof fileOrBlob === 'string' ? fileOrBlob : '';
+    }
+  },
+
+  async deleteServiceImage(imageUrl?: string): Promise<boolean> {
+    if (!imageUrl || typeof imageUrl !== 'string') return true;
+    const client = sb();
+    if (!client) return false;
+
+    try {
+      let filePath = imageUrl;
+      if (imageUrl.includes('/storage/v1/object/public/services/')) {
+        filePath = imageUrl.split('/storage/v1/object/public/services/')[1];
+      } else if (imageUrl.includes('/services/')) {
+        filePath = imageUrl.split('/services/')[1];
+      } else if (imageUrl.startsWith('http')) {
+        const parts = imageUrl.split('/');
+        filePath = parts[parts.length - 1];
+      }
+
+      if (filePath && !filePath.startsWith('data:')) {
+        const cleanPath = filePath.split('?')[0];
+        const { error } = await client.storage.from('services').remove([cleanPath]);
+        if (error) {
+          console.warn('DB.deleteServiceImage warning:', error.message);
+        }
+        return true;
+      }
+      return true;
+    } catch (e) {
+      console.error('DB.deleteServiceImage exception:', e);
+      return false;
+    }
+  },
+
+  async deleteService(serviceId: string, imageUrl?: string): Promise<boolean> {
+    if (imageUrl) {
+      await DB.deleteServiceImage(imageUrl);
+    }
+    return DB.remove('services', serviceId);
+  },
 
   // ---- التصنيفات ----
-  async fetchCategories() { return DB.fetchAll<any>('categories'); },
-  async saveCategory(c: any) {
+  async fetchCategories(salonId?: string) { return DB.fetchAll<any>('categories', undefined, salonId); },
+  async saveCategory(c: any, salonId?: string) {
     const client = sb(); if (!client || !c) return null;
-    const validSalonId = toSalonUUID(c.salonId || getSalonId());
+    const validSalonId = toSalonUUID(salonId || c.salonId || getSalonId());
     const { error } = await client.from('categories').upsert(
       { id: c.id, salon_id: validSalonId, name: c.name, icon: c.icon || 'Scissors', type: c.type || 'service' },
       { onConflict: 'id' }
@@ -929,13 +1266,14 @@ export const DB = {
     if (error) console.error('DB.saveCategory error:', error.message);
     return error ? null : c;
   },
-  async saveCategories(list: any[]) { for (const c of list) await DB.saveCategory(c); return true; },
+  async deleteCategory(id: string) { return DB.remove('categories', id); },
+  async saveCategories(list: any[], salonId?: string) { for (const c of list) await DB.saveCategory(c, salonId); return true; },
 
   // ---- المنتجات ----
-  async fetchProducts() { return DB.fetchAll<any>('products'); },
-  async saveProduct(p: any) {
+  async fetchProducts(salonId?: string) { return DB.fetchAll<any>('products', undefined, salonId); },
+  async saveProduct(p: any, salonId?: string) {
     const client = sb(); if (!client || !p) return null;
-    const validSalonId = toSalonUUID(p.salonId || getSalonId());
+    const validSalonId = toSalonUUID(salonId || p.salonId || getSalonId());
     const validBranchId = toBranchUUID(p.branchId);
     const { error } = await client.from('products').upsert({
       id: p.id, salon_id: validSalonId, branch_id: validBranchId,
@@ -948,13 +1286,13 @@ export const DB = {
     if (error) { console.error('DB.saveProduct error:', error.message); return null; }
     return p;
   },
-  async saveProducts(list: any[]) { for (const p of list) await DB.saveProduct(p); return true; },
+  async saveProducts(list: any[], salonId?: string) { for (const p of list) await DB.saveProduct(p, salonId); return true; },
 
   // ---- الموردون ----
-  async fetchSuppliers() { return DB.fetchAll<any>('suppliers'); },
-  async saveSupplier(s: any) {
+  async fetchSuppliers(salonId?: string) { return DB.fetchAll<any>('suppliers', undefined, salonId); },
+  async saveSupplier(s: any, salonId?: string) {
     const client = sb(); if (!client || !s) return null;
-    const validSalonId = toSalonUUID(s.salonId || getSalonId());
+    const validSalonId = toSalonUUID(salonId || s.salonId || getSalonId());
     const { error } = await client.from('suppliers').upsert({
       id: s.id, salon_id: validSalonId, name: s.name, phone: s.phone,
       email: s.email || null, address: s.address || null, current_balance: s.currentBalance ?? 0
@@ -964,10 +1302,10 @@ export const DB = {
   },
 
   // ---- فواتير الشراء ----
-  async fetchPurchaseInvoices() { return DB.fetchAll<any>('purchase_invoices'); },
-  async savePurchaseInvoice(p: any) {
+  async fetchPurchaseInvoices(salonId?: string) { return DB.fetchAll<any>('purchase_invoices', undefined, salonId); },
+  async savePurchaseInvoice(p: any, salonId?: string) {
     const client = sb(); if (!client || !p) return null;
-    const validSalonId = toSalonUUID(p.salonId || getSalonId());
+    const validSalonId = toSalonUUID(salonId || p.salonId || getSalonId());
     const validBranchId = toBranchUUID(p.branchId);
     const { error } = await client.from('purchase_invoices').upsert({
       id: p.id, salon_id: validSalonId, branch_id: validBranchId,
@@ -981,10 +1319,10 @@ export const DB = {
   },
 
   // ---- مدفوعات الموردين ----
-  async fetchSupplierPayments() { return DB.fetchAll<any>('supplier_payments'); },
-  async saveSupplierPayment(sp: any) {
+  async fetchSupplierPayments(salonId?: string) { return DB.fetchAll<any>('supplier_payments', undefined, salonId); },
+  async saveSupplierPayment(sp: any, salonId?: string) {
     const client = sb(); if (!client || !sp) return null;
-    const validSalonId = toSalonUUID(sp.salonId || getSalonId());
+    const validSalonId = toSalonUUID(salonId || sp.salonId || getSalonId());
     const validBranchId = toBranchUUID(sp.branchId);
     const { error } = await client.from('supplier_payments').upsert({
       id: sp.id, salon_id: validSalonId, branch_id: validBranchId,
@@ -996,10 +1334,10 @@ export const DB = {
   },
 
   // ---- الجرد ----
-  async fetchInventoryCounts() { return DB.fetchAll<any>('inventory_counts'); },
-  async saveInventoryCount(ic: any) {
+  async fetchInventoryCounts(salonId?: string) { return DB.fetchAll<any>('inventory_counts', undefined, salonId); },
+  async saveInventoryCount(ic: any, salonId?: string) {
     const client = sb(); if (!client || !ic) return null;
-    const validSalonId = toSalonUUID(ic.salonId || getSalonId());
+    const validSalonId = toSalonUUID(salonId || ic.salonId || getSalonId());
     const validBranchId = toBranchUUID(ic.branchId);
     const { error } = await client.from('inventory_counts').upsert({
       id: ic.id, salon_id: validSalonId, branch_id: validBranchId,
@@ -1010,10 +1348,10 @@ export const DB = {
   },
 
   // ---- حركات المخزون ----
-  async fetchItemMovements() { return DB.fetchAll<any>('item_movements'); },
-  async saveItemMovement(im: any) {
+  async fetchItemMovements(salonId?: string) { return DB.fetchAll<any>('item_movements', undefined, salonId); },
+  async saveItemMovement(im: any, salonId?: string) {
     const client = sb(); if (!client || !im) return null;
-    const validSalonId = toSalonUUID(im.salonId || getSalonId());
+    const validSalonId = toSalonUUID(salonId || im.salonId || getSalonId());
     const validBranchId = toBranchUUID(im.branchId);
     const { error } = await client.from('item_movements').upsert({
       id: im.id, salon_id: validSalonId, branch_id: validBranchId,
@@ -1027,12 +1365,12 @@ export const DB = {
   },
 
   // ---- الشكاوى ----
-  async fetchComplaints() { return DB.fetchAll<any>('customer_complaints'); },
-  async saveComplaint(c: any) {
+  async fetchComplaints(salonId?: string) { return DB.fetchAll<any>('customer_complaints', undefined, salonId); },
+  async saveComplaint(c: any, salonId?: string) {
     const client = sb(); if (!client) return null;
-    const salonId = getSalonId();
+    const validSalonId = toSalonUUID(salonId || c.salonId || getSalonId());
     const { error } = await client.from('customer_complaints').upsert({
-      id: c.id, salon_id: salonId, branch_id: c.branchId || null,
+      id: c.id, salon_id: validSalonId, branch_id: c.branchId || null,
       client_phone: c.clientPhone, client_name: c.clientName, client_id: c.clientId || null,
       invoice_id: c.invoiceId || null, invoice_date: c.invoiceDate || null,
       invoice_total: c.invoiceTotal || null, employee_id: c.employeeId || null,
@@ -1049,15 +1387,40 @@ export const DB = {
     return c;
   },
 
-  // ---- حذف فاتورة (خاص بالأدمن) ----
+  // ---- حذف فاتورة ومعاملاتها المالية المرتبطة نهائياً من قاعدة البيانات ----
   async deleteInvoice(invoiceId: string) {
     const client = sb();
     if (!client) return false;
     try {
+      // 1. Delete all transactions linked to this invoice from PostgreSQL DB
+      await client.from('transactions').delete().eq('invoice_id', invoiceId);
+      await client.from('transactions').delete().ilike('description', `%${invoiceId}%`);
+      // 2. Delete the invoice itself from DB
       const { error } = await client.from('invoices').delete().eq('id', invoiceId);
       if (error) { console.error('DB.deleteInvoice error:', error.message); return false; }
       return true;
     } catch (e) { console.error('DB.deleteInvoice exception:', e); return false; }
+  },
+
+  // ---- حذف معاملة مالية من قاعدة البيانات ----
+  async deleteTransaction(transactionId: string) {
+    const client = sb();
+    if (!client) return false;
+    try {
+      const { error } = await client.from('transactions').delete().eq('id', transactionId);
+      if (error) { console.error('DB.deleteTransaction error:', error.message); return false; }
+      return true;
+    } catch (e) { console.error('DB.deleteTransaction exception:', e); return false; }
+  },
+
+  async deleteTransactionsByInvoiceId(invoiceId: string) {
+    const client = sb();
+    if (!client) return false;
+    try {
+      await client.from('transactions').delete().eq('invoice_id', invoiceId);
+      await client.from('transactions').delete().ilike('description', `%${invoiceId}%`);
+      return true;
+    } catch (e) { return false; }
   },
 
   // ---- الورديات ومتابعة العهدة (Work Shifts & Custody) ----
@@ -1068,7 +1431,10 @@ export const DB = {
       let q = client.from('work_shifts').select('*');
       const sId = salonId || getSalonId();
       if (sId) q = q.eq('salon_id', toSalonUUID(sId));
-      if (branchId && branchId !== 'all') q = q.eq('branch_id', toBranchUUID(branchId));
+      if (branchId && branchId !== 'all') {
+        const bId = toBranchUUID(branchId) || branchId;
+        q = q.eq('branch_id', bId);
+      }
       const { data, error } = await q.order('opened_at', { ascending: false });
       if (error) { console.error('DB.fetchWorkShifts:', error.message); return []; }
       return (data || []).map(toCamel);
@@ -1082,7 +1448,10 @@ export const DB = {
       let q = client.from('work_shifts').select('*').eq('status', 'open');
       const sId = salonId || getSalonId();
       if (sId) q = q.eq('salon_id', toSalonUUID(sId));
-      if (branchId && branchId !== 'all') q = q.eq('branch_id', toBranchUUID(branchId));
+      if (branchId && branchId !== 'all') {
+        const bId = toBranchUUID(branchId) || branchId;
+        q = q.eq('branch_id', bId);
+      }
       const { data, error } = await q.order('opened_at', { ascending: false }).limit(1).maybeSingle();
       if (error) return null;
       return data ? toCamel(data) : null;
@@ -1094,7 +1463,7 @@ export const DB = {
     if (!client || !ws) return false;
     try {
       const validSalonId = toSalonUUID(ws.salonId || getSalonId());
-      const validBranchId = toBranchUUID(ws.branchId);
+      const validBranchId = ws.branchId ? (toBranchUUID(ws.branchId) || ws.branchId) : null;
       const snap: any = {
         id: ws.id,
         salon_id: validSalonId,
@@ -1277,14 +1646,21 @@ export const DB = {
       const snap: any = {
         id: fl.id, salon_id: validSalonId, branch_id: validBranchId,
         employee_id: fl.employeeId || null, employee_name: fl.employeeName || null,
-        fingerprint_code: fl.fingerprintCode, timestamp: fl.timestamp,
+        fingerprint_code: fl.fingerprintCode || (fl.employeeId ? `FP-${fl.employeeId.slice(0, 4)}` : '101'),
+        timestamp: fl.timestamp,
         type: fl.type || 'check_in', device_ip: fl.deviceIp || null,
         status: fl.status || 'synced', notes: fl.notes || null
       };
       const { error } = await client.from('fingerprint_logs').upsert(snap, { onConflict: 'id' });
-      if (error) { console.error('DB.saveFingerprintLog error:', error.message); return null; }
+      if (error) { 
+        console.error('DB.saveFingerprintLog error:', error.message); 
+        throw error; 
+      }
       return fl;
-    } catch (e) { console.error('DB.saveFingerprintLog exception:', e); return null; }
+    } catch (e) { 
+      console.error('DB.saveFingerprintLog exception:', e); 
+      throw e; 
+    }
   },
   async deleteFingerprintLog(id: string) {
     const client = sb(); if (!client || !id) return false;
@@ -1297,7 +1673,127 @@ export const DB = {
 
 
   // ============================================================
-  // تحميل كل بيانات الصالون دفعة واحدة عند بدء التشغيل
+  // تحميل البيانات الأساسية فقط (Auth, Settings, POS Catalog) بسرعة خارقة
+  // ============================================================
+  async loadEssentialData(salonId: string) {
+    const client = sb();
+    if (!client) return null;
+
+    const validSalonId = toSalonUUID(salonId);
+    console.log('⚡ [Fast Startup] تحميل البيانات الأساسية للصالون:', validSalonId);
+    
+    // Fetch ONLY essential catalog needed for POS & basic operations concurrently
+    const [categories, services, employees, clients, products] = await Promise.all([
+      DB.fetchAll<any>('categories', undefined, validSalonId),
+      DB.fetchAll<any>('services', undefined, validSalonId),
+      DB.fetchAll<any>('employees', undefined, validSalonId),
+      // Recent clients for instant POS lookup
+      DB.fetchAll<any>('clients', undefined, validSalonId),
+      DB.fetchAll<any>('products', undefined, validSalonId),
+    ]);
+
+    return {
+      categories,
+      services,
+      employees,
+      clients,
+      products
+    };
+  },
+
+  // ============================================================
+  // تحميل بيانات قسم معين عند فتحه (Lazy Load per Tab)
+  // ============================================================
+  async loadSectionData(section: string, salonId: string) {
+    const client = sb();
+    if (!client) return {};
+    const validSalonId = toSalonUUID(salonId);
+
+    switch (section) {
+      case 'invoices': {
+        const invoices = await DB.fetchAll<any>('invoices', undefined, validSalonId);
+        return { invoices };
+      }
+      case 'transactions':
+      case 'treasury':
+      case 'expenses': {
+        const [transactions, custodies] = await Promise.all([
+          DB.fetchAll<any>('transactions', undefined, validSalonId),
+          DB.fetchAll<any>('employee_custodies', undefined, validSalonId)
+        ]);
+        return { transactions, custodies };
+      }
+      case 'bookings': {
+        const bookings = await DB.fetchAll<any>('bookings', undefined, validSalonId);
+        return { bookings };
+      }
+      case 'clients': {
+        const clients = await DB.fetchAll<any>('clients', undefined, validSalonId);
+        return { clients };
+      }
+      case 'dashboard':
+      case 'reports': {
+        const [invoices, transactions, bookings] = await Promise.all([
+          DB.fetchAll<any>('invoices', undefined, validSalonId),
+          DB.fetchAll<any>('transactions', undefined, validSalonId),
+          DB.fetchAll<any>('bookings', undefined, validSalonId)
+        ]);
+        return { invoices, transactions, bookings };
+      }
+      case 'hr':
+      case 'employees': {
+        const [fingerprintLogs, custodies, tips] = await Promise.all([
+          DB.fetchAll<any>('fingerprint_logs', undefined, validSalonId),
+          DB.fetchAll<any>('employee_custodies', undefined, validSalonId),
+          DB.fetchAll<any>('tips', undefined, validSalonId)
+        ]);
+        return { fingerprintLogs, custodies, tips };
+      }
+      case 'warehouse':
+      case 'suppliers':
+      case 'purchases':
+      case 'inventory': {
+        const [suppliers, purchaseInvoices, supplierPayments, inventoryCounts, itemMovements] = await Promise.all([
+          DB.fetchAll<any>('suppliers', undefined, validSalonId),
+          DB.fetchAll<any>('purchase_invoices', undefined, validSalonId),
+          DB.fetchAll<any>('supplier_payments', undefined, validSalonId),
+          DB.fetchAll<any>('inventory_counts', undefined, validSalonId),
+          DB.fetchAll<any>('item_movements', undefined, validSalonId)
+        ]);
+        return { suppliers, purchaseInvoices, supplierPayments, inventoryCounts, itemMovements };
+      }
+      case 'partners': {
+        const [partners, partnerTransactions] = await Promise.all([
+          DB.fetchAll<any>('partners', undefined, validSalonId),
+          DB.fetchAll<any>('partner_transactions', undefined, validSalonId)
+        ]);
+        return { partners, partnerTransactions };
+      }
+      case 'promotions':
+      case 'promo-codes': {
+        const [promoCodes, promoCodeUsages] = await Promise.all([
+          DB.fetchAll<any>('promo_codes', undefined, validSalonId),
+          DB.fetchAll<any>('promo_code_usages', undefined, validSalonId)
+        ]);
+        return { promoCodes, promoCodeUsages };
+      }
+      case 'tips': {
+        const tips = await DB.fetchAll<any>('tips', undefined, validSalonId);
+        return { tips };
+      }
+      case 'fingerprint':
+      case 'fingerprint_logs':
+      case 'fingerprint-logs': {
+        const fingerprintLogs = await DB.fetchAll<any>('fingerprint_logs', undefined, validSalonId);
+        return { fingerprintLogs };
+      }
+      default:
+        return {};
+    }
+  },
+
+  // ============================================================
+  // تحميل كل بيانات الصالون دفعة واحدة عند بدء التشغيل أو الطلب
   // ============================================================
   async loadAllData(salonId: string) {
     const client = sb();
@@ -1436,6 +1932,7 @@ export function dbServiceToApp(row: any) {
     clientReferralCashbackAmount: row.clientReferralCashbackAmount ?? 0,
     durationMinutes: row.durationMinutes ?? 30, 
     barcode: row.barcode || '',
+    imageUrl: row.imageUrl || row.image_url || '',
     isActive: row.isActive !== false, 
     type: row.type || 'service',
     isPriority: row.isPriority ?? row.is_priority ?? false,
@@ -1456,7 +1953,7 @@ export function dbUserToApp(row: any): any {
     salonCode: c.salonCode,
     branchCode: c.branchCode,
     username: (c.username || '').trim().toLowerCase(),
-    password: c.password || c.passwordHash || row.password_hash || '123456',
+    password: c.password || c.passwordHash || row.password_hash || '',
     name: c.name || c.username || 'مستخدم',
     email: c.email || '',
     phone: c.phone || '',

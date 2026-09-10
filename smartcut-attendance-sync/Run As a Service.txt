@@ -1,0 +1,2 @@
+nssm install SmartCutAttendanceSync "node" "E:\Smart Cut V2\smartcut-main\smartcut-attendance-sync\server.js"
+nssm start SmartCutAttendanceSync

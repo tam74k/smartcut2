@@ -125,8 +125,8 @@ export const DEFAULT_CUSTOM_ROLES: CustomRole[] = [];
 
 export const DEFAULT_ROLE_PRESETS: Record<UserRole, { screens: string[]; actions: ActionPermission[] }> = {
   owner: {
-    screens: ['owner_portal'],
-    actions: ['view_reports', 'view_system_analytics', 'view_employee_analytics', 'export_excel', 'treasury_view_balance']
+    screens: ['*'],
+    actions: ['*']
   },
   admin: {
     screens: ['*'],
@@ -240,6 +240,22 @@ export class AuthService {
     if (clean === 'programmer' || clean === 'master') return true;
     const users = this.getUsers(salonId);
     return users.some(u => u.username.toLowerCase() === clean && u.id !== excludeUserId);
+  }
+
+  public static async isUsernameTakenAsync(username: string, excludeUserId?: string): Promise<boolean> {
+    const clean = username.trim().toLowerCase();
+    if (!clean) return false;
+    if (clean === 'programmer' || clean === 'master') return true;
+    const users = this.getUsers();
+    if (users.some(u => u.username.toLowerCase() === clean && u.id !== excludeUserId)) {
+      return true;
+    }
+    try {
+      const dbUsers = await DB.fetchUsers();
+      return dbUsers.some(u => u.username.toLowerCase() === clean && u.id !== excludeUserId);
+    } catch {
+      return false;
+    }
   }
 
   public static isEmailTaken(email: string, excludeUserId?: string, salonId?: string): boolean {
@@ -366,42 +382,56 @@ export class AuthService {
     }
   }
 
+  private static setSession(user: AppUser) {
+    this.currentUser = user;
+    try {
+      localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify({ userId: user.id, salonId: user.salonId, user, loginTime: new Date().toISOString() }));
+      localStorage.setItem('smartcut_current_user', JSON.stringify(user));
+      if (user.salonId) {
+        localStorage.setItem('smartcut_active_salon_id', user.salonId);
+        const s = localStorage.getItem('smartcut_app_settings');
+        if (s) {
+          const parsed = JSON.parse(s);
+          parsed.salonId = user.salonId;
+          localStorage.setItem('smartcut_app_settings', JSON.stringify(parsed));
+        }
+      }
+    } catch (e) {}
+  }
+
   public static login(identifier: string, password: string): AppUser | null {
     const cleanId = identifier.trim().toLowerCase();
     const cleanPass = password.trim();
+    if (!cleanId || !cleanPass) return null;
 
     // 1. Master Programmer login
     const currentProgPass = this.getProgrammerPassword();
-    if (cleanId === 'programmer' && (cleanPass === currentProgPass || cleanPass === MASTER_PROGRAMMER_USER.password || cleanPass === 'dev@smartcut2026' || cleanPass === 'programmer123')) {
-      const progUser = { ...MASTER_PROGRAMMER_USER, password: currentProgPass };
-      this.currentUser = progUser;
-      localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify({ userId: progUser.id, loginTime: new Date().toISOString() }));
-      return progUser;
-    }
-
-    // 2. Direct Admin Fallback Check
-    if (cleanId === 'admin' && (cleanPass === '123' || cleanPass === '123456' || cleanPass === 'admin')) {
-      const defaultAdmin = DEFAULT_USERS[0];
-      this.currentUser = defaultAdmin;
-      localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify({ userId: defaultAdmin.id, loginTime: new Date().toISOString() }));
-      return defaultAdmin;
+    if (cleanId === 'programmer') {
+      if (cleanPass === currentProgPass || cleanPass === MASTER_PROGRAMMER_USER.password) {
+        const progUser = { ...MASTER_PROGRAMMER_USER, password: currentProgPass };
+        this.setSession(progUser);
+        return progUser;
+      }
+      return null;
     }
 
     const users = this.getUsers();
     
-    // 3. Match by username or email or phone
+    // 2. Strict matching by username or email or phone + exact password match
     const user = users.find(
       u => (u.username.toLowerCase() === cleanId || 
             (u.email && u.email.toLowerCase() === cleanId) || 
             (u.phone && u.phone.replace(/\D/g, '') === cleanId.replace(/\D/g, ''))) && 
-           (u.password === cleanPass || (u as any).passwordHash === cleanPass || (u as any).password_hash === cleanPass || (u.username.toLowerCase() === 'admin' && (cleanPass === '123' || cleanPass === '123456'))) && 
            u.active !== false
     );
 
     if (user) {
-      this.currentUser = user;
-      localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify({ userId: user.id, loginTime: new Date().toISOString() }));
-      return user;
+      const targetPass = user.password || (user as any).passwordHash || (user as any).password_hash || '';
+      if (targetPass && targetPass === cleanPass) {
+        this.setSession(user);
+        return user;
+      }
+      return null;
     }
 
     return null;
@@ -410,12 +440,20 @@ export class AuthService {
   public static async loginAsync(identifier: string, password: string): Promise<AppUser | null> {
     const cleanId = identifier.trim().toLowerCase();
     const cleanPass = password.trim();
+    if (!cleanId || !cleanPass) return null;
 
-    // 1. Try local/sync login first
-    const syncUser = this.login(identifier, password);
-    if (syncUser) return syncUser;
+    // 1. Master Programmer check
+    const currentProgPass = this.getProgrammerPassword();
+    if (cleanId === 'programmer') {
+      if (cleanPass === currentProgPass || cleanPass === MASTER_PROGRAMMER_USER.password) {
+        const progUser = { ...MASTER_PROGRAMMER_USER, password: currentProgPass };
+        this.setSession(progUser);
+        return progUser;
+      }
+      return null;
+    }
 
-    // 2. Query Supabase users directly
+    // 2. Query Supabase users directly (Source of Truth)
     try {
       const dbUsers = await DB.fetchUsers();
       if (dbUsers && dbUsers.length > 0) {
@@ -424,8 +462,9 @@ export class AuthService {
           const idx = currentLocal.findIndex(l => l.username.toLowerCase() === dbu.username.toLowerCase());
           if (idx >= 0) {
             currentLocal[idx] = {
+              ...currentLocal[idx],
               ...dbu,
-              password: dbu.password || currentLocal[idx].password || '123456'
+              password: dbu.password || dbu.passwordHash || (dbu as any).password_hash || currentLocal[idx].password
             };
           } else {
             currentLocal.push(dbu);
@@ -437,52 +476,39 @@ export class AuthService {
           u => (u.username.toLowerCase() === cleanId || 
                 (u.email && u.email.toLowerCase() === cleanId) || 
                 (u.phone && u.phone.replace(/\D/g, '') === cleanId.replace(/\D/g, ''))) && 
-               (u.password === cleanPass || (u as any).passwordHash === cleanPass || (u as any).password_hash === cleanPass || ((u.username.toLowerCase() === 'admin' || u.role === 'admin' || u.role === 'owner') && (cleanPass === '123' || cleanPass === '123456'))) && 
                u.active !== false
         );
 
         if (matched) {
-          this.currentUser = matched;
-          localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify({ userId: matched.id, loginTime: new Date().toISOString() }));
-          return matched;
+          const targetPass = matched.password || (matched as any).passwordHash || (matched as any).password_hash || '';
+          if (targetPass && targetPass === cleanPass) {
+            this.setSession(matched);
+            return matched;
+          }
+          // Password did not match -> Reject login immediately!
+          return null;
         }
       }
-
-      // 3. Check if matching a registered salon in database (e.g. salon owner login by email/phone/username)
-      const salons = await DB.fetchSalons();
-      const matchedSalon = (salons || []).find(s => 
-        (s.code && s.code.toLowerCase() === cleanId) ||
-        (s.email && s.email.toLowerCase() === cleanId) ||
-        (s.ownerEmail && s.ownerEmail.toLowerCase() === cleanId) ||
-        (s.phone && s.phone.replace(/\D/g, '') === cleanId.replace(/\D/g, '')) ||
-        (s.name && s.name.toLowerCase() === cleanId)
-      );
-
-      if (matchedSalon) {
-        // Find or synthesize admin user for this salon
-        const sAdmin: AppUser = {
-          id: `usr-${matchedSalon.id}`,
-          salonId: matchedSalon.id,
-          salonCode: matchedSalon.code,
-          username: cleanId,
-          password: cleanPass,
-          name: matchedSalon.ownerName || matchedSalon.name,
-          email: matchedSalon.email || matchedSalon.ownerEmail || '',
-          phone: matchedSalon.phone || '',
-          role: 'owner',
-          active: matchedSalon.isActive !== false,
-          screens: ['*'],
-          actions: ['*']
-        };
-        this.saveUser(sAdmin);
-        await DB.saveUser(sAdmin);
-        this.currentUser = sAdmin;
-        localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify({ userId: sAdmin.id, loginTime: new Date().toISOString() }));
-        return sAdmin;
-      }
-
     } catch (err) {
       console.warn('DB login lookup error:', err);
+    }
+
+    // 3. Fallback to local users list
+    const localUsers = this.getUsers();
+    const localMatched = localUsers.find(
+      u => (u.username.toLowerCase() === cleanId || 
+            (u.email && u.email.toLowerCase() === cleanId) || 
+            (u.phone && u.phone.replace(/\D/g, '') === cleanId.replace(/\D/g, ''))) && 
+           u.active !== false
+    );
+
+    if (localMatched) {
+      const targetPass = localMatched.password || (localMatched as any).passwordHash || (localMatched as any).password_hash || '';
+      if (targetPass && targetPass === cleanPass) {
+        this.setSession(localMatched);
+        return localMatched;
+      }
+      return null;
     }
 
     return null;
@@ -492,8 +518,7 @@ export class AuthService {
     const users = this.getUsers();
     const user = users.find(u => u.role === role && u.active) || users[0];
     if (user) {
-      this.currentUser = user;
-      localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify({ userId: user.id, loginTime: new Date().toISOString() }));
+      this.setSession(user);
       return user;
     }
     return null;
@@ -502,6 +527,8 @@ export class AuthService {
   public static logout(): void {
     this.currentUser = null;
     localStorage.removeItem(STORAGE_KEYS.SESSION);
+    localStorage.removeItem('smartcut_current_user');
+    localStorage.removeItem('smartcut_active_salon_id');
   }
 
   public static canAccess(screen: string, user?: AppUser | null): boolean {

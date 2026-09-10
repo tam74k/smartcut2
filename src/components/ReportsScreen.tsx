@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { AppSettings, Transaction, Invoice, Branch, TipRecord } from '../types';
-import { Calendar, FileBarChart, Download, TrendingUp, TrendingDown, DollarSign, Printer, CheckCircle2, Clock, Wallet } from 'lucide-react';
+import { Calendar, FileBarChart, Download, TrendingUp, TrendingDown, DollarSign, Printer, CheckCircle2, Clock, Wallet, Coins } from 'lucide-react';
 import { ClosingReportReceipt } from './ClosingReportReceipt';
 import { ServicesReportReceipt } from './ServicesReportReceipt';
 import { EmployeesReportReceipt } from './EmployeesReportReceipt';
@@ -9,6 +9,7 @@ import { IncomeReportReceipt } from './IncomeReportReceipt';
 import { CustodyReportReceipt } from './CustodyReportReceipt';
 import { exportToExcel } from '../utils/exportExcel';
 import { handlePrintReceipt } from '../utils/print';
+import { calculateEmployeeCommission } from '../utils/commissionHelper';
 
 export function ReportsScreen({ 
   settings, 
@@ -183,11 +184,11 @@ export function ReportsScreen({
     const totalSupplierPayments = periodSupplierPayments.reduce((sum, sp) => sum + (Number(sp.amount) || 0), 0);
     const totalPurchasesAndSuppliers = totalPurchasesPaid + totalSupplierPayments;
 
-    // 5. Employee Commissions (عمولات الموظفين)
+    // 5. Employee Commissions (عمولات الموظفين - تنفيذ وإحالة)
     let totalCommissions = 0;
     periodInvoices.forEach(inv => {
       (inv.items || []).forEach((item: any) => {
-        totalCommissions += Number(item.employeeCommission || item.commissionAmount || 0);
+        totalCommissions += Number(item.employeeCommission || item.commissionAmount || 0) + Number(item.referralCommissionAmount || 0);
       });
     });
 
@@ -195,7 +196,7 @@ export function ReportsScreen({
       branchEmployees.forEach(emp => {
         (emp.financialRecords || []).forEach((rec: any) => {
           const d = (rec.date || '').split('T')[0];
-          if (d >= activeFrom && d <= activeTo && (rec.type === 'commission' || rec.type === 'service_commission')) {
+          if (d >= activeFrom && d <= activeTo && (rec.type === 'commission' || rec.type === 'service_commission' || rec.type === 'referral_commission')) {
             totalCommissions += Number(rec.amount) || 0;
           }
         });
@@ -422,6 +423,100 @@ export function ReportsScreen({
     };
   }, [activeFrom, activeTo, branchTransactions, branchTips]);
 
+  // ---- حسابات حركة صرف العمولات (Commission Payouts Report) ----
+  const commissionPayoutsReportData = useMemo(() => {
+    if (!activeFrom || !activeTo) {
+      return {
+        rows: [] as any[],
+        totalAmount: 0,
+        count: 0,
+        treasuryBreakdown: [] as any[]
+      };
+    }
+
+    const rows: Array<{
+      id: string;
+      dateStr: string;
+      empId: string;
+      empCode: string;
+      empName: string;
+      empRole: string;
+      amount: number;
+      treasuryId?: string;
+      treasuryName: string;
+      note: string;
+    }> = [];
+
+    branchEmployees.forEach(emp => {
+      (emp.financialRecords || []).forEach((rec: any) => {
+        if (rec.type === 'commission_payout') {
+          const d = (rec.date || '').split('T')[0];
+          if (d >= activeFrom && d <= activeTo) {
+            const trName = settings.treasuries.find(t => t.id === rec.treasuryId)?.name || 'الخزينة الرئيسية';
+            rows.push({
+              id: rec.id || Math.random().toString(),
+              dateStr: rec.date || d,
+              empId: emp.id,
+              empCode: emp.fingerprintCode || emp.id,
+              empName: emp.name,
+              empRole: emp.role || 'فني',
+              amount: Number(rec.amount) || 0,
+              treasuryId: rec.treasuryId,
+              treasuryName: trName,
+              note: rec.note || 'صرف عمولة مستحقة'
+            });
+          }
+        }
+      });
+    });
+
+    // Also check transactions categorized as 'commissions'
+    branchTransactions.forEach(trx => {
+      if (trx.category === 'commissions' && trx.type === 'out') {
+        const d = (trx.date || '').split('T')[0];
+        if (d >= activeFrom && d <= activeTo) {
+          const alreadyExists = rows.some(r => r.id === trx.id || (r.dateStr.startsWith(d) && Math.abs(r.amount - trx.amount) < 0.01));
+          if (!alreadyExists) {
+            const trName = settings.treasuries.find(t => t.id === trx.treasury)?.name || trx.treasury || 'الخزينة الرئيسية';
+            rows.push({
+              id: trx.id,
+              dateStr: trx.date,
+              empId: '',
+              empCode: '-',
+              empName: trx.description || 'صرف عمولة',
+              empRole: 'موظف',
+              amount: Number(trx.amount) || 0,
+              treasuryId: trx.treasury,
+              treasuryName: trName,
+              note: trx.description || 'صرف عمولة'
+            });
+          }
+        }
+      }
+    });
+
+    rows.sort((a, b) => b.dateStr.localeCompare(a.dateStr));
+
+    const totalAmount = rows.reduce((s, r) => s + r.amount, 0);
+    const count = rows.length;
+
+    const tMap: { [key: string]: { name: string; amount: number; count: number } } = {};
+    rows.forEach(r => {
+      if (!tMap[r.treasuryName]) {
+        tMap[r.treasuryName] = { name: r.treasuryName, amount: 0, count: 0 };
+      }
+      tMap[r.treasuryName].amount += r.amount;
+      tMap[r.treasuryName].count += 1;
+    });
+
+    return {
+      rows,
+      totalAmount,
+      count,
+      treasuryBreakdown: Object.values(tMap)
+    };
+  }, [branchEmployees, branchTransactions, activeFrom, activeTo, settings.treasuries]);
+
   const handleExport = () => {
     const filename = `تقرير_${activeReportType}_${activeFrom}_${activeTo}`;
     if (activeReportType === 'income') {
@@ -519,6 +614,19 @@ export function ReportsScreen({
         ]);
         exportToExcel(filename, 'تفاصيل_الأوفر_تايم_يومي', headers, rows);
       }
+    } else if (activeReportType === 'commission_payouts') {
+      const headers = ['رقم السند', 'التاريخ والوقت', 'كود الموظف', 'اسم الموظف', 'الوظيفة', 'الخزينة المنصرف منها', 'المبلغ المصروف', 'البيان والملاحظات'];
+      const rows = commissionPayoutsReportData.rows.map(r => [
+        r.id,
+        r.dateStr,
+        r.empCode,
+        r.empName,
+        r.empRole,
+        r.treasuryName,
+        r.amount.toFixed(2),
+        r.note
+      ]);
+      exportToExcel(filename, 'حركة_صرف_العمولات', headers, rows);
     } else if (activeReportType === 'net_profit') {
       const headers = ['البند المالي', 'نوع التأثير', 'المبلغ المستحق', 'النسبة المئوية من الدخل', 'الملاحظات'];
       const rows = netProfitReportData.breakdownList.map(b => [
@@ -580,6 +688,7 @@ export function ReportsScreen({
               <option value="income">تقرير الدخل التفصيلي</option>
               <option value="closing">تقرير إغلاق اليوم</option>
               <option value="employees">أعمال وعمولات الموظفين</option>
+              <option value="commission_payouts">💵 حركة صرف العمولات (سندات الصرف والخزن)</option>
               <option value="services_report">تقرير الخدمات</option>
               <option value="expenses">تقرير المصروفات</option>
               <option value="initial_cash">تقرير العهد الافتتاحية</option>
@@ -993,6 +1102,7 @@ export function ReportsScreen({
             setSelectedOvertimeEmpId={setSelectedOvertimeEmpId}
             stats={stats}
             netProfitReportData={netProfitReportData}
+            commissionPayoutsReportData={commissionPayoutsReportData}
           />
         </div>
       )}
@@ -1019,7 +1129,8 @@ function ReportTable({
   selectedOvertimeEmpId,
   setSelectedOvertimeEmpId,
   stats,
-  netProfitReportData
+  netProfitReportData,
+  commissionPayoutsReportData
 }: any) {
   const start = new Date(activeFrom);
   const end = new Date(activeTo);
@@ -1051,18 +1162,30 @@ function ReportTable({
       : `${start.toISOString().split('T')[0]} - ${end.toISOString().split('T')[0]}`;
 
     return (
-      <div className="flex flex-col items-center py-8 bg-slate-200 overflow-x-auto w-full">
-        <button onClick={() => { import('../utils/print').then(m => m.handlePrintReceipt('print-income-receipt', true)); }} className="mb-6 bg-slate-800 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 print:hidden">
-          <Printer size={18} /> طباعة التقرير (A4 بالعرض)
-        </button>
-        <div className="bg-white shadow-xl overflow-x-auto max-w-full">
-          <IncomeReportReceipt 
-            settings={settings}
-            transactions={transactions}
-            startDate={activeFrom}
-            endDate={activeTo}
-            dateLabel={dateLabel}
-          />
+      <div className="w-full flex flex-col items-center py-6 bg-slate-100/90 rounded-2xl">
+        <div className="flex flex-wrap items-center justify-between gap-4 w-full px-6 mb-4 print:hidden">
+          <div className="text-xs text-slate-600 font-bold flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs">
+            <span>👈 يمكنك التمرير أفقياً لرؤية باقي أعمدة التقرير كاملة (اليسار)</span>
+          </div>
+          <button 
+            onClick={() => { import('../utils/print').then(m => m.handlePrintReceipt('print-income-receipt', true)); }} 
+            className="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
+          >
+            <Printer size={16} /> طباعة التقرير (A4 بالعرض)
+          </button>
+        </div>
+
+        {/* Scrollable Container */}
+        <div className="w-full overflow-x-auto px-4 pb-4">
+          <div className="w-max min-w-full mx-auto bg-white shadow-xl rounded-xl p-4 border border-slate-200">
+            <IncomeReportReceipt 
+              settings={settings}
+              transactions={transactions}
+              startDate={activeFrom}
+              endDate={activeTo}
+              dateLabel={dateLabel}
+            />
+          </div>
         </div>
       </div>
     );
@@ -1246,6 +1369,195 @@ function ReportTable({
   }
 
   
+  if (reportType === 'commission_payouts') {
+    const data = commissionPayoutsReportData || { rows: [], totalAmount: 0, count: 0, treasuryBreakdown: [] };
+    const dateLabel = start.toISOString().split('T')[0] === end.toISOString().split('T')[0] 
+      ? start.toISOString().split('T')[0] 
+      : `${start.toISOString().split('T')[0]} - ${end.toISOString().split('T')[0]}`;
+
+    return (
+      <div className="p-6 space-y-6">
+        {/* Top Header Bar */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-amber-500/10 border border-amber-200 p-4 rounded-2xl">
+          <div>
+            <h4 className="font-extrabold text-sm text-amber-950 flex items-center gap-2">
+              <Coins size={18} className="text-amber-600" />
+              <span>كشف وسجل حركة صرف عمولات الموظفين ({dateLabel})</span>
+            </h4>
+            <p className="text-xs text-amber-800 mt-0.5">
+              إجمالي العمولات المصروفة: <strong className="font-mono text-slate-900 font-bold">{data.totalAmount.toFixed(2)} {settings.currency}</strong> ({data.count} سند صرف)
+            </p>
+          </div>
+          <button 
+            onClick={() => { import('../utils/print').then(m => m.handlePrintReceipt('print-commission-payouts-receipt', true, 'a4')); }} 
+            className="bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-2 shadow-xs cursor-pointer"
+          >
+            <Printer size={15} /> طباعة التقرير (A4)
+          </button>
+        </div>
+
+        {/* Summary Stats Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
+            <p className="text-xs font-bold text-slate-500">إجمالي المبالغ المصروفة</p>
+            <h3 className="text-xl font-black font-mono text-amber-600 mt-1">
+              {data.totalAmount.toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
+            </h3>
+          </div>
+
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
+            <p className="text-xs font-bold text-slate-500">إجمالي سندات الصرف</p>
+            <h3 className="text-xl font-black font-mono text-slate-800 mt-1">
+              {data.count} <span className="text-xs font-normal text-slate-400">سند</span>
+            </h3>
+          </div>
+
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
+            <p className="text-xs font-bold text-slate-500 mb-1">التوزيع حسب الخزينة</p>
+            <div className="space-y-1 max-h-16 overflow-y-auto">
+              {data.treasuryBreakdown.map((t: any, i: number) => (
+                <div key={i} className="flex justify-between text-[11px]">
+                  <span className="text-slate-600 font-bold">{t.name}:</span>
+                  <span className="font-mono font-bold text-slate-900">{t.amount.toFixed(2)}</span>
+                </div>
+              ))}
+              {data.treasuryBreakdown.length === 0 && (
+                <span className="text-[11px] text-slate-400">لا توجد حركات</span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Detailed Table */}
+        <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
+          <div className="overflow-x-auto">
+            <table className="w-full text-right text-xs">
+              <thead>
+                <tr className="bg-slate-100 text-slate-700 font-extrabold border-b border-slate-200">
+                  <th className="py-3 px-4">رقم السند</th>
+                  <th className="py-3 px-4">التاريخ والوقت</th>
+                  <th className="py-3 px-4">كود</th>
+                  <th className="py-3 px-4">اسم الموظف</th>
+                  <th className="py-3 px-4">الوظيفة</th>
+                  <th className="py-3 px-4">الخزينة المنصرف منها</th>
+                  <th className="py-3 px-4">البيان والملاحظات</th>
+                  <th className="py-3 px-4 text-left">المبلغ المصروف</th>
+                  <th className="py-3 px-4 text-center">إيصال</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {data.rows.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="py-12 text-center text-slate-400 font-bold">
+                      لا توجد حركات صرف عمولات مسجلة خلال الفترة المحددة
+                    </td>
+                  </tr>
+                ) : (
+                  data.rows.map((row: any) => (
+                    <tr key={row.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="py-3 px-4 font-mono font-bold text-slate-600">{row.id}</td>
+                      <td className="py-3 px-4 font-mono text-slate-700">{row.dateStr}</td>
+                      <td className="py-3 px-4 font-mono font-bold text-indigo-700">#{row.empCode}</td>
+                      <td className="py-3 px-4 font-black text-slate-900">{row.empName}</td>
+                      <td className="py-3 px-4 text-slate-600">{row.empRole}</td>
+                      <td className="py-3 px-4 font-semibold text-slate-700">
+                        <span className="bg-slate-100 px-2 py-0.5 rounded-md">{row.treasuryName}</span>
+                      </td>
+                      <td className="py-3 px-4 text-slate-600 max-w-xs truncate">{row.note}</td>
+                      <td className="py-3 px-4 text-left font-mono font-black text-rose-600 text-sm">
+                        {row.amount.toFixed(2)} {settings.currency}
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            import('./ThermalFinancialVoucher').then(m => {
+                              m.printThermalFinancialVoucher(settings, {
+                                voucherType: 'commission_payout',
+                                voucherNumber: row.id,
+                                date: row.dateStr,
+                                employeeName: row.empName,
+                                employeeCode: row.empCode,
+                                employeeRole: row.empRole,
+                                amount: row.amount,
+                                treasuryName: row.treasuryName,
+                                note: row.note,
+                                issuedBy: 'المحاسب'
+                              });
+                            });
+                          }}
+                          className="hover:text-indigo-600 transition-colors p-1 rounded hover:bg-slate-100 text-slate-400 cursor-pointer"
+                          title="طباعة إيصال حراري 80mm"
+                        >
+                          <Printer size={15} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+              {data.rows.length > 0 && (
+                <tfoot>
+                  <tr className="bg-slate-100 font-black text-slate-900 border-t-2 border-slate-300">
+                    <td colSpan={7} className="py-3 px-4 text-left font-black">
+                      إجمالي العمولات المصروفة للفترة ({data.rows.length} حركة):
+                    </td>
+                    <td className="py-3 px-4 text-left font-mono text-rose-700 text-base font-black">
+                      {data.totalAmount.toFixed(2)} {settings.currency}
+                    </td>
+                    <td className="py-3 px-4"></td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        </div>
+
+        {/* Printable Receipt Container (A4 Printable) */}
+        <div id="print-commission-payouts-receipt" className="hidden print:block p-6 text-right font-sans" dir="rtl">
+          <div className="text-center pb-4 border-b-2 border-slate-900 mb-4">
+            <h2 className="text-xl font-black">{settings.salonName || 'SMART CUT'}</h2>
+            <h3 className="text-base font-bold text-slate-700 mt-1">تقرير حركة صرف العمولات للفترة ({dateLabel})</h3>
+            <p className="text-xs text-slate-500 mt-0.5">تاريخ الطباعة: {new Date().toLocaleString('ar-SA')}</p>
+          </div>
+
+          <table className="w-full text-right text-xs border-collapse mb-4">
+            <thead>
+              <tr className="bg-slate-200 border border-slate-400">
+                <th className="p-2 border border-slate-400">رقم السند</th>
+                <th className="p-2 border border-slate-400">التاريخ</th>
+                <th className="p-2 border border-slate-400">كود</th>
+                <th className="p-2 border border-slate-400">اسم الموظف</th>
+                <th className="p-2 border border-slate-400">الخزينة</th>
+                <th className="p-2 border border-slate-400">الملاحظات</th>
+                <th className="p-2 border border-slate-400 text-left">المبلغ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.rows.map((row: any) => (
+                <tr key={row.id} className="border border-slate-300">
+                  <td className="p-2 border border-slate-300 font-mono">{row.id}</td>
+                  <td className="p-2 border border-slate-300 font-mono">{row.dateStr}</td>
+                  <td className="p-2 border border-slate-300 font-mono">{row.empCode}</td>
+                  <td className="p-2 border border-slate-300 font-bold">{row.empName}</td>
+                  <td className="p-2 border border-slate-300">{row.treasuryName}</td>
+                  <td className="p-2 border border-slate-300">{row.note}</td>
+                  <td className="p-2 border border-slate-300 font-mono font-bold text-left">{row.amount.toFixed(2)} {settings.currency}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="bg-slate-100 font-black border border-slate-400">
+                <td colSpan={6} className="p-2 border border-slate-400 text-left">الإجمالي الكلي:</td>
+                <td className="p-2 border border-slate-400 font-mono text-left">{data.totalAmount.toFixed(2)} {settings.currency}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
   if (reportType === 'employees') {
     const filteredInvoices = invoices.filter((i: Invoice) => {
       const iDateStr = i.date.split('T')[0]; return iDateStr >= activeFrom && iDateStr <= activeTo;
@@ -1255,20 +1567,286 @@ function ReportTable({
       ? start.toISOString().split('T')[0] 
       : `${start.toISOString().split('T')[0]} - ${end.toISOString().split('T')[0]}`;
 
+    // Map employees work and commissions
+    const empsMap: Record<string, {
+      name: string;
+      count: number;
+      totalWork: number;
+      executionCommission: number;
+      openingCommission: number;
+      totalCommission: number;
+    }> = {};
+
+    const getOrCreate = (name: string) => {
+      const cleanName = (name || '').trim();
+      if (!cleanName || cleanName === 'غير محدد' || cleanName === 'بدون') return null;
+      if (!empsMap[cleanName]) {
+        empsMap[cleanName] = {
+          name: cleanName,
+          count: 0,
+          totalWork: 0,
+          executionCommission: 0,
+          openingCommission: 0,
+          totalCommission: 0
+        };
+      }
+      return empsMap[cleanName];
+    };
+
+    filteredInvoices.forEach(inv => {
+      if (inv.status !== 'cancelled' && Array.isArray(inv.items)) {
+        const totalBeforeDiscount = inv.items.reduce((s, item) => s + (Number(item.price || 0) * (item.quantity || 1)), 0);
+        const discount = Number(inv.discount) || 0;
+        const discountRatio = totalBeforeDiscount > 0 ? (discount / totalBeforeDiscount) : 0;
+
+        inv.items.forEach(item => {
+          const qty = item.quantity || 1;
+          const itemTotal = (Number(item.price) || 0) * qty;
+          const effectivePrice = Math.max(0, itemTotal - (itemTotal * discountRatio));
+
+          const service = services.find((s: any) => s.id === item.itemId || s.name === item.serviceName);
+          const product = products && products.find((p: any) => p.id === item.itemId || p.name === item.serviceName);
+
+          // 1. عمولة التنفيذ (فني التنفيذ)
+          const performerEmp = employees.find((e: any) => (item.employeeId && e.id === item.employeeId) || (item.technicianName && e.name === item.technicianName));
+          const performerName = performerEmp?.name || item.technicianName;
+          const performerEntry = getOrCreate(performerName);
+
+          if (performerEntry) {
+            let execComm = 0;
+            if (item.type === 'product' || (!service && product)) {
+              if (product && product.commission > 0) {
+                execComm = product.commission * qty;
+              } else if (performerEmp) {
+                execComm = calculateEmployeeCommission(performerEmp, effectivePrice);
+              }
+            } else {
+              if (service && service.employeeCommissionAmount !== undefined && service.employeeCommissionAmount > 0) {
+                execComm = service.employeeCommissionAmount * qty;
+              } else if (service && service.employeeCommissionPercentage !== undefined && service.employeeCommissionPercentage > 0) {
+                execComm = effectivePrice * (service.employeeCommissionPercentage / 100);
+              } else if (performerEmp) {
+                execComm = calculateEmployeeCommission(performerEmp, effectivePrice);
+              }
+            }
+
+            performerEntry.count += qty;
+            performerEntry.totalWork += effectivePrice;
+            performerEntry.executionCommission += execComm;
+            performerEntry.totalCommission += execComm;
+          }
+
+          // 2. عمولة فتح الشغل / الإحالة (فني فتح الشغل)
+          const referrerEmp = employees.find((e: any) => (item.referralEmployeeId && e.id === item.referralEmployeeId) || (item.referralEmployeeName && e.name === item.referralEmployeeName));
+          const referrerName = referrerEmp?.name || item.referralEmployeeName;
+          const referrerEntry = getOrCreate(referrerName);
+
+          if (referrerEntry && (item.referralEmployeeId || item.referralEmployeeName)) {
+            let openComm = 0;
+            if (item.referralCommissionAmount !== undefined && item.referralCommissionAmount > 0) {
+              openComm = item.referralCommissionAmount * qty;
+            } else if (service && service.referralCommissionAmount !== undefined && service.referralCommissionAmount > 0) {
+              if (service.referralCommissionType === 'fixed') {
+                openComm = service.referralCommissionAmount * qty;
+              } else {
+                openComm = effectivePrice * (service.referralCommissionAmount / 100);
+              }
+            }
+
+            if (openComm > 0) {
+              referrerEntry.openingCommission += openComm;
+              referrerEntry.totalCommission += openComm;
+            }
+          }
+        });
+      }
+    });
+
+    const empList = Object.values(empsMap).sort((a, b) => b.totalWork - a.totalWork);
+
+    const grandTotalCount = empList.reduce((s, e) => s + e.count, 0);
+    const grandTotalWork = empList.reduce((s, e) => s + e.totalWork, 0);
+    const grandTotalExecComm = empList.reduce((s, e) => s + e.executionCommission, 0);
+    const grandTotalOpenComm = empList.reduce((s, e) => s + e.openingCommission, 0);
+    const grandTotalComm = empList.reduce((s, e) => s + e.totalCommission, 0);
+
+    const handleExportExcel = () => {
+      const excelData = empList.map(e => ({
+        'الموظف': e.name,
+        'العدد': e.count,
+        'اجمالي الشغل': e.totalWork.toFixed(2),
+        'عمولة تنفيذ': e.executionCommission.toFixed(2),
+        'عمولة فتح شغل': e.openingCommission.toFixed(2),
+        'مجموع العمولة': e.totalCommission.toFixed(2)
+      }));
+
+      excelData.push({
+        'الموظف': 'الإجمالي العام',
+        'العدد': grandTotalCount,
+        'اجمالي الشغل': grandTotalWork.toFixed(2),
+        'عمولة تنفيذ': grandTotalExecComm.toFixed(2),
+        'عمولة فتح شغل': grandTotalOpenComm.toFixed(2),
+        'مجموع العمولة': grandTotalComm.toFixed(2)
+      });
+
+      exportToExcel(excelData, `تقرير_أعمال_وعمولات_الموظفين_${dateLabel.replace(/\s+/g, '_')}`);
+    };
+
     return (
-      <div className="flex flex-col items-center py-8 bg-slate-200">
-        <button onClick={() => { import('../utils/print').then(m => m.handlePrintReceipt('print-employees-receipt')); }} className="mb-6 bg-slate-800 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 print:hidden">
-          <Printer size={18} /> طباعة التقرير
-        </button>
-        <div className="bg-white shadow-xl">
-          <EmployeesReportReceipt 
-            settings={settings}
-            invoices={filteredInvoices}
-            employees={employees}
-            services={services}
-            products={products}
-            dateLabel={dateLabel}
-          />
+      <div className="space-y-6">
+        {/* Actions Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs print:hidden">
+          <div className="flex items-center gap-3">
+            <span className="font-black text-slate-800 text-base">تقرير أعمال وعمولات الموظفين</span>
+            <span className="text-xs font-bold px-3 py-1 bg-slate-100 text-slate-600 rounded-full">الفترة: {dateLabel}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleExportExcel}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm transition-all"
+            >
+              <Download size={16} /> تصدير إكسيل
+            </button>
+            <button
+              onClick={() => handlePrintReceipt('print-employees-receipt')}
+              className="bg-slate-900 hover:bg-black text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm transition-all"
+            >
+              <Printer size={16} /> طباعة إيصال كاشير (حراري 80mm)
+            </button>
+            <button
+              onClick={() => window.print()}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm transition-all"
+            >
+              <Printer size={16} /> طباعة صفحة A4
+            </button>
+          </div>
+        </div>
+
+        {/* KPI Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 print:hidden">
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs border-r-4 border-r-blue-500">
+            <p className="text-slate-500 text-xs font-bold mb-1">إجمالي الشغل</p>
+            <h4 className="text-xl font-black text-slate-900">
+              {grandTotalWork.toFixed(2)} <span className="text-xs font-bold text-slate-400">{settings.currency}</span>
+            </h4>
+            <p className="text-[10px] text-slate-400 mt-1">صافي قيمة الخدمات والمنتجات</p>
+          </div>
+
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs border-r-4 border-r-indigo-500">
+            <p className="text-slate-500 text-xs font-bold mb-1">إجمالي العدد المنفذ</p>
+            <h4 className="text-xl font-black text-slate-900">{grandTotalCount}</h4>
+            <p className="text-[10px] text-slate-400 mt-1">عملية خدمة / بيع منتج</p>
+          </div>
+
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs border-r-4 border-r-purple-500">
+            <p className="text-slate-500 text-xs font-bold mb-1">عمولات التنفيذ</p>
+            <h4 className="text-xl font-black text-purple-700">
+              {grandTotalExecComm.toFixed(2)} <span className="text-xs font-bold text-slate-400">{settings.currency}</span>
+            </h4>
+            <p className="text-[10px] text-slate-400 mt-1">المستحقة لفنيي التنفيذ</p>
+          </div>
+
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs border-r-4 border-r-amber-500">
+            <p className="text-slate-500 text-xs font-bold mb-1">عمولات فتح الشغل</p>
+            <h4 className="text-xl font-black text-amber-700">
+              {grandTotalOpenComm.toFixed(2)} <span className="text-xs font-bold text-slate-400">{settings.currency}</span>
+            </h4>
+            <p className="text-[10px] text-slate-400 mt-1">عمولات الإحالة والترشيح</p>
+          </div>
+
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs border-r-4 border-r-emerald-500 bg-emerald-50/20">
+            <p className="text-slate-500 text-xs font-bold mb-1">مجموع العمولات المستحقة</p>
+            <h4 className="text-xl font-black text-emerald-700">
+              {grandTotalComm.toFixed(2)} <span className="text-xs font-bold text-slate-400">{settings.currency}</span>
+            </h4>
+            <p className="text-[10px] text-emerald-600 mt-1">تنفيذ + فتح شغل</p>
+          </div>
+        </div>
+
+        {/* 6-Column Main Table */}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden print:hidden">
+          <div className="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+            <span className="font-extrabold text-sm text-slate-800">بيان تفصيلي بأعمال وعمولات الموظفين</span>
+            <span className="text-xs font-bold text-slate-500">عدد الموظفين: {empList.length}</span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-right text-xs">
+              <thead>
+                <tr className="bg-slate-100/80 text-slate-700 font-black border-b border-slate-200">
+                  <th className="py-3 px-4 text-right">الموظف</th>
+                  <th className="py-3 px-4 text-center">العدد</th>
+                  <th className="py-3 px-4 text-center">اجمالي الشغل</th>
+                  <th className="py-3 px-4 text-center">عمولة تنفيذ</th>
+                  <th className="py-3 px-4 text-center">عمولة فتح شغل</th>
+                  <th className="py-3 px-4 text-left">مجموع العمولة</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {empList.map((emp, idx) => (
+                  <tr key={emp.name} className={`hover:bg-slate-50/80 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/30'}`}>
+                    <td className="py-3 px-4 font-black text-slate-900 flex items-center gap-2">
+                      <span className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-700 font-extrabold flex items-center justify-center text-xs">
+                        {idx + 1}
+                      </span>
+                      <span>{emp.name}</span>
+                    </td>
+                    <td className="py-3 px-4 text-center font-bold text-slate-700 font-mono">
+                      {emp.count}
+                    </td>
+                    <td className="py-3 px-4 text-center font-extrabold text-slate-800 font-mono">
+                      {emp.totalWork.toFixed(2)} <span className="text-[10px] text-slate-400 font-normal">{settings.currency}</span>
+                    </td>
+                    <td className="py-3 px-4 text-center font-bold text-purple-700 font-mono">
+                      {emp.executionCommission.toFixed(2)} <span className="text-[10px] text-slate-400 font-normal">{settings.currency}</span>
+                    </td>
+                    <td className="py-3 px-4 text-center font-bold text-amber-700 font-mono">
+                      {emp.openingCommission.toFixed(2)} <span className="text-[10px] text-slate-400 font-normal">{settings.currency}</span>
+                    </td>
+                    <td className="py-3 px-4 text-left font-black text-emerald-700 font-mono text-sm">
+                      {emp.totalCommission.toFixed(2)} <span className="text-[10px] text-slate-400 font-normal">{settings.currency}</span>
+                    </td>
+                  </tr>
+                ))}
+                {empList.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="py-12 text-center text-slate-400 font-bold">
+                      لا توجد عمليات أو عمولات مسجلة للموظفين خلال هذه الفترة
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+              {empList.length > 0 && (
+                <tfoot>
+                  <tr className="bg-slate-900 text-white font-black text-xs border-t-2 border-slate-900">
+                    <td className="py-3.5 px-4 font-black text-sm">الإجمالي العام</td>
+                    <td className="py-3.5 px-4 text-center font-mono font-black">{grandTotalCount}</td>
+                    <td className="py-3.5 px-4 text-center font-mono font-black">{grandTotalWork.toFixed(2)} {settings.currency}</td>
+                    <td className="py-3.5 px-4 text-center font-mono font-black text-purple-300">{grandTotalExecComm.toFixed(2)} {settings.currency}</td>
+                    <td className="py-3.5 px-4 text-center font-mono font-black text-amber-300">{grandTotalOpenComm.toFixed(2)} {settings.currency}</td>
+                    <td className="py-3.5 px-4 text-left font-mono font-black text-emerald-300 text-sm">{grandTotalComm.toFixed(2)} {settings.currency}</td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        </div>
+
+        {/* Thermal Print Receipt Preview */}
+        <div className="flex flex-col items-center py-8 bg-slate-200 rounded-2xl border border-slate-300">
+          <div className="mb-4 text-xs font-black text-slate-600 bg-white/80 px-4 py-1.5 rounded-full shadow-2xs">
+            معاينة إيصال الطابعة الحرارية (80mm)
+          </div>
+          <div className="bg-white shadow-xl rounded-lg p-2">
+            <EmployeesReportReceipt 
+              settings={settings}
+              invoices={filteredInvoices}
+              employees={employees}
+              services={services}
+              products={products}
+              dateLabel={dateLabel}
+            />
+          </div>
         </div>
       </div>
     );

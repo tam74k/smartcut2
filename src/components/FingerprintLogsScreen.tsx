@@ -1,24 +1,92 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { AppSettings, FingerprintLog, Employee } from '../types';
 import { Fingerprint, Clock, RefreshCw, CheckCircle2, User, Search, Filter } from 'lucide-react';
+import { DB } from '../services/db';
 
 interface FingerprintLogsScreenProps {
   settings: AppSettings;
-  fingerprintLogs: FingerprintLog[];
-  setFingerprintLogs: (updater: FingerprintLog[] | ((prev: FingerprintLog[]) => FingerprintLog[])) => void;
-  employees: Employee[];
+  fingerprintLogs?: FingerprintLog[];
+  setFingerprintLogs?: (updater: FingerprintLog[] | ((prev: FingerprintLog[]) => FingerprintLog[])) => void;
+  logs?: FingerprintLog[];
+  setLogs?: (updater: FingerprintLog[] | ((prev: FingerprintLog[]) => FingerprintLog[])) => void;
+  employees?: Employee[];
 }
 
 export function FingerprintLogsScreen({
   settings,
   fingerprintLogs = [],
   setFingerprintLogs,
+  logs = [],
+  setLogs,
   employees = []
 }: FingerprintLogsScreenProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedType, setSelectedType] = useState<'all' | 'check_in' | 'check_out'>('all');
+  const [localLogs, setLocalLogs] = useState<FingerprintLog[]>([]);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState<string>('');
 
-  const filteredLogs = fingerprintLogs.filter(log => {
+  const incomingLogs = (fingerprintLogs && fingerprintLogs.length > 0) 
+    ? fingerprintLogs 
+    : (logs && logs.length > 0 ? logs : []);
+
+  // Sync internal logs from props when available
+  useEffect(() => {
+    if (incomingLogs.length > 0) {
+      setLocalLogs(incomingLogs);
+    }
+  }, [incomingLogs]);
+
+  // Direct fetch function from Supabase
+  const fetchLogsDirectly = async (showLoading = false) => {
+    const sId = settings.salonId;
+    if (!sId) return;
+
+    if (showLoading) setIsRefreshing(true);
+    try {
+      const data = await DB.fetchFingerprintLogs(sId);
+      if (data && Array.isArray(data)) {
+        setLocalLogs(data);
+        if (setFingerprintLogs) setFingerprintLogs(data);
+        if (setLogs) setLogs(data);
+        const timeStr = new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        setLastSyncTime(timeStr);
+      }
+    } catch (err) {
+      console.warn('Error loading fingerprint logs in FingerprintLogsScreen:', err);
+    } finally {
+      if (showLoading) setIsRefreshing(false);
+    }
+  };
+
+  // Auto-fetch on mount and periodically every 8s + on tab visibility
+  useEffect(() => {
+    fetchLogsDirectly();
+
+    const intervalId = setInterval(() => {
+      if (!document.hidden) {
+        fetchLogsDirectly();
+      }
+    }, 8000);
+
+    const handleVis = () => {
+      if (!document.hidden) {
+        fetchLogsDirectly();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVis);
+
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVis);
+    };
+  }, [settings.salonId]);
+
+  const displayLogs = useMemo(() => {
+    return localLogs.length > 0 ? localLogs : incomingLogs;
+  }, [localLogs, incomingLogs]);
+
+  const filteredLogs = displayLogs.filter(log => {
     if (selectedType !== 'all' && log.type !== selectedType) return false;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -30,15 +98,41 @@ export function FingerprintLogsScreen({
   });
 
   return (
-    <div className="flex-1 p-4 sm:p-6 overflow-y-auto bg-slate-50 flex flex-col gap-6">
+    <div className="flex-1 p-4 sm:p-6 overflow-y-auto bg-slate-50 flex flex-col gap-6" dir="rtl">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
         <div>
-          <h1 className="text-xl sm:text-2xl font-black text-slate-800 flex items-center gap-2.5">
-            <Fingerprint className="text-blue-600" size={26} />
-            <span>سجل حركات وسحوبات جهاز البصمة (Fingerprint Logs)</span>
-          </h1>
-          <p className="text-xs text-slate-500 mt-1">عرض السجلات الخام الملتقطة من أجهزة البصمة البيومترية وحركات الحضور والانصراف</p>
+          <div className="flex items-center gap-2.5">
+            <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black shadow-md shadow-blue-600/20">
+              <Fingerprint size={22} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl sm:text-2xl font-black text-slate-800">
+                  سجل حركات وسحوبات جهاز البصمة (Fingerprint Logs)
+                </h1>
+                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-bold">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  <span>تزامن سحابي حي</span>
+                  {lastSyncTime && <span className="font-mono text-slate-400">({lastSyncTime})</span>}
+                </div>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">عرض السجلات الخام الملتقطة من أجهزة البصمة البيومترية وحركات الحضور والانصراف مع المزامنة الفورية</p>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <button
+            type="button"
+            onClick={() => fetchLogsDirectly(true)}
+            disabled={isRefreshing}
+            className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 shadow-2xs"
+            title="تحديث وسحب أحدث البصمات من السحابة"
+          >
+            <RefreshCw size={14} className={isRefreshing ? 'animate-spin text-blue-600' : 'text-slate-600'} />
+            <span>{isRefreshing ? 'جارٍ السحب...' : 'تحديث السجلات الآن 🔄'}</span>
+          </button>
         </div>
       </div>
 

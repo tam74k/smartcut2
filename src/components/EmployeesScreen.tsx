@@ -1,8 +1,9 @@
-import { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   AppSettings, Employee, EmployeeFinancialRecord, EmployeeLeaveRecord, 
   Transaction, Invoice, Booking, SalaryHistoryEntry, EmployeePermissionRecord, 
-  EndOfServiceRecord, HRSettings, CommissionTier, TipRecord, FingerprintLog, EmployeeCustody 
+  EndOfServiceRecord, HRSettings, CommissionTier, TipRecord, FingerprintLog, EmployeeCustody,
+  AppUser, ShiftScheduleEntry
 } from '../types';
 import { 
   Plus, Edit2, Trash2, Save, UserCog, Search, Banknote, CalendarMinus, 
@@ -19,6 +20,7 @@ import { FingerprintLogsScreen } from './FingerprintLogsScreen';
 import { EmployeeCustodyModal } from './EmployeeCustodyModal';
 import { printThermalFinancialVoucher, FinancialVoucherData } from './ThermalFinancialVoucher';
 import { getCommissionModelLabel, calculateEmployeeCommission } from '../utils/commissionHelper';
+import { DB } from '../services/db';
 
 export function EmployeesScreen({ 
   settings, 
@@ -69,8 +71,8 @@ export function EmployeesScreen({
     role: 'حلاق محترف',
     baseSalary: 3000,
     fingerprintCode: '',
-    commissionRate: 10,
-    commissionModel: 'fixed_rate',
+    commissionRate: 0,
+    commissionModel: 'none',
     commissionTiers: [
       { id: 't1', fromAmount: 0, toAmount: 5000, percentage: 5 },
       { id: 't2', fromAmount: 5000, toAmount: 10000, percentage: 10 },
@@ -343,7 +345,9 @@ export function EmployeesScreen({
       delayAbsenceThresholdHours: 2,
       maxMonthlyPermissions: 2,
       maxPermissionHours: 2,
-      weeklyOffPaid: true
+      weeklyOffPaid: true,
+      weeklyOffPaidType: 'paid',
+      absenceDeductionDays: 1
     }
   );
 
@@ -361,6 +365,8 @@ export function EmployeesScreen({
     setEditingId(emp.id);
     setFormData({
       ...emp,
+      commissionRate: emp.commissionRate ?? 0,
+      commissionModel: emp.commissionModel || (emp.commissionRate === 0 ? 'none' : 'fixed_rate'),
       email: emp.email || '',
       avatarUrl: emp.avatarUrl || '',
       hasOnlineAccount: emp.hasOnlineAccount || false,
@@ -459,15 +465,19 @@ export function EmployeesScreen({
         updatedHistory = [...updatedHistory, shiftEntry];
       }
 
-      setEmployees(employees.map(e => e.id === editingId ? { 
-        ...e, 
+      const updatedEmp = { 
+        ...existingEmp, 
         ...formData,
         shiftScheduleHistory: updatedHistory
-      } as Employee : e));
+      } as Employee;
+
+      setEmployees(employees.map(e => e.id === editingId ? updatedEmp : e));
+      DB.saveEmployee(updatedEmp);
     } else {
       const newEmp: Employee = {
         ...formData,
         id: employeeId,
+        salonId: (formData as any).salonId || settings?.salonId,
         fingerprintCode: formData.fingerprintCode || String(employees.length + 1),
         financialRecords: [],
         leaveRecords: [],
@@ -493,6 +503,7 @@ export function EmployeesScreen({
         permissionRecords: []
       } as Employee;
       setEmployees([...employees, newEmp]);
+      DB.saveEmployee(newEmp);
     }
     setEditingId(null);
     setFormData(defaultFormData);
@@ -644,12 +655,19 @@ export function EmployeesScreen({
       }
 
       else if (modalType === 'leave') {
+        const s = new Date(leaveForm.startDate);
+        const e = new Date(leaveForm.endDate);
+        const days = Math.max(1, Math.round((e.getTime() - s.getTime()) / (1000 * 3600 * 24)) + 1);
         const record: EmployeeLeaveRecord = {
-          id: 'LEV-' + Math.random().toString(36).substring(2, 9),
+          id: 'LEV-' + Math.random().toString(36).substring(2, 9).toUpperCase(),
           startDate: leaveForm.startDate,
           endDate: leaveForm.endDate,
           type: leaveForm.type,
-          note: leaveForm.note
+          daysCount: days,
+          reason: leaveForm.note || (leaveForm.type === 'paid' ? 'إجازة مدفوعة الأجر' : 'إجازة بدون أجر'),
+          note: leaveForm.note || (leaveForm.type === 'paid' ? 'إجازة مدفوعة الأجر' : 'إجازة بدون أجر'),
+          createdAt: new Date().toISOString(),
+          approvedBy: currentUser?.name || 'مدير النظام'
         };
         updatedEmp.leaveRecords = [...(updatedEmp.leaveRecords || []), record];
       }
@@ -712,6 +730,11 @@ export function EmployeesScreen({
         updatedEmp.isActive = false;
         updatedEmp.isBlacklisted = endOfServiceForm.isBlacklisted;
         updatedEmp.blacklistReason = endOfServiceForm.blacklistReason;
+      }
+
+      // Persist to Supabase DB if available
+      if (DB.saveEmployee) {
+        DB.saveEmployee(updatedEmp).catch(err => console.error('Error saving updated employee:', err));
       }
 
       return updatedEmp;
@@ -1022,10 +1045,18 @@ export function EmployeesScreen({
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">نظام ونموذج احتساب العمولة</label>
                 <select
-                  value={formData.commissionModel || 'fixed_rate'}
-                  onChange={e => setFormData({ ...formData, commissionModel: e.target.value as any })}
+                  value={formData.commissionModel || 'none'}
+                  onChange={e => {
+                    const val = e.target.value as any;
+                    setFormData({
+                      ...formData,
+                      commissionModel: val,
+                      commissionRate: val === 'none' ? 0 : (formData.commissionRate ?? 0)
+                    });
+                  }}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none"
                 >
+                  <option value="none">بدون عمولة ثابتة (0%)</option>
                   <option value="fixed_rate">نسبة مئوية ثابتة (%)</option>
                   <option value="target_based">تارجت مبيعات محدد + نسبة عمولة</option>
                   <option value="tiered_brackets">شرائح مبيعات متدرجة تصاعدية (Tiered Brackets) 📈</option>
@@ -1037,7 +1068,9 @@ export function EmployeesScreen({
                   <label className="block text-xs font-bold text-slate-700 mb-1">نسبة العمولة الثابتة (%)</label>
                   <input 
                     type="number" 
-                    value={formData.commissionRate || 0} 
+                    min="0"
+                    max="100"
+                    value={formData.commissionRate ?? 0} 
                     onChange={e => setFormData({ ...formData, commissionRate: Number(e.target.value) })}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:border-indigo-600 outline-none"
                   />
@@ -1059,7 +1092,9 @@ export function EmployeesScreen({
                     <label className="block text-xs font-bold text-slate-700 mb-1">النسبة عند التحقيق (%)</label>
                     <input 
                       type="number" 
-                      value={formData.commissionRate || 0} 
+                      min="0"
+                      max="100"
+                      value={formData.commissionRate ?? 0} 
                       onChange={e => setFormData({ ...formData, commissionRate: Number(e.target.value) })}
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:border-indigo-600 outline-none"
                     />
@@ -1436,6 +1471,8 @@ export function EmployeesScreen({
           setTransactions={setTransactions}
           bookings={bookings}
           currentUser={currentUser}
+          fingerprintLogs={fingerprintLogs}
+          setFingerprintLogs={setFingerprintLogs}
         />
       )}
 
@@ -1446,8 +1483,7 @@ export function EmployeesScreen({
           tips={tips}
           setTips={setTips}
           employees={employees}
-          transactions={transactions}
-          setTransactions={setTransactions}
+          setTransactions={setTransactions!}
           currentUser={currentUser}
         />
       )}
@@ -1456,8 +1492,8 @@ export function EmployeesScreen({
       {activeSubTab === 'fingerprint_logs' && (
         <FingerprintLogsScreen
           settings={settings}
-          logs={fingerprintLogs}
-          setLogs={setFingerprintLogs}
+          fingerprintLogs={fingerprintLogs}
+          setFingerprintLogs={setFingerprintLogs!}
           employees={employees}
         />
       )}
@@ -1811,18 +1847,42 @@ export function EmployeesScreen({
                 </ul>
               </div>
 
-              <div className="pt-2">
-                <label className="flex items-center gap-2 cursor-pointer">
+              <div className="pt-3 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    خصم غياب اليوم (عدد أيام الخصم):
+                  </label>
                   <input 
-                    type="checkbox"
-                    checked={hrSettingsForm.weeklyOffPaid}
-                    onChange={e => setHrSettingsForm({ ...hrSettingsForm, weeklyOffPaid: e.target.checked })}
-                    className="w-4 h-4 text-indigo-600 rounded"
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    value={hrSettingsForm.absenceDeductionDays ?? 1}
+                    onChange={e => setHrSettingsForm({ ...hrSettingsForm, absenceDeductionDays: Number(e.target.value) })}
+                    className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono font-bold"
                   />
-                  <span className="text-xs font-bold text-slate-800">
-                    احتساب العطلات الأسبوعية مدفوعة الراتب (افتراضي)
-                  </span>
-                </label>
+                  <p className="text-[10px] text-slate-500 mt-1">الافتراضي 1 (يخصم اليومية فقط). عند تحديد 2 يخصم اليوم ومعه يوم جزاء إضافي.</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    نوع الإجازة الأسبوعية:
+                  </label>
+                  <select
+                    value={hrSettingsForm.weeklyOffPaidType || (hrSettingsForm.weeklyOffPaid !== false ? 'paid' : 'unpaid')}
+                    onChange={e => {
+                      const val = e.target.value as 'paid' | 'unpaid';
+                      setHrSettingsForm({
+                        ...hrSettingsForm,
+                        weeklyOffPaidType: val,
+                        weeklyOffPaid: val === 'paid'
+                      });
+                    }}
+                    className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold"
+                  >
+                    <option value="paid">مدفوعة الأجر (على حساب الصالون)</option>
+                    <option value="unpaid">غير مدفوعة (تخصم من الراتب)</option>
+                  </select>
+                </div>
               </div>
             </div>
           </div>
@@ -2004,62 +2064,85 @@ export function EmployeesScreen({
               </div>
             )}
 
-            {/* Leave Form (Multi-Day Support) */}
-            {modalType === 'leave' && (
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-3">
+            {/* Leave Form (Multi-Day Support with Financial Impact Breakdown) */}
+            {modalType === 'leave' && (() => {
+              const s = new Date(leaveForm.startDate);
+              const e = new Date(leaveForm.endDate);
+              const daysCount = Math.max(1, Math.round((e.getTime() - s.getTime()) / (1000 * 3600 * 24)) + 1);
+              const targetEmp = employees.find(emp => emp.id === activeEmpId);
+              const dailyRate = (targetEmp?.baseSalary || 0) / 30;
+              const paidTotalValue = (dailyRate * daysCount).toFixed(2);
+
+              return (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">من تاريخ (بداية الإجازة)</label>
+                      <input
+                        type="date"
+                        value={leaveForm.startDate}
+                        onChange={e => setLeaveForm({ ...leaveForm, startDate: e.target.value })}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold outline-none focus:border-sky-600"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">إلى تاريخ (نهاية الإجازة)</label>
+                      <input
+                        type="date"
+                        value={leaveForm.endDate}
+                        onChange={e => setLeaveForm({ ...leaveForm, endDate: e.target.value })}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold outline-none focus:border-sky-600"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-sky-50 border border-sky-200 rounded-xl flex items-center justify-between">
+                    <span className="text-xs font-bold text-sky-900">إجمالي مدة الإجازة:</span>
+                    <span className="text-sm font-black font-mono text-sky-700 bg-white px-3 py-0.5 rounded-lg border border-sky-100 shadow-2xs">
+                      {daysCount} {daysCount === 1 ? 'يوم واحد' : daysCount === 2 ? 'يومان' : `${daysCount} أيام`}
+                    </span>
+                  </div>
+
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">من تاريخ (بداية الإجازة)</label>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">طريقة احتساب الإجازة (الأثر المالي)</label>
+                    <select
+                      value={leaveForm.type}
+                      onChange={e => setLeaveForm({ ...leaveForm, type: e.target.value as any })}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-sky-600"
+                    >
+                      <option value="paid">إجازة مدفوعة الأجر (يستحق راتب الأيام بالكامل)</option>
+                      <option value="unpaid">إجازة بدون راتب (خصم اليومية مع إعفاء من جزاء الغياب)</option>
+                    </select>
+                  </div>
+
+                  {targetEmp && (
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5 text-xs">
+                      <div className="flex justify-between items-center text-slate-600">
+                        <span>أجر اليوم للموظف:</span>
+                        <span className="font-mono font-bold text-slate-800">{dailyRate.toFixed(2)} {settings.currency}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-slate-600">
+                        <span>الأثر المالي في التايم شيت:</span>
+                        <span className={`font-mono font-bold ${leaveForm.type === 'paid' ? 'text-emerald-700' : 'text-amber-700'}`}>
+                          {leaveForm.type === 'paid' ? `+${paidTotalValue} ${settings.currency} (مدفوع بالكامل)` : `0.00 ${settings.currency} (غير مدفوع وبدون جزاء)`}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">السبب / الملاحظات</label>
                     <input
-                      type="date"
-                      value={leaveForm.startDate}
-                      onChange={e => setLeaveForm({ ...leaveForm, startDate: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold"
+                      type="text"
+                      value={leaveForm.note}
+                      onChange={e => setLeaveForm({ ...leaveForm, note: e.target.value })}
+                      placeholder="إجازة سنوية / إجازة مرضية / ظرف خاص..."
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs outline-none focus:border-sky-600"
                     />
                   </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">إلى تاريخ (نهاية الإجازة)</label>
-                    <input
-                      type="date"
-                      value={leaveForm.endDate}
-                      onChange={e => setLeaveForm({ ...leaveForm, endDate: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold"
-                    />
-                  </div>
                 </div>
-
-                <div className="p-2.5 bg-indigo-50 border border-indigo-100 rounded-xl text-center">
-                  <span className="text-xs font-bold text-indigo-900">
-                    عدد أيام الإجازة: {
-                      Math.max(1, Math.round((new Date(leaveForm.endDate).getTime() - new Date(leaveForm.startDate).getTime()) / (1000 * 3600 * 24)) + 1)
-                    } يوم
-                  </span>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">نوع الإجازة</label>
-                  <select
-                    value={leaveForm.type}
-                    onChange={e => setLeaveForm({ ...leaveForm, type: e.target.value as any })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold"
-                  >
-                    <option value="paid">إجازة مدفوعة الأجر (براتب)</option>
-                    <option value="unpaid">إجازة بدون راتب (خصم اليومية)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">السبب / الملاحظات</label>
-                  <input
-                    type="text"
-                    value={leaveForm.note}
-                    onChange={e => setLeaveForm({ ...leaveForm, note: e.target.value })}
-                    placeholder="إجازة سنوية / إجازة مرضية / ظرف خاص..."
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs"
-                  />
-                </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Permission Form */}
             {modalType === 'permission' && (

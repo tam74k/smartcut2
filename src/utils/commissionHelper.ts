@@ -2,12 +2,14 @@ import { Employee, CommissionTier } from '../types';
 
 /**
  * Calculates earned commission for an employee based on their configured model:
- * 1. 'tiered_brackets': Progressive brackets calculation
- * 2. 'target_based': Target threshold
- * 3. 'fixed_rate': Standard fixed percentage rate
+ * 1. 'none': No commission (0)
+ * 2. 'tiered_brackets': Progressive brackets calculation
+ * 3. 'target_based': Target threshold
+ * 4. 'fixed_rate': Standard fixed percentage rate
  */
 export function calculateEmployeeCommission(emp: Employee, salesAmount: number): number {
   if (!emp || salesAmount <= 0) return 0;
+  if (emp.commissionModel === 'none') return 0;
 
   // 1. Tiered Brackets (شرائح العمولات المتدرجة)
   if (emp.commissionModel === 'tiered_brackets' && emp.commissionTiers && emp.commissionTiers.length > 0) {
@@ -29,13 +31,13 @@ export function calculateEmployeeCommission(emp: Employee, salesAmount: number):
   // 2. Target-Based (تحقيق التارجت)
   if (emp.commissionModel === 'target_based' && emp.target > 0) {
     if (salesAmount >= emp.target) {
-      return salesAmount * ((emp.commissionRate || 0) / 100);
+      return salesAmount * ((Number(emp.commissionRate) || 0) / 100);
     }
     return 0;
   }
 
   // 3. Fixed Rate (نسبة مئوية ثابتة)
-  const rate = emp.commissionRate !== undefined && emp.commissionRate !== null ? emp.commissionRate : 10;
+  const rate = emp.commissionRate !== undefined && emp.commissionRate !== null ? Number(emp.commissionRate) : 0;
   return salesAmount * (rate / 100);
 }
 
@@ -43,11 +45,14 @@ export function calculateEmployeeCommission(emp: Employee, salesAmount: number):
  * Returns a human-readable description of the employee's commission model
  */
 export function getCommissionModelLabel(emp: Employee): string {
+  if (emp.commissionModel === 'none' || emp.commissionRate === 0) {
+    return 'بدون عمولة ثابتة (0%)';
+  }
   if (emp.commissionModel === 'tiered_brackets' && emp.commissionTiers && emp.commissionTiers.length > 0) {
     return `شرائح متدرجة (${emp.commissionTiers.length} شرائح)`;
   }
   if (emp.commissionModel === 'target_based' && emp.target > 0) {
-    return `تارجت ${emp.target} (${emp.commissionRate || 0}%)`;
+    return `تارجت ${emp.target} (${emp.commissionRate ?? 0}%)`;
   }
-  return `نسبة ثابتة ${emp.commissionRate || 10}%`;
+  return `نسبة ثابتة ${emp.commissionRate ?? 0}%`;
 }

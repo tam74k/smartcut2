@@ -32,15 +32,33 @@ export function exportToCSV(filename: string, headers: string[], rows: (string |
 
 import * as XLSX from 'xlsx';
 
-export function exportToExcel(filename: string, sheetName: string, headers: string[], rows: (string | number)[][]) {
+export function exportToExcel(
+  filenameOrData: any, 
+  sheetNameOrFilename?: string, 
+  headers?: string[], 
+  rows?: (string | number)[][]
+) {
   try {
-    const data = [headers, ...rows];
-    const ws = XLSX.utils.aoa_to_sheet(data);
+    const filename = typeof filenameOrData === 'string' ? filenameOrData : (sheetNameOrFilename || 'تقرير');
+    const sheetName = typeof filenameOrData === 'string' ? (sheetNameOrFilename || 'البيانات') : 'البيانات';
+    let ws: XLSX.WorkSheet;
+
+    if (Array.isArray(filenameOrData) && typeof filenameOrData[0] === 'object' && !Array.isArray(filenameOrData[0])) {
+      ws = XLSX.utils.json_to_sheet(filenameOrData);
+    } else if (headers && rows) {
+      const data = [headers, ...rows];
+      ws = XLSX.utils.aoa_to_sheet(data);
+    } else {
+      ws = XLSX.utils.json_to_sheet(Array.isArray(filenameOrData) ? filenameOrData : []);
+    }
+
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, sheetName || 'البيانات');
-    XLSX.writeFile(wb, `${filename}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    XLSX.writeFile(wb, `${filename.replace(/\.xlsx$/, '')}.xlsx`);
   } catch (error) {
     console.error('Failed to export XLSX:', error);
-    exportToCSV(filename, headers, rows);
+    if (headers && rows) {
+      exportToCSV(typeof filenameOrData === 'string' ? filenameOrData : 'تقرير', headers, rows);
+    }
   }
 }

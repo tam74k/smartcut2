@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { 
   Scissors, LayoutDashboard, Users, Settings, LogOut,
   Calendar, Wallet, Receipt, Banknote, FileText,
@@ -40,7 +40,6 @@ import { PromoCodesScreen } from './components/PromoCodesScreen';
 import { TipsScreen } from './components/TipsScreen';
 import { FingerprintLogsScreen } from './components/FingerprintLogsScreen';
 import { LoginScreen } from './components/LoginScreen';
-import { OwnerLoginScreen } from './components/OwnerLoginScreen';
 import { BarberLoginScreen } from './components/BarberLoginScreen';
 import { BarberPortalScreen } from './components/BarberPortalScreen';
 import { ClientReservationPortal } from './components/ClientReservationPortal';
@@ -48,7 +47,7 @@ import { MobileBottomNav } from './components/MobileBottomNav';
 import { SubscriptionBanner } from './components/SubscriptionBanner';
 import { AuthService, ROLE_LABELS } from './services/auth';
 import { SupabaseService } from './services/supabase';
-import { DB, dbClientToApp, dbEmployeeToApp, dbServiceToApp } from './services/db';
+import { DB, dbClientToApp, dbEmployeeToApp, dbServiceToApp, toCamel } from './services/db';
 import { SubscriptionService } from './services/subscriptionService';
 import { 
   AppSettings, Transaction, Booking, Invoice, ServiceItem, Category, Employee, Product, AppUser, 
@@ -62,24 +61,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('pos');
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
   const [isCloudConnected, setIsCloudConnected] = useState(false);
-
-  // Dedicated Route for Standalone Executive Owner Portal (/owner)
-  const [isOwnerRoute, setIsOwnerRoute] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
-    const path = window.location.pathname.toLowerCase();
-    const hash = window.location.hash.toLowerCase();
-    const search = window.location.search.toLowerCase();
-    return path.endsWith('/owner') || path.includes('/owner/') || hash.includes('owner') || search.includes('owner') || search.includes('portal=owner');
-  });
-
-  // Allow Owner to enter Full System as Admin Mode
-  const [ownerWantsFullApp, setOwnerWantsFullApp] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('smartcut_owner_full_app') === 'true';
-    } catch (e) {
-      return false;
-    }
-  });
+  const [isDbLoading, setIsDbLoading] = useState(false);
 
   // Dedicated Route for Standalone Barber & Technician Portal (/barber or /staff)
   const [isBarberRoute, setIsBarberRoute] = useState<boolean>(() => {
@@ -98,7 +80,6 @@ export default function App() {
     const search = window.location.search.toLowerCase();
     if (path.endsWith('/reservation') || path.includes('/reservation/') || path.endsWith('/booking') || path.includes('/booking/')) return true;
     if (hash.includes('reservation') || hash.includes('booking') || search.includes('portal=reservation') || search.includes('salon=') || search.includes('code=')) return true;
-    // SaaS short url: e.g. ?10a5n
     if (search.length > 1 && !search.includes('tab=') && !search.includes('owner') && !search.includes('barber') && !search.includes('admin')) {
       return true;
     }
@@ -112,7 +93,6 @@ export default function App() {
       const path = window.location.pathname.toLowerCase();
       const hash = window.location.hash.toLowerCase();
       const search = window.location.search.toLowerCase();
-      setIsOwnerRoute(path.endsWith('/owner') || path.includes('/owner/') || hash.includes('owner') || search.includes('owner') || search.includes('portal=owner'));
       setIsBarberRoute(path.endsWith('/barber') || path.includes('/barber/') || path.endsWith('/staff') || path.includes('/staff/') || hash.includes('barber') || search.includes('barber') || search.includes('portal=barber'));
       setIsReservationRoute(isReservationQuery());
     };
@@ -124,256 +104,11 @@ export default function App() {
     };
   }, []);
 
-  // SaaS Multi-tenancy & Branches
-  const [subscription, setSubscription] = useState<SaaSSubscription>(() => {
-    try {
-      const savedSettings = localStorage.getItem('smartcut_app_settings');
-      if (savedSettings) {
-        const s = JSON.parse(savedSettings);
-        if (s.salonName) {
-          const salons = SubscriptionService.getSalons();
-          const salon = s.salonId ? salons.find((item: any) => item.id === s.salonId) : salons.find((item: any) => item.name === s.salonName);
-          if (salon) {
-            return {
-              id: salon.id,
-              salonId: salon.id,
-              salonCode: salon.code,
-              organizationName: salon.name,
-              ownerEmail: salon.email,
-              phone: salon.phone,
-              country: salon.country,
-              plan: salon.subscriptionPlan || 'pro',
-              status: salon.subscriptionStatus || 'trial',
-              isActive: salon.isActive !== false,
-              startDate: salon.subscriptionStartDate,
-              endDate: salon.subscriptionEndDate,
-              maxBranches: salon.maxBranches || 3,
-              maxUsers: salon.maxUsers || 10,
-              trialDays: salon.trialDays || 7
-            };
-          }
-          return {
-            id: s.salonId || 'sub-main',
-            salonId: s.salonId,
-            salonCode: s.salonCode,
-            organizationName: s.salonName,
-            plan: 'pro',
-            status: 'trial',
-            isActive: true,
-            startDate: new Date().toISOString().split('T')[0],
-            endDate: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
-            maxBranches: 3,
-            maxUsers: 10,
-            trialDays: 7
-          };
-        }
-      }
-    } catch (e) {}
-    const regSalons = SubscriptionService.getSalons();
-    if (regSalons.length > 0) {
-      const s = regSalons[0];
-      return {
-        id: s.id,
-        salonId: s.id,
-        salonCode: s.code,
-        organizationName: s.name,
-        ownerEmail: s.email,
-        phone: s.phone,
-        country: s.country,
-        plan: s.subscriptionPlan || 'pro',
-        status: s.subscriptionStatus || 'trial',
-        isActive: s.isActive !== false,
-        startDate: s.subscriptionStartDate,
-        endDate: s.subscriptionEndDate,
-        maxBranches: s.maxBranches || 3,
-        maxUsers: s.maxUsers || 10,
-        trialDays: s.trialDays || 7
-      };
-    }
-    return {
-      id: '',
-      salonId: '',
-      salonCode: '',
-      organizationName: '',
-      plan: 'pro',
-      status: 'trial',
-      isActive: true,
-      startDate: new Date().toISOString().split('T')[0],
-      endDate: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
-      maxBranches: 3,
-      maxUsers: 10
-    };
-  });
-
-  const [branches, setBranches] = useState<Branch[]>(() => {
-    try {
-      const savedSettings = localStorage.getItem('smartcut_app_settings');
-      const sId = savedSettings ? JSON.parse(savedSettings).salonId : '';
-      if (sId) {
-        const list = SubscriptionService.getBranches(sId);
-        if (list && list.length > 0) return list;
-      }
-      const allBranches = SubscriptionService.getBranches();
-      if (allBranches && allBranches.length > 0) return allBranches;
-    } catch (e) {}
-    return [];
-  });
-  const [activeBranchId, setActiveBranchId] = useState<string>(() => {
-    try {
-      const savedSettings = localStorage.getItem('smartcut_app_settings');
-      const sId = savedSettings ? JSON.parse(savedSettings).salonId : '';
-      if (sId) {
-        const list = SubscriptionService.getBranches(sId);
-        if (list && list.length > 0) return list[0].id;
-      }
-      const allBranches = SubscriptionService.getBranches();
-      if (allBranches && allBranches.length > 0) return allBranches[0].id;
-    } catch (e) {}
-    return 'b-main';
-  });
-
-  useEffect(() => {
-    const user = AuthService.getCurrentUser();
-    if (user) {
-      setCurrentUser(user);
-      const salons = SubscriptionService.getSalons();
-      const salon = user.salonId ? salons.find(s => s.id === user.salonId) : (salons.find(s => s.email === user.email) || null);
-      if (salon) {
-        setSettings(prev => {
-          const updated: AppSettings = {
-            ...prev,
-            salonId: salon.id,
-            salonCode: salon.code,
-            salonName: salon.name,
-            phone: salon.phone,
-            country: salon.country,
-            currency: salon.currency,
-            ownerEmail: salon.email,
-            evolutionInstanceName: salon.evolutionInstanceName
-          };
-          try {
-            localStorage.setItem('smartcut_app_settings', JSON.stringify(updated));
-          } catch (e) {}
-          return updated;
-        });
-        setSubscription({
-          id: salon.id,
-          salonId: salon.id,
-          salonCode: salon.code,
-          organizationName: salon.name,
-          ownerEmail: salon.email,
-          phone: salon.phone,
-          country: salon.country,
-          plan: salon.subscriptionPlan || 'pro',
-          status: salon.subscriptionStatus || 'trial',
-          isActive: salon.isActive !== false,
-          startDate: salon.subscriptionStartDate,
-          endDate: salon.subscriptionEndDate,
-          maxBranches: salon.maxBranches || 3,
-          maxUsers: salon.maxUsers || 10,
-          trialDays: salon.trialDays || 7
-        });
-        const salonBranches = SubscriptionService.getBranches(salon.id);
-        setBranches(salonBranches.length > 0 ? salonBranches : [
-          { id: 'b-main', name: `الفرع الرئيسي (${salon.name})`, code: 'B01', isMain: true, phone: salon.phone, address: salon.country, isActive: true, status: 'active' }
-        ]);
-        if (user.branchId) {
-          setActiveBranchId(user.branchId);
-        }
-      } else if (user.branchId) {
-        setActiveBranchId(user.branchId);
-      }
-      if (!AuthService.canAccess(activeTab, user)) {
-        setActiveTab(user.screens?.includes('*') ? 'dashboard' : (user.screens?.[0] || 'pos'));
-      }
-    }
-
-    // Check cloud connection
-    SupabaseService.testConnection().then(res => {
-      setIsCloudConnected(res.success);
-    });
-  }, []);
-
-  // Dynamically resolve salon from URL query parameter (?code=... or ?salon=...) for Client Reservation Portal
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const params = new URLSearchParams(window.location.search);
-    const codeParam = params.get('code') || params.get('salon') || window.location.search.replace(/^\?/, '').trim();
-    if (codeParam && !codeParam.includes('=')) {
-      const cleanCode = codeParam.trim().toLowerCase();
-      // 1. Search local salons first
-      const salons = SubscriptionService.getSalons();
-      const localMatched = salons.find(s => s.code?.toLowerCase() === cleanCode || s.id?.toLowerCase() === cleanCode);
-      if (localMatched) {
-        setSettings(prev => ({
-          ...prev,
-          salonId: localMatched.id,
-          salonCode: localMatched.code,
-          salonName: localMatched.name,
-          phone: localMatched.phone,
-          country: localMatched.country,
-          currency: localMatched.currency,
-          ownerEmail: localMatched.email,
-          salonType: localMatched.salonType
-        }));
-        const sBranches = SubscriptionService.getBranches(localMatched.id);
-        if (sBranches.length > 0) {
-          setBranches(sBranches);
-        }
-      }
-
-      // 2. Fetch from Supabase Cloud DB
-      DB.fetchSalons().then(async (cloudSalons) => {
-        if (cloudSalons && cloudSalons.length > 0) {
-          const cloudMatched = cloudSalons.find((s: any) => s.code?.toLowerCase() === cleanCode || s.id?.toLowerCase() === cleanCode);
-          if (cloudMatched) {
-            const dbSettings = await DB.fetchSettings(cloudMatched.id);
-            const dbBranches = await DB.fetchBranches(cloudMatched.id);
-            const dbServices = await DB.fetchServices(cloudMatched.id);
-            const dbEmployees = await DB.fetchEmployees(cloudMatched.id);
-            const dbCategories = await DB.fetchCategories(cloudMatched.id);
-
-            setSettings(prev => ({
-              ...prev,
-              salonId: cloudMatched.id,
-              salonCode: cloudMatched.code,
-              salonName: dbSettings?.salonName || cloudMatched.name,
-              logoUrl: dbSettings?.logoUrl || cloudMatched.logoUrl || prev.logoUrl,
-              phone: dbSettings?.phone || cloudMatched.phone || prev.phone,
-              country: dbSettings?.country || cloudMatched.country || prev.country,
-              currency: dbSettings?.currency || cloudMatched.currency || prev.currency,
-              salonType: dbSettings?.salonType || cloudMatched.salonType || prev.salonType
-            }));
-
-            if (dbBranches && dbBranches.length > 0) {
-              setBranches(dbBranches.map((b: any) => ({
-                ...b,
-                salonId: cloudMatched.id,
-                salonCode: cloudMatched.code
-              })));
-            }
-            if (dbServices && dbServices.length > 0) {
-              setServices(dbServices.map(dbServiceToApp));
-            }
-            if (dbEmployees && dbEmployees.length > 0) {
-              setEmployees(dbEmployees.map(dbEmployeeToApp));
-            }
-            if (dbCategories && dbCategories.length > 0) {
-              setCategories(dbCategories.map(toCamel));
-            }
-          }
-        }
-      }).catch(err => console.warn('Error fetching salon for reservation in App.tsx:', err));
-    }
-  }, [isReservationRoute]);
-
   // 1. App Settings State
   const [settings, setSettings] = useState<AppSettings>(() => {
     try {
       const saved = localStorage.getItem('smartcut_app_settings');
-      if (saved) {
-        return JSON.parse(saved);
-      }
+      if (saved) return JSON.parse(saved);
       const regSalons = SubscriptionService.getSalons();
       if (regSalons.length > 0) {
         const s = regSalons[0];
@@ -385,6 +120,7 @@ export default function App() {
           branchId: firstBranch?.id || '',
           branchCode: firstBranch?.code || 'BR-01',
           salonName: s.name,
+          salonType: s.salonType || (s as any).salon_type || 'men',
           taxNumber: '',
           commercialReg: '',
           vatEnabled: true,
@@ -449,7 +185,83 @@ export default function App() {
     };
   });
 
-  // 2. Shift State scoped per active branch & persisted in localStorage + Supabase
+  // SaaS Subscription & Branches State
+  const [subscription, setSubscription] = useState<SaaSSubscription>(() => {
+    try {
+      const savedSettings = localStorage.getItem('smartcut_app_settings');
+      if (savedSettings) {
+        const s = JSON.parse(savedSettings);
+        if (s.salonName) {
+          const salons = SubscriptionService.getSalons();
+          const salon = s.salonId ? salons.find((item: any) => item.id === s.salonId) : salons.find((item: any) => item.name === s.salonName);
+          if (salon) {
+            return {
+              id: salon.id,
+              salonId: salon.id,
+              salonCode: salon.code,
+              organizationName: salon.name,
+              ownerEmail: salon.email,
+              phone: salon.phone,
+              country: salon.country,
+              plan: salon.subscriptionPlan || 'pro',
+              status: salon.subscriptionStatus || 'trial',
+              isActive: salon.isActive !== false,
+              startDate: salon.subscriptionStartDate,
+              endDate: salon.subscriptionEndDate,
+              maxBranches: salon.maxBranches || 3,
+              maxUsers: salon.maxUsers || 10,
+              trialDays: salon.trialDays || 7
+            };
+          }
+        }
+      }
+    } catch (e) {}
+    return {
+      id: '',
+      salonId: '',
+      salonCode: '',
+      organizationName: '',
+      plan: 'pro',
+      status: 'trial',
+      isActive: true,
+      startDate: new Date().toISOString().split('T')[0],
+      endDate: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
+      maxBranches: 3,
+      maxUsers: 10
+    };
+  });
+
+  const [branches, setBranches] = useState<Branch[]>(() => {
+    try {
+      const savedSettings = localStorage.getItem('smartcut_app_settings');
+      const sId = savedSettings ? JSON.parse(savedSettings).salonId : '';
+      if (sId) {
+        const list = SubscriptionService.getBranches(sId);
+        if (list && list.length > 0) return list;
+      }
+      const allBranches = SubscriptionService.getBranches();
+      if (allBranches && allBranches.length > 0) return allBranches;
+    } catch (e) {}
+    return [];
+  });
+
+  const [activeBranchId, setActiveBranchId] = useState<string>(() => {
+    try {
+      const savedSettings = localStorage.getItem('smartcut_app_settings');
+      const sId = savedSettings ? JSON.parse(savedSettings).salonId : '';
+      if (sId) {
+        const list = SubscriptionService.getBranches(sId);
+        if (list && list.length > 0) return list[0].id;
+      }
+      const allBranches = SubscriptionService.getBranches();
+      if (allBranches && allBranches.length > 0) return allBranches[0].id;
+    } catch (e) {}
+    return 'b-main';
+  });
+
+  const [allSalons, setAllSalons] = useState<any[]>(() => SubscriptionService.getSalons());
+
+  // Shift State scoped per active branch & persisted in localStorage + Supabase
   const [branchShifts, setBranchShifts] = useState<Record<string, { isOpen: boolean, date: string, initialCash: number, shiftId?: string }>>(() => {
     try {
       const saved = localStorage.getItem('smartcut_work_shifts_state');
@@ -472,30 +284,7 @@ export default function App() {
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [openShiftForm, setOpenShiftForm] = useState({ date: new Date().toISOString().split('T')[0], initialCash: 0 });
 
-  // Synchronize active shift with DB on salon/branch change
-  useEffect(() => {
-    const sId = settings.salonId;
-    if (!sId || !activeBranchId) return;
-    DB.getActiveWorkShift(sId, activeBranchId).then(activeShift => {
-      if (activeShift && activeShift.status === 'open') {
-        setBranchShifts(prev => {
-          const updated = {
-            ...prev,
-            [activeBranchId]: {
-              isOpen: true,
-              date: activeShift.shiftDate,
-              initialCash: Number(activeShift.initialCash) || 0,
-              shiftId: activeShift.id
-            }
-          };
-          try { localStorage.setItem('smartcut_work_shifts_state', JSON.stringify(updated)); } catch (e) {}
-          return updated;
-        });
-      }
-    }).catch(err => console.warn('Could not query active shift:', err));
-  }, [settings.salonId, activeBranchId]);
-
-  // 2. Global In-Memory Stores
+  // Global In-Memory Stores
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -511,7 +300,7 @@ export default function App() {
   const [inventoryCounts, setInventoryCounts] = useState<any[]>([]);
   const [itemMovements, setItemMovements] = useState<any[]>([]);
   
-  // New System States
+  // Extended Features Stores
   const [partners, setPartners] = useState<Partner[]>([]);
   const [partnerTransactions, setPartnerTransactions] = useState<PartnerTransaction[]>([]);
   const [promoCodes, setPromoCodes] = useState<PromoCode[]>([]);
@@ -519,141 +308,459 @@ export default function App() {
   const [tips, setTips] = useState<TipRecord[]>([]);
   const [custodies, setCustodies] = useState<EmployeeCustody[]>([]);
   const [fingerprintLogs, setFingerprintLogs] = useState<FingerprintLog[]>([]);
-  
-  const [isDbLoading, setIsDbLoading] = useState(false);
 
-  // ── تحميل البيانات من Supabase عند بدء التشغيل وتنظيف البيانات التجريبية ────────────────
+  // Refs to prevent duplicate initialization and redundant fetches
+  const hasInitializedRef = useRef<boolean>(false);
+  const loadedSectionsRef = useRef<Set<string>>(new Set());
+
+  // Function to apply tab section data into state
+  const applySectionData = useCallback((section: string, data: any) => {
+    if (!data) return;
+    if (data.invoices) {
+      setInvoices(data.invoices.map((inv: any) => ({
+        ...inv,
+        vatAmount: inv.vat,
+        cashbackUsed: inv.cashbackUsed ?? 0,
+        paymentMethods: inv.paymentMethods || [],
+        isRemedyInvoice: inv.isRemedy || false,
+        remedyReason: inv.remedyNotes || '',
+        relatedComplaintId: inv.relatedComplaintId || '',
+        originalInvoiceId: inv.originalInvoiceId || '',
+        zatcaQr: inv.zatcaQr || '',
+        zatcaHash: inv.zatcaHash || '',
+        etaSubmissionUuid: inv.etaSubmissionUuid || '',
+      })));
+    }
+    if (data.transactions) {
+      setTransactions(data.transactions.map((t: any) => ({
+        ...t, expenseCategory: t.expenseCategory || '', createdBy: t.createdBy || '',
+        userId: t.userId || '', userName: t.userName || '', shiftDate: t.shiftDate || ''
+      })));
+    }
+    if (data.bookings) {
+      setBookings(data.bookings.map((b: any) => ({
+        ...b, phone: b.clientPhone || b.phone || '',
+        customerEmail: b.customerEmail || '', advancePayments: b.advancePayments || []
+      })));
+    }
+    if (data.clients) {
+      setClients(data.clients.map(dbClientToApp));
+    }
+    if (data.suppliers) setSuppliers(data.suppliers);
+    if (data.purchaseInvoices) setPurchaseInvoices(data.purchaseInvoices);
+    if (data.supplierPayments) setSupplierPayments(data.supplierPayments);
+    if (data.inventoryCounts) setInventoryCounts(data.inventoryCounts);
+    if (data.itemMovements) setItemMovements(data.itemMovements);
+    if (data.partners) setPartners(data.partners);
+    if (data.partnerTransactions) setPartnerTransactions(data.partnerTransactions);
+    if (data.promoCodes) setPromoCodes(data.promoCodes);
+    if (data.promoCodeUsages) setPromoCodeUsages(data.promoCodeUsages);
+    if (data.tips) setTips(data.tips);
+    if (data.custodies) setCustodies(data.custodies);
+    if (data.fingerprintLogs) setFingerprintLogs(data.fingerprintLogs);
+  }, []);
+
+  // ── 1. Single Mount Startup Lifecycle (Strictly Once) ──────────────────────────
   useEffect(() => {
+    if (hasInitializedRef.current) return;
+    hasInitializedRef.current = true;
+
     // تنظيف شامل لأي بيانات تجريبية سابقة من التخزين المحلي لضمان بدء النظام نظيفاً 100%
     try {
       const keysToCheck = [
-        'smartcut_client_complaints',
-        'smartcut_clients',
-        'smartcut_invoices',
-        'smartcut_transactions',
-        'smartcut_bookings',
-        'smartcut_employees',
-        'smartcut_services',
-        'smartcut_products',
-        'smartcut_suppliers',
-        'smartcut_purchase_invoices',
-        'smartcut_partners',
-        'smartcut_promo_codes',
-        'smartcut_tips',
-        'smartcut_custodies'
+        'smartcut_client_complaints', 'smartcut_clients', 'smartcut_invoices',
+        'smartcut_transactions', 'smartcut_bookings', 'smartcut_employees',
+        'smartcut_services', 'smartcut_products', 'smartcut_suppliers',
+        'smartcut_purchase_invoices', 'smartcut_partners', 'smartcut_promo_codes',
+        'smartcut_tips', 'smartcut_custodies'
       ];
       keysToCheck.forEach(key => {
         const val = localStorage.getItem(key);
         if (val && (
-          val.includes('CMP-101') || 
-          val.includes('INV-1001') || 
-          val.includes('TRX-001') || 
-          val.includes('B-101') || 
-          val.includes('عمر عبدالله') ||
-          val.includes('قص شعر كلاسيك')
+          val.includes('CMP-101') || val.includes('INV-1001') || 
+          val.includes('TRX-001') || val.includes('B-101') || 
+          val.includes('عمر عبدالله') || val.includes('قص شعر كلاسيك')
         )) {
           localStorage.removeItem(key);
         }
       });
     } catch (e) {}
 
-    // تحميل ومزامنة الصالونات والفروع مباشرة من Supabase (Source of Truth)
-    const syncFromCloud = async () => {
+    const initializeApp = async () => {
       try {
+        const user = AuthService.getCurrentUser();
+        if (user) setCurrentUser(user);
+
+        // Fetch Salons list once
         const cloudSalons = await DB.fetchSalons();
         if (cloudSalons && cloudSalons.length > 0) {
+          setAllSalons(cloudSalons);
           SubscriptionService.saveSalons(cloudSalons);
-          if (settings.salonId) {
-            const activeCloudSalon = cloudSalons.find(s => s.id === settings.salonId);
-            if (activeCloudSalon) {
-              setSettings(prev => ({
+        }
+
+        const salons = (cloudSalons && cloudSalons.length > 0) ? cloudSalons : SubscriptionService.getSalons();
+        const savedActiveId = localStorage.getItem('smartcut_active_salon_id');
+        let activeSalon = user?.salonId 
+          ? (salons.find(s => s.id === user.salonId || s.code === (user as any).salonCode) || null)
+          : (savedActiveId ? salons.find(s => s.id === savedActiveId) : null);
+        
+        if (!activeSalon && salons.length > 0) {
+          activeSalon = salons[0];
+        }
+
+        if (activeSalon) {
+          const sId = activeSalon.id;
+          try { localStorage.setItem('smartcut_active_salon_id', sId); } catch (e) {}
+
+          // Load settings, branches, and essential POS data in parallel
+          const [dbSettings, dbBranches, essentialData] = await Promise.all([
+            DB.fetchSettings(sId),
+            DB.fetchBranches(sId),
+            DB.loadEssentialData(sId)
+          ]);
+
+          if (dbSettings) {
+            setSettings(prev => ({
+              ...prev,
+              ...dbSettings,
+              salonId: sId,
+              salonCode: activeSalon.code || prev.salonCode,
+              salonName: dbSettings.salonName || activeSalon.name || prev.salonName,
+              salonType: dbSettings.salonType || (dbSettings as any)?.salon_type || activeSalon.salonType || (activeSalon as any)?.salon_type || prev.salonType || 'men',
+              phone: activeSalon.phone || prev.phone,
+              country: activeSalon.country || prev.country,
+              currency: activeSalon.currency || prev.currency,
+              treasuries: (Array.isArray(dbSettings.treasuries) && dbSettings.treasuries.length > 0) ? dbSettings.treasuries : prev.treasuries,
+              expenseCategories: (Array.isArray(dbSettings.expenseCategories) && dbSettings.expenseCategories.length > 0) ? dbSettings.expenseCategories : prev.expenseCategories,
+            }));
+          }
+
+          setSubscription({
+            id: sId,
+            salonId: sId,
+            salonCode: activeSalon.code,
+            organizationName: activeSalon.name,
+            ownerEmail: activeSalon.email,
+            phone: activeSalon.phone,
+            country: activeSalon.country,
+            plan: activeSalon.subscriptionPlan || 'pro',
+            status: activeSalon.subscriptionStatus || 'trial',
+            isActive: activeSalon.isActive !== false,
+            startDate: activeSalon.subscriptionStartDate,
+            endDate: activeSalon.subscriptionEndDate,
+            maxBranches: activeSalon.maxBranches || 3,
+            maxUsers: activeSalon.maxUsers || 10,
+            trialDays: activeSalon.trialDays || 7
+          });
+
+          if (dbBranches && dbBranches.length > 0) {
+            SubscriptionService.saveBranches(dbBranches);
+          }
+          const salonBranches = (dbBranches && dbBranches.length > 0) ? dbBranches : SubscriptionService.getBranches(sId);
+          const finalBranches = salonBranches.length > 0 ? salonBranches : [
+            { id: 'b-main', salonId: sId, name: `الفرع الرئيسي (${activeSalon.name})`, code: 'B01', isMain: true, phone: activeSalon.phone, address: activeSalon.country, isActive: true, status: 'active' }
+          ];
+          setBranches(finalBranches);
+
+          const branchIdToUse = user?.branchId || finalBranches[0].id;
+          setActiveBranchId(branchIdToUse);
+
+          if (essentialData) {
+            const validCats = essentialData.categories || [];
+            setCategories(validCats.length ? validCats : [{ id: 'all', name: 'الكل' }]);
+            setServices(essentialData.services ? essentialData.services.map(dbServiceToApp) : []);
+            setEmployees(essentialData.employees ? essentialData.employees.map(dbEmployeeToApp) : []);
+            setClients(essentialData.clients ? essentialData.clients.map(dbClientToApp) : []);
+            setProducts(essentialData.products || []);
+          }
+
+          // Mark essential sections as loaded
+          loadedSectionsRef.current.add('pos');
+          loadedSectionsRef.current.add('services');
+          loadedSectionsRef.current.add('products');
+
+          // Check active shift
+          DB.getActiveWorkShift(sId, branchIdToUse).then(activeShift => {
+            if (activeShift && activeShift.status === 'open') {
+              setBranchShifts(prev => ({
                 ...prev,
-                salonName: activeCloudSalon.name || prev.salonName,
-                salonType: activeCloudSalon.salonType || (activeCloudSalon as any).salon_type || prev.salonType,
-                phone: activeCloudSalon.phone || prev.phone,
-                country: activeCloudSalon.country || prev.country,
-                currency: activeCloudSalon.currency || prev.currency,
-                evolutionInstanceName: activeCloudSalon.evolutionInstanceName || prev.evolutionInstanceName,
-                evolutionApiKey: activeCloudSalon.evolutionApiKey || prev.evolutionApiKey
+                [branchIdToUse]: {
+                  isOpen: true,
+                  date: activeShift.shiftDate,
+                  initialCash: Number(activeShift.initialCash) || 0,
+                  shiftId: activeShift.id
+                }
               }));
             }
+          }).catch(() => {});
+        }
+
+        // Test Cloud Connection
+        SupabaseService.testConnection().then(res => setIsCloudConnected(res.success));
+      } catch (err) {
+        console.error('Error during initial startup:', err);
+      }
+    };
+
+    initializeApp();
+  }, []);
+
+  // ── Smart HTTP Polling (15s interval, Visibility API aware, REST queries) ────
+  useEffect(() => {
+    const sId = settings.salonId;
+    const bId = activeBranchId;
+    if (!sId) return;
+
+    let isSubscribed = true;
+    let isFetching = false;
+
+    const executePoll = async () => {
+      // 5. Visibility API: Pause polling when the browser tab is hidden or inactive
+      if (document.hidden || isFetching || !isSubscribed) return;
+
+      try {
+        isFetching = true;
+
+        // Poll active shift & operational collections concurrently via REST
+        const [activeShift, polledInvoices, polledTransactions, polledBookings, polledFingerprints, polledEmployees] = await Promise.all([
+          bId ? DB.getActiveWorkShift(sId, bId) : null,
+          DB.fetchAll<any>('invoices', undefined, sId),
+          DB.fetchAll<any>('transactions', undefined, sId),
+          DB.fetchAll<any>('bookings', undefined, sId),
+          DB.fetchAll<any>('fingerprint_logs', undefined, sId),
+          DB.fetchEmployees(sId)
+        ]);
+
+        if (!isSubscribed) return;
+
+        // Sync Employees
+        if (polledEmployees && Array.isArray(polledEmployees) && polledEmployees.length > 0) {
+          setEmployees(polledEmployees);
+        }
+
+        // Sync Fingerprint Logs
+        if (polledFingerprints && Array.isArray(polledFingerprints)) {
+          setFingerprintLogs(polledFingerprints);
+        }
+
+        // Sync Shift State
+        if (bId) {
+          if (activeShift && activeShift.status === 'open') {
+            setBranchShifts(prev => {
+              const current = prev[bId];
+              if (
+                current?.isOpen === true &&
+                current?.date === activeShift.shiftDate &&
+                current?.initialCash === (Number(activeShift.initialCash) || 0) &&
+                current?.shiftId === activeShift.id
+              ) {
+                return prev;
+              }
+              const updated = {
+                ...prev,
+                [bId]: {
+                  isOpen: true,
+                  date: activeShift.shiftDate,
+                  initialCash: Number(activeShift.initialCash) || 0,
+                  shiftId: activeShift.id
+                }
+              };
+              try { localStorage.setItem('smartcut_work_shifts_state', JSON.stringify(updated)); } catch (e) {}
+              return updated;
+            });
+          } else {
+            setBranchShifts(prev => {
+              const current = prev[bId];
+              if (!current?.isOpen) return prev;
+              const updated = {
+                ...prev,
+                [bId]: {
+                  isOpen: false,
+                  date: '',
+                  initialCash: 0
+                }
+              };
+              try { localStorage.setItem('smartcut_work_shifts_state', JSON.stringify(updated)); } catch (e) {}
+              return updated;
+            });
           }
         }
-        const targetSalonId = settings.salonId || (cloudSalons && cloudSalons[0]?.id);
-        const cloudBranches = await DB.fetchBranches(targetSalonId);
-        if (cloudBranches && cloudBranches.length > 0) {
-          SubscriptionService.saveBranches(cloudBranches);
-          const salonOnly = targetSalonId ? cloudBranches.filter(b => b.salonId === targetSalonId) : cloudBranches;
-          setBranches(salonOnly);
+
+        // Sync Invoices
+        if (polledInvoices && Array.isArray(polledInvoices)) {
+          setInvoices(polledInvoices.map((inv: any) => ({
+            ...inv,
+            vatAmount: inv.vat,
+            cashbackUsed: inv.cashbackUsed ?? 0,
+            paymentMethods: inv.paymentMethods || [],
+            isRemedyInvoice: inv.isRemedy || false,
+            remedyReason: inv.remedyNotes || '',
+            relatedComplaintId: inv.relatedComplaintId || '',
+            originalInvoiceId: inv.originalInvoiceId || '',
+            zatcaQr: inv.zatcaQr || '',
+            zatcaHash: inv.zatcaHash || '',
+            etaSubmissionUuid: inv.etaSubmissionUuid || '',
+          })));
         }
-      } catch (e) {
-        console.error('Failed to sync cloud salons:', e);
-      }
-    };
-    syncFromCloud();
 
-    const loadDataForSalon = async (targetSalonId?: string) => {
-      const client = SupabaseService.getClient();
-      if (!client) return;
-      const sId = targetSalonId || settings.salonId;
-      if (!sId) return;
+        // Sync Transactions
+        if (polledTransactions && Array.isArray(polledTransactions)) {
+          setTransactions(polledTransactions.map((t: any) => ({
+            ...t,
+            expenseCategory: t.expenseCategory || '',
+            createdBy: t.createdBy || '',
+            userId: t.userId || '',
+            userName: t.userName || '',
+            shiftDate: t.shiftDate || ''
+          })));
+        }
 
-      setIsDbLoading(true);
-      try {
-        const data = await DB.loadAllData(sId);
-        if (!data) return;
-
-        setCategories(data.categories?.length ? data.categories : [{ id: 'all', name: 'الكل' }]);
-        setServices(data.services ? data.services.map(dbServiceToApp) : []);
-        setEmployees(data.employees ? data.employees.map(dbEmployeeToApp) : []);
-        setClients(data.clients ? data.clients.map(dbClientToApp) : []);
-        setProducts(data.products || []);
-        setSuppliers(data.suppliers || []);
-        setInvoices(data.invoices ? data.invoices.map((inv: any) => ({
-          ...inv,
-          vatAmount: inv.vat,
-          cashbackUsed: inv.cashbackUsed ?? 0,
-          paymentMethods: inv.paymentMethods || [],
-          isRemedyInvoice: inv.isRemedy || false,
-          remedyReason: inv.remedyNotes || '',
-          relatedComplaintId: inv.relatedComplaintId || '',
-          originalInvoiceId: inv.originalInvoiceId || '',
-          zatcaQr: inv.zatcaQr || '',
-          zatcaHash: inv.zatcaHash || '',
-          etaSubmissionUuid: inv.etaSubmissionUuid || '',
-        })) : []);
-        setTransactions(data.transactions ? data.transactions.map((t: any) => ({
-          ...t, expenseCategory: t.expenseCategory || '', createdBy: t.createdBy || '',
-          userId: t.userId || '', userName: t.userName || '', shiftDate: t.shiftDate || ''
-        })) : []);
-        setBookings(data.bookings ? data.bookings.map((b: any) => ({
-          ...b, phone: b.clientPhone || b.phone || '',
-          customerEmail: b.customerEmail || '', advancePayments: b.advancePayments || []
-        })) : []);
-        setPurchaseInvoices(data.purchaseInvoices || []);
-        setSupplierPayments(data.supplierPayments || []);
-        setInventoryCounts(data.inventoryCounts || []);
-        setItemMovements(data.itemMovements || []);
-        
-        // Load new feature tables
-        setPartners(data.partners || []);
-        setPartnerTransactions(data.partnerTransactions || []);
-        setPromoCodes(data.promoCodes || []);
-        setPromoCodeUsages(data.promoCodeUsages || []);
-        setTips(data.tips || []);
-        setCustodies(data.custodies || []);
-        setFingerprintLogs(data.fingerprintLogs || []);
-
-        setIsCloudConnected(true);
-        console.log('✅ تم تحميل بيانات الصالون من Supabase بنجاح:', sId);
+        // Sync Bookings
+        if (polledBookings && Array.isArray(polledBookings)) {
+          setBookings(polledBookings.map((b: any) => ({
+            ...b,
+            phone: b.clientPhone || b.phone || '',
+            customerEmail: b.customerEmail || '',
+            advancePayments: b.advancePayments || []
+          })));
+        }
       } catch (err) {
-        console.error('خطأ في تحميل البيانات من Supabase:', err);
+        console.warn('[Smart Polling] Background poll error:', err);
       } finally {
-        setIsDbLoading(false);
+        isFetching = false;
       }
     };
-    loadDataForSalon(settings.salonId);
-  }, [settings.salonId]);
+
+    // Immediate poll execution on mount & branch/salon change
+    executePoll();
+
+    // 3. Interval Configuration: Set the polling interval to 8 seconds for fast cross-device sync
+    const intervalId = setInterval(executePoll, 8000);
+
+    // 5. Visibility API: Pause polling when hidden, immediately poll when tab becomes active
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        executePoll();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // 4. Safe Cleanup: Strictly clear interval & event listener on unmount
+    return () => {
+      isSubscribed = false;
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [settings.salonId, activeBranchId]);
+
+  // ── 2. Lazy Loading Tab Data on Demand ──────────────────────────────────────────
+  useEffect(() => {
+    const sId = settings.salonId;
+    if (!sId) return;
+
+    // Determine what tab section is needed
+    let sectionToLoad = '';
+    if (activeTab === 'invoices') sectionToLoad = 'invoices';
+    else if (activeTab === 'bookings') sectionToLoad = 'bookings';
+    else if (activeTab === 'clients' || activeTab === 'complaints') sectionToLoad = 'clients';
+    else if (activeTab === 'treasury' || activeTab === 'expenses') sectionToLoad = 'transactions';
+    else if (activeTab === 'dashboard' || activeTab === 'reports' || activeTab === 'closing-receipt') sectionToLoad = 'reports';
+    else if (activeTab === 'employees' || activeTab === 'hr' || activeTab === 'permissions' || activeTab === 'employee-analytics') sectionToLoad = 'hr';
+    else if (activeTab === 'warehouse' || activeTab === 'suppliers' || activeTab === 'purchases' || activeTab === 'inventory') sectionToLoad = 'warehouse';
+    else if (activeTab === 'partners') sectionToLoad = 'partners';
+    else if (activeTab === 'promotions' || activeTab === 'promo-codes') sectionToLoad = 'promotions';
+    else if (activeTab === 'tips') sectionToLoad = 'tips';
+    else if (activeTab === 'fingerprint-logs' || activeTab === 'fingerprint_logs') sectionToLoad = 'fingerprint';
+
+    if (sectionToLoad && !loadedSectionsRef.current.has(sectionToLoad)) {
+      loadedSectionsRef.current.add(sectionToLoad);
+      DB.loadSectionData(sectionToLoad, sId).then(data => {
+        applySectionData(sectionToLoad, data);
+      }).catch(err => console.warn(`Error lazy-loading section [${sectionToLoad}]:`, err));
+    }
+  }, [activeTab, settings.salonId, applySectionData]);
+
+  // ── 3. Switch Salon Handler ───────────────────────────────────────────────────
+  const handleSwitchSalon = async (targetSalonId: string) => {
+    const s = allSalons.find(item => item.id === targetSalonId);
+    if (!s) return;
+    
+    setIsDbLoading(true);
+    loadedSectionsRef.current.clear();
+    try {
+      localStorage.setItem('smartcut_active_salon_id', s.id);
+      
+      const [dbSettings, dbBranches, essentialData] = await Promise.all([
+        DB.fetchSettings(s.id),
+        DB.fetchBranches(s.id),
+        DB.loadEssentialData(s.id)
+      ]);
+      
+      const sBranches = (dbBranches && dbBranches.length > 0) ? dbBranches : SubscriptionService.getBranches(s.id);
+      const finalBranches = sBranches.length > 0 ? sBranches : [
+        { id: 'b-main', salonId: s.id, name: `الفرع الرئيسي (${s.name})`, code: 'B01', isMain: true, phone: s.phone, address: s.country, isActive: true, status: 'active' }
+      ];
+      setBranches(finalBranches);
+      setActiveBranchId(finalBranches[0].id);
+
+      const updatedSettings: AppSettings = {
+        ...settings,
+        ...(dbSettings || {}),
+        salonId: s.id,
+        salonCode: s.code,
+        salonName: dbSettings?.salonName || s.name,
+        country: s.country,
+        currency: s.currency,
+        phone: s.phone,
+        evolutionInstanceName: s.evolutionInstanceName
+      };
+      setSettings(updatedSettings);
+      try { localStorage.setItem('smartcut_app_settings', JSON.stringify(updatedSettings)); } catch (e) {}
+
+      setSubscription({
+        id: s.id,
+        salonId: s.id,
+        salonCode: s.code,
+        organizationName: s.name,
+        ownerEmail: s.email,
+        phone: s.phone,
+        country: s.country,
+        plan: s.subscriptionPlan || 'pro',
+        status: s.subscriptionStatus || 'trial',
+        isActive: s.isActive !== false,
+        startDate: s.subscriptionStartDate,
+        endDate: s.subscriptionEndDate,
+        maxBranches: s.maxBranches || 3,
+        maxUsers: s.maxUsers || 10,
+        trialDays: s.trialDays || 7
+      });
+
+      if (currentUser) {
+        const updatedUser = { ...currentUser, salonId: s.id, salonCode: s.code };
+        setCurrentUser(updatedUser);
+        try { localStorage.setItem('smartcut_current_user', JSON.stringify(updatedUser)); } catch (e) {}
+      }
+
+      if (essentialData) {
+        const validCats = essentialData.categories || [];
+        setCategories(validCats.length ? validCats : [{ id: 'all', name: 'الكل' }]);
+        setServices(essentialData.services ? essentialData.services.map(dbServiceToApp) : []);
+        setEmployees(essentialData.employees ? essentialData.employees.map(dbEmployeeToApp) : []);
+        setClients(essentialData.clients ? essentialData.clients.map(dbClientToApp) : []);
+        setProducts(essentialData.products || []);
+      }
+
+      loadedSectionsRef.current.add('pos');
+      loadedSectionsRef.current.add('services');
+      loadedSectionsRef.current.add('products');
+
+      setIsCloudConnected(true);
+    } catch (err) {
+      console.error('Error switching salon:', err);
+    } finally {
+      setIsDbLoading(false);
+    }
+  };
   // ─────────────────────────────────────────────────────────────────────────
 
   const handleLogout = () => {
@@ -663,7 +770,7 @@ export default function App() {
     }
   };
 
-  const currentSalonId = settings.salonId || currentUser?.salonId || (SubscriptionService.getSalons()[0]?.id || '');
+  const currentSalonId = currentUser?.salonId || settings.salonId || '';
 
 
   // 3. Autonomous Branch Isolation Filter & Helpers
@@ -673,6 +780,7 @@ export default function App() {
 
   const isItemInBranch = (itemBranchId?: string, itemBranchCode?: string) => {
     if (!itemBranchId && !itemBranchCode) return true; // Global / salon-wide entity
+    if (branches.length <= 1) return true; // If salon has only 1 branch, all entities are visible
     if (itemBranchId && itemBranchId === activeBranchId) return true;
     if (activeBranch && itemBranchCode && itemBranchCode === activeBranch.code) return true;
     const mainBranch = branches.find(b => b.isMain) || branches[0];
@@ -683,29 +791,73 @@ export default function App() {
     return false;
   };
 
-  // Salon-Scoped Clients (Shared across all branches of the same salon)
+  // Salon-Scoped Entities (Direct from Supabase — Guaranteed 100% visible across all screens)
   const salonClients = useMemo(() => {
-    return clients.filter(c => !c.salonId || c.salonId === currentSalonId);
+    return clients.filter(c => !c.salonId || !currentSalonId || c.salonId === currentSalonId);
   }, [clients, currentSalonId]);
 
-  // Salon-Scoped Categories (Available across all branches of the salon)
-  const branchCategories = useMemo(() => {
-    return categories.filter(c => !c.salonId || c.salonId === currentSalonId);
+  const salonCategories = useMemo(() => {
+    return categories.filter(c => !c.salonId || !currentSalonId || c.salonId === currentSalonId);
   }, [categories, currentSalonId]);
 
-  // Branch Scoped Data Slices (Current Active Branch View)
-  const branchEmployees = useMemo(() => employees.filter(e => (!e.salonId || e.salonId === currentSalonId) && isItemInBranch(e.branchId, (e as any).branchCode)), [employees, currentSalonId, activeBranchId, branches, activeBranch]);
-  const branchServices = useMemo(() => services.filter(s => (!s.salonId || s.salonId === currentSalonId) && (isItemInBranch(s.branchId, (s as any).branchCode) || !s.branchId)), [services, currentSalonId, activeBranchId, branches, activeBranch]);
-  const branchProducts = useMemo(() => products.filter(p => (!p.salonId || p.salonId === currentSalonId) && isItemInBranch(p.branchId, (p as any).branchCode)), [products, currentSalonId, activeBranchId, branches, activeBranch]);
-  const branchInvoices = useMemo(() => invoices.filter(i => (!i.salonId || i.salonId === currentSalonId) && isItemInBranch(i.branchId, (i as any).branchCode)), [invoices, currentSalonId, activeBranchId, branches, activeBranch]);
-  const branchTransactions = useMemo(() => transactions.filter(t => (!(t as any).salonId || (t as any).salonId === currentSalonId) && isItemInBranch((t as any).branchId, (t as any).branchCode)), [transactions, currentSalonId, activeBranchId, branches, activeBranch]);
-  const branchBookings = useMemo(() => bookings.filter(b => (!(b as any).salonId || (b as any).salonId === currentSalonId) && isItemInBranch((b as any).branchId, (b as any).branchCode)), [bookings, currentSalonId, activeBranchId, branches, activeBranch]);
-  const branchClients = useMemo(() => salonClients.filter(c => isItemInBranch((c as any).branchId, (c as any).branchCode) || !(c as any).branchId), [salonClients, activeBranchId, branches, activeBranch]);
-  const branchSuppliers = useMemo(() => suppliers.filter(s => (!(s as any).salonId || (s as any).salonId === currentSalonId) && isItemInBranch((s as any).branchId, (s as any).branchCode)), [suppliers, currentSalonId, activeBranchId, branches, activeBranch]);
-  const branchPurchaseInvoices = useMemo(() => purchaseInvoices.filter(p => (!(p as any).salonId || (p as any).salonId === currentSalonId) && isItemInBranch((p as any).branchId, (p as any).branchCode)), [purchaseInvoices, currentSalonId, activeBranchId, branches, activeBranch]);
-  const branchSupplierPayments = useMemo(() => supplierPayments.filter(sp => (!(sp as any).salonId || (sp as any).salonId === currentSalonId) && isItemInBranch((sp as any).branchId, (sp as any).branchCode)), [supplierPayments, currentSalonId, activeBranchId, branches, activeBranch]);
-  const branchInventoryCounts = useMemo(() => inventoryCounts.filter(ic => (!(ic as any).salonId || (ic as any).salonId === currentSalonId) && isItemInBranch((ic as any).branchId, (ic as any).branchCode)), [inventoryCounts, currentSalonId, activeBranchId, branches, activeBranch]);
-  const branchItemMovements = useMemo(() => itemMovements.filter(im => (!(im as any).salonId || (im as any).salonId === currentSalonId) && isItemInBranch((im as any).branchId, (im as any).branchCode)), [itemMovements, currentSalonId, activeBranchId, branches, activeBranch]);
+  const salonServices = useMemo(() => {
+    return services.filter(s => !s.salonId || !currentSalonId || s.salonId === currentSalonId);
+  }, [services, currentSalonId]);
+
+  const salonEmployees = useMemo(() => {
+    return employees.filter(e => !e.salonId || !currentSalonId || e.salonId === currentSalonId);
+  }, [employees, currentSalonId]);
+
+  const salonProducts = useMemo(() => {
+    return products.filter(p => !p.salonId || !currentSalonId || p.salonId === currentSalonId);
+  }, [products, currentSalonId]);
+
+  const salonInvoices = useMemo(() => {
+    return invoices.filter(i => !i.salonId || !currentSalonId || i.salonId === currentSalonId);
+  }, [invoices, currentSalonId]);
+
+  const salonTransactions = useMemo(() => {
+    return transactions.filter(t => !(t as any).salonId || !currentSalonId || (t as any).salonId === currentSalonId);
+  }, [transactions, currentSalonId]);
+
+  const salonBookings = useMemo(() => {
+    return bookings.filter(b => !(b as any).salonId || !currentSalonId || (b as any).salonId === currentSalonId);
+  }, [bookings, currentSalonId]);
+
+  const salonSuppliers = useMemo(() => {
+    return suppliers.filter(s => !(s as any).salonId || !currentSalonId || (s as any).salonId === currentSalonId);
+  }, [suppliers, currentSalonId]);
+
+  const salonPurchaseInvoices = useMemo(() => {
+    return purchaseInvoices.filter(p => !(p as any).salonId || !currentSalonId || (p as any).salonId === currentSalonId);
+  }, [purchaseInvoices, currentSalonId]);
+
+  const salonSupplierPayments = useMemo(() => {
+    return supplierPayments.filter(sp => !(sp as any).salonId || !currentSalonId || (sp as any).salonId === currentSalonId);
+  }, [supplierPayments, currentSalonId]);
+
+  const salonInventoryCounts = useMemo(() => {
+    return inventoryCounts.filter(ic => !(ic as any).salonId || !currentSalonId || (ic as any).salonId === currentSalonId);
+  }, [inventoryCounts, currentSalonId]);
+
+  const salonItemMovements = useMemo(() => {
+    return itemMovements.filter(im => !(im as any).salonId || !currentSalonId || (im as any).salonId === currentSalonId);
+  }, [itemMovements, currentSalonId]);
+
+  // Backward compatible alias
+  const branchCategories = salonCategories;
+  const branchServices = salonServices;
+  const branchEmployees = salonEmployees;
+  const branchProducts = salonProducts;
+  const branchInvoices = salonInvoices;
+  const branchTransactions = salonTransactions;
+  const branchBookings = salonBookings;
+  const branchClients = salonClients;
+  const branchSuppliers = salonSuppliers;
+  const branchPurchaseInvoices = salonPurchaseInvoices;
+  const branchSupplierPayments = salonSupplierPayments;
+  const branchInventoryCounts = salonInventoryCounts;
+  const branchItemMovements = salonItemMovements;
 
   // ============================================================
   // Subscription & Read-Only Protection Rules
@@ -732,19 +884,19 @@ export default function App() {
     return false;
   };
 
-  // Branch-Aware Setters with Read-Only Protection
+  // Salon-Scoped State Setters with Real-time Supabase Persistence
   const handleSetEmployees = (updater: Employee[] | ((prev: Employee[]) => Employee[])) => {
     if (checkReadOnlyAndWarn()) return;
     setEmployees(prev => {
-      const currentBranchEmps = prev.filter(e => (!e.salonId || e.salonId === currentSalonId) && isItemInBranch(e.branchId, (e as any).branchCode));
-      const nextBranchEmps = typeof updater === 'function' ? updater(currentBranchEmps) : updater;
-      const tagged = nextBranchEmps.map(e => ({ 
+      const currentSalonEmps = prev.filter(e => !e.salonId || e.salonId === currentSalonId);
+      const nextSalonEmps = typeof updater === 'function' ? updater(currentSalonEmps) : updater;
+      const tagged = nextSalonEmps.map(e => ({ 
         ...e, 
         salonId: e.salonId || currentSalonId, 
         branchId: e.branchId || activeBranch?.id || activeBranchId,
         branchCode: (e as any).branchCode || activeBranch?.code || 'BR-01'
       }));
-      const otherEmps = prev.filter(e => (e.salonId && e.salonId !== currentSalonId) || !isItemInBranch(e.branchId, (e as any).branchCode));
+      const otherEmps = prev.filter(e => e.salonId && e.salonId !== currentSalonId);
       const res = [...otherEmps, ...tagged];
       DB.saveEmployees(tagged);
       return res;
@@ -754,15 +906,15 @@ export default function App() {
   const handleSetServices = (updater: ServiceItem[] | ((prev: ServiceItem[]) => ServiceItem[])) => {
     if (checkReadOnlyAndWarn()) return;
     setServices(prev => {
-      const current = prev.filter(s => (!s.salonId || s.salonId === currentSalonId) && (isItemInBranch(s.branchId, (s as any).branchCode) || !s.branchId));
-      const next = typeof updater === 'function' ? updater(current) : updater;
-      const tagged = next.map(s => ({ 
+      const currentSalonServices = prev.filter(s => !s.salonId || s.salonId === currentSalonId);
+      const nextSalonServices = typeof updater === 'function' ? updater(currentSalonServices) : updater;
+      const tagged = nextSalonServices.map(s => ({ 
         ...s, 
         salonId: s.salonId || currentSalonId, 
         branchId: s.branchId || activeBranch?.id || activeBranchId,
         branchCode: (s as any).branchCode || activeBranch?.code || 'BR-01'
       }));
-      const other = prev.filter(s => (s.salonId && s.salonId !== currentSalonId) || (s.branchId && !isItemInBranch(s.branchId, (s as any).branchCode)));
+      const other = prev.filter(s => s.salonId && s.salonId !== currentSalonId);
       const res = [...other, ...tagged];
       DB.saveServices(tagged);
       return res;
@@ -772,9 +924,9 @@ export default function App() {
   const handleSetCategories = (updater: Category[] | ((prev: Category[]) => Category[])) => {
     if (checkReadOnlyAndWarn()) return;
     setCategories(prev => {
-      const current = prev.filter(c => !c.salonId || c.salonId === currentSalonId);
-      const next = typeof updater === 'function' ? updater(current) : updater;
-      const tagged = next.map(c => ({ 
+      const currentSalonCats = prev.filter(c => !c.salonId || c.salonId === currentSalonId);
+      const nextSalonCats = typeof updater === 'function' ? updater(currentSalonCats) : updater;
+      const tagged = nextSalonCats.map(c => ({ 
         ...c, 
         salonId: c.salonId || currentSalonId, 
         branchId: c.branchId || activeBranch?.id || activeBranchId,
@@ -790,10 +942,10 @@ export default function App() {
   const handleSetProducts = (updater: Product[] | ((prev: Product[]) => Product[])) => {
     if (checkReadOnlyAndWarn()) return;
     setProducts(prev => {
-      const current = prev.filter(p => (!p.salonId || p.salonId === currentSalonId) && isItemInBranch(p.branchId));
-      const next = typeof updater === 'function' ? updater(current) : updater;
+      const currentSalonProds = prev.filter(p => !p.salonId || p.salonId === currentSalonId);
+      const next = typeof updater === 'function' ? updater(currentSalonProds) : updater;
       const tagged = next.map(p => ({ ...p, salonId: p.salonId || currentSalonId, branchId: p.branchId || activeBranchId }));
-      const other = prev.filter(p => (p.salonId && p.salonId !== currentSalonId) || !isItemInBranch(p.branchId));
+      const other = prev.filter(p => p.salonId && p.salonId !== currentSalonId);
       const res = [...other, ...tagged];
       DB.saveProducts(tagged);
       return res;
@@ -803,10 +955,10 @@ export default function App() {
   const handleSetInvoices = (updater: Invoice[] | ((prev: Invoice[]) => Invoice[])) => {
     if (checkReadOnlyAndWarn()) return;
     setInvoices(prev => {
-      const current = prev.filter(i => (!i.salonId || i.salonId === currentSalonId) && isItemInBranch(i.branchId));
-      const next = typeof updater === 'function' ? updater(current) : updater;
+      const currentSalonInvs = prev.filter(i => !i.salonId || i.salonId === currentSalonId);
+      const next = typeof updater === 'function' ? updater(currentSalonInvs) : updater;
       const tagged = next.map(i => ({ ...i, salonId: i.salonId || currentSalonId, branchId: i.branchId || activeBranchId }));
-      const other = prev.filter(i => (i.salonId && i.salonId !== currentSalonId) || !isItemInBranch(i.branchId));
+      const other = prev.filter(i => i.salonId && i.salonId !== currentSalonId);
       const res = [...other, ...tagged];
       tagged.forEach(inv => DB.saveInvoice(inv));
       return res;
@@ -816,10 +968,10 @@ export default function App() {
   const handleSetTransactions = (updater: Transaction[] | ((prev: Transaction[]) => Transaction[])) => {
     if (checkReadOnlyAndWarn()) return;
     setTransactions(prev => {
-      const current = prev.filter(t => (!(t as any).salonId || (t as any).salonId === currentSalonId) && isItemInBranch((t as any).branchId));
-      const next = typeof updater === 'function' ? updater(current) : updater;
+      const currentSalonTrxs = prev.filter(t => !(t as any).salonId || (t as any).salonId === currentSalonId);
+      const next = typeof updater === 'function' ? updater(currentSalonTrxs) : updater;
       const tagged = next.map(t => ({ ...t, salonId: (t as any).salonId || currentSalonId, branchId: (t as any).branchId || activeBranchId } as any));
-      const other = prev.filter(t => ((t as any).salonId && (t as any).salonId !== currentSalonId) || !isItemInBranch((t as any).branchId));
+      const other = prev.filter(t => (t as any).salonId && (t as any).salonId !== currentSalonId);
       const res = [...other, ...tagged];
       DB.saveTransactions(tagged);
       return res;
@@ -829,10 +981,10 @@ export default function App() {
   const handleSetBookings = (updater: Booking[] | ((prev: Booking[]) => Booking[])) => {
     if (checkReadOnlyAndWarn()) return;
     setBookings(prev => {
-      const current = prev.filter(b => (!(b as any).salonId || (b as any).salonId === currentSalonId) && isItemInBranch((b as any).branchId));
-      const next = typeof updater === 'function' ? updater(current) : updater;
+      const currentSalonBookings = prev.filter(b => !(b as any).salonId || (b as any).salonId === currentSalonId);
+      const next = typeof updater === 'function' ? updater(currentSalonBookings) : updater;
       const tagged = next.map(b => ({ ...b, salonId: (b as any).salonId || currentSalonId, branchId: (b as any).branchId || activeBranchId }));
-      const other = prev.filter(b => ((b as any).salonId && (b as any).salonId !== currentSalonId) || !isItemInBranch((b as any).branchId));
+      const other = prev.filter(b => (b as any).salonId && (b as any).salonId !== currentSalonId);
       const res = [...other, ...tagged];
       tagged.forEach(b => DB.saveBooking(b));
       return res;
@@ -855,10 +1007,10 @@ export default function App() {
   const handleSetSuppliers = (updater: any) => {
     if (checkReadOnlyAndWarn()) return;
     setSuppliers(prev => {
-      const current = prev.filter((s: any) => isItemInBranch(s.branchId));
-      const next = typeof updater === 'function' ? updater(current) : updater;
-      const tagged = next.map((s: any) => ({ ...s, branchId: s.branchId || activeBranchId }));
-      const other = prev.filter((s: any) => !isItemInBranch(s.branchId));
+      const currentSalonSuppliers = prev.filter((s: any) => !(s as any).salonId || (s as any).salonId === currentSalonId);
+      const next = typeof updater === 'function' ? updater(currentSalonSuppliers) : updater;
+      const tagged = next.map((s: any) => ({ ...s, salonId: s.salonId || currentSalonId, branchId: s.branchId || activeBranchId }));
+      const other = prev.filter((s: any) => (s as any).salonId && (s as any).salonId !== currentSalonId);
       const res = [...other, ...tagged];
       tagged.forEach((s: any) => DB.saveSupplier(s));
       return res;
@@ -868,10 +1020,10 @@ export default function App() {
   const handleSetPurchaseInvoices = (updater: any) => {
     if (checkReadOnlyAndWarn()) return;
     setPurchaseInvoices(prev => {
-      const current = prev.filter((p: any) => isItemInBranch(p.branchId));
-      const next = typeof updater === 'function' ? updater(current) : updater;
-      const tagged = next.map((p: any) => ({ ...p, branchId: p.branchId || activeBranchId }));
-      const other = prev.filter((p: any) => !isItemInBranch(p.branchId));
+      const currentSalonPurchases = prev.filter((p: any) => !(p as any).salonId || (p as any).salonId === currentSalonId);
+      const next = typeof updater === 'function' ? updater(currentSalonPurchases) : updater;
+      const tagged = next.map((p: any) => ({ ...p, salonId: p.salonId || currentSalonId, branchId: p.branchId || activeBranchId }));
+      const other = prev.filter((p: any) => (p as any).salonId && (p as any).salonId !== currentSalonId);
       const res = [...other, ...tagged];
       tagged.forEach((p: any) => DB.savePurchaseInvoice(p));
       return res;
@@ -881,10 +1033,10 @@ export default function App() {
   const handleSetSupplierPayments = (updater: any) => {
     if (checkReadOnlyAndWarn()) return;
     setSupplierPayments(prev => {
-      const current = prev.filter((sp: any) => isItemInBranch(sp.branchId));
-      const next = typeof updater === 'function' ? updater(current) : updater;
-      const tagged = next.map((sp: any) => ({ ...sp, branchId: sp.branchId || activeBranchId }));
-      const other = prev.filter((sp: any) => !isItemInBranch(sp.branchId));
+      const currentSalonPayments = prev.filter((sp: any) => !(sp as any).salonId || (sp as any).salonId === currentSalonId);
+      const next = typeof updater === 'function' ? updater(currentSalonPayments) : updater;
+      const tagged = next.map((sp: any) => ({ ...sp, salonId: sp.salonId || currentSalonId, branchId: sp.branchId || activeBranchId }));
+      const other = prev.filter((sp: any) => (sp as any).salonId && (sp as any).salonId !== currentSalonId);
       const res = [...other, ...tagged];
       tagged.forEach((sp: any) => DB.saveSupplierPayment(sp));
       return res;
@@ -894,10 +1046,10 @@ export default function App() {
   const handleSetInventoryCounts = (updater: any) => {
     if (checkReadOnlyAndWarn()) return;
     setInventoryCounts(prev => {
-      const current = prev.filter((ic: any) => isItemInBranch(ic.branchId));
-      const next = typeof updater === 'function' ? updater(current) : updater;
-      const tagged = next.map((ic: any) => ({ ...ic, branchId: ic.branchId || activeBranchId }));
-      const other = prev.filter((ic: any) => !isItemInBranch(ic.branchId));
+      const currentSalonCounts = prev.filter((ic: any) => !(ic as any).salonId || (ic as any).salonId === currentSalonId);
+      const next = typeof updater === 'function' ? updater(currentSalonCounts) : updater;
+      const tagged = next.map((ic: any) => ({ ...ic, salonId: ic.salonId || currentSalonId, branchId: ic.branchId || activeBranchId }));
+      const other = prev.filter((ic: any) => (ic as any).salonId && (ic as any).salonId !== currentSalonId);
       const res = [...other, ...tagged];
       tagged.forEach((ic: any) => DB.saveInventoryCount(ic));
       return res;
@@ -907,10 +1059,10 @@ export default function App() {
   const handleSetItemMovements = (updater: any) => {
     if (checkReadOnlyAndWarn()) return;
     setItemMovements(prev => {
-      const current = prev.filter((im: any) => isItemInBranch(im.branchId));
-      const next = typeof updater === 'function' ? updater(current) : updater;
-      const tagged = next.map((im: any) => ({ ...im, branchId: im.branchId || activeBranchId }));
-      const other = prev.filter((im: any) => !isItemInBranch(im.branchId));
+      const currentSalonMovements = prev.filter((im: any) => !(im as any).salonId || (im as any).salonId === currentSalonId);
+      const next = typeof updater === 'function' ? updater(currentSalonMovements) : updater;
+      const tagged = next.map((im: any) => ({ ...im, salonId: im.salonId || currentSalonId, branchId: im.branchId || activeBranchId }));
+      const other = prev.filter((im: any) => (im as any).salonId && (im as any).salonId !== currentSalonId);
       const res = [...other, ...tagged];
       tagged.forEach((im: any) => DB.saveItemMovement(im));
       return res;
@@ -1158,9 +1310,10 @@ export default function App() {
       return;
     }
 
-    // 1. Add invoice tagged with active branch
+    // 1. Add invoice tagged with active branch and salon
     const invoiceWithBranch: Invoice = {
       ...invoice,
+      salonId: settings.salonId,
       branchId: activeBranchId,
       branchCode: activeBranch?.code
     };
@@ -1257,13 +1410,18 @@ export default function App() {
     }
     
     if (newFinancialRecords.length > 0) {
-      setEmployees(prev => prev.map(emp => {
-        const myRecords = newFinancialRecords.filter(r => r.employeeId === emp.id).map(r => r.record);
-        if (myRecords.length > 0) {
-          return { ...emp, financialRecords: [...(emp.financialRecords || []), ...myRecords] };
-        }
-        return emp;
-      }));
+      setEmployees(prev => {
+        const updated = prev.map(emp => {
+          const myRecords = newFinancialRecords.filter(r => r.employeeId === emp.id).map(r => r.record);
+          if (myRecords.length > 0) {
+            const updatedEmp = { ...emp, financialRecords: [...(emp.financialRecords || []), ...myRecords] };
+            DB.saveEmployee(updatedEmp);
+            return updatedEmp;
+          }
+          return emp;
+        });
+        return updated;
+      });
     }
 
     // 2. Add transactions for the payments
@@ -1271,13 +1429,15 @@ export default function App() {
       .filter(split => split.treasuryId !== 'cashback')
       .map(split => ({
         id: 'TRX-' + Math.random().toString(36).substr(2,9),
+        salonId: settings.salonId,
         date: invoice.date,
         type: 'in',
         amount: split.amount,
         category: 'sales',
         description: `مبيعات - فاتورة ${invoice.id}`,
         treasury: split.treasuryId,
-        branchId: activeBranchId
+        branchId: activeBranchId,
+        branchCode: activeBranch?.code
       } as any));
 
     // 2.b. If tip was paid via non-cash method and branch mode is 'instant_cash', deduct tip immediately from Cash Drawer
@@ -1288,13 +1448,15 @@ export default function App() {
         const cashTreasuryId = settings.treasuries.find(t => t.id === 'cash' || t.name.includes('كاش') || t.name.includes('نقد'))?.id || 'cash';
         newTrxs.push({
           id: 'TRX-TIP-CASH-' + Math.random().toString(36).substr(2, 9),
+          salonId: settings.salonId,
           date: invoice.date,
           type: 'out',
           amount: invoice.tipAmount,
           category: 'صرف بقشيش فوري',
           description: `صرف بقشيش فوري كاش - فاتورة ${invoice.id} للموظف ${invoice.tipEmployeeName || 'الموظف'}`,
           treasury: cashTreasuryId,
-          branchId: activeBranchId
+          branchId: activeBranchId,
+          branchCode: activeBranch?.code
         } as any);
       }
     }
@@ -1310,9 +1472,9 @@ export default function App() {
       DB.patch('bookings', bookingId, { status: 'completed' });
     }
 
-    // 4. 🔄 حفظ في Supabase (في الخلفية — لا يعطّل واجهة المستخدم)
-    DB.saveInvoice({ ...invoiceWithBranch, salonId: settings.salonId });
-    if (newTrxs.length > 0) DB.saveTransactions(newTrxs);
+    // 4. 🔄 حفظ فوري في Supabase لضمان بقاء وتوثيق البيانات
+    DB.saveInvoice(invoiceWithBranch, settings.salonId);
+    if (newTrxs.length > 0) DB.saveTransactions(newTrxs, settings.salonId);
 
     setActiveBookingForPOS(null);
   };
@@ -1446,6 +1608,8 @@ export default function App() {
       case 'fingerprint_logs': return (
         <FingerprintLogsScreen 
           settings={settings}
+          fingerprintLogs={fingerprintLogs}
+          setFingerprintLogs={setFingerprintLogs}
           logs={fingerprintLogs}
           setLogs={setFingerprintLogs}
           employees={branchEmployees}
@@ -1511,6 +1675,9 @@ export default function App() {
           activeBranchId={activeBranchId}
           branches={branches}
           currentUser={currentUser}
+          products={branchProducts}
+          setProducts={handleSetProducts}
+          setItemMovements={handleSetItemMovements}
         />
       );
 
@@ -1701,7 +1868,7 @@ export default function App() {
 
   const menuItems = [
     ...(currentUser?.role === 'owner' ? [
-      { id: 'owner_portal', icon: Smartphone, label: '📱 نبض المالك (تنفيذي)' }
+      { id: 'owner_portal', icon: Smartphone, label: '📱 نبض المالك' }
     ] : []),
     { id: 'dashboard', icon: LayoutDashboard, label: 'لوحة التحكم' },
     { id: 'bookings', icon: Calendar, label: 'الحجوزات' },
@@ -1729,10 +1896,14 @@ export default function App() {
 
 
   // Helper login state handler
-  const handleApplyLoginSuccess = (u: AppUser, customSettings?: AppSettings, selectedBranch?: Branch) => {
+  const handleApplyLoginSuccess = async (u: AppUser, customSettings?: AppSettings, selectedBranch?: Branch) => {
     setCurrentUser(u);
-    const salons = SubscriptionService.getSalons();
-    const salon = u.salonId ? salons.find(s => s.id === u.salonId) : (salons.find(s => s.email === u.email) || null);
+    const dbSalons = await DB.fetchSalons();
+    const salons = (dbSalons && dbSalons.length > 0) ? dbSalons : SubscriptionService.getSalons();
+    const salon = u.salonId 
+      ? (salons.find(s => s.id === u.salonId || s.code === (u as any).salonCode) || (u.salonId ? { id: u.salonId, name: (u as any).salonName || 'صالون', code: (u as any).salonCode || 'SC-01', phone: u.phone || '', country: 'المملكة العربية السعودية', currency: 'SAR', isActive: true } as any : null))
+      : (salons.find(s => (u.email && s.email === u.email)) || null);
+
     if (salon) {
       setSubscription({
         id: salon.id,
@@ -1751,9 +1922,10 @@ export default function App() {
         maxUsers: salon.maxUsers || 10,
         trialDays: salon.trialDays || 7
       });
-      const salonBranches = SubscriptionService.getBranches(salon.id);
+      const dbBranches = await DB.fetchBranches(salon.id);
+      const salonBranches = (dbBranches && dbBranches.length > 0) ? dbBranches : (salon.id ? SubscriptionService.getBranches(salon.id) : []);
       setBranches(salonBranches.length > 0 ? salonBranches : [
-        { id: 'b-main', name: `الفرع الرئيسي (${salon.name})`, code: 'B01', isMain: true, phone: salon.phone, address: salon.country, isActive: true, status: 'active' }
+        { id: 'b-main', salonId: salon.id, name: `الفرع الرئيسي (${salon.name})`, code: 'B01', isMain: true, phone: salon.phone, address: salon.country, isActive: true, status: 'active' }
       ]);
       if (u.branchId) {
         setActiveBranchId(u.branchId);
@@ -1771,12 +1943,14 @@ export default function App() {
         localStorage.setItem('smartcut_app_settings', JSON.stringify(customSettings));
       } catch (e) {}
     } else if (salon) {
+      const dbSettings = await DB.fetchSettings(salon.id);
       setSettings(prev => {
         const updated: AppSettings = {
           ...prev,
+          ...(dbSettings || {}),
           salonId: salon.id,
           salonCode: salon.code,
-          salonName: salon.name,
+          salonName: dbSettings?.salonName || salon.name,
           phone: salon.phone,
           country: salon.country,
           currency: salon.currency,
@@ -1799,58 +1973,6 @@ export default function App() {
       setActiveTab(u.screens?.includes('*') ? 'pos' : (u.screens?.[0] || 'pos'));
     }
   };
-
-  // 1. STANDALONE OWNER PORTAL ROUTE (/owner or #owner or owner role)
-  if ((isOwnerRoute || currentUser?.role === 'owner') && !ownerWantsFullApp) {
-    if (!currentUser || (currentUser.role !== 'owner' && currentUser.role !== 'admin' && currentUser.role !== 'programmer')) {
-      return (
-        <OwnerLoginScreen
-          onLoginSuccess={handleApplyLoginSuccess}
-          salonName={settings.salonName}
-          onSwitchToMainApp={() => {
-            localStorage.setItem('smartcut_owner_full_app', 'true');
-            setOwnerWantsFullApp(true);
-            window.location.href = '/';
-          }}
-        />
-      );
-    }
-
-    return (
-      <OwnerExecutivePortal
-        settings={settings}
-        invoices={invoices}
-        transactions={transactions}
-        bookings={bookings}
-        employees={employees}
-        clients={clients}
-        branches={branches}
-        activeBranchId={activeBranchId}
-        onSelectBranch={setActiveBranchId}
-        currentUser={currentUser}
-        standalone={true}
-        onLogout={() => {
-          localStorage.removeItem('smartcut_owner_full_app');
-          setOwnerWantsFullApp(false);
-          AuthService.logout();
-          setCurrentUser(null);
-        }}
-        onSwitchToMainApp={() => {
-          localStorage.setItem('smartcut_owner_full_app', 'true');
-          setOwnerWantsFullApp(true);
-          setActiveTab('dashboard');
-        }}
-        expenses={transactions.filter(t => t.category === 'expense' || t.type === 'expense')}
-        purchases={purchaseInvoices}
-        supplierPayments={supplierPayments}
-        partners={partners}
-        setPartners={handleSetPartners}
-        partnerTransactions={partnerTransactions}
-        setPartnerTransactions={setPartnerTransactions}
-        setTransactions={handleSetTransactions}
-      />
-    );
-  }
 
   // 2. STANDALONE BARBER & TECHNICIAN PORTAL ROUTE (/barber, /staff or barber role)
   if (isBarberRoute || currentUser?.role === 'barber') {
@@ -1981,11 +2103,8 @@ export default function App() {
         isCloudConnected={isCloudConnected}
         salonName={settings.salonName}
         currentUser={currentUser}
-        onOpenOwnerPortal={() => {
-          localStorage.removeItem('smartcut_owner_full_app');
-          setOwnerWantsFullApp(false);
-          setActiveTab('owner_portal');
-        }}
+        allSalons={allSalons}
+        onSelectSalon={handleSwitchSalon}
       />
 
       <div className="flex flex-1 overflow-hidden relative">
@@ -2146,23 +2265,6 @@ export default function App() {
                   }`}
                 >
                   {shiftData.isOpen ? 'إغلاق الوردية' : 'فتح الوردية'}
-                </button>
-              )}
-
-              {/* Owner Return Button - Top Header Only (Non-floating) */}
-              {(currentUser?.role === 'owner' || ownerWantsFullApp) && (
-                <button
-                  onClick={() => {
-                    localStorage.removeItem('smartcut_owner_full_app');
-                    setOwnerWantsFullApp(false);
-                    setActiveTab('owner_portal');
-                  }}
-                  className="flex items-center gap-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black px-3 py-1.5 rounded-xl text-xs shadow-xs transition-all active:scale-95 cursor-pointer border border-amber-400/60"
-                  title="العودة لشاشة المالك التنفيذية"
-                >
-                  <Smartphone size={14} />
-                  <span className="font-extrabold hidden sm:inline">العودة لشاشة المالك</span>
-                  <span>👑</span>
                 </button>
               )}
 

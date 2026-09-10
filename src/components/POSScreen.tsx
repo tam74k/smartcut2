@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   Search, Plus, Minus, Trash2, User, CreditCard, Banknote, Scissors, 
   Tag, X, Package, Clock, UserCog, Calendar, CheckCircle2, Image as ImageIcon,
@@ -66,8 +66,82 @@ export function POSScreen({
   const [itemTypeFilter, setItemTypeFilter] = useState<'service' | 'product'>('service');
   const [clientSearch, setClientSearch] = useState('');
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
   const [showAddClientModal, setShowAddClientModal] = useState(false);
   const [newClientForm, setNewClientForm] = useState({ name: '', phone: '', referredByPhone: '', dobDay: '', dobMonth: '' });
+
+  // العميل المرشِّح المستنتج من رقم الهاتف المدخل في نافذة إضافة عميل جديد
+  const referrerClientInModal = useMemo(() => {
+    const rawRef = (newClientForm.referredByPhone || '').trim();
+    if (!rawRef) return null;
+    const digitsRef = rawRef.replace(/\D/g, '');
+    if (digitsRef.length < 3) return null;
+
+    return (clients || []).find(c => {
+      const p = (c.phone || '').replace(/\D/g, '');
+      if (!p) return false;
+      if (p === digitsRef) return true;
+      if (digitsRef.length >= 7 && (p.endsWith(digitsRef) || digitsRef.endsWith(p))) return true;
+      return false;
+    }) || null;
+  }, [newClientForm.referredByPhone, clients]);
+
+  // تصفية عملاء الصالون الحالي فقط (بما يشمل كافة فروعه دون أي صالونات أخرى)
+  const currentSalonId = settings?.salonId;
+  const currentSalonClients = useMemo(() => {
+    return (clients || []).filter(c => !c.salonId || !currentSalonId || c.salonId === currentSalonId);
+  }, [clients, currentSalonId]);
+
+  // قائمة الاقتراحات والإكمال التلقائي لأرقام وأسماء العملاء مع كتابة كل رقم
+  const phoneSuggestions = useMemo(() => {
+    const rawQuery = clientSearch.trim();
+    if (!rawQuery) return [];
+
+    const digitsQuery = rawQuery.replace(/\D/g, '');
+    const textQuery = rawQuery.toLowerCase();
+
+    return currentSalonClients.filter(client => {
+      const phoneDigits = (client.phone || '').replace(/\D/g, '');
+      // البحث ببادئة الرقم (مثال: كتابة 0 تظهر كل ما يبدأ بـ 0، ثم 01 تظهر ما يبدأ بـ 01 وهكذا)
+      const isPrefixMatch = digitsQuery.length > 0 && phoneDigits.startsWith(digitsQuery);
+      // أو احتواء الرقم
+      const isPhoneContains = digitsQuery.length >= 2 && phoneDigits.includes(digitsQuery);
+      // أو البحث بالاسم
+      const isNameMatch = client.name && client.name.toLowerCase().includes(textQuery);
+
+      return isPrefixMatch || isPhoneContains || isNameMatch;
+    }).sort((a, b) => {
+      const phoneA = (a.phone || '').replace(/\D/g, '');
+      const phoneB = (b.phone || '').replace(/\D/g, '');
+      if (digitsQuery.length > 0) {
+        const aStarts = phoneA.startsWith(digitsQuery);
+        const bStarts = phoneB.startsWith(digitsQuery);
+        if (aStarts && !bStarts) return -1;
+        if (!aStarts && bStarts) return 1;
+      }
+      return (a.name || '').localeCompare(b.name || '', 'ar');
+    }).slice(0, 10);
+  }, [clientSearch, currentSalonClients]);
+
+  // إغلاق قائمة الاقتراحات عند النقر خارج حقل البحث
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleSelectClient = (client: Client) => {
+    setSelectedClient(client);
+    setClientSearch('');
+    setShowSuggestions(false);
+    setHighlightedIndex(-1);
+  };
 
   // Permissions
   const canViewClientFinancials = !currentUser || currentUser.role === 'admin' || currentUser.role === 'owner' || currentUser.role === 'programmer' || currentUser.actions?.includes('view_client_financials') || currentUser.actions?.includes('*');
@@ -491,11 +565,17 @@ export function POSScreen({
         const performer = employees.find(e => e.id === c.employeeId);
         const referrer = employees.find(e => e.id === c.referralEmployeeId);
         let refCommAmt = 0;
-        if (c.item.referralCommissionAmount && c.referralEmployeeId) {
-          if (c.item.referralCommissionType === 'fixed') {
-            refCommAmt = c.item.referralCommissionAmount;
+        const matchedService = items.find(s => s.id === c.item.id || s.name === c.item.name);
+        const refCommType = c.item.referralCommissionType || matchedService?.referralCommissionType || 'percentage';
+        const refCommVal = c.item.referralCommissionAmount !== undefined && c.item.referralCommissionAmount > 0 
+          ? c.item.referralCommissionAmount 
+          : (matchedService?.referralCommissionAmount || 0);
+
+        if (refCommVal > 0 && c.referralEmployeeId) {
+          if (refCommType === 'fixed') {
+            refCommAmt = refCommVal;
           } else {
-            refCommAmt = (c.item.referralCommissionAmount / 100) * (c.item.displayPrice || c.price || 0);
+            refCommAmt = (refCommVal / 100) * (c.item.displayPrice || c.price || 0);
           }
         }
 
@@ -891,11 +971,11 @@ export function POSScreen({
   }
 
   return (
-    <div className="flex h-full w-full bg-slate-50">
+    <div className="flex flex-col lg:flex-row w-full bg-slate-50 overflow-y-auto lg:overflow-hidden lg:h-full">
       {/* Right Section: Items Grid */}
-      <div className="flex-1 flex flex-col p-6 overflow-hidden">
+      <div className="order-2 lg:order-none flex-none lg:flex-1 flex flex-col p-4 lg:p-6 lg:overflow-hidden">
         {/* Search & Filter */}
-        <div className="flex items-center gap-3 mb-6">
+        <div className="flex items-center gap-3 mb-3 lg:mb-6">
           <div className="relative flex-1">
             <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
             <input 
@@ -909,17 +989,17 @@ export function POSScreen({
 
           <button
             onClick={handleOpenScheduleModal}
-            className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 hover:text-slate-900 px-4 py-3 rounded-xl text-xs font-bold flex items-center gap-2 shadow-xs transition-all cursor-pointer whitespace-nowrap"
+            className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 hover:text-slate-900 px-3 py-3 lg:px-4 rounded-xl text-xs font-bold flex items-center gap-2 shadow-xs transition-all cursor-pointer whitespace-nowrap"
             title="تعديل مواعيد حضور وانصراف الموظفين"
           >
             <Clock size={16} className="text-amber-600" />
-            <span>تعديل مواعيد الدوام</span>
+            <span className="hidden lg:inline">تعديل مواعيد الدوام</span>
           </button>
         </div>
 
         
         {/* Type Toggle */}
-        <div className="flex gap-2 mb-4 bg-white p-2 rounded-xl shadow-sm border border-slate-100">
+        <div className="flex gap-2 mb-2 lg:mb-4 bg-white p-2 rounded-xl shadow-sm border border-slate-100">
           <button 
             onClick={() => { setItemTypeFilter('service'); setSelectedCategory('all'); }} 
             className={`flex-1 py-2 rounded-lg font-bold text-sm transition-all flex justify-center items-center gap-2 ${itemTypeFilter === 'service' ? 'bg-primary text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
@@ -935,7 +1015,7 @@ export function POSScreen({
         </div>
 
         {/* Categories */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-4 no-scrollbar">
+        <div className="flex items-center gap-2 overflow-x-auto pb-2 lg:pb-4 no-scrollbar">
           {categories.filter(c => c.id === 'all' || !c.type || c.type === itemTypeFilter).map(cat => (
             <button
               key={cat.id}
@@ -952,8 +1032,8 @@ export function POSScreen({
         </div>
 
         {/* Items Grid */}
-        <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
-          <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+        <div className="lg:flex-1 lg:overflow-y-auto pr-2 custom-scrollbar">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 lg:gap-4 pb-4 lg:pb-0">
             {filteredItems.map(item => {
               const isPriority = !item._isProduct && item.isPriority;
               const customColor = item.cardColor || '#10b981';
@@ -980,10 +1060,14 @@ export function POSScreen({
                   )}
 
                   <div 
-                    className="w-13 h-13 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110 shadow-2xs"
+                    className="w-13 h-13 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110 shadow-2xs overflow-hidden"
                     style={isPriority ? { backgroundColor: `${customColor}15`, color: customColor } : { backgroundColor: '#f1f5f9', color: '#0f766e' }}
                   >
-                    {item._isProduct ? <Package size={22} /> : <Scissors size={22} />}
+                    {item.imageUrl ? (
+                      <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover rounded-2xl" />
+                    ) : (
+                      item._isProduct ? <Package size={22} /> : <Scissors size={22} />
+                    )}
                   </div>
 
                   <div className="w-full">
@@ -1007,7 +1091,7 @@ export function POSScreen({
       </div>
 
       {/* Left Section: Cart & Payment (Enlarged & Re-engineered) */}
-      <div className="w-full max-w-[420px] lg:max-w-[460px] bg-white border-r border-slate-200 shadow-xl z-10 flex flex-col h-full overflow-hidden">
+      <div className="order-1 lg:order-none w-full lg:w-[420px] lg:max-w-[460px] bg-white border-b lg:border-b-0 lg:border-r border-slate-200 shadow-xl z-10 flex flex-col lg:h-full lg:overflow-hidden">
         
         {/* 1. Top Quick Action Bar: New Bill / Hold / Held Invoices Counter */}
         <div className="p-3 bg-slate-900 text-white flex items-center justify-between gap-2 shadow-xs shrink-0">
@@ -1054,17 +1138,130 @@ export function POSScreen({
         <div className="p-3 border-b border-slate-100 bg-slate-50/80 shrink-0">
           <div className="flex items-center gap-2">
             {!selectedClient ? (
-              <div className="relative flex-1 flex gap-2">
+              <div ref={searchContainerRef} className="relative flex-1 flex gap-2">
                 <div className="relative flex-1">
                   <User className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                   <input 
                     type="text"
                     placeholder="رقم العميل للبحث أو الإضافة..."
-                    className="w-full bg-white border border-slate-200 rounded-xl pr-9 pl-3 py-1.5 text-xs font-bold focus:outline-none focus:border-primary transition-colors"
+                    className="w-full bg-white border border-slate-200 rounded-xl pr-9 pl-3 py-1.5 text-xs font-bold focus:outline-none focus:border-primary transition-colors font-mono"
                     value={clientSearch}
-                    onChange={(e) => setClientSearch(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') handleClientSearch(); }}
+                    onFocus={() => setShowSuggestions(true)}
+                    onChange={(e) => {
+                      setClientSearch(e.target.value);
+                      setShowSuggestions(true);
+                      setHighlightedIndex(-1);
+                    }}
+                    onKeyDown={(e) => {
+                      if (showSuggestions && phoneSuggestions.length > 0) {
+                        if (e.key === 'ArrowDown') {
+                          e.preventDefault();
+                          setHighlightedIndex(prev => (prev < phoneSuggestions.length - 1 ? prev + 1 : 0));
+                          return;
+                        }
+                        if (e.key === 'ArrowUp') {
+                          e.preventDefault();
+                          setHighlightedIndex(prev => (prev > 0 ? prev - 1 : phoneSuggestions.length - 1));
+                          return;
+                        }
+                        if (e.key === 'Enter' && highlightedIndex >= 0 && phoneSuggestions[highlightedIndex]) {
+                          e.preventDefault();
+                          handleSelectClient(phoneSuggestions[highlightedIndex]);
+                          return;
+                        }
+                        if (e.key === 'Escape') {
+                          setShowSuggestions(false);
+                          return;
+                        }
+                      }
+                      if (e.key === 'Enter') {
+                        handleClientSearch();
+                      }
+                    }}
                   />
+
+                  {/* القائمة المنسدلة للإكمال التلقائي لأرقام العملاء */}
+                  {showSuggestions && clientSearch.trim().length > 0 && (
+                    <div className="absolute top-full right-0 left-0 mt-1.5 bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 overflow-hidden max-h-72 flex flex-col animate-in fade-in-50 slide-in-from-top-2 duration-150">
+                      <div className="p-2 bg-slate-50 border-b border-slate-100 flex items-center justify-between text-[11px] font-bold text-slate-500">
+                        <span className="flex items-center gap-1">
+                          <span>⚡</span>
+                          <span>عملاء الصالون المطابقون:</span>
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-700 font-mono text-[10px]">
+                          {phoneSuggestions.length}
+                        </span>
+                      </div>
+
+                      <div className="overflow-y-auto divide-y divide-slate-100 max-h-56 custom-scrollbar">
+                        {phoneSuggestions.map((client, idx) => {
+                          const isHighlighted = idx === highlightedIndex;
+                          const tier = getClientTier(client, invoices, settings.tierSettings);
+                          const cashbackVal = client.cashback !== undefined ? client.cashback : (client.loyaltyPoints || 0);
+
+                          return (
+                            <button
+                              key={client.id}
+                              type="button"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                handleSelectClient(client);
+                              }}
+                              onMouseEnter={() => setHighlightedIndex(idx)}
+                              className={`w-full text-right p-2.5 flex items-center justify-between gap-2 transition-colors cursor-pointer ${
+                                isHighlighted ? 'bg-primary/10 text-primary' : 'hover:bg-slate-50'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <div className="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center font-bold text-xs text-slate-700 shrink-0">
+                                  {tier?.icon || client.name.charAt(0) || '👤'}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-extrabold text-xs text-slate-900 truncate">{client.name}</span>
+                                    {tier && (
+                                      <span className={`text-[8px] font-black px-1.5 py-0.2 rounded-md ${tier.badgeBg} ${tier.badgeText} shrink-0`}>
+                                        {tier.name}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-[11px] font-mono font-bold text-slate-600 flex items-center gap-1" dir="ltr">
+                                    <span>{client.phone}</span>
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="text-left shrink-0">
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-purple-50 text-purple-700 border border-purple-100 font-mono block">
+                                  كاش باك: {cashbackVal.toFixed(0)} {settings.currency}
+                                </span>
+                              </div>
+                            </button>
+                          );
+                        })}
+
+                        {/* خيار تسجيل عميل جديد بالرقم المكتوب */}
+                        <button
+                          type="button"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            setShowSuggestions(false);
+                            setNewClientForm(prev => ({ ...prev, phone: clientSearch.replace(/[^0-9]/g, '') }));
+                            setShowAddClientModal(true);
+                          }}
+                          className="w-full text-right p-2.5 bg-emerald-50/70 hover:bg-emerald-100/80 text-emerald-800 flex items-center justify-between gap-2 transition-colors cursor-pointer text-xs font-bold"
+                        >
+                          <span className="flex items-center gap-1.5">
+                            <Plus size={14} className="text-emerald-600" />
+                            <span>إضافة عميل جديد بالرقم: <strong className="font-mono" dir="ltr">{clientSearch}</strong></span>
+                          </span>
+                          <span className="text-[10px] bg-emerald-200/80 text-emerald-900 px-2 py-0.5 rounded-full font-bold">
+                            تسجيل جديد +
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <button onClick={handleClientSearch} className="bg-primary hover:bg-primary-dark text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-colors">
                   بحث
@@ -1129,7 +1326,7 @@ export function POSScreen({
         </div>
 
         {/* 3. Cart Items List (Enlarged & Spacious) */}
-        <div className="flex-1 overflow-y-auto p-3 space-y-2.5 custom-scrollbar bg-slate-50/40">
+        <div className="lg:flex-1 lg:overflow-y-auto p-3 space-y-2.5 custom-scrollbar bg-slate-50/40">
           {cart.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-2 p-6 text-center">
               <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center text-slate-300">
@@ -1796,20 +1993,78 @@ export function POSScreen({
                 />
               </div>
               <div>
-                <label className="block text-sm font-bold text-amber-700 mb-1 flex items-center gap-2">
-                  <span>🎁</span>
-                  <span>رقم جوال العميل الذي رشحه (اختياري)</span>
+                <label className="block text-sm font-bold text-amber-700 mb-1 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <span>🎁</span>
+                    <span>رقم جوال العميل الذي رشحه (اختياري)</span>
+                  </span>
+                  {referrerClientInModal && (
+                    <span className="text-[11px] text-emerald-700 font-extrabold bg-emerald-100/90 px-2 py-0.5 rounded-md">
+                      تم التعرف على العميل ✅
+                    </span>
+                  )}
                 </label>
-                <input 
-                  type="text"
-                  value={newClientForm.referredByPhone}
-                  onChange={(e) => setNewClientForm({...newClientForm, referredByPhone: e.target.value})}
-                  className="w-full bg-amber-50 border border-amber-200 rounded-lg px-4 py-2 outline-none focus:border-amber-500 font-mono"
-                  placeholder="رقم جوال العميل المرشِح..."
-                  dir="ltr"
-                />
-                {newClientForm.referredByPhone && newClientForm.referredByPhone.trim() === newClientForm.phone.trim() && (
-                  <p className="text-xs text-red-500 font-bold mt-1">⚠️ لا يمكن إدخال رقم العميل نفسه كمرشِح</p>
+                <div className="relative">
+                  <input 
+                    type="text"
+                    value={newClientForm.referredByPhone}
+                    onChange={(e) => setNewClientForm({...newClientForm, referredByPhone: e.target.value})}
+                    className={`w-full border rounded-xl px-4 py-2.5 outline-none font-mono text-sm transition-all ${
+                      referrerClientInModal 
+                        ? 'border-emerald-500 ring-2 ring-emerald-500/20 bg-emerald-50/40 text-emerald-950 font-bold' 
+                        : 'bg-amber-50 border-amber-200 focus:border-amber-500'
+                    }`}
+                    placeholder="رقم جوال العميل المرشِح..."
+                    dir="ltr"
+                  />
+                  {newClientForm.referredByPhone && (
+                    <button 
+                      type="button"
+                      onClick={() => setNewClientForm({...newClientForm, referredByPhone: ''})}
+                      className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 p-1 rounded-full transition-colors"
+                      title="مسح الرقم"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+
+                {/* التحقق من عدم ترشيح العميل لنفسه */}
+                {newClientForm.referredByPhone && newClientForm.phone && newClientForm.referredByPhone.trim().replace(/\D/g, '') === newClientForm.phone.trim().replace(/\D/g, '') && (
+                  <p className="text-xs text-red-500 font-bold mt-1.5 flex items-center gap-1">
+                    <span>⚠️</span>
+                    <span>لا يمكن إدخال رقم العميل نفسه كمرشِح</span>
+                  </p>
+                )}
+
+                {/* إظهار اسم العميل المرشِح فور العثور عليه برقم هاتفه */}
+                {referrerClientInModal && (
+                  <div className="mt-2 p-2.5 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-300/90 rounded-xl flex items-center justify-between gap-2 text-emerald-950 shadow-2xs animate-in fade-in zoom-in-95 duration-150">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black text-xs shrink-0 shadow-xs">
+                        <User size={16} />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] text-emerald-700 font-bold">العميل الذي رشح الصالون:</span>
+                        </div>
+                        <p className="text-xs font-black text-emerald-950 truncate">{referrerClientInModal.name}</p>
+                      </div>
+                    </div>
+                    <div className="text-left shrink-0">
+                      <span className="text-[11px] font-mono font-bold bg-white/90 border border-emerald-200 text-emerald-800 px-2 py-0.5 rounded-lg" dir="ltr">
+                        {referrerClientInModal.phone}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* إشعار في حال كتابة رقم كامل غير مسجل مسبقاً */}
+                {!referrerClientInModal && newClientForm.referredByPhone && newClientForm.referredByPhone.trim().replace(/\D/g, '').length >= 9 && (
+                  <div className="mt-1.5 p-2 bg-amber-50 border border-amber-200/80 rounded-xl flex items-center gap-1.5 text-amber-800 text-[11px] font-medium">
+                    <span>ℹ️</span>
+                    <span>لم يتم العثور على عميل مسجل بهذا الرقم مسبقاً (سيتم حفظ الرقم كجهة ترشيح)</span>
+                  </div>
                 )}
               </div>
               <div>

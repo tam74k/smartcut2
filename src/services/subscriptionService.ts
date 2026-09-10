@@ -119,7 +119,7 @@ export const SubscriptionService = {
   /**
    * Register a new salon with automated 7-day trial and setup
    */
-  registerNewSalon(data: {
+  async registerNewSalon(data: {
     salonName: string;
     ownerName: string;
     username?: string;
@@ -129,7 +129,7 @@ export const SubscriptionService = {
     salonType?: 'men' | 'women' | 'mixed';
     password?: string;
     customTrialDays?: number;
-  }): { salon: SalonTenant; user: AppUser; branch: Branch; settings: AppSettings } {
+  }): Promise<{ salon: SalonTenant; user: AppUser; branch: Branch; settings: AppSettings }> {
     const salons = this.getSalons();
     const trialDays = data.customTrialDays || 7;
     const now = new Date();
@@ -184,7 +184,7 @@ export const SubscriptionService = {
     const chosenUsername = data.username?.trim().toLowerCase() || data.email.split('@')[0] || 'admin';
 
     const newAdminUser: AppUser = {
-      id: 'usr-' + Math.random().toString(36).substring(2, 9),
+      id: generateUUID(),
       salonId: salonId,
       salonCode: salonCode,
       branchId: branchId,
@@ -193,7 +193,7 @@ export const SubscriptionService = {
       email: data.email,
       password: data.password || '123456',
       name: data.ownerName || data.salonName,
-      role: 'admin',
+      role: 'owner',
       phone: data.phone,
       active: true,
       screens: ['*'],
@@ -236,7 +236,7 @@ export const SubscriptionService = {
       evolutionInstanceName: `${salonCode.toLowerCase()}_main`
     };
 
-    // 1. Save user to AuthService so they can authenticate
+    // 1. Save user to AuthService so they can authenticate locally
     AuthService.saveUser(newAdminUser);
 
     // 2. Save active salon settings to localStorage
@@ -252,11 +252,11 @@ export const SubscriptionService = {
     const allBranches = this.getBranches();
     this.saveBranches([...allBranches, newBranch]);
 
-    // 3. Save directly and instantly to Supabase Cloud Database
-    DB.saveSalon(newSalon);
-    DB.saveBranch(newBranch);
-    DB.saveSettings(salonId, initialSettings);
-    DB.saveUser(newAdminUser);
+    // 3. Save directly and instantly to Supabase Cloud Database (public.users)
+    await DB.saveUser(newAdminUser);
+    await DB.saveSettings(salonId, initialSettings);
+    await DB.saveSalon(newSalon);
+    await DB.saveBranch(newBranch);
 
     return { salon: newSalon, user: newAdminUser, branch: newBranch, settings: initialSettings };
   },

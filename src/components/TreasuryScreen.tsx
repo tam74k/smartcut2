@@ -1,8 +1,9 @@
 import { useState, useMemo } from 'react';
 import { AppSettings, Transaction, Treasury, Branch, AppUser } from '../types';
-import { Wallet, ArrowDownRight, ArrowUpRight, ArrowRightLeft, XCircle, Download, Building2 } from 'lucide-react';
+import { Wallet, ArrowDownRight, ArrowUpRight, ArrowRightLeft, XCircle, Download, Building2, Trash2 } from 'lucide-react';
 import { exportToExcel } from '../utils/exportExcel';
 import { AuthService } from '../services/auth';
+import { DB } from '../services/db';
 
 export function TreasuryScreen({ 
   settings, 
@@ -175,6 +176,21 @@ export function TreasuryScreen({
     return settings.treasuries.reduce((sum, t) => sum + getTreasuryTotals(t.id).balance, 0);
   }, [settings.treasuries, transactions]);
 
+  const handleExportExcel = () => {
+    const headers = ['رقم الحركة', 'التاريخ والوقت', 'الخزينة', 'المستخدم / الكاشير', 'نوع الحركة', 'التصنيف', 'البيان والتفاصيل', 'المبلغ (SAR)'];
+    const rows = filteredTransactions.map(t => [
+      t.id,
+      t.date ? new Date(t.date).toLocaleString('ar-SA') : '-',
+      settings.treasuries.find(tr => tr.id === t.treasury)?.name || t.treasury,
+      (t as any).userName || (t as any).createdBy || '-',
+      t.type === 'in' ? 'إيداع / وارد' : 'صرف / صادر',
+      translateCategory(t.category),
+      t.description || '-',
+      t.amount
+    ]);
+    exportToExcel(`سجل_حركات_الخزائن_${new Date().toISOString().split('T')[0]}`, 'حركات الخزائن', headers, rows);
+  };
+
   return (
     <div className="p-4 sm:p-8 w-full h-full overflow-y-auto bg-slate-100/60 font-sans relative">
       {/* Active Branch Notice Banner */}
@@ -283,109 +299,112 @@ export function TreasuryScreen({
                     <ArrowDownRight size={15} />
                     <span>مقبوضات: {totalIn.toFixed(2)}</span>
                   </div>
-                  <div className="flex items-center gap-1.5 text-rose-300 justify-end">
+                  <div className="flex items-center gap-1.5 text-rose-300">
                     <ArrowUpRight size={15} />
-                    <span>مصروفات: {totalOut.toFixed(2)}</span>
+                    <span>مدفوعات: {totalOut.toFixed(2)}</span>
                   </div>
                 </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-2 mt-4 pt-4 border-t border-white/10">
+                <button
+                  onClick={() => handleOpenModal('deposit')}
+                  className="flex-1 bg-white/10 hover:bg-white/20 text-white font-bold py-2 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <ArrowDownRight size={14} />
+                  <span>إيداع</span>
+                </button>
+                <button
+                  onClick={() => handleOpenModal('withdraw')}
+                  className="flex-1 bg-white/10 hover:bg-white/20 text-white font-bold py-2 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <ArrowUpRight size={14} />
+                  <span>صرف</span>
+                </button>
+                <button
+                  onClick={() => handleOpenModal('transfer')}
+                  className="flex-1 bg-white/10 hover:bg-white/20 text-white font-bold py-2 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <ArrowRightLeft size={14} />
+                  <span>تحويل</span>
+                </button>
               </div>
             </div>
           );
         })}
       </div>
 
-      {/* Expanded Operations Section with Page Scrolling */}
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden mb-12">
-        {/* Filter Header */}
-        <div className="p-4 sm:p-5 border-b border-slate-100 bg-slate-50/70 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-            <h3 className="font-extrabold text-sm sm:text-base text-slate-800">
-              سجل العمليات والعهد والحركات المالية ({filteredTransactions.length} حركة)
-            </h3>
+      {/* Transactions History */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
+        {/* Header & Filter Bar */}
+        <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-50/50">
+          <div>
+            <h3 className="font-black text-slate-800 text-base">سجل العمليات والخزينة</h3>
+            <p className="text-xs text-slate-400 mt-0.5">سجل كامل بجميع الحركات النقدية، المبيعات، العهد، والمصروفات</p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
-            {/* Quick Filter Pills */}
-            <div className="flex items-center gap-1 bg-white border border-slate-200 p-1 rounded-xl">
-              <button
+          <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+            {/* Category Filter */}
+            <div className="flex bg-slate-200/60 p-1 rounded-xl text-xs font-bold">
+              <button 
                 onClick={() => setCategoryFilter('all')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
-                  categoryFilter === 'all' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'
-                }`}
+                className={`px-3 py-1.5 rounded-lg transition-all ${categoryFilter === 'all' ? 'bg-white text-slate-900 shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'}`}
               >
                 الكل
               </button>
-              <button
+              <button 
                 onClick={() => setCategoryFilter('custody')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1 ${
-                  categoryFilter === 'custody' ? 'bg-amber-500 text-white shadow-xs' : 'text-amber-700 hover:bg-amber-50'
-                }`}
+                className={`px-3 py-1.5 rounded-lg transition-all ${categoryFilter === 'custody' ? 'bg-amber-500 text-white shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'}`}
               >
-                <span>💰 العهد فقط</span>
+                💰 العهدة
               </button>
-              <button
+              <button 
                 onClick={() => setCategoryFilter('sales')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
-                  categoryFilter === 'sales' ? 'bg-emerald-600 text-white shadow-xs' : 'text-emerald-700 hover:bg-emerald-50'
-                }`}
+                className={`px-3 py-1.5 rounded-lg transition-all ${categoryFilter === 'sales' ? 'bg-emerald-600 text-white shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'}`}
               >
-                المبيعات
+                مبيعات
               </button>
-              <button
+              <button 
                 onClick={() => setCategoryFilter('expense')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
-                  categoryFilter === 'expense' ? 'bg-rose-600 text-white shadow-xs' : 'text-rose-700 hover:bg-rose-50'
-                }`}
+                className={`px-3 py-1.5 rounded-lg transition-all ${categoryFilter === 'expense' ? 'bg-rose-600 text-white shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'}`}
               >
-                المصروفات
+                مصروفات
               </button>
             </div>
 
-            <div className="flex items-center gap-2">
-              <label className="text-xs font-bold text-slate-600">من:</label>
+            {/* Date Range Inputs */}
+            <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-2.5 py-1.5 rounded-xl text-xs">
+              <span className="text-slate-400 text-[11px] font-bold">من:</span>
               <input 
                 type="date" 
                 value={fromDate} 
-                onChange={e => setFromDate(e.target.value)} 
-                className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-semibold outline-none focus:border-emerald-500 shadow-2xs" 
+                onChange={(e) => setFromDate(e.target.value)}
+                className="bg-transparent border-none outline-none font-sans font-bold text-slate-700 text-xs"
               />
-            </div>
-            <div className="flex items-center gap-2">
-              <label className="text-xs font-bold text-slate-600">إلى:</label>
+              <span className="text-slate-400 text-[11px] font-bold mr-1">إلى:</span>
               <input 
                 type="date" 
                 value={toDate} 
-                onChange={e => setToDate(e.target.value)} 
-                className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-semibold outline-none focus:border-emerald-500 shadow-2xs" 
+                onChange={(e) => setToDate(e.target.value)}
+                className="bg-transparent border-none outline-none font-sans font-bold text-slate-700 text-xs"
               />
+              {(fromDate || toDate) && (
+                <button 
+                  onClick={() => { setFromDate(''); setToDate(''); }}
+                  className="text-slate-400 hover:text-red-500 text-[10px] font-bold px-1"
+                  title="مسح التاريخ"
+                >
+                  ✕
+                </button>
+              )}
             </div>
-            {(fromDate || toDate || categoryFilter !== 'all') && (
-              <button 
-                onClick={() => { setFromDate(''); setToDate(''); setCategoryFilter('all'); }} 
-                className="text-xs text-rose-600 hover:text-rose-700 font-bold bg-rose-50 px-2.5 py-1.5 rounded-xl transition-colors cursor-pointer"
-              >
-                إلغاء الفلتر
-              </button>
-            )}
 
-            {AuthService.canDo('export_excel') && (
+            {/* Excel Export */}
+            {filteredTransactions.length > 0 && (
               <button
-                onClick={() => {
-                  const headers = ['رقم الحركة', 'التاريخ', 'الخزينة', 'المستخدم', 'النوع', 'المبلغ', 'التصنيف', 'البيان'];
-                  const rows = filteredTransactions.map(t => [
-                    t.id,
-                    t.date,
-                    settings.treasuries.find(tr => tr.id === t.treasury)?.name || t.treasury,
-                    t.userName || t.createdBy || '-',
-                    t.type === 'in' ? 'إيداع / وارد' : 'صرف / منصرف',
-                    t.amount,
-                    translateCategory(t.category),
-                    t.description || ''
-                  ]);
-                  exportToExcel(`سجل_حركات_الخزائن_${new Date().toISOString().split('T')[0]}`, 'حركات الخزينة والعهد', headers, rows);
-                }}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
+                onClick={handleExportExcel}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer mr-auto md:mr-0"
               >
                 <Download size={14} />
                 <span>تصدير Excel</span>
@@ -407,6 +426,7 @@ export function TreasuryScreen({
                 <th className="py-3 px-4">المبلغ</th>
                 <th className="py-3 px-4">التصنيف</th>
                 <th className="py-3 px-4">البيان / ملاحظات</th>
+                <th className="py-3 px-4 text-center">إجراءات</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -457,12 +477,21 @@ export function TreasuryScreen({
                       </span>
                     </td>
                     <td className="py-3.5 px-4 text-slate-600 font-medium max-w-xs truncate">{trx.description || '-'}</td>
+                    <td className="py-3.5 px-4 text-center">
+                      <button
+                        onClick={() => handleDeleteTransaction(trx)}
+                        className="text-slate-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition-all cursor-pointer"
+                        title="حذف الحركة المالية"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </td>
                   </tr>
                 );
               })}
               {filteredTransactions.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="py-16 text-center text-slate-400 font-bold">
+                  <td colSpan={9} className="py-16 text-center text-slate-400 font-bold">
                     لا توجد حركات مطابقة للبحث أو التصفية الحالية
                   </td>
                 </tr>

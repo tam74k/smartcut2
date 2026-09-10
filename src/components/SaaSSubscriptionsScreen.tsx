@@ -180,14 +180,14 @@ export function SaaSSubscriptionsScreen({ onSwitchSalon }: SaaSSubscriptionsScre
   }, [salons, payments]);
 
   // Handle Salon Creation
-  const handleCreateSalon = (e: React.FormEvent) => {
+  const handleCreateSalon = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newSalonForm.salonName || !newSalonForm.email || !newSalonForm.phone) {
       alert('الرجاء ملء جميع الحقول الأساسية للصالون');
       return;
     }
 
-    SubscriptionService.registerNewSalon({
+    await SubscriptionService.registerNewSalon({
       salonName: newSalonForm.salonName,
       salonType: newSalonForm.salonType,
       ownerName: newSalonForm.ownerName || newSalonForm.salonName,

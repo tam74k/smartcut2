@@ -120,6 +120,22 @@ export function ClientReservationPortal({
     referredByPhone: '',
     country: 'المملكة العربية السعودية'
   });
+
+  // العميل المرشِّح المستنتج من رقم الهاتف المدخل في بوابة الحجز
+  const referrerClientInPortal = useMemo(() => {
+    const rawRef = (authForm.referredByPhone || '').trim();
+    if (!rawRef) return null;
+    const digitsRef = rawRef.replace(/\D/g, '');
+    if (digitsRef.length < 3) return null;
+
+    return (clients || []).find(c => {
+      const p = (c.phone || '').replace(/\D/g, '');
+      if (!p) return false;
+      if (p === digitsRef) return true;
+      if (digitsRef.length >= 7 && (p.endsWith(digitsRef) || digitsRef.endsWith(p))) return true;
+      return false;
+    }) || null;
+  }, [authForm.referredByPhone, clients]);
   
   // OTP State
   const [enteredOtp, setEnteredOtp] = useState('');
@@ -1073,18 +1089,45 @@ export function ClientReservationPortal({
                 <div>
                   <label className="block text-xs font-bold text-amber-300 mb-1 flex items-center justify-between">
                     <span>رقم جوال العميل الذي رشحك (اختياري) 🎁</span>
-                    <span className="text-[10px] text-amber-400/80 font-normal">كود الترشيح / الإحالة</span>
+                    {referrerClientInPortal ? (
+                      <span className="text-[10px] text-emerald-400 font-extrabold bg-emerald-950/80 border border-emerald-500/30 px-2 py-0.5 rounded-md">
+                        تم التعرف على المرشِّح ✅
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-amber-400/80 font-normal">كود الترشيح / الإحالة</span>
+                    )}
                   </label>
                   <input
                     type="tel"
                     value={authForm.referredByPhone}
                     onChange={e => setAuthForm({ ...authForm, referredByPhone: e.target.value })}
                     placeholder="مثال: 0501234567"
-                    className="w-full bg-slate-950 border border-slate-800 text-white rounded-2xl px-4 py-3 text-xs font-bold outline-none focus:border-amber-500 font-mono"
+                    className={`w-full bg-slate-950 border text-white rounded-2xl px-4 py-3 text-xs font-bold outline-none font-mono transition-all ${
+                      referrerClientInPortal
+                        ? 'border-emerald-500 ring-2 ring-emerald-500/20'
+                        : 'border-slate-800 focus:border-amber-500'
+                    }`}
                     dir="ltr"
                   />
                   {authForm.referredByPhone && authForm.referredByPhone.trim() === authForm.phone.trim() && (
                     <p className="text-[10px] text-rose-400 font-bold mt-1">⚠️ لا يمكنك إدخال رقم جوالك كمرشِح لنفسك.</p>
+                  )}
+
+                  {referrerClientInPortal && (
+                    <div className="mt-2 p-2.5 bg-emerald-950/40 border border-emerald-500/40 rounded-xl flex items-center justify-between gap-2 text-emerald-200 text-xs animate-in fade-in">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-6 h-6 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-bold text-[10px] shrink-0">
+                          ✓
+                        </div>
+                        <div className="min-w-0">
+                          <span className="text-[10px] text-emerald-400 block font-normal leading-none mb-0.5">العميل الذي رشحك:</span>
+                          <p className="text-xs font-black text-white truncate leading-tight">{referrerClientInPortal.name}</p>
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-mono font-bold bg-slate-900 border border-emerald-500/30 text-emerald-300 px-2 py-0.5 rounded" dir="ltr">
+                        {referrerClientInPortal.phone}
+                      </span>
+                    </div>
                   )}
                 </div>
 

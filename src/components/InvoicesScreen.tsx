@@ -1,8 +1,8 @@
 import { useState, useMemo } from 'react';
-import { AppSettings, Invoice, Transaction, Client, Branch } from '../types';
+import { AppSettings, Invoice, Transaction, Client, Branch, Product } from '../types';
 import { 
   Search, Filter, Printer, XCircle, Edit, CheckCircle, ChevronDown, 
-  ChevronUp, Image as ImageIcon, Wrench, Eye, X, Trash2 
+  ChevronUp, Image as ImageIcon, Wrench, Eye, X, Trash2, RotateCcw
 } from 'lucide-react';
 import { DB } from '../services/db';
 
@@ -16,7 +16,10 @@ export function InvoicesScreen({
   setClients,
   activeBranchId,
   branches = [],
-  currentUser
+  currentUser,
+  products = [],
+  setProducts,
+  setItemMovements,
 }: { 
   settings: AppSettings;
   invoices: Invoice[];
@@ -28,6 +31,9 @@ export function InvoicesScreen({
   activeBranchId?: string;
   branches?: Branch[];
   currentUser?: any;
+  products?: Product[];
+  setProducts?: (p: Product[] | ((prev: Product[]) => Product[])) => void;
+  setItemMovements?: (m: any[] | ((prev: any[]) => any[])) => void;
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [dateFrom, setDateFrom] = useState('');
@@ -70,24 +76,39 @@ export function InvoicesScreen({
     }
   };
   
-  const handleConfirmCancel = () => {
+  const handleConfirmCancel = async () => {
     if (!cancelInvoiceTarget) return;
     const invoice = cancelInvoiceTarget;
-    // Update invoice status
-    setInvoices(invoices.map(inv => inv.id === invoice.id ? { ...inv, status: 'cancelled' } : inv));
-    // Remove financial effect (delete related transactions)
-    setTransactions(transactions.filter(t => !t.description.includes(invoice.id)));
+    // 1. Update invoice status in DB & state
+    const updatedInv = { ...invoice, status: 'cancelled' as const };
+    await DB.saveInvoice(updatedInv);
+    setInvoices(invoices.map(inv => inv.id === invoice.id ? updatedInv : inv));
 
-    // Revert cashback if it was used
+    // 2. Remove financial effect from DB & state
+    await DB.deleteTransactionsByInvoiceId(invoice.id);
+    setTransactions(transactions.filter(t => !t.description?.includes(invoice.id) && (t as any).invoiceId !== invoice.id));
+
+    // 3. Revert cashback if it was used
     if (invoice.cashbackUsed && invoice.clientId) {
-      setClients(clients.map(c => c.id === invoice.clientId ? { ...c, loyaltyPoints: c.loyaltyPoints + invoice.cashbackUsed! } : c));
+      const targetClient = clients.find(c => c.id === invoice.clientId);
+      if (targetClient) {
+        const updatedClient = { ...targetClient, loyaltyPoints: (targetClient.loyaltyPoints || 0) + invoice.cashbackUsed! };
+        await DB.saveClient(updatedClient);
+        setClients(clients.map(c => c.id === invoice.clientId ? updatedClient : c));
+      }
     }
 
     setCancelInvoiceTarget(null);
   };
 
+  // ✅ إصلاح: التحقق من كلمة المرور الحقيقية للمستخدم الحالي بدلاً من الكلمة المشفرة ثابتة
   const handleAdminPasswordSubmit = () => {
-    if (adminPasswordInput === 'admin') {
+    const currentUserPassword = currentUser?.password || '';
+    const isValid = 
+      (currentUserPassword && adminPasswordInput === currentUserPassword) ||
+      (currentUser?.role === 'admin' || currentUser?.role === 'owner' || currentUser?.role === 'programmer') && !currentUserPassword;
+    
+    if (isValid) {
       setShowEditModal(adminPasswordTarget);
       setAdminPasswordTarget(null);
       setAdminPasswordInput('');
@@ -95,6 +116,89 @@ export function InvoicesScreen({
     } else {
       setAdminPasswordError(true);
     }
+  };
+
+  // ✅ استعادة فاتورة ملغاة مع إعادة كل آثارها المالية والمخزنية
+  const handleRestoreInvoice = async (invoice: Invoice) => {
+    const isAuthorized = !currentUser || ['admin', 'owner', 'programmer'].includes(currentUser.role) ||
+      currentUser.actions?.includes('manage_invoices') || currentUser.actions?.includes('*');
+    if (!isAuthorized) {
+      alert('⛔ عذراً، استعادة الفواتير تتطلب صلاحية الإدارة.');
+      return;
+    }
+    if (!window.confirm(`هل أنت متأكد من استعادة الفاتورة رقم (${invoice.id})؟ سيتم إعادة تفعيلها وإعادة تسجيل آثارها المالية وكميات المنتجات.`)) return;
+
+    // 1. تحديث حالة الفاتورة إلى مكتملة
+    const restored = { ...invoice, status: 'completed' as const };
+    await DB.saveInvoice(restored);
+    setInvoices(invoices.map(inv => inv.id === invoice.id ? restored : inv));
+
+    // 2. إعادة إنشاء المعاملات المالية من طرق الدفع الموجودة في الفاتورة
+    if (invoice.paymentMethods && invoice.paymentMethods.length > 0) {
+      const restoredTrxs: Transaction[] = invoice.paymentMethods
+        .filter(pm => pm.treasuryId !== 'cashback')
+        .map(pm => ({
+          id: 'TRX-RST-' + Math.random().toString(36).substr(2, 9),
+          salonId: invoice.salonId,
+          date: new Date().toISOString(),
+          type: 'in' as const,
+          amount: pm.amount,
+          category: 'sales',
+          description: `استعادة - مبيعات فاتورة ${invoice.id}`,
+          treasury: pm.treasuryId,
+          branchId: invoice.branchId,
+        } as any));
+      if (restoredTrxs.length > 0) {
+        setTransactions([...transactions, ...restoredTrxs]);
+        DB.saveTransactions(restoredTrxs, invoice.salonId);
+      }
+    }
+
+    // 3. إعادة خصم كميات المنتجات من المخزن
+    if (setProducts && invoice.items && invoice.items.some(i => i.type === 'product')) {
+      const updatedProducts = [...products];
+      const newMovements: any[] = [];
+      invoice.items.forEach(item => {
+        if (item.type === 'product' && item.itemId) {
+          const pIdx = updatedProducts.findIndex(p => p.id === item.itemId);
+          if (pIdx !== -1) {
+            updatedProducts[pIdx] = { 
+              ...updatedProducts[pIdx], 
+              currentStock: updatedProducts[pIdx].currentStock - (item.quantity || 1) 
+            };
+            newMovements.push({
+              id: 'MOV-RST-' + Math.random().toString(36).substr(2, 9),
+              productId: item.itemId,
+              date: new Date().toISOString(),
+              type: 'sale',
+              referenceId: invoice.id,
+              quantityIn: 0,
+              quantityOut: item.quantity || 1,
+              balanceAfter: updatedProducts[pIdx].currentStock,
+            });
+          }
+        }
+      });
+      setProducts(updatedProducts);
+      if (setItemMovements && newMovements.length > 0) {
+        setItemMovements((prev: any[]) => [...prev, ...newMovements]);
+      }
+    }
+
+    // 4. إعادة خصم نقاط الكاش باك إذا كانت مستخدمة
+    if (invoice.cashbackUsed && invoice.cashbackUsed > 0 && invoice.clientId) {
+      const targetClient = clients.find(c => c.id === invoice.clientId);
+      if (targetClient) {
+        const updatedClient = { 
+          ...targetClient, 
+          loyaltyPoints: Math.max(0, (targetClient.loyaltyPoints || 0) - invoice.cashbackUsed!) 
+        };
+        await DB.saveClient(updatedClient);
+        setClients(clients.map(c => c.id === invoice.clientId ? updatedClient : c));
+      }
+    }
+
+    alert(`✅ تم استعادة الفاتورة ${invoice.id} بنجاح وإعادة تسجيل آثارها المالية.`);
   };
   
   const handlePayInvoice = () => {
@@ -177,10 +281,11 @@ export function InvoicesScreen({
   const isMainBranch = !activeBranchId || activeBranchId === mainBranchId || activeBranchId === 'b-main';
 
   const matchesActiveBranch = (itemBranchId?: string) => {
-    if (itemBranchId) {
-      return itemBranchId === activeBranchId;
-    }
-    return isMainBranch;
+    if (!itemBranchId) return true;
+    if (!branches || branches.length <= 1) return true;
+    if (itemBranchId === activeBranchId) return true;
+    if (isMainBranch) return true;
+    return false;
   };
 
   const filteredInvoices = useMemo(() => {
@@ -374,6 +479,17 @@ export function InvoicesScreen({
                       {inv.status === 'completed' && (
                         <button onClick={() => setCancelInvoiceTarget(inv)} className="w-8 h-8 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 flex items-center justify-center transition-colors" title="إلغاء الفاتورة">
                           <XCircle size={16} />
+                        </button>
+                      )}
+
+                      {/* زر استعادة الفاتورة الملغاة */}
+                      {inv.status === 'cancelled' && (
+                        <button 
+                          onClick={() => handleRestoreInvoice(inv)} 
+                          className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 flex items-center justify-center transition-colors" 
+                          title="استعادة الفاتورة الملغاة وإعادة آثارها المالية"
+                        >
+                          <RotateCcw size={15} />
                         </button>
                       )}
 

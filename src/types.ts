@@ -221,6 +221,7 @@ export interface ServiceItem {
   isActive: boolean;
   type: 'service' | 'product'; 
   barcode?: string; 
+  imageUrl?: string; // رابط صورة الخدمة المخزنة في Bucket services
   isPriority?: boolean; // أولوية الظهور في الكاشير ونقطة البيع
   cardColor?: string; // لون البطاقة المخصص للخدمة في شاشة الكاشير
   priorityOrder?: number; // ترتيب أسبقية الظهور
@@ -288,7 +289,7 @@ export interface EndOfServiceRecord {
 export interface EmployeeFinancialRecord {
   id: string;
   date: string; // shift date or ISO
-  type: 'advance' | 'penalty_cash' | 'penalty_days' | 'bonus' | 'commission' | 'referral_commission';
+  type: 'advance' | 'penalty_cash' | 'penalty_days' | 'bonus' | 'commission' | 'referral_commission' | 'commission_payout';
   amount?: number;
   days?: number;
   treasuryId?: string;
@@ -301,6 +302,10 @@ export interface EmployeeLeaveRecord {
   endDate: string;
   type: 'paid' | 'unpaid' | 'termination';
   note: string;
+  daysCount?: number;
+  reason?: string;
+  createdAt?: string;
+  approvedBy?: string;
 }
 
 export interface HRSettings {
@@ -332,6 +337,8 @@ export interface HRSettings {
   permissionDeductionRate?: 'exact_minute_rate' | 'hourly_rate';
 
   weeklyOffPaid: boolean;
+  weeklyOffPaidType?: 'paid' | 'unpaid'; // نوع الإجازة الأسبوعية: مدفوعة على حساب المحل أو غير مدفوعة
+  absenceDeductionDays?: number; // عدد أيام الخصم في حالة الغياب (الافتراضي 1)
 }
 
 
@@ -368,7 +375,7 @@ export interface Employee {
   baseSalary: number; 
   fingerprintCode: string; 
   commissionRate: number; 
-  commissionModel?: 'fixed_rate' | 'target_based' | 'tiered_brackets';
+  commissionModel?: 'none' | 'fixed_rate' | 'target_based' | 'tiered_brackets';
   commissionTiers?: CommissionTier[];
   target: number; 
   targetType: 'daily' | 'monthly'; 
@@ -473,14 +480,14 @@ export const DEFAULT_CLIENT_TIERS: ClientTierConfig[] = [
   }
 ];
 
-export function calculateClientTotalSpend(client: { id?: string; name: string; phone?: string }, invoices: Invoice[], periodMonths: number = 0): number {
-  if (!client) return 0;
+export function calculateClientTotalSpend(client: { id?: string; name: string; phone?: string }, invoices?: Invoice[], periodMonths: number = 0): number {
+  if (!client || !Array.isArray(invoices)) return 0;
   const now = new Date().getTime();
   const periodMs = periodMonths > 0 ? periodMonths * 30 * 24 * 60 * 60 * 1000 : 0;
 
   return invoices
     .filter(inv => {
-      if (inv.status === 'cancelled') return false;
+      if (!inv || inv.status === 'cancelled') return false;
       const isMatch = (client.id && inv.clientId === client.id) || 
                       (client.phone && inv.clientPhone && inv.clientPhone.replace(/\D/g, '') === client.phone.replace(/\D/g, '')) || 
                       (inv.clientName && inv.clientName.trim().toLowerCase() === client.name.trim().toLowerCase());
@@ -496,7 +503,7 @@ export function calculateClientTotalSpend(client: { id?: string; name: string; p
 
 export function getClientTier(
   client: { id?: string; name: string; phone?: string; isVip?: boolean } | null | undefined, 
-  invoices: Invoice[], 
+  invoices?: Invoice[], 
   tierSettings?: ClientTierSettings
 ): ClientTierConfig {
   if (!client) {
@@ -986,6 +993,8 @@ export interface Transaction {
   userId?: string;
   userName?: string;
   shiftDate?: string;
+  branchId?: string;
+  salonId?: string;
 }
 
 export interface Product {
