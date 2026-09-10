@@ -684,6 +684,11 @@ export default function App() {
 
   // ── 3. Switch Salon Handler ───────────────────────────────────────────────────
   const handleSwitchSalon = async (targetSalonId: string) => {
+    // CRITICAL MULTI-TENANCY SECURITY: Only platform programmer can switch salons
+    if (currentUser?.role !== 'programmer') {
+      console.error('[Security Violation] Unauthorized attempt to switch salon blocked.');
+      return;
+    }
     const s = allSalons.find(item => item.id === targetSalonId);
     if (!s) return;
     
@@ -2107,8 +2112,8 @@ export default function App() {
         isCloudConnected={isCloudConnected}
         salonName={settings.salonName}
         currentUser={currentUser}
-        allSalons={allSalons}
-        onSelectSalon={handleSwitchSalon}
+        allSalons={currentUser?.role === 'programmer' ? allSalons : []}
+        onSelectSalon={currentUser?.role === 'programmer' ? handleSwitchSalon : undefined}
         onOpenPricingModal={() => setShowSubscriptionModal(true)}
       />
 
@@ -2443,6 +2448,7 @@ export default function App() {
         onClose={() => setShowSubscriptionModal(false)}
         settings={settings}
         currentSalon={allSalons.find((s: any) => s.id === currentSalonId) || { id: currentSalonId, name: settings.salonName }}
+        currentUser={currentUser}
         onSubscriptionUpdated={() => {
           setShowSubscriptionModal(false);
           window.location.reload();

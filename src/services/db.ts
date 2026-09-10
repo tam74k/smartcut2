@@ -71,7 +71,7 @@ export function toCamel(obj: any): any {
   if (Array.isArray(obj)) return obj.map(toCamel);
   return Object.fromEntries(
     Object.entries(obj).map(([k, v]) => [
-      k.replace(/_([a-z])/g, (_, c) => c.toUpperCase()),
+      k.replace(/_([a-zA-Z0-9])/g, (_, c) => c.toUpperCase()),
       toCamel(v)
     ])
   );
@@ -1846,7 +1846,29 @@ export const DB = {
       try {
         const { data, error } = await client.from('subscription_plans').select('*').eq('is_active', true).order('display_order', { ascending: true });
         if (!error && data && data.length > 0) {
-          return data.map(toCamel);
+          return data.map((row: any) => {
+            const camel = toCamel(row);
+            return {
+              id: camel.id || row.id,
+              planNameAr: camel.planNameAr || row.plan_name_ar || '',
+              planNameEn: camel.planNameEn || row.plan_name_en || '',
+              descriptionAr: camel.descriptionAr || row.description_ar || '',
+              minEmployees: Number(camel.minEmployees ?? row.min_employees ?? 1),
+              maxEmployees: Number(camel.maxEmployees ?? row.max_employees ?? 9999),
+              priceEgp1m: Number(camel.priceEgp1m ?? camel.priceEgp_1m ?? row.price_egp_1m ?? 0),
+              priceEgp3m: Number(camel.priceEgp3m ?? camel.priceEgp_3m ?? row.price_egp_3m ?? 0),
+              priceEgp6m: Number(camel.priceEgp6m ?? camel.priceEgp_6m ?? row.price_egp_6m ?? 0),
+              priceEgp12m: Number(camel.priceEgp12m ?? camel.priceEgp_12m ?? row.price_egp_12m ?? 0),
+              priceUsd1m: Number(camel.priceUsd1m ?? camel.priceUsd_1m ?? row.price_usd_1m ?? 0),
+              priceUsd3m: Number(camel.priceUsd3m ?? camel.priceUsd_3m ?? row.price_usd_3m ?? 0),
+              priceUsd6m: Number(camel.priceUsd6m ?? camel.priceUsd_6m ?? row.price_usd_6m ?? 0),
+              priceUsd12m: Number(camel.priceUsd12m ?? camel.priceUsd_12m ?? row.price_usd_12m ?? 0),
+              features: Array.isArray(camel.features) ? camel.features : (typeof camel.features === 'string' ? JSON.parse(camel.features) : []),
+              isPopular: Boolean(camel.isPopular ?? row.is_popular),
+              isActive: Boolean(camel.isActive ?? row.is_active ?? true),
+              displayOrder: Number(camel.displayOrder ?? row.display_order ?? 0)
+            };
+          });
         }
       } catch (e) {
         console.warn('Could not fetch subscription_plans from DB, using fallback defaults');
@@ -1944,7 +1966,25 @@ export const DB = {
       try {
         const { data, error } = await client.from('subscription_addons').select('*').eq('is_active', true);
         if (!error && data && data.length > 0) {
-          return data.map(toCamel);
+          return data.map((row: any) => {
+            const camel = toCamel(row);
+            return {
+              id: camel.id || row.id,
+              addonName: camel.addonName || row.addon_name || '',
+              addonNameAr: camel.addonNameAr || row.addon_name_ar || '',
+              addonType: camel.addonType || row.addon_type || 'branch_license',
+              maxEmployeesPerBranch: Number(camel.maxEmployeesPerBranch ?? row.max_employees_per_branch ?? 5),
+              priceEgp1m: Number(camel.priceEgp1m ?? camel.priceEgp_1m ?? row.price_egp_1m ?? 0),
+              priceEgp3m: Number(camel.priceEgp3m ?? camel.priceEgp_3m ?? row.price_egp_3m ?? 0),
+              priceEgp6m: Number(camel.priceEgp6m ?? camel.priceEgp_6m ?? row.price_egp_6m ?? 0),
+              priceEgp12m: Number(camel.priceEgp12m ?? camel.priceEgp_12m ?? row.price_egp_12m ?? 0),
+              priceUsd1m: Number(camel.priceUsd1m ?? camel.priceUsd_1m ?? row.price_usd_1m ?? 0),
+              priceUsd3m: Number(camel.priceUsd3m ?? camel.priceUsd_3m ?? row.price_usd_3m ?? 0),
+              priceUsd6m: Number(camel.priceUsd6m ?? camel.priceUsd_6m ?? row.price_usd_6m ?? 0),
+              priceUsd12m: Number(camel.priceUsd12m ?? camel.priceUsd_12m ?? row.price_usd_12m ?? 0),
+              descriptionAr: camel.descriptionAr || row.description_ar || ''
+            };
+          });
         }
       } catch (e) {
         console.warn('Could not fetch subscription_addons from DB, using fallback defaults');
@@ -2025,9 +2065,12 @@ export const DB = {
     paidAmount?: number;
     paymentMethod?: string;
     notes?: string;
+    status?: 'active' | 'pending_payment';
   }) {
     const client = sb();
     const validSalonId = toSalonUUID(params.tenantId || getSalonId());
+    const reqStatus = params.status || 'pending_payment';
+
     if (client) {
       try {
         const { data, error } = await client.rpc('rpc_activate_or_renew_subscription', {
@@ -2038,18 +2081,23 @@ export const DB = {
           p_currency: params.currency || 'EGP',
           p_paid_amount: params.paidAmount || 0,
           p_payment_method: params.paymentMethod || 'bank_transfer',
-          p_notes: params.notes || null
+          p_notes: params.notes || null,
+          p_status: reqStatus
         });
         if (!error && data) return data;
       } catch (e) {
         console.warn('RPC rpc_activate_or_renew_subscription failed, using client fallback', e);
       }
     }
-    // Fallback: update salons table directly
+    // Fallback:
     try {
       const months = params.billingCycle === '1m' ? 1 : params.billingCycle === '3m' ? 3 : params.billingCycle === '12m' ? 12 : 6;
       const end = new Date(Date.now() + months * 30 * 86400000).toISOString().split('T')[0];
-      if (client) {
+      const subId = 'SUB-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+
+      // CRITICAL SECURITY: ONLY update salons table if status is strictly 'active' (programmer authorized)
+      // Normal tenant renewal requests MUST NEVER activate or extend the salons table directly!
+      if (reqStatus === 'active' && client) {
         await client.from('salons').update({
           subscription_status: 'active',
           subscription_plan: params.planId,
@@ -2058,10 +2106,192 @@ export const DB = {
           is_active: true
         }).eq('id', validSalonId);
       }
-      return { success: true, status: 'active', endDate: end };
+      return { 
+        success: true, 
+        subscriptionId: subId, 
+        status: reqStatus, 
+        endDate: end,
+        message: reqStatus === 'active'
+          ? 'تم تفعيل وتنشيط الاشتراك رسمياً بنجاح'
+          : 'تم تسجيل طلب الاشتراك وبانتظار تأكيد السداد واعتماده من إدارة المنظومة'
+      };
     } catch (e) {
       return { success: false, error: e };
     }
+  },
+
+  // ---- دوال المبرمج لإدارة الاشتراكات والطلبات وتصحيح الحالات ----
+
+  async fetchPendingSubscriptions(): Promise<any[]> {
+    const client = sb(); if (!client) return [];
+    try {
+      const { data, error } = await client
+        .from('tenant_subscriptions')
+        .select('*')
+        .eq('status', 'pending_payment')
+        .order('created_at', { ascending: false });
+      if (!error && data) {
+        return data.map(toCamel);
+      }
+    } catch (e) {}
+    return [];
+  },
+
+  async approvePendingSubscription(subscriptionId: string, salonId: string): Promise<boolean> {
+    const client = sb(); if (!client) return false;
+    const validSalonId = toSalonUUID(salonId);
+    try {
+      // 1. Get subscription details
+      const { data: sub } = await client
+        .from('tenant_subscriptions')
+        .select('*')
+        .eq('id', subscriptionId)
+        .maybeSingle();
+
+      const subPlan = sub?.plan_id || 'growth';
+      const subEnd = sub?.end_date || new Date(Date.now() + 180 * 86400000).toISOString().split('T')[0];
+      const maxBranches = sub?.total_branches || 1;
+      const maxUsers = sub?.total_employees || 10;
+
+      // 2. Mark subscription as active
+      await client
+        .from('tenant_subscriptions')
+        .update({ status: 'active', updated_at: new Date().toISOString() })
+        .eq('id', subscriptionId);
+
+      // 3. Update salon table
+      await client
+        .from('salons')
+        .update({
+          subscription_status: 'active',
+          subscription_plan: subPlan,
+          subscription_end_date: subEnd,
+          max_branches: maxBranches,
+          max_users: maxUsers,
+          is_active: true,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', validSalonId);
+
+      // 4. Update app_settings
+      await DB.saveSettings(validSalonId, {
+        subscriptionStatus: 'active',
+        subscriptionEndDate: subEnd,
+        isSalonActive: true
+      });
+
+      return true;
+    } catch (e) {
+      console.error('Error approving pending subscription:', e);
+      return false;
+    }
+  },
+
+  async cancelPendingSubscription(subscriptionId: string): Promise<boolean> {
+    const client = sb(); if (!client) return false;
+    try {
+      await client
+        .from('tenant_subscriptions')
+        .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+        .eq('id', subscriptionId);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  },
+
+  async resetSalonToTrialDB(salonId: string, trialDays: number = 7, plan: string = 'starter'): Promise<any> {
+    const client = sb();
+    const validSalonId = toSalonUUID(salonId);
+    const startDate = new Date().toISOString().split('T')[0];
+    const endDate = new Date(Date.now() + trialDays * 86400000).toISOString().split('T')[0];
+
+    const updates = {
+      subscription_status: 'trial',
+      subscription_plan: plan,
+      subscription_start_date: startDate,
+      subscription_end_date: endDate,
+      trial_days: trialDays,
+      is_active: true,
+      updated_at: new Date().toISOString()
+    };
+
+    if (client) {
+      try {
+        await client.from('salons').update(updates).eq('id', validSalonId);
+        const subId = 'SUB-TR-' + Math.random().toString(36).substring(2, 7).toUpperCase();
+        await client.from('tenant_subscriptions').insert({
+          id: subId,
+          salon_id: validSalonId,
+          tenant_id: validSalonId,
+          plan_id: plan,
+          status: 'trial',
+          start_date: startDate,
+          end_date: endDate,
+          total_branches: 1,
+          total_employees: 5,
+          billing_cycle: 'trial',
+          currency: 'SAR',
+          paid_amount: 0,
+          payment_method: 'free_trial',
+          notes: `إعادة إلى الفترة التجريبية بواسطة المبرمج (${trialDays} أيام)`
+        });
+      } catch (e) {
+        console.warn('DB update failed during reset to trial:', e);
+      }
+    }
+
+    await DB.saveSettings(validSalonId, {
+      subscriptionStatus: 'trial',
+      subscriptionEndDate: endDate,
+      isSalonActive: true
+    });
+
+    return SubscriptionService.updateSalon(salonId, {
+      subscriptionStatus: 'trial',
+      subscriptionPlan: plan as any,
+      subscriptionStartDate: startDate,
+      subscriptionEndDate: endDate,
+      trialDays,
+      isActive: true
+    });
+  },
+
+  async expireSalonSubscriptionDB(salonId: string, reason: string = 'إلغاء الاشتراك من لوحة المبرمج'): Promise<any> {
+    const client = sb();
+    const validSalonId = toSalonUUID(salonId);
+    const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+
+    const updates = {
+      subscription_status: 'expired',
+      subscription_end_date: yesterday,
+      is_active: false,
+      updated_at: new Date().toISOString()
+    };
+
+    if (client) {
+      try {
+        await client.from('salons').update(updates).eq('id', validSalonId);
+        await client.from('tenant_subscriptions')
+          .update({ status: 'expired', notes: reason, updated_at: new Date().toISOString() })
+          .or(`salon_id.eq.${validSalonId},tenant_id.eq.${validSalonId}`)
+          .in('status', ['active', 'trial', 'pending_payment']);
+      } catch (e) {
+        console.warn('DB update failed during cancel subscription:', e);
+      }
+    }
+
+    await DB.saveSettings(validSalonId, {
+      subscriptionStatus: 'expired',
+      subscriptionEndDate: yesterday,
+      isSalonActive: false
+    });
+
+    return SubscriptionService.updateSalon(salonId, {
+      subscriptionStatus: 'expired',
+      subscriptionEndDate: yesterday,
+      isActive: false
+    });
   },
 
   // ============================================================

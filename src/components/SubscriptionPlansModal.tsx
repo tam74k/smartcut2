@@ -2,11 +2,12 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   X, Check, Sparkles, Building2, Users, ShieldCheck, 
   CreditCard, MessageCircle, AlertCircle, ArrowRight, 
-  HelpCircle, Plus, Minus, Zap, Crown
+  HelpCircle, Plus, Minus, Zap, Crown, Clock, CheckCircle2,
+  Receipt, ShieldAlert
 } from 'lucide-react';
 import { 
   SubscriptionPlan, SubscriptionAddon, BillingCycle, 
-  BillingCurrency, AppSettings, SalonTenant 
+  BillingCurrency, AppSettings, SalonTenant, AppUser 
 } from '../types';
 import { DB } from '../services/db';
 
@@ -15,6 +16,7 @@ interface Props {
   onClose: () => void;
   settings: AppSettings;
   currentSalon?: SalonTenant | any;
+  currentUser?: AppUser | null;
   onSubscriptionUpdated?: () => void;
 }
 
@@ -23,8 +25,11 @@ export const SubscriptionPlansModal: React.FC<Props> = ({
   onClose,
   settings,
   currentSalon,
+  currentUser,
   onSubscriptionUpdated
 }) => {
+  const isProgrammer = currentUser?.role === 'programmer';
+
   // Billing cycle state: default is '6m' (نصف سنوي)
   const [billingCycle, setBillingCycle] = useState<BillingCycle>('6m');
   // Currency state: Egypt (EGP) vs International (USD)
@@ -43,6 +48,14 @@ export const SubscriptionPlansModal: React.FC<Props> = ({
   const [loading, setLoading] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [pendingRequestResult, setPendingRequestResult] = useState<{
+    orderId: string;
+    planName: string;
+    cycleLabel: string;
+    amount: number;
+    currency: string;
+    branches: number;
+  } | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -82,60 +95,67 @@ export const SubscriptionPlansModal: React.FC<Props> = ({
   }, [billingCycle]);
 
   // Get plan price for the chosen cycle & currency
-  const getPlanPrice = (plan: SubscriptionPlan) => {
+  const getPlanPrice = (plan: SubscriptionPlan): number => {
+    if (!plan) return 0;
+    let val: any = 0;
     if (currency === 'USD') {
       switch (billingCycle) {
-        case '1m': return plan.priceUsd1m;
-        case '3m': return plan.priceUsd3m;
-        case '6m': return plan.priceUsd6m;
-        case '12m': return plan.priceUsd12m;
+        case '1m': val = plan.priceUsd1m ?? (plan as any).priceUsd_1m ?? (plan as any).price_usd_1m; break;
+        case '3m': val = plan.priceUsd3m ?? (plan as any).priceUsd_3m ?? (plan as any).price_usd_3m; break;
+        case '6m': val = plan.priceUsd6m ?? (plan as any).priceUsd_6m ?? (plan as any).price_usd_6m; break;
+        case '12m': val = plan.priceUsd12m ?? (plan as any).priceUsd_12m ?? (plan as any).price_usd_12m; break;
       }
     } else {
       switch (billingCycle) {
-        case '1m': return plan.priceEgp1m;
-        case '3m': return plan.priceEgp3m;
-        case '6m': return plan.priceEgp6m;
-        case '12m': return plan.priceEgp12m;
+        case '1m': val = plan.priceEgp1m ?? (plan as any).priceEgp_1m ?? (plan as any).price_egp_1m; break;
+        case '3m': val = plan.priceEgp3m ?? (plan as any).priceEgp_3m ?? (plan as any).price_egp_3m; break;
+        case '6m': val = plan.priceEgp6m ?? (plan as any).priceEgp_6m ?? (plan as any).price_egp_6m; break;
+        case '12m': val = plan.priceEgp12m ?? (plan as any).priceEgp_12m ?? (plan as any).price_egp_12m; break;
       }
     }
-    return 0;
+    return Number(val) || 0;
   };
 
   // Monthly base price for comparison
-  const getMonthlyBasePrice = (plan: SubscriptionPlan) => {
-    return currency === 'USD' ? plan.priceUsd1m : plan.priceEgp1m;
+  const getMonthlyBasePrice = (plan: SubscriptionPlan): number => {
+    if (!plan) return 0;
+    const val = currency === 'USD' 
+      ? (plan.priceUsd1m ?? (plan as any).priceUsd_1m ?? (plan as any).price_usd_1m)
+      : (plan.priceEgp1m ?? (plan as any).priceEgp_1m ?? (plan as any).price_egp_1m);
+    return Number(val) || 0;
   };
 
   // Calculate Frontend Savings
   // Savings = (Monthly Rate * Cycle Months) - Discounted Period Price
-  const calculateSavings = (plan: SubscriptionPlan) => {
-    if (billingCycle === '1m') return 0;
+  const calculateSavings = (plan: SubscriptionPlan): number => {
+    if (!plan || billingCycle === '1m') return 0;
     const monthlyRate = getMonthlyBasePrice(plan);
     const regularTotal = monthlyRate * cycleMonths;
     const discountedTotal = getPlanPrice(plan);
     const savings = regularTotal - discountedTotal;
-    return savings > 0 ? savings : 0;
+    return savings > 0 ? Math.round(savings) : 0;
   };
 
   // Branch addon price for the chosen cycle & currency
-  const getAddonPrice = () => {
+  const getAddonPrice = (): number => {
     if (!addon) return currency === 'USD' ? 50 : 1500;
+    let val: any = 0;
     if (currency === 'USD') {
       switch (billingCycle) {
-        case '1m': return addon.priceUsd1m;
-        case '3m': return addon.priceUsd3m;
-        case '6m': return addon.priceUsd6m;
-        case '12m': return addon.priceUsd12m;
+        case '1m': val = addon.priceUsd1m ?? (addon as any).priceUsd_1m ?? (addon as any).price_usd_1m; break;
+        case '3m': val = addon.priceUsd3m ?? (addon as any).priceUsd_3m ?? (addon as any).price_usd_3m; break;
+        case '6m': val = addon.priceUsd6m ?? (addon as any).priceUsd_6m ?? (addon as any).price_usd_6m; break;
+        case '12m': val = addon.priceUsd12m ?? (addon as any).priceUsd_12m ?? (addon as any).price_usd_12m; break;
       }
     } else {
       switch (billingCycle) {
-        case '1m': return addon.priceEgp1m;
-        case '3m': return addon.priceEgp3m;
-        case '6m': return addon.priceEgp6m;
-        case '12m': return addon.priceEgp12m;
+        case '1m': val = addon.priceEgp1m ?? (addon as any).priceEgp_1m ?? (addon as any).price_egp_1m; break;
+        case '3m': val = addon.priceEgp3m ?? (addon as any).priceEgp_3m ?? (addon as any).price_egp_3m; break;
+        case '6m': val = addon.priceEgp6m ?? (addon as any).priceEgp_6m ?? (addon as any).price_egp_6m; break;
+        case '12m': val = addon.priceEgp12m ?? (addon as any).priceEgp_12m ?? (addon as any).price_egp_12m; break;
       }
     }
-    return 0;
+    return Number(val) || 0;
   };
 
   // Selected plan object
@@ -154,7 +174,7 @@ export const SubscriptionPlansModal: React.FC<Props> = ({
   const currencyLabel = currency === 'USD' ? '$ USD' : 'ج.م EGP';
 
   // Handle WhatsApp Checkout
-  const handleWhatsAppContact = () => {
+  const handleWhatsAppContact = (orderRef?: string) => {
     const salonName = settings.salonName || currentSalon?.name || 'الصالون';
     const planName = selectedPlan?.planNameAr || 'الباقة';
     const cycleLabel = 
@@ -163,22 +183,66 @@ export const SubscriptionPlansModal: React.FC<Props> = ({
       billingCycle === '6m' ? '6 شهور (نصف سنوي)' : 'سنة كاملة (12 شهر)';
 
     const msg = `مرحباً فريق سمارت كت،
-أرغب في الاشتراك / تجديد باقة صالوننا:
+أرغب في الاشتراك / تجديد باقة صالوننا${orderRef ? ` (رقم الطلب: #${orderRef})` : ''}:
 🏛️ اسم الصالون: ${salonName}
 📦 الباقة المختارة: ${planName}
 ⏱️ دورة الفوترة: ${cycleLabel}
 🏢 عدد الفروع الإضافية: ${additionalBranches} فرع
-💰 إجمالي الفاتورة: ${grandTotal.toLocaleString()} ${currencyLabel}
-${totalSavings > 0 ? `🎁 إجمالي التوفير: ${totalSavings.toLocaleString()} ${currencyLabel}\n` : ''}
-يرجى تزويدي ببيانات الدفع لتأكيد التفعيل فوراً. شكراً لكم!`;
+💰 إجمالي الفاتورة: ${Number(grandTotal || 0).toLocaleString()} ${currencyLabel}
+${totalSavings > 0 ? `🎁 إجمالي التوفير: ${Number(totalSavings || 0).toLocaleString()} ${currencyLabel}\n` : ''}
+يرجى تزويدي ببيانات الدفع (حساب بنكي / فودافون كاش / إنستاباي / رابط فيزا) لإرفاق إيصال التحويل وتأكيد التفعيل فوراً. شكراً لكم!`;
 
     const cleanPhone = (settings.contactPhone || '201014888000').replace(/[^0-9]/g, '');
     window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
-  // Direct Activation / Renewal handler via RPC
-  const handleDirectActivation = async () => {
+  // Submit Official Subscription Request (Pending Payment Verification)
+  // CRITICAL SECURITY: Normal clients can NEVER self-activate. This records a pending request only!
+  const handleRequestSubscription = async () => {
     if (!selectedPlan) return;
+    setIsSubmitting(true);
+    try {
+      const tenantId = settings.salonId || currentSalon?.id || 'default-salon';
+      const cycleLabel = 
+        billingCycle === '1m' ? 'شهر واحد' :
+        billingCycle === '3m' ? '3 شهور (ربع سنوي)' :
+        billingCycle === '6m' ? '6 شهور (نصف سنوي)' : 'سنة كاملة (12 شهر)';
+
+      const res = await DB.activateOrRenewSubscriptionRPC({
+        tenantId,
+        planId: selectedPlan.id,
+        billingCycle,
+        additionalBranches,
+        currency,
+        paidAmount: grandTotal,
+        paymentMethod: 'pending_transfer',
+        notes: `طلب اشتراك مسجل عبر واجهة الأسعار - ${billingCycle}`,
+        status: 'pending_payment'
+      });
+
+      const orderId = res?.subscription_id || res?.subscriptionId || 'SUB-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+      setPendingRequestResult({
+        orderId,
+        planName: selectedPlan.planNameAr,
+        cycleLabel,
+        amount: grandTotal,
+        currency: currencyLabel,
+        branches: additionalBranches
+      });
+    } catch (err) {
+      console.error('Error submitting subscription request:', err);
+      handleWhatsAppContact();
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Dedicated Programmer-Only Direct Activation (Requires confirm)
+  const handleProgrammerDirectActivation = async () => {
+    if (!selectedPlan) return;
+    if (!window.confirm(`⚡ تنبيه المبرمج الرئيسي:\nهل أنت متأكد من تفعيل باقة (${selectedPlan.planNameAr}) فورياً وتحديث تاريخ انتهاء الصالون في قاعدة البيانات بدون انتظار السداد؟`)) {
+      return;
+    }
     setIsSubmitting(true);
     try {
       const tenantId = settings.salonId || currentSalon?.id || 'default-salon';
@@ -189,23 +253,24 @@ ${totalSavings > 0 ? `🎁 إجمالي التوفير: ${totalSavings.toLocaleS
         additionalBranches,
         currency,
         paidAmount: grandTotal,
-        paymentMethod: 'online_direct',
-        notes: `تجديد إلكتروني عبر باقات الأسعار - ${billingCycle}`
+        paymentMethod: 'programmer_override',
+        notes: `تفعيل استثنائي مباشر بواسطة المبرمج الرئيسي - ${billingCycle}`,
+        status: 'active'
       });
 
       if (res && (res.success || res.status === 'active')) {
-        setSuccessMessage('🎉 تم تسجيل طلب الاشتراك وتحديث حالة المنشأة بنجاح!');
+        setSuccessMessage('🎉 تم تفعيل الباقة وتحديث حالة المنشأة بنجاح بواسطة المبرمج!');
         if (onSubscriptionUpdated) {
           setTimeout(() => {
             onSubscriptionUpdated();
           }, 1500);
         }
       } else {
-        handleWhatsAppContact();
+        alert('تعذر التفعيل: ' + (res?.message || 'خطأ غير معروف'));
       }
     } catch (err) {
-      console.error('Error activating subscription:', err);
-      handleWhatsAppContact();
+      console.error('Error in programmer activation:', err);
+      alert('حدث خطأ أثناء التفعيل المباشر');
     } finally {
       setIsSubmitting(false);
     }
@@ -320,20 +385,95 @@ ${totalSavings > 0 ? `🎁 إجمالي التوفير: ${totalSavings.toLocaleS
 
         {/* Modal Scrollable Body */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 bg-slate-50/50">
-          {successMessage && (
-            <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-2xl flex items-center justify-between text-sm font-bold shadow-xs">
-              <div className="flex items-center gap-2">
-                <Check className="text-emerald-600" size={20} />
-                <span>{successMessage}</span>
+          {pendingRequestResult ? (
+            <div className="p-6 sm:p-10 bg-white rounded-3xl border border-slate-200 shadow-md flex flex-col items-center text-center space-y-6 animate-in fade-in zoom-in-95">
+              <div className="w-16 h-16 rounded-3xl bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center shadow-lg shadow-amber-500/10">
+                <Clock size={36} className="animate-pulse" />
               </div>
-              <button onClick={() => setSuccessMessage(null)} className="text-emerald-600 text-xs hover:underline">
-                حسناً
-              </button>
-            </div>
-          )}
 
-          {/* Pricing Cards Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-5">
+              <div className="space-y-1 max-w-lg">
+                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-xs font-black mb-1">
+                  <Clock size={12} />
+                  بانتظار التحقق من السداد والاعتماد ⏳
+                </span>
+                <h3 className="text-2xl font-black text-slate-900">تم تسجيل طلب الاشتراك بنجاح!</h3>
+                <p className="text-xs text-slate-500">
+                  رقم الفاتورة / الطلب المرجعي: <strong className="font-mono text-slate-900 text-sm font-black">#{pendingRequestResult.orderId}</strong>
+                </p>
+              </div>
+
+              {/* Order Details */}
+              <div className="w-full max-w-md bg-slate-50 border border-slate-200/80 rounded-2xl p-4 text-xs space-y-2.5 text-right font-medium">
+                <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                  <span className="text-slate-500">الصالون:</span>
+                  <span className="font-bold text-slate-800">{settings.salonName || currentSalon?.name}</span>
+                </div>
+                <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                  <span className="text-slate-500">الباقة المطلوبة:</span>
+                  <span className="font-bold text-indigo-700">{pendingRequestResult.planName}</span>
+                </div>
+                <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                  <span className="text-slate-500">دورة الفوترة:</span>
+                  <span className="font-bold text-slate-800">{pendingRequestResult.cycleLabel}</span>
+                </div>
+                {pendingRequestResult.branches > 0 && (
+                  <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                    <span className="text-slate-500">الفروع الإضافية:</span>
+                    <span className="font-bold text-slate-800">+{pendingRequestResult.branches} فرع</span>
+                  </div>
+                )}
+                <div className="flex justify-between items-center py-2.5 text-sm font-black text-slate-900 bg-white px-3.5 rounded-xl border border-slate-200">
+                  <span>إجمالي المبلغ المطلوب سداده:</span>
+                  <span className="font-mono text-emerald-600 text-base">{Number(pendingRequestResult.amount).toLocaleString()} {pendingRequestResult.currency}</span>
+                </div>
+              </div>
+
+              {/* Strict Security Alert */}
+              <div className="w-full max-w-md bg-rose-50 border border-rose-200 rounded-2xl p-4 text-rose-800 text-xs text-right leading-relaxed flex items-start gap-3">
+                <ShieldAlert size={22} className="text-rose-600 shrink-0 mt-0.5" />
+                <div>
+                  <strong className="font-bold text-rose-900 block mb-1">تنبيه مالي وأمني حاسم:</strong>
+                  تم حظر التفعيل المجاني أو التلقائي لحماية المنظومة. لن يتم تفعيل الباقة وتمديد صلاحية الصالون إلا بعد تحويل المبلغ ومراجعة إيصال التحويل من قِبل إدارة المنظومة.
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex flex-col sm:flex-row items-center gap-3 w-full max-w-md pt-2">
+                <button
+                  onClick={() => handleWhatsAppContact(pendingRequestResult.orderId)}
+                  className="w-full py-3.5 px-5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-lg shadow-emerald-600/25 transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95"
+                >
+                  <MessageCircle size={18} />
+                  <span>إرسال إيصال السداد عبر واتساب الآن 📲</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setPendingRequestResult(null);
+                    onClose();
+                  }}
+                  className="w-full sm:w-auto py-3.5 px-6 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-all cursor-pointer"
+                >
+                  إغلاق
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              {successMessage && (
+                <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-2xl flex items-center justify-between text-sm font-bold shadow-xs">
+                  <div className="flex items-center gap-2">
+                    <Check className="text-emerald-600" size={20} />
+                    <span>{successMessage}</span>
+                  </div>
+                  <button onClick={() => setSuccessMessage(null)} className="text-emerald-600 text-xs hover:underline">
+                    حسناً
+                  </button>
+                </div>
+              )}
+
+              {/* Pricing Cards Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-5">
             {plans.map((plan) => {
               const isSelected = selectedPlanId === plan.id;
               const price = getPlanPrice(plan);
@@ -391,7 +531,7 @@ ${totalSavings > 0 ? `🎁 إجمالي التوفير: ${totalSavings.toLocaleS
                     {/* Price Block */}
                     <div className="my-4 p-4 rounded-2xl bg-slate-50 border border-slate-100">
                       <div className="flex items-baseline gap-1 text-slate-900">
-                        <span className="text-3xl font-black tracking-tight">{price.toLocaleString()}</span>
+                        <span className="text-3xl font-black tracking-tight">{Number(price || 0).toLocaleString()}</span>
                         <span className="text-xs font-bold text-slate-500">{currencyLabel}</span>
                         <span className="text-xs text-slate-400 font-medium">/ {cycleMonths === 1 ? 'شهرياً' : `${cycleMonths} شهور`}</span>
                       </div>
@@ -399,7 +539,7 @@ ${totalSavings > 0 ? `🎁 إجمالي التوفير: ${totalSavings.toLocaleS
                       {cycleMonths > 1 && (
                         <div className="mt-1 flex items-center justify-between text-[11px]">
                           <span className="text-slate-400">ما يعادل شهرياً:</span>
-                          <span className="font-bold text-slate-700 font-mono">{monthlyEquivalent.toLocaleString()} {currencyLabel}/شهر</span>
+                          <span className="font-bold text-slate-700 font-mono">{Number(monthlyEquivalent || 0).toLocaleString()} {currencyLabel}/شهر</span>
                         </div>
                       )}
 
@@ -407,7 +547,7 @@ ${totalSavings > 0 ? `🎁 إجمالي التوفير: ${totalSavings.toLocaleS
                       {savings > 0 && (
                         <div className="mt-2.5 pt-2 border-t border-slate-200/60 flex items-center justify-between text-xs font-black text-emerald-700 bg-emerald-50/80 px-2.5 py-1 rounded-lg">
                           <span>وفرت مع هذه المدة:</span>
-                          <span className="font-mono text-emerald-600">{savings.toLocaleString()} {currencyLabel} 🎉</span>
+                          <span className="font-mono text-emerald-600">{Number(savings || 0).toLocaleString()} {currencyLabel} 🎉</span>
                         </div>
                       )}
                     </div>
@@ -457,7 +597,7 @@ ${totalSavings > 0 ? `🎁 إجمالي التوفير: ${totalSavings.toLocaleS
                   تسمح لك رخصة الفرع الإضافي بربط وتشغيل فرع إضافي في النظام مع قاعدة بيانات موحدة ومزامنة حية للمخزون والتقارير.
                 </p>
                 <p className="text-xs font-bold text-indigo-950 mt-1.5">
-                  سعر رخصة الفرع للمدة المختارة: <strong className="text-indigo-600 font-mono font-black">{addonPricePerBranch.toLocaleString()} {currencyLabel}</strong>
+                  سعر رخصة الفرع للمدة المختارة: <strong className="text-indigo-600 font-mono font-black">{Number(addonPricePerBranch || 0).toLocaleString()} {currencyLabel}</strong>
                 </p>
               </div>
             </div>
@@ -499,7 +639,7 @@ ${totalSavings > 0 ? `🎁 إجمالي التوفير: ${totalSavings.toLocaleS
               </span>
               <div className="flex flex-wrap items-baseline justify-center md:justify-start gap-2">
                 <span className="text-3xl sm:text-4xl font-black tracking-tight text-white font-mono">
-                  {grandTotal.toLocaleString()}
+                  {Number(grandTotal || 0).toLocaleString()}
                 </span>
                 <span className="text-sm font-bold text-slate-300">{currencyLabel}</span>
                 <span className="text-xs text-slate-400 font-medium">
@@ -509,7 +649,7 @@ ${totalSavings > 0 ? `🎁 إجمالي التوفير: ${totalSavings.toLocaleS
               {totalSavings > 0 && (
                 <p className="text-xs text-amber-300 font-bold flex items-center justify-center md:justify-start gap-1">
                   <span>وفرت:</span>
-                  <strong className="font-mono">{totalSavings.toLocaleString()} {currencyLabel}</strong>
+                  <strong className="font-mono">{Number(totalSavings || 0).toLocaleString()} {currencyLabel}</strong>
                   <span>مقارنة بالدفع الشهري المنفصل! 🎁</span>
                 </p>
               )}
@@ -517,23 +657,37 @@ ${totalSavings > 0 ? `🎁 إجمالي التوفير: ${totalSavings.toLocaleS
 
             <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
               <button
-                onClick={handleWhatsAppContact}
-                className="w-full sm:w-auto px-5 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold text-xs shadow-lg shadow-emerald-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95"
+                onClick={() => handleWhatsAppContact()}
+                className="w-full sm:w-auto px-5 py-3.5 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold text-xs shadow-lg shadow-emerald-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95"
               >
                 <MessageCircle size={18} />
-                <span>تواصل عبر واتساب للتفعيل الفوري</span>
+                <span>طلب التفعيل الفوري عبر واتساب 📲</span>
               </button>
 
               <button
-                onClick={handleDirectActivation}
+                onClick={handleRequestSubscription}
                 disabled={isSubmitting}
-                className="w-full sm:w-auto px-5 py-3 rounded-2xl bg-white text-slate-950 hover:bg-slate-100 font-black text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 active:scale-95"
+                className="w-full sm:w-auto px-5 py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 active:scale-95"
               >
-                <CreditCard size={18} className="text-slate-800" />
-                <span>{isSubmitting ? 'جاري المعالجة...' : 'تأكيد وحفظ الاشتراك'}</span>
+                <Receipt size={18} />
+                <span>{isSubmitting ? 'جاري التسجيل...' : 'تسجيل طلب اشتراك (بانتظار السداد) 📋'}</span>
               </button>
+
+              {isProgrammer && (
+                <button
+                  onClick={handleProgrammerDirectActivation}
+                  disabled={isSubmitting}
+                  className="w-full sm:w-auto px-4 py-3.5 rounded-2xl bg-amber-400 hover:bg-amber-500 text-slate-950 font-black text-xs shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60 active:scale-95 border-2 border-amber-300"
+                  title="صلاحية خاصة بالمبرمج الرئيسي فقط"
+                >
+                  <Zap size={16} className="text-slate-950" />
+                  <span>تفعيل فوري مباشر (صلاحية المبرمج) ⚡</span>
+                </button>
+              )}
             </div>
           </div>
+          </>
+          )}
         </div>
       </div>
     </div>

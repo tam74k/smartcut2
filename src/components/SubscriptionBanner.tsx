@@ -34,7 +34,11 @@ export function SubscriptionBanner({
   // Can this user switch branches? ONLY Master Programmer OR Salon Owner (Admin with no branchId constraint)
   const isOwnerOrProgrammer = currentUser?.role === 'programmer' || currentUser?.role === 'owner' || (currentUser?.role === 'admin' && !currentUser?.branchId);
   const canSwitchBranches = isOwnerOrProgrammer;
-  const canSwitchSalons = allSalons && allSalons.length > 1;
+  
+  // CRITICAL MULTI-TENANCY SECURITY:
+  // Strictly ONLY the SaaS Master Programmer (Platform Developer) is permitted to switch between different client salons!
+  // Salon owners, managers, cashiers, and staff must NEVER see or switch to any other customer salon!
+  const canSwitchSalons = currentUser?.role === 'programmer' && Boolean(allSalons && allSalons.length > 1);
 
   const currentSalonId = currentUser?.salonId || subscription.salonId;
   const filteredBranches = (branches && branches.length > 0)
@@ -128,7 +132,10 @@ export function SubscriptionBanner({
                 )}
               </div>
             ) : (
-              <span className="text-emerald-400 font-extrabold">{displaySalonName}</span>
+              <span className="text-emerald-400 font-extrabold flex items-center gap-1.5">
+                <span>🏠</span>
+                <span>{displaySalonName}</span>
+              </span>
             )}
             <button 
               onClick={onOpenPricingModal || (() => setShowPlanModal(true))}

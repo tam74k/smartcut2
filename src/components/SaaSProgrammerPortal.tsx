@@ -18,9 +18,10 @@ interface SaaSProgrammerPortalProps {
 }
 
 export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: SaaSProgrammerPortalProps) {
-  const [portalTab, setPortalTab] = useState<'salons' | 'branches'>('salons');
+  const [portalTab, setPortalTab] = useState<'salons' | 'branches' | 'orders'>('salons');
   const [salons, setSalons] = useState<SalonTenant[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
+  const [pendingSubscriptions, setPendingSubscriptions] = useState<any[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'expiring_soon' | 'expired_trials' | 'active' | 'trial' | 'expired' | 'suspended'>('all');
@@ -31,6 +32,18 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
   const [extendDaysCount, setExtendDaysCount] = useState<number>(30);
   const [showResetPassModal, setShowResetPassModal] = useState<SalonTenant | null>(null);
   const [newAdminPassword, setNewAdminPassword] = useState('123456');
+
+  // Master Subscription Controller Modal State
+  const [selectedControlSalon, setSelectedControlSalon] = useState<SalonTenant | null>(null);
+  const [controlForm, setControlForm] = useState({
+    status: 'trial' as 'active' | 'trial' | 'expired' | 'suspended',
+    plan: 'starter' as 'starter' | 'growth' | 'enterprise' | 'pro',
+    startDate: '',
+    endDate: '',
+    maxBranches: 1,
+    maxUsers: 5,
+    isActive: true
+  });
 
   // Change Developer Master Key State
   const [showChangeProgrammerPassModal, setShowChangeProgrammerPassModal] = useState(false);
@@ -105,11 +118,16 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
 
     setIsLoadingData(true);
     try {
-      const [dbSalons, dbBranches, dbPlatform] = await Promise.all([
+      const [dbSalons, dbBranches, dbPlatform, dbPendingOrders] = await Promise.all([
         DB.fetchSalons(),
         DB.fetchBranches(),
-        DB.fetchPlatformSettings()
+        DB.fetchPlatformSettings(),
+        DB.fetchPendingSubscriptions()
       ]);
+
+      if (dbPendingOrders) {
+        setPendingSubscriptions(dbPendingOrders);
+      }
 
       if (dbPlatform) {
         setPlatformForm({
@@ -349,6 +367,118 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
     alert(`✅ تم تمديد فترة اشتراك ${showExtendModal.name} بنجاح بمقدار +${extendDaysCount} يوماً وحفظها بقاعدة البيانات!`);
   };
 
+  // Master Subscription Control Handlers
+  const handleOpenSubscriptionControl = (salon: SalonTenant) => {
+    setSelectedControlSalon(salon);
+    setControlForm({
+      status: salon.subscriptionStatus || (salon.isActive ? 'active' : 'expired'),
+      plan: (salon.subscriptionPlan as any) || 'starter',
+      startDate: salon.subscriptionStartDate || new Date().toISOString().split('T')[0],
+      endDate: salon.subscriptionEndDate || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
+      maxBranches: salon.maxBranches || 1,
+      maxUsers: salon.maxUsers || 5,
+      isActive: salon.isActive !== false
+    });
+  };
+
+  const handleExecuteResetToTrial = async (salon: SalonTenant, days: number = 7, plan: string = 'starter') => {
+    if (!confirm(`هل أنت متأكد من إعادة حساب صالون (${salon.name}) إلى الوضع التجريبي المجاني لمدة (${days} أيام) وإلغاء أي تفعيل رسمي سابق؟`)) {
+      return;
+    }
+    const updated = await DB.resetSalonToTrialDB(salon.id, days, plan);
+    if (updated) {
+      setSalons(prev => prev.map(s => s.id === salon.id ? { ...s, ...updated } : s));
+      setSelectedControlSalon(null);
+      alert(`✅ تم إعادة صالون (${salon.name}) إلى الوضع التجريبي بنجاح (${days} أيام) وتحديث السحابة!`);
+      loadData();
+    }
+  };
+
+  const handleExecuteForceExpire = async (salon: SalonTenant) => {
+    if (!confirm(`تحذير حاسم:\nهل أنت متأكد من إلغاء اشتراك صالون (${salon.name}) فوراً وإنهاء صلاحيته؟\nسيتحول الصالون مباشرة إلى وضع القراءة فقط (Read-Only) ويُمنع من حفظ أي فواتير.`)) {
+      return;
+    }
+    const updated = await DB.expireSalonSubscriptionDB(salon.id, 'تم إنهاء الاشتراك بقرار من المبرمج');
+    if (updated) {
+      setSalons(prev => prev.map(s => s.id === salon.id ? { ...s, ...updated } : s));
+      setSelectedControlSalon(null);
+      alert(`🛑 تم إلغاء اشتراك صالون (${salon.name}) وإنهاء صلاحيته وقفل المنظومة لوضع القراءة فقط بنجاح!`);
+      loadData();
+    }
+  };
+
+  const handleExecuteDirectActivate = async (salon: SalonTenant, months: number, plan: string) => {
+    if (!confirm(`هل أنت متأكد من تفعيل باقة (${plan}) رسمياً لصالون (${salon.name}) لمدة (${months} شهر)؟`)) {
+      return;
+    }
+    const res = await DB.activateOrRenewSubscriptionRPC({
+      tenantId: salon.id,
+      planId: plan,
+      billingCycle: months + 'm',
+      status: 'active',
+      notes: `تفعيل رسمي مباشر من لوحة المبرمج - ${months} شهور`
+    });
+    if (res && res.success) {
+      setSelectedControlSalon(null);
+      alert(`🎉 تم تفعيل باقة (${plan}) رسمياً لصالون (${salon.name}) بنجاح!`);
+      loadData();
+    }
+  };
+
+  const handleSaveControlForm = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedControlSalon) return;
+    const salonId = selectedControlSalon.id;
+
+    const updatedSalon: SalonTenant = {
+      ...selectedControlSalon,
+      subscriptionStatus: controlForm.status,
+      subscriptionPlan: controlForm.plan,
+      subscriptionStartDate: controlForm.startDate,
+      subscriptionEndDate: controlForm.endDate,
+      maxBranches: Number(controlForm.maxBranches) || 1,
+      maxUsers: Number(controlForm.maxUsers) || 5,
+      isActive: controlForm.isActive
+    };
+
+    setSalons(prev => prev.map(s => s.id === salonId ? updatedSalon : s));
+    SubscriptionService.updateSalon(salonId, updatedSalon);
+    await DB.saveSalon(updatedSalon);
+    await DB.saveSettings(salonId, {
+      subscriptionStatus: controlForm.status,
+      subscriptionEndDate: controlForm.endDate,
+      isSalonActive: controlForm.isActive
+    });
+
+    setSelectedControlSalon(null);
+    alert(`✅ تم حفظ وتحديث بيانات اشتراك (${selectedControlSalon.name}) في السحابة بنجاح!`);
+    loadData();
+  };
+
+  const handleApproveOrder = async (order: any) => {
+    const sId = order.salonId || order.tenantId;
+    const sName = salons.find(s => s.id === sId)?.name || 'الصالون';
+    if (!confirm(`هل أنت متأكد من اعتماد سداد الفاتورة رقم (${order.id}) وتفعيل باقة (${order.planId || 'المختارة'}) لصالون (${sName})؟`)) {
+      return;
+    }
+    const ok = await DB.approvePendingSubscription(order.id, sId);
+    if (ok) {
+      alert(`🎉 تم اعتماد سداد الطلب وتفعيل الصالون رسمياً بنجاح!`);
+      loadData();
+    } else {
+      alert('تعذر اعتماد الطلب، يرجى المحاولة لاحقاً');
+    }
+  };
+
+  const handleCancelOrder = async (orderId: string) => {
+    if (!confirm('هل أنت متأكد من إلغاء أو رفض هذا الطلب؟')) return;
+    const ok = await DB.cancelPendingSubscription(orderId);
+    if (ok) {
+      alert('تم إلغاء الطلب بنجاح');
+      loadData();
+    }
+  };
+
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingSalon) return;
@@ -557,6 +687,23 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
             </span>
           )}
         </button>
+
+        <button
+          onClick={() => { setPortalTab('orders'); setSearchQuery(''); }}
+          className={`flex items-center gap-2 px-5 py-3 rounded-2xl text-xs font-black transition-all cursor-pointer relative ${
+            portalTab === 'orders'
+              ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
+              : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
+          }`}
+        >
+          <Receipt size={16} />
+          <span>📋 طلبات الفواتير والاشتراكات ({pendingSubscriptions.length})</span>
+          {pendingSubscriptions.length > 0 && (
+            <span className="bg-amber-500 text-slate-950 px-2 py-0.5 rounded-full text-[10px] font-black animate-pulse">
+              {pendingSubscriptions.length} بانتظار التحقق ⏳
+            </span>
+          )}
+        </button>
       </div>
 
       {/* Main Table Card */}
@@ -734,6 +881,13 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
                       <td className="py-3 px-3">
                         <div className="flex items-center justify-center gap-1.5">
                           <button
+                            title="إدارة وتحكم الاشتراك الشامل (إعادة للتجريبي / إلغاء / تفعيل)"
+                            onClick={() => handleOpenSubscriptionControl(salon)}
+                            className="p-1.5 bg-indigo-950/80 hover:bg-indigo-600 text-indigo-300 hover:text-white rounded-lg transition-all border border-indigo-700/60 shadow-sm"
+                          >
+                            <CreditCard size={14} />
+                          </button>
+                          <button
                             title="تمديد الاشتراك أو التجربة"
                             onClick={() => {
                               setShowExtendModal(salon);
@@ -891,6 +1045,124 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
                   })}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* TAB 3: PENDING SUBSCRIPTION ORDERS */}
+        {portalTab === 'orders' && (
+          <div className="overflow-x-auto">
+            {pendingSubscriptions.length === 0 ? (
+              <div className="p-12 text-center text-slate-400">
+                <Receipt className="mx-auto mb-3 text-slate-600" size={48} />
+                <p className="font-bold text-sm text-slate-300">لا توجد طلبات اشتراك أو فواتير معلقة حالياً</p>
+                <p className="text-xs text-slate-500 mt-1">جميع طلبات الاشتراك تم البت فيها واعتمادها، أو لم يتم تقديم طلبات جديدة بعد.</p>
+              </div>
+            ) : (
+              <table className="w-full text-right text-xs">
+                <thead>
+                  <tr className="border-b border-slate-800 text-slate-400 font-black">
+                    <th className="py-3 px-3">رقم الطلب / الفاتورة</th>
+                    <th className="py-3 px-3">الصالون والمالك</th>
+                    <th className="py-3 px-3">الباقة المطلوبة</th>
+                    <th className="py-3 px-3">الدورة والمبلغ</th>
+                    <th className="py-3 px-3">تاريخ الطلب</th>
+                    <th className="py-3 px-3">حالة السداد</th>
+                    <th className="py-3 px-3 text-center">إجراء المبرمج والاعتماد</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60">
+                  {pendingSubscriptions.map(order => {
+                    const salonId = order.tenant_id || order.tenantId || order.salon_id || order.salonId;
+                    const linkedSalon = order.salons || salons.find(s => s.id === salonId);
+                    const salonName = linkedSalon?.name || order.notes || 'صالون غير محدد';
+                    const salonPhone = linkedSalon?.phone;
+                    const planName = (order.plan_id || order.planId || 'starter').toUpperCase();
+                    const cycle = order.billing_cycle || order.billingCycle || 'monthly';
+                    const amount = order.total_amount || order.totalAmount || order.amount || 0;
+                    const currency = order.currency || 'SAR';
+                    const orderDate = order.created_at || order.createdAt ? new Date(order.created_at || order.createdAt).toLocaleDateString('ar-SA') : 'اليوم';
+
+                    return (
+                      <tr key={order.id} className="hover:bg-slate-800/40 transition-colors">
+                        <td className="py-3 px-3">
+                          <span className="font-mono text-[11px] font-bold text-slate-400">
+                            #{String(order.id).slice(0, 8)}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3">
+                          <p className="font-bold text-white text-xs">{salonName}</p>
+                          {salonPhone && (
+                            <p className="text-[10px] text-slate-400 font-mono flex items-center gap-1 mt-0.5">
+                              <Phone size={10} />
+                              <span>{salonPhone}</span>
+                            </p>
+                          )}
+                        </td>
+                        <td className="py-3 px-3">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-950 text-indigo-300 border border-indigo-800">
+                            {planName}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3">
+                          <p className="font-bold text-emerald-400 font-mono">{amount} {currency}</p>
+                          <p className="text-[10px] text-slate-400">
+                            {cycle === 'annual' || cycle === '12m' ? 'سنوي (سنة كاملة)' : 'شهري'}
+                          </p>
+                        </td>
+                        <td className="py-3 px-3">
+                          <span className="text-slate-300 font-mono text-[11px]">{orderDate}</span>
+                        </td>
+                        <td className="py-3 px-3">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-950 text-amber-300 border border-amber-800 flex items-center gap-1 w-fit">
+                            <Clock size={10} />
+                            <span>بانتظار التأكيد والسداد</span>
+                          </span>
+                        </td>
+                        <td className="py-3 px-3">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              title="اعتماد السداد وتفعيل الباقة فوراً للصالون"
+                              onClick={() => handleApproveOrder(order)}
+                              className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs flex items-center gap-1 shadow-md shadow-emerald-900/40 cursor-pointer"
+                            >
+                              <CheckCircle2 size={13} />
+                              <span>اعتماد وتفعيل</span>
+                            </button>
+                            <button
+                              title="إلغاء ورفض هذا الطلب"
+                              onClick={() => handleCancelOrder(order)}
+                              className="p-1.5 bg-slate-800 hover:bg-red-600 text-slate-400 hover:text-white rounded-lg transition-all cursor-pointer"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                            {salonPhone && (
+                              <a
+                                href={`https://wa.me/${salonPhone.replace(/[^0-9]/g, '')}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                title="مراسلة عبر واتساب للتأكيد"
+                                className="p-1.5 bg-slate-800 hover:bg-emerald-500 text-slate-400 hover:text-white rounded-lg transition-all"
+                              >
+                                <MessageSquare size={13} />
+                              </a>
+                            )}
+                            {linkedSalon && (
+                              <button
+                                title="تحكم كامل باشتراك الصالون"
+                                onClick={() => handleOpenSubscriptionControl(linkedSalon)}
+                                className="p-1.5 bg-indigo-950 hover:bg-indigo-600 text-indigo-300 hover:text-white rounded-lg transition-all"
+                              >
+                                <CreditCard size={13} />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
           </div>
         )}
       </div>
@@ -1409,6 +1681,258 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Master Subscription Controller Modal */}
+      {selectedControlSalon && (
+        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center z-50 p-4 animate-in fade-in overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-700/80 rounded-3xl p-6 max-w-2xl w-full shadow-2xl my-8 text-slate-100">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-4 border-b border-slate-800 mb-5">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold">
+                  <Shield size={22} />
+                </div>
+                <div>
+                  <h3 className="font-black text-base text-white flex items-center gap-2">
+                    <span>إدارة وتحكم اشتراك: {selectedControlSalon.name}</span>
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${
+                      selectedControlSalon.subscriptionStatus === 'active'
+                        ? 'bg-emerald-950 text-emerald-300 border-emerald-800'
+                        : selectedControlSalon.subscriptionStatus === 'trial'
+                        ? 'bg-amber-950 text-amber-300 border-amber-800'
+                        : 'bg-rose-950 text-rose-300 border-rose-800'
+                    }`}>
+                      {selectedControlSalon.subscriptionStatus === 'active' ? 'مشترك ساري 🟢' : selectedControlSalon.subscriptionStatus === 'trial' ? 'فترة تجريبية 🟡' : 'منتهي / معطل 🔴'}
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-slate-400 font-mono mt-0.5">
+                    ID: {selectedControlSalon.id} | ينتهي في: {selectedControlSalon.subscriptionEndDate || 'غير محدد'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedControlSalon(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-6 max-h-[75vh] overflow-y-auto pr-1">
+              {/* 1. Quick Correction & Emergency Actions */}
+              <div className="bg-slate-800/60 border border-slate-700/80 rounded-2xl p-4">
+                <h4 className="text-xs font-black text-amber-400 flex items-center gap-2 mb-3">
+                  <RefreshCw size={15} />
+                  <span>إجراءات التصحيح الفورية (إعادة للتجريبي أو إلغاء الاشتراك)</span>
+                </h4>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Reset to Trial Box */}
+                  <div className="bg-slate-900/80 border border-amber-900/40 rounded-xl p-3.5 flex flex-col justify-between">
+                    <div>
+                      <p className="font-bold text-xs text-amber-300 flex items-center gap-1.5 mb-1">
+                        <Clock size={13} />
+                        <span>إعادة الحساب للوضع التجريبي المجاني</span>
+                      </p>
+                      <p className="text-[10px] text-slate-400 leading-relaxed mb-3">
+                        يقوم بإلغاء أي تفعيل باقة خاطئ، وتصفير حالة الحساب فوراً إلى "تجريبي" وإعادة تعيين تاريخ الانتهاء بالسحابة.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1.5 pt-2 border-t border-slate-800">
+                      <button
+                        type="button"
+                        onClick={() => handleExecuteResetToTrial(selectedControlSalon, 7, 'starter')}
+                        className="flex-1 py-1.5 bg-amber-600/20 hover:bg-amber-600 text-amber-300 hover:text-white border border-amber-600/40 font-bold rounded-lg text-[11px] transition-all cursor-pointer"
+                      >
+                        7 أيام
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleExecuteResetToTrial(selectedControlSalon, 14, 'starter')}
+                        className="flex-1 py-1.5 bg-amber-600/20 hover:bg-amber-600 text-amber-300 hover:text-white border border-amber-600/40 font-bold rounded-lg text-[11px] transition-all cursor-pointer"
+                      >
+                        14 يوماً
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleExecuteResetToTrial(selectedControlSalon, 30, 'starter')}
+                        className="flex-1 py-1.5 bg-amber-600/20 hover:bg-amber-600 text-amber-300 hover:text-white border border-amber-600/40 font-bold rounded-lg text-[11px] transition-all cursor-pointer"
+                      >
+                        30 يوماً
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Force Expire / Cancel Subscription Box */}
+                  <div className="bg-slate-900/80 border border-rose-900/40 rounded-xl p-3.5 flex flex-col justify-between">
+                    <div>
+                      <p className="font-bold text-xs text-rose-300 flex items-center gap-1.5 mb-1">
+                        <ShieldAlert size={13} />
+                        <span>إلغاء الاشتراك فوراً وفرض القراءة فقط</span>
+                      </p>
+                      <p className="text-[10px] text-slate-400 leading-relaxed mb-3">
+                        يقوم بإنهاء صلاحية الصالون وقفل المنظومة لوضع العرض فقط (Read-Only) لمنع إضافة أو تعديل الفواتير حتى يسدد.
+                      </p>
+                    </div>
+                    <div className="pt-2 border-t border-slate-800">
+                      <button
+                        type="button"
+                        onClick={() => handleExecuteForceExpire(selectedControlSalon)}
+                        className="w-full py-1.5 bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-600/40 font-black rounded-lg text-[11px] transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md shadow-rose-950/50"
+                      >
+                        <Lock size={12} />
+                        <span>إنهاء الاشتراك فوراً وقفل الحساب 🛑</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Direct Activation Shortcuts */}
+                <div className="mt-3 pt-3 border-t border-slate-700/60">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="text-[11px] text-slate-300 font-bold flex items-center gap-1">
+                      <Zap size={13} className="text-emerald-400" />
+                      <span>تفعيل رسمي سريع ومعتمد:</span>
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleExecuteDirectActivate(selectedControlSalon, 1, 'growth')}
+                        className="px-2.5 py-1 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-600/40 font-bold rounded-lg text-[11px] transition-all cursor-pointer"
+                      >
+                        باقة النمو (شهر واحد)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleExecuteDirectActivate(selectedControlSalon, 12, 'pro')}
+                        className="px-2.5 py-1 bg-emerald-600/30 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-600/60 font-bold rounded-lg text-[11px] transition-all cursor-pointer"
+                      >
+                        باقة الاحتراف (سنة كاملة 🌟)
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. Manual Detailed Customization Form */}
+              <form onSubmit={handleSaveControlForm} className="bg-slate-800/40 border border-slate-700/60 rounded-2xl p-4 space-y-4">
+                <h4 className="text-xs font-black text-slate-200 flex items-center gap-2 border-b border-slate-700/80 pb-2">
+                  <Sliders size={15} className="text-indigo-400" />
+                  <span>تخصيص يدوي دقيق لكافة معلمات الاشتراك</span>
+                </h4>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 mb-1">حالة الاشتراك (Subscription Status)</label>
+                    <select
+                      value={controlForm.status}
+                      onChange={e => setControlForm({ ...controlForm, status: e.target.value as any })}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-indigo-500 font-bold"
+                    >
+                      <option value="trial">فترة تجريبية (Trial)</option>
+                      <option value="active">اشتراك رسمي ساري (Active)</option>
+                      <option value="expired">منتهي الصلاحية (Expired - Read Only)</option>
+                      <option value="suspended">موقوف إدارياً (Suspended)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 mb-1">الباقة المختارة (Plan)</label>
+                    <select
+                      value={controlForm.plan}
+                      onChange={e => setControlForm({ ...controlForm, plan: e.target.value as any })}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-indigo-500 font-bold"
+                    >
+                      <option value="starter">البداية (Starter - فرع واحد)</option>
+                      <option value="growth">النمو (Growth - فرعين)</option>
+                      <option value="pro">الاحترافية (Pro - 5 فروع)</option>
+                      <option value="enterprise">المؤسسات (Enterprise - غير محدود)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 mb-1">تاريخ بداية الاشتراك</label>
+                    <input
+                      type="date"
+                      value={controlForm.startDate}
+                      onChange={e => setControlForm({ ...controlForm, startDate: e.target.value })}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 mb-1">تاريخ نهاية الاشتراك</label>
+                    <input
+                      type="date"
+                      value={controlForm.endDate}
+                      onChange={e => setControlForm({ ...controlForm, endDate: e.target.value })}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 mb-1">أقصى عدد فروع مسموح</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={99}
+                      value={controlForm.maxBranches}
+                      onChange={e => setControlForm({ ...controlForm, maxBranches: Number(e.target.value) })}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-bold outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 mb-1">أقصى عدد مستخدمين مسموح</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={999}
+                      value={controlForm.maxUsers}
+                      onChange={e => setControlForm({ ...controlForm, maxUsers: Number(e.target.value) })}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-bold outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 p-3 bg-slate-900/60 rounded-xl border border-slate-800">
+                  <input
+                    type="checkbox"
+                    id="isActiveCheckbox"
+                    checked={controlForm.isActive}
+                    onChange={e => setControlForm({ ...controlForm, isActive: e.target.checked })}
+                    className="w-4 h-4 rounded text-indigo-600 bg-slate-800 border-slate-700 cursor-pointer"
+                  />
+                  <label htmlFor="isActiveCheckbox" className="text-xs text-slate-300 font-bold cursor-pointer">
+                    حساب الصالون نشط ومتاح لتسجيل الدخول (Is Active)
+                  </label>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedControlSalon(null)}
+                    className="px-4 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 cursor-pointer transition-all"
+                  >
+                    إلغاء
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 rounded-xl text-xs font-black text-white bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-600/30 flex items-center gap-1.5 cursor-pointer transition-all"
+                  >
+                    <CheckCircle2 size={14} />
+                    <span>حفظ وتحديث بيانات الاشتراك بالسحابة 💾</span>
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         </div>
       )}
