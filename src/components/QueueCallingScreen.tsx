@@ -42,15 +42,32 @@ export function QueueCallingScreen({
   const [assigningTicket, setAssigningTicket] = useState<QueueTicket | null>(null);
   const [selectedEmpId, setSelectedEmpId] = useState('');
 
-  // Auto-refresh tickets
+  // Auto-refresh & Supabase Real-time Sync
   useEffect(() => {
-    const load = () => {
-      const list = QueueService.getTickets(settings.salonId, selectedBranchId);
-      setTickets(list);
+    let isMounted = true;
+
+    const load = async () => {
+      const list = await QueueService.fetchTicketsAsync(settings.salonId, selectedBranchId);
+      if (isMounted) {
+        setTickets(list);
+      }
     };
+
     load();
-    const interval = setInterval(load, 3000);
-    return () => clearInterval(interval);
+
+    // 1. اشتراك لحظي عبر Real-time WebSockets
+    const unsubscribe = QueueService.subscribe(settings.salonId, () => {
+      load();
+    });
+
+    // 2. فحص متكرر (Polling) كل 2.5 ثانية كضمان استقرار إضافي
+    const interval = setInterval(load, 2500);
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+      clearInterval(interval);
+    };
   }, [settings.salonId, selectedBranchId]);
 
   const activeBranch = branches.find(b => b.id === selectedBranchId) || branches[0];
@@ -132,8 +149,8 @@ export function QueueCallingScreen({
   };
 
   // Call Specific Customer (Manual or Out of order)
-  const handleCallSpecific = (ticket: QueueTicket) => {
-    const updated = QueueService.updateTicket(ticket.id, {
+  const handleCallSpecific = async (ticket: QueueTicket) => {
+    const updated = await QueueService.updateTicket(ticket.id, {
       status: 'called',
       calledAt: new Date().toISOString()
     });
@@ -144,10 +161,10 @@ export function QueueCallingScreen({
   };
 
   // Assign to Employee & Move to In-Service
-  const handleConfirmAssign = () => {
+  const handleConfirmAssign = async () => {
     if (!assigningTicket) return;
     const emp = employees.find(e => e.id === selectedEmpId);
-    const updated = QueueService.updateTicket(assigningTicket.id, {
+    const updated = await QueueService.updateTicket(assigningTicket.id, {
       status: 'in_service',
       assignedEmployeeId: emp?.id,
       assignedEmployeeName: emp?.name
@@ -163,8 +180,8 @@ export function QueueCallingScreen({
   };
 
   // Mark Completed
-  const handleMarkCompleted = (ticketId: string) => {
-    const updated = QueueService.updateTicket(ticketId, {
+  const handleMarkCompleted = async (ticketId: string) => {
+    const updated = await QueueService.updateTicket(ticketId, {
       status: 'completed',
       completedAt: new Date().toISOString()
     });
@@ -174,11 +191,11 @@ export function QueueCallingScreen({
   };
 
   // Mark No-Show or Cancel (Automatically cancels the held invoice in POS)
-  const handleMarkNoShow = (ticket: QueueTicket) => {
+  const handleMarkNoShow = async (ticket: QueueTicket) => {
     if (!window.confirm(`هل أنت متأكد من تسجيل عدم حضور العميل رقم #${ticket.queueNumber} (${ticket.clientName}) وإلغاء الفاتورة المعلقة؟`)) {
       return;
     }
-    const updated = QueueService.updateTicket(ticket.id, {
+    const updated = await QueueService.updateTicket(ticket.id, {
       status: 'no_show'
     });
     if (updated) {
@@ -187,7 +204,7 @@ export function QueueCallingScreen({
   };
 
   // Manual Add Walk-in
-  const handleManualAdd = (e: React.FormEvent) => {
+  const handleManualAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newClientPhone) return;
 
@@ -206,7 +223,7 @@ export function QueueCallingScreen({
       };
     }
 
-    const { ticket } = QueueService.createTicketFromKiosk({
+    const { ticket } = await QueueService.createTicketFromKiosk({
       salonId: settings.salonId,
       branchId: selectedBranchId,
       client: targetClient

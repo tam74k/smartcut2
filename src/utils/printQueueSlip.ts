@@ -69,15 +69,27 @@ function generateCode39Svg(text: string, height: number = 30): string {
 }
 
 /**
- * Direct Print Queue Slip (80mm x 80mm, Single Copy)
- * Uses a hidden iframe to print instantly without blocking or navigating away.
+ * Direct Print Queue Slip (80mm Thermal Receipt, Single Copy)
+ * Uses a hidden iframe to print directly without on-screen popups or preview modals.
  */
 export function printQueueSlipDirect(data: QueueSlipData): void {
   try {
     const now = new Date();
-    const dateStr = data.dateStr || now.toISOString().split('T')[0];
-    const timeStr = data.timeStr || now.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
-    const barcodeSvg = generateCode39Svg(data.phone || '0500000000', 26);
+    
+    // Clean formatted Date (YYYY/MM/DD)
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const dateStr = data.dateStr || `${year}/${month}/${day}`;
+
+    // Clean formatted Time (12h format with ص / م)
+    const hours24 = now.getHours();
+    const mins = String(now.getMinutes()).padStart(2, '0');
+    const ampm = hours24 >= 12 ? 'م' : 'ص';
+    const hours12 = hours24 % 12 || 12;
+    const timeStr = data.timeStr || `${hours12}:${mins} ${ampm}`;
+
+    const barcodeSvg = generateCode39Svg(data.phone || '0000000000', 24);
 
     // Remove any existing print iframes
     const oldIframe = document.getElementById('queue-print-iframe');
@@ -100,178 +112,174 @@ export function printQueueSlipDirect(data: QueueSlipData): void {
     const doc = iframe.contentDocument || iframe.contentWindow?.document;
     if (!doc) return;
 
+    // Build pure HTML (Zero JSX comments!)
+    const logoHtml = data.salonLogo 
+      ? `<div style="text-align:center; margin-bottom: 2px;"><img src="${data.salonLogo}" alt="Logo" style="max-height: 30px; max-width: 60px; object-fit: contain;" /></div>`
+      : '';
+
+    const branchHtml = data.branchName 
+      ? `<div style="font-size: 8px; color: #444; margin-top: 1px;">الفرع: ${data.branchName}</div>` 
+      : '';
+
+    const clientDisplayName = data.clientName || 'عميل';
+    const clientPhone = data.phone || '';
+
+    const htmlContent = `<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+  <meta charset="utf-8">
+  <title>تذكرة انتظار #${data.queueNumber}</title>
+  <style>
+    @page {
+      size: 80mm auto;
+      margin: 0;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Tahoma, Arial, sans-serif;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    body {
+      width: 72mm;
+      margin: 0 auto;
+      padding: 4px 2px;
+      background: #fff;
+      color: #000;
+      text-align: center;
+    }
+    .slip {
+      width: 100%;
+      border: 1.5px dashed #000;
+      border-radius: 6px;
+      padding: 6px 4px;
+    }
+    .salon-name {
+      font-size: 13px;
+      font-weight: 900;
+      line-height: 1.2;
+      color: #000;
+    }
+    .divider {
+      border-top: 1px dashed #000;
+      margin: 4px 0;
+    }
+    .meta-line {
+      display: flex;
+      justify-content: space-between;
+      font-size: 8.5px;
+      font-weight: bold;
+      color: #111;
+      padding: 0 2px;
+    }
+    .client-box {
+      font-size: 10px;
+      font-weight: 800;
+      color: #000;
+      margin: 3px 0;
+      padding: 2px;
+      background: #f8f8f8;
+      border-radius: 4px;
+    }
+    .queue-container {
+      margin: 4px 0;
+      padding: 4px 2px;
+      background: #000;
+      color: #fff;
+      border-radius: 6px;
+    }
+    .queue-title {
+      font-size: 8px;
+      font-weight: bold;
+      letter-spacing: 0.5px;
+    }
+    .queue-num {
+      font-size: 32px;
+      font-weight: 900;
+      line-height: 1;
+      font-family: monospace, sans-serif;
+      margin-top: 2px;
+    }
+    .barcode-wrap {
+      margin-top: 4px;
+    }
+    .phone-text {
+      font-size: 9px;
+      font-weight: bold;
+      letter-spacing: 1px;
+      font-family: monospace, sans-serif;
+      margin-top: 1px;
+      direction: ltr;
+    }
+    .footer-text {
+      font-size: 7.5px;
+      font-weight: bold;
+      color: #333;
+      margin-top: 4px;
+      border-top: 1px dotted #888;
+      padding-top: 3px;
+    }
+  </style>
+</head>
+<body>
+  <div class="slip">
+    ${logoHtml}
+    <div class="salon-name">${data.salonName || 'صالون الحلاقة'}</div>
+    ${branchHtml}
+    
+    <div class="divider"></div>
+    
+    <div class="meta-line">
+      <span>التاريخ: ${dateStr}</span>
+      <span>الوقت: ${timeStr}</span>
+    </div>
+
+    <div class="client-box">
+      العميل: ${clientDisplayName}
+    </div>
+
+    <div class="queue-container">
+      <div class="queue-title">رقم الدور الخاص بك</div>
+      <div class="queue-num">#${data.queueNumber}</div>
+    </div>
+
+    <div class="barcode-wrap">
+      ${barcodeSvg}
+      <div class="phone-text">${clientPhone}</div>
+    </div>
+
+    <div class="footer-text">
+      شكراً لزيارتكم • يرجى الانتظار لحين المناداة
+    </div>
+  </div>
+</body>
+</html>`;
+
     doc.open();
-    doc.write(`
-      <!DOCTYPE html>
-      <html dir="rtl" lang="ar">
-        <head>
-          <meta charset="utf-8">
-          <title>تذكرة انتظار - ${data.queueNumber}</title>
-          <style>
-            @page {
-              size: 80mm 80mm;
-              margin: 0;
-            }
-            * {
-              box-sizing: border-box;
-              margin: 0;
-              padding: 0;
-              font-family: system-ui, -apple-system, 'Segoe UI', Tahoma, sans-serif;
-              -webkit-print-color-adjust: exact;
-              print-color-adjust: exact;
-            }
-            html, body {
-              width: 80mm;
-              height: 80mm;
-              max-height: 80mm;
-              overflow: hidden;
-              background: #fff;
-              color: #000;
-            }
-            .slip-container {
-              width: 76mm;
-              height: 76mm;
-              margin: 2mm auto;
-              padding: 2mm;
-              border: 1px dashed #000;
-              border-radius: 4px;
-              display: flex;
-              flex-direction: column;
-              justify-content: space-between;
-              align-items: center;
-              text-align: center;
-              page-break-inside: avoid;
-            }
-            .header {
-              width: 100%;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              gap: 4px;
-              border-bottom: 1px solid #000;
-              padding-bottom: 1.5mm;
-            }
-            .logo {
-              max-height: 18px;
-              max-width: 28px;
-              object-contain: contain;
-            }
-            .salon-name {
-              font-size: 11px;
-              font-weight: 900;
-              line-height: 1.1;
-            }
-            .meta-row {
-              width: 100%;
-              display: flex;
-              justify-content: space-between;
-              font-size: 8px;
-              font-weight: bold;
-              color: #333;
-              margin-top: 1mm;
-            }
-            .client-info {
-              font-size: 9px;
-              font-weight: 800;
-              margin-top: 1mm;
-              white-space: nowrap;
-              overflow: hidden;
-              text-overflow: ellipsis;
-              max-width: 100%;
-            }
-            .queue-box {
-              width: 100%;
-              background: #f4f4f4;
-              border: 1.5px solid #000;
-              border-radius: 6px;
-              padding: 1.5mm 0;
-              margin: 1mm 0;
-            }
-            .queue-label {
-              font-size: 8px;
-              font-weight: 800;
-              letter-spacing: 0.5px;
-            }
-            .queue-number {
-              font-size: 26px;
-              font-weight: 900;
-              font-family: monospace;
-              line-height: 1;
-              margin-top: 0.5mm;
-            }
-            .barcode-section {
-              width: 100%;
-              margin-top: 0.5mm;
-            }
-            .barcode-text {
-              font-size: 8px;
-              font-weight: bold;
-              font-family: monospace;
-              letter-spacing: 1px;
-              margin-top: 0.5mm;
-            }
-            .footer-note {
-              font-size: 7.5px;
-              font-weight: bold;
-              border-top: 1px dotted #666;
-              padding-top: 1mm;
-              width: 100%;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="slip-container">
-            
-            {/* Header: Salon Logo & Name */}
-            <div class="header">
-              ${data.salonLogo ? `<img src="${data.salonLogo}" class="logo" alt="Logo" />` : ''}
-              <div class="salon-name">${data.salonName || 'منظومة الصالون'}</div>
-            </div>
-
-            {/* Date, Time & Branch */}
-            <div class="meta-row">
-              <span>📅 ${dateStr}</span>
-              <span>⏰ ${timeStr}</span>
-              ${data.branchName ? `<span>📍 ${data.branchName}</span>` : ''}
-            </div>
-
-            {/* Client Info */}
-            <div class="client-info">
-              العميل: ${data.clientName}
-            </div>
-
-            {/* Turn Number Box */}
-            <div class="queue-box">
-              <div class="queue-label">رقم الدور الخاص بك</div>
-              <div class="queue-number">#${data.queueNumber}</div>
-            </div>
-
-            {/* Phone Barcode */}
-            <div class="barcode-section">
-              ${barcodeSvg}
-              <div class="barcode-text">${data.phone}</div>
-            </div>
-
-            {/* Footer */}
-            <div class="footer-note">
-              يرجى التفضل بالانتظار لحين المناداة على رقمك • نسخة واحدة
-            </div>
-
-          </div>
-        </body>
-      </html>
-    `);
+    doc.write(htmlContent);
     doc.close();
 
-    // Trigger silent print after short rendering tick
-    setTimeout(() => {
+    // Trigger printing once DOM is ready
+    const triggerPrint = () => {
       try {
         iframe.contentWindow?.focus();
         iframe.contentWindow?.print();
       } catch (err) {
         console.warn('Iframe print error:', err);
       }
-    }, 250);
+    };
+
+    // If there is a logo image, wait for it or fallback after 300ms
+    const img = doc.querySelector('img');
+    if (img && !img.complete) {
+      img.onload = () => setTimeout(triggerPrint, 50);
+      img.onerror = () => setTimeout(triggerPrint, 50);
+      setTimeout(triggerPrint, 350);
+    } else {
+      setTimeout(triggerPrint, 100);
+    }
 
   } catch (e) {
     console.error('Failed to direct print queue slip:', e);

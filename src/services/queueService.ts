@@ -1,10 +1,47 @@
 import { QueueTicket, HeldInvoice, Client } from '../types';
-import { DB } from './db';
+import { DB, toCamel, toSnake, toSalonUUID } from './db';
+import { SupabaseService } from './supabase';
 
 const QUEUE_STORAGE_KEY = 'smartcut_queue_tickets';
 const QUEUE_SEQ_KEY_PREFIX = 'smartcut_queue_seq_';
 
 export const QueueService = {
+  /**
+   * توليد الرقم التسلسلي التالي للدور سحابياً مع مطابقة أجهزة الاستقبال والتابلت
+   */
+  async getNextQueueNumberAsync(salonId: string, branchId: string = 'b-main', shiftDate?: string): Promise<number> {
+    const today = shiftDate || new Date().toISOString().split('T')[0];
+    try {
+      const client = SupabaseService.getClient();
+      const validSalonId = toSalonUUID(salonId);
+      if (client && validSalonId) {
+        let query = client
+          .from('queue_tickets')
+          .select('queue_number')
+          .eq('salon_id', validSalonId)
+          .eq('shift_date', today)
+          .order('queue_number', { ascending: false })
+          .limit(1);
+
+        if (branchId) {
+          query = query.eq('branch_id', branchId);
+        }
+
+        const { data, error } = await query;
+        if (!error && data && data.length > 0) {
+          const maxNum = Number(data[0].queue_number) || 0;
+          const next = maxNum + 1;
+          const key = `${QUEUE_SEQ_KEY_PREFIX}${validSalonId}_${branchId || 'main'}_${today}`;
+          localStorage.setItem(key, next.toString());
+          return next;
+        }
+      }
+    } catch (e) {
+      console.warn('Supabase next queue query fallback:', e);
+    }
+    return this.getNextQueueNumber(salonId, branchId, shiftDate);
+  },
+
   /**
    * توليد الرقم التسلسلي التالي للدور للفرع والوردية الحالية (يبدأ من 1)
    */
@@ -38,7 +75,7 @@ export const QueueService = {
   },
 
   /**
-   * جلب قائمة تذاكر الانتظار للفرع
+   * جلب قائمة تذاكر الانتظار للفرع (محلياً)
    */
   getTickets(salonId?: string, branchId?: string, shiftDate?: string): QueueTicket[] {
     try {
@@ -61,9 +98,75 @@ export const QueueService = {
   },
 
   /**
-   * حفظ تذكرة انتظار جديدة
+   * جلب تذاكر الانتظار سحابياً من Supabase مع حفظها في التخزين المحلي
    */
-  saveTicket(ticket: QueueTicket): QueueTicket {
+  async fetchTicketsAsync(salonId?: string, branchId?: string, shiftDate?: string): Promise<QueueTicket[]> {
+    const today = shiftDate || new Date().toISOString().split('T')[0];
+    try {
+      const client = SupabaseService.getClient();
+      const validSalonId = toSalonUUID(salonId);
+      if (client && validSalonId) {
+        let query = client
+          .from('queue_tickets')
+          .select('*')
+          .eq('salon_id', validSalonId)
+          .eq('shift_date', today)
+          .order('created_at', { ascending: false });
+
+        if (branchId) {
+          query = query.eq('branch_id', branchId);
+        }
+
+        const { data, error } = await query;
+        if (!error && Array.isArray(data)) {
+          const remoteTickets: QueueTicket[] = data.map(row => toCamel(row));
+          // تحديث الكاش المحلي
+          try {
+            localStorage.setItem(QUEUE_STORAGE_KEY, JSON.stringify(remoteTickets));
+          } catch {}
+          return remoteTickets;
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to fetch queue tickets from cloud:', e);
+    }
+    return this.getTickets(salonId, branchId, shiftDate);
+  },
+
+  /**
+   * اشتراك لحظي (Real-time WebSockets) في جدول تذاكر الانتظار
+   */
+  subscribe(salonId: string, onUpdate: () => void): () => void {
+    try {
+      const client = SupabaseService.getClient();
+      if (!client) return () => {};
+
+      const channelName = `queue_tickets_${Date.now()}`;
+      const channel = client
+        .channel(channelName)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'queue_tickets' },
+          () => {
+            onUpdate();
+          }
+        )
+        .subscribe();
+
+      return () => {
+        try {
+          client.removeChannel(channel);
+        } catch {}
+      };
+    } catch {
+      return () => {};
+    }
+  },
+
+  /**
+   * حفظ تذكرة انتظار جديدة (محلياً وسحابياً)
+   */
+  async saveTicket(ticket: QueueTicket): Promise<QueueTicket> {
     try {
       const current = this.getTickets();
       const existingIdx = current.findIndex(t => t.id === ticket.id);
@@ -76,10 +179,19 @@ export const QueueService = {
       }
       localStorage.setItem(QUEUE_STORAGE_KEY, JSON.stringify(updated));
 
-      // تزامن اختياري مع Supabase DB إذا توفر الجدول
+      // تزامن سحابي فوري مع Supabase
       try {
-        DB.saveRecord('queue_tickets', ticket);
-      } catch {}
+        const client = SupabaseService.getClient();
+        if (client) {
+          const snake: any = toSnake(ticket);
+          if (ticket.salonId) {
+            snake.salon_id = toSalonUUID(ticket.salonId) || ticket.salonId;
+          }
+          await client.from('queue_tickets').upsert(snake, { onConflict: 'id' });
+        }
+      } catch (err) {
+        console.warn('Cloud save ticket error:', err);
+      }
 
       return ticket;
     } catch {
@@ -88,9 +200,9 @@ export const QueueService = {
   },
 
   /**
-   * تحديث حالة تذكرة الانتظار
+   * تحديث حالة تذكرة الانتظار (محلياً وسحابياً)
    */
-  updateTicket(ticketId: string, updates: Partial<QueueTicket>): QueueTicket | null {
+  async updateTicket(ticketId: string, updates: Partial<QueueTicket>): Promise<QueueTicket | null> {
     try {
       const current = this.getTickets();
       const idx = current.findIndex(t => t.id === ticketId);
@@ -108,9 +220,16 @@ export const QueueService = {
         this.cancelHeldInvoiceForTicket(ticketId);
       }
 
+      // تزامن سحابي مع Supabase
       try {
-        DB.saveRecord('queue_tickets', updatedTicket);
-      } catch {}
+        const client = SupabaseService.getClient();
+        if (client) {
+          const snakeUpdates = toSnake(updates);
+          await client.from('queue_tickets').update(snakeUpdates).eq('id', ticketId);
+        }
+      } catch (err) {
+        console.warn('Cloud update ticket error:', err);
+      }
 
       return updatedTicket;
     } catch {
@@ -120,16 +239,16 @@ export const QueueService = {
 
   /**
    * تسجيل حضور عميل من الكيوسك / التابلت:
-   * 1. إصدار تذكرة انتظار برقم تسلسلي.
+   * 1. إصدار تذكرة انتظار برقم تسلسلي موحد عبر السحابة.
    * 2. إنشاء فاتورة معلقة (Held Invoice) تلقائياً في POS مع رقم الدور.
    */
-  createTicketFromKiosk(params: {
+  async createTicketFromKiosk(params: {
     salonId: string;
     branchId: string;
     client: Client;
     shiftDate?: string;
-  }): { ticket: QueueTicket; heldInvoice: HeldInvoice } {
-    const queueNumber = this.getNextQueueNumber(params.salonId, params.branchId, params.shiftDate);
+  }): Promise<{ ticket: QueueTicket; heldInvoice: HeldInvoice }> {
+    const queueNumber = await this.getNextQueueNumberAsync(params.salonId, params.branchId, params.shiftDate);
     const now = new Date();
     const ticketId = 'QT-' + Math.random().toString(36).substr(2, 9).toUpperCase();
     const heldInvoiceId = 'HELD-' + Math.random().toString(36).substr(2, 9).toUpperCase();
@@ -149,7 +268,7 @@ export const QueueService = {
       shiftDate: params.shiftDate || now.toISOString().split('T')[0]
     };
 
-    this.saveTicket(ticket);
+    await this.saveTicket(ticket);
 
     // إنشاء فاتورة معلقة في شاشة الكاشير
     const heldInvoice: HeldInvoice = {
@@ -195,3 +314,4 @@ export const QueueService = {
     }
   }
 };
+

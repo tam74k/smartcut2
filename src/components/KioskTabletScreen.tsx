@@ -83,8 +83,7 @@ export function KioskTabletScreen({
   const [clientName, setClientName] = useState('');
   const [detectedClient, setDetectedClient] = useState<Client | null>(null);
   const [isNewClient, setIsNewClient] = useState(false);
-  const [activeTicket, setActiveTicket] = useState<QueueTicket | null>(null);
-  const [countdown, setCountdown] = useState(5);
+  const [successNotice, setSuccessNotice] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Time display
@@ -134,25 +133,6 @@ export function KioskTabletScreen({
     }
   }, [phoneNumber, clients]);
 
-  // Countdown timer for auto-reset after ticket issuance
-  useEffect(() => {
-    if (!activeTicket) return;
-
-    setCountdown(5);
-    const interval = setInterval(() => {
-      setCountdown(prev => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          handleResetAll();
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [activeTicket]);
-
   // التحقق من جاهزية الرقم للتأكيد وفق القواعد المطلوبة:
   // - إذا بدأ بـ 01 فيكون مطلوباً 11 رقماً بالضبط
   // - خلاف ذلك يبقى مفتوحاً لحين ضغط العميل على زر الاعتماد
@@ -195,7 +175,6 @@ export function KioskTabletScreen({
     setClientName('');
     setDetectedClient(null);
     setIsNewClient(false);
-    setActiveTicket(null);
   };
 
   // Submit and Issue Queue Ticket
@@ -239,17 +218,16 @@ export function KioskTabletScreen({
       targetClient = newC;
     }
 
-    // Issue Queue Ticket & Create Held Invoice in POS
-    const { ticket } = QueueService.createTicketFromKiosk({
+    // Issue Queue Ticket & Create Held Invoice in POS with Supabase coordination
+    const { ticket } = await QueueService.createTicketFromKiosk({
       salonId: settings.salonId,
       branchId: activeBranch?.id || 'b-main',
       client: targetClient
     });
 
     playKioskChime();
-    setActiveTicket(ticket);
 
-    // طباعة إيصال حراري مباشرة (80mm x 80mm) مع باركود العميل بدون أي شاشات إضافية
+    // طباعة إيصال حراري مباشرة بدون أي شاشات أو معاينات
     printQueueSlipDirect({
       salonName: settings.salonName || 'منظومة الصالون',
       salonLogo: settings.logoUrl,
@@ -258,6 +236,14 @@ export function KioskTabletScreen({
       phone: targetClient.phone,
       queueNumber: ticket.queueNumber
     });
+
+    // تفريغ الحقول فوراً للعميل التالي مع إشعار نجاح علوي سريع
+    const num = ticket.queueNumber;
+    handleResetAll();
+    setSuccessNotice(`✅ تم استلام دورك بنجاح! رقمك هو #${num} وجارٍ طباعة إيصالك الحراري 🎟️`);
+    setTimeout(() => {
+      setSuccessNotice(null);
+    }, 4000);
   };
 
   // Toggle Fullscreen
@@ -348,6 +334,14 @@ export function KioskTabletScreen({
       {/* MAIN KIOSK BODY */}
       <main className="flex-1 flex flex-col items-center justify-center p-4 sm:p-8 max-w-2xl w-full mx-auto relative z-10">
         
+        {/* Success Notice Banner */}
+        {successNotice && (
+          <div className="w-full max-w-md mb-6 p-4 bg-emerald-500/20 border-2 border-emerald-500/60 rounded-3xl flex items-center justify-center gap-3 text-emerald-300 font-black text-sm sm:text-base animate-in fade-in zoom-in-95 shadow-xl shadow-emerald-500/20 text-center">
+            <CheckCircle2 size={24} className="text-emerald-400 shrink-0" />
+            <span>{successNotice}</span>
+          </div>
+        )}
+
         {/* Welcome Text */}
         <div className="text-center mb-6">
           <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full text-xs font-black bg-amber-500/10 text-amber-300 border border-amber-500/30 mb-2">
@@ -596,87 +590,7 @@ export function KioskTabletScreen({
         </p>
       </footer>
 
-      {/* ── DIGITAL TICKET ISSUANCE MODAL (BOARDING PASS) ── */}
-      {activeTicket && (
-        <div className="fixed inset-0 bg-slate-950/95 backdrop-blur-xl flex items-center justify-center z-50 p-4 animate-in fade-in zoom-in-95">
-          <div className="bg-gradient-to-b from-slate-900 to-slate-950 border-2 border-amber-500/60 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl text-center relative overflow-hidden text-slate-100">
-            
-            {/* Ribbon glow */}
-            <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-amber-400 via-amber-500 to-amber-400" />
-            
-            <div className="w-16 h-16 rounded-3xl bg-amber-500/20 text-amber-400 mx-auto flex items-center justify-center mb-4 border border-amber-500/40 shadow-lg shadow-amber-500/20">
-              <CheckCircle2 size={36} />
-            </div>
 
-            <span className="px-3 py-1 rounded-full text-xs font-black bg-amber-500/10 text-amber-300 border border-amber-500/30">
-              تم تسجيل حضورك بنجاح
-            </span>
-
-            <p className="text-slate-400 text-xs mt-3">رقم الدور الخاص بك:</p>
-
-            {/* Giant Queue Number */}
-            <div className="my-3 py-4 px-6 bg-slate-950/80 border border-amber-500/40 rounded-3xl shadow-inner inline-block min-w-[180px]">
-              <span className="font-mono text-6xl sm:text-7xl font-black text-amber-400 tracking-tighter drop-shadow-md">
-                #{activeTicket.queueNumber}
-              </span>
-            </div>
-
-            <h3 className="font-black text-lg sm:text-xl text-white mt-1">
-              {activeTicket.clientName}
-            </h3>
-            
-            <p className="text-xs text-slate-400 mt-0.5">
-              الوقت: {new Date(activeTicket.checkInTime).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })} • {activeBranch?.name}
-            </p>
-
-            <div className="mt-4 p-3 bg-slate-800/60 rounded-2xl border border-slate-700 text-xs text-slate-300 leading-relaxed">
-              يرجى التفضل بأخذ مقعدك في صالة الانتظار، سيتم النداء على رقمك واسمك عبر شاشات المناداة ومكبرات الصوت فوراً.
-            </div>
-
-            {/* Auto-Reset Countdown Bar */}
-            <div className="mt-6 pt-4 border-t border-slate-800 flex flex-col gap-2">
-              <div className="flex items-center justify-between text-xs text-slate-400">
-                <span>تفريغ الشاشة للعميل التالي تلقائياً:</span>
-                <span className="font-bold text-amber-400 font-mono">{countdown} ثوانٍ</span>
-              </div>
-              <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                <div 
-                  className="h-full bg-amber-500 transition-all duration-1000 ease-linear"
-                  style={{ width: `${(countdown / 5) * 100}%` }}
-                />
-              </div>
-
-              <div className="flex gap-2 mt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    printQueueSlipDirect({
-                      salonName: settings.salonName || 'منظومة الصالون',
-                      salonLogo: settings.logoUrl,
-                      branchName: activeBranch?.name,
-                      clientName: activeTicket.clientName,
-                      phone: activeTicket.phone,
-                      queueNumber: activeTicket.queueNumber
-                    });
-                  }}
-                  className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer border border-slate-700"
-                >
-                  <Printer size={14} />
-                  <span>طباعة الإيصال الحراري 🖨️</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleResetAll}
-                  className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs transition-all cursor-pointer shadow"
-                >
-                  عميل جديد (تفريغ)
-                </button>
-              </div>
-            </div>
-
-          </div>
-        </div>
-      )}
 
       {/* ── STAFF EXIT & SETTINGS MODAL ── */}
       {showExitModal && (
