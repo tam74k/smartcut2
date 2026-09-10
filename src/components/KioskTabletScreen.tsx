@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Scissors, Phone, CheckCircle2, User, UserPlus, Sparkles, 
-  RotateCcw, Clock, Volume2, ArrowRight, Printer, AlertCircle, Maximize, Minimize, Lock, Wifi
+  RotateCcw, Clock, Volume2, ArrowRight, Printer, AlertCircle, Maximize, Minimize, Lock, Wifi,
+  Eye, EyeOff, ShieldCheck, LogOut, Key, UserCheck, Unlock
 } from 'lucide-react';
-import { AppSettings, Branch, Client, QueueTicket } from '../types';
+import { AppSettings, Branch, Client, QueueTicket, AppUser } from '../types';
 import { QueueService } from '../services/queueService';
 import { DB } from '../services/db';
+import { AuthService, ROLE_LABELS } from '../services/auth';
 import { printQueueSlipDirect } from '../utils/printQueueSlip';
 import { dispatchKioskSilentPrint, sendToNetworkPrinter } from '../services/networkPrinterService';
 
@@ -90,10 +92,21 @@ export function KioskTabletScreen({
   // Time display
   const [currentTime, setCurrentTime] = useState(new Date());
 
-  // Staff Settings / Exit Modal
+  // Staff Authentication & Settings Modal
   const [showExitModal, setShowExitModal] = useState(false);
-  const [exitPin, setExitPin] = useState('');
-  const [pinError, setPinError] = useState(false);
+  const [isKioskLocked, setIsKioskLocked] = useState(() => {
+    try {
+      return localStorage.getItem('smartcut_kiosk_is_locked') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [staffUsername, setStaffUsername] = useState('');
+  const [staffPassword, setStaffPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [authenticatedStaff, setAuthenticatedStaff] = useState<AppUser | null>(null);
 
   // Network Printer IP configuration on Tablet
   const [kioskPrinterIp, setKioskPrinterIp] = useState(() => localStorage.getItem('smartcut_kiosk_printer_ip') || settings.thermalPrinterIp || '');
@@ -296,21 +309,168 @@ export function KioskTabletScreen({
     }
   };
 
-  // Verify PIN for Exit or Admin
-  const handleVerifyExit = () => {
-    if (exitPin === '1234' || exitPin === '0000' || exitPin === (settings.taxNumber?.slice(-4) || '')) {
-      setShowExitModal(false);
-      setExitPin('');
-      setPinError(false);
-      if (onSwitchToMainApp) {
-        onSwitchToMainApp();
-      } else {
-        window.location.href = '/';
+  const resetStaffForm = () => {
+    setStaffUsername('');
+    setStaffPassword('');
+    setShowPassword(false);
+    setLoginError(null);
+  };
+
+  const handleCloseStaffModal = () => {
+    setShowExitModal(false);
+    resetStaffForm();
+    setAuthenticatedStaff(null);
+  };
+
+  const handleStaffLogin = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!staffUsername.trim() || !staffPassword.trim()) {
+      setLoginError('يرجى إدخال اسم المستخدم وكلمة المرور');
+      return;
+    }
+
+    setIsLoggingIn(true);
+    setLoginError(null);
+
+    try {
+      let user = await AuthService.loginAsync(staffUsername, staffPassword);
+      if (!user) {
+        user = AuthService.login(staffUsername, staffPassword);
       }
-    } else {
-      setPinError(true);
+
+      if (!user) {
+        setLoginError('اسم المستخدم أو كلمة المرور غير صحيحة');
+        setIsLoggingIn(false);
+        return;
+      }
+
+      // Check salon affiliation
+      if (user.role !== 'programmer' && user.salonId && settings.salonId && user.salonId !== settings.salonId) {
+        setLoginError('عذراً، هذا الحساب لا يتبع لهذا الصالون');
+        setIsLoggingIn(false);
+        return;
+      }
+
+      // Check role authorization (cashier, admin, manager, owner, programmer, supervisor, receptionist)
+      const allowedRoles = ['admin', 'cashier', 'manager', 'owner', 'programmer', 'supervisor', 'receptionist'];
+      if (!allowedRoles.includes(user.role)) {
+        setLoginError('هذا الحساب لا يملك صلاحيات وصول الكادر');
+        setIsLoggingIn(false);
+        return;
+      }
+
+      // Authenticated successfully
+      setAuthenticatedStaff(user);
+      setIsKioskLocked(false);
+      try {
+        localStorage.removeItem('smartcut_kiosk_is_locked');
+      } catch {}
+      resetStaffForm();
+    } catch (err) {
+      console.error('Staff login error:', err);
+      setLoginError('تعذر التحقق من البيانات، يرجى المحاولة لاحقاً');
+    } finally {
+      setIsLoggingIn(false);
     }
   };
+
+  const handleExitToMainApp = () => {
+    setShowExitModal(false);
+    if (onSwitchToMainApp) {
+      onSwitchToMainApp();
+    } else {
+      window.location.href = '/';
+    }
+  };
+
+  const handleLockKiosk = () => {
+    setIsKioskLocked(true);
+    setShowExitModal(false);
+    setAuthenticatedStaff(null);
+    try {
+      localStorage.setItem('smartcut_kiosk_is_locked', 'true');
+    } catch {}
+  };
+
+  // If kiosk is locked, render lock screen
+  if (isKioskLocked) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-6 relative overflow-hidden font-sans" dir="rtl">
+        <div className="absolute top-0 left-1/4 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="max-w-md w-full bg-slate-900/90 border border-slate-800 rounded-3xl p-8 shadow-2xl backdrop-blur-xl relative z-10 text-center">
+          <div className="w-20 h-20 mx-auto rounded-3xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 mb-6 shadow-lg shadow-amber-500/10">
+            <Lock size={40} />
+          </div>
+
+          <h2 className="text-2xl font-black text-white mb-2">جهاز الكيوسك مقفل</h2>
+          <p className="text-sm text-slate-400 mb-6 leading-relaxed">
+            تم قفل شاشة الخدمة الذاتية مؤقتاً. لفتح القفل، يرجى تسجيل الدخول بحساب كاشير أو مسؤول في الصالون:
+          </p>
+
+          <form onSubmit={handleStaffLogin} className="space-y-4 text-right">
+            <div>
+              <label className="block text-xs font-bold text-slate-300 mb-1.5">اسم المستخدم / رقم الجوال</label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={staffUsername}
+                  onChange={e => {
+                    setStaffUsername(e.target.value);
+                    setLoginError(null);
+                  }}
+                  placeholder="مثال: cashier1 أو admin"
+                  className="w-full bg-slate-800/90 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder:text-slate-500 outline-none focus:border-amber-400"
+                  autoFocus
+                />
+                <User size={16} className="absolute left-3 top-3 text-slate-500" />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-300 mb-1.5">كلمة المرور</label>
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={staffPassword}
+                  onChange={e => {
+                    setStaffPassword(e.target.value);
+                    setLoginError(null);
+                  }}
+                  placeholder="••••••••"
+                  className="w-full bg-slate-800/90 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder:text-slate-500 outline-none focus:border-amber-400"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute left-3 top-3 text-slate-400 hover:text-white"
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </div>
+
+            {loginError && (
+              <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-300 text-xs font-bold flex items-center gap-2">
+                <AlertCircle size={15} className="shrink-0" />
+                <span>{loginError}</span>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={isLoggingIn}
+              className="w-full py-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-sm rounded-xl shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+            >
+              <Unlock size={18} />
+              <span>{isLoggingIn ? 'جاري التحقق...' : 'فتح قفل الكيوسك'}</span>
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between selection:bg-amber-500 selection:text-black font-sans relative overflow-hidden">
@@ -633,122 +793,221 @@ export function KioskTabletScreen({
 
       {/* ── STAFF EXIT & SETTINGS MODAL ── */}
       {showExitModal && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-50 p-4 animate-in fade-in">
-          <div className="bg-slate-900 border border-slate-700 rounded-3xl p-6 max-w-sm w-full shadow-2xl text-slate-100">
-            <h3 className="font-black text-sm text-white mb-2 flex items-center gap-2">
-              <Lock size={16} className="text-amber-400" />
-              <span>إغلاق شاشة الكيوسك / إعدادات الفرع</span>
-            </h3>
-            <p className="text-xs text-slate-400 mb-4">
-              الرجاء إدخال الرقم السري للكادر (الافتراضي 1234 أو آخر 4 أرقام من الرقم الضريبي):
-            </p>
-
-            <div className="space-y-3 mb-4">
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-50 p-4 animate-in fade-in" dir="rtl">
+          <div className="bg-slate-900 border border-slate-700 rounded-3xl p-6 max-w-md w-full shadow-2xl text-slate-100">
+            
+            {!authenticatedStaff ? (
               <div>
-                <label className="block text-[11px] font-bold text-slate-400 mb-1">الفرع المربوط به الكيوسك</label>
-                <select
-                  value={selectedBranchId}
-                  onChange={e => setSelectedBranchId(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none"
-                >
-                  {branches.map(b => (
-                    <option key={b.id} value={b.id}>{b.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* 🖨️ Network Printer IP for Tablet */}
-              <div className="pt-2 border-t border-slate-800 space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="block text-[11px] font-bold text-amber-400 flex items-center gap-1.5">
-                    <Printer size={13} />
-                    <span>عنوان IP طابعة الشبكة (لطباعة التذاكر صامتاً)</span>
-                  </label>
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="col-span-2">
-                    <input
-                      type="text"
-                      value={kioskPrinterIp}
-                      onChange={e => setKioskPrinterIp(e.target.value)}
-                      placeholder="192.168.1.50"
-                      dir="ltr"
-                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-white font-mono outline-none focus:border-amber-400"
-                    />
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+                    <ShieldCheck size={22} />
                   </div>
                   <div>
-                    <input
-                      type="number"
-                      value={kioskPrinterPort}
-                      onChange={e => setKioskPrinterPort(e.target.value)}
-                      placeholder="8080"
-                      dir="ltr"
-                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-white font-mono outline-none focus:border-amber-400"
-                    />
+                    <h3 className="font-black text-sm sm:text-base text-white">
+                      تسجيل دخول الكادر / الكاشير / الإدارة
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      أدخل بيانات أي حساب مصرح به في هذا الصالون
+                    </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+
+                <form onSubmit={handleStaffLogin} className="space-y-3.5 my-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">اسم المستخدم / رقم الجوال</label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={staffUsername}
+                        onChange={e => {
+                          setStaffUsername(e.target.value);
+                          setLoginError(null);
+                        }}
+                        placeholder="مثال: cashier1 أو admin"
+                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-xs sm:text-sm text-white placeholder:text-slate-500 outline-none focus:border-amber-400"
+                        autoFocus
+                      />
+                      <User size={15} className="absolute left-3 top-3 text-slate-500" />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">كلمة المرور</label>
+                    <div className="relative">
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        value={staffPassword}
+                        onChange={e => {
+                          setStaffPassword(e.target.value);
+                          setLoginError(null);
+                        }}
+                        placeholder="••••••••"
+                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-xs sm:text-sm text-white placeholder:text-slate-500 outline-none focus:border-amber-400"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute left-3 top-3 text-slate-400 hover:text-white"
+                      >
+                        {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {loginError && (
+                    <div className="p-2.5 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-300 text-xs font-bold flex items-center gap-2">
+                      <AlertCircle size={15} className="shrink-0" />
+                      <span>{loginError}</span>
+                    </div>
+                  )}
+
+                  <div className="flex gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={handleCloseStaffModal}
+                      className="flex-1 py-2.5 rounded-xl text-xs font-bold text-slate-300 bg-slate-800 hover:bg-slate-700 transition cursor-pointer"
+                    >
+                      إلغاء
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isLoggingIn}
+                      className="flex-1 py-2.5 rounded-xl text-xs font-black text-slate-950 bg-amber-500 hover:bg-amber-400 transition cursor-pointer shadow disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      <UserCheck size={16} />
+                      <span>{isLoggingIn ? 'جاري التحقق...' : 'تسجيل الدخول والتحقق'}</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Staff Profile Card */}
+                <div className="p-3 bg-slate-800/80 border border-slate-700 rounded-2xl flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                      <ShieldCheck size={20} />
+                    </div>
+                    <div>
+                      <div className="text-xs font-black text-white flex items-center gap-1.5">
+                        <span>{authenticatedStaff.name || authenticatedStaff.username}</span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                          {ROLE_LABELS[authenticatedStaff.role] || authenticatedStaff.role}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-400">
+                        اسم المستخدم: <span className="font-mono text-slate-300">{authenticatedStaff.username}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Primary Quick Actions */}
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    onClick={handleSavePrinterIp}
-                    className="flex-1 py-1.5 rounded-lg text-[10px] font-black text-slate-900 bg-amber-400 hover:bg-amber-300 cursor-pointer"
+                    onClick={handleExitToMainApp}
+                    className="p-3 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs flex flex-col items-center justify-center gap-1.5 shadow cursor-pointer text-center"
                   >
-                    حفظ الـ IP
+                    <LogOut size={18} />
+                    <span>الخروج للنظام الرئيسي</span>
+                    <span className="text-[10px] font-normal opacity-80">(كاشير / إدارة)</span>
                   </button>
+
                   <button
                     type="button"
-                    onClick={handleTestKioskPrint}
-                    className="flex-1 py-1.5 rounded-lg text-[10px] font-bold text-slate-300 bg-slate-800 hover:bg-slate-700 border border-slate-700 cursor-pointer"
+                    onClick={handleLockKiosk}
+                    className="p-3 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 hover:border-slate-600 font-bold text-xs flex flex-col items-center justify-center gap-1.5 cursor-pointer text-center"
                   >
-                    اختبار اتصال
+                    <Lock size={18} className="text-amber-400" />
+                    <span>قفل شاشة الكيوسك</span>
+                    <span className="text-[10px] text-slate-400 font-normal">تعطيل مؤقت</span>
                   </button>
                 </div>
-                {kioskTestResult && (
-                  <p className="text-[10px] text-center font-bold text-amber-300 bg-slate-800/80 py-1 px-2 rounded-lg">
-                    {kioskTestResult}
-                  </p>
-                )}
-              </div>
 
-              <div>
-                <label className="block text-[11px] font-bold text-slate-400 mb-1">الرقم السري للموظفين</label>
-                <input
-                  type="password"
-                  value={exitPin}
-                  onChange={e => {
-                    setExitPin(e.target.value);
-                    setPinError(false);
-                  }}
-                  placeholder="1234"
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white font-mono text-center outline-none focus:border-amber-400"
-                  autoFocus
-                />
-                {pinError && (
-                  <p className="text-[11px] text-rose-400 mt-1 font-bold">الرمز السري غير صحيح</p>
-                )}
-              </div>
-            </div>
+                {/* Settings Accordion / Panel */}
+                <div className="space-y-3 pt-3 border-t border-slate-800">
+                  <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-wider">
+                    إعدادات الكيوسك والطابعة
+                  </h4>
 
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowExitModal(false);
-                  setExitPin('');
-                  setPinError(false);
-                }}
-                className="flex-1 py-2 rounded-xl text-xs font-bold text-slate-300 bg-slate-800 hover:bg-slate-700 cursor-pointer"
-              >
-                إلغاء
-              </button>
-              <button
-                type="button"
-                onClick={handleVerifyExit}
-                className="flex-1 py-2 rounded-xl text-xs font-black text-slate-950 bg-amber-500 hover:bg-amber-400 cursor-pointer shadow"
-              >
-                الخروج للنظام
-              </button>
-            </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 mb-1">الفرع المربوط به الكيوسك</label>
+                    <select
+                      value={selectedBranchId}
+                      onChange={e => setSelectedBranchId(e.target.value)}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none"
+                    >
+                      {branches.map(b => (
+                        <option key={b.id} value={b.id}>{b.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* 🖨️ Network Printer IP for Tablet */}
+                  <div className="pt-2 border-t border-slate-800 space-y-2">
+                    <label className="block text-[11px] font-bold text-amber-400 flex items-center gap-1.5">
+                      <Printer size={13} />
+                      <span>عنوان IP طابعة الشبكة (لطباعة التذاكر صامتاً)</span>
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="col-span-2">
+                        <input
+                          type="text"
+                          value={kioskPrinterIp}
+                          onChange={e => setKioskPrinterIp(e.target.value)}
+                          placeholder="192.168.1.50"
+                          dir="ltr"
+                          className="w-full bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-white font-mono outline-none focus:border-amber-400"
+                        />
+                      </div>
+                      <div>
+                        <input
+                          type="number"
+                          value={kioskPrinterPort}
+                          onChange={e => setKioskPrinterPort(e.target.value)}
+                          placeholder="8080"
+                          dir="ltr"
+                          className="w-full bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-white font-mono outline-none focus:border-amber-400"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleSavePrinterIp}
+                        className="flex-1 py-1.5 rounded-lg text-[10px] font-black text-slate-900 bg-amber-400 hover:bg-amber-300 cursor-pointer"
+                      >
+                        حفظ الـ IP
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleTestKioskPrint}
+                        className="flex-1 py-1.5 rounded-lg text-[10px] font-bold text-slate-300 bg-slate-800 hover:bg-slate-700 border border-slate-700 cursor-pointer"
+                      >
+                        اختبار اتصال
+                      </button>
+                    </div>
+                    {kioskTestResult && (
+                      <p className="text-[10px] text-center font-bold text-amber-300 bg-slate-800/80 py-1 px-2 rounded-lg">
+                        {kioskTestResult}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={handleCloseStaffModal}
+                    className="w-full py-2.5 rounded-xl text-xs font-bold text-slate-300 bg-slate-800 hover:bg-slate-700 transition cursor-pointer"
+                  >
+                    إغلاق والعودة لشاشة الكيوسك
+                  </button>
+                </div>
+              </div>
+            )}
+
           </div>
         </div>
       )}
