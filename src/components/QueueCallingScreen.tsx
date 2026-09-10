@@ -100,8 +100,8 @@ export function QueueCallingScreen({
       if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel(); // clear previous
         const text = empName 
-          ? `العميل رقم ${ticket.queueNumber}، الأستاذ ${ticket.clientName}، يرجى التوجه إلى ${empName}`
-          : `العميل رقم ${ticket.queueNumber}، الأستاذ ${ticket.clientName}، تفضل للخدمة`;
+          ? `عميل رقم ${ticket.queueNumber}، يرجى التوجه إلى ${empName}`
+          : `عميل رقم ${ticket.queueNumber}`;
         
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.lang = 'ar-SA';
