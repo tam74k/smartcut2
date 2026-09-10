@@ -1,5 +1,6 @@
 import { SupabaseService } from './supabase';
 import { dataUrlToBlob } from '../utils/imageUpload';
+import { HeldInvoice } from '../types';
 
 // ============================================================
 // 🗄️ SmartCut DB Service — طبقة البيانات الموحدة
@@ -566,6 +567,133 @@ export const DB = {
     } catch (e) { return false; }
   },
 
+  // ---- الفواتير المعلقة والمفتوحة (Held / Suspended Invoices) ----
+  async fetchHeldInvoices(salonId?: string, branchId?: string): Promise<HeldInvoice[]> {
+    const client = sb();
+    if (!client) return [];
+    try {
+      const validSalonId = toSalonUUID(salonId || getSalonId());
+      let q = client.from('held_invoices').select('*');
+      if (validSalonId) {
+        q = q.eq('salon_id', validSalonId);
+      }
+      if (branchId) {
+        q = q.eq('branch_id', branchId);
+      }
+      q = q.order('held_at', { ascending: false });
+      const { data, error } = await q;
+      if (error) {
+        console.error('DB.fetchHeldInvoices:', error.message);
+        return [];
+      }
+      return (data || []).map(row => {
+        const camel = toCamel(row);
+        if (!camel.discount && (camel.discountType || camel.discountValue !== undefined)) {
+          camel.discount = {
+            type: camel.discountType || 'fixed',
+            value: Number(camel.discountValue) || 0
+          };
+        }
+        if (!camel.cart && Array.isArray(camel.items)) {
+          camel.cart = camel.items;
+        }
+        if (!Array.isArray(camel.cart)) {
+          camel.cart = [];
+        }
+        if (!camel.client && (camel.clientName || camel.clientPhone || camel.clientId)) {
+          camel.client = {
+            id: camel.clientId || 'client-walkin',
+            name: camel.clientName || '',
+            phone: camel.clientPhone || '',
+            gender: 'men'
+          };
+        }
+        if (!camel.timeStr && camel.heldAt) {
+          try {
+            camel.timeStr = new Date(camel.heldAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
+          } catch {}
+        }
+        return camel;
+      });
+    } catch (e) {
+      console.error('DB.fetchHeldInvoices exception:', e);
+      return [];
+    }
+  },
+
+  async saveHeldInvoice(held: HeldInvoice): Promise<boolean> {
+    const client = sb();
+    if (!client) return false;
+    try {
+      const validSalonId = toSalonUUID(held.salonId || getSalonId());
+      if (!validSalonId) return false;
+
+      const snake: any = {
+        id: held.id,
+        salon_id: validSalonId,
+        branch_id: toBranchUUID(held.branchId) || held.branchId || null,
+        client_id: held.client?.id || null,
+        client_name: held.client?.name || held.clientSearch || 'عميل',
+        client_phone: held.client?.phone || '',
+        client_search: held.clientSearch || held.client?.name || '',
+        cart: held.cart || [],
+        items: held.cart || [],
+        discount_type: held.discount?.type || 'fixed',
+        discount_value: held.discount?.value || 0,
+        advance_deduction: held.advanceDeduction || 0,
+        is_remedy_invoice: !!held.isRemedyInvoice,
+        remedy_reason: held.remedyReason || null,
+        before_photo_url: held.beforePhotoUrl || null,
+        after_photo_url: held.afterPhotoUrl || null,
+        note: held.note || null,
+        held_at: held.heldAt || new Date().toISOString(),
+        queue_number: held.queueNumber || null,
+        queue_ticket_id: held.queueTicketId || null,
+        total: (held.cart || []).reduce((sum, c) => sum + ((c.item?.displayPrice || c.price || 0) * (c.quantity || 1)), 0)
+      };
+
+      const { error } = await client.from('held_invoices').upsert(snake, { onConflict: 'id' });
+      if (error) {
+        console.error('DB.saveHeldInvoice error:', error.message);
+        return false;
+      }
+      return true;
+    } catch (e) {
+      console.error('DB.saveHeldInvoice exception:', e);
+      return false;
+    }
+  },
+
+  async removeHeldInvoice(id: string): Promise<boolean> {
+    const client = sb();
+    if (!client) return false;
+    try {
+      const { error } = await client.from('held_invoices').delete().eq('id', id);
+      if (error) {
+        console.error('DB.removeHeldInvoice error:', error.message);
+        return false;
+      }
+      return true;
+    } catch (e) {
+      return false;
+    }
+  },
+
+  async removeHeldInvoiceByTicket(queueTicketId: string): Promise<boolean> {
+    const client = sb();
+    if (!client) return false;
+    try {
+      const { error } = await client.from('held_invoices').delete().or(`id.eq.${queueTicketId},queue_ticket_id.eq.${queueTicketId}`);
+      if (error) {
+        console.error('DB.removeHeldInvoiceByTicket error:', error.message);
+        return false;
+      }
+      return true;
+    } catch (e) {
+      return false;
+    }
+  },
+
   // ---- الصالونات والمستأجرين (Salons / Tenants) ----
   async fetchSalons() {
     const client = sb();
@@ -877,6 +1005,8 @@ export const DB = {
         printer_name: settings.printerName || 'طابعة الكاشير',
         paper_size: settings.paperSize || '80mm',
         print_automatically: settings.printAutomatically ?? false,
+        thermal_printer_ip: settings.thermalPrinterIp || null,
+        thermal_printer_port: settings.thermalPrinterPort ? Number(settings.thermalPrinterPort) : 9100,
         evolution_api_url: settings.evolutionApiUrl || null,
         evolution_api_key: settings.evolutionApiKey || settings.waApiKey || null,
         evolution_instance_name: settings.evolutionInstanceName || settings.waInstantName || null,

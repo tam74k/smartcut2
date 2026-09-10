@@ -757,6 +757,12 @@ export interface AppSettings {
   printerName: string;
   paperSize: '80mm' | '58mm' | 'a4';
   printAutomatically: boolean;
+  // Network / Kiosk Thermal Printer Settings (إعدادات طابعة الانتظار بالشبكة)
+  thermalPrinterIp?: string; // عنوان IP الخاص بالطابعة أو الجهاز المتصل بها في الشبكة
+  thermalPrinterPort?: number; // رقم المنفذ (مثل 9100 أو 8080 أو 80)
+  kioskPrinterEndpoint?: string; // مسار الإرسال (مثل /print أو /api/print)
+  kioskPrinterMethod?: 'direct_ip' | 'reception_auto' | 'both'; // طريقة الطباعة الشبكية
+  isReceptionPrinterStation?: boolean; // هل هذا الجهاز هو محطة الطباعة التلقائية المتصلة بالطابعة
   zatcaEnabled: boolean;
   zatcaSettings?: ZatcaSettings;
   etaEgyptSettings?: EtaEgyptSettings;

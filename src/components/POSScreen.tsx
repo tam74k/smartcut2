@@ -14,12 +14,14 @@ import { ComplaintsService } from '../services/complaintsService';
 import { ZatcaService } from '../services/zatcaService';
 import { EtaEgyptService } from '../services/etaEgyptService';
 import { DB } from '../services/db';
+import { SupabaseService } from '../services/supabase';
 
 export function POSScreen({ 
   settings, 
   isShiftOpen, 
   shiftDate, 
   initialBooking, 
+  initialHeldInvoice,
   onClearInitial, 
   onCheckoutComplete, 
   clients, 
@@ -42,6 +44,7 @@ export function POSScreen({
   isShiftOpen: boolean,
   shiftDate: string,
   initialBooking?: Booking | null, 
+  initialHeldInvoice?: HeldInvoice | null,
   onClearInitial?: () => void,
   onCheckoutComplete?: (invoice: Invoice, paymentSplits: { amount: number, treasuryId: string }[], bookingId?: string) => void,
   clients: Client[],
@@ -180,6 +183,51 @@ export function POSScreen({
     }
   }, [heldInvoices]);
 
+  // مزامنة لحظية للفواتير المعلقة مع السحابة (Supabase) للربط المباشر بين تابلت الكيوسك وشاشات الكاشير
+  useEffect(() => {
+    let isMounted = true;
+    const fetchHeld = async () => {
+      try {
+        const cloudHeld = await DB.fetchHeldInvoices(settings.salonId);
+        if (isMounted && Array.isArray(cloudHeld)) {
+          setHeldInvoices(prev => {
+            // دمج الفواتير السحابية والمحلية بدون تكرار، مع إعطاء الأولوية للسحابية
+            const cloudIds = new Set(cloudHeld.map(h => h.id));
+            const localOnly = prev.filter(h => !cloudIds.has(h.id));
+            return [...cloudHeld, ...localOnly];
+          });
+        }
+      } catch (err) {
+        console.warn('Cloud fetch held invoices error:', err);
+      }
+    };
+
+    fetchHeld();
+
+    // اشتراك لحظي في أحداث الفواتير المعلقة عبر Supabase Realtime
+    const client = SupabaseService.getClient();
+    let channel: any = null;
+    if (client) {
+      channel = client
+        .channel('held_invoices_realtime_pos')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'held_invoices' }, () => {
+          fetchHeld();
+        })
+        .subscribe();
+    }
+
+    // فحص دوري كل 3 ثوانٍ للتأكد من عدم فوات أي فاتورة جديدة
+    const interval = setInterval(fetchHeld, 3000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+      if (channel && client) {
+        client.removeChannel(channel);
+      }
+    };
+  }, [settings.salonId]);
+
   // Before & After Photos for Invoice (Max 500 KB)
   const [beforePhotoUrl, setBeforePhotoUrl] = useState('');
   const [afterPhotoUrl, setAfterPhotoUrl] = useState('');
@@ -262,6 +310,7 @@ export function POSScreen({
     }
     const newHeld: HeldInvoice = {
       id: 'HOLD-' + Math.random().toString(36).substr(2, 6).toUpperCase(),
+      salonId: settings.salonId,
       heldAt: new Date().toISOString(),
       timeStr: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
       client: selectedClient,
@@ -275,6 +324,7 @@ export function POSScreen({
       afterPhotoUrl
     };
     setHeldInvoices(prev => [newHeld, ...prev]);
+    DB.saveHeldInvoice(newHeld).catch(e => console.warn('Failed to save held invoice:', e));
     // تفريغ الفاتورة النشطة
     setCart([]);
     setSelectedClient(null);
@@ -292,6 +342,7 @@ export function POSScreen({
     if (cart.length > 0) {
       const newHeld: HeldInvoice = {
         id: 'HOLD-' + Math.random().toString(36).substr(2, 6).toUpperCase(),
+        salonId: settings.salonId,
         heldAt: new Date().toISOString(),
         timeStr: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
         client: selectedClient,
@@ -305,6 +356,7 @@ export function POSScreen({
         afterPhotoUrl
       };
       setHeldInvoices(prev => [newHeld, ...prev]);
+      DB.saveHeldInvoice(newHeld).catch(e => console.warn('Failed to save held invoice:', e));
     }
     setCart([]);
     setSelectedClient(null);
@@ -323,6 +375,7 @@ export function POSScreen({
       // تعليق الفاتورة الحالية أولاً
       const activeAsHeld: HeldInvoice = {
         id: 'HOLD-' + Math.random().toString(36).substr(2, 6).toUpperCase(),
+        salonId: settings.salonId,
         heldAt: new Date().toISOString(),
         timeStr: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
         client: selectedClient,
@@ -336,9 +389,11 @@ export function POSScreen({
         afterPhotoUrl
       };
       setHeldInvoices(prev => [activeAsHeld, ...prev.filter(h => h.id !== held.id)]);
+      DB.saveHeldInvoice(activeAsHeld).catch(e => console.warn('Failed to save held invoice:', e));
     } else {
       setHeldInvoices(prev => prev.filter(h => h.id !== held.id));
     }
+    DB.removeHeldInvoice(held.id).catch(e => console.warn('Failed to remove held invoice:', e));
 
     setCart(held.cart || []);
     setSelectedClient(held.client || null);
@@ -356,6 +411,7 @@ export function POSScreen({
   const handleDeleteHeldInvoice = (heldId: string) => {
     if (window.confirm('هل أنت متأكد من رغبتك في حذف / إلغاء هذه الفاتورة المعلقة؟')) {
       setHeldInvoices(prev => prev.filter(h => h.id !== heldId));
+      DB.removeHeldInvoice(heldId).catch(e => console.warn('Failed to remove held invoice:', e));
     }
   };
 
@@ -859,10 +915,57 @@ export function POSScreen({
     }
   }, [initialBooking]);
 
+  // رقم الدور النشط في شاشة الكاشير (عند الفتح التلقائي من شاشة المناداة)
+  const [activeQueueNumber, setActiveQueueNumber] = useState<number | null>(null);
+
+  // استكمال وفتح الفاتورة المعلقة تلقائياً عند تمريرها من شاشة المناداة بعد اكتمال الخدمة
+  useEffect(() => {
+    if (initialHeldInvoice) {
+      let client = initialHeldInvoice.client;
+      if (!client && initialHeldInvoice.clientSearch) {
+        client = clients.find(c => 
+          initialHeldInvoice.clientSearch?.includes(c.phone) || 
+          c.name === initialHeldInvoice.clientSearch
+        );
+      }
+      if (!client && initialHeldInvoice.clientSearch) {
+        const parts = initialHeldInvoice.clientSearch.split(' - ');
+        client = {
+          id: 'C-' + Math.random().toString(36).substr(2, 9),
+          name: parts[0] || 'عميل',
+          phone: parts[1] || '',
+          loyaltyPoints: 0
+        };
+      }
+
+      setSelectedClient(client || null);
+      setClientSearch(initialHeldInvoice.clientSearch || client?.name || '');
+      setCart(initialHeldInvoice.cart || []);
+      setDiscount(initialHeldInvoice.discount || { type: 'fixed', value: 0 });
+      setAdvanceDeduction(initialHeldInvoice.advanceDeduction || 0);
+      setIsRemedyInvoice(initialHeldInvoice.isRemedyInvoice || false);
+      setRemedyReason(initialHeldInvoice.remedyReason || '');
+      setBeforePhotoUrl(initialHeldInvoice.beforePhotoUrl || '');
+      setAfterPhotoUrl(initialHeldInvoice.afterPhotoUrl || '');
+      if (initialHeldInvoice.queueNumber) {
+        setActiveQueueNumber(initialHeldInvoice.queueNumber);
+      }
+
+      // إزالة الفاتورة من قائمة المعلقة محلياً وسحابياً لأنها فُتحت مباشرة على شاشة الكاشير
+      setHeldInvoices(prev => prev.filter(h => h.id !== initialHeldInvoice.id && h.queueTicketId !== initialHeldInvoice.queueTicketId));
+      if (initialHeldInvoice.id) {
+        DB.removeHeldInvoice(initialHeldInvoice.id).catch(e => console.warn('Failed to remove active held invoice:', e));
+      }
+
+      if (onClearInitial) onClearInitial();
+    }
+  }, [initialHeldInvoice, clients]);
+
   const clearBooking = () => {
     setCart([]);
     setClientSearch('');
     setAdvanceDeduction(0);
+    setActiveQueueNumber(null);
     if(onClearInitial) onClearInitial();
   };
 
@@ -1308,6 +1411,20 @@ export function POSScreen({
                     كاش باك: <strong className="font-mono">{(selectedClient.cashback !== undefined ? selectedClient.cashback : selectedClient.loyaltyPoints || 0).toFixed(1)} {settings.currency}</strong>
                   </span>
                 </div>
+              </div>
+            )}
+            
+            {activeQueueNumber && (
+              <div className="flex items-center gap-1.5 bg-amber-500/10 text-amber-700 px-2.5 py-1 rounded-xl border border-amber-500/30 text-xs font-black font-mono">
+                <span>🎟️ دور #{activeQueueNumber}</span>
+                <button 
+                  type="button" 
+                  onClick={() => setActiveQueueNumber(null)} 
+                  className="hover:text-red-600 cursor-pointer"
+                  title="إخفاء شارة الدور"
+                >
+                  <X size={13} />
+                </button>
               </div>
             )}
             
@@ -2284,9 +2401,10 @@ export function POSScreen({
                 </div>
               ) : (
                 heldInvoices.map((held, idx) => {
-                  const heldSubtotal = held.cart.reduce((sum, c) => sum + (c.item.displayPrice * c.quantity), 0);
-                  const heldDiscountAmt = held.discount.type === 'percentage' ? heldSubtotal * (held.discount.value / 100) : held.discount.value;
-                  const heldTotal = held.isRemedyInvoice ? 0 : Math.max(0, heldSubtotal - heldDiscountAmt - held.advanceDeduction);
+                  const heldCart = held.cart || [];
+                  const heldSubtotal = heldCart.reduce((sum, c) => sum + ((c?.item?.displayPrice || (c as any)?.price || 0) * (c?.quantity || 1)), 0);
+                  const heldDiscountAmt = held.discount?.type === 'percentage' ? heldSubtotal * ((held.discount?.value || 0) / 100) : (held.discount?.value || 0);
+                  const heldTotal = held.isRemedyInvoice ? 0 : Math.max(0, heldSubtotal - heldDiscountAmt - (held.advanceDeduction || 0));
 
                   return (
                     <div key={held.id} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs space-y-3 hover:border-amber-300 transition-all">
@@ -2316,7 +2434,7 @@ export function POSScreen({
                             </div>
                             <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1 font-mono">
                               <Clock size={11} />
-                              <span>معلقة منذ: {held.timeStr || held.heldAt.split('T')[1].substring(0, 5)}</span>
+                              <span>معلقة منذ: {held.timeStr || (held.heldAt && held.heldAt.includes('T') ? held.heldAt.split('T')[1].substring(0, 5) : 'الآن')}</span>
                             </p>
                           </div>
                         </div>
@@ -2325,19 +2443,21 @@ export function POSScreen({
                           <span className="text-sm font-black font-mono text-primary">
                             {heldTotal.toFixed(2)} {settings.currency}
                           </span>
-                          <p className="text-[10px] text-slate-400 font-semibold">{held.cart.length} أصناف / خدمات</p>
+                          <p className="text-[10px] text-slate-400 font-semibold">{heldCart.length} أصناف / خدمات</p>
                         </div>
                       </div>
 
                       {/* Items Preview Chips */}
-                      <div className="flex flex-wrap gap-1.5 pt-1 border-t border-slate-100">
-                        {held.cart.map(c => (
-                          <span key={c.cartId} className="text-[10px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md flex items-center gap-1">
-                            <span>{c.item.name}</span>
-                            <span className="font-mono text-primary font-bold">x{c.quantity}</span>
-                          </span>
-                        ))}
-                      </div>
+                      {heldCart.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 pt-1 border-t border-slate-100">
+                          {heldCart.map(c => (
+                            <span key={c.cartId || Math.random().toString()} className="text-[10px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md flex items-center gap-1">
+                              <span>{c?.item?.name || 'خدمة'}</span>
+                              <span className="font-mono text-primary font-bold">x{c?.quantity || 1}</span>
+                            </span>
+                          ))}
+                        </div>
+                      )}
 
                       {/* Actions */}
                       <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">

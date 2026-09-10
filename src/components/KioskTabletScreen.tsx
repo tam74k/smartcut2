@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Scissors, Phone, CheckCircle2, User, UserPlus, Sparkles, 
-  RotateCcw, Clock, Volume2, ArrowRight, Printer, AlertCircle, Maximize, Minimize, Lock
+  RotateCcw, Clock, Volume2, ArrowRight, Printer, AlertCircle, Maximize, Minimize, Lock, Wifi
 } from 'lucide-react';
 import { AppSettings, Branch, Client, QueueTicket } from '../types';
 import { QueueService } from '../services/queueService';
 import { DB } from '../services/db';
 import { printQueueSlipDirect } from '../utils/printQueueSlip';
+import { dispatchKioskSilentPrint, sendToNetworkPrinter } from '../services/networkPrinterService';
 
 interface KioskTabletScreenProps {
   settings: AppSettings;
@@ -93,6 +94,37 @@ export function KioskTabletScreen({
   const [showExitModal, setShowExitModal] = useState(false);
   const [exitPin, setExitPin] = useState('');
   const [pinError, setPinError] = useState(false);
+
+  // Network Printer IP configuration on Tablet
+  const [kioskPrinterIp, setKioskPrinterIp] = useState(() => localStorage.getItem('smartcut_kiosk_printer_ip') || settings.thermalPrinterIp || '');
+  const [kioskPrinterPort, setKioskPrinterPort] = useState(() => localStorage.getItem('smartcut_kiosk_printer_port') || String(settings.thermalPrinterPort || 8080));
+  const [kioskTestResult, setKioskTestResult] = useState<string | null>(null);
+
+  const handleSavePrinterIp = () => {
+    localStorage.setItem('smartcut_kiosk_printer_ip', kioskPrinterIp.trim());
+    localStorage.setItem('smartcut_kiosk_printer_port', kioskPrinterPort.trim());
+    setKioskTestResult('✅ تم حفظ عنوان IP للطابعة بنجاح');
+    setTimeout(() => setKioskTestResult(null), 3500);
+  };
+
+  const handleTestKioskPrint = async () => {
+    if (!kioskPrinterIp.trim()) {
+      setKioskTestResult('⚠️ يرجى كتابة عنوان IP أولاً');
+      return;
+    }
+    setKioskTestResult('جاري فحص الاتصال بالطابعة...');
+    const res = await sendToNetworkPrinter({
+      salonName: settings.salonName || 'صالون سمارت كت',
+      branchName: activeBranch?.name || 'الفرع الرئيسي',
+      clientName: 'فحص اتصال التابلت',
+      phone: '0500000000',
+      queueNumber: 99
+    }, {
+      ip: kioskPrinterIp.trim(),
+      port: Number(kioskPrinterPort) || 8080
+    });
+    setKioskTestResult(res.success ? '✅ تم الاتصال وإرسال تذكرة الفحص' : `❌ ${res.message}`);
+  };
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -227,15 +259,22 @@ export function KioskTabletScreen({
 
     playKioskChime();
 
-    // طباعة إيصال حراري مباشرة بدون أي شاشات أو معاينات
-    printQueueSlipDirect({
+    // إرسال أمر الطباعة عبر الشبكة للـ IP المحدد أو جهاز الاستقبال بدون أي شاشات على التابلت إطلاقاً
+    const printerIp = localStorage.getItem('smartcut_kiosk_printer_ip') || settings.thermalPrinterIp;
+    const printerPort = Number(localStorage.getItem('smartcut_kiosk_printer_port')) || settings.thermalPrinterPort || 8080;
+
+    dispatchKioskSilentPrint({
       salonName: settings.salonName || 'منظومة الصالون',
       salonLogo: settings.logoUrl,
       branchName: activeBranch?.name,
       clientName: targetClient.name,
       phone: targetClient.phone,
       queueNumber: ticket.queueNumber
-    });
+    }, {
+      printerIp,
+      printerPort,
+      salonId: settings.salonId
+    }).catch(err => console.warn('Kiosk silent print error:', err));
 
     // تفريغ الحقول فوراً للعميل التالي مع إشعار نجاح علوي سريع
     const num = ticket.queueNumber;
@@ -616,6 +655,59 @@ export function KioskTabletScreen({
                     <option key={b.id} value={b.id}>{b.name}</option>
                   ))}
                 </select>
+              </div>
+
+              {/* 🖨️ Network Printer IP for Tablet */}
+              <div className="pt-2 border-t border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block text-[11px] font-bold text-amber-400 flex items-center gap-1.5">
+                    <Printer size={13} />
+                    <span>عنوان IP طابعة الشبكة (لطباعة التذاكر صامتاً)</span>
+                  </label>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="col-span-2">
+                    <input
+                      type="text"
+                      value={kioskPrinterIp}
+                      onChange={e => setKioskPrinterIp(e.target.value)}
+                      placeholder="192.168.1.50"
+                      dir="ltr"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-white font-mono outline-none focus:border-amber-400"
+                    />
+                  </div>
+                  <div>
+                    <input
+                      type="number"
+                      value={kioskPrinterPort}
+                      onChange={e => setKioskPrinterPort(e.target.value)}
+                      placeholder="8080"
+                      dir="ltr"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-white font-mono outline-none focus:border-amber-400"
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSavePrinterIp}
+                    className="flex-1 py-1.5 rounded-lg text-[10px] font-black text-slate-900 bg-amber-400 hover:bg-amber-300 cursor-pointer"
+                  >
+                    حفظ الـ IP
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleTestKioskPrint}
+                    className="flex-1 py-1.5 rounded-lg text-[10px] font-bold text-slate-300 bg-slate-800 hover:bg-slate-700 border border-slate-700 cursor-pointer"
+                  >
+                    اختبار اتصال
+                  </button>
+                </div>
+                {kioskTestResult && (
+                  <p className="text-[10px] text-center font-bold text-amber-300 bg-slate-800/80 py-1 px-2 rounded-lg">
+                    {kioskTestResult}
+                  </p>
+                )}
               </div>
 
               <div>

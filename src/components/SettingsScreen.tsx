@@ -4,7 +4,8 @@ import {
   Save, Globe, Receipt, MessageSquare, Wallet, Plus, Trash2, CheckCircle, 
   Edit2, Shield, Cloud, Sparkles, RefreshCw, X, Check, Database, Download, 
   Upload, HardDrive, AlertTriangle, FileCheck, RefreshCcw, Landmark, FileSpreadsheet,
-  QrCode, Key, Send, CheckCircle2, ShieldCheck, HelpCircle, Building2, Layers, Clock, DollarSign
+  QrCode, Key, Send, CheckCircle2, ShieldCheck, HelpCircle, Building2, Layers, Clock, DollarSign,
+  Printer, Wifi, Laptop
 } from 'lucide-react';
 
 import { AuthService, ROLE_LABELS } from '../services/auth';
@@ -13,6 +14,7 @@ import { ZatcaService } from '../services/zatcaService';
 import { EtaEgyptService } from '../services/etaEgyptService';
 import { SubscriptionService, COUNTRY_CURRENCY_MAP, getCountryMeta } from '../services/subscriptionService';
 import { DB } from '../services/db';
+import { sendToNetworkPrinter } from '../services/networkPrinterService';
 
 export function SettingsScreen({ 
   settings, 
@@ -85,6 +87,29 @@ export function SettingsScreen({
   const isMainBranch = !activeBranch || activeBranch.isMain !== false;
   const isOwnerOrProgrammer = currentUser?.role === 'programmer' || ((currentUser?.role === 'admin' || currentUser?.role === 'owner' || !currentUser?.role) && isMainBranch);
   const [activeTab, setActiveTab] = useState<'general' | 'printing' | 'users' | 'supabase' | 'treasuries' | 'categories' | 'whatsapp'>('general');
+
+  // اختبار طابعة تذاكر الانتظار والكيوسك بالشبكة
+  const [printerTestStatus, setPrinterTestStatus] = useState<{ loading: boolean; success?: boolean; message?: string } | null>(null);
+
+  const handleTestNetworkPrinter = async () => {
+    if (!settings.thermalPrinterIp) {
+      setPrinterTestStatus({ loading: false, success: false, message: 'يرجى إدخال عنوان IP الخاص بالطابعة أو الجهاز أولاً' });
+      return;
+    }
+    setPrinterTestStatus({ loading: true, message: 'جاري محاولة الاتصال بالطابعة وإرسال تذكرة الفحص...' });
+    const res = await sendToNetworkPrinter({
+      salonName: settings.salonName || 'صالون سمارت كت',
+      branchName: activeBranch?.name || 'الفرع الرئيسي',
+      clientName: 'تجربة فحص اتصال الشبكة',
+      phone: '0500000000',
+      queueNumber: 99
+    }, {
+      ip: settings.thermalPrinterIp,
+      port: settings.thermalPrinterPort || 8080,
+      path: settings.kioskPrinterEndpoint || '/print'
+    });
+    setPrinterTestStatus({ loading: false, success: res.success, message: res.message });
+  };
 
 
   const [newTreasuryName, setNewTreasuryName] = useState('');
@@ -2706,6 +2731,143 @@ export function SettingsScreen({
                 placeholder="شكراً لزيارتكم ونسعد بخدمتكم دائماً"
                 className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:border-primary outline-none"
               />
+            </div>
+          </div>
+        </div>
+
+        {/* 🖨️ Network & Kiosk Thermal Printer Setup */}
+        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-600 flex items-center justify-center font-bold">
+                <Printer size={22} />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                  <span>طابعة تذاكر الانتظار والكيوسك بالشبكة (Network Thermal Printer)</span>
+                  <span className="text-[10px] bg-cyan-100 text-cyan-800 font-mono px-2 py-0.5 rounded-full font-bold">
+                    Direct IP / LAN
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-500">
+                  تحديد عنوان IP الخاص بالطابعة أو كمبيوتر الاستقبال المتصل بالطابعة لطباعة تذاكر التابلت صامتاً وفورياً دون شاشات إضافية
+                </p>
+              </div>
+            </div>
+            <div className="hidden sm:flex items-center gap-1.5 text-xs font-bold text-amber-600 bg-amber-50 border border-amber-200 px-3 py-1 rounded-xl">
+              <Wifi size={14} />
+              <span>طباعة صامتة عبر Wi-Fi</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* IP Address */}
+            <div className="space-y-1">
+              <label className="block text-xs font-bold text-slate-700">
+                عنوان IP الطابعة / الجهاز المتصل بالطابعة:
+              </label>
+              <input
+                type="text"
+                value={settings.thermalPrinterIp || ''}
+                onChange={(e) => handleChange('thermalPrinterIp', e.target.value)}
+                placeholder="مثال: 192.168.1.50"
+                dir="ltr"
+                className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-xs font-mono font-bold text-slate-900 focus:border-amber-500 outline-none"
+              />
+              <p className="text-[10px] text-slate-400">
+                عنوان IP الخاص بجهاز الاستقبال المتصل بالطابعة أو طابعة الشبكة
+              </p>
+            </div>
+
+            {/* Port */}
+            <div className="space-y-1">
+              <label className="block text-xs font-bold text-slate-700">
+                رقم المنفذ (Port):
+              </label>
+              <input
+                type="number"
+                value={settings.thermalPrinterPort || 8080}
+                onChange={(e) => handleChange('thermalPrinterPort', Number(e.target.value) || 8080)}
+                placeholder="8080 أو 9100"
+                dir="ltr"
+                className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-xs font-mono font-bold text-slate-900 focus:border-amber-500 outline-none"
+              />
+              <p className="text-[10px] text-slate-400">
+                افتراضي لخادم الطباعة: 8080 | لطابعات الشبكة المباشرة: 9100
+              </p>
+            </div>
+
+            {/* Endpoint Path */}
+            <div className="space-y-1">
+              <label className="block text-xs font-bold text-slate-700">
+                مسار أمر الطباعة (Endpoint):
+              </label>
+              <input
+                type="text"
+                value={settings.kioskPrinterEndpoint || '/print'}
+                onChange={(e) => handleChange('kioskPrinterEndpoint', e.target.value)}
+                placeholder="/print"
+                dir="ltr"
+                className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-xs font-mono font-bold text-slate-900 focus:border-amber-500 outline-none"
+              />
+              <p className="text-[10px] text-slate-400">
+                المسار البرمجي المخصص (افتراضي: /print)
+              </p>
+            </div>
+          </div>
+
+          {/* Station Auto-Print Option */}
+          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2">
+                <Laptop size={16} className="text-slate-700" />
+                <h4 className="text-xs font-bold text-slate-900">
+                  اعتماد هذا الجهاز الحالي كمحطة طباعة تلقائية لتذاكر الكيوسك (Reception Print Station)
+                </h4>
+              </div>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                إذا كان هذا الكمبيوتر هو المتصل بطابعة الفواتير (USB)، قم بتفعيل هذا الخيار ليقوم النظام بطباعة أي تذكرة تصدر من التابلت فورياً وبشكل صامت.
+              </p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer shrink-0">
+              <input 
+                type="checkbox" 
+                className="sr-only peer"
+                checked={!!settings.isReceptionPrinterStation}
+                onChange={(e) => {
+                  handleChange('isReceptionPrinterStation', e.target.checked);
+                  localStorage.setItem('smartcut_is_printer_station', e.target.checked ? 'true' : 'false');
+                }}
+              />
+              <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
+            </label>
+          </div>
+
+          {/* Test & Status Bar */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-2 border-t border-slate-100">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleTestNetworkPrinter}
+                disabled={printerTestStatus?.loading}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-sm cursor-pointer disabled:opacity-50"
+              >
+                <Printer size={15} />
+                <span>{printerTestStatus?.loading ? 'جاري الفحص...' : '🖨️ طباعة تجريبية واختبار الاتصال'}</span>
+              </button>
+
+              {printerTestStatus && !printerTestStatus.loading && (
+                <span className={`text-xs font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 ${
+                  printerTestStatus.success ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
+                }`}>
+                  {printerTestStatus.success ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
+                  <span>{printerTestStatus.message}</span>
+                </span>
+              )}
+            </div>
+
+            <div className="text-[11px] text-slate-500 bg-slate-100 px-3 py-1.5 rounded-xl">
+              💡 يمكنك تشغيل خادم الطباعة الخفيف على كمبيوتر الاستقبال عبر تشغيل ملف: <code className="text-amber-700 font-bold font-mono">scripts/start_printer_server.bat</code>
             </div>
           </div>
         </div>

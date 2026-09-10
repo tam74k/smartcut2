@@ -296,21 +296,35 @@ export const QueueService = {
       console.warn('Failed to add held invoice for kiosk ticket:', e);
     }
 
+    // حفظ الفاتورة المعلقة سحابياً في Supabase لتظهر فوراً على أجهزة الكاشير والاستقبال
+    try {
+      await DB.saveHeldInvoice(heldInvoice);
+    } catch (e) {
+      console.warn('Failed to save held invoice to cloud:', e);
+    }
+
     return { ticket, heldInvoice };
   },
 
   /**
-   * حذف / إلغاء الفاتورة المعلقة المقترنة بتذكرة الدور (في حال عدم الحضور)
+   * حذف / إلغاء الفاتورة المعلقة المقترنة بتذكرة الدور (في حال عدم الحضور أو الإلغاء)
    */
-  cancelHeldInvoiceForTicket(ticketId: string): void {
+  async cancelHeldInvoiceForTicket(ticketId: string): Promise<void> {
     try {
       const savedInvoices = localStorage.getItem('smartcut_held_invoices');
-      if (!savedInvoices) return;
-      const heldList: HeldInvoice[] = JSON.parse(savedInvoices);
-      const filtered = heldList.filter(h => h.queueTicketId !== ticketId && h.id !== ticketId);
-      localStorage.setItem('smartcut_held_invoices', JSON.stringify(filtered));
+      if (savedInvoices) {
+        const heldList: HeldInvoice[] = JSON.parse(savedInvoices);
+        const filtered = heldList.filter(h => h.queueTicketId !== ticketId && h.id !== ticketId);
+        localStorage.setItem('smartcut_held_invoices', JSON.stringify(filtered));
+      }
     } catch (e) {
-      console.warn('Failed to cancel held invoice:', e);
+      console.warn('Failed to cancel held invoice locally:', e);
+    }
+
+    try {
+      await DB.removeHeldInvoiceByTicket(ticketId);
+    } catch (e) {
+      console.warn('Failed to cancel held invoice in cloud:', e);
     }
   }
 };

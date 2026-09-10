@@ -48,6 +48,7 @@ import { QueueCallingScreen } from './components/QueueCallingScreen';
 import { SubscriptionPlansModal } from './components/SubscriptionPlansModal';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { SubscriptionBanner } from './components/SubscriptionBanner';
+import { printQueueSlipDirect } from './utils/printQueueSlip';
 import { AuthService, ROLE_LABELS } from './services/auth';
 import { SupabaseService } from './services/supabase';
 import { DB, dbClientToApp, dbEmployeeToApp, dbServiceToApp, toCamel } from './services/db';
@@ -56,7 +57,7 @@ import { QueueService } from './services/queueService';
 import { 
   AppSettings, Transaction, Booking, Invoice, ServiceItem, Category, Employee, Product, AppUser, 
   SaaSSubscription, Branch, Partner, PartnerTransaction, PromoCode, PromoCodeUsage, TipRecord, 
-  EmployeeCustody, FingerprintLog, WorkShift, Client 
+  EmployeeCustody, FingerprintLog, WorkShift, Client, HeldInvoice 
 } from './types';
 
 
@@ -311,6 +312,7 @@ export default function App() {
   const [categories, setCategories] = useState<Category[]>([{ id: 'all', name: 'الكل' }]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [activeBookingForPOS, setActiveBookingForPOS] = useState<Booking | null>(null);
+  const [activeHeldInvoiceForPOS, setActiveHeldInvoiceForPOS] = useState<HeldInvoice | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [purchaseInvoices, setPurchaseInvoices] = useState<any[]>([]);
@@ -670,6 +672,30 @@ export default function App() {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [settings.salonId, activeBranchId]);
+
+  // ── Reception Auto-Print Station Listener for Tablet Kiosk Slips ──────────────
+  useEffect(() => {
+    const isStation = settings.isReceptionPrinterStation || (typeof window !== 'undefined' && localStorage.getItem('smartcut_is_printer_station') === 'true');
+    if (!isStation) return;
+
+    const client = SupabaseService.getClient();
+    if (!client) return;
+
+    const channel = client
+      .channel('smartcut_kiosk_print_jobs')
+      .on('broadcast', { event: 'print_ticket' }, (payload: any) => {
+        const ticketData = payload?.payload?.data;
+        if (ticketData) {
+          console.log('[Reception Printer Station] Auto-printing kiosk ticket #', ticketData.queueNumber);
+          printQueueSlipDirect(ticketData);
+        }
+      })
+      .subscribe();
+
+    return () => {
+      client.removeChannel(channel);
+    };
+  }, [settings.isReceptionPrinterStation]);
 
   // ── 2. Lazy Loading Tab Data on Demand ──────────────────────────────────────────
   useEffect(() => {
@@ -1516,7 +1542,11 @@ export default function App() {
           isShiftOpen={shiftData.isOpen} 
           shiftDate={shiftData.date} 
           initialBooking={activeBookingForPOS} 
-          onClearInitial={() => setActiveBookingForPOS(null)} 
+          initialHeldInvoice={activeHeldInvoiceForPOS}
+          onClearInitial={() => {
+            setActiveBookingForPOS(null);
+            setActiveHeldInvoiceForPOS(null);
+          }} 
           onCheckoutComplete={handleCheckoutComplete} 
           clients={salonClients} 
           setClients={handleSetClients} 
@@ -1683,6 +1713,10 @@ export default function App() {
           employees={branchEmployees}
           clients={salonClients}
           onNavigateScreen={(screenName) => setActiveTab(screenName)}
+          onCompleteAndOpenPOS={(heldInvoice) => {
+            setActiveHeldInvoiceForPOS(heldInvoice);
+            setActiveTab('pos');
+          }}
         />
       );
       case 'bookings': return (
