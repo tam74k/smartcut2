@@ -7,6 +7,7 @@ export type ActionPermission =
   | 'pos_void' 
   | 'pos_reprint'
   | 'sales_return' 
+  | 'manage_queue'
   // Shifts & Treasuries
   | 'manage_shifts' 
   | 'edit_shift_cash'
@@ -627,6 +628,7 @@ export interface Booking {
   notes?: string;
   source?: 'online' | 'pos' | 'phone';
   bookingCode?: string;
+  queueNumber?: number;
 }
 
 export interface CartItem { 
@@ -637,6 +639,27 @@ export interface CartItem {
   referralEmployeeId?: string; // موظف الإحالة / فتح الشغل
   type: 'service' | 'product'; 
   price: number;
+}
+
+export interface QueueTicket {
+  id: string;
+  salonId: string;
+  branchId: string;
+  queueNumber: number; // رقم التسلسل (1, 2, 3...)
+  clientId?: string;
+  clientName: string;
+  phone: string;
+  status: 'waiting' | 'called' | 'in_service' | 'completed' | 'cancelled' | 'no_show';
+  source: 'kiosk' | 'booking' | 'pos';
+  bookingId?: string;
+  heldInvoiceId?: string;
+  assignedEmployeeId?: string;
+  assignedEmployeeName?: string;
+  checkInTime: string; // ISO string
+  calledAt?: string;
+  completedAt?: string;
+  notes?: string;
+  shiftDate?: string;
 }
 
 export interface HeldInvoice {
@@ -653,6 +676,10 @@ export interface HeldInvoice {
   beforePhotoUrl?: string;
   afterPhotoUrl?: string;
   note?: string;
+  queueNumber?: number;
+  queueTicketId?: string;
+  salonId?: string;
+  branchId?: string;
 }
 
 export interface Treasury { 

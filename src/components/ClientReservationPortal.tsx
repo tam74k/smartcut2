@@ -13,6 +13,7 @@ import {
 import { EvolutionApiService } from '../services/evolutionApiService';
 import { SubscriptionService } from '../services/subscriptionService';
 import { DB, dbClientToApp, dbEmployeeToApp, dbServiceToApp, toCamel } from '../services/db';
+import { QueueService } from '../services/queueService';
 import { 
   isDateBlocked, isHourBlocked, isStaffAvailableOnDate, 
   isStaffAvailableAtTime, generateSalonTimeSlots, isStaffBookedAtSlot 
@@ -657,6 +658,7 @@ export function ClientReservationPortal({
       : branchEmployees[0];
 
     const bookingCode = '#SC-' + Math.floor(100000 + Math.random() * 900000);
+    const queueNumber = QueueService.getNextQueueNumber(settings.salonId, selectedBranchId, selectedDate);
 
     const bookingServices: BookingService[] = selectedServicesList.map(s => ({
       id: 'bs-' + Math.random().toString(36).substr(2, 9),
@@ -682,7 +684,8 @@ export function ClientReservationPortal({
       totalAmount: totalBookingPrice,
       notes: bookingNotes,
       source: 'online',
-      bookingCode
+      bookingCode,
+      queueNumber
     };
 
     // Auto-sync client to Central Salon Clients database if not exists
@@ -709,7 +712,7 @@ export function ClientReservationPortal({
     setCompletedBookingResult(newBooking);
 
     // 2. Send WhatsApp confirmation message via Evolution API
-    const waText = `✨ *${settings.salonName || 'صالون العناية'}*\n\nأهلاً بكِ ${currentClient.name} ✨\nتم استلام طلب حجزك بنجاح وسنقوم بتأكيده فوراً.\n\n📍 *الفرع:* ${activeBranch.name}\n📅 *الموعد:* ${selectedDate} • ${selectedTimeSlot}\n✂️ *الخبير:* ${assignedStaff?.name || 'طاقم العمل المتميز'}\n📋 *الخدمات:* ${selectedServicesList.map(s => s.name).join('، ')}\n💰 *الإجمالي:* ${totalBookingPrice} ${currency}\n🔖 *كود الحجز:* ${bookingCode}\n\nشكراً لثقتكم بنا ونسعد بخدمتكم دائماً! ❤️`;
+    const waText = `✨ *${settings.salonName || 'صالون العناية'}*\n\nأهلاً بكِ ${currentClient.name} ✨\nتم استلام طلب حجزك بنجاح وسنقوم بتأكيده فوراً.\n\n🎟️ *رقم دورك المبدئي بالصالون:* #${queueNumber}\n📍 *الفرع:* ${activeBranch.name}\n📅 *الموعد:* ${selectedDate} • ${selectedTimeSlot}\n✂️ *الخبير:* ${assignedStaff?.name || 'طاقم العمل المتميز'}\n📋 *الخدمات:* ${selectedServicesList.map(s => s.name).join('، ')}\n💰 *الإجمالي:* ${totalBookingPrice} ${currency}\n🔖 *كود الحجز:* ${bookingCode}\n\nشكراً لثقتكم بنا ونسعد بخدمتكم دائماً! ❤️`;
 
     try {
       if (EvolutionApiService.isConfigured(settings, selectedBranchId)) {
@@ -1674,8 +1677,13 @@ export function ClientReservationPortal({
                 <div key={b.id} className="bg-slate-900 border border-slate-800 rounded-3xl p-4 shadow-lg space-y-3">
                   <div className="flex items-start justify-between">
                     <div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-black text-white text-sm font-mono">{b.bookingCode || b.id.slice(0, 8)}</span>
+                        {b.queueNumber && (
+                          <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono">
+                            🎟️ دور #{b.queueNumber}
+                          </span>
+                        )}
                         <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full ${
                           b.status === 'confirmed'
                             ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
@@ -1743,6 +1751,12 @@ export function ClientReservationPortal({
               <p className="text-xs text-slate-400 mt-1">
                 كود الحجز الخاص بك: <strong className="text-emerald-400 font-mono text-sm">{completedBookingResult.bookingCode}</strong>
               </p>
+              {completedBookingResult.queueNumber && (
+                <div className="mt-2.5 py-2 px-4 bg-amber-500/15 border border-amber-500/40 rounded-2xl inline-block text-amber-300 font-bold text-xs shadow-sm">
+                  <span>🎟️ رقم دورك المبدئي بالصالون: </span>
+                  <strong className="font-mono text-base text-amber-400 font-black">#{completedBookingResult.queueNumber}</strong>
+                </div>
+              )}
             </div>
 
             <div className="bg-slate-950 p-3 rounded-2xl border border-slate-800 text-xs text-slate-300 space-y-1">

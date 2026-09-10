@@ -15,6 +15,7 @@ import {
   isStaffAvailableAtTime, timeSlotToMinutes, generateSalonTimeSlots, 
   isStaffBookedAtSlot, minutesToFormattedSlot 
 } from '../utils/bookingAvailability';
+import { QueueService } from '../services/queueService';
 
 export function BookingsScreen({ 
   settings, 
@@ -386,6 +387,9 @@ export function BookingsScreen({
       return;
     }
 
+    const bBranchId = editingBooking?.branchId || activeBranchId || mainBranchId;
+    const queueNumber = editingBooking?.queueNumber || QueueService.getNextQueueNumber(settings.salonId, bBranchId, newBooking.date);
+
     const booking: Booking = {
       id: editingBooking ? editingBooking.id : 'B-' + Math.random().toString(36).substr(2, 9).toUpperCase(),
       clientName: newBooking.clientName!,
@@ -396,7 +400,8 @@ export function BookingsScreen({
       services: newBooking.services || [],
       advancePayments: newBooking.advancePayments || [],
       totalAmount: (newBooking.services || []).reduce((sum, s) => sum + s.price, 0),
-      branchId: editingBooking?.branchId || activeBranchId || mainBranchId
+      branchId: bBranchId,
+      queueNumber
     };
 
     if (editingBooking) {
@@ -749,6 +754,7 @@ export function BookingsScreen({
               <table className="w-full text-right text-xs">
                 <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
                   <tr>
+                    <th className="p-3.5 text-center">رقم الدور</th>
                     <th className="p-3.5">العميل</th>
                     <th className="p-3.5">الجوال</th>
                     <th className="p-3.5">الخدمات المحجوزة</th>
@@ -762,7 +768,7 @@ export function BookingsScreen({
                 <tbody className="divide-y divide-slate-100">
                   {tableFilteredBookings.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="p-12 text-center text-slate-400 font-bold">
+                      <td colSpan={9} className="p-12 text-center text-slate-400 font-bold">
                         لا توجد أي حجوزات تطابق البحث في هذه الفترة
                       </td>
                     </tr>
@@ -771,6 +777,15 @@ export function BookingsScreen({
                       const badge = getStatusBadge(b.status);
                       return (
                         <tr key={b.id} className="hover:bg-slate-50 transition-colors">
+                          <td className="p-3.5 text-center">
+                            {b.queueNumber ? (
+                              <span className="font-mono font-black text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-lg text-xs">
+                                #{b.queueNumber}
+                              </span>
+                            ) : (
+                              <span className="text-slate-300 font-mono">-</span>
+                            )}
+                          </td>
                           <td className="p-3.5">
                             <div className="flex items-center gap-1.5">
                               <span className="font-bold text-slate-900">{b.clientName}</span>

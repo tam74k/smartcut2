@@ -9,7 +9,7 @@ import {
   Calendar, Wallet, Receipt, Banknote, FileText,
   UsersRound, List, Menu, X, Printer, Package, Truck, 
   ShoppingCart, ClipboardList, Shield, User as UserIcon, Sparkles, BarChart3, Boxes, Bot,
-  AlertCircle, Smartphone, ShieldAlert, Tag, HeartHandshake, Briefcase, Fingerprint
+  AlertCircle, Smartphone, ShieldAlert, Tag, HeartHandshake, Briefcase, Fingerprint, Radio
 } from 'lucide-react';
 import { POSScreen } from './components/POSScreen';
 import { SettingsScreen } from './components/SettingsScreen';
@@ -43,6 +43,8 @@ import { LoginScreen } from './components/LoginScreen';
 import { BarberLoginScreen } from './components/BarberLoginScreen';
 import { BarberPortalScreen } from './components/BarberPortalScreen';
 import { ClientReservationPortal } from './components/ClientReservationPortal';
+import { KioskTabletScreen } from './components/KioskTabletScreen';
+import { QueueCallingScreen } from './components/QueueCallingScreen';
 import { SubscriptionPlansModal } from './components/SubscriptionPlansModal';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { SubscriptionBanner } from './components/SubscriptionBanner';
@@ -50,6 +52,7 @@ import { AuthService, ROLE_LABELS } from './services/auth';
 import { SupabaseService } from './services/supabase';
 import { DB, dbClientToApp, dbEmployeeToApp, dbServiceToApp, toCamel } from './services/db';
 import { SubscriptionService } from './services/subscriptionService';
+import { QueueService } from './services/queueService';
 import { 
   AppSettings, Transaction, Booking, Invoice, ServiceItem, Category, Employee, Product, AppUser, 
   SaaSSubscription, Branch, Partner, PartnerTransaction, PromoCode, PromoCodeUsage, TipRecord, 
@@ -87,7 +90,19 @@ export default function App() {
     return false;
   };
 
+  // Dedicated Route for Standalone Tablet Kiosk Check-In (/kiosk, ?kiosk=true, #kiosk)
+  const isKioskQuery = () => {
+    if (typeof window === 'undefined') return false;
+    const path = window.location.pathname.toLowerCase();
+    const hash = window.location.hash.toLowerCase();
+    const search = window.location.search.toLowerCase();
+    if (path.endsWith('/kiosk') || path.includes('/kiosk/') || path.endsWith('/queue') || path.includes('/queue/')) return true;
+    if (hash.includes('kiosk') || hash.includes('queue') || search.includes('kiosk') || search.includes('portal=kiosk')) return true;
+    return false;
+  };
+
   const [isReservationRoute, setIsReservationRoute] = useState<boolean>(isReservationQuery);
+  const [isKioskRoute, setIsKioskRoute] = useState<boolean>(isKioskQuery);
 
   useEffect(() => {
     const checkRoutes = () => {
@@ -96,6 +111,7 @@ export default function App() {
       const search = window.location.search.toLowerCase();
       setIsBarberRoute(path.endsWith('/barber') || path.includes('/barber/') || path.endsWith('/staff') || path.includes('/staff/') || hash.includes('barber') || search.includes('barber') || search.includes('portal=barber'));
       setIsReservationRoute(isReservationQuery());
+      setIsKioskRoute(isKioskQuery());
     };
     window.addEventListener('popstate', checkRoutes);
     window.addEventListener('hashchange', checkRoutes);
@@ -1308,6 +1324,9 @@ export default function App() {
     };
     DB.saveWorkShift(closedShift);
     
+    // تصفير عداد الأدوار للوردية القادمة ليبدأ من 1
+    QueueService.resetShiftQueue(settings.salonId, activeBranchId, shiftData.date);
+
     setShiftData({ isOpen: false, date: '', initialCash: 0 });
     setShowCloseModal(false);
   };
@@ -1656,6 +1675,16 @@ export default function App() {
           branches={branches}
         />
       );
+      case 'queue_calling': return (
+        <QueueCallingScreen
+          settings={settings}
+          branches={branches}
+          activeBranchId={activeBranchId}
+          employees={branchEmployees}
+          clients={salonClients}
+          onNavigateScreen={(screenName) => setActiveTab(screenName)}
+        />
+      );
       case 'bookings': return (
         <BookingsScreen 
           settings={settings} 
@@ -1880,6 +1909,7 @@ export default function App() {
       { id: 'owner_portal', icon: Smartphone, label: '📱 نبض المالك' }
     ] : []),
     { id: 'dashboard', icon: LayoutDashboard, label: 'لوحة التحكم' },
+    { id: 'queue_calling', icon: Radio, label: '📢 المناداة وطابور الانتظار' },
     { id: 'bookings', icon: Calendar, label: 'الحجوزات' },
     { id: 'pos', icon: Scissors, label: 'نقطة البيع (POS)' },
     { id: 'invoices', icon: Receipt, label: 'الفواتير' },
@@ -2039,6 +2069,23 @@ export default function App() {
         }}
         onCancelBooking={(bId) => {
           handleSetBookings((prev: Booking[]) => prev.map(b => b.id === bId ? { ...b, status: 'cancelled' } : b));
+        }}
+        onSwitchToMainApp={() => {
+          window.location.href = '/';
+        }}
+      />
+    );
+  }
+
+  // 3B. STANDALONE TABLET KIOSK CHECK-IN ROUTE (/kiosk or ?kiosk=true)
+  if (isKioskRoute) {
+    return (
+      <KioskTabletScreen
+        settings={settings}
+        branches={branches}
+        clients={clients}
+        onSaveClient={(newClient) => {
+          handleSetClients((prev: Client[]) => [newClient, ...prev.filter(c => c.id !== newClient.id && c.phone !== newClient.phone)]);
         }}
         onSwitchToMainApp={() => {
           window.location.href = '/';

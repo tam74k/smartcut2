@@ -28,6 +28,7 @@ export const SCREEN_CATALOG: ScreenMeta[] = [
   { id: 'barber_portal', name: '✂️ بوابة الفني / الحلاق المستقلة', category: 'الرئيسية', description: 'شاشة خاصة بالفني لمتابعة حجوزاته والعمولات والخدمات والتارجت والدوام والسلف' },
   { id: 'dashboard', name: 'لوحة التحكم والملخص العام', category: 'الرئيسية', description: 'عرض مؤشرات الأداء، الحجوزات السريعة، والإحصائيات العامة' },
   { id: 'pos', name: 'نقطة البيع (الكاشير POS)', category: 'المبيعات', description: 'إنشاء الفواتير، اختيار الخدمات والمنتجات، والدفع وطباعة الفاتورة' },
+  { id: 'queue_calling', name: '📢 شاشة المتابعة والمناداة (طابور الانتظار)', category: 'المبيعات', description: 'متابعة العملاء الحاضرين، تسكينهم مع الموظفين، والمناداة عليهم بالدور' },
   { id: 'bookings', name: 'الحجوزات والمواعيد', category: 'المبيعات', description: 'جدولة مواعيد العملاء مع الفنيين ومتابعة حالة الحجز' },
   { id: 'invoices', name: 'سجل الفواتير والمبيعات', category: 'المبيعات', description: 'استعراض فواتير المبيعات، إعادة الطباعة، وتتبع تفاصيل الدفع' },
   { id: 'services', name: 'الخدمات والتصنيفات', category: 'الكتالوج والخدمات', description: 'إضافة وتعديل الخدمات والأسعار ومدد التنفيذ والتصنيفات' },
@@ -59,6 +60,7 @@ export const ACTION_CATALOG: ActionMeta[] = [
   { id: 'pos_void', name: 'إلغاء الفاتورة / حذف البنود أثناء البيع', category: 'نقطة البيع والمبيعات', description: 'حذف عناصر من السلة أو إفراغ الفاتورة قبل الدفع' },
   { id: 'pos_reprint', name: 'إعادة طباعة الفواتير السابقة', category: 'نقطة البيع والمبيعات', description: 'طباعة نسخة ثانية من أي فاتورة مبيعات سابقة' },
   { id: 'sales_return', name: 'إنشاء فواتير مرتجع مبيعات', category: 'نقطة البيع والمبيعات', description: 'استرجاع مبالغ فواتير المبيعات وإلغاء تأثيرها المالي' },
+  { id: 'manage_queue', name: 'إدارة صف الانتظار والمناداة على العملاء', category: 'نقطة البيع والمبيعات', description: 'التحكم في ترتيب الانتظار، المناداة وتسكين العملاء مع الموظفين' },
 
   // Shifts & Treasuries
   { id: 'manage_shifts', name: 'فتح وإغلاق الوردية وإصدار تقرير Z', category: 'الورديات والخزائن', description: 'إمكانية بدء وردية جديدة أو إغلاقها وتصفير الخزائن وطباعة التقرير' },
@@ -133,20 +135,20 @@ export const DEFAULT_ROLE_PRESETS: Record<UserRole, { screens: string[]; actions
     actions: ['*']
   },
   supervisor: {
-    screens: ['dashboard', 'pos', 'bookings', 'invoices', 'services', 'warehouse', 'clients', 'employees', 'treasury', 'expenses', 'reports'],
-    actions: ['pos_discount', 'pos_void', 'pos_reprint', 'sales_return', 'manage_shifts', 'edit_shift_cash', 'treasury_deposit', 'treasury_withdraw', 'treasury_transfer', 'treasury_view_balance', 'manage_expenses', 'manage_products', 'manage_inventory', 'manage_employees', 'manage_salaries', 'manage_hr', 'manage_clients', 'manage_booking_settings', 'view_reports', 'export_excel']
+    screens: ['dashboard', 'pos', 'queue_calling', 'bookings', 'invoices', 'services', 'warehouse', 'clients', 'employees', 'treasury', 'expenses', 'reports'],
+    actions: ['pos_discount', 'pos_void', 'pos_reprint', 'sales_return', 'manage_queue', 'manage_shifts', 'edit_shift_cash', 'treasury_deposit', 'treasury_withdraw', 'treasury_transfer', 'treasury_view_balance', 'manage_expenses', 'manage_products', 'manage_inventory', 'manage_employees', 'manage_salaries', 'manage_hr', 'manage_clients', 'manage_booking_settings', 'view_reports', 'export_excel']
   },
   warehouse_manager: {
     screens: ['dashboard', 'warehouse', 'products', 'suppliers', 'purchases', 'inventory'],
     actions: ['manage_products', 'import_products_excel', 'manage_suppliers', 'manage_purchases', 'manage_inventory', 'export_excel']
   },
   cashier: {
-    screens: ['pos', 'bookings', 'invoices', 'clients', 'expenses', 'treasury'],
-    actions: ['pos_discount', 'pos_reprint', 'manage_shifts', 'treasury_deposit', 'manage_expenses']
+    screens: ['pos', 'queue_calling', 'bookings', 'invoices', 'clients', 'expenses', 'treasury'],
+    actions: ['pos_discount', 'pos_reprint', 'manage_queue', 'manage_shifts', 'treasury_deposit', 'manage_expenses']
   },
   receptionist: {
-    screens: ['bookings', 'clients', 'services', 'complaints'],
-    actions: ['pos_reprint', 'manage_clients']
+    screens: ['queue_calling', 'bookings', 'clients', 'services', 'complaints'],
+    actions: ['pos_reprint', 'manage_queue', 'manage_clients']
   },
   accountant: {
     screens: ['dashboard', 'invoices', 'warehouse', 'treasury', 'expenses', 'reports'],
@@ -161,8 +163,8 @@ export const DEFAULT_ROLE_PRESETS: Record<UserRole, { screens: string[]; actions
     actions: ['*']
   },
   custom: {
-    screens: ['pos', 'bookings', 'invoices'],
-    actions: ['pos_discount', 'pos_reprint']
+    screens: ['pos', 'queue_calling', 'bookings', 'invoices'],
+    actions: ['pos_discount', 'pos_reprint', 'manage_queue']
   }
 };
 

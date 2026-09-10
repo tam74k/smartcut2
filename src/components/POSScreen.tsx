@@ -2300,6 +2300,11 @@ export function POSScreen({
                               <h4 className="font-black text-xs text-slate-900">
                                 {held.client?.name || held.clientSearch || 'عميل نقدي'}
                               </h4>
+                              {held.queueNumber && (
+                                <span className="text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-full font-mono">
+                                  🎟️ دور #{held.queueNumber}
+                                </span>
+                              )}
                               {held.client?.phone && (
                                 <span className="text-[10px] text-slate-500 font-mono" dir="ltr">{held.client.phone}</span>
                               )}
