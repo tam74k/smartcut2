@@ -56,6 +56,11 @@ export function QueueCallingScreen({
       }
     };
 
+    // مزامنة حجوزات اليوم وتحويلها لتذاكر انتظار تلقائياً عند فتح الشاشة
+    QueueService.syncTodayBookingsToQueue(settings.salonId, selectedBranchId).then(() => {
+      if (isMounted) load();
+    }).catch(err => console.error('Error syncing today bookings:', err));
+
     load();
 
     // 1. اشتراك لحظي عبر Real-time WebSockets

@@ -381,14 +381,16 @@ export function BookingsScreen({
   };
 
   // Save Booking
-  const saveBooking = () => {
+  // Save Booking
+  const saveBooking = async () => {
     if (!newBooking.clientName || !newBooking.phone || !newBooking.date || !newBooking.time) {
       alert('يرجى ملء جميع الحقول الإلزامية: رقم الجوال، اسم العميل، التاريخ، والوقت');
       return;
     }
 
     const bBranchId = editingBooking?.branchId || activeBranchId || mainBranchId;
-    const queueNumber = editingBooking?.queueNumber || QueueService.getNextQueueNumber(settings.salonId, bBranchId, newBooking.date);
+    const queueNumber = editingBooking?.queueNumber 
+      || await QueueService.getNextQueueNumberAsync(settings.salonId, bBranchId, newBooking.date);
 
     const booking: Booking = {
       id: editingBooking ? editingBooking.id : 'B-' + Math.random().toString(36).substr(2, 9).toUpperCase(),
@@ -411,22 +413,32 @@ export function BookingsScreen({
     }
 
     // Auto add client to overall salon clients database if new
-    if (setClients && newBooking.phone) {
+    let matchedClient = clients.find(c => c.phone && c.phone.trim() === newBooking.phone!.trim());
+    if (setClients && newBooking.phone && !matchedClient) {
       const cleanInput = newBooking.phone.trim();
-      const clientExists = clients.some(c => c.phone && c.phone.trim() === cleanInput);
-      if (!clientExists) {
-        const newClientRecord: Client = {
-          id: 'C-' + Date.now(),
-          name: newBooking.clientName.trim(),
-          phone: cleanInput,
-          email: newBooking.customerEmail || '',
-          notes: 'عميل مسجل تلقائياً من شاشة الحجوزات',
-          loyaltyPoints: 0,
-          cashback: 0,
-          createdAt: new Date().toISOString()
-        };
-        setClients([newClientRecord, ...clients]);
-      }
+      matchedClient = {
+        id: 'C-' + Date.now(),
+        name: newBooking.clientName.trim(),
+        phone: cleanInput,
+        email: newBooking.customerEmail || '',
+        notes: 'عميل مسجل تلقائياً من شاشة الحجوزات',
+        loyaltyPoints: 0,
+        cashback: 0,
+        createdAt: new Date().toISOString()
+      };
+      setClients([matchedClient, ...clients]);
+    }
+
+    // إدراج الحجز تلقائياً في شاشة المناداة وفتح فاتورة معلقة بالكاشير
+    try {
+      await QueueService.createTicketFromBooking({
+        booking,
+        salonId: settings.salonId,
+        branchId: bBranchId,
+        client: matchedClient
+      });
+    } catch (err) {
+      console.warn('Failed to auto-create queue ticket for booking:', err);
     }
 
     setShowAddModal(false);
@@ -446,6 +458,7 @@ export function BookingsScreen({
     if (window.confirm('هل أنت متأكد من إلغاء هذا الحجز؟')) {
       setBookings(bookings.map(b => b.id === id ? { ...b, status: 'cancelled' } : b));
       setSelectedBookingDetails(null);
+      QueueService.updateTicket('QT-B-' + id, { status: 'cancelled' });
     }
   };
 
@@ -464,6 +477,12 @@ export function BookingsScreen({
         <h3 style="font-size: 18px; font-weight: bold; border: 1px solid #000; display: inline-block; padding: 5px 15px; margin-top: 10px;">إيصال حجز موعد مؤكد</h3>
       </div>
       <div style="margin-bottom: 20px; font-size: 14px;">
+        ${booking.queueNumber ? `
+          <div style="background: #fef3c7; border: 2px solid #f59e0b; border-radius: 8px; padding: 8px; text-align: center; margin-bottom: 12px;">
+            <span style="font-size: 12px; color: #92400e; font-weight: bold; display: block;">رقم الدور بالصالون</span>
+            <strong style="font-size: 28px; color: #b45309; font-weight: 900;">#${booking.queueNumber}</strong>
+          </div>
+        ` : ''}
         <p><strong>رقم الحجز:</strong> ${booking.id}</p>
         <p><strong>تاريخ الموعد:</strong> ${booking.date}</p>
         <p><strong>الوقت:</strong> ${booking.time}</p>

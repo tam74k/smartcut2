@@ -97,6 +97,54 @@ export interface DayTimesheetRow {
   netDaily: number;
 }
 
+/**
+ * Checks whether an employee's salary has already been disbursed for the given period/month.
+ */
+export const getEmployeeSalaryDisbursementRecord = (
+  emp: Employee, 
+  start: string, 
+  end: string, 
+  monthStr?: string
+): { isPaid: boolean; record?: EmployeeFinancialRecord } => {
+  const targetMonth = monthStr || start.slice(0, 7); // e.g. "2026-09"
+  const records = emp.financialRecords || [];
+
+  for (const r of records) {
+    const isSalaryRecord = r.type === 'salary' || r.id?.startsWith('FIN-SAL-') || r.note?.includes('مسير رواتب') || r.note?.includes('تم استلام صافي الراتب');
+    if (!isSalaryRecord) continue;
+
+    // 1. Explicit period match
+    if (r.payrollPeriod) {
+      if (r.payrollPeriod.month && r.payrollPeriod.month === targetMonth) {
+        return { isPaid: true, record: r };
+      }
+      if (r.payrollPeriod.startDate === start && r.payrollPeriod.endDate === end) {
+        return { isPaid: true, record: r };
+      }
+      if (r.payrollPeriod.startDate?.startsWith(targetMonth)) {
+        return { isPaid: true, record: r };
+      }
+    }
+
+    // 2. Note inspection (notes contain e.g. "فترة 2026-09-01 إلى 2026-09-30" or "شهر 2026-09")
+    if (r.note) {
+      if (r.note.includes(targetMonth)) {
+        return { isPaid: true, record: r };
+      }
+      if (r.note.includes(start) && r.note.includes(end)) {
+        return { isPaid: true, record: r };
+      }
+    }
+
+    // 3. Fallback: If record date is in targetMonth and mentions salary disbursement
+    if (r.date?.startsWith(targetMonth) && (r.note?.includes('صافي الراتب') || r.id?.startsWith('FIN-SAL-') || r.note?.includes('مسير رواتب'))) {
+      return { isPaid: true, record: r };
+    }
+  }
+
+  return { isPaid: false };
+};
+
 export function HRScreen({ 
   settings, 
   employees, 
@@ -132,6 +180,31 @@ export function HRScreen({
       setSelectedEmpId(activeEmployees[0].id);
     }
   }, [activeEmployees, selectedEmpId]);
+
+  // تصحيح تلقائي لأي سلف سابقة تم تسجيلها كرواتب بالخطأ وتحويلها إلى رواتب رسمية
+  useEffect(() => {
+    let hasChanges = false;
+    const cleanedEmployees = employees.map(emp => {
+      let empChanged = false;
+      const cleanedRecords = (emp.financialRecords || []).map(r => {
+        if (r.type === 'advance' && (r.id?.startsWith('FIN-SAL-') || r.note?.includes('مسير رواتب') || r.note?.includes('تم استلام صافي الراتب'))) {
+          empChanged = true;
+          return { ...r, type: 'salary' as const };
+        }
+        return r;
+      });
+      if (empChanged) {
+        hasChanges = true;
+        return { ...emp, financialRecords: cleanedRecords };
+      }
+      return emp;
+    });
+
+    if (hasChanges) {
+      console.log('[HRScreen] Automatically cleaned up legacy salary records misclassified as advances.');
+      setEmployees(cleanedEmployees);
+    }
+  }, [employees]);
 
   // Fallback internal logs state to guarantee resilience if prop is missing or setter is undefined
   const [localLogs, setLocalLogs] = useState<FingerprintLog[]>(fingerprintLogs || []);
@@ -574,7 +647,8 @@ export function HRScreen({
         let commissionPaid = 0;
 
         emp.financialRecords?.filter(r => r.date?.startsWith(dateStr)).forEach(r => {
-          if (r.type === 'advance') advances += (r.amount || 0);
+          const isSalaryRecord = r.type === 'salary' || (r.type === 'advance' && (r.id?.startsWith('FIN-SAL-') || r.note?.includes('مسير رواتب') || r.note?.includes('تم استلام صافي الراتب')));
+          if (r.type === 'advance' && !isSalaryRecord) advances += (r.amount || 0);
           if (r.type === 'bonus') bonuses += (r.amount || 0);
           if (r.type === 'penalty_cash') specialPenalty += (r.amount || 0);
           if (r.type === 'penalty_days') specialPenalty += (r.days || 0) * baseDailyRate;
@@ -1691,6 +1765,8 @@ export function HRScreen({
       const totalDeductions = totalAdvances + totalPenalties + totalDelaysDeduction + totalAbsenceDeduction + totalPermissionDeduction + totalCommissionsPaid;
       const netPayable = Math.max(0, earnedBaseSalary + totalCommissions + totalBonuses + totalOvertimeAmount - totalDeductions);
 
+      const paidCheck = getEmployeeSalaryDisbursementRecord(emp, startDate, endDate, selectedMonth);
+
       return {
         emp,
         presentDaysCount,
@@ -1703,16 +1779,37 @@ export function HRScreen({
         totalPenalties,
         totalOvertimeAmount,
         totalDeductions,
-        netPayable
+        netPayable,
+        isAlreadyPaid: paidCheck.isPaid,
+        paidRecord: paidCheck.record
       };
     });
-  }, [activeEmployees, timesheetRows, hrConfig]);
+  }, [activeEmployees, timesheetRows, hrConfig, startDate, endDate, selectedMonth, employees]);
 
   const handleOpenDisbursementModal = () => {
-    setSelectedDisbursementEmpIds(activeEmployees.map(e => e.id));
+    // تحديد الموظفين الذين لم يتم صرف رواتبهم بعد لهذا الشهر ولهم مبالغ مستحقة
+    const unpaidEmpIds = payrollDisbursementData.filter(d => !d.isAlreadyPaid && d.netPayable > 0).map(d => d.emp.id);
+    setSelectedDisbursementEmpIds(unpaidEmpIds);
     setDisbursementDate(now.toISOString().split('T')[0]);
     setDisbursementTreasuryId(settings.treasuries[0]?.id || '');
     setShowDisbursementModal(true);
+  };
+
+  const handleReprintDisbursementVoucher = (item: (typeof payrollDisbursementData)[0]) => {
+    const treasuryName = settings.treasuries.find(t => t.id === item.paidRecord?.treasuryId || t.id === disbursementTreasuryId)?.name || 'الخزنة';
+    printThermalFinancialVoucher(settings, {
+      voucherType: 'salary',
+      voucherNumber: item.paidRecord?.id || `SAL-${Math.floor(100000 + Math.random() * 900000)}`,
+      date: item.paidRecord?.date ? `${item.paidRecord.date} ${new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}` : `${disbursementDate} ${new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}`,
+      employeeName: item.emp.name,
+      employeeCode: item.emp.fingerprintCode || item.emp.id,
+      employeeRole: item.emp.role,
+      amount: item.paidRecord?.amount ?? item.netPayable,
+      treasuryName: treasuryName,
+      note: item.paidRecord?.note || `إعادة طباعة سند صرف مسير رواتب شهر (${selectedMonth}) فترة (${startDate} إلى ${endDate})`,
+      issuedBy: currentUser?.name || 'مدير النظام',
+      payrollPeriod: `${startDate} إلى ${endDate}`
+    });
   };
 
   const handleDisburseSalaries = (targetEmpIds: string[]) => {
@@ -1726,16 +1823,24 @@ export function HRScreen({
     }
 
     const treasuryName = settings.treasuries.find(t => t.id === disbursementTreasuryId)?.name || 'الخزنة';
-    const targets = payrollDisbursementData.filter(d => targetEmpIds.includes(d.emp.id) && d.netPayable > 0);
+
+    // 1. فحص ومنع الصرف المتكرر لنفس الشهر
+    const alreadyPaidSelected = payrollDisbursementData.filter(d => targetEmpIds.includes(d.emp.id) && d.isAlreadyPaid);
+    if (alreadyPaidSelected.length > 0) {
+      const details = alreadyPaidSelected.map(d => `• ${d.emp.name}: تم الصرف مسبقاً بتاريخ (${d.paidRecord?.date}) بمبلغ ${d.paidRecord?.amount} ${settings.currency}`).join('\n');
+      alert(`⚠️ تنبيه نظام الرواتب (منع الازدواجية والتكرار):\nتم صرف راتب هذا الشهر (${selectedMonth}) مسبقاً للموظفين التاليين:\n${details}\n\nسيتم استبعادهم فوراً لمنع التكرار والصرف لمن لم يُصرف لهم فقط.`);
+    }
+
+    // ترشيح الموظفين المستحقين الذين لم يُصرف لهم راتب هذا الشهر ولهم صافي مستحق
+    const targets = payrollDisbursementData.filter(d => targetEmpIds.includes(d.emp.id) && !d.isAlreadyPaid && d.netPayable > 0);
 
     if (targets.length === 0) {
-      alert('لا توجد مبالغ مستحقة للصرف للموظفين المحددين');
+      alert('لا توجد مبالغ مستحقة للصرف للموظفين المحددين (إما تم صرف رواتبهم مسبقاً لهذا الشهر أو صافي الراتب 0).');
       return;
     }
 
-    // 1. Create financial transactions for treasury deduction
+    // 2. إنشاء الحركات المالية لخروج الرواتب من الخزينة
     const newTrxs: Transaction[] = [];
-    let updatedEmployees = [...employees];
 
     targets.forEach(item => {
       const trx: Transaction = {
@@ -1744,34 +1849,14 @@ export function HRScreen({
         type: 'out',
         amount: item.netPayable,
         category: 'salaries',
-        description: `صرف راتب الموظف (${item.emp.name}) عن فترة (${startDate} إلى ${endDate}) - ${disbursementNote}`,
+        description: `صرف راتب الموظف (${item.emp.name}) عن شهر (${selectedMonth}) الفترة (${startDate} إلى ${endDate}) - ${disbursementNote}`,
         treasury: disbursementTreasuryId
       };
       newTrxs.push(trx);
 
-      // Record disbursement voucher on employee
-      const finRecord: EmployeeFinancialRecord = {
-        id: 'FIN-SAL-' + Math.random().toString(36).substring(2, 9),
-        date: disbursementDate,
-        type: 'advance',
-        amount: item.netPayable,
-        treasuryId: disbursementTreasuryId,
-        note: `مسير رواتب: تم استلام صافي الراتب (${item.netPayable.toFixed(2)} ${settings.currency}) عن فترة ${startDate} إلى ${endDate}`
-      };
-
-      updatedEmployees = updatedEmployees.map(e => {
-        if (e.id === item.emp.id) {
-          return {
-            ...e,
-            financialRecords: [...(e.financialRecords || []), finRecord]
-          };
-        }
-        return e;
-      });
-
-      // Print Thermal Salary Slip Receipt for Employee to Sign
+      // طباعة سند صرف الراتب الحراري 80mm
       printThermalFinancialVoucher(settings, {
-        voucherType: 'advance',
+        voucherType: 'salary', // نوع السند: راتب رسمي وليس سلفة
         voucherNumber: `SAL-${Math.floor(100000 + Math.random() * 900000)}`,
         date: `${disbursementDate} ${new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}`,
         employeeName: item.emp.name,
@@ -1779,9 +1864,32 @@ export function HRScreen({
         employeeRole: item.emp.role,
         amount: item.netPayable,
         treasuryName: treasuryName,
-        note: `مسير رواتب معتمد عن فترة (${startDate} إلى ${endDate}) | الراتب المستحق: ${item.earnedBaseSalary.toFixed(2)} + العمولات: ${item.totalCommissions.toFixed(2)} - المستقطعات والسلف: ${item.totalDeductions.toFixed(2)}`,
-        issuedBy: currentUser?.name || 'مدير النظام'
+        note: `مسير رواتب معتمد عن شهر (${selectedMonth}) فترة (${startDate} إلى ${endDate}) | الراتب المستحق: ${item.earnedBaseSalary.toFixed(2)} + العمولات: ${item.totalCommissions.toFixed(2)} - المستقطعات والسلف: ${item.totalDeductions.toFixed(2)}`,
+        issuedBy: currentUser?.name || 'مدير النظام',
+        payrollPeriod: `${startDate} إلى ${endDate}`
       });
+    });
+
+    // 3. توثيق حركة صرف الراتب في الملف المالي للموظف بنوع 'salary' (وليس 'advance')
+    const updatedEmployees = employees.map(e => {
+      const target = targets.find(t => t.emp.id === e.id);
+      if (!target) return e;
+
+      const finRecord: EmployeeFinancialRecord = {
+        id: 'FIN-SAL-' + Math.random().toString(36).substring(2, 9),
+        date: disbursementDate,
+        type: 'salary', // نوع الراتب الرسمي لمنع تسجيله كسلفة
+        amount: target.netPayable,
+        treasuryId: disbursementTreasuryId,
+        note: `مسير رواتب: تم استلام صافي الراتب (${target.netPayable.toFixed(2)} ${settings.currency}) عن شهر (${selectedMonth}) فترة ${startDate} إلى ${endDate}`,
+        payrollPeriod: { startDate, endDate, month: selectedMonth },
+        periodKey: `${selectedMonth}_${target.emp.id}`
+      };
+
+      return {
+        ...e,
+        financialRecords: [...(e.financialRecords || []), finRecord]
+      };
     });
 
     if (setTransactions && transactions) {
@@ -2506,18 +2614,26 @@ export function HRScreen({
                   <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 sticky top-0 z-10">
                     <tr>
                       <th className="p-3 text-center w-10">
-                        <input
-                          type="checkbox"
-                          checked={selectedDisbursementEmpIds.length === activeEmployees.length}
-                          onChange={e => {
-                            if (e.target.checked) {
-                              setSelectedDisbursementEmpIds(activeEmployees.map(emp => emp.id));
-                            } else {
-                              setSelectedDisbursementEmpIds([]);
-                            }
-                          }}
-                          className="w-4 h-4 text-emerald-600 rounded cursor-pointer"
-                        />
+                        {(() => {
+                          const payableEmps = payrollDisbursementData.filter(d => !d.isAlreadyPaid && d.netPayable > 0);
+                          const isAllPayableSelected = payableEmps.length > 0 && payableEmps.every(d => selectedDisbursementEmpIds.includes(d.emp.id));
+                          return (
+                            <input
+                              type="checkbox"
+                              checked={isAllPayableSelected}
+                              disabled={payableEmps.length === 0}
+                              onChange={e => {
+                                if (e.target.checked) {
+                                  setSelectedDisbursementEmpIds(payableEmps.map(emp => emp.emp.id));
+                                } else {
+                                  setSelectedDisbursementEmpIds([]);
+                                }
+                              }}
+                              className="w-4 h-4 text-emerald-600 rounded cursor-pointer disabled:opacity-30"
+                              title={payableEmps.length === 0 ? 'جميع الموظفين تم صرف رواتبهم مسبقاً لهذا الشهر' : 'تحديد جميع الموظفين غير المصروف لهم'}
+                            />
+                          );
+                        })()}
                       </th>
                       <th className="p-3">الموظف</th>
                       <th className="p-3">أيام العمل</th>
@@ -2525,8 +2641,8 @@ export function HRScreen({
                       <th className="p-3">العمولات المحققة</th>
                       <th className="p-3">المكافآت (+)</th>
                       <th className="p-3">السلف والخصومات (-)</th>
-                      <th className="p-3 text-emerald-800">الصافي المستحق للصرف</th>
-                      <th className="p-3 text-center">إجراء فردي</th>
+                      <th className="p-3 text-emerald-800">الصافي وحالة الصرف</th>
+                      <th className="p-3 text-center">الإجراء</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -2537,25 +2653,39 @@ export function HRScreen({
                         <tr 
                           key={item.emp.id} 
                           className={`hover:bg-slate-50 transition-colors ${
-                            isSelected ? 'bg-emerald-50/20' : ''
+                            item.isAlreadyPaid ? 'bg-slate-50/70 opacity-90' : isSelected ? 'bg-emerald-50/20' : ''
                           }`}
                         >
                           <td className="p-3 text-center">
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={e => {
-                                if (e.target.checked) {
-                                  setSelectedDisbursementEmpIds([...selectedDisbursementEmpIds, item.emp.id]);
-                                } else {
-                                  setSelectedDisbursementEmpIds(selectedDisbursementEmpIds.filter(id => id !== item.emp.id));
-                                }
-                              }}
-                              className="w-4 h-4 text-emerald-600 rounded cursor-pointer"
-                            />
+                            {item.isAlreadyPaid ? (
+                              <span title={`تم صرف راتب شهر (${selectedMonth}) لهذا الموظف مسبقاً`}>
+                                <Check size={16} className="text-emerald-600 mx-auto" />
+                              </span>
+                            ) : (
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                disabled={item.netPayable <= 0}
+                                onChange={e => {
+                                  if (e.target.checked) {
+                                    setSelectedDisbursementEmpIds([...selectedDisbursementEmpIds, item.emp.id]);
+                                  } else {
+                                    setSelectedDisbursementEmpIds(selectedDisbursementEmpIds.filter(id => id !== item.emp.id));
+                                  }
+                                }}
+                                className="w-4 h-4 text-emerald-600 rounded cursor-pointer disabled:opacity-30"
+                              />
+                            )}
                           </td>
                           <td className="p-3">
-                            <div className="font-bold text-slate-900">{item.emp.name}</div>
+                            <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                              <span>{item.emp.name}</span>
+                              {item.isAlreadyPaid && (
+                                <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded">
+                                  تم الصرف ✅
+                                </span>
+                              )}
+                            </div>
                             <div className="text-[10px] text-slate-500 font-mono">
                               #{item.emp.fingerprintCode || item.emp.id} | {item.emp.role}
                             </div>
@@ -2575,19 +2705,44 @@ export function HRScreen({
                           <td className="p-3 font-mono font-bold text-rose-700">
                             -{item.totalDeductions.toFixed(2)}
                           </td>
-                          <td className="p-3 font-mono font-black text-emerald-800 text-sm">
-                            {item.netPayable.toFixed(2)} {settings.currency}
+                          <td className="p-3 font-mono">
+                            {item.isAlreadyPaid ? (
+                              <div>
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-black text-xs border border-emerald-300">
+                                  <span>تم الصرف: {item.paidRecord?.amount?.toFixed(2) ?? item.netPayable.toFixed(2)} {settings.currency}</span>
+                                </span>
+                                <div className="text-[10px] text-slate-500 mt-0.5 font-sans">
+                                  بتاريخ: {item.paidRecord?.date || '-'}
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="font-black text-emerald-800 text-sm">
+                                {item.netPayable.toFixed(2)} {settings.currency}
+                              </span>
+                            )}
                           </td>
                           <td className="p-3 text-center">
-                            <button
-                              type="button"
-                              onClick={() => handleDisburseSalaries([item.emp.id])}
-                              disabled={item.netPayable <= 0}
-                              className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-30 text-white px-2.5 py-1.5 rounded-xl text-[11px] font-black flex items-center gap-1 mx-auto cursor-pointer shadow-xs"
-                            >
-                              <Check size={13} />
-                              <span>صرف وإيصال</span>
-                            </button>
+                            {item.isAlreadyPaid ? (
+                              <button
+                                type="button"
+                                onClick={() => handleReprintDisbursementVoucher(item)}
+                                className="bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1 mx-auto cursor-pointer shadow-2xs transition-colors"
+                                title="إعادة طباعة سند صرف الراتب 80mm للتوقيع"
+                              >
+                                <Printer size={13} className="text-slate-600" />
+                                <span>إعادة طباعة</span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleDisburseSalaries([item.emp.id])}
+                                disabled={item.netPayable <= 0}
+                                className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-30 text-white px-2.5 py-1.5 rounded-xl text-[11px] font-black flex items-center gap-1 mx-auto cursor-pointer shadow-xs"
+                              >
+                                <Check size={13} />
+                                <span>صرف وإيصال</span>
+                              </button>
+                            )}
                           </td>
                         </tr>
                       );

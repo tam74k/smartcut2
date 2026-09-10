@@ -658,7 +658,7 @@ export function ClientReservationPortal({
       : branchEmployees[0];
 
     const bookingCode = '#SC-' + Math.floor(100000 + Math.random() * 900000);
-    const queueNumber = QueueService.getNextQueueNumber(settings.salonId, selectedBranchId, selectedDate);
+    const queueNumber = await QueueService.getNextQueueNumberAsync(settings.salonId, selectedBranchId, selectedDate);
 
     const bookingServices: BookingService[] = selectedServicesList.map(s => ({
       id: 'bs-' + Math.random().toString(36).substr(2, 9),
@@ -689,9 +689,10 @@ export function ClientReservationPortal({
     };
 
     // Auto-sync client to Central Salon Clients database if not exists
+    let existingInSalon: Client | undefined;
     if (onSaveClient && currentClient.phone) {
       const cleanP = currentClient.phone.trim();
-      const existingInSalon = clients.find(c => c.phone && c.phone.trim() === cleanP);
+      existingInSalon = clients.find(c => c.phone && c.phone.trim() === cleanP);
       if (!existingInSalon) {
         const newSalonClient: Client = {
           id: currentClient.id || 'C-' + Date.now(),
@@ -704,6 +705,7 @@ export function ClientReservationPortal({
           createdAt: new Date().toISOString()
         };
         onSaveClient(newSalonClient);
+        existingInSalon = newSalonClient;
       }
     }
 
@@ -711,7 +713,26 @@ export function ClientReservationPortal({
     onSaveBooking(newBooking);
     setCompletedBookingResult(newBooking);
 
-    // 2. Send WhatsApp confirmation message via Evolution API
+    // 2. إدراج الحجز فوراً في شاشة المناداة وفتح فاتورة معلقة
+    try {
+      await QueueService.createTicketFromBooking({
+        booking: newBooking,
+        salonId: settings.salonId,
+        branchId: selectedBranchId,
+        client: existingInSalon || {
+          id: currentClient.id || 'C-' + Date.now(),
+          name: currentClient.name,
+          phone: currentClient.phone,
+          loyaltyPoints: 0,
+          cashback: 0,
+          createdAt: new Date().toISOString()
+        }
+      });
+    } catch (e) {
+      console.warn('Failed to create queue ticket for online booking:', e);
+    }
+
+    // 3. Send WhatsApp confirmation message via Evolution API
     const waText = `✨ *${settings.salonName || 'صالون العناية'}*\n\nأهلاً بكِ ${currentClient.name} ✨\nتم استلام طلب حجزك بنجاح وسنقوم بتأكيده فوراً.\n\n🎟️ *رقم دورك المبدئي بالصالون:* #${queueNumber}\n📍 *الفرع:* ${activeBranch.name}\n📅 *الموعد:* ${selectedDate} • ${selectedTimeSlot}\n✂️ *الخبير:* ${assignedStaff?.name || 'طاقم العمل المتميز'}\n📋 *الخدمات:* ${selectedServicesList.map(s => s.name).join('، ')}\n💰 *الإجمالي:* ${totalBookingPrice} ${currency}\n🔖 *كود الحجز:* ${bookingCode}\n\nشكراً لثقتكم بنا ونسعد بخدمتكم دائماً! ❤️`;
 
     try {

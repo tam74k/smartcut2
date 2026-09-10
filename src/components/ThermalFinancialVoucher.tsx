@@ -3,7 +3,7 @@ import { AppSettings, Employee } from '../types';
 import { printHtml } from '../utils/print';
 
 export interface FinancialVoucherData {
-  voucherType: 'advance' | 'penalty' | 'bonus' | 'commission_payout';
+  voucherType: 'salary' | 'advance' | 'penalty' | 'bonus' | 'commission_payout';
   voucherNumber: string;
   date: string;
   employeeName: string;
@@ -14,6 +14,7 @@ export interface FinancialVoucherData {
   treasuryName?: string;
   note: string;
   issuedBy: string;
+  payrollPeriod?: string;
 }
 
 export function ThermalFinancialVoucher({
@@ -23,12 +24,15 @@ export function ThermalFinancialVoucher({
   settings: AppSettings;
   data: FinancialVoucherData;
 }) {
+  const isSalary = data.voucherType === 'salary';
   const isAdvance = data.voucherType === 'advance';
   const isPenalty = data.voucherType === 'penalty';
   const isBonus = data.voucherType === 'bonus';
   const isCommission = data.voucherType === 'commission_payout';
 
-  const title = isCommission
+  const title = isSalary
+    ? 'سند صرف راتب شهري'
+    : isCommission
     ? 'سند صرف عمولة مستحقة'
     : isAdvance 
     ? 'سند صرف سلفة نقدية' 
@@ -87,13 +91,14 @@ export function ThermalFinancialVoucher({
 
       {/* Amount Box */}
       <div className={`p-2.5 rounded-xl text-center space-y-0.5 mb-2 border ${
+        isSalary ? 'bg-emerald-50 border-emerald-300 text-emerald-950' :
         isCommission ? 'bg-indigo-50 border-indigo-300 text-indigo-950' :
         isAdvance ? 'bg-amber-50 border-amber-300 text-amber-950' :
         isPenalty ? 'bg-rose-50 border-rose-300 text-rose-950' :
         'bg-emerald-50 border-emerald-300 text-emerald-950'
       }`}>
         <p className="text-[10px] font-bold">
-          {isCommission ? 'مبلغ العمولة المنصرف' : isAdvance ? 'المبلغ المنصرف للموظف' : isPenalty ? 'قيمة الخصم المستقطع' : 'قيمة المكافأة'}
+          {isSalary ? 'صافي الراتب المصروف' : isCommission ? 'مبلغ العمولة المنصرف' : isAdvance ? 'المبلغ المنصرف للموظف' : isPenalty ? 'قيمة الخصم المستقطع' : 'قيمة المكافأة'}
         </p>
         <h3 className="text-base font-black font-mono">
           {data.amount !== undefined && data.amount > 0 
@@ -144,12 +149,15 @@ export function ThermalFinancialVoucher({
  * Direct print helper for 80mm thermal financial voucher
  */
 export function printThermalFinancialVoucher(settings: AppSettings, data: FinancialVoucherData) {
+  const isSalary = data.voucherType === 'salary';
   const isAdvance = data.voucherType === 'advance';
   const isPenalty = data.voucherType === 'penalty';
   const isBonus = data.voucherType === 'bonus';
   const isCommission = data.voucherType === 'commission_payout';
 
-  const title = isCommission
+  const title = isSalary
+    ? 'سند صرف راتب شهري'
+    : isCommission
     ? 'سند صرف عمولة مستحقة'
     : isAdvance 
     ? 'سند صرف سلفة نقدية' 
@@ -218,11 +226,11 @@ export function printThermalFinancialVoucher(settings: AppSettings, data: Financ
       </div>
 
       <!-- Amount Box -->
-      <div style="padding: 8px; border-radius: 8px; text-align: center; margin-bottom: 6px; border: 1px solid #cbd5e1; background: ${isCommission ? '#eef2ff' : isAdvance ? '#fffbeb' : isPenalty ? '#fff1f2' : '#f0fdf4'};">
+      <div style="padding: 8px; border-radius: 8px; text-align: center; margin-bottom: 6px; border: 1px solid #cbd5e1; background: ${isSalary ? '#f0fdf4' : isCommission ? '#eef2ff' : isAdvance ? '#fffbeb' : isPenalty ? '#fff1f2' : '#f0fdf4'};">
         <p style="margin: 0; font-size: 10px; font-weight: bold; color: #475569;">
-          ${isCommission ? 'مبلغ العمولة المنصرف' : isAdvance ? 'المبلغ المنصرف للموظف' : isPenalty ? 'قيمة الخصم المستقطع' : 'قيمة المكافأة'}
+          ${isSalary ? 'صافي الراتب المصروف' : isCommission ? 'مبلغ العمولة المنصرف' : isAdvance ? 'المبلغ المنصرف للموظف' : isPenalty ? 'قيمة الخصم المستقطع' : 'قيمة المكافأة'}
         </p>
-        <h3 style="margin: 2px 0 0; font-size: 16px; font-weight: 900; font-family: monospace; color: ${isCommission ? '#3730a3' : isAdvance ? '#92400e' : isPenalty ? '#9f1239' : '#166534'};">
+        <h3 style="margin: 2px 0 0; font-size: 16px; font-weight: 900; font-family: monospace; color: ${isSalary ? '#166534' : isCommission ? '#3730a3' : isAdvance ? '#92400e' : isPenalty ? '#9f1239' : '#166534'};">
           ${amountDisplay}
         </h3>
       </div>

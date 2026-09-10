@@ -360,6 +360,7 @@ export default function App() {
     if (data.bookings) {
       setBookings(data.bookings.map((b: any) => ({
         ...b, phone: b.clientPhone || b.phone || '',
+        queueNumber: b.queueNumber || b.queue_number || undefined,
         customerEmail: b.customerEmail || '', advancePayments: b.advancePayments || []
       })));
     }
@@ -941,12 +942,22 @@ export default function App() {
     setEmployees(prev => {
       const currentSalonEmps = prev.filter(e => !e.salonId || e.salonId === currentSalonId);
       const nextSalonEmps = typeof updater === 'function' ? updater(currentSalonEmps) : updater;
-      const tagged = nextSalonEmps.map(e => ({ 
-        ...e, 
-        salonId: e.salonId || currentSalonId, 
-        branchId: e.branchId || activeBranch?.id || activeBranchId,
-        branchCode: (e as any).branchCode || activeBranch?.code || 'BR-01'
-      }));
+      const tagged = nextSalonEmps.map(e => {
+        // تصحيح أي مسير رواتب تم حفظه كسلفة بالخطأ
+        const cleanedRecords = (e.financialRecords || []).map((r: any) => {
+          if (r.type === 'advance' && (r.id?.startsWith('FIN-SAL-') || r.note?.includes('مسير رواتب') || r.note?.includes('تم استلام صافي الراتب'))) {
+            return { ...r, type: 'salary' };
+          }
+          return r;
+        });
+        return { 
+          ...e, 
+          financialRecords: cleanedRecords,
+          salonId: e.salonId || currentSalonId, 
+          branchId: e.branchId || activeBranch?.id || activeBranchId,
+          branchCode: (e as any).branchCode || activeBranch?.code || 'BR-01'
+        };
+      });
       const otherEmps = prev.filter(e => e.salonId && e.salonId !== currentSalonId);
       const res = [...otherEmps, ...tagged];
       DB.saveEmployees(tagged);

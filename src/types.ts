@@ -300,11 +300,13 @@ export interface EndOfServiceRecord {
 export interface EmployeeFinancialRecord {
   id: string;
   date: string; // shift date or ISO
-  type: 'advance' | 'penalty_cash' | 'penalty_days' | 'bonus' | 'commission' | 'referral_commission' | 'commission_payout';
+  type: 'salary' | 'advance' | 'penalty_cash' | 'penalty_days' | 'bonus' | 'commission' | 'referral_commission' | 'commission_payout';
   amount?: number;
   days?: number;
   treasuryId?: string;
   note: string;
+  payrollPeriod?: { startDate: string; endDate: string; month?: string };
+  periodKey?: string;
 }
 
 export interface EmployeeLeaveRecord {

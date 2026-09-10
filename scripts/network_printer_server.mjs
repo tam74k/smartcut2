@@ -70,188 +70,162 @@ function getAllInstalledPrinters() {
   });
 }
 
-// 4. البحث عن متصفح Edge أو Chrome لتنفيذ الطباعة الصامتة الصافية
-function getBrowserPath() {
-  const edgePaths = [
-    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
-  ];
-  const chromePaths = [
-    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe'
-  ];
-
-  for (const p of [...edgePaths, ...chromePaths]) {
-    if (fs.existsSync(p)) return p;
-  }
-  return null;
-}
-
-// 5. توليد صفحة HTML احترافية للتذكرة متوافقة مع كل أنواع الطابعات (حرارية 80 مم أو ليزر A4)
-function generateTicketHtml(data) {
-  const now = new Date();
-  const dateStr = data.dateStr || now.toLocaleDateString('ar-SA');
-  const timeStr = data.timeStr || now.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
-  const ticketNum = data.queueNumber || data.slip?.queueNumber || 'TEST';
-  const clientName = data.clientName || data.slip?.clientName || 'عميل';
-  const phone = data.phone || data.slip?.phone || '';
-  const salonName = data.salonName || data.slip?.salonName || 'صالون سمارت كت';
-  const branchName = data.branchName || data.slip?.branchName || '';
-
-  return `<!DOCTYPE html>
-<html dir="rtl" lang="ar">
-<head>
-  <meta charset="utf-8">
-  <title>تذكرة انتظار #${ticketNum}</title>
-  <style>
-    @page {
-      size: 80mm auto;
-      margin: 0;
-    }
-    @media print {
-      html, body {
-        width: 78mm;
-        margin: 0 auto;
-        padding: 6px 2px;
-      }
-    }
-    body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      text-align: center;
-      color: #000;
-      background: #fff;
-      margin: 0 auto;
-      padding: 10px 4px;
-      width: 74mm;
-      box-sizing: border-box;
-    }
-    .salon-name {
-      font-size: 16px;
-      font-weight: 900;
-      margin-bottom: 2px;
-    }
-    .branch-name {
-      font-size: 11px;
-      color: #333;
-      margin-bottom: 6px;
-    }
-    .divider {
-      border-top: 1px dashed #000;
-      margin: 6px 0;
-    }
-    .meta-row {
-      display: flex;
-      justify-content: space-between;
-      font-size: 10px;
-      margin: 3px 0;
-      font-weight: bold;
-    }
-    .queue-card {
-      border: 2px solid #000;
-      border-radius: 10px;
-      padding: 6px 4px;
-      margin: 8px 0;
-      background: #fafafa;
-    }
-    .queue-title {
-      font-size: 11px;
-      font-weight: bold;
-      color: #333;
-    }
-    .queue-number {
-      font-size: 38px;
-      font-weight: 900;
-      line-height: 1.1;
-      margin: 2px 0;
-      font-family: 'Courier New', Courier, monospace;
-    }
-    .client-box {
-      font-size: 12px;
-      margin: 4px 0;
-      font-weight: bold;
-    }
-    .phone-box {
-      font-size: 11px;
-      font-family: monospace;
-      margin: 2px 0;
-    }
-    .footer-note {
-      font-size: 10px;
-      margin-top: 8px;
-      line-height: 1.4;
-    }
-  </style>
-</head>
-<body>
-  <div class="salon-name">${salonName}</div>
-  ${branchName ? `<div class="branch-name">فرع: ${branchName}</div>` : ''}
-  <div class="divider"></div>
-
-  <div class="meta-row">
-    <span>التاريخ: ${dateStr}</span>
-    <span>الوقت: ${timeStr}</span>
-  </div>
-
-  <div class="queue-card">
-    <div class="queue-title">رقم الدور الخاص بك</div>
-    <div class="queue-number">#${ticketNum}</div>
-  </div>
-
-  <div class="client-box">العميل: ${clientName}</div>
-  ${phone ? `<div class="phone-box">هاتف: ${phone}</div>` : ''}
-
-  <div class="divider"></div>
-  <div class="footer-note">
-    أهلاً بكم نسعد بخدمتكم دائماً<br>
-    يرجى الانتظار لحين المناداة على دورك
-  </div>
-</body>
-</html>`;
-}
-
-// 6. تنفيذ الطباعة الصامتة إلى الطابعة الافتراضية
+// 4. تنفيذ الطباعة الصامتة المباشرة إلى الطابعة الافتراضية للويندوز عبر محرك ويندوز الأصيل (.NET PrintDocument)
 async function printToWindowsDefaultPrinter(data, specifiedPrinter = '') {
-  // جلب الطابعة الافتراضية إذا لم يتم تمرير طابعة محددة
   const defaultPrinter = specifiedPrinter || await getDefaultPrinterName();
-  console.log(`[${new Date().toLocaleTimeString()}] توجيه أمر الطباعة إلى الطابعة الافتراضية: [${defaultPrinter}]`);
+  console.log(`[${new Date().toLocaleTimeString('ar-SA')}] توجيه أمر الطباعة إلى الطابعة الافتراضية: [${defaultPrinter}]`);
 
-  const html = generateTicketHtml(data);
-  const tempFile = path.join(os.tmpdir(), `smartcut_ticket_${Date.now()}.html`);
-  fs.writeFileSync(tempFile, html, 'utf-8');
+  const ticketData = {
+    salonName: data.salonName || data.slip?.salonName || 'صالون سمارت كت',
+    branchName: data.branchName || data.slip?.branchName || '',
+    queueNumber: data.queueNumber || data.slip?.queueNumber || 'TEST',
+    clientName: data.clientName || data.slip?.clientName || 'عميل',
+    phone: data.phone || data.slip?.phone || '',
+    dateStr: data.dateStr || new Date().toLocaleDateString('ar-SA'),
+    timeStr: data.timeStr || new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })
+  };
 
-  const browserPath = getBrowserPath();
+  const jsonPath = path.join(os.tmpdir(), `smartcut_ticket_${Date.now()}.json`);
+  fs.writeFileSync(jsonPath, JSON.stringify(ticketData), 'utf-8');
+
+  const psScript = `
+Add-Type -AssemblyName System.Drawing
+
+$jsonPath = '${jsonPath.replace(/\\/g, '\\\\')}'
+$rawJson = [System.IO.File]::ReadAllText($jsonPath, [System.Text.Encoding]::UTF8)
+$data = $rawJson | ConvertFrom-Json
+
+$targetPrinter = '${(defaultPrinter || '').replace(/'/g, "''")}'
+if (-not $targetPrinter -or $targetPrinter -eq 'Default') {
+    $targetPrinter = (Get-CimInstance Win32_Printer | Where-Object Default -eq $true).Name
+}
+
+$doc = New-Object System.Drawing.Printing.PrintDocument
+if ($targetPrinter) {
+    $doc.PrinterSettings.PrinterName = $targetPrinter
+}
+
+$doc.DefaultPageSettings.Margins = New-Object System.Drawing.Printing.Margins(10, 10, 10, 10)
+
+$doc.add_PrintPage({
+    param($sender, $ev)
+    $g = $ev.Graphics
+    $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+    $g.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::AntiAliasGridFit
+
+    $fontHeader = New-Object System.Drawing.Font("Arial", 14, [System.Drawing.FontStyle]::Bold)
+    $fontSub = New-Object System.Drawing.Font("Arial", 10, [System.Drawing.FontStyle]::Regular)
+    $fontQueueTitle = New-Object System.Drawing.Font("Arial", 10, [System.Drawing.FontStyle]::Bold)
+    $fontQueueNum = New-Object System.Drawing.Font("Arial", 38, [System.Drawing.FontStyle]::Bold)
+    $fontBody = New-Object System.Drawing.Font("Arial", 11, [System.Drawing.FontStyle]::Bold)
+    $fontSmall = New-Object System.Drawing.Font("Arial", 9, [System.Drawing.FontStyle]::Regular)
+
+    $brushBlack = [System.Drawing.Brushes]::Black
+    $penDash = New-Object System.Drawing.Pen([System.Drawing.Color]::Black, 1)
+    $penDash.DashStyle = [System.Drawing.Drawing2D.DashStyle]::Dash
+    $penSolid = New-Object System.Drawing.Pen([System.Drawing.Color]::Black, 2)
+
+    $fmtCenter = New-Object System.Drawing.StringFormat
+    $fmtCenter.Alignment = [System.Drawing.StringAlignment]::Center
+    $fmtCenter.FormatFlags = [System.Drawing.StringFormatFlags]::DirectionRightToLeft
+
+    $pageWidth = 280
+    $y = 15
+
+    # Salon Name
+    $rectHeader = New-Object System.Drawing.RectangleF(0, $y, $pageWidth, 30)
+    $g.DrawString($data.salonName, $fontHeader, $brushBlack, $rectHeader, $fmtCenter)
+    $y += 30
+
+    # Branch
+    if ($data.branchName) {
+        $rectBranch = New-Object System.Drawing.RectangleF(0, $y, $pageWidth, 20)
+        $g.DrawString(([string]"فرع: " + $data.branchName), $fontSub, $brushBlack, $rectBranch, $fmtCenter)
+        $y += 22
+    }
+
+    # Separator
+    $g.DrawLine($penDash, 10, $y, $pageWidth - 10, $y)
+    $y += 8
+
+    # Date & Time
+    $dateText = [string]"التاريخ: " + $data.dateStr + "   " + $data.timeStr
+    $rectDate = New-Object System.Drawing.RectangleF(0, $y, $pageWidth, 20)
+    $g.DrawString($dateText, $fontSmall, $brushBlack, $rectDate, $fmtCenter)
+    $y += 25
+
+    # Queue Box
+    $boxX = 20
+    $boxWidth = $pageWidth - 40
+    $boxHeight = 85
+    $g.DrawRectangle($penSolid, $boxX, $y, $boxWidth, $boxHeight)
+
+    $yTitle = $y + 6
+    $rectQTitle = New-Object System.Drawing.RectangleF($boxX, $yTitle, $boxWidth, 20)
+    $g.DrawString("رقم الدور الخاص بك", $fontQueueTitle, $brushBlack, $rectQTitle, $fmtCenter)
+
+    $yNum = $y + 26
+    $rectQNum = New-Object System.Drawing.RectangleF($boxX, $yNum, $boxWidth, 55)
+    $g.DrawString(("#" + $data.queueNumber), $fontQueueNum, $brushBlack, $rectQNum, $fmtCenter)
+    $y += $boxHeight + 12
+
+    # Client Name
+    $clientText = [string]"العميل: " + $data.clientName
+    $rectClient = New-Object System.Drawing.RectangleF(0, $y, $pageWidth, 22)
+    $g.DrawString($clientText, $fontBody, $brushBlack, $rectClient, $fmtCenter)
+    $y += 24
+
+    # Phone
+    if ($data.phone) {
+        $phoneText = [string]"الجوال: " + $data.phone
+        $rectPhone = New-Object System.Drawing.RectangleF(0, $y, $pageWidth, 20)
+        $g.DrawString($phoneText, $fontSub, $brushBlack, $rectPhone, $fmtCenter)
+        $y += 22
+    }
+
+    # Separator
+    $g.DrawLine($penDash, 10, $y, $pageWidth - 10, $y)
+    $y += 10
+
+    # Footer note
+    $rectFoot1 = New-Object System.Drawing.RectangleF(0, $y, $pageWidth, 18)
+    $g.DrawString("أهلاً بكم.. نسعد بخدمتكم دائماً", $fontSmall, $brushBlack, $rectFoot1, $fmtCenter)
+    $y += 20
+
+    $rectFoot2 = New-Object System.Drawing.RectangleF(0, $y, $pageWidth, 18)
+    $g.DrawString("يرجى الانتظار لحين المناداة على دورك", $fontSmall, $brushBlack, $rectFoot2, $fmtCenter)
+
+    $ev.HasMorePages = $false
+})
+
+$doc.Print()
+Write-Output "SUCCESS: Printed ticket #$($data.queueNumber) to $targetPrinter"
+`;
+
+  const psPath = path.join(os.tmpdir(), `smartcut_print_${Date.now()}.ps1`);
+  const bom = Buffer.from([0xEF, 0xBB, 0xBF]);
+  fs.writeFileSync(psPath, Buffer.concat([bom, Buffer.from(psScript, 'utf-8')]));
+
+  const cmd = `powershell -NoProfile -ExecutionPolicy Bypass -File "${psPath}"`;
 
   return new Promise((resolve) => {
-    let cmd = '';
-
-    if (browserPath) {
-      // الطباعة المباشرة الصامتة بدون واجهات عبر Edge / Chrome إلى الطابعة الافتراضية
-      const printerArg = defaultPrinter && defaultPrinter !== 'Default' 
-        ? `--print-to-printer="${defaultPrinter}"` 
-        : '--print-to-printer';
-      
-      cmd = `"${browserPath}" --headless --disable-gpu --run-all-compositor-stages-before-draw --no-first-run --no-default-browser-check ${printerArg} "${tempFile}"`;
-    } else {
-      // بديل عبر أمر الطباعة العام للويندوز
-      cmd = `powershell -NoProfile -Command "Start-Process -FilePath '${tempFile}' -Verb Print -PassThru | ForEach-Object { Start-Sleep -Seconds 2; Stop-Process -Id $_.Id -Force }"`;
-    }
-
-    exec(cmd, (error) => {
+    exec(cmd, (error, stdout) => {
       setTimeout(() => {
-        try { fs.unlinkSync(tempFile); } catch {}
-      }, 10000);
+        try { fs.unlinkSync(jsonPath); } catch {}
+        try { fs.unlinkSync(psPath); } catch {}
+      }, 5000);
 
       if (error) {
-        console.warn(`[تنبيه أثناء عملية الطباعة]:`, error.message);
+        console.warn(`[خطأ أثناء الطباعة]:`, error.message);
       } else {
-        console.log(`[✓ نجاح]: تم إرسال التذكرة بنجاح إلى الطابعة [${defaultPrinter}]`);
+        console.log(`[✓ نجاح الطباعة]: تم إرسال التذكرة #${ticketData.queueNumber} بنجاح إلى الطابعة [${defaultPrinter}]`);
       }
     });
 
-    // استجابة فورية للتابلت والعميل خلال 200 مللي ثانية
+    // استجابة فورية للتابلت والكيوسك
     setTimeout(() => {
       resolve({ success: true, printer: defaultPrinter });
-    }, 200);
+    }, 150);
   });
 }
 

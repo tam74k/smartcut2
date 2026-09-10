@@ -1194,6 +1194,7 @@ export const DB = {
         source: b.source || 'pos', services: b.services || [],
         total_amount: b.totalAmount ?? 0,
         date: b.date, time: b.time, status: b.status || 'confirmed',
+        queue_number: b.queueNumber || null,
         advance_payments: b.advancePayments || [], notes: b.notes || null
       };
       const { error } = await client.from('bookings').upsert(snap, { onConflict: 'id' });
