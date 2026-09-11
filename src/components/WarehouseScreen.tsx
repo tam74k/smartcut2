@@ -6,7 +6,7 @@ import {
 import { 
   Package, Truck, ShoppingCart, ClipboardList, AlertTriangle, 
   Search, Plus, TrendingDown, ArrowRightLeft, DollarSign, 
-  Boxes, ShieldCheck, Sparkles, Filter, ExternalLink 
+  Boxes, ShieldCheck, Sparkles, Filter, ExternalLink, RefreshCw 
 } from 'lucide-react';
 import { ProductsScreen } from './ProductsScreen';
 import { SuppliersScreen } from './SuppliersScreen';
@@ -33,7 +33,8 @@ export function WarehouseScreen({
   setTransactions,
   shiftData,
   initialSubTab = 'products',
-  currentUser
+  currentUser,
+  onRefresh
 }: {
   settings: AppSettings;
   products: Product[];
@@ -55,9 +56,21 @@ export function WarehouseScreen({
   shiftData: { isOpen: boolean; date: string; initialCash?: number };
   initialSubTab?: 'products' | 'suppliers' | 'purchases' | 'inventory' | 'shortages';
   currentUser?: any;
+  onRefresh?: () => Promise<void> | void;
 }) {
   const [activeSubTab, setActiveSubTab] = useState<'products' | 'suppliers' | 'purchases' | 'inventory' | 'shortages'>(initialSubTab);
   const [shortageSearch, setShortageSearch] = useState('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    if (!onRefresh || isRefreshing) return;
+    try {
+      setIsRefreshing(true);
+      await onRefresh();
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   // Warehouse KPI Calculations
   const stats = useMemo(() => {
@@ -108,7 +121,7 @@ export function WarehouseScreen({
         </div>
 
         {/* Sub-Tabs Nav Buttons */}
-        <div className="flex flex-wrap gap-1.5 bg-slate-100 p-1.5 rounded-2xl border border-slate-200">
+        <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1.5 rounded-2xl border border-slate-200">
           <button
             onClick={() => setActiveSubTab('products')}
             className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
@@ -163,6 +176,18 @@ export function WarehouseScreen({
               </span>
             )}
           </button>
+
+          {onRefresh && (
+            <button
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              className="px-3 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer bg-white text-amber-700 hover:bg-amber-50 border border-amber-200/70 shadow-xs disabled:opacity-50"
+              title="تحديث البيانات فوراً من السحابة وقاعدة البيانات"
+            >
+              <RefreshCw size={13} className={isRefreshing ? 'animate-spin text-amber-600' : 'text-amber-600'} />
+              <span>{isRefreshing ? 'جاري التحديث...' : 'تحديث البيانات 🔄'}</span>
+            </button>
+          )}
         </div>
       </div>
 

@@ -209,32 +209,111 @@ export function TreasuryScreen({
     }
   };
 
-  const [categoryFilter, setCategoryFilter] = useState<'all' | 'custody' | 'sales' | 'expense'>('all');
+  const [categoryFilter, setCategoryFilter] = useState<
+    'all' | 'sales' | 'expense' | 'purchases' | 'payroll' | 'transfer' | 'custody' | 'deposit_withdraw'
+  >('all');
 
   const getTreasuryTotals = (tId: string) => {
-    const trxs = transactions.filter(t => t.treasury === tId);
+    const trxs = transactions.filter(t => t.treasury === tId || (t as any).treasuryId === tId);
+
+    // Inflows (المقبوضات)
     const totalCustody = trxs
       .filter(t => t.type === 'in' && (t.category === 'عهدة افتتاحية' || t.category === 'initial_cash'))
       .reduce((sum, t) => sum + t.amount, 0);
+
     const totalSales = trxs
-      .filter(t => t.type === 'in' && (t.category === 'sales' || t.category === 'مبيعات'))
+      .filter(t => t.type === 'in' && (t.category === 'sales' || t.category === 'مبيعات' || t.category === 'booking_advance' || t.category === 'advance'))
       .reduce((sum, t) => sum + t.amount, 0);
+
+    const totalDeposits = trxs
+      .filter(t => t.type === 'in' && (t.category === 'deposit' || t.category === 'partner_deposit'))
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    const totalTransfersIn = trxs
+      .filter(t => t.type === 'in' && t.category === 'transfer')
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    // Outflows (المدفوعات والمصروفات)
+    const totalExpenses = trxs
+      .filter(t => t.type === 'out' && (t.category === 'expense' || t.category === 'مصروفات'))
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    const totalPurchases = trxs
+      .filter(t => t.type === 'out' && (t.category === 'purchase' || t.category === 'مشتريات'))
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    const totalSupplierPayments = trxs
+      .filter(t => t.type === 'out' && (t.category === 'supplier_payment' || t.category === 'supplier' || t.category === 'سداد مورد'))
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    const totalSalaries = trxs
+      .filter(t => t.type === 'out' && (t.category === 'salary' || t.category === 'رواتب' || t.category === 'راتب'))
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    const totalAdvances = trxs
+      .filter(t => t.type === 'out' && (t.category === 'hr_advance' || t.category === 'staff_advance' || t.category === 'advance' || t.category === 'سلف'))
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    const totalCommissions = trxs
+      .filter(t => t.type === 'out' && (t.category === 'commission' || t.category === 'commission_payout' || t.category === 'عمولة'))
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    const totalTransfersOut = trxs
+      .filter(t => t.type === 'out' && t.category === 'transfer')
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    const totalWithdrawals = trxs
+      .filter(t => t.type === 'out' && (t.category === 'withdrawal' || t.category === 'partner_withdrawal'))
+      .reduce((sum, t) => sum + t.amount, 0);
+
     const totalIn = trxs.filter(t => t.type === 'in').reduce((sum, t) => sum + t.amount, 0);
     const totalOut = trxs.filter(t => t.type === 'out').reduce((sum, t) => sum + t.amount, 0);
-    return { totalIn, totalOut, totalCustody, totalSales, balance: totalIn - totalOut };
+
+    return { 
+      totalIn, 
+      totalOut, 
+      totalCustody, 
+      totalSales, 
+      totalDeposits,
+      totalTransfersIn,
+      totalExpenses,
+      totalPurchases,
+      totalSupplierPayments,
+      totalSalaries,
+      totalAdvances,
+      totalCommissions,
+      totalTransfersOut,
+      totalWithdrawals,
+      balance: totalIn - totalOut 
+    };
   };
 
   const translateCategory = (cat: string) => {
     const dict: Record<string, string> = {
       sales: 'مبيعات',
+      مبيعات: 'مبيعات',
       'عهدة افتتاحية': 'عهدة افتتاحية',
       initial_cash: 'عهدة افتتاحية',
-      advance: 'مقدم حجز',
+      advance: 'سلفة / عربون',
+      booking_advance: 'عربون حجز',
       hr_advance: 'سلفة موظف',
+      staff_advance: 'سلفة موظف',
       expense: 'مصروفات',
-      transfer: 'تحويل',
-      deposit: 'إيداع',
-      withdrawal: 'سحب'
+      مصروفات: 'مصروفات',
+      purchase: 'مشتريات',
+      مشتريات: 'مشتريات',
+      supplier_payment: 'سداد مورد',
+      supplier: 'سداد مورد',
+      salary: 'صرف راتب',
+      رواتب: 'صرف راتب',
+      commission: 'عمولة موظف',
+      commission_payout: 'صرف عمولة',
+      transfer: 'تحويل بين الخزن',
+      deposit: 'إيداع نقدي',
+      withdrawal: 'سحب نقدي',
+      partner_deposit: 'إيداع شريك',
+      partner_withdrawal: 'مسحوبات شريك',
+      partner_profit: 'أرباح شريك'
     };
     return dict[cat] || cat;
   };
@@ -252,9 +331,17 @@ export function TreasuryScreen({
     if (categoryFilter === 'custody') {
       filtered = filtered.filter(t => t.category === 'عهدة افتتاحية' || t.category === 'initial_cash');
     } else if (categoryFilter === 'sales') {
-      filtered = filtered.filter(t => t.category === 'sales' || t.category === 'مبيعات');
+      filtered = filtered.filter(t => t.category === 'sales' || t.category === 'مبيعات' || t.category === 'booking_advance');
     } else if (categoryFilter === 'expense') {
-      filtered = filtered.filter(t => t.type === 'out');
+      filtered = filtered.filter(t => t.category === 'expense' || t.category === 'مصروفات');
+    } else if (categoryFilter === 'purchases') {
+      filtered = filtered.filter(t => t.category === 'purchase' || t.category === 'مشتريات' || t.category === 'supplier_payment' || t.category === 'supplier');
+    } else if (categoryFilter === 'payroll') {
+      filtered = filtered.filter(t => t.category === 'salary' || t.category === 'رواتب' || t.category === 'hr_advance' || t.category === 'staff_advance' || t.category === 'advance' || t.category === 'commission_payout');
+    } else if (categoryFilter === 'transfer') {
+      filtered = filtered.filter(t => t.category === 'transfer' || t.id.includes('TRF'));
+    } else if (categoryFilter === 'deposit_withdraw') {
+      filtered = filtered.filter(t => t.category === 'deposit' || t.category === 'withdrawal' || t.category === 'partner_deposit' || t.category === 'partner_withdrawal');
     }
     return filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [transactions, fromDate, toDate, categoryFilter]);
@@ -342,9 +429,15 @@ export function TreasuryScreen({
       {/* Treasury Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-8">
         {settings.treasuries.map((treasury, idx) => {
-          const { totalIn, totalOut, totalCustody, totalSales, balance } = getTreasuryTotals(treasury.id);
+          const { 
+            totalIn, totalOut, totalCustody, totalSales, 
+            totalExpenses, totalPurchases, totalSupplierPayments, 
+            totalSalaries, totalAdvances, balance 
+          } = getTreasuryTotals(treasury.id);
           const isPrimary = idx === 0;
           const isCashDrawer = treasury.id === 'cash' || treasury.name.includes('كاش') || treasury.name.includes('الدرج');
+          const totalPurchasesAndSuppliers = totalPurchases + totalSupplierPayments;
+          const totalSalariesAndAdvances = totalSalaries + totalAdvances;
 
           return (
             <div 
@@ -374,12 +467,36 @@ export function TreasuryScreen({
 
                 {/* Custody Breakdown Tag */}
                 {totalCustody > 0 && (
-                  <div className="mb-3 inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-amber-400/20 text-amber-200 border border-amber-300/30 text-xs font-black">
+                  <div className="mb-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-amber-400/20 text-amber-200 border border-amber-300/30 text-xs font-black">
                     <span>💰 العهدة الافتتاحية:</span>
                     <span className="text-amber-100 font-mono">+{totalCustody.toFixed(2)} {settings.currency}</span>
                     <span className="text-[10px] text-amber-300/80 font-normal">(مضمنة بالرصيد)</span>
                   </div>
                 )}
+
+                {/* Linked Accounts Quick Summary */}
+                <div className="flex flex-wrap gap-1.5 mb-3 text-[10px] font-bold">
+                  {totalSales > 0 && (
+                    <span className="bg-emerald-500/25 text-emerald-100 px-2 py-0.5 rounded-md border border-emerald-400/30">
+                      مبيعات: {totalSales.toFixed(0)}
+                    </span>
+                  )}
+                  {totalExpenses > 0 && (
+                    <span className="bg-rose-500/25 text-rose-200 px-2 py-0.5 rounded-md border border-rose-400/30">
+                      مصروفات: {totalExpenses.toFixed(0)}
+                    </span>
+                  )}
+                  {totalPurchasesAndSuppliers > 0 && (
+                    <span className="bg-purple-500/25 text-purple-200 px-2 py-0.5 rounded-md border border-purple-400/30">
+                      مشتريات/موردين: {totalPurchasesAndSuppliers.toFixed(0)}
+                    </span>
+                  )}
+                  {totalSalariesAndAdvances > 0 && (
+                    <span className="bg-blue-500/25 text-blue-200 px-2 py-0.5 rounded-md border border-blue-400/30">
+                      رواتب/سلف: {totalSalariesAndAdvances.toFixed(0)}
+                    </span>
+                  )}
+                </div>
 
                 <div className="grid grid-cols-2 gap-2 pt-3 border-t border-white/10 text-xs font-bold">
                   <div className="flex items-center gap-1.5 text-emerald-300">
@@ -427,36 +544,60 @@ export function TreasuryScreen({
         {/* Header & Filter Bar */}
         <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-50/50">
           <div>
-            <h3 className="font-black text-slate-800 text-base">سجل العمليات والخزينة</h3>
-            <p className="text-xs text-slate-400 mt-0.5">سجل كامل بجميع الحركات النقدية، المبيعات، العهد، والمصروفات</p>
+            <h3 className="font-black text-slate-800 text-base">سجل العمليات والخزينة الموحد</h3>
+            <p className="text-xs text-slate-400 mt-0.5">سجل كامل بجميع الحركات النقدية، المبيعات، المشتريات، سداد الموردين، الرواتب، السلف، والمصروفات</p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
             {/* Category Filter */}
-            <div className="flex bg-slate-200/60 p-1 rounded-xl text-xs font-bold">
+            <div className="flex flex-wrap bg-slate-200/60 p-1 rounded-xl text-xs font-bold gap-1">
               <button 
                 onClick={() => setCategoryFilter('all')}
-                className={`px-3 py-1.5 rounded-lg transition-all ${categoryFilter === 'all' ? 'bg-white text-slate-900 shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'}`}
+                className={`px-2.5 py-1 rounded-lg transition-all ${categoryFilter === 'all' ? 'bg-white text-slate-900 shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'}`}
               >
                 الكل
               </button>
               <button 
-                onClick={() => setCategoryFilter('custody')}
-                className={`px-3 py-1.5 rounded-lg transition-all ${categoryFilter === 'custody' ? 'bg-amber-500 text-white shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'}`}
-              >
-                💰 العهدة
-              </button>
-              <button 
                 onClick={() => setCategoryFilter('sales')}
-                className={`px-3 py-1.5 rounded-lg transition-all ${categoryFilter === 'sales' ? 'bg-emerald-600 text-white shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'}`}
+                className={`px-2.5 py-1 rounded-lg transition-all ${categoryFilter === 'sales' ? 'bg-emerald-600 text-white shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'}`}
               >
-                مبيعات
+                مبيعات وعربونات
               </button>
               <button 
                 onClick={() => setCategoryFilter('expense')}
-                className={`px-3 py-1.5 rounded-lg transition-all ${categoryFilter === 'expense' ? 'bg-rose-600 text-white shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'}`}
+                className={`px-2.5 py-1 rounded-lg transition-all ${categoryFilter === 'expense' ? 'bg-rose-600 text-white shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'}`}
               >
                 مصروفات
+              </button>
+              <button 
+                onClick={() => setCategoryFilter('purchases')}
+                className={`px-2.5 py-1 rounded-lg transition-all ${categoryFilter === 'purchases' ? 'bg-purple-600 text-white shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'}`}
+              >
+                مشتريات وسداد موردين
+              </button>
+              <button 
+                onClick={() => setCategoryFilter('payroll')}
+                className={`px-2.5 py-1 rounded-lg transition-all ${categoryFilter === 'payroll' ? 'bg-blue-600 text-white shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'}`}
+              >
+                رواتب وسلف
+              </button>
+              <button 
+                onClick={() => setCategoryFilter('transfer')}
+                className={`px-2.5 py-1 rounded-lg transition-all ${categoryFilter === 'transfer' ? 'bg-indigo-600 text-white shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'}`}
+              >
+                تحويلات
+              </button>
+              <button 
+                onClick={() => setCategoryFilter('custody')}
+                className={`px-2.5 py-1 rounded-lg transition-all ${categoryFilter === 'custody' ? 'bg-amber-500 text-white shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'}`}
+              >
+                💰 عهدة
+              </button>
+              <button 
+                onClick={() => setCategoryFilter('deposit_withdraw')}
+                className={`px-2.5 py-1 rounded-lg transition-all ${categoryFilter === 'deposit_withdraw' ? 'bg-teal-600 text-white shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'}`}
+              >
+                سحب وإيداع
               </button>
             </div>
 

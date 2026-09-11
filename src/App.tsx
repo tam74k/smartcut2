@@ -51,7 +51,7 @@ import { SubscriptionBanner } from './components/SubscriptionBanner';
 import { printQueueSlipDirect } from './utils/printQueueSlip';
 import { AuthService, ROLE_LABELS } from './services/auth';
 import { SupabaseService } from './services/supabase';
-import { DB, dbClientToApp, dbEmployeeToApp, dbServiceToApp, toCamel } from './services/db';
+import { DB, dbClientToApp, dbEmployeeToApp, dbServiceToApp, dbProductToApp, toCamel } from './services/db';
 import { SubscriptionService } from './services/subscriptionService';
 import { QueueService } from './services/queueService';
 import { 
@@ -69,17 +69,54 @@ export default function App() {
   const [isDbLoading, setIsDbLoading] = useState(false);
 
   // Dedicated Route for Standalone Barber & Technician Portal (/barber or /staff)
-  const [isBarberRoute, setIsBarberRoute] = useState<boolean>(() => {
+  const isBarberQuery = () => {
     if (typeof window === 'undefined') return false;
     const path = window.location.pathname.toLowerCase();
     const hash = window.location.hash.toLowerCase();
     const search = window.location.search.toLowerCase();
-    return path.endsWith('/barber') || path.includes('/barber/') || path.endsWith('/staff') || path.includes('/staff/') || hash.includes('barber') || search.includes('barber') || search.includes('portal=barber');
-  });
+    return (
+      path.endsWith('/barber') || path.includes('/barber/') ||
+      path.endsWith('/staff') || path.includes('/staff/') ||
+      hash.includes('barber') || search.includes('barber') ||
+      search.includes('portal=barber')
+    );
+  };
+
+  // Dedicated Route for Standalone Tablet Kiosk Check-In (/kiosk, /koisk, /queue, ?kiosk=true, ?koisk=true, #/koisk, #/kiosk)
+  const isKioskQuery = () => {
+    if (typeof window === 'undefined') return false;
+    const path = window.location.pathname.toLowerCase();
+    const hash = window.location.hash.toLowerCase();
+    const search = window.location.search.toLowerCase();
+
+    // Direct path match
+    if (
+      path.includes('kiosk') || path.includes('koisk') ||
+      path.endsWith('/queue') || path.includes('/queue/')
+    ) return true;
+
+    // Hash match (e.g. #/koisk, #/kiosk, #koisk, #kiosk, #/koisk?salon=xxx)
+    if (
+      hash.includes('kiosk') || hash.includes('koisk') ||
+      hash.includes('queue')
+    ) return true;
+
+    // Query parameters match (e.g. ?kiosk=true, ?koisk=true, ?portal=kiosk, ?portal=koisk)
+    if (
+      search.includes('kiosk') || search.includes('koisk') ||
+      search.includes('portal=kiosk') || search.includes('portal=koisk')
+    ) return true;
+
+    return false;
+  };
 
   // Dedicated Route for Standalone Online Client Reservation Portal (/reservation, /booking, or ?salonCode)
   const isReservationQuery = () => {
     if (typeof window === 'undefined') return false;
+    // CRITICAL: Kiosk and Barber routes must NOT be intercepted by reservation portal!
+    if (isKioskQuery()) return false;
+    if (isBarberQuery()) return false;
+
     const path = window.location.pathname.toLowerCase();
     const hash = window.location.hash.toLowerCase();
     const search = window.location.search.toLowerCase();
@@ -91,26 +128,13 @@ export default function App() {
     return false;
   };
 
-  // Dedicated Route for Standalone Tablet Kiosk Check-In (/kiosk, ?kiosk=true, #kiosk)
-  const isKioskQuery = () => {
-    if (typeof window === 'undefined') return false;
-    const path = window.location.pathname.toLowerCase();
-    const hash = window.location.hash.toLowerCase();
-    const search = window.location.search.toLowerCase();
-    if (path.endsWith('/kiosk') || path.includes('/kiosk/') || path.endsWith('/queue') || path.includes('/queue/')) return true;
-    if (hash.includes('kiosk') || hash.includes('queue') || search.includes('kiosk') || search.includes('portal=kiosk')) return true;
-    return false;
-  };
-
+  const [isBarberRoute, setIsBarberRoute] = useState<boolean>(isBarberQuery);
   const [isReservationRoute, setIsReservationRoute] = useState<boolean>(isReservationQuery);
   const [isKioskRoute, setIsKioskRoute] = useState<boolean>(isKioskQuery);
 
   useEffect(() => {
     const checkRoutes = () => {
-      const path = window.location.pathname.toLowerCase();
-      const hash = window.location.hash.toLowerCase();
-      const search = window.location.search.toLowerCase();
-      setIsBarberRoute(path.endsWith('/barber') || path.includes('/barber/') || path.endsWith('/staff') || path.includes('/staff/') || hash.includes('barber') || search.includes('barber') || search.includes('portal=barber'));
+      setIsBarberRoute(isBarberQuery());
       setIsReservationRoute(isReservationQuery());
       setIsKioskRoute(isKioskQuery());
     };
@@ -367,6 +391,12 @@ export default function App() {
     if (data.clients) {
       setClients(data.clients.map(dbClientToApp));
     }
+    if (data.products && Array.isArray(data.products)) {
+      setProducts(data.products.map(dbProductToApp));
+    }
+    if (data.categories && Array.isArray(data.categories) && data.categories.length > 0) {
+      setCategories(data.categories);
+    }
     if (data.suppliers) setSuppliers(data.suppliers);
     if (data.purchaseInvoices) setPurchaseInvoices(data.purchaseInvoices);
     if (data.supplierPayments) setSupplierPayments(data.supplierPayments);
@@ -492,7 +522,10 @@ export default function App() {
             setServices(essentialData.services ? essentialData.services.map(dbServiceToApp) : []);
             setEmployees(essentialData.employees ? essentialData.employees.map(dbEmployeeToApp) : []);
             setClients(essentialData.clients ? essentialData.clients.map(dbClientToApp) : []);
-            setProducts(essentialData.products || []);
+            setProducts(essentialData.products ? essentialData.products.map(dbProductToApp) : []);
+            if (essentialData.suppliers) setSuppliers(essentialData.suppliers);
+            if (essentialData.purchaseInvoices) setPurchaseInvoices(essentialData.purchaseInvoices);
+            if (essentialData.supplierPayments) setSupplierPayments(essentialData.supplierPayments);
           }
 
           // Mark essential sections as loaded
@@ -543,13 +576,30 @@ export default function App() {
         isFetching = true;
 
         // Poll active shift & operational collections concurrently via REST
-        const [activeShift, polledInvoices, polledTransactions, polledBookings, polledFingerprints, polledEmployees] = await Promise.all([
+        const [
+          activeShift,
+          polledInvoices,
+          polledTransactions,
+          polledBookings,
+          polledFingerprints,
+          polledEmployees,
+          polledProducts,
+          polledCategories,
+          polledPurchases,
+          polledSupplierPayments,
+          polledSuppliers
+        ] = await Promise.all([
           bId ? DB.getActiveWorkShift(sId, bId) : null,
           DB.fetchAll<any>('invoices', undefined, sId),
           DB.fetchAll<any>('transactions', undefined, sId),
           DB.fetchAll<any>('bookings', undefined, sId),
           DB.fetchAll<any>('fingerprint_logs', undefined, sId),
-          DB.fetchEmployees(sId)
+          DB.fetchEmployees(sId),
+          DB.fetchProducts(sId),
+          DB.fetchCategories(sId),
+          DB.fetchPurchaseInvoices(sId),
+          DB.fetchSupplierPayments(sId),
+          DB.fetchSuppliers(sId)
         ]);
 
         if (!isSubscribed) return;
@@ -557,6 +607,31 @@ export default function App() {
         // Sync Employees
         if (polledEmployees && Array.isArray(polledEmployees) && polledEmployees.length > 0) {
           setEmployees(polledEmployees);
+        }
+
+        // Sync Products
+        if (polledProducts && Array.isArray(polledProducts)) {
+          setProducts(polledProducts.map(dbProductToApp));
+        }
+
+        // Sync Categories
+        if (polledCategories && Array.isArray(polledCategories) && polledCategories.length > 0) {
+          setCategories(polledCategories);
+        }
+
+        // Sync Purchase Invoices
+        if (polledPurchases && Array.isArray(polledPurchases)) {
+          setPurchaseInvoices(polledPurchases);
+        }
+
+        // Sync Supplier Payments
+        if (polledSupplierPayments && Array.isArray(polledSupplierPayments)) {
+          setSupplierPayments(polledSupplierPayments);
+        }
+
+        // Sync Suppliers
+        if (polledSuppliers && Array.isArray(polledSuppliers) && polledSuppliers.length > 0) {
+          setSuppliers(polledSuppliers);
         }
 
         // Sync Fingerprint Logs
@@ -797,7 +872,10 @@ export default function App() {
         setServices(essentialData.services ? essentialData.services.map(dbServiceToApp) : []);
         setEmployees(essentialData.employees ? essentialData.employees.map(dbEmployeeToApp) : []);
         setClients(essentialData.clients ? essentialData.clients.map(dbClientToApp) : []);
-        setProducts(essentialData.products || []);
+        setProducts(essentialData.products ? essentialData.products.map(dbProductToApp) : []);
+        if (essentialData.suppliers) setSuppliers(essentialData.suppliers);
+        if (essentialData.purchaseInvoices) setPurchaseInvoices(essentialData.purchaseInvoices);
+        if (essentialData.supplierPayments) setSupplierPayments(essentialData.supplierPayments);
       }
 
       loadedSectionsRef.current.add('pos');
@@ -847,19 +925,19 @@ export default function App() {
   }, [clients, currentSalonId]);
 
   const salonCategories = useMemo(() => {
-    return categories.filter(c => !c.salonId || !currentSalonId || c.salonId === currentSalonId);
+    return categories.filter(c => !c.salonId || !currentSalonId || c.salonId === currentSalonId || (c as any).salon_id === currentSalonId || c.id === 'all');
   }, [categories, currentSalonId]);
 
   const salonServices = useMemo(() => {
-    return services.filter(s => !s.salonId || !currentSalonId || s.salonId === currentSalonId);
+    return services.filter(s => !s.salonId || !currentSalonId || s.salonId === currentSalonId || (s as any).salon_id === currentSalonId);
   }, [services, currentSalonId]);
 
   const salonEmployees = useMemo(() => {
-    return employees.filter(e => !e.salonId || !currentSalonId || e.salonId === currentSalonId);
+    return employees.filter(e => !e.salonId || !currentSalonId || e.salonId === currentSalonId || (e as any).salon_id === currentSalonId);
   }, [employees, currentSalonId]);
 
   const salonProducts = useMemo(() => {
-    return products.filter(p => !p.salonId || !currentSalonId || p.salonId === currentSalonId);
+    return products.filter(p => !p.salonId || !currentSalonId || p.salonId === currentSalonId || (p as any).salon_id === currentSalonId);
   }, [products, currentSalonId]);
 
   const salonInvoices = useMemo(() => {
@@ -1130,6 +1208,42 @@ export default function App() {
       return res;
     });
   };
+
+  const handleRefreshWarehouse = useCallback(async () => {
+    const sId = currentSalonId || settings.salonId;
+    if (!sId) return;
+    try {
+      const [polledProducts, polledCategories, polledPurchases, polledSupplierPayments, polledSuppliers, sectionData] = await Promise.all([
+        DB.fetchProducts(sId),
+        DB.fetchCategories(sId),
+        DB.fetchPurchaseInvoices(sId),
+        DB.fetchSupplierPayments(sId),
+        DB.fetchSuppliers(sId),
+        DB.loadSectionData('warehouse', sId)
+      ]);
+      if (polledProducts && Array.isArray(polledProducts)) {
+        setProducts(polledProducts.map(dbProductToApp));
+      }
+      if (polledCategories && Array.isArray(polledCategories) && polledCategories.length > 0) {
+        setCategories(polledCategories);
+      }
+      if (polledPurchases && Array.isArray(polledPurchases)) {
+        setPurchaseInvoices(polledPurchases);
+      }
+      if (polledSupplierPayments && Array.isArray(polledSupplierPayments)) {
+        setSupplierPayments(polledSupplierPayments);
+      }
+      if (polledSuppliers && Array.isArray(polledSuppliers)) {
+        setSuppliers(polledSuppliers);
+      }
+      if (sectionData) {
+        applySectionData('warehouse', sectionData);
+      }
+    } catch (e) {
+      console.warn('Error refreshing warehouse data:', e);
+    }
+  }, [currentSalonId, settings.salonId, applySectionData]);
+
 
   const handleSetPartners = (updater: any) => {
     if (checkReadOnlyAndWarn()) return;
@@ -1841,6 +1955,7 @@ export default function App() {
               activeTab === 'products' ? 'products' : 'products'
             }
             currentUser={currentUser}
+            onRefresh={handleRefreshWarehouse}
           />
         );
       case 'reports': return (
@@ -1858,6 +1973,10 @@ export default function App() {
           expenses={branchTransactions.filter(t => t.category === 'expense' || t.type === 'expense')}
           purchases={branchPurchaseInvoices}
           supplierPayments={branchSupplierPayments}
+          suppliers={branchSuppliers}
+          currentUser={currentUser}
+          setEmployees={handleSetEmployees}
+          setTransactions={handleSetTransactions}
         />
 
       );
@@ -2047,6 +2166,32 @@ export default function App() {
         return updated;
       });
     }
+
+    // Load essential data (products, categories, services, employees, clients) for the logged-in salon
+    if (salon?.id) {
+      try {
+        localStorage.setItem('smartcut_active_salon_id', salon.id);
+        const essentialData = await DB.loadEssentialData(salon.id);
+        if (essentialData) {
+          const validCats = essentialData.categories || [];
+          setCategories(validCats.length ? validCats : [{ id: 'all', name: 'الكل' }]);
+          setServices(essentialData.services ? essentialData.services.map(dbServiceToApp) : []);
+          setEmployees(essentialData.employees ? essentialData.employees.map(dbEmployeeToApp) : []);
+          setClients(essentialData.clients ? essentialData.clients.map(dbClientToApp) : []);
+          setProducts(essentialData.products ? essentialData.products.map(dbProductToApp) : []);
+          if (essentialData.suppliers) setSuppliers(essentialData.suppliers);
+          if (essentialData.purchaseInvoices) setPurchaseInvoices(essentialData.purchaseInvoices);
+          if (essentialData.supplierPayments) setSupplierPayments(essentialData.supplierPayments);
+        }
+        loadedSectionsRef.current.clear();
+        loadedSectionsRef.current.add('pos');
+        loadedSectionsRef.current.add('services');
+        loadedSectionsRef.current.add('products');
+      } catch (e) {
+        console.warn('Error loading essential data after login:', e);
+      }
+    }
+
     if (u.role === 'programmer') {
       setActiveTab('saas_subscriptions');
     } else if (u.role === 'owner') {
@@ -2126,6 +2271,7 @@ export default function App() {
   if (isKioskRoute) {
     return (
       <KioskTabletScreen
+        currentUser={currentUser}
         settings={settings}
         branches={branches}
         clients={clients}
@@ -2461,6 +2607,7 @@ export default function App() {
                   invoices={invoices.filter(i => i.date.startsWith(shiftData.date))}
                   dateLabel={shiftData.date}
                   initialCash={shiftData.initialCash}
+                  userName={currentUser?.name || user?.name || settings.ownerName || 'المسؤول'}
                 />
               </div>
             </div>

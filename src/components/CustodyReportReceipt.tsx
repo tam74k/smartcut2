@@ -6,13 +6,14 @@ export function CustodyReportReceipt({
   settings,
   transactions,
   dateLabel,
-  userName = 'الكاشير'
+  userName
 }: {
   settings: AppSettings;
   transactions: Transaction[];
   dateLabel: string;
   userName?: string;
 }) {
+  const effectiveUserName = userName || settings.ownerName || 'المسؤول';
   const custodyTrxs = transactions.filter(
     t => t.category === 'عهدة افتتاحية' || t.category === 'initial_cash'
   );
@@ -51,7 +52,7 @@ export function CustodyReportReceipt({
               <span className="font-black text-slate-900 font-mono">+{trx.amount.toFixed(2)} {settings.currency}</span>
             </div>
             <div className="flex justify-between text-slate-500 text-[9px]">
-              <span>المستخدم: {trx.userName || trx.createdBy || userName}</span>
+              <span>المستخدم: {trx.userName || trx.createdBy || effectiveUserName}</span>
               <span>{settings.treasuries.find(t => t.id === trx.treasury)?.name || 'كاش الدرج'}</span>
             </div>
             <div className="text-[8px] text-slate-400 font-mono">
@@ -67,7 +68,7 @@ export function CustodyReportReceipt({
 
       {/* Footer */}
       <div className="pt-2 border-t border-dashed border-slate-300 text-center text-[9px] text-slate-400">
-        <p>تم استخراج التقرير بواسطة: {userName}</p>
+        <p>تم استخراج التقرير بواسطة: {effectiveUserName}</p>
         <p>{new Date().toLocaleString('ar-SA')}</p>
       </div>
     </div>

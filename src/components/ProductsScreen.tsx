@@ -51,8 +51,20 @@ export function ProductsScreen({
     items: [{ productId: '', quantity: 1, employeeId: employees[0]?.id || '' }]
   });
 
+  const normalizeText = (text: string) => {
+    return (text || '')
+      .toLowerCase()
+      .trim()
+      .replace(/[أإآ]/g, 'ا')
+      .replace(/ة/g, 'ه')
+      .replace(/ى/g, 'ي');
+  };
+
   const filteredProducts = products.filter(p => {
-    const matchesSearch = p.name.includes(searchQuery);
+    const q = normalizeText(searchQuery);
+    const matchesSearch = !q || 
+      normalizeText(p.name).includes(q) || 
+      (p.barcode && p.barcode.toLowerCase().includes(searchQuery.toLowerCase().trim()));
     const matchesCat = categoryFilter === 'all' || p.categoryId === categoryFilter;
     return matchesSearch && matchesCat;
   });

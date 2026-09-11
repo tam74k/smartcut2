@@ -2436,13 +2436,16 @@ export const DB = {
     console.log('⚡ [Fast Startup] تحميل البيانات الأساسية للصالون:', validSalonId);
     
     // Fetch ONLY essential catalog needed for POS & basic operations concurrently
-    const [categories, services, employees, clients, products] = await Promise.all([
+    const [categories, services, employees, clients, products, suppliers, purchaseInvoices, supplierPayments] = await Promise.all([
       DB.fetchAll<any>('categories', undefined, validSalonId),
       DB.fetchAll<any>('services', undefined, validSalonId),
       DB.fetchAll<any>('employees', undefined, validSalonId),
       // Recent clients for instant POS lookup
       DB.fetchAll<any>('clients', undefined, validSalonId),
       DB.fetchAll<any>('products', undefined, validSalonId),
+      DB.fetchAll<any>('suppliers', undefined, validSalonId),
+      DB.fetchAll<any>('purchase_invoices', undefined, validSalonId),
+      DB.fetchAll<any>('supplier_payments', undefined, validSalonId),
     ]);
 
     return {
@@ -2450,7 +2453,10 @@ export const DB = {
       services,
       employees,
       clients,
-      products
+      products,
+      suppliers,
+      purchaseInvoices,
+      supplierPayments
     };
   },
 
@@ -2486,12 +2492,16 @@ export const DB = {
       }
       case 'dashboard':
       case 'reports': {
-        const [invoices, transactions, bookings] = await Promise.all([
+        const [invoices, transactions, bookings, purchaseInvoices, supplierPayments, suppliers, fingerprintLogs] = await Promise.all([
           DB.fetchAll<any>('invoices', undefined, validSalonId),
           DB.fetchAll<any>('transactions', undefined, validSalonId),
-          DB.fetchAll<any>('bookings', undefined, validSalonId)
+          DB.fetchAll<any>('bookings', undefined, validSalonId),
+          DB.fetchAll<any>('purchase_invoices', undefined, validSalonId),
+          DB.fetchAll<any>('supplier_payments', undefined, validSalonId),
+          DB.fetchAll<any>('suppliers', undefined, validSalonId),
+          DB.fetchAll<any>('fingerprint_logs', undefined, validSalonId)
         ]);
-        return { invoices, transactions, bookings };
+        return { invoices, transactions, bookings, purchaseInvoices, supplierPayments, suppliers, fingerprintLogs };
       }
       case 'hr':
       case 'employees': {
@@ -2505,15 +2515,18 @@ export const DB = {
       case 'warehouse':
       case 'suppliers':
       case 'purchases':
-      case 'inventory': {
-        const [suppliers, purchaseInvoices, supplierPayments, inventoryCounts, itemMovements] = await Promise.all([
+      case 'inventory':
+      case 'products': {
+        const [suppliers, purchaseInvoices, supplierPayments, inventoryCounts, itemMovements, products, categories] = await Promise.all([
           DB.fetchAll<any>('suppliers', undefined, validSalonId),
           DB.fetchAll<any>('purchase_invoices', undefined, validSalonId),
           DB.fetchAll<any>('supplier_payments', undefined, validSalonId),
           DB.fetchAll<any>('inventory_counts', undefined, validSalonId),
-          DB.fetchAll<any>('item_movements', undefined, validSalonId)
+          DB.fetchAll<any>('item_movements', undefined, validSalonId),
+          DB.fetchAll<any>('products', undefined, validSalonId),
+          DB.fetchAll<any>('categories', undefined, validSalonId)
         ]);
-        return { suppliers, purchaseInvoices, supplierPayments, inventoryCounts, itemMovements };
+        return { suppliers, purchaseInvoices, supplierPayments, inventoryCounts, itemMovements, products, categories };
       }
       case 'partners': {
         const [partners, partnerTransactions] = await Promise.all([
@@ -2718,4 +2731,26 @@ export function dbUserToApp(row: any): any {
     avatar: c.avatar
   };
 }
+
+// تحويل بيانات المنتج من قاعدة البيانات إلى كيان Product في التطبيق
+export function dbProductToApp(row: any): any {
+  if (!row) return {} as any;
+  const c = toCamel(row);
+  return {
+    id: c.id || row.id || '',
+    name: c.name || row.name || '',
+    categoryId: c.categoryId || row.category_id || '',
+    sellPrice: Number(c.sellPrice ?? row.sell_price ?? 0),
+    costPrice: Number(c.costPrice ?? row.cost_price ?? 0),
+    reorderLimit: Number(c.reorderLimit ?? row.reorder_limit ?? 5),
+    openingStock: Number(c.openingStock ?? row.opening_stock ?? 0),
+    currentStock: Number(c.currentStock ?? row.current_stock ?? 0),
+    commission: Number(c.commission ?? 0),
+    barcode: c.barcode || row.barcode || '',
+    salonId: c.salonId || row.salon_id || undefined,
+    branchId: c.branchId || row.branch_id || undefined,
+    isActive: c.isActive !== false && row.is_active !== false
+  };
+}
+
 

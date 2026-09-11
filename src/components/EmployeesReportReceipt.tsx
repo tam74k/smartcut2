@@ -17,7 +17,7 @@ export function EmployeesReportReceipt({
   services = [],
   products = [],
   dateLabel,
-  userName = 'الكاشير'
+  userName
 }: {
   settings: AppSettings,
   invoices: Invoice[],
@@ -27,6 +27,7 @@ export function EmployeesReportReceipt({
   dateLabel: string,
   userName?: string
 }) {
+  const effectiveUserName = userName || settings.ownerName || 'المسؤول';
   const empsMap: Record<string, EmployeeWorkCommissionSummary> = {};
 
   const getOrCreate = (name: string): EmployeeWorkCommissionSummary | null => {
@@ -141,7 +142,7 @@ export function EmployeesReportReceipt({
         <h1 className="text-sm font-black text-slate-900 bg-slate-100 py-1 rounded-md mb-1">تقرير أعمال وعمولات الموظفين</h1>
         <div className="flex justify-between items-center text-[10px] text-slate-700 px-1 mt-1">
           <span>الفترة: {dateLabel}</span>
-          <span>المستخدم: {userName}</span>
+          <span>المستخدم: {effectiveUserName}</span>
         </div>
       </div>
 

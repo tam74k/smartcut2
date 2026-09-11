@@ -8,10 +8,12 @@ import { AppSettings, Branch, Client, QueueTicket, AppUser } from '../types';
 import { QueueService } from '../services/queueService';
 import { DB } from '../services/db';
 import { AuthService, ROLE_LABELS } from '../services/auth';
+import { SubscriptionService } from '../services/subscriptionService';
 import { printQueueSlipDirect } from '../utils/printQueueSlip';
 import { dispatchKioskSilentPrint, sendToNetworkPrinter } from '../services/networkPrinterService';
 
 interface KioskTabletScreenProps {
+  currentUser?: AppUser | null;
   settings: AppSettings;
   branches: Branch[];
   clients: Client[];
@@ -60,18 +62,168 @@ function playKioskChime() {
   }
 }
 
+// استخراج كود الصالون من الرابط سواء كان في الاستعلام search أو في الـ hash (مثل /#/koisk?salon=... أو ?code=...)
+function extractKioskSalonCode(): string {
+  if (typeof window === 'undefined') return '';
+  try {
+    // 1. Search params
+    const searchParams = new URLSearchParams(window.location.search);
+    const s1 = searchParams.get('salon') || searchParams.get('code') || searchParams.get('salonCode');
+    if (s1) return s1.trim().toLowerCase();
+
+    // 2. Hash query params (e.g. #/koisk?salon=xxx or #/kiosk?code=xxx)
+    const hash = window.location.hash || '';
+    if (hash.includes('?')) {
+      const hashQuery = hash.substring(hash.indexOf('?') + 1);
+      const hashParams = new URLSearchParams(hashQuery);
+      const s2 = hashParams.get('salon') || hashParams.get('code') || hashParams.get('salonCode');
+      if (s2) return s2.trim().toLowerCase();
+    }
+
+    // 3. Hash path segments: e.g. #/koisk/10a5n or #/10a5n
+    const cleanHash = hash.replace(/^#\/?/, '').split('?')[0];
+    const parts = cleanHash.split('/').map(p => p.trim()).filter(Boolean);
+    for (const part of parts) {
+      if (
+        part !== 'koisk' &&
+        part !== 'kiosk' &&
+        part !== 'queue' &&
+        part.length >= 3 &&
+        part.length <= 15 &&
+        !part.includes('=')
+      ) {
+        return part.toLowerCase();
+      }
+    }
+
+    // 4. Stored salon code if available
+    const saved = localStorage.getItem('smartcut_registered_salon_code');
+    if (saved) return saved.trim().toLowerCase();
+  } catch {}
+  return '';
+}
+
 export function KioskTabletScreen({
+  currentUser,
   settings,
   branches,
   clients,
   onSaveClient,
   onSwitchToMainApp
 }: KioskTabletScreenProps) {
+  // كود الصالون من الرابط إن وُجد
+  const urlSalonCode = useMemo(() => extractKioskSalonCode(), []);
+
+  // الحساب النشط المسجل دخوله حالياً (سواء ممرر كـ prop أو محفوظ في التخزين المحلي)
+  const activeUser = useMemo(() => {
+    if (currentUser) return currentUser;
+    try {
+      const saved = localStorage.getItem('smartcut_current_user');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return null;
+  }, [currentUser]);
+
+  // Scoped Data State (دعم تخصيص الصالون تلقائياً وفق الكود في الرابط)
+  const [scopedSettings, setScopedSettings] = useState<AppSettings>(settings);
+  const [scopedBranches, setScopedBranches] = useState<Branch[]>(branches);
+  const [scopedClients, setScopedClients] = useState<Client[]>(clients);
+
+  useEffect(() => {
+    if (!urlSalonCode) {
+      setScopedSettings(settings);
+    }
+  }, [settings, urlSalonCode]);
+
+  useEffect(() => {
+    if (!urlSalonCode) {
+      setScopedBranches(branches);
+    }
+  }, [branches, urlSalonCode]);
+
+  useEffect(() => {
+    if (!urlSalonCode) {
+      setScopedClients(clients);
+    }
+  }, [clients, urlSalonCode]);
+
+  // تحميل بيانات الصالون والفروع والعملاء تلقائياً عند وجود كود صالون في الرابط
+  useEffect(() => {
+    let isMounted = true;
+    if (!urlSalonCode) return;
+
+    const resolveSalon = async () => {
+      try {
+        const localSalons = SubscriptionService.getSalons();
+        let matched = localSalons.find(s => s.code?.toLowerCase() === urlSalonCode || s.id?.toLowerCase() === urlSalonCode);
+
+        if (!matched) {
+          const cloudSalons = await DB.fetchSalons();
+          if (cloudSalons && cloudSalons.length > 0) {
+            matched = cloudSalons.find((s: any) => s.code?.toLowerCase() === urlSalonCode || s.id?.toLowerCase() === urlSalonCode);
+          }
+        }
+
+        if (matched && isMounted) {
+          try {
+            localStorage.setItem('smartcut_registered_salon_code', matched.code || matched.id);
+          } catch {}
+
+          const [dbSettings, dbBranches, dbClients] = await Promise.allSettled([
+            DB.fetchSettings(matched.id),
+            DB.fetchBranches(matched.id),
+            DB.fetchClients(matched.id)
+          ]);
+
+          const sData = dbSettings.status === 'fulfilled' ? dbSettings.value : null;
+          const bData = dbBranches.status === 'fulfilled' ? dbBranches.value : [];
+          const cData = dbClients.status === 'fulfilled' ? dbClients.value : [];
+
+          setScopedSettings(prev => ({
+            ...prev,
+            ...(sData || {}),
+            salonId: matched.id,
+            salonCode: matched.code,
+            salonName: sData?.salonName || matched.name || 'صالون العناية',
+            logoUrl: sData?.logoUrl || matched.logoUrl || prev.logoUrl
+          }));
+
+          if (bData && bData.length > 0) {
+            setScopedBranches(bData.map((b: any) => ({
+              ...b,
+              salonId: matched.id,
+              salonCode: matched.code
+            })));
+          } else {
+            const localBranches = SubscriptionService.getBranches(matched.id);
+            if (localBranches.length > 0) {
+              setScopedBranches(localBranches);
+            }
+          }
+
+          if (cData && cData.length > 0) {
+            setScopedClients(cData);
+          }
+        }
+      } catch (err) {
+        console.warn('Error resolving salon for kiosk:', err);
+      }
+    };
+
+    resolveSalon();
+    return () => { isMounted = false; };
+  }, [urlSalonCode]);
+
   // Active Branch
   const [selectedBranchId, setSelectedBranchId] = useState<string>(() => {
     try {
       const urlParams = new URLSearchParams(window.location.search);
-      const bFromUrl = urlParams.get('branchId') || urlParams.get('branch');
+      let bFromUrl = urlParams.get('branchId') || urlParams.get('branch');
+      if (!bFromUrl && window.location.hash.includes('?')) {
+        const hashQuery = window.location.hash.substring(window.location.hash.indexOf('?') + 1);
+        const hashParams = new URLSearchParams(hashQuery);
+        bFromUrl = hashParams.get('branchId') || hashParams.get('branch');
+      }
       if (bFromUrl) return bFromUrl;
       const saved = localStorage.getItem('smartcut_kiosk_branch_id');
       if (saved) return saved;
@@ -79,7 +231,7 @@ export function KioskTabletScreen({
     return branches[0]?.id || 'b-main';
   });
 
-  const activeBranch = branches.find(b => b.id === selectedBranchId) || branches[0];
+  const activeBranch = scopedBranches.find(b => b.id === selectedBranchId) || scopedBranches[0];
 
   // Keypad & Input State
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -94,19 +246,45 @@ export function KioskTabletScreen({
 
   // Staff Authentication & Settings Modal
   const [showExitModal, setShowExitModal] = useState(false);
+
+  // حالة قفل الكيوسك:
+  // إذا كان هناك حساب مسجل دخول أو تم الدخول برابط يحتوي على كود صالون، يتم إلغاء القفل فوراً والدخول إلى لوحة الأرقام مباشرة
   const [isKioskLocked, setIsKioskLocked] = useState(() => {
+    if (activeUser || urlSalonCode) {
+      try {
+        localStorage.removeItem('smartcut_kiosk_is_locked');
+      } catch {}
+      return false;
+    }
     try {
       return localStorage.getItem('smartcut_kiosk_is_locked') === 'true';
     } catch {
       return false;
     }
   });
+
+  // فك القفل فوراً إذا تم تسجيل الدخول أو عند توفر كود الصالون في الرابط
+  useEffect(() => {
+    if (activeUser || urlSalonCode) {
+      setIsKioskLocked(false);
+      try {
+        localStorage.removeItem('smartcut_kiosk_is_locked');
+      } catch {}
+    }
+  }, [activeUser, urlSalonCode]);
+
   const [staffUsername, setStaffUsername] = useState('');
   const [staffPassword, setStaffPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
-  const [authenticatedStaff, setAuthenticatedStaff] = useState<AppUser | null>(null);
+  const [authenticatedStaff, setAuthenticatedStaff] = useState<AppUser | null>(activeUser);
+
+  useEffect(() => {
+    if (activeUser) {
+      setAuthenticatedStaff(activeUser);
+    }
+  }, [activeUser]);
 
   // Network Printer IP configuration on Tablet
   const [kioskPrinterIp, setKioskPrinterIp] = useState(() => localStorage.getItem('smartcut_kiosk_printer_ip') || settings.thermalPrinterIp || '');
@@ -127,7 +305,7 @@ export function KioskTabletScreen({
     }
     setKioskTestResult('جاري فحص الاتصال بالطابعة...');
     const res = await sendToNetworkPrinter({
-      salonName: settings.salonName || 'صالون سمارت كت',
+      salonName: scopedSettings.salonName || 'صالون سمارت كت',
       branchName: activeBranch?.name || 'الفرع الرئيسي',
       clientName: 'فحص اتصال التابلت',
       phone: '0500000000',
@@ -159,7 +337,7 @@ export function KioskTabletScreen({
     
     if (isReadyForLookup) {
       // Find matching client
-      const found = clients.find(c => {
+      const found = scopedClients.find(c => {
         const cPhone = c.phone.replace(/[^0-9]/g, '');
         return cPhone === cleanPhone || cPhone.endsWith(cleanPhone) || cleanPhone.endsWith(cPhone);
       });
@@ -176,7 +354,7 @@ export function KioskTabletScreen({
       setDetectedClient(null);
       setIsNewClient(false);
     }
-  }, [phoneNumber, clients]);
+  }, [phoneNumber, scopedClients]);
 
   // التحقق من جاهزية الرقم للتأكيد وفق القواعد المطلوبة:
   // - إذا بدأ بـ 01 فيكون مطلوباً 11 رقماً بالضبط
@@ -244,7 +422,7 @@ export function KioskTabletScreen({
       const finalName = clientName.trim() || `عميل (${cleanPhone.slice(-4)})`;
       const newC: Client = {
         id: 'C-' + Math.random().toString(36).substr(2, 9).toUpperCase(),
-        salonId: settings.salonId,
+        salonId: scopedSettings.salonId,
         branchId: activeBranch?.id,
         name: finalName,
         phone: cleanPhone,
@@ -256,6 +434,7 @@ export function KioskTabletScreen({
       };
 
       onSaveClient(newC);
+      setScopedClients(prev => [newC, ...prev.filter(c => c.id !== newC.id && c.phone !== newC.phone)]);
       try {
         await DB.saveClient(newC);
       } catch {}
@@ -265,7 +444,7 @@ export function KioskTabletScreen({
 
     // Issue Queue Ticket & Create Held Invoice in POS with Supabase coordination
     const { ticket } = await QueueService.createTicketFromKiosk({
-      salonId: settings.salonId,
+      salonId: scopedSettings.salonId,
       branchId: activeBranch?.id || 'b-main',
       client: targetClient
     });
@@ -273,12 +452,12 @@ export function KioskTabletScreen({
     playKioskChime();
 
     // إرسال أمر الطباعة عبر الشبكة للـ IP المحدد أو جهاز الاستقبال بدون أي شاشات على التابلت إطلاقاً
-    const printerIp = localStorage.getItem('smartcut_kiosk_printer_ip') || settings.thermalPrinterIp;
-    const printerPort = Number(localStorage.getItem('smartcut_kiosk_printer_port')) || settings.thermalPrinterPort || 8080;
+    const printerIp = localStorage.getItem('smartcut_kiosk_printer_ip') || scopedSettings.thermalPrinterIp;
+    const printerPort = Number(localStorage.getItem('smartcut_kiosk_printer_port')) || scopedSettings.thermalPrinterPort || 8080;
 
     dispatchKioskSilentPrint({
-      salonName: settings.salonName || 'منظومة الصالون',
-      salonLogo: settings.logoUrl,
+      salonName: scopedSettings.salonName || 'منظومة الصالون',
+      salonLogo: scopedSettings.logoUrl,
       branchName: activeBranch?.name,
       clientName: targetClient.name,
       phone: targetClient.phone,
@@ -286,7 +465,7 @@ export function KioskTabletScreen({
     }, {
       printerIp,
       printerPort,
-      salonId: settings.salonId
+      salonId: scopedSettings.salonId
     }).catch(err => console.warn('Kiosk silent print error:', err));
 
     // تفريغ الحقول فوراً للعميل التالي مع إشعار نجاح علوي سريع
@@ -345,7 +524,7 @@ export function KioskTabletScreen({
       }
 
       // Check salon affiliation
-      if (user.role !== 'programmer' && user.salonId && settings.salonId && user.salonId !== settings.salonId) {
+      if (user.role !== 'programmer' && user.salonId && scopedSettings.salonId && user.salonId !== scopedSettings.salonId) {
         setLoginError('عذراً، هذا الحساب لا يتبع لهذا الصالون');
         setIsLoggingIn(false);
         return;
@@ -482,8 +661,8 @@ export function KioskTabletScreen({
       {/* TOP HEADER */}
       <header className="p-4 sm:p-6 flex items-center justify-between border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-md relative z-10">
         <div className="flex items-center gap-3">
-          {settings.logoUrl ? (
-            <img src={settings.logoUrl} alt="Logo" className="w-12 h-12 sm:w-14 sm:h-14 object-contain rounded-2xl p-1 bg-white/5 border border-slate-700" />
+          {scopedSettings.logoUrl ? (
+            <img src={scopedSettings.logoUrl} alt="Logo" className="w-12 h-12 sm:w-14 sm:h-14 object-contain rounded-2xl p-1 bg-white/5 border border-slate-700" />
           ) : (
             <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-tr from-amber-600 to-amber-400 flex items-center justify-center text-slate-950 shadow-lg shadow-amber-500/20">
               <Scissors size={28} />
@@ -491,7 +670,7 @@ export function KioskTabletScreen({
           )}
           <div>
             <h1 className="font-black text-base sm:text-xl text-white tracking-wide">
-              {settings.salonName || 'منظومة الصالون الحديث'}
+              {scopedSettings.salonName || 'منظومة الصالون الحديث'}
             </h1>
             <p className="text-xs sm:text-sm text-amber-400/90 font-bold flex items-center gap-1.5 mt-0.5">
               <span>{activeBranch ? activeBranch.name : 'الفرع الرئيسي'}</span>
@@ -938,7 +1117,7 @@ export function KioskTabletScreen({
                       onChange={e => setSelectedBranchId(e.target.value)}
                       className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none"
                     >
-                      {branches.map(b => (
+                      {scopedBranches.map(b => (
                         <option key={b.id} value={b.id}>{b.name}</option>
                       ))}
                     </select>

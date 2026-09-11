@@ -5,13 +5,14 @@ export function ServicesReportReceipt({
   settings,
   invoices,
   dateLabel,
-  userName = 'أحمد محمد'
+  userName
 }: {
   settings: AppSettings,
   invoices: Invoice[],
   dateLabel: string,
   userName?: string
 }) {
+  const effectiveUserName = userName || settings.ownerName || 'المسؤول';
   const servicesMap: Record<string, { count: number, total: number }> = {};
   let overallTotal = 0;
   let overallCount = 0;
@@ -49,7 +50,7 @@ export function ServicesReportReceipt({
         <h2 className="text-xl font-bold mb-2">{settings.salonName || 'اسم الصالون'}</h2>
         <h1 className="text-xl font-bold">تقرير الخدمات</h1>
         <p className="text-xs mt-1">تاريخ: {dateLabel}</p>
-        <p className="text-xs">المستخدم: {userName}</p>
+        <p className="text-xs">المستخدم: {effectiveUserName}</p>
       </div>
 
       <div className="mb-4">

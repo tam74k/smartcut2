@@ -5,13 +5,14 @@ export function ExpensesReportReceipt({
   settings,
   transactions,
   dateLabel,
-  userName = 'أحمد محمد'
+  userName
 }: {
   settings: AppSettings,
   transactions: Transaction[],
   dateLabel: string,
   userName?: string
 }) {
+  const effectiveUserName = userName || settings.ownerName || 'المسؤول';
   let overallTotal = 0;
 
   const getDisplayCategory = (t: Transaction) => {
@@ -50,7 +51,7 @@ export function ExpensesReportReceipt({
         <h2 className="text-xl font-bold mb-2">{settings.salonName || 'اسم الصالون'}</h2>
         <h1 className="text-xl font-bold">تقرير المصروفات</h1>
         <p className="text-xs mt-1">تاريخ: {dateLabel}</p>
-        <p className="text-xs">المستخدم: {userName}</p>
+        <p className="text-xs">المستخدم: {effectiveUserName}</p>
       </div>
 
       <div className="mb-4">

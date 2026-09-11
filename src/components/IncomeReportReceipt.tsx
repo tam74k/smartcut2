@@ -7,7 +7,7 @@ export function IncomeReportReceipt({
   startDate,
   endDate,
   dateLabel,
-  userName = 'أحمد محمد'
+  userName
 }: {
   settings: AppSettings,
   transactions: Transaction[],
@@ -16,6 +16,7 @@ export function IncomeReportReceipt({
   dateLabel: string,
   userName?: string
 }) {
+  const effectiveUserName = userName || settings.ownerName || 'المسؤول';
   const treasuries = settings.treasuries;
 
   const { rows, totals } = useMemo(() => {
@@ -125,7 +126,7 @@ export function IncomeReportReceipt({
         <h2 className="text-lg font-bold mb-1">{settings.salonName || 'اسم الصالون'}</h2>
         <h1 className="text-lg font-bold">تقرير الدخل</h1>
         <p className="text-[10px] mt-1">تاريخ: {dateLabel}</p>
-        <p className="text-[10px]">المستخدم: {userName}</p>
+        <p className="text-[10px]">المستخدم: {effectiveUserName}</p>
       </div>
 
       <div className="mb-2 overflow-x-auto">

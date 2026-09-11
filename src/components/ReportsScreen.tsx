@@ -1,6 +1,6 @@
-import { useState, useMemo } from 'react';
-import { AppSettings, Transaction, Invoice, Branch, TipRecord } from '../types';
-import { Calendar, FileBarChart, Download, TrendingUp, TrendingDown, DollarSign, Printer, CheckCircle2, Clock, Wallet, Coins } from 'lucide-react';
+import { useState, useMemo, useEffect } from 'react';
+import { AppSettings, Transaction, Invoice, Branch, TipRecord, AppUser } from '../types';
+import { Calendar, FileBarChart, Download, TrendingUp, TrendingDown, DollarSign, Printer, CheckCircle2, Clock, Wallet, Coins, ShoppingCart, Truck, Edit2, Trash2, RefreshCw, AlertTriangle, User, X, Check, Save } from 'lucide-react';
 import { ClosingReportReceipt } from './ClosingReportReceipt';
 import { ServicesReportReceipt } from './ServicesReportReceipt';
 import { EmployeesReportReceipt } from './EmployeesReportReceipt';
@@ -10,6 +10,7 @@ import { CustodyReportReceipt } from './CustodyReportReceipt';
 import { exportToExcel } from '../utils/exportExcel';
 import { handlePrintReceipt } from '../utils/print';
 import { calculateEmployeeCommission } from '../utils/commissionHelper';
+import { DB } from '../services/db';
 
 export function ReportsScreen({ 
   settings, 
@@ -24,7 +25,11 @@ export function ReportsScreen({
   fingerprintLogs = [],
   expenses = [],
   purchases = [],
-  supplierPayments = []
+  supplierPayments = [],
+  suppliers = [],
+  currentUser,
+  setEmployees,
+  setTransactions
 }: { 
   settings: AppSettings, 
   transactions: Transaction[], 
@@ -38,7 +43,11 @@ export function ReportsScreen({
   fingerprintLogs?: any[],
   expenses?: any[],
   purchases?: any[],
-  supplierPayments?: any[]
+  supplierPayments?: any[],
+  suppliers?: any[],
+  currentUser?: AppUser | null,
+  setEmployees?: (employees: any[]) => void,
+  setTransactions?: (transactions: any[]) => void
 }) {
 
   const date = new Date();
@@ -54,6 +63,49 @@ export function ReportsScreen({
   const [isGenerated, setIsGenerated] = useState(false);
   const [overtimeViewMode, setOvertimeViewMode] = useState<'summary' | 'detailed'>('summary');
   const [selectedOvertimeEmpId, setSelectedOvertimeEmpId] = useState<string>('all');
+  const [selectedAdvanceEmpId, setSelectedAdvanceEmpId] = useState<string>('all');
+
+  const [localFingerprintLogs, setLocalFingerprintLogs] = useState<any[]>(fingerprintLogs || []);
+  const [isRefreshingLogs, setIsRefreshingLogs] = useState<boolean>(false);
+  const [editingAdvance, setEditingAdvance] = useState<{
+    row: any;
+    amount: number;
+    date: string;
+    treasuryId: string;
+    note: string;
+  } | null>(null);
+
+  const activeUserName = currentUser?.name || settings.ownerName || 'المسؤول';
+
+  useEffect(() => {
+    if (fingerprintLogs && fingerprintLogs.length > 0) {
+      setLocalFingerprintLogs(fingerprintLogs);
+    }
+  }, [fingerprintLogs]);
+
+  const refreshLogs = async () => {
+    const sId = settings.salonId;
+    if (!sId) return;
+    setIsRefreshingLogs(true);
+    try {
+      const freshLogs = await DB.fetchFingerprintLogs(sId);
+      if (Array.isArray(freshLogs)) {
+        setLocalFingerprintLogs(freshLogs);
+      }
+    } catch (e) {
+      console.warn('Error refreshing logs in ReportsScreen:', e);
+    } finally {
+      setIsRefreshingLogs(false);
+    }
+  };
+
+  useEffect(() => {
+    if (reportType === 'overtime' && localFingerprintLogs.length === 0) {
+      refreshLogs();
+    }
+  }, [reportType]);
+
+  const effectiveFingerprintLogs = localFingerprintLogs.length > 0 ? localFingerprintLogs : fingerprintLogs;
 
   const [activeFrom, setActiveFrom] = useState(defaultFirstDay);
   const [activeTo, setActiveTo] = useState(defaultLastDay);
@@ -86,6 +138,26 @@ export function ReportsScreen({
     return (tips || []).filter(t => matchesActiveBranch(t.branchId));
   }, [tips, activeBranchId, isMainBranch]);
 
+  const getTreasuryLabel = (tId?: string, paymentMethod?: string) => {
+    if (tId) {
+      const found = settings.treasuries?.find((t: any) => t.id === tId);
+      if (found) return found.name;
+      if (tId === 'cash') return 'كاش (الدرج)';
+      if (tId === 'card') return 'شبكة / فيزا';
+      if (tId === 'main') return 'الخزنة الرئيسية';
+    }
+    if (paymentMethod === 'cash') return 'نقدي (كاش)';
+    if (paymentMethod === 'card') return 'شبكة / فيزا';
+    if (paymentMethod === 'bank' || paymentMethod === 'transfer') return 'تحويل بنكي';
+    return tId || paymentMethod || 'كاش';
+  };
+
+  const getSupplierName = (sId?: string) => {
+    if (!sId) return 'مورد عام';
+    const s = (suppliers || []).find((item: any) => item.id === sId);
+    return s ? s.name : sId;
+  };
+
   const handleGenerate = () => {
     setActiveFrom(fromDate);
     setActiveTo(toDate);
@@ -102,12 +174,19 @@ export function ReportsScreen({
         totalSalaries: 0,
         totalAdvances: 0,
         totalPurchasesPaid: 0,
+        totalPurchasesAmount: 0,
+        totalPurchasesRemaining: 0,
         totalSupplierPayments: 0,
         totalPurchasesAndSuppliers: 0,
         totalCommissions: 0,
+        totalDeductions: 0,
         netProfit: 0,
         profitMargin: 0,
         periodInvoicesCount: 0,
+        periodPurchases: [],
+        periodSupplierPayments: [],
+        supplierPaymentsByMethod: {},
+        purchasesByMethod: {},
         breakdownList: []
       };
     }
@@ -174,7 +253,9 @@ export function ReportsScreen({
       const isBranchMatch = matchesActiveBranch(p.branchId);
       return d >= activeFrom && d <= activeTo && isBranchMatch;
     });
-    const totalPurchasesPaid = periodPurchases.reduce((sum, p) => sum + (Number(p.paidAmount) || 0), 0);
+    const totalPurchasesPaid = periodPurchases.reduce((sum, p) => sum + (Number(p.paid ?? p.paidAmount ?? p.paid_amount) || 0), 0);
+    const totalPurchasesAmount = periodPurchases.reduce((sum, p) => sum + (Number(p.total ?? p.totalAmount ?? p.total_amount) || 0), 0);
+    const totalPurchasesRemaining = periodPurchases.reduce((sum, p) => sum + (Number(p.remaining ?? p.remainingAmount ?? p.remaining_amount) || 0), 0);
 
     const periodSupplierPayments = (supplierPayments || []).filter(sp => {
       const d = (sp.paymentDate || sp.date || '').split('T')[0];
@@ -183,6 +264,23 @@ export function ReportsScreen({
     });
     const totalSupplierPayments = periodSupplierPayments.reduce((sum, sp) => sum + (Number(sp.amount) || 0), 0);
     const totalPurchasesAndSuppliers = totalPurchasesPaid + totalSupplierPayments;
+
+    // Breakdown of Supplier Payments by Treasury / Payment Method
+    const supplierPaymentsByMethod: Record<string, number> = {};
+    periodSupplierPayments.forEach(sp => {
+      const method = sp.treasuryId || sp.paymentMethod || sp.treasury || 'cash';
+      supplierPaymentsByMethod[method] = (supplierPaymentsByMethod[method] || 0) + (Number(sp.amount) || 0);
+    });
+
+    // Breakdown of Purchases by Treasury / Payment Method
+    const purchasesByMethod: Record<string, number> = {};
+    periodPurchases.forEach(p => {
+      const paid = Number(p.paid ?? p.paidAmount ?? p.paid_amount) || 0;
+      if (paid > 0) {
+        const method = p.treasuryId || p.paymentMethod || p.treasury || 'cash';
+        purchasesByMethod[method] = (purchasesByMethod[method] || 0) + paid;
+      }
+    });
 
     // 5. Employee Commissions (عمولات الموظفين - تنفيذ وإحالة)
     let totalCommissions = 0;
@@ -204,7 +302,7 @@ export function ReportsScreen({
     }
 
     // 6. Net Profit Calculation:
-    // صافي الربح = إجمالي الدخل - المصروفات - الرواتب - السلف - (المسدد في المشتريات + دفعات الموردين) - العمولات
+    // صافي الربح = إجمالي الدخل - المصروفات - الرواتب - السلف - المسدد في المشتريات - دفعات الموردين - العمولات
     const totalDeductions = totalExpenses + totalSalaries + totalAdvances + totalPurchasesAndSuppliers + totalCommissions;
     const netProfit = grossIncome - totalDeductions;
     const profitMargin = grossIncome > 0 ? (netProfit / grossIncome) * 100 : 0;
@@ -214,8 +312,8 @@ export function ReportsScreen({
       { id: 'expenses', label: 'جميع المصروفات التشغيلية والنثرية', amount: totalExpenses, type: 'minus', percent: grossIncome > 0 ? (totalExpenses / grossIncome) * 100 : 0, note: 'مصروفات الإيجار والفواتير والنثريات' },
       { id: 'salaries', label: 'الرواتب الأساسية ومسيرات الصرف', amount: totalSalaries, type: 'minus', percent: grossIncome > 0 ? (totalSalaries / grossIncome) * 100 : 0, note: 'مسيرات الرواتب المنصرفة للكادر' },
       { id: 'advances', label: 'سلف الموظفين المصروفة', amount: totalAdvances, type: 'minus', percent: grossIncome > 0 ? (totalAdvances / grossIncome) * 100 : 0, note: 'السلف الممنوحة خلال هذه الفترة' },
-      { id: 'purchases', label: 'المسدد في فواتير المشتريات', amount: totalPurchasesPaid, type: 'minus', percent: grossIncome > 0 ? (totalPurchasesPaid / grossIncome) * 100 : 0, note: 'دفعات فواتير مخزون المنتجات والمستلزمات' },
-      { id: 'supplier_payments', label: 'سندات دفعات وسداد الموردين', amount: totalSupplierPayments, type: 'minus', percent: grossIncome > 0 ? (totalSupplierPayments / grossIncome) * 100 : 0, note: 'المبالغ المسددة لسندات وصكوك الموردين' },
+      { id: 'purchases', label: 'المسدد في فواتير المشتريات', amount: totalPurchasesPaid, type: 'minus', percent: grossIncome > 0 ? (totalPurchasesPaid / grossIncome) * 100 : 0, note: `${periodPurchases.length} فاتورة مشتريات (إجمالي الفواتير: ${totalPurchasesAmount.toFixed(2)} ${settings.currency} - المتبقي كآجل: ${totalPurchasesRemaining.toFixed(2)} ${settings.currency})` },
+      { id: 'supplier_payments', label: 'سندات دفعات وسداد الموردين', amount: totalSupplierPayments, type: 'minus', percent: grossIncome > 0 ? (totalSupplierPayments / grossIncome) * 100 : 0, note: `${periodSupplierPayments.length} سند دفع وسداد للموردين خلال الفترة` },
       { id: 'commissions', label: 'عمولات الموظفين على الخدمات والمنتجات', amount: totalCommissions, type: 'minus', percent: grossIncome > 0 ? (totalCommissions / grossIncome) * 100 : 0, note: 'استحقاقات الفنيين عن المبيعات المنجزة' },
       { id: 'net_profit', label: 'صافي الربح الفعلي بعد كافة الاستقطاعات', amount: netProfit, type: 'result', percent: profitMargin, note: `هامش الربح الصافي: ${profitMargin.toFixed(1)}%` }
     ];
@@ -226,6 +324,8 @@ export function ReportsScreen({
       totalSalaries,
       totalAdvances,
       totalPurchasesPaid,
+      totalPurchasesAmount,
+      totalPurchasesRemaining,
       totalSupplierPayments,
       totalPurchasesAndSuppliers,
       totalCommissions,
@@ -233,9 +333,13 @@ export function ReportsScreen({
       netProfit,
       profitMargin,
       periodInvoicesCount: periodInvoices.length,
+      periodPurchases,
+      periodSupplierPayments,
+      supplierPaymentsByMethod,
+      purchasesByMethod,
       breakdownList
     };
-  }, [activeFrom, activeTo, branchInvoices, branchTransactions, expenses, branchEmployees, purchases, supplierPayments, matchesActiveBranch]);
+  }, [activeFrom, activeTo, branchInvoices, branchTransactions, expenses, branchEmployees, purchases, supplierPayments, matchesActiveBranch, settings.currency]);
 
   const overtimeReportData = useMemo(() => {
     if (!activeFrom || !activeTo) return { detailedRows: [], summaryRows: [], totalHours: 0, totalAmount: 0, totalEmployees: 0, otCount: 0 };
@@ -249,6 +353,8 @@ export function ReportsScreen({
     const targetEmployees = selectedOvertimeEmpId === 'all'
       ? branchEmployees
       : branchEmployees.filter(e => e.id === selectedOvertimeEmpId);
+
+    const effectiveLogs = (localFingerprintLogs && localFingerprintLogs.length > 0) ? localFingerprintLogs : (fingerprintLogs || []);
 
     const dates: string[] = [];
     const cur = new Date(activeFrom);
@@ -285,28 +391,72 @@ export function ReportsScreen({
           ? [...emp.shiftScheduleHistory].reverse().find(s => s.date <= dateStr) || { checkInTime: emp.checkInTime || '09:00', checkOutTime: emp.checkOutTime || '18:00' }
           : { checkInTime: emp.checkInTime || '09:00', checkOutTime: emp.checkOutTime || '18:00' };
 
-        const scheduledCheckOut = shiftSchedule.checkOutTime || '18:00';
-        const schedOutParts = scheduledCheckOut.split(':').map(Number);
-        const totalSchedOutMin = schedOutParts[0] * 60 + (schedOutParts[1] || 0);
+        const scheduledCheckIn = shiftSchedule.checkInTime || emp.checkInTime || '09:00';
+        const scheduledCheckOut = shiftSchedule.checkOutTime || emp.checkOutTime || '18:00';
+        
+        const schedInParts = scheduledCheckIn.split(':').map(Number);
+        const totalSchedInMin = schedInParts[0] * 60 + (schedInParts[1] || 0);
 
-        const dayLogs = (fingerprintLogs || []).filter(l => 
+        const schedOutParts = scheduledCheckOut.split(':').map(Number);
+        let totalSchedOutMin = schedOutParts[0] * 60 + (schedOutParts[1] || 0);
+
+        // Overnight shift schedule (e.g. 14:00 to 02:00)
+        if (totalSchedOutMin <= totalSchedInMin) {
+          totalSchedOutMin += 1440;
+        }
+
+        const dayLogs = effectiveLogs.filter(l => 
           (l.employeeId === emp.id || (emp.fingerprintCode && l.fingerprintCode === emp.fingerprintCode)) &&
-          (l.timestamp && l.timestamp.startsWith(dateStr))
+          (l.timestamp && (l.timestamp.startsWith(dateStr) || l.timestamp.split('T')[0] === dateStr))
         ).sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
 
-        const checkInLog = dayLogs.find(l => l.type === 'check_in') || dayLogs[0];
-        const checkOutLog = dayLogs.filter(l => l.type === 'check_out').pop() || (dayLogs.length > 1 ? dayLogs[dayLogs.length - 1] : null);
+        // Look for next day early morning check_out (00:00 - 11:59) for overnight shift
+        const nextDate = new Date(rowDate);
+        nextDate.setDate(nextDate.getDate() + 1);
+        const nextDateStr = nextDate.toISOString().split('T')[0];
 
-        if (checkOutLog && checkOutLog !== checkInLog) {
+        const nextDayEarlyCheckOut = effectiveLogs.find(l => 
+          (l.employeeId === emp.id || (emp.fingerprintCode && l.fingerprintCode === emp.fingerprintCode)) &&
+          l.type === 'check_out' &&
+          (l.timestamp && (l.timestamp.startsWith(nextDateStr) || l.timestamp.split('T')[0] === nextDateStr)) &&
+          (() => {
+            const timePart = l.timestamp.includes('T') ? l.timestamp.split('T')[1] : l.timestamp.split(' ')[1];
+            if (!timePart) return false;
+            const hour = Number(timePart.split(':')[0]);
+            return hour < 12;
+          })()
+        );
+
+        const checkInLogs = dayLogs.filter(l => l.type === 'check_in');
+        const checkOutLogs = dayLogs.filter(l => l.type === 'check_out');
+
+        const checkInLog = checkInLogs[checkInLogs.length - 1] || (dayLogs.length > 0 && !checkOutLogs.includes(dayLogs[0]) ? dayLogs[0] : null);
+        let checkOutLog = checkOutLogs[checkOutLogs.length - 1] || (dayLogs.length > 1 && dayLogs[dayLogs.length - 1] !== checkInLog ? dayLogs[dayLogs.length - 1] : null);
+
+        let isNextDayLog = false;
+        if (!checkOutLog && nextDayEarlyCheckOut) {
+          checkOutLog = nextDayEarlyCheckOut;
+          isNextDayLog = true;
+        }
+
+        if (checkOutLog && (checkInLog || isNextDayLog || checkOutLog !== checkInLog)) {
           const outTimeStr = checkOutLog.timestamp.includes('T') ? checkOutLog.timestamp.split('T')[1].substring(0, 5) : checkOutLog.timestamp.split(' ')[1]?.substring(0, 5);
           if (outTimeStr) {
             const outParts = outTimeStr.split(':').map(Number);
-            const actualOutMin = outParts[0] * 60 + (outParts[1] || 0);
+            let actualOutMin = outParts[0] * 60 + (outParts[1] || 0);
+
+            const inTimeStr = checkInLog ? (checkInLog.timestamp.includes('T') ? checkInLog.timestamp.split('T')[1].substring(0, 5) : checkInLog.timestamp.split(' ')[1]?.substring(0, 5)) : null;
+            const actualInMin = inTimeStr ? (Number(inTimeStr.split(':')[0]) * 60 + Number(inTimeStr.split(':')[1])) : totalSchedInMin;
+
+            const isOvernight = isNextDayLog || (actualOutMin <= actualInMin);
+            if (isOvernight) {
+              actualOutMin += 1440;
+            }
 
             if (actualOutMin > totalSchedOutMin) {
               const rawOt = actualOutMin - totalSchedOutMin;
               const otGrace = hr.overtimeGraceMinutes ?? 30;
-              if (rawOt > otGrace) {
+              if (rawOt >= otGrace) {
                 const overtimeMinutes = rawOt;
                 const overtimeHours = (overtimeMinutes / 60);
                 
@@ -340,7 +490,7 @@ export function ReportsScreen({
                   empCode: emp.fingerprintCode || emp.id,
                   role: emp.role || 'موظف',
                   scheduledCheckOut,
-                  actualCheckOut: outTimeStr,
+                  actualCheckOut: isOvernight ? `${outTimeStr} (+1)` : outTimeStr,
                   overtimeMinutes,
                   overtimeHours: overtimeHours.toFixed(2),
                   hourlyRate: hourlyRate.toFixed(2),
@@ -372,7 +522,7 @@ export function ReportsScreen({
       totalEmployees,
       otCount: detailedRows.length
     };
-  }, [activeFrom, activeTo, branchEmployees, selectedOvertimeEmpId, fingerprintLogs, settings.hrSettings, settings.currency]);
+  }, [activeFrom, activeTo, branchEmployees, selectedOvertimeEmpId, fingerprintLogs, localFingerprintLogs, settings.hrSettings, settings.currency]);
 
   const stats = useMemo(() => {
     const start = new Date(activeFrom);
@@ -517,6 +667,229 @@ export function ReportsScreen({
     };
   }, [branchEmployees, branchTransactions, activeFrom, activeTo, settings.treasuries]);
 
+  // ---- حسابات تقرير سلف الموظفين وتفاصيلها (Advances Report) ----
+  const advancesReportData = useMemo(() => {
+    if (!activeFrom || !activeTo) {
+      return {
+        rows: [] as any[],
+        totalAmount: 0,
+        count: 0,
+        employeeCount: 0,
+        treasuryBreakdown: [] as any[]
+      };
+    }
+
+    const rows: Array<{
+      id: string;
+      dateStr: string;
+      empId: string;
+      empCode: string;
+      empName: string;
+      empRole: string;
+      amount: number;
+      treasuryId?: string;
+      treasuryName: string;
+      note: string;
+      source: 'emp_record' | 'transaction';
+      originalRecord?: any;
+    }> = [];
+
+    const targetEmployees = selectedAdvanceEmpId === 'all'
+      ? branchEmployees
+      : branchEmployees.filter(e => e.id === selectedAdvanceEmpId);
+
+    targetEmployees.forEach(emp => {
+      (emp.financialRecords || []).forEach((rec: any) => {
+        const isSalaryRecord = rec.type === 'salary' || (rec.type === 'advance' && (rec.id?.startsWith('FIN-SAL-') || rec.note?.includes('مسير رواتب') || rec.note?.includes('تم استلام صافي الراتب')));
+        if (rec.type === 'advance' && !isSalaryRecord) {
+          const d = (rec.date || '').split('T')[0];
+          if (d >= activeFrom && d <= activeTo) {
+            const trName = settings.treasuries.find(t => t.id === rec.treasuryId)?.name || 'الخزينة الرئيسية';
+            rows.push({
+              id: rec.id || `ADV-${emp.id}-${d}-${rec.amount}`,
+              dateStr: rec.date || d,
+              empId: emp.id,
+              empCode: emp.fingerprintCode || emp.id,
+              empName: emp.name,
+              empRole: emp.role || 'موظف',
+              amount: Number(rec.amount) || 0,
+              treasuryId: rec.treasuryId,
+              treasuryName: trName,
+              note: rec.note || 'سلفة موظف',
+              source: 'emp_record',
+              originalRecord: rec
+            });
+          }
+        }
+      });
+    });
+
+    // Also check transactions categorized as advance if not already included
+    if (selectedAdvanceEmpId === 'all') {
+      branchTransactions.forEach(trx => {
+        const isAdvanceTrx = trx.type === 'out' && (
+          trx.category === 'staff_advance' || 
+          trx.category === 'hr_advance' || 
+          trx.category === 'advance' ||
+          trx.expenseCategory === 'سلف' ||
+          trx.expenseCategory === 'سلفة موظف' ||
+          (trx.description && trx.description.includes('سلفة'))
+        );
+        if (isAdvanceTrx) {
+          const d = (trx.date || '').split('T')[0];
+          if (d >= activeFrom && d <= activeTo) {
+            const alreadyExists = rows.some(r => r.id === trx.id || (r.dateStr.startsWith(d) && Math.abs(r.amount - trx.amount) < 0.01));
+            if (!alreadyExists) {
+              const trName = settings.treasuries.find(t => t.id === trx.treasury)?.name || trx.treasury || 'الخزينة الرئيسية';
+              rows.push({
+                id: trx.id,
+                dateStr: trx.date,
+                empId: '',
+                empCode: '-',
+                empName: trx.description || 'سلفة موظف',
+                empRole: 'موظف',
+                amount: Number(trx.amount) || 0,
+                treasuryId: trx.treasury,
+                treasuryName: trName,
+                note: trx.description || 'سلفة موظف',
+                source: 'transaction',
+                originalRecord: trx
+              });
+            }
+          }
+        }
+      });
+    }
+
+    rows.sort((a, b) => b.dateStr.localeCompare(a.dateStr));
+
+    const totalAmount = rows.reduce((s, r) => s + r.amount, 0);
+    const count = rows.length;
+    const uniqueEmployees = new Set(rows.map(r => r.empId || r.empName)).size;
+
+    const tMap: { [key: string]: { name: string; amount: number; count: number } } = {};
+    rows.forEach(r => {
+      if (!tMap[r.treasuryName]) {
+        tMap[r.treasuryName] = { name: r.treasuryName, amount: 0, count: 0 };
+      }
+      tMap[r.treasuryName].amount += r.amount;
+      tMap[r.treasuryName].count += 1;
+    });
+
+    return {
+      rows,
+      totalAmount,
+      count,
+      employeeCount: uniqueEmployees,
+      treasuryBreakdown: Object.values(tMap)
+    };
+  }, [branchEmployees, branchTransactions, activeFrom, activeTo, selectedAdvanceEmpId, settings.treasuries]);
+
+  // Handle Edit & Save Advance
+  const handleSaveEditAdvance = async () => {
+    if (!editingAdvance) return;
+    const { row, amount, date, treasuryId, note } = editingAdvance;
+    const numAmount = Number(amount);
+    if (!numAmount || numAmount <= 0) {
+      alert('الرجاء إدخال مبلغ صحيح أكبر من صفر');
+      return;
+    }
+
+    try {
+      // 1. Update in employee financial records if linked to an employee
+      if (row.empId && employees) {
+        const emp = employees.find(e => e.id === row.empId);
+        if (emp) {
+          const updatedFinancialRecords = (emp.financialRecords || []).map((rec: any) => {
+            if (rec.id === row.id || (rec.date === row.dateStr && Math.abs(rec.amount - row.amount) < 0.01)) {
+              return {
+                ...rec,
+                amount: numAmount,
+                date: date || rec.date,
+                treasuryId: treasuryId || rec.treasuryId,
+                note: note !== undefined ? note : rec.note
+              };
+            }
+            return rec;
+          });
+
+          const updatedEmp = { ...emp, financialRecords: updatedFinancialRecords };
+          const updatedEmployees = employees.map(e => e.id === emp.id ? updatedEmp : e);
+          if (setEmployees) setEmployees(updatedEmployees);
+          await DB.saveEmployee(updatedEmp);
+        }
+      }
+
+      // 2. Update linked transaction if it exists
+      if (transactions) {
+        const linkedTrx = transactions.find(t => 
+          t.id === row.id || 
+          (t.date && t.date.startsWith(row.dateStr.split('T')[0]) && Math.abs(t.amount - row.amount) < 0.01 && (t.category === 'staff_advance' || t.category === 'hr_advance' || t.category === 'advance' || (t.description && t.description.includes('سلفة'))))
+        );
+        if (linkedTrx) {
+          const updatedTrx = {
+            ...linkedTrx,
+            amount: numAmount,
+            date: date ? `${date}T12:00:00` : linkedTrx.date,
+            treasury: treasuryId || linkedTrx.treasury,
+            description: note !== undefined ? note : linkedTrx.description
+          };
+          const updatedTransactions = transactions.map(t => t.id === linkedTrx.id ? updatedTrx : t);
+          if (setTransactions) setTransactions(updatedTransactions);
+          await DB.saveTransaction(updatedTrx);
+        }
+      }
+
+      alert('✅ تم تعديل السلفة بنجاح');
+      setEditingAdvance(null);
+    } catch (err: any) {
+      console.error('Error updating advance:', err);
+      alert('حدث خطأ أثناء حفظ التعديل: ' + (err?.message || 'خطأ غير معروف'));
+    }
+  };
+
+  // Handle Delete Advance
+  const handleDeleteAdvance = async (row: any) => {
+    const confirmMsg = `هل أنت متأكد من حذف سلفة الموظف (${row.empName}) بمبلغ ${row.amount} ${settings.currency}؟\nسيتم حذفها نهائياً من سجلات الموظف والمعاملات المالية.`;
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      // 1. Remove from employee financial records
+      if (row.empId && employees) {
+        const emp = employees.find(e => e.id === row.empId);
+        if (emp) {
+          const updatedFinancialRecords = (emp.financialRecords || []).filter((rec: any) => {
+            const isMatch = rec.id === row.id || (rec.date === row.dateStr && Math.abs(rec.amount - row.amount) < 0.01);
+            return !isMatch;
+          });
+
+          const updatedEmp = { ...emp, financialRecords: updatedFinancialRecords };
+          const updatedEmployees = employees.map(e => e.id === emp.id ? updatedEmp : e);
+          if (setEmployees) setEmployees(updatedEmployees);
+          await DB.saveEmployee(updatedEmp);
+        }
+      }
+
+      // 2. Remove from transactions if linked
+      if (transactions) {
+        const linkedTrx = transactions.find(t => 
+          t.id === row.id || 
+          (t.date && t.date.startsWith(row.dateStr.split('T')[0]) && Math.abs(t.amount - row.amount) < 0.01 && (t.category === 'staff_advance' || t.category === 'hr_advance' || t.category === 'advance' || (t.description && t.description.includes('سلفة'))))
+        );
+        if (linkedTrx) {
+          const updatedTransactions = transactions.filter(t => t.id !== linkedTrx.id);
+          if (setTransactions) setTransactions(updatedTransactions);
+          await DB.deleteTransaction(linkedTrx.id);
+        }
+      }
+
+      alert('🗑️ تم حذف السلفة بنجاح');
+    } catch (err: any) {
+      console.error('Error deleting advance:', err);
+      alert('حدث خطأ أثناء حذف السلفة: ' + (err?.message || 'خطأ غير معروف'));
+    }
+  };
+
   const handleExport = () => {
     const filename = `تقرير_${activeReportType}_${activeFrom}_${activeTo}`;
     if (activeReportType === 'income') {
@@ -614,6 +987,19 @@ export function ReportsScreen({
         ]);
         exportToExcel(filename, 'تفاصيل_الأوفر_تايم_يومي', headers, rows);
       }
+    } else if (activeReportType === 'advances') {
+      const headers = ['رقم السند', 'التاريخ والوقت', 'كود الموظف', 'اسم الموظف', 'الوظيفة', 'الخزينة المنصرف منها', 'المبلغ المصروف', 'البيان والملاحظات'];
+      const rows = advancesReportData.rows.map(r => [
+        r.id,
+        r.dateStr,
+        r.empCode,
+        r.empName,
+        r.empRole,
+        r.treasuryName,
+        r.amount.toFixed(2),
+        r.note
+      ]);
+      exportToExcel(filename, 'تقرير_سلف_الموظفين', headers, rows);
     } else if (activeReportType === 'commission_payouts') {
       const headers = ['رقم السند', 'التاريخ والوقت', 'كود الموظف', 'اسم الموظف', 'الوظيفة', 'الخزينة المنصرف منها', 'المبلغ المصروف', 'البيان والملاحظات'];
       const rows = commissionPayoutsReportData.rows.map(r => [
@@ -689,6 +1075,7 @@ export function ReportsScreen({
               <option value="closing">تقرير إغلاق اليوم</option>
               <option value="employees">أعمال وعمولات الموظفين</option>
               <option value="commission_payouts">💵 حركة صرف العمولات (سندات الصرف والخزن)</option>
+              <option value="advances">💸 تقرير سلف الموظفين وتفاصيلها</option>
               <option value="services_report">تقرير الخدمات</option>
               <option value="expenses">تقرير المصروفات</option>
               <option value="initial_cash">تقرير العهد الافتتاحية</option>
@@ -710,6 +1097,30 @@ export function ReportsScreen({
             </button>
           </div>
         </div>
+
+        {/* Sub-filters for Advances Report */}
+        {reportType === 'advances' && (
+          <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-4 animate-in fade-in">
+            <div>
+              <label className="block text-xs font-bold text-slate-600 mb-1">فلترة حسب الموظف:</label>
+              <select
+                value={selectedAdvanceEmpId}
+                onChange={(e) => setSelectedAdvanceEmpId(e.target.value)}
+                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-primary"
+              >
+                <option value="all">👥 جميع الموظفين (الكل)</option>
+                {branchEmployees.map(emp => (
+                  <option key={emp.id} value={emp.id}>{emp.name} ({emp.role || 'موظف'})</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-end">
+              <span className="text-xs text-slate-500 font-semibold">
+                يمكنك معاينة سلف الفترة وتعديل أو حذف أي سلفة مباشرة في الجدول أدناه قبل الطباعة والتصدير.
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Sub-filters for Overtime Report */}
         {reportType === 'overtime' && (
@@ -845,24 +1256,58 @@ export function ReportsScreen({
               </div>
             </div>
 
-            {/* 5. Purchases & Suppliers (-) */}
+            {/* 5. Purchases Paid (-) */}
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm border-r-4 border-r-purple-500 flex justify-between items-center">
-              <div>
-                <p className="text-slate-500 text-xs font-bold mb-1">5. المشتريات والموردين (-)</p>
+              <div className="flex-1">
+                <p className="text-slate-500 text-xs font-bold mb-1">5. المسدد في فواتير المشتريات (-)</p>
                 <h4 className="text-xl font-black text-purple-600 font-mono">
-                  {netProfitReportData.totalPurchasesAndSuppliers.toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
+                  {netProfitReportData.totalPurchasesPaid.toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
                 </h4>
-                <p className="text-[10px] text-slate-400 font-bold mt-1">مشتريات: {netProfitReportData.totalPurchasesPaid.toFixed(1)} + موردين: {netProfitReportData.totalSupplierPayments.toFixed(1)}</p>
+                <div className="flex flex-wrap items-center gap-1 mt-1.5">
+                  {Object.keys(netProfitReportData.purchasesByMethod).length > 0 ? (
+                    Object.entries(netProfitReportData.purchasesByMethod).map(([m, amt]) => (
+                      <span key={m} className="bg-purple-50 text-purple-700 text-[10px] font-bold px-1.5 py-0.5 rounded border border-purple-200">
+                        {getTreasuryLabel(m)}: {Number(amt).toFixed(0)}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-[10px] text-slate-400 font-bold">إجمالي الفواتير: {netProfitReportData.totalPurchasesAmount.toFixed(0)}</span>
+                  )}
+                </div>
               </div>
-              <div className="w-11 h-11 rounded-xl bg-purple-50 flex items-center justify-center text-purple-600">
-                <FileBarChart size={22} />
+              <div className="w-11 h-11 rounded-xl bg-purple-50 flex items-center justify-center text-purple-600 shrink-0 mr-2">
+                <ShoppingCart size={22} />
               </div>
             </div>
 
-            {/* 6. Employee Commissions (-) */}
+            {/* 6. Supplier Payments (-) */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm border-r-4 border-r-indigo-500 flex justify-between items-center">
+              <div className="flex-1">
+                <p className="text-slate-500 text-xs font-bold mb-1">6. سندات دفعات وسداد الموردين (-)</p>
+                <h4 className="text-xl font-black text-indigo-600 font-mono">
+                  {netProfitReportData.totalSupplierPayments.toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
+                </h4>
+                <div className="flex flex-wrap items-center gap-1 mt-1.5">
+                  {Object.keys(netProfitReportData.supplierPaymentsByMethod).length > 0 ? (
+                    Object.entries(netProfitReportData.supplierPaymentsByMethod).map(([m, amt]) => (
+                      <span key={m} className="bg-indigo-50 text-indigo-700 text-[10px] font-bold px-1.5 py-0.5 rounded border border-indigo-200">
+                        {getTreasuryLabel(m)}: {Number(amt).toFixed(0)}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-[10px] text-slate-400 font-bold">عدد السندات: {netProfitReportData.periodSupplierPayments.length}</span>
+                  )}
+                </div>
+              </div>
+              <div className="w-11 h-11 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0 mr-2">
+                <Truck size={22} />
+              </div>
+            </div>
+
+            {/* 7. Employee Commissions (-) */}
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm border-r-4 border-r-teal-500 flex justify-between items-center">
               <div>
-                <p className="text-slate-500 text-xs font-bold mb-1">6. عمولات الموظفين (-)</p>
+                <p className="text-slate-500 text-xs font-bold mb-1">7. عمولات الموظفين (-)</p>
                 <h4 className="text-xl font-black text-teal-600 font-mono">
                   {netProfitReportData.totalCommissions.toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
                 </h4>
@@ -873,14 +1318,14 @@ export function ReportsScreen({
               </div>
             </div>
 
-            {/* 7. Total Deductions (-) */}
+            {/* 8. Total Deductions (-) */}
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm border-r-4 border-r-slate-700 flex justify-between items-center">
               <div>
                 <p className="text-slate-500 text-xs font-bold mb-1">إجمالي التكاليف والاستقطاعات</p>
                 <h4 className="text-xl font-black text-slate-800 font-mono">
                   {netProfitReportData.totalDeductions.toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
                 </h4>
-                <p className="text-[10px] text-slate-400 font-bold mt-1">مجموع البنود (2 + 3 + 4 + 5 + 6)</p>
+                <p className="text-[10px] text-slate-400 font-bold mt-1">مجموع البنود (المصروفات + الرواتب + السلف + المشتريات + الموردين + العمولات)</p>
               </div>
               <div className="w-11 h-11 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700">
                 <Clock size={22} />
@@ -905,6 +1350,56 @@ export function ReportsScreen({
 
           </div>
 
+        </div>
+      ) : isGenerated && activeReportType === 'advances' ? (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm border-r-4 border-r-rose-500 flex justify-between items-center">
+            <div>
+              <p className="text-slate-500 text-xs font-bold mb-1">إجمالي مبالغ السلف</p>
+              <h4 className="text-2xl font-black text-rose-600 font-mono">
+                {advancesReportData.totalAmount.toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
+              </h4>
+            </div>
+            <div className="w-11 h-11 rounded-xl bg-rose-50 flex items-center justify-center text-rose-600">
+              <DollarSign size={22} />
+            </div>
+          </div>
+
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm border-r-4 border-r-indigo-500 flex justify-between items-center">
+            <div>
+              <p className="text-slate-500 text-xs font-bold mb-1">عدد السلف المنصرفة</p>
+              <h4 className="text-2xl font-black text-indigo-600 font-mono">
+                {advancesReportData.count} <span className="text-xs font-normal text-slate-400">سند</span>
+              </h4>
+            </div>
+            <div className="w-11 h-11 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
+              <Wallet size={22} />
+            </div>
+          </div>
+
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm border-r-4 border-r-blue-500 flex justify-between items-center">
+            <div>
+              <p className="text-slate-500 text-xs font-bold mb-1">الموظفون المستفيدون</p>
+              <h4 className="text-2xl font-black text-blue-600 font-mono">
+                {advancesReportData.employeeCount} <span className="text-xs font-normal text-slate-400">موظف</span>
+              </h4>
+            </div>
+            <div className="w-11 h-11 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600">
+              <User size={22} />
+            </div>
+          </div>
+
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm border-r-4 border-r-purple-500 flex justify-between items-center">
+            <div>
+              <p className="text-slate-500 text-xs font-bold mb-1">متوسط السلفة</p>
+              <h4 className="text-2xl font-black text-purple-600 font-mono">
+                {advancesReportData.count > 0 ? (advancesReportData.totalAmount / advancesReportData.count).toFixed(2) : '0.00'} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
+              </h4>
+            </div>
+            <div className="w-11 h-11 rounded-xl bg-purple-50 flex items-center justify-center text-purple-600">
+              <Coins size={22} />
+            </div>
+          </div>
         </div>
       ) : isGenerated && activeReportType === 'overtime' ? (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -1184,6 +1679,7 @@ function ReportTable({
               startDate={activeFrom}
               endDate={activeTo}
               dateLabel={dateLabel}
+              userName={activeUserName}
             />
           </div>
         </div>
@@ -1280,6 +1776,7 @@ function ReportTable({
             settings={settings}
             transactions={custodyTrxs}
             dateLabel={dateLabel}
+            userName={activeUserName}
           />
         </div>
       </div>
@@ -1307,6 +1804,7 @@ function ReportTable({
             settings={settings}
             transactions={filteredTransactions}
             dateLabel={dateLabel}
+            userName={activeUserName}
           />
         </div>
       </div>
@@ -1336,6 +1834,7 @@ function ReportTable({
             transactions={filteredTransactions} 
             invoices={filteredInvoices} 
             dateLabel={dateLabel} 
+            userName={activeUserName}
           />
         </div>
       </div>
@@ -1362,6 +1861,7 @@ function ReportTable({
             settings={settings}
             invoices={filteredInvoices}
             dateLabel={dateLabel}
+            userName={activeUserName}
           />
         </div>
       </div>
@@ -1482,7 +1982,7 @@ function ReportTable({
                                 amount: row.amount,
                                 treasuryName: row.treasuryName,
                                 note: row.note,
-                                issuedBy: 'المحاسب'
+                                issuedBy: activeUserName
                               });
                             });
                           }}
@@ -1845,6 +2345,7 @@ function ReportTable({
               services={services}
               products={products}
               dateLabel={dateLabel}
+              userName={activeUserName}
             />
           </div>
         </div>
@@ -1968,6 +2469,7 @@ function ReportTable({
               settings={settings}
               transactions={transactions}
               dateLabel={dateLabel}
+              userName={activeUserName}
             />
           </div>
         </div>
@@ -2138,6 +2640,16 @@ function ReportTable({
               </p>
             </div>
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={refreshLogs}
+                disabled={isRefreshingLogs}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-bold hover:bg-indigo-100 transition-colors cursor-pointer"
+                title="تحديث واسترجاع سجلات الحضور والانصراف والبصمة من السيرفر"
+              >
+                <RefreshCw size={13} className={isRefreshingLogs ? 'animate-spin' : ''} />
+                <span>{isRefreshingLogs ? 'جاري التحديث...' : 'تحديث سجلات البصمة'}</span>
+              </button>
               <span className="text-xs font-bold text-slate-500 bg-white border border-slate-200 px-3 py-1.5 rounded-xl">
                 الفترة: {dateLabel}
               </span>
@@ -2276,6 +2788,314 @@ function ReportTable({
     );
   }
 
+  /* ---------------- ADVANCES REPORT TABLE & PREVIEW ---------------- */
+  if (reportType === 'advances') {
+    const dateLabel = start.toISOString().split('T')[0] === end.toISOString().split('T')[0] 
+      ? start.toISOString().split('T')[0] 
+      : `${start.toISOString().split('T')[0]} - ${end.toISOString().split('T')[0]}`;
+
+    const data = advancesReportData;
+
+    return (
+      <div className="space-y-6">
+        {/* Advances Summary Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 print:hidden">
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs border-r-4 border-r-rose-500 flex justify-between items-center">
+            <div>
+              <p className="text-slate-500 text-xs font-bold mb-1">إجمالي مبالغ السلف</p>
+              <h4 className="text-2xl font-black text-rose-600 font-mono">
+                {data.totalAmount.toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
+              </h4>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center font-bold">
+              <DollarSign size={20} />
+            </div>
+          </div>
+
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs border-r-4 border-r-indigo-500 flex justify-between items-center">
+            <div>
+              <p className="text-slate-500 text-xs font-bold mb-1">عدد السلف المنصرفة</p>
+              <h4 className="text-2xl font-black text-slate-800 font-mono">{data.count} <span className="text-xs font-normal text-slate-400">سند</span></h4>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+              <Wallet size={20} />
+            </div>
+          </div>
+
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs border-r-4 border-r-blue-500 flex justify-between items-center">
+            <div>
+              <p className="text-slate-500 text-xs font-bold mb-1">الموظفون المستفيدون</p>
+              <h4 className="text-2xl font-black text-slate-800 font-mono">{data.employeeCount} <span className="text-xs font-normal text-slate-400">موظف</span></h4>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+              <User size={20} />
+            </div>
+          </div>
+
+          {/* Treasury Breakdown */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
+            <p className="text-slate-500 text-xs font-bold mb-2">توزيع السلف حسب الخزائن</p>
+            <div className="space-y-1 max-h-20 overflow-y-auto">
+              {data.treasuryBreakdown.map((tb, idx) => (
+                <div key={idx} className="flex justify-between text-xs">
+                  <span className="text-slate-600 font-semibold">{tb.name}:</span>
+                  <span className="font-mono font-bold text-rose-600">{tb.amount.toFixed(2)} ({tb.count})</span>
+                </div>
+              ))}
+              {data.treasuryBreakdown.length === 0 && (
+                <span className="text-[11px] text-slate-400">لا توجد سلف مسجلة</span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Detailed Advances Table Container */}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden" id="report-receipt-container">
+          <div className="p-4 border-b border-slate-100 bg-slate-50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-rose-600"></span>
+                <span className="font-extrabold text-sm text-slate-800">
+                  تقرير وسجل سلف الموظفين وتفاصيلها (معاينة حية وإدارة السلف)
+                </span>
+                {selectedAdvanceEmpId !== 'all' && (
+                  <span className="bg-rose-50 text-rose-700 border border-rose-200 px-2.5 py-0.5 rounded-full text-xs font-bold">
+                    موظف محدد: {branchEmployees.find(e => e.id === selectedAdvanceEmpId)?.name}
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                يمكنك معاينة السلف المصروفة وتعديل القيمة أو التاريخ أو الخزينة أو حذف السلفة مباشرة قبل الطباعة
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-500 bg-white border border-slate-200 px-3 py-1.5 rounded-xl">
+                الفترة: {dateLabel}
+              </span>
+              <button
+                type="button"
+                onClick={() => handlePrintReceipt('report-receipt-container', true, 'a4')}
+                className="bg-slate-900 hover:bg-slate-800 text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs print:hidden"
+              >
+                <Printer size={14} />
+                <span>طباعة التقرير (A4)</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-right text-xs">
+              <thead className="bg-slate-900 text-white font-bold text-[11px]">
+                <tr>
+                  <th className="py-3 px-4 text-center">#</th>
+                  <th className="py-3 px-4">رقم السند</th>
+                  <th className="py-3 px-4">التاريخ والوقت</th>
+                  <th className="py-3 px-4">كود الموظف</th>
+                  <th className="py-3 px-4">اسم الموظف</th>
+                  <th className="py-3 px-4">الوظيفة</th>
+                  <th className="py-3 px-4">الخزينة المنصرف منها</th>
+                  <th className="py-3 px-4">البيان والملاحظات</th>
+                  <th className="py-3 px-4 text-left">مبلغ السلفة ({settings.currency})</th>
+                  <th className="py-3 px-4 text-center print:hidden">إجراءات المعاينة</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-semibold">
+                {data.rows.map((row: any, idx: number) => (
+                  <tr key={row.id || idx} className="hover:bg-slate-50 transition-colors">
+                    <td className="py-3 px-4 text-slate-400 font-mono text-center">{idx + 1}</td>
+                    <td className="py-3 px-4 font-mono font-bold text-slate-700">{row.id}</td>
+                    <td className="py-3 px-4 font-mono text-slate-600">{row.dateStr}</td>
+                    <td className="py-3 px-4 font-mono text-slate-500">{row.empCode}</td>
+                    <td className="py-3 px-4 font-bold text-slate-900">{row.empName}</td>
+                    <td className="py-3 px-4 text-slate-600">{row.empRole}</td>
+                    <td className="py-3 px-4 font-semibold text-slate-700">
+                      <span className="bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200 text-[11px]">
+                        {row.treasuryName}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 text-slate-600 max-w-xs truncate" title={row.note}>{row.note}</td>
+                    <td className="py-3 px-4 text-left font-mono font-black text-rose-600 text-sm">
+                      {row.amount.toFixed(2)}
+                    </td>
+                    <td className="py-3 px-4 text-center print:hidden">
+                      <div className="flex items-center justify-center gap-1.5">
+                        {/* Edit Button */}
+                        <button
+                          type="button"
+                          onClick={() => setEditingAdvance({
+                            row,
+                            amount: row.amount,
+                            date: row.dateStr.split('T')[0],
+                            treasuryId: row.treasuryId || settings.treasuries[0]?.id || 'cash',
+                            note: row.note
+                          })}
+                          className="px-2 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                          title="تعديل السلفة"
+                        >
+                          <Edit2 size={13} />
+                          <span>تعديل</span>
+                        </button>
+
+                        {/* Delete Button */}
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteAdvance(row)}
+                          className="px-2 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                          title="حذف السلفة"
+                        >
+                          <Trash2 size={13} />
+                          <span>حذف</span>
+                        </button>
+
+                        {/* Thermal Voucher Print */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            import('./ThermalFinancialVoucher').then(m => {
+                              m.printThermalFinancialVoucher(settings, {
+                                voucherType: 'advance',
+                                voucherNumber: row.id,
+                                date: row.dateStr,
+                                employeeName: row.empName,
+                                employeeCode: row.empCode,
+                                employeeRole: row.empRole,
+                                amount: row.amount,
+                                treasuryName: row.treasuryName,
+                                note: row.note,
+                                issuedBy: activeUserName
+                              });
+                            });
+                          }}
+                          className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 border border-slate-200 cursor-pointer transition-colors"
+                          title="طباعة سند صرف سلفة حراري (80mm)"
+                        >
+                          <Printer size={13} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {data.rows.length === 0 && (
+                  <tr>
+                    <td colSpan={10} className="py-12 text-center text-slate-400 font-bold">
+                      لا توجد سلف مسجلة خلال الفترة المحددة
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+              {data.rows.length > 0 && (
+                <tfoot className="bg-slate-100 font-black text-slate-900 border-t-2 border-slate-300 text-xs">
+                  <tr>
+                    <td colSpan={8} className="py-3 px-4 text-left font-black">
+                      المجموع الكلي لسلف الموظفين المنصرفة ({data.rows.length} سلفة):
+                    </td>
+                    <td className="py-3 px-4 text-left font-mono text-rose-700 text-base font-black">
+                      {data.totalAmount.toFixed(2)} {settings.currency}
+                    </td>
+                    <td className="print:hidden"></td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        </div>
+
+        {/* Modal: Edit Advance */}
+        {editingAdvance && (
+          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+            <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden animate-in zoom-in-95">
+              <div className="p-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-700 flex items-center justify-center font-bold">
+                    <Edit2 size={16} />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-sm text-slate-800">تعديل بيانات السلفة</h3>
+                    <p className="text-[11px] text-slate-500">الموظف: {editingAdvance.row.empName}</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditingAdvance(null)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200 cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="p-5 space-y-4 text-xs">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">مبلغ السلفة ({settings.currency})</label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="any"
+                    value={editingAdvance.amount}
+                    onChange={(e) => setEditingAdvance({ ...editingAdvance, amount: Number(e.target.value) })}
+                    className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-black font-mono text-rose-600 focus:border-indigo-600 outline-none"
+                    placeholder="0.00"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">تاريخ السلفة</label>
+                  <input
+                    type="date"
+                    value={editingAdvance.date}
+                    onChange={(e) => setEditingAdvance({ ...editingAdvance, date: e.target.value })}
+                    className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:border-indigo-600 outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">الخزينة المنصرف منها</label>
+                  <select
+                    value={editingAdvance.treasuryId}
+                    onChange={(e) => setEditingAdvance({ ...editingAdvance, treasuryId: e.target.value })}
+                    className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:border-indigo-600 outline-none bg-white"
+                  >
+                    {settings.treasuries.map(t => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">البيان / سبب السلفة</label>
+                  <input
+                    type="text"
+                    value={editingAdvance.note}
+                    onChange={(e) => setEditingAdvance({ ...editingAdvance, note: e.target.value })}
+                    className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:border-indigo-600 outline-none"
+                    placeholder="بيان وملاحظة السلفة"
+                  />
+                </div>
+              </div>
+
+              <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingAdvance(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-200 transition-colors cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveEditAdvance}
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+                >
+                  <Save size={14} />
+                  <span>حفظ التعديلات</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   /* ---------------- NET PROFIT REPORT TABLE ---------------- */
   if (reportType === 'net_profit') {
     const dateLabel = start.toISOString().split('T')[0] === end.toISOString().split('T')[0] 
@@ -2312,7 +3132,8 @@ function ReportTable({
             <div title={`مصروفات: ${netProfitReportData.totalExpenses.toFixed(1)}`} style={{ width: `${Math.min(100, (netProfitReportData.totalExpenses / (netProfitReportData.grossIncome || 1)) * 100)}%` }} className="bg-rose-500 h-full"></div>
             <div title={`رواتب: ${netProfitReportData.totalSalaries.toFixed(1)}`} style={{ width: `${Math.min(100, (netProfitReportData.totalSalaries / (netProfitReportData.grossIncome || 1)) * 100)}%` }} className="bg-blue-500 h-full"></div>
             <div title={`سلف: ${netProfitReportData.totalAdvances.toFixed(1)}`} style={{ width: `${Math.min(100, (netProfitReportData.totalAdvances / (netProfitReportData.grossIncome || 1)) * 100)}%` }} className="bg-amber-500 h-full"></div>
-            <div title={`مشتريات وموردين: ${netProfitReportData.totalPurchasesAndSuppliers.toFixed(1)}`} style={{ width: `${Math.min(100, (netProfitReportData.totalPurchasesAndSuppliers / (netProfitReportData.grossIncome || 1)) * 100)}%` }} className="bg-purple-500 h-full"></div>
+            <div title={`مشتريات: ${netProfitReportData.totalPurchasesPaid.toFixed(1)}`} style={{ width: `${Math.min(100, (netProfitReportData.totalPurchasesPaid / (netProfitReportData.grossIncome || 1)) * 100)}%` }} className="bg-purple-500 h-full"></div>
+            <div title={`دفعات موردين: ${netProfitReportData.totalSupplierPayments.toFixed(1)}`} style={{ width: `${Math.min(100, (netProfitReportData.totalSupplierPayments / (netProfitReportData.grossIncome || 1)) * 100)}%` }} className="bg-indigo-500 h-full"></div>
             <div title={`عمولات: ${netProfitReportData.totalCommissions.toFixed(1)}`} style={{ width: `${Math.min(100, (netProfitReportData.totalCommissions / (netProfitReportData.grossIncome || 1)) * 100)}%` }} className="bg-teal-500 h-full"></div>
             {netProfitReportData.netProfit > 0 && (
               <div title={`صافي الربح: ${netProfitReportData.netProfit.toFixed(1)}`} style={{ width: `${Math.max(0, (netProfitReportData.netProfit / (netProfitReportData.grossIncome || 1)) * 100)}%` }} className="bg-emerald-500 h-full"></div>
@@ -2322,7 +3143,8 @@ function ReportTable({
             <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span> مصروفات</span>
             <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span> رواتب</span>
             <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span> سلف</span>
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-purple-500"></span> مشتريات وموردين</span>
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-purple-500"></span> مشتريات مسددة</span>
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-indigo-500"></span> دفعات موردين</span>
             <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-teal-500"></span> عمولات</span>
             <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> صافي الربح</span>
           </div>
@@ -2395,6 +3217,238 @@ function ReportTable({
               </tr>
             </tfoot>
           </table>
+        </div>
+
+        {/* SECTION: تفاصيل فواتير المشتريات والمسدد منها */}
+        <div className="mt-8 pt-6 border-t border-slate-200">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
+            <div className="flex items-center gap-2">
+              <div className="p-2 bg-purple-100 rounded-lg text-purple-700">
+                <ShoppingCart className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-black text-slate-800 text-sm">تفاصيل فواتير المشتريات والمسدد منها ({netProfitReportData.periodPurchases.length} فاتورة)</h3>
+                <p className="text-[11px] text-slate-400">فواتير الشراء المسجلة خلال الفترة مع تفصيل المسدد منها والمتبقي كآجل وطرق الدفع</p>
+              </div>
+            </div>
+            
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <div className="bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-700 font-bold">
+                إجمالي الفواتير: <span className="font-mono text-purple-700">{netProfitReportData.totalPurchasesAmount.toFixed(2)} {settings.currency}</span>
+              </div>
+              <div className="bg-purple-50 px-3 py-1.5 rounded-lg border border-purple-200 text-purple-800 font-bold">
+                المسدد فعلياً: <span className="font-mono">{netProfitReportData.totalPurchasesPaid.toFixed(2)} {settings.currency}</span>
+              </div>
+              <div className="bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-200 text-amber-800 font-bold">
+                المتبقي كآجل: <span className="font-mono">{netProfitReportData.totalPurchasesRemaining.toFixed(2)} {settings.currency}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Breakdown by Payment Method / Treasury for Purchases */}
+          {Object.keys(netProfitReportData.purchasesByMethod).length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 mb-3 bg-purple-50/50 p-2.5 rounded-xl border border-purple-100 text-xs">
+              <span className="font-black text-purple-900 ml-2">طرق سداد المشتريات:</span>
+              {Object.entries(netProfitReportData.purchasesByMethod).map(([method, amount]) => (
+                <span key={method} className="bg-white px-2.5 py-1 rounded-lg border border-purple-200 text-purple-700 font-bold flex items-center gap-1 shadow-sm">
+                  <span>{getTreasuryLabel(method)}:</span>
+                  <span className="font-mono font-black">{amount.toFixed(2)} {settings.currency}</span>
+                </span>
+              ))}
+            </div>
+          )}
+
+          <div className="overflow-x-auto rounded-xl border border-slate-200">
+            <table className="w-full text-right text-xs">
+              <thead className="bg-slate-800 text-white font-bold text-[11px]">
+                <tr>
+                  <th className="py-2.5 px-3 text-center">#</th>
+                  <th className="py-2.5 px-3">رقم الفاتورة</th>
+                  <th className="py-2.5 px-3">التاريخ</th>
+                  <th className="py-2.5 px-3">المورد</th>
+                  <th className="py-2.5 px-3">طريقة السداد / الخزينة</th>
+                  <th className="py-2.5 px-3 text-center">إجمالي الفاتورة</th>
+                  <th className="py-2.5 px-3 text-center">المسدد (مستقطع بالأرباح)</th>
+                  <th className="py-2.5 px-3 text-center">المتبقي (آجل)</th>
+                  <th className="py-2.5 px-3 text-center">حالة السداد</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-semibold">
+                {netProfitReportData.periodPurchases.map((p: any, idx: number) => {
+                  const invoiceNum = p.invoiceNumber || p.id || '-';
+                  const invDate = (p.invoiceDate || p.date || '').split('T')[0];
+                  const supplierName = getSupplierName(p.supplierId);
+                  const total = Number(p.total ?? p.totalAmount ?? p.total_amount) || 0;
+                  const paid = Number(p.paid ?? p.paidAmount ?? p.paid_amount) || 0;
+                  const remaining = Number(p.remaining ?? p.remainingAmount ?? p.remaining_amount) || 0;
+                  const treasury = p.treasuryId || p.paymentMethod || p.treasury || 'cash';
+                  const isFullyPaid = remaining <= 0 && paid > 0;
+                  const isPartial = paid > 0 && remaining > 0;
+
+                  return (
+                    <tr key={p.id || idx} className="hover:bg-slate-50 transition-colors">
+                      <td className="py-2.5 px-3 text-slate-400 font-mono text-center">{idx + 1}</td>
+                      <td className="py-2.5 px-3 font-mono font-bold text-slate-800">{invoiceNum}</td>
+                      <td className="py-2.5 px-3 font-mono text-slate-600">{invDate}</td>
+                      <td className="py-2.5 px-3 font-bold text-slate-900">{supplierName}</td>
+                      <td className="py-2.5 px-3">
+                        <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[11px] font-bold border border-slate-200">
+                          {getTreasuryLabel(treasury)}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 font-mono font-bold text-slate-700 text-center">
+                        {total.toFixed(2)}
+                      </td>
+                      <td className="py-2.5 px-3 font-mono font-black text-purple-700 text-center">
+                        {paid.toFixed(2)}
+                      </td>
+                      <td className="py-2.5 px-3 font-mono font-bold text-amber-700 text-center">
+                        {remaining.toFixed(2)}
+                      </td>
+                      <td className="py-2.5 px-3 text-center">
+                        {isFullyPaid ? (
+                          <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-2 py-0.5 rounded-full border border-emerald-300">
+                            مدفوعة بالكامل
+                          </span>
+                        ) : isPartial ? (
+                          <span className="bg-amber-100 text-amber-800 text-[10px] font-black px-2 py-0.5 rounded-full border border-amber-300">
+                            مسددة جزئياً
+                          </span>
+                        ) : (
+                          <span className="bg-rose-100 text-rose-800 text-[10px] font-black px-2 py-0.5 rounded-full border border-rose-300">
+                            آجلة بالكامل
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {netProfitReportData.periodPurchases.length === 0 && (
+                  <tr>
+                    <td colSpan={9} className="py-8 text-center text-slate-400 font-bold">
+                      لا توجد فواتير مشتريات مسجلة خلال هذه الفترة
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+              {netProfitReportData.periodPurchases.length > 0 && (
+                <tfoot className="bg-slate-50 font-black text-slate-900 border-t border-slate-200 text-xs">
+                  <tr>
+                    <td colSpan={5} className="py-2.5 px-3 text-center font-black">
+                      المجموع ({netProfitReportData.periodPurchases.length} فاتورة)
+                    </td>
+                    <td className="py-2.5 px-3 text-center font-mono font-black">
+                      {netProfitReportData.totalPurchasesAmount.toFixed(2)}
+                    </td>
+                    <td className="py-2.5 px-3 text-center font-mono font-black text-purple-700">
+                      {netProfitReportData.totalPurchasesPaid.toFixed(2)}
+                    </td>
+                    <td className="py-2.5 px-3 text-center font-mono font-black text-amber-700">
+                      {netProfitReportData.totalPurchasesRemaining.toFixed(2)}
+                    </td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        </div>
+
+        {/* SECTION: تفاصيل سندات دفعات وسداد الموردين */}
+        <div className="mt-8 pt-6 border-t border-slate-200">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
+            <div className="flex items-center gap-2">
+              <div className="p-2 bg-indigo-100 rounded-lg text-indigo-700">
+                <Truck className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-black text-slate-800 text-sm">تفاصيل سندات دفعات وسداد الموردين ({netProfitReportData.periodSupplierPayments.length} سند)</h3>
+                <p className="text-[11px] text-slate-400">سندات الصرف المسددة للموردين مع الخزائن وطرق الدفع والبيان المالي</p>
+              </div>
+            </div>
+
+            <div className="bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-200 text-indigo-800 font-bold text-xs">
+              إجمالي دفعات الموردين: <span className="font-mono text-sm">{netProfitReportData.totalSupplierPayments.toFixed(2)} {settings.currency}</span>
+            </div>
+          </div>
+
+          {/* Breakdown by Payment Method / Treasury for Supplier Payments */}
+          {Object.keys(netProfitReportData.supplierPaymentsByMethod).length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 mb-3 bg-indigo-50/50 p-2.5 rounded-xl border border-indigo-100 text-xs">
+              <span className="font-black text-indigo-900 ml-2">طرق صرف دفعات الموردين:</span>
+              {Object.entries(netProfitReportData.supplierPaymentsByMethod).map(([method, amount]) => (
+                <span key={method} className="bg-white px-2.5 py-1 rounded-lg border border-indigo-200 text-indigo-700 font-bold flex items-center gap-1 shadow-sm">
+                  <span>{getTreasuryLabel(method)}:</span>
+                  <span className="font-mono font-black">{amount.toFixed(2)} {settings.currency}</span>
+                </span>
+              ))}
+            </div>
+          )}
+
+          <div className="overflow-x-auto rounded-xl border border-slate-200">
+            <table className="w-full text-right text-xs">
+              <thead className="bg-slate-800 text-white font-bold text-[11px]">
+                <tr>
+                  <th className="py-2.5 px-3 text-center">#</th>
+                  <th className="py-2.5 px-3">رقم السند</th>
+                  <th className="py-2.5 px-3">التاريخ</th>
+                  <th className="py-2.5 px-3">المورد</th>
+                  <th className="py-2.5 px-3">الخزينة / طريقة الدفع</th>
+                  <th className="py-2.5 px-3">البيان / ملاحظات السند</th>
+                  <th className="py-2.5 px-3 text-left pl-6">المبلغ المنصرف ({settings.currency})</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-semibold">
+                {netProfitReportData.periodSupplierPayments.map((sp: any, idx: number) => {
+                  const payNum = sp.paymentNumber || sp.id || '-';
+                  const payDate = (sp.paymentDate || sp.date || '').split('T')[0];
+                  const supplierName = getSupplierName(sp.supplierId);
+                  const treasury = sp.treasuryId || sp.paymentMethod || sp.treasury || 'cash';
+                  const amount = Number(sp.amount) || 0;
+                  const notes = sp.notes || sp.description || '-';
+
+                  return (
+                    <tr key={sp.id || idx} className="hover:bg-slate-50 transition-colors">
+                      <td className="py-2.5 px-3 text-slate-400 font-mono text-center">{idx + 1}</td>
+                      <td className="py-2.5 px-3 font-mono font-bold text-slate-800">{payNum}</td>
+                      <td className="py-2.5 px-3 font-mono text-slate-600">{payDate}</td>
+                      <td className="py-2.5 px-3 font-bold text-slate-900">{supplierName}</td>
+                      <td className="py-2.5 px-3">
+                        <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[11px] font-bold border border-slate-200">
+                          {getTreasuryLabel(treasury, sp.paymentMethod)}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-600 text-[11px] max-w-xs truncate" title={notes}>
+                        {notes}
+                      </td>
+                      <td className="py-2.5 px-3 font-mono font-black text-sm text-indigo-700 text-left pl-6">
+                        {amount.toFixed(2)}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {netProfitReportData.periodSupplierPayments.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="py-8 text-center text-slate-400 font-bold">
+                      لا توجد سندات دفعات موردين مسجلة خلال هذه الفترة
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+              {netProfitReportData.periodSupplierPayments.length > 0 && (
+                <tfoot className="bg-slate-50 font-black text-slate-900 border-t border-slate-200 text-xs">
+                  <tr>
+                    <td colSpan={6} className="py-2.5 px-3 text-center font-black">
+                      المجموع الكلي لدفعات وسداد الموردين ({netProfitReportData.periodSupplierPayments.length} سند)
+                    </td>
+                    <td className="py-2.5 px-3 font-mono text-indigo-800 text-left pl-6 font-black text-sm">
+                      {netProfitReportData.totalSupplierPayments.toFixed(2)} {settings.currency}
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
         </div>
       </div>
     );
