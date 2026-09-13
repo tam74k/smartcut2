@@ -1858,6 +1858,8 @@ export default function App() {
           activeBranchId={activeBranchId}
           branches={branches}
           currentUser={currentUser}
+          transactions={branchTransactions}
+          setTransactions={handleSetTransactions}
         />
       );
       case 'invoices': return (

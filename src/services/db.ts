@@ -230,7 +230,10 @@ export async function ensureCoreSchema(): Promise<void> {
       ensureColumn('partners', 'total_withdrawn', 'NUMERIC(15,2)'),
       ensureColumn('partners', 'total_profit_received', 'NUMERIC(15,2)'),
       ensureColumn('partners', 'opening_balance', 'NUMERIC(15,2)'),
-      ensureColumn('partners', 'exit_date', 'DATE')
+      ensureColumn('partners', 'exit_date', 'DATE'),
+      ensureColumn('invoices', 'advance_deduction', 'NUMERIC(12,2)'),
+      ensureColumn('invoices', 'booking_id', 'VARCHAR(100)'),
+      ensureColumn('bookings', 'advance_payments', 'JSONB')
     ]);
   } catch { /* Silent fail */ }
 }
@@ -1133,6 +1136,8 @@ export const DB = {
         cashback_used: inv.cashbackUsed ?? 0,
         total: inv.total ?? 0, paid: inv.total ?? 0, remaining: 0,
         advance_deduction: inv.advanceDeduction ?? 0,
+        booking_id: inv.bookingId || null,
+        advance_payments: inv.advancePayments || [],
         payment_method: inv.paymentMethods?.[0]?.treasuryId || 'cash',
         treasury_id: inv.paymentMethods?.[0]?.treasuryId || 'main',
         items: inv.items || [], payment_methods: inv.paymentMethods || [],

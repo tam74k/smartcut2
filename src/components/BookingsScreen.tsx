@@ -1,14 +1,16 @@
 import React, { useState, useMemo } from 'react';
 import { 
   Booking, AppSettings, ServiceItem, Employee, Client, Branch, 
-  AppUser, BlockedDateEntry, BlockedHourEntry, StaffUnavailabilityEntry 
+  AppUser, BlockedDateEntry, BlockedHourEntry, StaffUnavailabilityEntry,
+  AdvancePayment, Transaction
 } from '../types';
 import { 
   Calendar as CalendarIcon, Plus, Printer, Edit2, X, ShoppingCart, 
   Search, ChevronRight, ChevronLeft, Clock, User, Phone, 
   Scissors, CheckCircle2, AlertCircle, Sparkles, Filter, 
   List, Grid3X3, Eye, CalendarDays, ArrowRight, Sliders, 
-  CalendarOff, ShieldAlert, Trash2, Lock, ShieldCheck, Check
+  CalendarOff, ShieldAlert, Trash2, Lock, ShieldCheck, Check,
+  DollarSign, Wallet, CreditCard, Banknote
 } from 'lucide-react';
 import { 
   isDateBlocked, isHourBlocked, isStaffAvailableOnDate, 
@@ -16,6 +18,7 @@ import {
   isStaffBookedAtSlot, minutesToFormattedSlot 
 } from '../utils/bookingAvailability';
 import { QueueService } from '../services/queueService';
+import { DB } from '../services/db';
 
 export function BookingsScreen({ 
   settings, 
@@ -29,7 +32,9 @@ export function BookingsScreen({
   setClients,
   activeBranchId,
   branches = [],
-  currentUser
+  currentUser,
+  transactions = [],
+  setTransactions
 }: { 
   settings: AppSettings, 
   setSettings?: (s: AppSettings) => void,
@@ -42,7 +47,9 @@ export function BookingsScreen({
   setClients?: (c: Client[]) => void,
   activeBranchId?: string,
   branches?: Branch[],
-  currentUser?: AppUser | null
+  currentUser?: AppUser | null,
+  transactions?: Transaction[],
+  setTransactions?: (t: Transaction[] | ((prev: Transaction[]) => Transaction[])) => void
 }) {
   // Permission to adjust booking rules
   const canManageBookingSettings = currentUser?.actions.includes('manage_booking_settings') || 
@@ -130,6 +137,21 @@ export function BookingsScreen({
   const [techToAdd, setTechToAdd] = useState('');
   const [serviceSearchQuery, setServiceSearchQuery] = useState('');
   const [isServiceDropdownOpen, setIsServiceDropdownOpen] = useState(false);
+
+  // Advance Payments State for Add/Edit Modal
+  const [advAmountInput, setAdvAmountInput] = useState<number | ''>('');
+  const [advTreasuryInput, setAdvTreasuryInput] = useState<string>('');
+  const [advMethodInput, setAdvMethodInput] = useState<string>('cash');
+  const [advDateInput, setAdvDateInput] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [advNotesInput, setAdvNotesInput] = useState<string>('');
+
+  // Quick Advance Modal for Details View
+  const [showQuickAdvanceModal, setShowQuickAdvanceModal] = useState<boolean>(false);
+  const [quickAdvAmount, setQuickAdvAmount] = useState<number | ''>('');
+  const [quickAdvTreasury, setQuickAdvTreasury] = useState<string>('');
+  const [quickAdvMethod, setQuickAdvMethod] = useState<string>('cash');
+  const [quickAdvDate, setQuickAdvDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [quickAdvNotes, setQuickAdvNotes] = useState<string>('');
 
   // Filtered services for autocomplete search
   const filteredServicesForBooking = useMemo(() => {
@@ -380,7 +402,109 @@ export function BookingsScreen({
     }
   };
 
-  // Save Booking
+  // Helper to add advance payment inside Add/Edit modal
+  const handleAddAdvanceInModal = () => {
+    const amt = Number(advAmountInput);
+    if (!amt || amt <= 0) {
+      alert('يرجى إدخال مبلغ صحيح للدفعة المقدمة');
+      return;
+    }
+    const currentTreasuries = settings.treasuries || [];
+    const tId = advTreasuryInput || (currentTreasuries[0]?.id || 'cash');
+    const selectedTreasuryObj = currentTreasuries.find(t => t.id === tId);
+    const tName = selectedTreasuryObj?.name || (tId === 'cash' ? 'الخزينة النقدية' : 'الخزينة');
+
+    const newAdv: AdvancePayment = {
+      id: 'ADV-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
+      amount: amt,
+      treasuryId: tId,
+      treasuryName: tName,
+      date: advDateInput || new Date().toISOString().split('T')[0],
+      paymentMethod: advMethodInput || 'cash',
+      notes: advNotesInput.trim() || undefined
+    };
+
+    setNewBooking(prev => ({
+      ...prev,
+      advancePayments: [...(prev.advancePayments || []), newAdv]
+    }));
+
+    // Reset inputs
+    setAdvAmountInput('');
+    setAdvNotesInput('');
+  };
+
+  const handleRemoveAdvanceInModal = (advId: string) => {
+    setNewBooking(prev => ({
+      ...prev,
+      advancePayments: (prev.advancePayments || []).filter(a => a.id !== advId)
+    }));
+  };
+
+  // Quick Add Advance directly from Booking Details Modal
+  const handleSaveQuickAdvance = async () => {
+    if (!selectedBookingDetails) return;
+    const amt = Number(quickAdvAmount);
+    if (!amt || amt <= 0) {
+      alert('يرجى إدخال مبلغ صالح للدفعة المقدمة');
+      return;
+    }
+
+    const currentTreasuries = settings.treasuries || [];
+    const tId = quickAdvTreasury || (currentTreasuries[0]?.id || 'cash');
+    const selectedTreasuryObj = currentTreasuries.find(t => t.id === tId);
+    const tName = selectedTreasuryObj?.name || (tId === 'cash' ? 'الخزينة النقدية' : 'الخزينة');
+    const advDate = quickAdvDate || new Date().toISOString().split('T')[0];
+
+    const newAdv: AdvancePayment = {
+      id: 'ADV-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
+      amount: amt,
+      treasuryId: tId,
+      treasuryName: tName,
+      date: advDate,
+      paymentMethod: quickAdvMethod || 'cash',
+      notes: quickAdvNotes.trim() || undefined
+    };
+
+    const updatedBooking: Booking = {
+      ...selectedBookingDetails,
+      advancePayments: [...(selectedBookingDetails.advancePayments || []), newAdv]
+    };
+
+    // Update in bookings state & DB
+    setBookings(bookings.map(b => b.id === updatedBooking.id ? updatedBooking : b));
+    setSelectedBookingDetails(updatedBooking);
+    await DB.saveBooking(updatedBooking);
+
+    // Create immediate financial transaction for this advance on its specific date
+    const bBranchId = updatedBooking.branchId || activeBranchId || mainBranchId;
+    const newTrx: Transaction = {
+      id: 'TRX-ADV-' + Math.random().toString(36).substr(2, 9),
+      date: advDate + 'T' + new Date().toTimeString().split(' ')[0],
+      type: 'in',
+      amount: amt,
+      category: 'مقدم حجز',
+      description: `دفعة مقدمة / عربون لحجز #${updatedBooking.bookingCode || updatedBooking.id} - العميل: ${updatedBooking.clientName}`,
+      treasury: tId,
+      createdBy: currentUser?.name || 'الكاشير',
+      userId: currentUser?.id,
+      userName: currentUser?.name || 'الكاشير',
+      branchId: bBranchId,
+      salonId: settings.salonId
+    };
+
+    if (setTransactions) {
+      setTransactions(prev => [...prev, newTrx]);
+    }
+    await DB.saveTransaction(newTrx);
+
+    // Reset quick modal
+    setShowQuickAdvanceModal(false);
+    setQuickAdvAmount('');
+    setQuickAdvNotes('');
+    alert(`تم تسجيل الدفعة المقدمة بنجاح بقيمة ${amt} ${settings.currency} وتوريدها إلى الخزينة بتاريخ ${advDate}`);
+  };
+
   // Save Booking
   const saveBooking = async () => {
     if (!newBooking.clientName || !newBooking.phone || !newBooking.date || !newBooking.time) {
@@ -406,10 +530,39 @@ export function BookingsScreen({
       queueNumber
     };
 
+    // Calculate newly added advance payments to generate financial transactions
+    const prevAdvIds = new Set((editingBooking?.advancePayments || []).map(a => a.id));
+    const brandNewAdvances = (booking.advancePayments || []).filter(a => !prevAdvIds.has(a.id));
+
     if (editingBooking) {
       setBookings(bookings.map(b => b.id === booking.id ? booking : b));
     } else {
       setBookings([booking, ...bookings]);
+    }
+
+    // Auto generate financial transactions for brand new advance payments on their payment date
+    if (brandNewAdvances.length > 0) {
+      const newTrxs: Transaction[] = brandNewAdvances.map(adv => ({
+        id: 'TRX-ADV-' + Math.random().toString(36).substr(2, 9),
+        date: (adv.date || new Date().toISOString().split('T')[0]) + 'T' + new Date().toTimeString().split(' ')[0],
+        type: 'in',
+        amount: adv.amount,
+        category: 'مقدم حجز',
+        description: `دفعة مقدمة / عربون لحجز #${booking.bookingCode || booking.id} - العميل: ${booking.clientName}`,
+        treasury: adv.treasuryId,
+        createdBy: currentUser?.name || 'الكاشير',
+        userId: currentUser?.id,
+        userName: currentUser?.name || 'الكاشير',
+        branchId: bBranchId,
+        salonId: settings.salonId
+      }));
+
+      if (setTransactions) {
+        setTransactions(prev => [...prev, ...newTrxs]);
+      }
+      for (const t of newTrxs) {
+        await DB.saveTransaction(t);
+      }
     }
 
     // Auto add client to overall salon clients database if new
@@ -449,7 +602,7 @@ export function BookingsScreen({
 
   const handleEdit = (b: Booking) => {
     setEditingBooking(b);
-    setNewBooking({ ...b });
+    setNewBooking({ ...b, advancePayments: b.advancePayments || [] });
     setShowAddModal(true);
     setSelectedBookingDetails(null);
   };
@@ -464,6 +617,10 @@ export function BookingsScreen({
 
   // Print Booking Receipt
   const printBooking = (booking: Booking) => {
+    const totalAdv = (booking.advancePayments || []).reduce((sum, a) => sum + (a.amount || 0), 0);
+    const totalAmt = booking.services.reduce((sum, s) => sum + s.price, 0);
+    const remainingAmt = Math.max(0, totalAmt - totalAdv);
+
     const printWindow = document.createElement('div');
     printWindow.id = 'print-booking-receipt';
     printWindow.className = 'hidden print:block fixed inset-0 bg-white z-[9999] p-8 text-black';
@@ -509,9 +666,25 @@ export function BookingsScreen({
       </table>
       <div style="margin-bottom: 20px; font-size: 14px;">
         <div style="display: flex; justify-content: space-between; font-weight: bold; border-bottom: 1px dashed #000; padding-bottom: 5px; margin-bottom: 5px;">
-          <span>الإجمالي:</span>
-          <span>${booking.services.reduce((sum, s) => sum + s.price, 0).toFixed(2)} ${settings.currency}</span>
+          <span>إجمالي الخدمات:</span>
+          <span>${totalAmt.toFixed(2)} ${settings.currency}</span>
         </div>
+        ${totalAdv > 0 ? `
+          <div style="display: flex; justify-content: space-between; color: #059669; font-weight: bold; padding-bottom: 5px; margin-bottom: 5px;">
+            <span>المسدد مقدماً (عربون):</span>
+            <span>-${totalAdv.toFixed(2)} ${settings.currency}</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 16px; font-weight: 900; border-top: 2px solid #000; padding-top: 5px;">
+            <span>المتبقي للتحصيل عند الزيارة:</span>
+            <span>${remainingAmt.toFixed(2)} ${settings.currency}</span>
+          </div>
+          <div style="margin-top: 10px; font-size: 12px; background: #f3f4f6; padding: 6px; border-radius: 6px;">
+            <strong style="display: block; margin-bottom: 4px;">تفاصيل الدفعات المقدمة:</strong>
+            ${(booking.advancePayments || []).map((adv, i) => `
+              <div>• دفعة ${i+1}: ${adv.amount.toFixed(2)} ${settings.currency} (${adv.paymentMethod === 'card' ? 'شبكة/مدى' : adv.paymentMethod === 'transfer' ? 'تحويل بنكي' : 'نقداً'}) - خزينة: ${adv.treasuryName} - تاريخ: ${adv.date}</div>
+            `).join('')}
+          </div>
+        ` : ''}
       </div>
       ${settings.bookingNotes ? `
         <div style="margin-top: 30px; text-align: center; font-size: 13px; font-weight: bold; white-space: pre-wrap;">
@@ -827,7 +1000,14 @@ export function BookingsScreen({
                             {b.time} • {b.date}
                           </td>
                           <td className="p-3.5 text-center font-mono font-black text-slate-900">
-                            {b.totalAmount} {settings.currency}
+                            <div>{b.totalAmount} {settings.currency}</div>
+                            {((b.advancePayments || []).length > 0) && (
+                              <div className="mt-1 inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-md text-[10px] font-bold">
+                                <span>عربون: {b.advancePayments.reduce((s, a) => s + (a.amount || 0), 0)}</span>
+                                <span className="text-slate-400">|</span>
+                                <span>متبقي: {Math.max(0, b.totalAmount - b.advancePayments.reduce((s, a) => s + (a.amount || 0), 0))}</span>
+                              </div>
+                            )}
                           </td>
                           <td className="p-3.5 text-center">
                             <span className={`px-2.5 py-1 rounded-full text-[10px] font-black border ${badge.bg}`}>
@@ -1082,6 +1262,12 @@ export function BookingsScreen({
                                     <span>{b.time}</span>
                                     <span className="font-bold text-slate-700">{b.totalAmount} {settings.currency}</span>
                                   </div>
+                                  {((b.advancePayments || []).length > 0) && (
+                                    <div className="mt-1 text-[9px] font-bold text-emerald-700 bg-emerald-100/70 rounded px-1 py-0.5 flex justify-between">
+                                      <span>عربون: {b.advancePayments.reduce((s, a) => s + (a.amount || 0), 0)}</span>
+                                      <span>متبقي: {Math.max(0, b.totalAmount - b.advancePayments.reduce((s, a) => s + (a.amount || 0), 0))}</span>
+                                    </div>
+                                  )}
                                 </div>
                               );
                             })
@@ -1166,6 +1352,12 @@ export function BookingsScreen({
                                       <span>{b.time}</span>
                                       <span className="font-black text-slate-800">{b.totalAmount} {settings.currency}</span>
                                     </div>
+                                    {((b.advancePayments || []).length > 0) && (
+                                      <div className="mt-1 text-[9px] font-bold text-emerald-700 bg-emerald-100/70 rounded px-1.5 py-0.5 flex justify-between">
+                                        <span>عربون: {b.advancePayments.reduce((s, a) => s + (a.amount || 0), 0)}</span>
+                                        <span>متبقي: {Math.max(0, b.totalAmount - b.advancePayments.reduce((s, a) => s + (a.amount || 0), 0))}</span>
+                                      </div>
+                                    )}
                                   </div>
                                 );
                               })
@@ -1317,12 +1509,83 @@ export function BookingsScreen({
               </div>
             </div>
 
-            {/* Total Price */}
-            <div className="pt-2 border-t border-slate-100 flex justify-between items-center font-black">
-              <span className="text-xs text-slate-600">المبلغ الإجمالي:</span>
-              <span className="text-base text-indigo-700 font-mono">
-                {selectedBookingDetails.totalAmount} {settings.currency}
-              </span>
+            {/* Advance Payments (العربون والدفعات المقدمة) Section */}
+            <div className="bg-emerald-50/60 border border-emerald-200/80 rounded-2xl p-3.5 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 font-black text-xs text-emerald-950">
+                  <Banknote size={15} className="text-emerald-700" />
+                  <span>الدفعات المقدمة (العربون المسدد):</span>
+                </div>
+                {selectedBookingDetails.status !== 'completed' && selectedBookingDetails.status !== 'cancelled' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuickAdvAmount('');
+                      setQuickAdvTreasury(settings.treasuries?.[0]?.id || 'cash');
+                      setQuickAdvMethod('cash');
+                      setQuickAdvDate(new Date().toISOString().split('T')[0]);
+                      setQuickAdvNotes('');
+                      setShowQuickAdvanceModal(true);
+                    }}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 rounded-xl text-[11px] font-black flex items-center gap-1 shadow-xs cursor-pointer transition-all"
+                  >
+                    <Plus size={13} />
+                    <span>سداد دفعة مقدمة</span>
+                  </button>
+                )}
+              </div>
+
+              {(selectedBookingDetails.advancePayments || []).length > 0 ? (
+                <div className="space-y-1.5 max-h-32 overflow-y-auto">
+                  {selectedBookingDetails.advancePayments.map((adv, idx) => (
+                    <div key={adv.id || idx} className="p-2 bg-white rounded-xl border border-emerald-100 flex justify-between items-center text-xs shadow-2xs">
+                      <div>
+                        <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                          <span>دفعة #{idx + 1}:</span>
+                          <span className="text-indigo-600 font-bold">{adv.treasuryName || 'الخزينة'}</span>
+                          <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded">
+                            {adv.paymentMethod === 'card' ? 'مدى/شبكة' : adv.paymentMethod === 'transfer' ? 'تحويل بنكي' : 'نقداً'}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-slate-500 font-mono">تاريخ السداد: {adv.date} {adv.notes ? `• ${adv.notes}` : ''}</div>
+                      </div>
+                      <div className="font-mono font-black text-emerald-700">
+                        {adv.amount.toFixed(2)} {settings.currency}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-[11px] text-slate-500 text-center py-1">
+                  لا توجد دفعات مقدمة مسجلة لهذا الحجز
+                </div>
+              )}
+            </div>
+
+            {/* Total Price & Advance Breakdown */}
+            <div className="pt-2 border-t border-slate-100 space-y-1.5 font-bold text-xs">
+              <div className="flex justify-between items-center text-slate-600">
+                <span>إجمالي الخدمات:</span>
+                <span className="text-sm text-slate-900 font-mono font-black">
+                  {selectedBookingDetails.totalAmount} {settings.currency}
+                </span>
+              </div>
+              {((selectedBookingDetails.advancePayments || []).length > 0) && (
+                <>
+                  <div className="flex justify-between items-center text-emerald-700">
+                    <span>إجمالي العربون المسدد:</span>
+                    <span className="text-sm font-mono font-black">
+                      -{(selectedBookingDetails.advancePayments || []).reduce((s, a) => s + (a.amount || 0), 0).toFixed(2)} {settings.currency}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-slate-900 bg-slate-100 p-2.5 rounded-xl border border-slate-200">
+                    <span className="font-black">المتبقي للدفع عند الزيارة:</span>
+                    <span className="text-base text-indigo-700 font-mono font-black">
+                      {Math.max(0, selectedBookingDetails.totalAmount - (selectedBookingDetails.advancePayments || []).reduce((s, a) => s + (a.amount || 0), 0)).toFixed(2)} {settings.currency}
+                    </span>
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Actions */}
@@ -1360,6 +1623,118 @@ export function BookingsScreen({
                 title="طباعة"
               >
                 <Printer size={14} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* QUICK ADVANCE PAYMENT MODAL */}
+      {showQuickAdvanceModal && selectedBookingDetails && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[60] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full p-5 space-y-4 animate-in fade-in zoom-in duration-150" dir="rtl">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+                  <Banknote size={18} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">سداد دفعة مقدمة (عربون)</h3>
+                  <p className="text-[11px] text-slate-500 font-mono">حجز #{selectedBookingDetails.bookingCode || selectedBookingDetails.id}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowQuickAdvanceModal(false)}
+                className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 cursor-pointer text-xs"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">المبلغ المدفوع * 💰</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="1"
+                  value={quickAdvAmount}
+                  onChange={e => setQuickAdvAmount(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                  placeholder="أدخل مبلغ العربون..."
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-mono font-bold focus:border-emerald-600 outline-none"
+                  autoFocus
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">وسيلة الدفع * 💳</label>
+                  <select
+                    value={quickAdvMethod}
+                    onChange={e => setQuickAdvMethod(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs font-bold focus:border-emerald-600 outline-none"
+                  >
+                    <option value="cash">نقداً (كاش)</option>
+                    <option value="card">مدى / بطاقة</option>
+                    <option value="transfer">تحويل بنكي</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">الخزينة المستلمة * 🏦</label>
+                  <select
+                    value={quickAdvTreasury || settings.treasuries?.[0]?.id || 'cash'}
+                    onChange={e => setQuickAdvTreasury(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs font-bold focus:border-emerald-600 outline-none"
+                  >
+                    {(settings.treasuries || []).map(t => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                    {(!settings.treasuries || settings.treasuries.length === 0) && (
+                      <option value="cash">الخزينة الرئيسية</option>
+                    )}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">تاريخ سداد العربون * 📅</label>
+                <input
+                  type="date"
+                  value={quickAdvDate}
+                  onChange={e => setQuickAdvDate(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono font-bold focus:border-emerald-600 outline-none"
+                />
+                <span className="text-[10px] text-slate-400 mt-0.5 block">يدخل الحساب المالي ليوم السداد فقط</span>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">ملاحظات / مرجع الإيصال</label>
+                <input
+                  type="text"
+                  value={quickAdvNotes}
+                  onChange={e => setQuickAdvNotes(e.target.value)}
+                  placeholder="مثلاً: تحويل بنكي على الراجحي..."
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:border-emerald-600 outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-slate-100 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setShowQuickAdvanceModal(false)}
+                className="flex-1 py-2 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl cursor-pointer"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveQuickAdvance}
+                disabled={!quickAdvAmount || Number(quickAdvAmount) <= 0}
+                className="flex-1 py-2 text-xs font-black text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 rounded-xl cursor-pointer shadow-xs"
+              >
+                تأكيد وتسجيل السداد
               </button>
             </div>
           </div>
@@ -1653,27 +2028,157 @@ export function BookingsScreen({
                     </div>
                   )}
                 </div>
+
+                {/* 5. ADVANCE PAYMENTS SECTION (العربون والدفعات المقدمة) */}
+                <div className="bg-emerald-50/50 p-3.5 rounded-2xl border border-emerald-200 space-y-3">
+                  <div className="flex justify-between items-center">
+                    <label className="text-xs font-black text-emerald-950 flex items-center gap-1.5">
+                      <Banknote size={16} className="text-emerald-700" />
+                      <span>العربون والدفعات المقدمة (سداد مسبق)</span>
+                    </label>
+                    <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-md">
+                      اختياري
+                    </span>
+                  </div>
+
+                  {/* Form inputs for new advance */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">المبلغ المدفوع * 💰</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="1"
+                        value={advAmountInput}
+                        onChange={e => setAdvAmountInput(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                        placeholder="أدخل مبلغ العربون..."
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-mono font-bold focus:border-emerald-600 outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">طريقة الدفع * 💳</label>
+                      <select
+                        value={advMethodInput}
+                        onChange={e => setAdvMethodInput(e.target.value)}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs font-bold focus:border-emerald-600 outline-none"
+                      >
+                        <option value="cash">نقداً (كاش)</option>
+                        <option value="card">مدى / بطاقة</option>
+                        <option value="transfer">تحويل بنكي</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">الخزينة المستلمة * 🏦</label>
+                      <select
+                        value={advTreasuryInput || settings.treasuries?.[0]?.id || 'cash'}
+                        onChange={e => setAdvTreasuryInput(e.target.value)}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs font-bold focus:border-emerald-600 outline-none"
+                      >
+                        {(settings.treasuries || []).map(t => (
+                          <option key={t.id} value={t.id}>{t.name}</option>
+                        ))}
+                        {(!settings.treasuries || settings.treasuries.length === 0) && (
+                          <option value="cash">الخزينة الرئيسية</option>
+                        )}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">تاريخ السداد * 📅</label>
+                      <input
+                        type="date"
+                        value={advDateInput}
+                        onChange={e => setAdvDateInput(e.target.value)}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-mono font-bold focus:border-emerald-600 outline-none"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">ملاحظات على الدفعة</label>
+                      <input
+                        type="text"
+                        value={advNotesInput}
+                        onChange={e => setAdvNotesInput(e.target.value)}
+                        placeholder="مثلاً: دفعة تحويل بنكي على حساب الراجحي..."
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs focus:border-emerald-600 outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleAddAdvanceInModal}
+                    disabled={!advAmountInput || Number(advAmountInput) <= 0}
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white py-1.5 rounded-xl text-xs font-black cursor-pointer shadow-xs transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <Plus size={14} />
+                    <span>+ إضافة الدفعة المقدمة إلى الحجز</span>
+                  </button>
+
+                  {/* Advances List */}
+                  {(newBooking.advancePayments || []).length > 0 && (
+                    <div className="space-y-1.5 max-h-36 overflow-y-auto pt-1">
+                      {newBooking.advancePayments?.map(adv => (
+                        <div key={adv.id} className="flex justify-between items-center bg-white p-2 rounded-xl border border-emerald-100 text-xs shadow-2xs">
+                          <div>
+                            <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                              <span className="font-mono text-emerald-700 font-black">{adv.amount.toFixed(2)} {settings.currency}</span>
+                              <span className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded font-bold">
+                                {adv.paymentMethod === 'card' ? 'مدى/شبكة' : adv.paymentMethod === 'transfer' ? 'تحويل بنكي' : 'نقداً'}
+                              </span>
+                              <span className="text-[10px] text-indigo-600 font-bold">• {adv.treasuryName}</span>
+                            </div>
+                            <div className="text-[10px] text-slate-500 font-mono">
+                              تاريخ: {adv.date} {adv.notes ? `• ${adv.notes}` : ''}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveAdvanceInModal(adv.id)}
+                            className="text-rose-500 hover:text-rose-700 cursor-pointer p-1"
+                            title="حذف هذه الدفعة"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
-            <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-between items-center">
-              <div className="text-xs font-bold text-slate-700">
-                الإجمالي: <span className="font-mono text-indigo-700 text-sm font-black">
-                  {(newBooking.services || []).reduce((sum, s) => sum + s.price, 0)} {settings.currency}
-                </span>
+            <div className="p-4 border-t border-slate-100 bg-slate-50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+              <div className="space-y-0.5">
+                <div className="text-xs font-bold text-slate-600">
+                  إجمالي الخدمات: <span className="font-mono text-slate-900 text-sm font-black">
+                    {(newBooking.services || []).reduce((sum, s) => sum + s.price, 0).toFixed(2)} {settings.currency}
+                  </span>
+                </div>
+                {((newBooking.advancePayments || []).length > 0) && (
+                  <div className="text-xs font-bold text-emerald-700 flex items-center gap-2">
+                    <span>العربون: -{(newBooking.advancePayments || []).reduce((sum, a) => sum + (a.amount || 0), 0).toFixed(2)} {settings.currency}</span>
+                    <span className="text-slate-400">|</span>
+                    <span className="text-indigo-700 font-black">
+                      المتبقي: {Math.max(0, (newBooking.services || []).reduce((sum, s) => sum + s.price, 0) - (newBooking.advancePayments || []).reduce((sum, a) => sum + (a.amount || 0), 0)).toFixed(2)} {settings.currency}
+                    </span>
+                  </div>
+                )}
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 w-full sm:w-auto">
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 text-xs font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-100 rounded-xl cursor-pointer"
+                  className="flex-1 sm:flex-initial px-4 py-2 text-xs font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-100 rounded-xl cursor-pointer"
                 >
                   إلغاء
                 </button>
                 <button
                   type="button"
                   onClick={saveBooking}
-                  className="px-5 py-2 text-xs font-black text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-sm cursor-pointer"
+                  className="flex-1 sm:flex-initial px-5 py-2 text-xs font-black text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-sm cursor-pointer"
                 >
                   حفظ وتأكيد الحجز
                 </button>

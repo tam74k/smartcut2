@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { 
   AppSettings, CartItem, ServiceItem, Booking, Invoice, Client, Category, Employee,
-  getClientTier, calculateClientTotalSpend, ClientTierConfig, HeldInvoice, PromoCode, PromoCodeUsage, TipRecord 
+  getClientTier, calculateClientTotalSpend, ClientTierConfig, HeldInvoice, PromoCode, PromoCodeUsage, TipRecord, AdvancePayment 
 } from '../types';
 import { processImageFile, MAX_IMAGE_SIZE_KB } from '../utils/imageUpload';
 import { ComplaintsService } from '../services/complaintsService';
@@ -301,6 +301,8 @@ export function POSScreen({
 
   const [discount, setDiscount] = useState<{type: 'percentage'|'fixed', value: number}>({ type: 'fixed', value: 0 });
   const [advanceDeduction, setAdvanceDeduction] = useState(0);
+  const [activeAdvancePayments, setActiveAdvancePayments] = useState<AdvancePayment[]>([]);
+  const [activeBookingId, setActiveBookingId] = useState<string | undefined>(undefined);
 
   // ⏸️ تعليق الفاتورة الحالية يدوياً (Hold Current Bill)
   const handleHoldCurrentInvoice = () => {
@@ -318,6 +320,8 @@ export function POSScreen({
       cart,
       discount,
       advanceDeduction,
+      advancePayments: activeAdvancePayments,
+      bookingId: activeBookingId,
       isRemedyInvoice,
       remedyReason,
       beforePhotoUrl,
@@ -331,6 +335,8 @@ export function POSScreen({
     setClientSearch('');
     setDiscount({ type: 'fixed', value: 0 });
     setAdvanceDeduction(0);
+    setActiveAdvancePayments([]);
+    setActiveBookingId(undefined);
     setIsRemedyInvoice(false);
     setBeforePhotoUrl('');
     setAfterPhotoUrl('');
@@ -350,6 +356,8 @@ export function POSScreen({
         cart,
         discount,
         advanceDeduction,
+        advancePayments: activeAdvancePayments,
+        bookingId: activeBookingId,
         isRemedyInvoice,
         remedyReason,
         beforePhotoUrl,
@@ -363,6 +371,8 @@ export function POSScreen({
     setClientSearch('');
     setDiscount({ type: 'fixed', value: 0 });
     setAdvanceDeduction(0);
+    setActiveAdvancePayments([]);
+    setActiveBookingId(undefined);
     setIsRemedyInvoice(false);
     setBeforePhotoUrl('');
     setAfterPhotoUrl('');
@@ -383,6 +393,8 @@ export function POSScreen({
         cart,
         discount,
         advanceDeduction,
+        advancePayments: activeAdvancePayments,
+        bookingId: activeBookingId,
         isRemedyInvoice,
         remedyReason,
         beforePhotoUrl,
@@ -400,6 +412,8 @@ export function POSScreen({
     setClientSearch(held.clientSearch || (held.client ? held.client.name : ''));
     setDiscount(held.discount || { type: 'fixed', value: 0 });
     setAdvanceDeduction(held.advanceDeduction || 0);
+    setActiveAdvancePayments(held.advancePayments || []);
+    setActiveBookingId(held.bookingId || undefined);
     setIsRemedyInvoice(held.isRemedyInvoice || false);
     setRemedyReason(held.remedyReason || '');
     setBeforePhotoUrl(held.beforePhotoUrl || '');
@@ -604,6 +618,9 @@ export function POSScreen({
       clientPhone: selectedClient ? selectedClient.phone : undefined,
       total: finalTotal, // net paid (0 if remedy)
       discount: isRemedyInvoice ? subtotal : discountAmount,
+      advanceDeduction: advanceDeduction > 0 ? advanceDeduction : undefined,
+      advancePayments: activeAdvancePayments.length > 0 ? activeAdvancePayments : undefined,
+      bookingId: activeBookingId || initialBooking?.id || undefined,
       cashbackUsed: cashbackUsed > 0 ? cashbackUsed : undefined,
       promoCode: appliedPromo ? appliedPromo.code : undefined,
       promoDiscount: promoDiscountAmount > 0 ? promoDiscountAmount : undefined,
@@ -788,6 +805,8 @@ export function POSScreen({
     setClientSearch('');
     setSelectedClient(null);
     setAdvanceDeduction(0);
+    setActiveAdvancePayments([]);
+    setActiveBookingId(undefined);
     setDiscount({ type: 'fixed', value: 0 });
     setSplitAmounts({});
     setBeforePhotoUrl('');
@@ -912,6 +931,8 @@ export function POSScreen({
       
       const advancesSum = initialBooking.advancePayments?.reduce((sum, p) => sum + p.amount, 0) || 0;
       setAdvanceDeduction(advancesSum);
+      setActiveAdvancePayments(initialBooking.advancePayments || []);
+      setActiveBookingId(initialBooking.id);
     }
   }, [initialBooking]);
 
@@ -943,6 +964,8 @@ export function POSScreen({
       setCart(initialHeldInvoice.cart || []);
       setDiscount(initialHeldInvoice.discount || { type: 'fixed', value: 0 });
       setAdvanceDeduction(initialHeldInvoice.advanceDeduction || 0);
+      setActiveAdvancePayments(initialHeldInvoice.advancePayments || []);
+      setActiveBookingId(initialHeldInvoice.bookingId || undefined);
       setIsRemedyInvoice(initialHeldInvoice.isRemedyInvoice || false);
       setRemedyReason(initialHeldInvoice.remedyReason || '');
       setBeforePhotoUrl(initialHeldInvoice.beforePhotoUrl || '');
@@ -965,6 +988,8 @@ export function POSScreen({
     setCart([]);
     setClientSearch('');
     setAdvanceDeduction(0);
+    setActiveAdvancePayments([]);
+    setActiveBookingId(undefined);
     setActiveQueueNumber(null);
     if(onClearInitial) onClearInitial();
   };
@@ -1434,10 +1459,24 @@ export function POSScreen({
               </button>
             )}
           </div>
-          {initialBooking && advanceDeduction > 0 && (
-            <div className="bg-emerald-50 text-emerald-700 text-[11px] px-2.5 py-1 rounded-md font-bold flex justify-between items-center border border-emerald-100 mt-1.5">
-              <span>مقدم مدفوع مسبقاً (سيتم خصمه)</span>
-              <span>{advanceDeduction} {settings.currency}</span>
+          {(initialBooking || advanceDeduction > 0) && (
+            <div className="flex flex-col gap-1 mt-1.5">
+              <div className="bg-emerald-50 text-emerald-800 text-[11px] px-3 py-1.5 rounded-xl font-bold flex justify-between items-center border border-emerald-200">
+                <span className="flex items-center gap-1">
+                  <span>💰</span>
+                  <span>المدفوع مقدماً (عربون الحجز):</span>
+                </span>
+                <span className="font-mono text-xs font-black text-emerald-700">-{advanceDeduction.toFixed(2)} {settings.currency}</span>
+              </div>
+              {activeAdvancePayments.length > 0 && (
+                <div className="text-[10px] text-emerald-600 px-1 font-semibold flex flex-wrap gap-1">
+                  {activeAdvancePayments.map((adv, idx) => (
+                    <span key={adv.id || idx} className="bg-white/80 px-1.5 py-0.5 rounded border border-emerald-200">
+                      {adv.treasuryName || adv.paymentMethod || 'دفعة'}: {adv.amount} {settings.currency}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1651,9 +1690,9 @@ export function POSScreen({
             )}
 
             {advanceDeduction > 0 && !isRemedyInvoice && (
-              <div className="flex justify-between items-center text-emerald-700 text-[11px] font-bold">
-                <span>خصم المقدم:</span>
-                <span className="font-mono">-{advanceDeduction.toFixed(2)}</span>
+              <div className="flex justify-between items-center text-emerald-700 bg-emerald-50/80 px-2 py-1 rounded-md text-[11px] font-bold border border-emerald-200/60">
+                <span>المدفوع مقدماً (عربون الحجز):</span>
+                <span className="font-mono font-black text-emerald-800">-{advanceDeduction.toFixed(2)} {settings.currency}</span>
               </div>
             )}
           </div>
@@ -2028,14 +2067,30 @@ export function POSScreen({
                       </>
                     );
                   })()}
-                  {advanceDeduction > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#059669' }}>
-                      <span>مقدم مدفوع:</span>
-                      <span>- {advanceDeduction.toFixed(2)}</span>
-                    </div>
-                  )}
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '15px', marginTop: '5px', paddingTop: '5px', borderTop: '1px solid #000' }}>
-                    <span>الصافي المدفوع:</span>
+                  {((completedInvoice.advanceDeduction || 0) > 0 || advanceDeduction > 0) && (() => {
+                    const advAmt = completedInvoice.advanceDeduction || advanceDeduction;
+                    const advList = completedInvoice.advancePayments || activeAdvancePayments;
+                    return (
+                      <div style={{ margin: '4px 0', padding: '4px 0', borderTop: '1px dotted #a7f3d0', borderBottom: '1px dotted #a7f3d0' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#059669', fontWeight: 'bold' }}>
+                          <span>المدفوع مقدماً (عربون الحجز):</span>
+                          <span>- {advAmt.toFixed(2)}</span>
+                        </div>
+                        {advList && advList.length > 0 && (
+                          <div style={{ fontSize: '10px', color: '#047857', marginTop: '2px' }}>
+                            {advList.map((adv, idx) => (
+                              <div key={adv.id || idx} style={{ display: 'flex', justifyContent: 'space-between', paddingLeft: '8px' }}>
+                                <span>• {adv.treasuryName || adv.paymentMethod || 'دفعة'} ({adv.date?.split('T')[0] || ''}):</span>
+                                <span>{adv.amount.toFixed(2)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '15px', marginTop: '5px', paddingTop: '5px', borderTop: '1px solid #000' }}>
+                    <span>الصافي المدفوع اليوم:</span>
                     <span>{completedInvoice.total.toFixed(2)} {settings.currency}</span>
                   </div>
                   {completedInvoice.paymentMethods && completedInvoice.paymentMethods.length > 0 && (

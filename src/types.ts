@@ -599,6 +599,8 @@ export interface AdvancePayment {
   treasuryId: string; 
   treasuryName: string; 
   date: string; 
+  paymentMethod?: string;
+  notes?: string;
 }
 
 export interface ClientPortalAccount {
@@ -673,6 +675,8 @@ export interface HeldInvoice {
   cart: CartItem[];
   discount: { type: 'percentage' | 'fixed'; value: number };
   advanceDeduction: number;
+  advancePayments?: AdvancePayment[];
+  bookingId?: string;
   isRemedyInvoice?: boolean;
   remedyReason?: string;
   beforePhotoUrl?: string;
@@ -842,6 +846,9 @@ export interface Invoice {
   clientPhone?: string; 
   subtotal?: number;
   discount: number; 
+  advanceDeduction?: number;
+  advancePayments?: AdvancePayment[];
+  bookingId?: string;
   vatAmount?: number;
   cashbackUsed?: number;
   total: number; 

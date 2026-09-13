@@ -471,6 +471,8 @@ export const QueueService = {
       })),
       discount: { type: 'percentage', value: 0 },
       advanceDeduction: (booking.advancePayments || []).reduce((sum, p) => sum + p.amount, 0),
+      advancePayments: booking.advancePayments || [],
+      bookingId: booking.id,
       note: `حجز موعد الساعة: ${booking.time || ''} - تذكرة دور #${booking.queueNumber}`,
       queueNumber: booking.queueNumber,
       queueTicketId: ticketId,

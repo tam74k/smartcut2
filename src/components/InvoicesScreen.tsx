@@ -430,6 +430,11 @@ export function InvoicesScreen({
                   <td className="px-6 py-4 text-center font-bold text-blue-600">{inv.cashbackUsed > 0 ? inv.cashbackUsed.toFixed(2) : '-'}</td>
                   <td className="px-6 py-4 font-bold text-slate-800">
                     <div>{inv.total.toFixed(2)} {settings.currency}</div>
+                    {inv.advanceDeduction !== undefined && inv.advanceDeduction > 0 && (
+                      <div className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 inline-block mt-0.5">
+                        (عربون: {inv.advanceDeduction.toFixed(2)})
+                      </div>
+                    )}
                     {inv.isRemedyInvoice && <div className="text-[10px] text-purple-700 font-bold">(0.00 إصلاح)</div>}
                   </td>
                   <td className="px-6 py-4 text-center">
@@ -576,8 +581,26 @@ export function InvoicesScreen({
                               </>
                             );
                           })()}
-                                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '15px', marginTop: '5px', paddingTop: '5px', borderTop: '1px solid #000' }}>
-                            <span>الصافي المدفوع:</span>
+                          {inv.advanceDeduction !== undefined && inv.advanceDeduction > 0 && (
+                            <div style={{ margin: '4px 0', padding: '4px 0', borderTop: '1px dotted #a7f3d0', borderBottom: '1px dotted #a7f3d0' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#059669', fontWeight: 'bold' }}>
+                                <span>المدفوع مقدماً (عربون الحجز):</span>
+                                <span>- {inv.advanceDeduction.toFixed(2)}</span>
+                              </div>
+                              {inv.advancePayments && inv.advancePayments.length > 0 && (
+                                <div style={{ fontSize: '10px', color: '#047857', marginTop: '2px' }}>
+                                  {inv.advancePayments.map((adv, idx) => (
+                                    <div key={adv.id || idx} style={{ display: 'flex', justifyContent: 'space-between', paddingLeft: '8px' }}>
+                                      <span>• {adv.treasuryName || adv.paymentMethod || 'دفعة'} ({adv.date?.split('T')[0] || ''}):</span>
+                                      <span>{adv.amount.toFixed(2)}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '15px', marginTop: '5px', paddingTop: '5px', borderTop: '1px solid #000' }}>
+                            <span>الصافي المدفوع اليوم:</span>
                             <span>{inv.total.toFixed(2)} {settings.currency}</span>
                           </div>
                           {inv.paymentMethods && inv.paymentMethods.length > 0 && (
