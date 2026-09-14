@@ -305,6 +305,10 @@ export function WarehouseScreen({
           setInventoryCounts={setInventoryCounts}
           itemMovements={itemMovements}
           setItemMovements={setItemMovements}
+          shiftData={{
+            isOpen: shiftData.isOpen,
+            date: shiftData.date
+          }}
         />
       )}
 

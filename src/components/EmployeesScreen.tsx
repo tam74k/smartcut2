@@ -238,6 +238,7 @@ export function EmployeesScreen({
       const trx: Transaction = {
         id: 'TRX-ADV-' + Math.random().toString(36).substring(2, 9),
         date: quickActionForm.date + 'T' + new Date().toTimeString().split(' ')[0],
+        shiftDate: shiftData?.isOpen ? shiftData.date : undefined,
         type: 'out',
         amount: quickActionForm.amount,
         category: 'hr_advance',
@@ -598,6 +599,7 @@ export function EmployeesScreen({
         const trx: Transaction = {
           id: 'TRX-ADV-' + Math.random().toString(36).substring(2, 9),
           date: advanceForm.date + 'T' + new Date().toTimeString().split(' ')[0],
+          shiftDate: shiftData?.isOpen ? shiftData.date : undefined,
           type: 'out',
           amount: advanceForm.amount,
           category: 'hr_advance',

@@ -11,6 +11,7 @@ import {
 import { DB } from '../services/db';
 import { PartnerLedgerPrintModal, PartnerLedgerEntry } from './PartnerLedgerPrintModal';
 import { PartnersProfitReportModal, PartnerProfitReportRow } from './PartnersProfitReportModal';
+import { getActiveShiftDate, getEffectiveDateTime, getEffectiveDateOnly } from '../utils/shiftDate';
 
 interface PartnersScreenProps {
   settings: AppSettings;
@@ -22,6 +23,7 @@ interface PartnersScreenProps {
   setTransactions: (updater: Transaction[] | ((prev: Transaction[]) => Transaction[])) => void;
   activeBranchId?: string;
   currentUser?: any;
+  shiftData?: { isOpen: boolean; date: string; initialCash?: number };
 }
 
 export function PartnersScreen({
@@ -33,7 +35,8 @@ export function PartnersScreen({
   transactions = [],
   setTransactions,
   activeBranchId,
-  currentUser
+  currentUser,
+  shiftData
 }: PartnersScreenProps) {
   // Navigation subtabs
   const [activeTab, setActiveTab] = useState<'partners' | 'transactions' | 'settlement' | 'exit_installments'>('partners');
@@ -215,7 +218,7 @@ export function PartnersScreen({
         debitBalance: 0,
         totalWithdrawn: 0,
         totalProfitReceived: 0,
-        joinDate: new Date().toISOString().split('T')[0],
+        joinDate: getEffectiveDateOnly(shiftData, activeBranchId),
         notes: formNotes.trim() || undefined,
         isActive: true
       };
@@ -279,7 +282,8 @@ export function PartnersScreen({
     }
 
     const amount = Number(txAmount);
-    const now = new Date().toISOString();
+    const effectiveShiftDate = getActiveShiftDate(shiftData, activeBranchId);
+    const now = getEffectiveDateTime(shiftData, activeBranchId);
     const treasuryObj = settings.treasuries.find(t => t.id === txTreasury) || settings.treasuries[0];
 
     // Check Drawings Cap (سقف السحوبات)
@@ -368,6 +372,7 @@ export function PartnersScreen({
     const salonTx: Transaction = {
       id: 'TRX-PTX-' + Math.random().toString(36).substring(2, 9),
       date: now,
+      shiftDate: effectiveShiftDate || undefined,
       type: txType === 'deposit' ? 'in' : 'out',
       amount: amount,
       category: txType === 'deposit' ? 'إيداع رأس مال' : 'مسحوبات شركاء',
@@ -430,7 +435,7 @@ export function PartnersScreen({
           status: 'exited' as const,
           sharePercentage: 0,
           isActive: false,
-          exitDate: new Date().toISOString().split('T')[0],
+          exitDate: getEffectiveDateOnly(shiftData, activeBranchId),
           notes: (p.notes ? p.notes + ' | ' : '') + `تم التخارج بقيمة ${valuation} على ${count} أقساط`
         };
       }
@@ -468,7 +473,8 @@ export function PartnersScreen({
       return;
     }
 
-    const now = new Date().toISOString();
+    const effectiveShiftDate = getActiveShiftDate(shiftData, activeBranchId);
+    const now = getEffectiveDateTime(shiftData, activeBranchId);
     const updatedInst: PartnerExitInstallment = {
       ...inst,
       status: 'paid',
@@ -482,6 +488,7 @@ export function PartnersScreen({
     const salonTx: Transaction = {
       id: 'TRX-INST-' + Math.random().toString(36).substring(2, 9),
       date: now,
+      shiftDate: effectiveShiftDate || undefined,
       type: 'out',
       amount: inst.amount,
       category: 'سداد قسط تخارج',
@@ -548,7 +555,7 @@ export function PartnersScreen({
         netPayableAmount: payable,
         carriedDebitBalance: carriedDebit,
         status: payable > 0 ? 'approved' : 'carried_forward',
-        distributionDate: new Date().toISOString().split('T')[0],
+        distributionDate: getEffectiveDateOnly(shiftData, activeBranchId),
         approvedBy: currentUser?.name || 'المالك',
         notes: carriedDebit > 0 
           ? `مسحوبات الشريك تجاوزت نصيبه من الربح بمبلغ ${carriedDebit.toLocaleString()} وتم ترحيلها كرصيد مدين مستحق السداد`

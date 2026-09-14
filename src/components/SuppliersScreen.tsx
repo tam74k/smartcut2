@@ -87,9 +87,16 @@ export function SuppliersScreen({
     setSuppliers(suppliers.map(s => s.id === paymentForm.supplierId ? { ...s, currentBalance: s.currentBalance - amountNum } : s));
     
     // Add transaction
+    const effectiveShiftDate = shiftData?.isOpen ? shiftData.date : undefined;
+    const nowTimeStr = new Date().toTimeString().split(' ')[0];
+    const trxDate = (paymentForm.date === effectiveShiftDate)
+      ? `${effectiveShiftDate}T${nowTimeStr}`
+      : `${paymentForm.date}T${nowTimeStr}`;
+
     setTransactions([...transactions, {
       id: 'TRX-' + Math.random().toString(36).substring(2,9),
-      date: new Date().toISOString(),
+      date: trxDate,
+      shiftDate: effectiveShiftDate,
       type: 'out',
       amount: amountNum,
       category: 'supplier_payment',

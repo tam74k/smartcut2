@@ -17,6 +17,7 @@ import { printHtml } from '../utils/print';
 import { printThermalFinancialVoucher } from './ThermalFinancialVoucher';
 import { calculateEmployeeCommission, getCommissionModelLabel } from '../utils/commissionHelper';
 import { DB } from '../services/db';
+import { getActiveShiftDate, getEffectiveDateTime, getEffectiveDateOnly } from '../utils/shiftDate';
 
 // Helper to reliably match date strings (YYYY-MM-DD) across ISO strings, space-delimited timestamps, and local timezone
 const isSameDay = (ts?: string, targetDateStr?: string): boolean => {
@@ -38,7 +39,10 @@ const extractTime = (ts?: string): string | null => {
     return ts.split('T')[1].substring(0, 5);
   }
   const parts = ts.split(' ');
-  return parts[1] ? parts[1].substring(0, 5) : null;
+  if (parts.length > 1) {
+    return parts[1].substring(0, 5);
+  }
+  return null;
 };
 
 const formatTime12h = (timeStr?: string): string => {
@@ -155,7 +159,9 @@ export function HRScreen({
   bookings = [],
   currentUser,
   fingerprintLogs = [],
-  setFingerprintLogs
+  setFingerprintLogs,
+  shiftData,
+  activeBranchId
 }: { 
   settings: AppSettings;
   employees: Employee[]; 
@@ -167,6 +173,8 @@ export function HRScreen({
   currentUser?: any;
   fingerprintLogs?: FingerprintLog[];
   setFingerprintLogs?: React.Dispatch<React.SetStateAction<FingerprintLog[]>> | ((logs: FingerprintLog[] | ((prev: FingerprintLog[]) => FingerprintLog[])) => void);
+  shiftData?: { isOpen: boolean; date: string; initialCash?: number };
+  activeBranchId?: string;
 }) {
   const activeEmployees = employees.filter(e => !e.isBlacklisted);
   
@@ -1360,7 +1368,7 @@ export function HRScreen({
   const [showCommissionModal, setShowCommissionModal] = useState(false);
   const [commEmpId, setCommEmpId] = useState('');
   const [commAmount, setCommAmount] = useState<number | ''>('');
-  const [commDate, setCommDate] = useState(now.toISOString().split('T')[0]);
+  const [commDate, setCommDate] = useState(() => getEffectiveDateOnly(shiftData, activeBranchId || settings.branchId));
   const [commTreasuryId, setCommTreasuryId] = useState(settings.treasuries[0]?.id || '');
   const [commNote, setCommNote] = useState('صرف عمولة مستحقة');
   const [isSavingCommissionPayout, setIsSavingCommissionPayout] = useState(false);
@@ -1368,7 +1376,7 @@ export function HRScreen({
   const handleOpenCommissionModal = (targetEmpId?: string) => {
     const defaultEmpId = targetEmpId || (viewMode === 'single_employee' && selectedEmpId) || activeEmployees[0]?.id || '';
     setCommEmpId(defaultEmpId);
-    setCommDate(now.toISOString().split('T')[0]);
+    setCommDate(getEffectiveDateOnly(shiftData, activeBranchId || settings.branchId));
     setCommTreasuryId(settings.treasuries[0]?.id || '');
     setCommNote('صرف عمولة مستحقة');
     setCommAmount('');
@@ -1417,16 +1425,23 @@ export function HRScreen({
       const voucherNum = `COMM-${Math.floor(100000 + Math.random() * 900000)}`;
 
       // 1. Create financial transaction
+      const effectiveShiftDate = getActiveShiftDate(shiftData, activeBranchId || settings.branchId);
+      const nowTimeStr = new Date().toTimeString().split(' ')[0];
+      const trxDate = (commDate === effectiveShiftDate)
+        ? `${effectiveShiftDate}T${nowTimeStr}`
+        : `${commDate}T${nowTimeStr}`;
+
       const trx: Transaction = {
         id: 'TRX-COMM-' + Math.random().toString(36).substring(2, 9),
-        date: `${commDate}T${new Date().toTimeString().split(' ')[0]}`,
+        date: trxDate,
+        shiftDate: (commDate === effectiveShiftDate) ? effectiveShiftDate : undefined,
         type: 'out',
         amount: amountVal,
         category: 'commissions',
         description: `صرف عمولة للموظف (${targetEmp.name}) - ${commNote}`,
         treasury: commTreasuryId,
         salonId: settings.salonId,
-        branchId: settings.branchId
+        branchId: activeBranchId || settings.branchId
       };
 
       if (DB.saveTransaction) {
@@ -1605,7 +1620,7 @@ export function HRScreen({
   const [showPermissionsListModal, setShowPermissionsListModal] = useState(false);
   const [showPayrollAuditModal, setShowPayrollAuditModal] = useState(false);
   const [permEmpId, setPermEmpId] = useState('');
-  const [permDate, setPermDate] = useState(now.toISOString().split('T')[0]);
+  const [permDate, setPermDate] = useState(() => getEffectiveDateOnly(shiftData, activeBranchId || settings.branchId));
   const [permType, setPermType] = useState<'shift_start' | 'mid_shift' | 'official_mission'>('shift_start');
   const [permStartTime, setPermStartTime] = useState('09:00');
   const [permEndTime, setPermEndTime] = useState('11:00');
@@ -1616,7 +1631,7 @@ export function HRScreen({
   const handleOpenPermissionModal = (targetEmpId?: string, targetDate?: string) => {
     const defaultEmpId = targetEmpId || (viewMode === 'single_employee' && selectedEmpId) || activeEmployees[0]?.id || '';
     setPermEmpId(defaultEmpId);
-    setPermDate(targetDate || (viewMode === 'single_day' && selectedSingleDay) || now.toISOString().split('T')[0]);
+    setPermDate(targetDate || (viewMode === 'single_day' && selectedSingleDay) || getEffectiveDateOnly(shiftData, activeBranchId || settings.branchId));
     setPermType('shift_start');
     setPermStartTime('09:00');
     setPermEndTime('11:00');
@@ -1738,7 +1753,7 @@ export function HRScreen({
   // Batch Salary Disbursement State
   const [showDisbursementModal, setShowDisbursementModal] = useState(false);
   const [disbursementTreasuryId, setDisbursementTreasuryId] = useState(settings.treasuries[0]?.id || '');
-  const [disbursementDate, setDisbursementDate] = useState(now.toISOString().split('T')[0]);
+  const [disbursementDate, setDisbursementDate] = useState(() => getEffectiveDateOnly(shiftData, activeBranchId || settings.branchId));
   const [disbursementNote, setDisbursementNote] = useState(`مسير رواتب شهر ${selectedMonth}`);
   const [selectedDisbursementEmpIds, setSelectedDisbursementEmpIds] = useState<string[]>([]);
 
@@ -1790,7 +1805,7 @@ export function HRScreen({
     // تحديد الموظفين الذين لم يتم صرف رواتبهم بعد لهذا الشهر ولهم مبالغ مستحقة
     const unpaidEmpIds = payrollDisbursementData.filter(d => !d.isAlreadyPaid && d.netPayable > 0).map(d => d.emp.id);
     setSelectedDisbursementEmpIds(unpaidEmpIds);
-    setDisbursementDate(now.toISOString().split('T')[0]);
+    setDisbursementDate(getEffectiveDateOnly(shiftData, activeBranchId || settings.branchId));
     setDisbursementTreasuryId(settings.treasuries[0]?.id || '');
     setShowDisbursementModal(true);
   };
@@ -1812,7 +1827,7 @@ export function HRScreen({
     });
   };
 
-  const handleDisburseSalaries = (targetEmpIds: string[]) => {
+  const handleDisburseSalaries = async (targetEmpIds: string[]) => {
     if (!targetEmpIds || targetEmpIds.length === 0) {
       alert('الرجاء تحديد موظف واحد على الأقل لصرف راتبه');
       return;
@@ -1841,16 +1856,24 @@ export function HRScreen({
 
     // 2. إنشاء الحركات المالية لخروج الرواتب من الخزينة
     const newTrxs: Transaction[] = [];
+    const effectiveShiftDate = getActiveShiftDate(shiftData, activeBranchId || settings.branchId);
+    const nowTimeStr = new Date().toTimeString().split(' ')[0];
+    const trxDate = (disbursementDate === effectiveShiftDate)
+      ? `${effectiveShiftDate}T${nowTimeStr}`
+      : `${disbursementDate}T${nowTimeStr}`;
 
     targets.forEach(item => {
       const trx: Transaction = {
         id: 'TRX-SAL-' + Math.random().toString(36).substring(2, 9),
-        date: `${disbursementDate}T${new Date().toTimeString().split(' ')[0]}`,
+        date: trxDate,
+        shiftDate: (disbursementDate === effectiveShiftDate) ? effectiveShiftDate : undefined,
         type: 'out',
         amount: item.netPayable,
         category: 'salaries',
         description: `صرف راتب الموظف (${item.emp.name}) عن شهر (${selectedMonth}) الفترة (${startDate} إلى ${endDate}) - ${disbursementNote}`,
-        treasury: disbursementTreasuryId
+        treasury: disbursementTreasuryId,
+        branchId: activeBranchId || settings.branchId,
+        salonId: settings.salonId
       };
       newTrxs.push(trx);
 
@@ -1892,10 +1915,22 @@ export function HRScreen({
       };
     });
 
+    if (DB.saveTransaction) {
+      for (const trx of newTrxs) {
+        await DB.saveTransaction(trx);
+      }
+    }
     if (setTransactions && transactions) {
       setTransactions([...transactions, ...newTrxs]);
     }
     setEmployees(updatedEmployees);
+    if (DB.saveEmployee) {
+      for (const emp of updatedEmployees) {
+        if (targets.some(t => t.emp.id === emp.id)) {
+          await DB.saveEmployee(emp);
+        }
+      }
+    }
 
     setShowDisbursementModal(false);
     alert(`✅ تم صرف وتوثيق رواتب (${targets.length}) موظف بنجاح بقيمة إجمالية ${targets.reduce((s, t) => s + t.netPayable, 0).toFixed(2)} ${settings.currency} وطباعة إيصالات الاستلام للتوقيع.`);

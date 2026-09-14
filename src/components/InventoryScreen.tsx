@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { AppSettings, Product, InventoryCount, ItemMovement, InventoryCountItem } from '../types';
 import { Plus, Search, FileText, CheckCircle, Save, X, Calendar, ArrowRightLeft, ClipboardList } from 'lucide-react';
+import { getEffectiveDateTime } from '../utils/shiftDate';
 
 export function InventoryScreen({
   settings,
@@ -9,7 +10,8 @@ export function InventoryScreen({
   inventoryCounts,
   setInventoryCounts,
   itemMovements,
-  setItemMovements
+  setItemMovements,
+  shiftData
 }: {
   settings: AppSettings;
   products: Product[];
@@ -18,6 +20,7 @@ export function InventoryScreen({
   setInventoryCounts: (ic: InventoryCount[]) => void;
   itemMovements: ItemMovement[];
   setItemMovements: (im: ItemMovement[]) => void;
+  shiftData?: { isOpen: boolean; date: string; initialCash?: number };
 }) {
   const [activeTab, setActiveTab] = useState<'counts' | 'movements'>('counts');
   
@@ -54,13 +57,12 @@ export function InventoryScreen({
   };
 
   const handleSaveCount = () => {
-    
-    
     const countId = 'CNT-' + Math.random().toString(36).substr(2, 9);
+    const effectiveNow = getEffectiveDateTime(shiftData);
     
     const newCount: InventoryCount = {
       id: countId,
-      date: new Date().toISOString(),
+      date: effectiveNow,
       notes: countNotes,
       items: countItems
     };
@@ -79,7 +81,7 @@ export function InventoryScreen({
           newMovements.push({
             id: 'MOV-' + Math.random().toString(36).substr(2, 9),
             productId: item.productId,
-            date: new Date().toISOString(),
+            date: effectiveNow,
             type: 'inventory_count',
             referenceId: countId,
             quantityIn: item.difference > 0 ? item.difference : 0,

@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { AppSettings, PurchaseInvoice, Supplier, Product, Transaction, ItemMovement, PurchaseInvoiceItem } from '../types';
 import { Plus, Trash2, Search, Printer, X, ShoppingCart } from 'lucide-react';
+import { getEffectiveDateTime } from '../utils/shiftDate';
 
 export function PurchasesScreen({
   settings,
@@ -125,7 +126,7 @@ export function PurchasesScreen({
         newMovements.push({
           id: 'MOV-' + Math.random().toString(36).substr(2, 9),
           productId: item.productId,
-          date: new Date().toISOString(),
+          date: getEffectiveDateTime(shiftData),
           type: 'purchase',
           referenceId: invoiceId,
           quantityIn: item.quantity,
@@ -142,7 +143,8 @@ export function PurchasesScreen({
     if (paidAmount > 0) {
       setTransactions([...transactions, {
         id: 'TRX-' + Math.random().toString(36).substring(2,9),
-        date: new Date().toISOString(),
+        date: getEffectiveDateTime(shiftData),
+        shiftDate: shiftData.isOpen ? shiftData.date : undefined,
         type: 'out',
         amount: paidAmount,
         category: 'purchase',

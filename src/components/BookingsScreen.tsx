@@ -34,7 +34,8 @@ export function BookingsScreen({
   branches = [],
   currentUser,
   transactions = [],
-  setTransactions
+  setTransactions,
+  shiftData
 }: { 
   settings: AppSettings, 
   setSettings?: (s: AppSettings) => void,
@@ -49,7 +50,8 @@ export function BookingsScreen({
   branches?: Branch[],
   currentUser?: AppUser | null,
   transactions?: Transaction[],
-  setTransactions?: (t: Transaction[] | ((prev: Transaction[]) => Transaction[])) => void
+  setTransactions?: (t: Transaction[] | ((prev: Transaction[]) => Transaction[])) => void,
+  shiftData?: { isOpen: boolean; date: string; initialCash?: number }
 }) {
   // Permission to adjust booking rules
   const canManageBookingSettings = currentUser?.actions.includes('manage_booking_settings') || 
@@ -121,11 +123,13 @@ export function BookingsScreen({
   const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
   const [selectedBookingDetails, setSelectedBookingDetails] = useState<Booking | null>(null);
 
+  const defaultBookingDate = (shiftData && shiftData.isOpen && shiftData.date) ? shiftData.date : new Date().toISOString().split('T')[0];
+
   // New Booking State
   const [newBooking, setNewBooking] = useState<Partial<Booking>>({
     clientName: '',
     phone: '',
-    date: new Date().toISOString().split('T')[0],
+    date: defaultBookingDate,
     time: '10:00',
     status: 'confirmed',
     services: [],
@@ -142,7 +146,7 @@ export function BookingsScreen({
   const [advAmountInput, setAdvAmountInput] = useState<number | ''>('');
   const [advTreasuryInput, setAdvTreasuryInput] = useState<string>('');
   const [advMethodInput, setAdvMethodInput] = useState<string>('cash');
-  const [advDateInput, setAdvDateInput] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [advDateInput, setAdvDateInput] = useState<string>(defaultBookingDate);
   const [advNotesInput, setAdvNotesInput] = useState<string>('');
 
   // Quick Advance Modal for Details View
@@ -150,7 +154,7 @@ export function BookingsScreen({
   const [quickAdvAmount, setQuickAdvAmount] = useState<number | ''>('');
   const [quickAdvTreasury, setQuickAdvTreasury] = useState<string>('');
   const [quickAdvMethod, setQuickAdvMethod] = useState<string>('cash');
-  const [quickAdvDate, setQuickAdvDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [quickAdvDate, setQuickAdvDate] = useState<string>(defaultBookingDate);
   const [quickAdvNotes, setQuickAdvNotes] = useState<string>('');
 
   // Filtered services for autocomplete search
@@ -414,12 +418,15 @@ export function BookingsScreen({
     const selectedTreasuryObj = currentTreasuries.find(t => t.id === tId);
     const tName = selectedTreasuryObj?.name || (tId === 'cash' ? 'الخزينة النقدية' : 'الخزينة');
 
+    const effectiveShiftDate = (shiftData && shiftData.isOpen && shiftData.date) ? shiftData.date : undefined;
+    const advDate = effectiveShiftDate || advDateInput || new Date().toISOString().split('T')[0];
+
     const newAdv: AdvancePayment = {
       id: 'ADV-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
       amount: amt,
       treasuryId: tId,
       treasuryName: tName,
-      date: advDateInput || new Date().toISOString().split('T')[0],
+      date: advDate,
       paymentMethod: advMethodInput || 'cash',
       notes: advNotesInput.trim() || undefined
     };
@@ -454,7 +461,8 @@ export function BookingsScreen({
     const tId = quickAdvTreasury || (currentTreasuries[0]?.id || 'cash');
     const selectedTreasuryObj = currentTreasuries.find(t => t.id === tId);
     const tName = selectedTreasuryObj?.name || (tId === 'cash' ? 'الخزينة النقدية' : 'الخزينة');
-    const advDate = quickAdvDate || new Date().toISOString().split('T')[0];
+    const effectiveShiftDate = (shiftData && shiftData.isOpen && shiftData.date) ? shiftData.date : undefined;
+    const advDate = effectiveShiftDate || quickAdvDate || new Date().toISOString().split('T')[0];
 
     const newAdv: AdvancePayment = {
       id: 'ADV-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
@@ -481,6 +489,7 @@ export function BookingsScreen({
     const newTrx: Transaction = {
       id: 'TRX-ADV-' + Math.random().toString(36).substr(2, 9),
       date: advDate + 'T' + new Date().toTimeString().split(' ')[0],
+      shiftDate: effectiveShiftDate,
       type: 'in',
       amount: amt,
       category: 'مقدم حجز',
@@ -542,20 +551,25 @@ export function BookingsScreen({
 
     // Auto generate financial transactions for brand new advance payments on their payment date
     if (brandNewAdvances.length > 0) {
-      const newTrxs: Transaction[] = brandNewAdvances.map(adv => ({
-        id: 'TRX-ADV-' + Math.random().toString(36).substr(2, 9),
-        date: (adv.date || new Date().toISOString().split('T')[0]) + 'T' + new Date().toTimeString().split(' ')[0],
-        type: 'in',
-        amount: adv.amount,
-        category: 'مقدم حجز',
-        description: `دفعة مقدمة / عربون لحجز #${booking.bookingCode || booking.id} - العميل: ${booking.clientName}`,
-        treasury: adv.treasuryId,
-        createdBy: currentUser?.name || 'الكاشير',
-        userId: currentUser?.id,
-        userName: currentUser?.name || 'الكاشير',
-        branchId: bBranchId,
-        salonId: settings.salonId
-      }));
+      const effectiveShiftDate = (shiftData && shiftData.isOpen && shiftData.date) ? shiftData.date : undefined;
+      const newTrxs: Transaction[] = brandNewAdvances.map(adv => {
+        const transDate = (effectiveShiftDate || adv.date || new Date().toISOString().split('T')[0]) + 'T' + new Date().toTimeString().split(' ')[0];
+        return {
+          id: 'TRX-ADV-' + Math.random().toString(36).substr(2, 9),
+          date: transDate,
+          shiftDate: effectiveShiftDate,
+          type: 'in',
+          amount: adv.amount,
+          category: 'مقدم حجز',
+          description: `دفعة مقدمة / عربون لحجز #${booking.bookingCode || booking.id} - العميل: ${booking.clientName}`,
+          treasury: adv.treasuryId,
+          createdBy: currentUser?.name || 'الكاشير',
+          userId: currentUser?.id,
+          userName: currentUser?.name || 'الكاشير',
+          branchId: bBranchId,
+          salonId: settings.salonId
+        };
+      });
 
       if (setTransactions) {
         setTransactions(prev => [...prev, ...newTrxs]);

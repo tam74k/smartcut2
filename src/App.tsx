@@ -1849,6 +1849,7 @@ export default function App() {
           fingerprintLogs={fingerprintLogs}
           setFingerprintLogs={setFingerprintLogs}
           shiftData={shiftData}
+          activeBranchId={activeBranchId}
         />
       );
 
