@@ -1,8 +1,9 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   AppSettings, Invoice, Transaction, Booking, Employee, Client, Branch, AppUser, UserRole, Partner, PartnerTransaction 
 } from '../types';
 import { AuthService, ROLE_LABELS } from '../services/auth';
+import { DB } from '../services/db';
 import { 
   Smartphone, DollarSign, Users, Calendar, Clock, CheckCircle2, AlertTriangle, 
   XCircle, UserCheck, UserX, Plus, RefreshCw, Send, ChevronDown, ArrowUpRight, 
@@ -22,19 +23,23 @@ interface PaymentSlice {
   icon: any;
 }
 
-// 1. Interactive Circular Donut Chart for Payment Methods
+// 1. Interactive Circular Donut Chart for Treasuries and Payment Methods
 function PaymentMethodsDonutChart({
   revenueStats,
   currency,
-  onViewAll
+  onViewAll,
+  customSlices,
+  title = 'توزيع حركة الخزائن والمقبوضات'
 }: {
   revenueStats: any;
   currency: string;
   onViewAll?: () => void;
+  customSlices?: PaymentSlice[];
+  title?: string;
 }) {
   const [hoveredSlice, setHoveredSlice] = useState<string | null>(null);
 
-  const rawSlices: PaymentSlice[] = [
+  const defaultSlices: PaymentSlice[] = [
     {
       id: 'cash',
       name: 'كاش / نقدي',
@@ -97,7 +102,8 @@ function PaymentMethodsDonutChart({
     }
   ];
 
-  const total = revenueStats.totalRevenue || 0;
+  const rawSlices: PaymentSlice[] = customSlices && customSlices.length > 0 ? customSlices : defaultSlices;
+  const total = rawSlices.reduce((sum, s) => sum + (s.amount > 0 ? s.amount : 0), 0) || revenueStats.totalRevenue || 0;
   const activeSlices = rawSlices.filter(s => s.amount > 0);
 
   // SVG dimensions
@@ -115,7 +121,7 @@ function PaymentMethodsDonutChart({
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-xs font-black text-white flex items-center gap-1.5">
           <PieChart size={16} className="text-emerald-400" />
-          <span>توزيع الدخل حسب طرق الدفع (اليوم)</span>
+          <span>{title}</span>
         </h3>
         {onViewAll && (
           <button 
@@ -458,7 +464,7 @@ function AttendanceGaugeChart({
   );
 }
 
-export type OwnerPeriod = 'today' | 'yesterday' | 'this_week' | 'this_month' | 'last_month' | 'custom';
+export type OwnerPeriod = 'today' | 'yesterday' | 'this_week' | 'this_month' | 'last_month' | 'all' | 'custom';
 
 interface OwnerExecutivePortalProps {
   settings: AppSettings;
@@ -471,6 +477,7 @@ interface OwnerExecutivePortalProps {
   activeBranchId: string;
   onSelectBranch: (branchId: string) => void;
   currentUser: AppUser;
+  onNavigateScreen?: (screenName: string) => void;
   standalone?: boolean;
   onLogout?: () => void;
   expenses?: any[];
@@ -481,6 +488,10 @@ interface OwnerExecutivePortalProps {
   partnerTransactions?: PartnerTransaction[];
   setPartnerTransactions?: (updater: PartnerTransaction[] | ((prev: PartnerTransaction[]) => PartnerTransaction[])) => void;
   setTransactions?: (updater: Transaction[] | ((prev: Transaction[]) => Transaction[])) => void;
+  onRefresh?: () => Promise<void> | void;
+  isRefreshing?: boolean;
+  shiftData?: { isOpen: boolean; date: string; initialCash?: number };
+  fingerprintLogs?: any[];
 }
 
 export function OwnerExecutivePortal({
@@ -504,7 +515,11 @@ export function OwnerExecutivePortal({
   setPartners,
   partnerTransactions = [],
   setPartnerTransactions,
-  setTransactions
+  setTransactions,
+  onRefresh,
+  isRefreshing: externalRefreshing = false,
+  shiftData,
+  fingerprintLogs = []
 }: OwnerExecutivePortalProps) {
   const [activeSubTab, setActiveSubTab] = useState<'overview' | 'profit_equation' | 'partners' | 'finance' | 'attendance' | 'bookings' | 'users'>('overview');
   const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
@@ -515,6 +530,32 @@ export function OwnerExecutivePortal({
   const [period, setPeriod] = useState<OwnerPeriod>('today');
   const [customStartDate, setCustomStartDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
   const [customEndDate, setCustomEndDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+
+  // Salon Treasuries State (Synchronized with Supabase DB)
+  const [liveTreasuries, setLiveTreasuries] = useState<Treasury[]>(() => {
+    return (settings.treasuries && settings.treasuries.length > 0) ? settings.treasuries : [];
+  });
+
+  useEffect(() => {
+    if (settings.treasuries && settings.treasuries.length > 0) {
+      setLiveTreasuries(settings.treasuries);
+    }
+  }, [settings.treasuries]);
+
+  useEffect(() => {
+    async function loadDbSettings() {
+      if (!settings.salonId) return;
+      try {
+        const dbSettings = await DB.fetchSettings(settings.salonId);
+        if (dbSettings?.treasuries && Array.isArray(dbSettings.treasuries) && dbSettings.treasuries.length > 0) {
+          setLiveTreasuries(dbSettings.treasuries);
+        }
+      } catch (e) {
+        console.warn('Error fetching settings from DB in owner portal:', e);
+      }
+    }
+    loadDbSettings();
+  }, [settings.salonId]);
 
   // User Management State
   const [users, setUsers] = useState<AppUser[]>(() => AuthService.getUsers());
@@ -555,28 +596,32 @@ export function OwnerExecutivePortal({
   // Target Date computation
   const dateRange = useMemo(() => {
     const now = new Date();
-    const todayStr = now.toISOString().split('T')[0];
+    const localToday = now.toLocaleDateString('en-CA');
+    const todayStr = (shiftData?.isOpen && shiftData?.date) ? shiftData.date : localToday;
 
+    if (period === 'all') {
+      return { start: '2000-01-01', end: '2099-12-31', label: 'كامل المدة (الكل)' };
+    }
     if (period === 'today') {
-      return { start: todayStr, end: todayStr, label: 'اليوم' };
+      return { start: todayStr, end: todayStr, label: shiftData?.isOpen && shiftData?.date ? `اليوم (${todayStr})` : 'اليوم' };
     }
     if (period === 'yesterday') {
       const y = new Date(Date.now() - 86400000);
-      const yStr = y.toISOString().split('T')[0];
+      const yStr = y.toLocaleDateString('en-CA');
       return { start: yStr, end: yStr, label: 'أمس' };
     }
     if (period === 'this_week') {
       const d = new Date();
       d.setDate(d.getDate() - 6);
-      return { start: d.toISOString().split('T')[0], end: todayStr, label: 'آخر 7 أيام' };
+      return { start: d.toLocaleDateString('en-CA'), end: todayStr, label: 'آخر 7 أيام' };
     }
     if (period === 'this_month') {
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toLocaleDateString('en-CA');
       return { start: startOfMonth, end: todayStr, label: 'هذا الشهر' };
     }
     if (period === 'last_month') {
-      const startOfLast = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().split('T')[0];
-      const endOfLast = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().split('T')[0];
+      const startOfLast = new Date(now.getFullYear(), now.getMonth() - 1, 1).toLocaleDateString('en-CA');
+      const endOfLast = new Date(now.getFullYear(), now.getMonth(), 0).toLocaleDateString('en-CA');
       return { start: startOfLast, end: endOfLast, label: 'الشهر السابق' };
     }
     return {
@@ -584,7 +629,7 @@ export function OwnerExecutivePortal({
       end: customEndDate || todayStr,
       label: `${customStartDate} إلى ${customEndDate}`
     };
-  }, [period, customStartDate, customEndDate]);
+  }, [period, customStartDate, customEndDate, shiftData]);
 
   const isAllBranches = activeBranchId === 'all';
 
@@ -600,7 +645,7 @@ export function OwnerExecutivePortal({
   const isMainBranch = !activeBranchId || activeBranchId === mainBranchId || activeBranchId === 'b-main';
 
   const matchesActiveBranch = (itemBranchId?: string) => {
-    if (isAllBranches) return true;
+    if (isAllBranches || branches.length <= 1 || !activeBranchId || activeBranchId === 'all') return true;
     if (itemBranchId) {
       return itemBranchId === activeBranchId;
     }
@@ -609,7 +654,17 @@ export function OwnerExecutivePortal({
 
   const isDateInSelectedPeriod = (dateStr?: string) => {
     if (!dateStr) return false;
-    const d = dateStr.split('T')[0];
+    if (period === 'all') return true;
+    const cleanDate = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr.split(' ')[0];
+    const d = cleanDate.match(/^\d{4}-\d{2}-\d{2}/)?.[0] || cleanDate;
+
+    if (period === 'today') {
+      const localToday = new Date().toLocaleDateString('en-CA');
+      const utcToday = new Date().toISOString().split('T')[0];
+      const shiftDate = (shiftData?.isOpen && shiftData?.date) ? shiftData.date : null;
+      return d === localToday || d === utcToday || (shiftDate !== null && d === shiftDate);
+    }
+
     return d >= dateRange.start && d <= dateRange.end;
   };
 
@@ -620,7 +675,7 @@ export function OwnerExecutivePortal({
       const isBranchMatch = matchesActiveBranch(inv.branchId);
       return inPeriod && isBranchMatch && inv.status !== 'cancelled';
     });
-  }, [invoices, dateRange, activeBranchId, isMainBranch, isAllBranches]);
+  }, [invoices, dateRange, activeBranchId, isMainBranch, isAllBranches, period, shiftData]);
 
   const todayInvoices = filteredInvoices; // Backward compatibility alias
 
@@ -630,7 +685,7 @@ export function OwnerExecutivePortal({
       const isBranchMatch = matchesActiveBranch((t as any).branchId);
       return inPeriod && isBranchMatch;
     });
-  }, [transactions, dateRange, activeBranchId, isMainBranch]);
+  }, [transactions, dateRange, activeBranchId, isMainBranch, period, shiftData]);
 
   const todayTransactions = filteredTransactions;
 
@@ -645,35 +700,62 @@ export function OwnerExecutivePortal({
     let other = 0;
 
     filteredInvoices.forEach(inv => {
-      const net = inv.netAmount ?? inv.total ?? 0;
+      const rawNet = (inv.netAmount !== undefined && inv.netAmount !== null) ? Number(inv.netAmount) : 0;
+      const rawTotal = (inv.total !== undefined && inv.total !== null) ? Number(inv.total) : 0;
+      const rawPaid = ((inv as any).paid !== undefined && (inv as any).paid !== null) ? Number((inv as any).paid) : 0;
+      const net = rawNet > 0 ? rawNet : (rawTotal > 0 ? rawTotal : rawPaid);
       totalRevenue += net;
 
-      // Check payments array or single method
-      if (inv.payments && inv.payments.length > 0) {
-        inv.payments.forEach(p => {
-          const amt = p.amount || 0;
-          const method = (p.method || '').toLowerCase();
-          if (method.includes('cash') || method.includes('نقدي') || method.includes('كاش')) cash += amt;
-          else if (method.includes('mada') || method.includes('شبكة') || method.includes('مدى')) card += amt;
-          else if (method.includes('visa') || method.includes('فيزا') || method.includes('card') || method.includes('credit') || method.includes('ماستر')) credit += amt;
-          else if (method.includes('transfer') || method.includes('تحويل') || method.includes('bank')) bankTransfer += amt;
-          else if (method.includes('tamara') || method.includes('tabby') || method.includes('تابي') || method.includes('تمارا')) tabTamara += amt;
-          else other += amt;
+      // Check payments array, paymentMethods, or single method
+      const splits = (inv.paymentMethods && inv.paymentMethods.length > 0)
+        ? inv.paymentMethods
+        : ((inv as any).payments && (inv as any).payments.length > 0)
+          ? (inv as any).payments
+          : null;
+
+      if (splits && splits.length > 0) {
+        splits.forEach((p: any) => {
+          const amt = Number(p.amount) || 0;
+          const targetId = p.treasuryId || p.treasury || p.method || '';
+          const treasuryObj = (settings.treasuries || []).find(t => t.id === targetId || t.name === targetId);
+          const descriptor = `${targetId} ${treasuryObj?.name || ''} ${treasuryObj?.type || ''}`.toLowerCase();
+
+          if (descriptor.includes('mada') || descriptor.includes('شبكة') || descriptor.includes('مدى') || descriptor.includes('pos') || descriptor.includes('card')) {
+            card += amt;
+          } else if (descriptor.includes('visa') || descriptor.includes('فيزا') || descriptor.includes('credit') || descriptor.includes('ماستر') || descriptor.includes('master')) {
+            credit += amt;
+          } else if (descriptor.includes('bank') || descriptor.includes('تحويل') || descriptor.includes('بنك') || descriptor.includes('transfer')) {
+            bankTransfer += amt;
+          } else if (descriptor.includes('tamara') || descriptor.includes('tabby') || descriptor.includes('تابي') || descriptor.includes('تمارا')) {
+            tabTamara += amt;
+          } else if (descriptor.includes('cash') || descriptor.includes('نقدي') || descriptor.includes('كاش')) {
+            cash += amt;
+          } else {
+            other += amt;
+          }
         });
       } else {
-        const method = (inv.paymentMethod || '').toLowerCase();
-        if (method.includes('cash') || method.includes('نقدي') || method.includes('كاش')) cash += net;
-        else if (method.includes('mada') || method.includes('شبكة') || method.includes('مدى')) card += net;
-        else if (method.includes('visa') || method.includes('فيزا') || method.includes('card') || method.includes('credit') || method.includes('ماستر')) credit += net;
-        else if (method.includes('transfer') || method.includes('تحويل') || method.includes('bank')) bankTransfer += net;
-        else if (method.includes('tamara') || method.includes('tabby') || method.includes('تابي') || method.includes('تمارا')) tabTamara += net;
-        else cash += net; // Default fallback
+        const method = (inv.paymentMethod || (inv as any).treasury || '').toLowerCase();
+        const treasuryObj = (settings.treasuries || []).find(t => t.id === method || t.name === method);
+        const descriptor = `${method} ${treasuryObj?.name || ''} ${treasuryObj?.type || ''}`.toLowerCase();
+
+        if (descriptor.includes('mada') || descriptor.includes('شبكة') || descriptor.includes('مدى') || descriptor.includes('pos') || descriptor.includes('card')) {
+          card += net;
+        } else if (descriptor.includes('visa') || descriptor.includes('فيزا') || descriptor.includes('credit') || descriptor.includes('ماستر') || descriptor.includes('master')) {
+          credit += net;
+        } else if (descriptor.includes('bank') || descriptor.includes('تحويل') || descriptor.includes('بنك') || descriptor.includes('transfer')) {
+          bankTransfer += net;
+        } else if (descriptor.includes('tamara') || descriptor.includes('tabby') || descriptor.includes('تابي') || descriptor.includes('تمارا')) {
+          tabTamara += net;
+        } else {
+          cash += net; // Default fallback
+        }
       }
     });
 
     const totalExpenses = filteredTransactions
-      .filter(t => t.type === 'expense')
-      .reduce((sum, t) => sum + (t.amount || 0), 0);
+      .filter(t => t.type === 'out' || (t.type as string) === 'expense' || t.category?.includes('مصروف'))
+      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
 
     const netProfit = totalRevenue - totalExpenses;
     const avgTicket = filteredInvoices.length > 0 ? (totalRevenue / filteredInvoices.length) : 0;
@@ -691,19 +773,141 @@ export function OwnerExecutivePortal({
       invoiceCount: filteredInvoices.length,
       avgTicket
     };
-  }, [filteredInvoices, filteredTransactions]);
+  }, [filteredInvoices, filteredTransactions, settings.treasuries]);
+
+  // ---- حسابات وأرصدة الخزائن المسجلة في النظام (Registered Treasuries Balances & Stats) ----
+  const treasuryStats = useMemo(() => {
+    const definedTreasuries = (liveTreasuries && liveTreasuries.length > 0)
+      ? liveTreasuries
+      : (settings.treasuries && settings.treasuries.length > 0)
+        ? settings.treasuries
+        : [
+            { id: 'main', name: 'الخزنة الرئيسية', isMain: true },
+            { id: 'cash', name: 'كاش (الدرج)', isMain: false },
+            { id: 'card', name: 'شبكة / فيزا', isMain: false }
+          ];
+
+    const palette = [
+      { color: '#10B981', hoverColor: '#34D399', textColor: 'text-emerald-400', bgBadge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30', icon: Banknote },
+      { color: '#0EA5E9', hoverColor: '#38BDF8', textColor: 'text-sky-400', bgBadge: 'bg-sky-500/20 text-sky-300 border-sky-500/30', icon: CreditCard },
+      { color: '#8B5CF6', hoverColor: '#A78BFA', textColor: 'text-purple-400', bgBadge: 'bg-purple-500/20 text-purple-300 border-purple-500/30', icon: Building2 },
+      { color: '#F59E0B', hoverColor: '#FBBF24', textColor: 'text-amber-400', bgBadge: 'bg-amber-500/20 text-amber-300 border-amber-500/30', icon: Wallet },
+      { color: '#EC4899', hoverColor: '#F472B6', textColor: 'text-pink-400', bgBadge: 'bg-pink-500/20 text-pink-300 border-pink-500/30', icon: Smartphone },
+      { color: '#14B8A6', hoverColor: '#2DD4BF', textColor: 'text-teal-400', bgBadge: 'bg-teal-500/20 text-teal-300 border-teal-500/30', icon: Wallet }
+    ];
+
+    const stats = definedTreasuries.map((t, idx) => {
+      // Period transactions for this treasury
+      const periodTrxs = filteredTransactions.filter(trx => trx.treasury === t.id || (trx as any).treasuryId === t.id);
+      // All lifetime transactions for this treasury
+      const allTrxs = transactions.filter(trx => trx.treasury === t.id || (trx as any).treasuryId === t.id);
+
+      // Inflows in period
+      const totalIn = periodTrxs.filter(trx => trx.type === 'in').reduce((sum, trx) => sum + (Number(trx.amount) || 0), 0);
+      // Outflows in period
+      const totalOut = periodTrxs.filter(trx => trx.type === 'out').reduce((sum, trx) => sum + (Number(trx.amount) || 0), 0);
+      const periodBalance = totalIn - totalOut;
+
+      // Lifetime balance
+      const lifetimeIn = allTrxs.filter(trx => trx.type === 'in').reduce((sum, trx) => sum + (Number(trx.amount) || 0), 0);
+      const lifetimeOut = allTrxs.filter(trx => trx.type === 'out').reduce((sum, trx) => sum + (Number(trx.amount) || 0), 0);
+      const lifetimeBalance = lifetimeIn - lifetimeOut;
+
+      // Invoices collected for this treasury in the period
+      let invoicesCollected = 0;
+      filteredInvoices.forEach(inv => {
+        const rawNet = (inv.netAmount !== undefined && inv.netAmount !== null) ? Number(inv.netAmount) : 0;
+        const rawTotal = (inv.total !== undefined && inv.total !== null) ? Number(inv.total) : 0;
+        const rawPaid = ((inv as any).paid !== undefined && (inv as any).paid !== null) ? Number((inv as any).paid) : 0;
+        const net = rawNet > 0 ? rawNet : (rawTotal > 0 ? rawTotal : rawPaid);
+
+        const splits = (inv.paymentMethods && inv.paymentMethods.length > 0)
+          ? inv.paymentMethods
+          : ((inv as any).payments && (inv as any).payments.length > 0)
+            ? (inv as any).payments
+            : null;
+
+        if (splits && splits.length > 0) {
+          splits.forEach((p: any) => {
+            const targetId = p.treasuryId || p.treasury || p.method || '';
+            if (targetId === t.id || targetId === t.name) {
+              invoicesCollected += Number(p.amount) || 0;
+            }
+          });
+        } else {
+          const m = inv.paymentMethod || (inv as any).treasury || '';
+          if (m === t.id || m === t.name || (!m && (t.id === 'cash' || t.name.includes('كاش')))) {
+            invoicesCollected += net;
+          }
+        }
+      });
+
+      const style = palette[idx % palette.length];
+
+      return {
+        treasury: t,
+        id: t.id,
+        name: t.name,
+        isMain: Boolean(t.isMain),
+        totalIn,
+        totalOut,
+        periodBalance,
+        lifetimeBalance,
+        invoicesCollected,
+        color: style.color,
+        hoverColor: style.hoverColor,
+        textColor: style.textColor,
+        bgBadge: style.bgBadge,
+        icon: t.isMain ? Building2 : (t.id === 'card' || t.name.includes('شبكة') || t.name.includes('فيزا')) ? CreditCard : (t.name.includes('انستاباي') || t.name.includes('فودافون') || t.name.includes('محفظة')) ? Smartphone : Banknote
+      };
+    });
+
+    // Generate donut slices for treasuries (based on invoicesCollected, totalIn, or positive period balance)
+    const slices: PaymentSlice[] = stats.map(s => {
+      const displayAmount = s.invoicesCollected > 0 ? s.invoicesCollected : (s.totalIn > 0 ? s.totalIn : (s.periodBalance > 0 ? s.periodBalance : 0));
+      return {
+        id: s.id,
+        name: s.name,
+        amount: displayAmount,
+        color: s.color,
+        hoverColor: s.hoverColor,
+        textColor: s.textColor,
+        bgBadge: s.bgBadge,
+        icon: s.icon
+      };
+    });
+
+    const totalPeriodTreasuryIn = stats.reduce((sum, s) => sum + s.totalIn, 0);
+    const totalPeriodTreasuryOut = stats.reduce((sum, s) => sum + s.totalOut, 0);
+    const totalLifetimeTreasuryBalance = stats.reduce((sum, s) => sum + s.lifetimeBalance, 0);
+    const totalInvoicesCollected = stats.reduce((sum, s) => sum + s.invoicesCollected, 0);
+
+    return {
+      list: stats,
+      slices,
+      totalPeriodTreasuryIn,
+      totalPeriodTreasuryOut,
+      totalLifetimeTreasuryBalance,
+      totalInvoicesCollected
+    };
+  }, [liveTreasuries, settings.treasuries, filteredTransactions, transactions, filteredInvoices]);
 
   // ---- معادلة صافي الربح الدقيقة (Net Profit Equation Analysis) ----
   // صافي الربح = إجمالي الدخل من الفواتير - جميع المصروفات - الرواتب - السلف - (المسدد في المشتريات + دفعات الموردين) - عمولات الموظفين
   const netProfitData = useMemo(() => {
     // 1. Gross Invoiced Income
     const grossIncome = filteredInvoices.reduce((sum, inv) => {
-      const paid = inv.paidAmount !== undefined ? Number(inv.paidAmount) : Number(inv.total) || 0;
+      const rawPaid = ((inv as any).paid !== undefined && (inv as any).paid !== null) ? Number((inv as any).paid) : 0;
+      const rawTotal = (inv.total !== undefined && inv.total !== null) ? Number(inv.total) : 0;
+      const rawNet = (inv.netAmount !== undefined && inv.netAmount !== null) ? Number(inv.netAmount) : 0;
+      const paid = (inv.paidAmount !== undefined && Number(inv.paidAmount) > 0)
+        ? Number(inv.paidAmount)
+        : (rawPaid > 0 ? rawPaid : (rawTotal > 0 ? rawTotal : rawNet));
       return sum + paid;
     }, 0);
 
     // 2. All Expenses
-    const directExpenseTx = filteredTransactions.filter(t => t.type === 'expense');
+    const directExpenseTx = filteredTransactions.filter(t => t.type === 'out' || (t.type as string) === 'expense' || t.category?.includes('مصروف'));
     const customExpenses = (expenses || []).filter(e => {
       const inPeriod = isDateInSelectedPeriod(e.date);
       const isBranchMatch = matchesActiveBranch(e.branchId);
@@ -812,10 +1016,18 @@ export function OwnerExecutivePortal({
       const isBrMatch = (bId?: string) => bId ? bId === br.id : (br.isMain || br.id === 'b-main');
       
       const brInvoices = invoices.filter(inv => isBrMatch(inv.branchId) && isDateInSelectedPeriod(inv.date) && inv.status !== 'cancelled');
-      const brGross = brInvoices.reduce((s, inv) => s + (inv.paidAmount !== undefined ? Number(inv.paidAmount) : Number(inv.total) || 0), 0);
+      const brGross = brInvoices.reduce((s, inv) => {
+        const rawPaid = ((inv as any).paid !== undefined && (inv as any).paid !== null) ? Number((inv as any).paid) : 0;
+        const rawTotal = (inv.total !== undefined && inv.total !== null) ? Number(inv.total) : 0;
+        const rawNet = (inv.netAmount !== undefined && inv.netAmount !== null) ? Number(inv.netAmount) : 0;
+        const paid = (inv.paidAmount !== undefined && Number(inv.paidAmount) > 0)
+          ? Number(inv.paidAmount)
+          : (rawPaid > 0 ? rawPaid : (rawTotal > 0 ? rawTotal : rawNet));
+        return s + paid;
+      }, 0);
 
       const brExp = (expenses || []).filter(e => isBrMatch(e.branchId) && isDateInSelectedPeriod(e.date)).reduce((s, e) => s + (Number(e.amount) || 0), 0)
-        + transactions.filter(t => isBrMatch((t as any).branchId) && t.type === 'expense' && isDateInSelectedPeriod(t.date)).reduce((s, t) => s + (Number(t.amount) || 0), 0);
+        + transactions.filter(t => isBrMatch((t as any).branchId) && (t.type === 'out' || (t.type as string) === 'expense' || t.category?.includes('مصروف')) && isDateInSelectedPeriod(t.date)).reduce((s, t) => s + (Number(t.amount) || 0), 0);
 
       const brStaff = employees.filter(e => isBrMatch((e as any).branchId));
       let brSalaries = 0;
@@ -898,8 +1110,8 @@ export function OwnerExecutivePortal({
     });
   }, [partners, totalCapital, netProfitData.netProfit, partnerTransactions]);
 
-  // ---- معالجات الشركاء (Partner Handlers) ----
-  const handleSavePartner = (e: React.FormEvent) => {
+  // ---- معالجات الشركاء (Partner Handlers - Bound to Supabase DB) ----
+  const handleSavePartner = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!partnerFormData.name.trim()) return;
 
@@ -915,9 +1127,14 @@ export function OwnerExecutivePortal({
       if (setPartners) {
         setPartners(prev => prev.map(p => p.id === editingPartner.id ? updatedPartner : p));
       }
+      try {
+        await DB.savePartner(updatedPartner, settings.salonId);
+      } catch (err) {
+        console.warn('DB.savePartner error:', err);
+      }
     } else {
       const newPartner: Partner = {
-        id: 'prt-' + Math.random().toString(36).substring(2, 9),
+        id: 'PRT-' + Math.random().toString(36).substring(2, 9),
         name: partnerFormData.name.trim(),
         phone: partnerFormData.phone.trim(),
         idNumber: partnerFormData.idNumber.trim(),
@@ -929,6 +1146,11 @@ export function OwnerExecutivePortal({
       if (setPartners) {
         setPartners(prev => [...prev, newPartner]);
       }
+      try {
+        await DB.savePartner(newPartner, settings.salonId);
+      } catch (err) {
+        console.warn('DB.savePartner error:', err);
+      }
     }
 
     setShowAddPartnerModal(false);
@@ -936,12 +1158,12 @@ export function OwnerExecutivePortal({
     setPartnerFormData({ name: '', phone: '', idNumber: '', capitalShare: 0, notes: '' });
   };
 
-  const handleRecordPartnerTx = (e: React.FormEvent) => {
+  const handleRecordPartnerTx = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedPartnerForTx || partnerTxData.amount <= 0) return;
 
     const newTx: PartnerTransaction = {
-      id: 'ptx-' + Math.random().toString(36).substring(2, 9),
+      id: 'PTX-' + Math.random().toString(36).substring(2, 9),
       partnerId: selectedPartnerForTx.id,
       type: partnerTxData.type,
       amount: Number(partnerTxData.amount),
@@ -958,19 +1180,30 @@ export function OwnerExecutivePortal({
     if (setPartnerTransactions) {
       setPartnerTransactions(prev => [newTx, ...prev]);
     }
+    try {
+      await DB.savePartnerTransaction(newTx, settings.salonId);
+    } catch (err) {
+      console.warn('DB.savePartnerTransaction error:', err);
+    }
 
     if (setTransactions) {
       const treasuryTx: Transaction = {
-        id: 'tx-' + Math.random().toString(36).substring(2, 9),
+        id: 'TX-PRT-' + Math.random().toString(36).substring(2, 9),
         branchId: activeBranchId === 'all' ? branches[0]?.id : activeBranchId,
         date: new Date().toISOString(),
         type: partnerTxData.type === 'deposit' ? 'income' : 'expense',
         category: 'الشركاء والأرباح',
         amount: Number(partnerTxData.amount),
         paymentMethod: 'cash',
+        treasury: 'main',
         description: `${partnerTxData.type === 'profit_share' ? 'صرف أرباح للشريك' : partnerTxData.type === 'withdrawal' ? 'مسحوبات الشريك' : 'إيداع شريك'}: ${selectedPartnerForTx.name} - ${partnerTxData.notes || ''}`
       };
       setTransactions(prev => [treasuryTx, ...prev]);
+      try {
+        await DB.saveTransaction(treasuryTx, settings.salonId);
+      } catch (err) {
+        console.warn('DB.saveTransaction error:', err);
+      }
     }
 
     setShowPartnerTxModal(false);
@@ -978,7 +1211,7 @@ export function OwnerExecutivePortal({
     setPartnerTxData({ type: 'profit_share', amount: 0, notes: '' });
   };
 
-  // 2. Staff Attendance & Delays for Selected Period
+  // 2. Staff Attendance & Delays for Selected Period (Bound to Real Supabase Fingerprint Logs)
   const attendanceStats = useMemo(() => {
     const activeStaff = employees.filter(e => !e.isBlacklisted && e.isActive !== false);
     const now = new Date();
@@ -1010,30 +1243,61 @@ export function OwnerExecutivePortal({
         return { emp, status: 'off' as const, label: 'عطلة أسبوعية', checkIn: null, delayMin: 0, sales: empPeriodSales };
       }
 
-      // Activity in selected period
-      const dayNum = now.getDate();
-      const hasActivity = empPeriodSales > 0;
-      const isAbsent = !hasActivity && (dayNum % 5 === 0 && emp.id.charCodeAt(emp.id.length - 1) % 3 === 0);
+      // Check REAL fingerprint logs for this employee in selected period
+      const empLogs = (fingerprintLogs || []).filter(log => {
+        const matchesEmp = log.employeeId === emp.id || 
+          log.employee_id === emp.id || 
+          (emp.fingerprintCode && (log.fingerprintCode === emp.fingerprintCode || log.fingerprint_code === emp.fingerprintCode));
+        const logDateStr = (log.timestamp || log.created_at || '').split('T')[0];
+        const inPeriod = isDateInSelectedPeriod(logDateStr);
+        return matchesEmp && inPeriod;
+      });
 
-      if (isAbsent) {
-        return { emp, status: 'absent' as const, label: 'غائب', checkIn: null, delayMin: 0, sales: empPeriodSales };
+      // Find earliest check-in log in period
+      const checkInLogs = empLogs.filter(l => (l.type === 'check_in' || l.log_type === 'check_in' || !l.type));
+      const firstCheckIn = checkInLogs.length > 0
+        ? checkInLogs.sort((a, b) => new Date(a.timestamp || a.created_at).getTime() - new Date(b.timestamp || b.created_at).getTime())[0]
+        : empLogs[0];
+
+      if (firstCheckIn) {
+        const checkInIso = firstCheckIn.timestamp || firstCheckIn.created_at;
+        const checkInDate = new Date(checkInIso);
+        const actualH = checkInDate.getHours();
+        const actualM = checkInDate.getMinutes();
+        const checkInTimeStr = `${String(actualH).padStart(2, '0')}:${String(actualM).padStart(2, '0')}`;
+        const actualMin = actualH * 60 + actualM;
+        const delayMin = Math.max(0, actualMin - schedMin);
+        const isLate = delayMin > 5; // allow 5 mins grace
+
+        return {
+          emp,
+          status: isLate ? ('late' as const) : ('present' as const),
+          label: isLate ? `متأخر (${delayMin} د)` : 'حاضر منتظم (بصمة)',
+          checkIn: checkInTimeStr,
+          delayMin,
+          sales: empPeriodSales
+        };
       }
 
-      // Simulated realistic check-in
-      const offset = (emp.name.charCodeAt(0) * 13 + dayNum * 7) % 50;
-      const isLate = offset > 20;
-      const delayMin = isLate ? offset - 10 : 0;
-      const actualInMin = schedMin + delayMin;
-      const inH = Math.floor(actualInMin / 60);
-      const inM = actualInMin % 60;
-      const checkInTimeStr = `${String(inH).padStart(2, '0')}:${String(inM).padStart(2, '0')}`;
+      // If no fingerprint log, but staff has active sales in invoices, mark present via invoice activity
+      if (empPeriodSales > 0) {
+        return {
+          emp,
+          status: 'present' as const,
+          label: 'حاضر (مبيعات فواتير)',
+          checkIn: scheduledCheckIn,
+          delayMin: 0,
+          sales: empPeriodSales
+        };
+      }
 
+      // Absent (no fingerprint, no sales, not on leave)
       return {
         emp,
-        status: isLate ? ('late' as const) : ('present' as const),
-        label: isLate ? `متأخر (${delayMin} د)` : 'حاضر منتظم',
-        checkIn: checkInTimeStr,
-        delayMin,
+        status: 'absent' as const,
+        label: 'لم يسجل حضور',
+        checkIn: null,
+        delayMin: 0,
         sales: empPeriodSales
       };
     });
@@ -1053,7 +1317,7 @@ export function OwnerExecutivePortal({
       totalStaff: activeStaff.length,
       totalDelayMin
     };
-  }, [employees, dateRange, filteredInvoices]);
+  }, [employees, dateRange, filteredInvoices, fingerprintLogs]);
 
   // 3. Bookings & Clients for Selected Period
   const bookingsStats = useMemo(() => {
@@ -1088,15 +1352,52 @@ export function OwnerExecutivePortal({
     };
   }, [bookings, dateRange, activeBranchId, filteredInvoices]);
 
+  // Load Users from Supabase on mount
+  useEffect(() => {
+    async function loadDbUsers() {
+      try {
+        const dbUsers = await DB.fetchUsers(settings.salonId);
+        if (dbUsers && dbUsers.length > 0) {
+          setUsers(dbUsers);
+        }
+      } catch (e) {
+        console.warn('Error fetching users from DB in owner portal:', e);
+      }
+    }
+    loadDbUsers();
+  }, [settings.salonId]);
+
   // Quick live refresh
-  const handleLiveRefresh = () => {
+  const handleLiveRefresh = async () => {
     setIsRefreshing(true);
-    setTimeout(() => {
+    try {
+      if (onRefresh) {
+        await onRefresh();
+      }
       setLastRefreshed(new Date());
-      setUsers(AuthService.getUsers());
+      try {
+        const dbUsers = await DB.fetchUsers(settings.salonId);
+        if (dbUsers && dbUsers.length > 0) {
+          setUsers(dbUsers);
+        } else {
+          setUsers(AuthService.getUsers());
+        }
+      } catch {
+        setUsers(AuthService.getUsers());
+      }
+    } catch (e) {
+      console.warn('Error refreshing owner portal data:', e);
+    } finally {
       setIsRefreshing(false);
-    }, 400);
+    }
   };
+
+  // Auto-fetch real data on mount if empty
+  React.useEffect(() => {
+    if (invoices.length === 0 && onRefresh) {
+      onRefresh();
+    }
+  }, [invoices.length, onRefresh]);
 
   // Copy Owner URL to clipboard
   const handleCopyOwnerLink = () => {
@@ -1141,16 +1442,22 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
     window.open(url, '_blank');
   };
 
-  // Toggle user active status
-  const handleToggleUserActive = (targetUser: AppUser) => {
+  // Toggle user active status (bound to Supabase DB)
+  const handleToggleUserActive = async (targetUser: AppUser) => {
     const newActiveState = !targetUser.active;
-    const updatedUsers = users.map(u => u.id === targetUser.id ? { ...u, active: newActiveState } : u);
+    const updatedUser: AppUser = { ...targetUser, active: newActiveState };
+    const updatedUsers = users.map(u => u.id === targetUser.id ? updatedUser : u);
     setUsers(updatedUsers);
     AuthService.saveUsers(updatedUsers);
+    try {
+      await DB.saveUser(updatedUser, settings.salonId);
+    } catch (err) {
+      console.warn('DB.saveUser error:', err);
+    }
   };
 
-  // Add new user
-  const handleAddUser = (e: React.FormEvent) => {
+  // Add new user (bound to Supabase DB)
+  const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setUserFormError('');
     setUserFormSuccess('');
@@ -1188,6 +1495,12 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
     const updated = [...users, newUser];
     setUsers(updated);
     AuthService.saveUsers(updated);
+    try {
+      await DB.saveUser(newUser, settings.salonId);
+    } catch (err) {
+      console.warn('DB.saveUser error:', err);
+    }
+
     setUserFormSuccess(`تمت إضافة المستخدم (${newUser.name}) بنجاح!`);
     setNewUserForm({ name: '', username: '', phone: '', role: 'cashier', password: '' });
     setTimeout(() => {
@@ -1199,7 +1512,7 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
   const currency = settings.currency || 'SAR';
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans pb-24 select-none">
+    <div className="w-full h-full min-h-screen bg-slate-950 text-slate-100 font-sans pb-32 select-none overflow-y-auto overflow-x-hidden">
       
       {/* 1. TOP EXECUTIVE HEADER */}
       <header className="sticky top-0 z-30 bg-slate-900/95 backdrop-blur-xl border-b border-slate-800 px-4 py-3 shadow-xl">
@@ -1262,9 +1575,9 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
             {/* Refresh Button */}
             <button
               onClick={handleLiveRefresh}
-              title="تحديث البيانات لحظياً"
+              title="تحديث البيانات لحظياً من قاعدة البيانات"
               className={`p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition-all cursor-pointer ${
-                isRefreshing ? 'animate-spin text-amber-400' : ''
+                isRefreshing || Boolean(externalRefreshing) ? 'animate-spin text-amber-400' : ''
               }`}
             >
               <RefreshCw size={16} />
@@ -1346,6 +1659,15 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
               }`}
             >
               الشهر السابق
+            </button>
+
+            <button
+              onClick={() => setPeriod('all')}
+              className={`px-3 py-1 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+                period === 'all' ? 'bg-amber-500 text-slate-950 shadow-xs' : 'text-slate-300 hover:bg-slate-800'
+              }`}
+            >
+              كامل المدة (الكل)
             </button>
 
             <button
@@ -1561,10 +1883,12 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
 
             {/* Live Interactive Charts Section */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {/* 1. Circular Donut Pie Chart: Revenue by Payment Method */}
+              {/* 1. Circular Donut Pie Chart: Revenue by Registered Treasuries & Payment Methods */}
               <PaymentMethodsDonutChart 
                 revenueStats={revenueStats} 
                 currency={currency}
+                customSlices={treasuryStats.slices}
+                title="توزيع حركة الخزائن وطرق الدفع المحصلة"
                 onViewAll={() => setActiveSubTab('finance')}
               />
 
@@ -2220,9 +2544,14 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                             </button>
                             {setPartners && (
                               <button
-                                onClick={() => {
+                                onClick={async () => {
                                   if (confirm(`هل أنت متأكد من حذف الشريك (${p.partner.name})؟`)) {
                                     setPartners(prev => prev.filter(item => item.id !== p.partner.id));
+                                    try {
+                                      await DB.deletePartner(p.partner.id);
+                                    } catch (err) {
+                                      console.warn('DB.deletePartner error:', err);
+                                    }
                                   }
                                 }}
                                 title="حذف الشريك"
@@ -2272,108 +2601,158 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
               </div>
             </div>
 
-            {/* Circular Donut Chart */}
+            {/* Donut Chart: Registered Treasuries Flow */}
             <PaymentMethodsDonutChart 
               revenueStats={revenueStats} 
               currency={currency} 
+              customSlices={treasuryStats.slices}
+              title={`توزيع التدفق المالي للخزائن المسجلة (${dateRange.label})`}
             />
 
-            {/* Payment Method Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              
-              {/* 1. Cash */}
-              <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-md flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
-                    <Banknote size={20} />
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-slate-400">الكاش / النقدي (الدرج)</p>
-                    <p className="text-lg font-black text-white mt-0.5">{revenueStats.cash.toLocaleString()} <span className="text-[10px] font-normal text-slate-400">{currency}</span></p>
-                  </div>
-                </div>
-                <span className="text-xs font-bold text-emerald-400">
-                  {revenueStats.totalRevenue > 0 ? `${Math.round((revenueStats.cash / revenueStats.totalRevenue) * 100)}%` : '0%'}
+            {/* 1. البطاقات الفعلية للخزائن المسجلة في النظام */}
+            <div className="space-y-3 pt-2">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-black text-white flex items-center gap-2">
+                  <Wallet size={16} className="text-emerald-400" />
+                  <span>الخزائن المسجلة في النظام ({treasuryStats.list.length})</span>
+                </h3>
+                <span className="text-[11px] font-mono text-slate-400">
+                  إجمالي رصيد الخزائن التراكمي: <strong className="text-emerald-400">{treasuryStats.totalLifetimeTreasuryBalance.toLocaleString()} {currency}</strong>
                 </span>
               </div>
 
-              {/* 2. Mada / POS */}
-              <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-md flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center">
-                    <CreditCard size={20} />
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-slate-400">مدى / شبكة (POS)</p>
-                    <p className="text-lg font-black text-white mt-0.5">{revenueStats.card.toLocaleString()} <span className="text-[10px] font-normal text-slate-400">{currency}</span></p>
-                  </div>
-                </div>
-                <span className="text-xs font-bold text-blue-400">
-                  {revenueStats.totalRevenue > 0 ? `${Math.round((revenueStats.card / revenueStats.totalRevenue) * 100)}%` : '0%'}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {treasuryStats.list.map(tStat => {
+                  const Icon = tStat.icon;
+                  return (
+                    <div 
+                      key={tStat.id} 
+                      className={`p-4 rounded-2xl border transition-all ${
+                        tStat.isMain 
+                          ? 'bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border-amber-500/40 shadow-lg shadow-amber-500/5' 
+                          : 'bg-slate-900 border-slate-800 shadow-md hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2.5">
+                          <div 
+                            className="w-9 h-9 rounded-xl flex items-center justify-center shadow-sm"
+                            style={{ backgroundColor: `${tStat.color}20`, color: tStat.color }}
+                          >
+                            <Icon size={18} />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-1.5">
+                              <p className="text-xs font-black text-white">{tStat.name}</p>
+                              {tStat.isMain && (
+                                <span className="bg-amber-400/20 text-amber-300 border border-amber-400/30 text-[9px] font-black px-1.5 py-0.2 rounded-md">
+                                  رئيسية 🏦
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-slate-400 font-mono">#{tStat.id}</p>
+                          </div>
+                        </div>
+
+                        <div className="text-left">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg border ${tStat.bgBadge}`}>
+                            {tStat.periodBalance >= 0 ? '+' : ''}{tStat.periodBalance.toLocaleString()} {currency}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Treasury Metrics Grid */}
+                      <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800/80 text-xs">
+                        <div className="bg-slate-800/40 p-2 rounded-xl">
+                          <span className="text-[10px] text-slate-400 block mb-0.5">وارد الفترة (+)</span>
+                          <span className="font-mono font-bold text-emerald-400">+{tStat.totalIn.toLocaleString()}</span>
+                        </div>
+                        <div className="bg-slate-800/40 p-2 rounded-xl">
+                          <span className="text-[10px] text-slate-400 block mb-0.5">صادر الفترة (-)</span>
+                          <span className="font-mono font-bold text-rose-400">-{tStat.totalOut.toLocaleString()}</span>
+                        </div>
+                      </div>
+
+                      <div className="mt-2.5 pt-2 border-t border-slate-800/60 flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">الرصيد التراكمي الفعلي:</span>
+                        <span className={`font-mono font-black text-sm ${tStat.lifetimeBalance >= 0 ? 'text-white' : 'text-rose-400'}`}>
+                          {tStat.lifetimeBalance.toLocaleString()} <span className="text-[10px] text-slate-400 font-normal">{currency}</span>
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 2. تحليل طرق الدفع والخزائن المحصلة في فواتير الفترة */}
+            <div className="space-y-3 pt-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-black text-white flex items-center gap-2">
+                  <CreditCard size={16} className="text-sky-400" />
+                  <span>تحليل طرق الدفع والخزائن المحصلة في فواتير الفترة ({dateRange.label})</span>
+                </h3>
+                <span className="text-[11px] font-mono text-slate-400">
+                  إجمالي المحصل: <strong className="text-white">{revenueStats.totalRevenue.toLocaleString()} {currency}</strong>
                 </span>
               </div>
 
-              {/* 3. Credit Card */}
-              <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-md flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center">
-                    <CreditCard size={20} />
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-slate-400">فيزا / ماستركارد</p>
-                    <p className="text-lg font-black text-white mt-0.5">{revenueStats.credit.toLocaleString()} <span className="text-[10px] font-normal text-slate-400">{currency}</span></p>
-                  </div>
-                </div>
-                <span className="text-xs font-bold text-indigo-400">
-                  {revenueStats.totalRevenue > 0 ? `${Math.round((revenueStats.credit / revenueStats.totalRevenue) * 100)}%` : '0%'}
-                </span>
-              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {treasuryStats.list.map(tStat => {
+                  const Icon = tStat.icon;
+                  const collectedAmt = tStat.invoicesCollected;
+                  const pct = revenueStats.totalRevenue > 0 
+                    ? Math.round((collectedAmt / revenueStats.totalRevenue) * 100) 
+                    : 0;
+                  return (
+                    <div 
+                      key={tStat.id} 
+                      className="bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-md flex items-center justify-between hover:border-slate-700 transition-all"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div 
+                          className="w-10 h-10 rounded-xl flex items-center justify-center shadow-sm"
+                          style={{ backgroundColor: `${tStat.color}20`, color: tStat.color }}
+                        >
+                          <Icon size={20} />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-xs font-bold text-slate-300">{tStat.name}</p>
+                            {tStat.isMain && (
+                              <span className="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[8px] font-black px-1.5 py-0.2 rounded">رئيسية</span>
+                            )}
+                          </div>
+                          <p className="text-lg font-black text-white mt-0.5">
+                            {collectedAmt.toLocaleString()} <span className="text-[10px] font-normal text-slate-400">{currency}</span>
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-left">
+                        <span 
+                          className="text-xs font-bold px-2 py-0.5 rounded-lg border font-mono"
+                          style={{ borderColor: `${tStat.color}40`, color: tStat.color, backgroundColor: `${tStat.color}15` }}
+                        >
+                          {pct}%
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
 
-              {/* 4. Bank Transfer */}
-              <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-md flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center">
-                    <Building2 size={20} />
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-slate-400">تحويل بنكي</p>
-                    <p className="text-lg font-black text-white mt-0.5">{revenueStats.bankTransfer.toLocaleString()} <span className="text-[10px] font-normal text-slate-400">{currency}</span></p>
-                  </div>
-                </div>
-                <span className="text-xs font-bold text-purple-400">
-                  {revenueStats.totalRevenue > 0 ? `${Math.round((revenueStats.bankTransfer / revenueStats.totalRevenue) * 100)}%` : '0%'}
-                </span>
-              </div>
-
-              {/* 5. Tabby / Tamara */}
-              <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-md flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center">
-                    <Smartphone size={20} />
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-slate-400">تابي / تمارا (أقساط)</p>
-                    <p className="text-lg font-black text-white mt-0.5">{revenueStats.tabTamara.toLocaleString()} <span className="text-[10px] font-normal text-slate-400">{currency}</span></p>
-                  </div>
-                </div>
-                <span className="text-xs font-bold text-amber-400">
-                  {revenueStats.totalRevenue > 0 ? `${Math.round((revenueStats.tabTamara / revenueStats.totalRevenue) * 100)}%` : '0%'}
-                </span>
-              </div>
-
-              {/* 6. Expenses */}
-              <div className="bg-slate-900 p-4 rounded-2xl border border-rose-900/40 shadow-md flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-rose-500/10 text-rose-400 flex items-center justify-center">
-                    <TrendingUp size={20} className="rotate-180" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-rose-400">مصروفات اليوم</p>
-                    <p className="text-lg font-black text-rose-300 mt-0.5">-{revenueStats.totalExpenses.toLocaleString()} <span className="text-[10px] font-normal text-slate-400">{currency}</span></p>
+                {/* Expenses */}
+                <div className="bg-slate-900 p-4 rounded-2xl border border-rose-900/40 shadow-md flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-rose-500/10 text-rose-400 flex items-center justify-center">
+                      <TrendingUp size={20} className="rotate-180" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-rose-400">مصروفات الفترة</p>
+                      <p className="text-lg font-black text-rose-300 mt-0.5">-{revenueStats.totalExpenses.toLocaleString()} <span className="text-[10px] font-normal text-slate-400">{currency}</span></p>
+                    </div>
                   </div>
                 </div>
               </div>
-
             </div>
 
             {/* Invoices List Today */}

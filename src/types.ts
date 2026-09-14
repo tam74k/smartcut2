@@ -32,6 +32,7 @@ export type ActionPermission =
   | 'view_client_financials'
   // Bookings, Partners, Promo Codes & Tips
   | 'manage_booking_settings'
+  | 'manage_bookings_delete'
   | 'manage_partners'
   | 'manage_promo_codes'
   | 'manage_tips'

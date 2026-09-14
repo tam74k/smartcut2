@@ -414,7 +414,11 @@ export const SubscriptionService = {
     try {
       const stored = localStorage.getItem(`smartcut_branch_settings_${branchId}`);
       if (stored) {
-        return JSON.parse(stored);
+        const parsed = JSON.parse(stored);
+        if (fallbackSettings?.treasuries && Array.isArray(fallbackSettings.treasuries) && fallbackSettings.treasuries.length > 0) {
+          parsed.treasuries = fallbackSettings.treasuries;
+        }
+        return parsed;
       }
     } catch (e) {}
 

@@ -10,7 +10,7 @@ import {
   Scissors, CheckCircle2, AlertCircle, Sparkles, Filter, 
   List, Grid3X3, Eye, CalendarDays, ArrowRight, Sliders, 
   CalendarOff, ShieldAlert, Trash2, Lock, ShieldCheck, Check,
-  DollarSign, Wallet, CreditCard, Banknote
+  DollarSign, Wallet, CreditCard, Banknote, XCircle
 } from 'lucide-react';
 import { 
   isDateBlocked, isHourBlocked, isStaffAvailableOnDate, 
@@ -59,6 +59,14 @@ export function BookingsScreen({
     currentUser?.role === 'admin' || 
     currentUser?.role === 'owner' || 
     currentUser?.role === 'programmer';
+
+  // Permission to permanently delete bookings
+  const canDeleteBooking = !currentUser || 
+    currentUser.role === 'admin' || 
+    currentUser.role === 'owner' || 
+    currentUser.role === 'programmer' || 
+    currentUser.actions?.includes('manage_bookings_delete') || 
+    currentUser.actions?.includes('*');
 
   // Primary Screen Tab: 'table' (default) | 'calendar'
   const [activeMainTab, setActiveMainTab] = useState<'table' | 'calendar'>('table');
@@ -624,11 +632,39 @@ export function BookingsScreen({
     setSelectedBookingDetails(null);
   };
 
-  const cancelBooking = (id: string) => {
+  const cancelBooking = async (id: string) => {
     if (window.confirm('هل أنت متأكد من إلغاء هذا الحجز؟')) {
-      setBookings(bookings.map(b => b.id === id ? { ...b, status: 'cancelled' } : b));
-      setSelectedBookingDetails(null);
-      QueueService.updateTicket('QT-B-' + id, { status: 'cancelled' });
+      try {
+        await DB.patch('bookings', id, { status: 'cancelled' });
+        setBookings(bookings.map(b => b.id === id ? { ...b, status: 'cancelled' } : b));
+        if (selectedBookingDetails?.id === id) {
+          setSelectedBookingDetails(prev => prev ? { ...prev, status: 'cancelled' } : null);
+        }
+        QueueService.updateTicket('QT-B-' + id, { status: 'cancelled' });
+      } catch (err) {
+        console.error('Error cancelling booking:', err);
+      }
+    }
+  };
+
+  const handleDeleteBooking = async (id: string) => {
+    if (!canDeleteBooking) {
+      alert('⛔ عذراً، لا تملك صلاحية حذف الحجز نهائياً.');
+      return;
+    }
+    if (window.confirm('⚠️ تحذير: هل أنت متأكد من حذف هذا الحجز نهائياً من النظام وقاعدة البيانات؟ لا يمكن التراجع عن هذا الإجراء.')) {
+      try {
+        await DB.deleteBooking(id);
+        setBookings(bookings.filter(b => b.id !== id));
+        if (selectedBookingDetails?.id === id) {
+          setSelectedBookingDetails(null);
+        }
+        QueueService.updateTicket('QT-B-' + id, { status: 'cancelled' });
+        alert('✅ تم حذف الحجز نهائياً بنجاح.');
+      } catch (err) {
+        console.error('Error deleting booking:', err);
+        alert('حدث خطأ أثناء حذف الحجز');
+      }
     }
   };
 
@@ -1052,10 +1088,10 @@ export function BookingsScreen({
                                   </button>
                                   <button
                                     onClick={() => cancelBooking(b.id)}
-                                    className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl cursor-pointer"
+                                    className="p-1.5 bg-amber-50 hover:bg-amber-100 text-amber-600 rounded-xl cursor-pointer"
                                     title="إلغاء الحجز"
                                   >
-                                    <X size={13} />
+                                    <XCircle size={13} />
                                   </button>
                                 </>
                               )}
@@ -1073,6 +1109,15 @@ export function BookingsScreen({
                               >
                                 <Eye size={13} />
                               </button>
+                              {canDeleteBooking && (
+                                <button
+                                  onClick={() => handleDeleteBooking(b.id)}
+                                  className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl cursor-pointer transition-colors"
+                                  title="حذف الحجز نهائياً من قاعدة البيانات"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -1635,11 +1680,23 @@ export function BookingsScreen({
                   </button>
                   <button
                     onClick={() => cancelBooking(selectedBookingDetails.id)}
-                    className="bg-rose-50 hover:bg-rose-100 text-rose-600 px-3 py-2.5 rounded-xl text-xs font-bold cursor-pointer"
+                    className="bg-amber-50 hover:bg-amber-100 text-amber-600 px-3 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                    title="إلغاء الحجز"
                   >
-                    <X size={14} />
+                    <XCircle size={14} />
+                    <span>إلغاء الحجز</span>
                   </button>
                 </>
+              )}
+              {canDeleteBooking && (
+                <button
+                  onClick={() => handleDeleteBooking(selectedBookingDetails.id)}
+                  className="bg-rose-50 hover:bg-rose-100 text-rose-600 px-3 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                  title="حذف الحجز نهائياً من قاعدة البيانات"
+                >
+                  <Trash2 size={14} />
+                  <span>حذف الحجز</span>
+                </button>
               )}
               <button
                 onClick={() => printBooking(selectedBookingDetails)}

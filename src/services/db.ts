@@ -2028,6 +2028,21 @@ export const DB = {
     } catch (e) { return false; }
   },
 
+  // ---- حذف حجز نهائياً من قاعدة البيانات ----
+  async deleteBooking(bookingId: string) {
+    const client = sb();
+    if (!client || !bookingId) return false;
+    try {
+      try {
+        await client.from('queue_tickets').delete().eq('booking_id', bookingId);
+        await client.from('queue_tickets').delete().eq('id', 'QT-B-' + bookingId);
+      } catch (e) {}
+      const { error } = await client.from('bookings').delete().eq('id', bookingId);
+      if (error) { console.error('DB.deleteBooking error:', error.message); return false; }
+      return true;
+    } catch (e) { console.error('DB.deleteBooking exception:', e); return false; }
+  },
+
   // ---- الورديات ومتابعة العهدة (Work Shifts & Custody) ----
   async fetchWorkShifts(salonId?: string, branchId?: string) {
     const client = sb();
@@ -3032,6 +3047,53 @@ export const DB = {
           DB.fetchAll<any>('partner_transactions', undefined, validSalonId)
         ]);
         return { partners, partnerTransactions };
+      }
+      case 'owner_portal':
+      case 'owner': {
+        const [
+          invoices, 
+          transactions, 
+          bookings, 
+          purchaseInvoices, 
+          supplierPayments, 
+          suppliers, 
+          partners, 
+          partnerTransactions, 
+          employees, 
+          clients,
+          fingerprintLogs,
+          users,
+          settings
+        ] = await Promise.all([
+          DB.fetchAll<any>('invoices', undefined, validSalonId),
+          DB.fetchAll<any>('transactions', undefined, validSalonId),
+          DB.fetchAll<any>('bookings', undefined, validSalonId),
+          DB.fetchAll<any>('purchase_invoices', undefined, validSalonId),
+          DB.fetchAll<any>('supplier_payments', undefined, validSalonId),
+          DB.fetchAll<any>('suppliers', undefined, validSalonId),
+          DB.fetchPartners(validSalonId),
+          DB.fetchPartnerTransactions(validSalonId),
+          DB.fetchEmployees(validSalonId),
+          DB.fetchAll<any>('clients', undefined, validSalonId),
+          DB.fetchAll<any>('fingerprint_logs', undefined, validSalonId),
+          DB.fetchUsers(validSalonId),
+          DB.fetchSettings(validSalonId)
+        ]);
+        return { 
+          invoices, 
+          transactions, 
+          bookings, 
+          purchaseInvoices, 
+          supplierPayments, 
+          suppliers, 
+          partners, 
+          partnerTransactions, 
+          employees, 
+          clients,
+          fingerprintLogs,
+          users,
+          settings
+        };
       }
       case 'promotions':
       case 'promo-codes': {

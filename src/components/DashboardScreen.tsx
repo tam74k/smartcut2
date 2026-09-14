@@ -12,6 +12,7 @@ export function DashboardScreen({
   settings, 
   isShiftOpen, 
   shiftDate, 
+  shiftData,
   bookings, 
   setBookings, 
   transactions, 
@@ -28,6 +29,7 @@ export function DashboardScreen({
   settings: AppSettings, 
   isShiftOpen: boolean, 
   shiftDate: string,
+  shiftData?: { isOpen: boolean, date: string, initialCash: number, shiftId?: string, openedAt?: string, lastClosedAt?: string },
   bookings: Booking[],
   setBookings: (b: Booking[]) => void,
   transactions: Transaction[],
@@ -71,20 +73,43 @@ export function DashboardScreen({
   const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   const utcToday = now.toISOString().split('T')[0];
 
-  const matchesToday = (dateStr?: string, createdAtStr?: string) => {
+  // دالة فحص العمليات التابعة للوردية الحالية المفتوحة حصراً
+  const matchesCurrentShift = (dateStr?: string, createdAtStr?: string, itemShiftId?: string) => {
+    // 1. إذا كانت الوردية مغلقة، يجب تصفير كافة المؤشرات للبدء بنظافة كاملة (0)
+    if (!isShiftOpen || !shiftDate) return false;
+
+    // 2. إذا كان العنصر يحمل معرّف وردية مطابق للوردية الحالية
+    if (itemShiftId && shiftData?.shiftId && itemShiftId === shiftData.shiftId) {
+      return true;
+    }
+
     if (!dateStr && !createdAtStr) return false;
     const cleanDate = (dateStr || '').trim();
     const cleanCreated = (createdAtStr || '').trim();
-    return (
-      cleanDate.startsWith(localToday) ||
-      cleanDate.startsWith(utcToday) ||
-      cleanCreated.startsWith(localToday) ||
-      cleanCreated.startsWith(utcToday) ||
-      (Boolean(isShiftOpen && shiftDate) && (cleanDate.startsWith(shiftDate) || cleanCreated.startsWith(shiftDate)))
-    );
+
+    // 3. يجب أن يتطابق التاريخ مع تاريخ الوردية المفتوحة
+    const dateMatches = cleanDate.startsWith(shiftDate) || cleanCreated.startsWith(shiftDate);
+    if (!dateMatches) return false;
+
+    // 4. استبعاد أي فواتير أو حركات سابقة تمت قبل توقيت فتح هذه الوردية
+    const openTime = shiftData?.openedAt ? new Date(shiftData.openedAt).getTime() : 0;
+    if (openTime > 0) {
+      const itemTime = new Date(cleanDate || cleanCreated).getTime();
+      if (itemTime < openTime - 5000) return false;
+    } else if (shiftData?.lastClosedAt) {
+      const lastClosedTime = new Date(shiftData.lastClosedAt).getTime();
+      const itemTime = new Date(cleanDate || cleanCreated).getTime();
+      if (itemTime <= lastClosedTime) return false;
+    }
+
+    return true;
   };
 
-  const shiftBookings = branchBookings.filter(b => matchesToday(b.date, (b as any).createdAt || (b as any).created_at) && b.status !== 'completed' && b.status !== 'cancelled');
+  const shiftBookings = branchBookings.filter(b => {
+    const targetDate = (isShiftOpen && shiftDate) ? shiftDate : localToday;
+    const bDate = (b.date || (b as any).createdAt || (b as any).created_at || '').trim();
+    return bDate.startsWith(targetDate) && b.status !== 'completed' && b.status !== 'cancelled';
+  });
   const pendingBookings = branchBookings.filter(b => b.status === 'pending');
 
   const handleConfirmBooking = (bookingId: string) => {
@@ -97,22 +122,31 @@ export function DashboardScreen({
     }
   };
 
-  // Compute stats for today based on transactions & invoices
+  // Compute stats for today based on transactions & invoices (صفر تلقائياً عند إغلاق الوردية)
   const todayTrx = useMemo(() => {
-    return branchTransactions.filter(t => matchesToday(t.date, (t as any).createdAt || (t as any).created_at));
-  }, [branchTransactions, localToday, utcToday, isShiftOpen, shiftDate]);
+    if (!isShiftOpen) return [];
+    return branchTransactions.filter(t => matchesCurrentShift(t.date, (t as any).createdAt || (t as any).created_at, (t as any).shiftId));
+  }, [branchTransactions, isShiftOpen, shiftDate, shiftData]);
   
-  // Pure Today's Sales Revenue (strictly from completed/paid sales invoices of today, without opening float)
+  // Pure Today's Sales Revenue (تصفير كامل عند إغلاق الوردية)
   const todayInvoices = useMemo(() => {
-    return branchInvoices.filter(inv => matchesToday(inv.date, (inv as any).createdAt || (inv as any).created_at) && inv.status !== 'cancelled');
-  }, [branchInvoices, localToday, utcToday, isShiftOpen, shiftDate]);
+    if (!isShiftOpen) return [];
+    return branchInvoices.filter(inv => matchesCurrentShift(inv.date, (inv as any).createdAt || (inv as any).created_at, (inv as any).shiftId) && inv.status !== 'cancelled');
+  }, [branchInvoices, isShiftOpen, shiftDate, shiftData]);
 
   const todaySalesRevenue = useMemo(() => {
+    if (!isShiftOpen) return 0;
     return todayInvoices.reduce((sum, inv) => sum + (Number(inv.total) || 0), 0);
-  }, [todayInvoices]);
+  }, [todayInvoices, isShiftOpen]);
+
+  const todayInvoicesCount = useMemo(() => {
+    if (!isShiftOpen) return 0;
+    return todayInvoices.length;
+  }, [todayInvoices, isShiftOpen]);
   
   // Total Income (excluding opening float and transfers)
   const totalIncome = useMemo(() => {
+    if (!isShiftOpen) return 0;
     return todayTrx
       .filter(t => {
         if (t.type !== 'in') return false;
@@ -123,10 +157,11 @@ export function DashboardScreen({
         return true;
       })
       .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
-  }, [todayTrx]);
+  }, [todayTrx, isShiftOpen]);
   
   // Total Expenses (purchases, expenses, bills, operational payouts — excluding staff advances and drawer transfers)
   const totalExpense = useMemo(() => {
+    if (!isShiftOpen) return 0;
     return todayTrx
       .filter(t => {
         if (t.type !== 'out') return false;
@@ -148,10 +183,11 @@ export function DashboardScreen({
         return true;
       })
       .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
-  }, [todayTrx]);
+  }, [todayTrx, isShiftOpen]);
   
   // Total Advances (سلف الموظفين المصروفة اليوم)
   const totalAdvancesGiven = useMemo(() => {
+    if (!isShiftOpen) return 0;
     const fromTrx = todayTrx
       .filter(t => {
         if (t.type !== 'out') return false;
@@ -174,7 +210,7 @@ export function DashboardScreen({
     if (employees && Array.isArray(employees)) {
       employees.forEach(emp => {
         (emp.financialRecords || []).forEach((r: any) => {
-          if (r.type === 'advance' && (r.date || (r as any).createdAt) && matchesToday(r.date, (r as any).createdAt || (r as any).created_at)) {
+          if (r.type === 'advance' && (r.date || (r as any).createdAt) && matchesCurrentShift(r.date, (r as any).createdAt || (r as any).created_at)) {
             const alreadyInTrx = todayTrx.some(t => 
               t.type === 'out' && 
               Math.abs((Number(t.amount) || 0) - (Number(r.amount) || 0)) < 0.01 &&
@@ -189,9 +225,7 @@ export function DashboardScreen({
     }
 
     return fromTrx + fromEmpRecords;
-  }, [todayTrx, employees, localToday, utcToday, isShiftOpen, shiftDate]);
-
-  const todayInvoicesCount = todayInvoices.length;
+  }, [todayTrx, employees, isShiftOpen, shiftDate, shiftData]);
 
   const handlePayAdvance = (booking: Booking) => {
     if (!advAmount || isNaN(Number(advAmount))) return;
@@ -305,7 +339,7 @@ export function DashboardScreen({
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4 border-b border-slate-700/80 pb-3">
             <div>
               <h3 className="font-black text-base flex items-center gap-2 text-white">
-                <span>تفاصيل الخزائن والإيرادات لليوم ({isShiftOpen && shiftDate ? `وردية: ${shiftDate}` : localToday})</span>
+                <span>تفاصيل الخزائن والإيرادات ({isShiftOpen && shiftDate ? `وردية: ${shiftDate}` : 'الوردية مغلقة - رصيد الخزائن مصفر'})</span>
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">تفصيل دقيق يوضح العهدة الافتتاحية، المبيعات النقدية والشبكة، والمصروفات</p>
             </div>
@@ -320,10 +354,23 @@ export function DashboardScreen({
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {settings.treasuries.map(t => {
               const tTrx = todayTrx.filter(trx => trx.treasury === t.id);
+              const invoiceIdsInTrx = new Set(
+                tTrx.filter(trx => trx.type === 'in' && ((trx as any).invoiceId || (trx as any).invoice_id))
+                  .map(trx => (trx as any).invoiceId || (trx as any).invoice_id)
+              );
+              const unrecordedSales = todayInvoices.reduce((sum, inv) => {
+                if (invoiceIdsInTrx.has(inv.id)) return sum;
+                const methods = inv.paymentMethods && inv.paymentMethods.length > 0
+                  ? inv.paymentMethods
+                  : [{ amount: Number(inv.total) || 0, treasuryId: inv.paymentMethod || 'cash' }];
+                const matched = methods.filter((m: any) => m.treasuryId === t.id);
+                return sum + matched.reduce((s: number, m: any) => s + (Number(m.amount) || 0), 0);
+              }, 0);
+
               const custody = tTrx.filter(trx => trx.type === 'in' && (trx.category === 'عهدة افتتاحية' || trx.category === 'initial_cash')).reduce((sum, trx) => sum + trx.amount, 0);
-              const sales = tTrx.filter(trx => trx.type === 'in' && (trx.category === 'sales' || trx.category === 'مبيعات' || trx.category === 'مقدم حجز')).reduce((sum, trx) => sum + trx.amount, 0);
+              const sales = tTrx.filter(trx => trx.type === 'in' && (trx.category === 'sales' || trx.category === 'مبيعات' || trx.category === 'مقدم حجز')).reduce((sum, trx) => sum + trx.amount, 0) + unrecordedSales;
               const otherIn = tTrx.filter(trx => trx.type === 'in' && trx.category !== 'عهدة افتتاحية' && trx.category !== 'initial_cash' && trx.category !== 'sales' && trx.category !== 'مبيعات' && trx.category !== 'مقدم حجز').reduce((sum, trx) => sum + trx.amount, 0);
-              const income = tTrx.filter(trx => trx.type === 'in').reduce((sum, trx) => sum + trx.amount, 0);
+              const income = tTrx.filter(trx => trx.type === 'in').reduce((sum, trx) => sum + trx.amount, 0) + unrecordedSales;
               const outcome = tTrx.filter(trx => trx.type === 'out').reduce((sum, trx) => sum + trx.amount, 0);
               const net = income - outcome;
               const isCash = t.id === 'cash' || t.name.includes('كاش') || t.name.includes('الدرج');

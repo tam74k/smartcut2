@@ -54,11 +54,12 @@ export function InvoicesScreen({
   const [adminPasswordInput, setAdminPasswordInput] = useState('');
   const [adminPasswordError, setAdminPasswordError] = useState(false);
 
-  // 🗑️ حذف الفاتورة نهائياً لحساب الأدمن والمالك حتى لو كانت قديمة
+  const canDeleteInvoice = !currentUser || currentUser.role === 'admin' || currentUser.role === 'owner' || currentUser.role === 'programmer' || currentUser.actions?.includes('manage_invoices_delete') || currentUser.actions?.includes('*');
+
+  // 🗑️ حذف الفاتورة نهائياً لحساب الأدمن والمالك أو من يملك الصلاحية حتى لو كانت قديمة
   const handleDeleteInvoice = async (inv: Invoice) => {
-    const isAuthorized = !currentUser || currentUser.role === 'admin' || currentUser.role === 'owner' || currentUser.role === 'programmer' || currentUser.actions?.includes('manage_invoices_delete') || currentUser.actions?.includes('*');
-    if (!isAuthorized) {
-      alert('⛔ عذراً، حذف الفواتير يتطلب صلاحية الإدارة (الأدمن أو المالك).');
+    if (!canDeleteInvoice) {
+      alert('⛔ عذراً، حذف الفواتير يتطلب صلاحية الحذف النهائي للفواتير.');
       return;
     }
 
@@ -498,14 +499,16 @@ export function InvoicesScreen({
                         </button>
                       )}
 
-                      {/* زر حذف الفاتورة نهائياً للإدارة */}
-                      <button 
-                        onClick={() => handleDeleteInvoice(inv)} 
-                        className="w-8 h-8 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 flex items-center justify-center transition-colors" 
-                        title="حذف الفاتورة نهائياً (إدارة)"
-                      >
-                        <Trash2 size={15} />
-                      </button>
+                      {/* زر حذف الفاتورة نهائياً للإدارة أو لمن يملك الصلاحية */}
+                      {canDeleteInvoice && (
+                        <button 
+                          onClick={() => handleDeleteInvoice(inv)} 
+                          className="w-8 h-8 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 flex items-center justify-center transition-colors" 
+                          title="حذف الفاتورة نهائياً"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      )}
                     </div>
                     
                     {/* Hidden printable receipt */}

@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { AppSettings, Transaction, Treasury, Branch, AppUser } from '../types';
+import { AppSettings, Transaction, Treasury, Branch, AppUser, Invoice } from '../types';
 import { Wallet, ArrowDownRight, ArrowUpRight, ArrowRightLeft, XCircle, Download, Building2, Trash2, Loader2 } from 'lucide-react';
 import { exportToExcel } from '../utils/exportExcel';
 import { AuthService } from '../services/auth';
@@ -12,7 +12,8 @@ export function TreasuryScreen({
   setTransactions,
   activeBranchId,
   branches = [],
-  currentUser
+  currentUser,
+  invoices = []
 }: { 
   settings: AppSettings, 
   shiftData: { isOpen: boolean, date: string, initialCash: number },
@@ -20,7 +21,8 @@ export function TreasuryScreen({
   setTransactions: (t: Transaction[]) => void,
   activeBranchId?: string,
   branches?: Branch[],
-  currentUser?: AppUser | null
+  currentUser?: AppUser | null,
+  invoices?: Invoice[]
 }) {
   const [modalType, setModalType] = useState<'deposit' | 'withdraw' | 'transfer' | null>(null);
   
@@ -147,6 +149,11 @@ export function TreasuryScreen({
       return;
     }
 
+    if (trx.id.startsWith('TRX-INV-')) {
+      alert('⚠️ هذه الحركة مسجلة تلقائياً من فاتورة مبيعات. لحذفها، يرجى حذف الفاتورة أو إلغاؤها من شاشة الفواتير.');
+      return;
+    }
+
     // 2. فحص نوع الحركة وتقديم إيضاح للمستخدم
     const isSales = trx.category === 'sales' || trx.category === 'مبيعات' || (trx as any).invoiceId;
     const isCustody = trx.category === 'عهدة افتتاحية' || trx.category === 'initial_cash';
@@ -215,15 +222,56 @@ export function TreasuryScreen({
       setDeletingId(null);
     }
   };
-
   const [categoryFilter, setCategoryFilter] = useState<
     'all' | 'sales' | 'expense' | 'purchases' | 'payroll' | 'transfer' | 'custody' | 'deposit_withdraw'
   >('all');
 
-  const getTreasuryTotals = (tId: string) => {
-    const trxs = transactions.filter(t => t.treasury === tId || (t as any).treasuryId === tId);
+  // دمج الحركات المسجلة مع أي فواتير مكتملة لم يُسجل لها حركة في جدول transactions لضمان ظهور كافة الفواتير كاش وفيزا بالجدول
+  const unifiedTransactions = useMemo(() => {
+    const knownInvoiceIds = new Set(
+      transactions
+        .filter(t => (t as any).invoiceId || (t as any).invoice_id)
+        .map(t => (t as any).invoiceId || (t as any).invoice_id)
+    );
 
-    // Inflows (المقبوضات)
+    const syntheticTrxs: Transaction[] = [];
+    (invoices || []).forEach(inv => {
+      if (inv.status === 'cancelled' || (inv as any).is_cancelled || (inv as any).isCancelled) return;
+      if (knownInvoiceIds.has(inv.id)) return;
+
+      const methods = (inv.paymentMethods && inv.paymentMethods.length > 0)
+        ? inv.paymentMethods
+        : [{ amount: Number(inv.total) || 0, treasuryId: inv.treasuryId || inv.paymentMethod || 'cash' }];
+
+      methods.forEach((split: any, idx: number) => {
+        if (split.treasuryId === 'cashback' || split.treasuryId === 'remedy_free') return;
+        const amt = Number(split.amount) || 0;
+        if (amt <= 0) return;
+
+        syntheticTrxs.push({
+          id: `TRX-INV-${inv.id}${methods.length > 1 ? `-${idx + 1}` : ''}`,
+          salonId: (inv as any).salonId || (inv as any).salon_id || settings.salonId,
+          date: inv.date,
+          type: 'in',
+          amount: amt,
+          category: 'sales',
+          description: `مبيعات - فاتورة ${inv.id}${inv.clientName ? ` (${inv.clientName})` : ''}`,
+          treasury: split.treasuryId || inv.treasuryId || inv.paymentMethod || 'cash',
+          branchId: (inv as any).branchId || (inv as any).branch_id || activeBranchId,
+          branchCode: (inv as any).branchCode || (inv as any).branch_code || activeBranch?.code,
+          invoiceId: inv.id,
+          userName: (inv as any).cashierName || (inv as any).created_by || undefined
+        } as any);
+      });
+    });
+
+    return [...transactions, ...syntheticTrxs];
+  }, [transactions, invoices, settings.salonId, activeBranchId, activeBranch]);
+
+  const getTreasuryTotals = (tId: string) => {
+    const trxs = unifiedTransactions.filter(t => t.treasury === tId || (t as any).treasuryId === tId);
+
+    // Inflows (المقبوضات والإيرادات)
     const totalCustody = trxs
       .filter(t => t.type === 'in' && (t.category === 'عهدة افتتاحية' || t.category === 'initial_cash'))
       .reduce((sum, t) => sum + t.amount, 0);
@@ -281,16 +329,16 @@ export function TreasuryScreen({
       totalOut, 
       totalCustody, 
       totalSales, 
-      totalDeposits,
-      totalTransfersIn,
-      totalExpenses,
-      totalPurchases,
-      totalSupplierPayments,
-      totalSalaries,
-      totalAdvances,
-      totalCommissions,
-      totalTransfersOut,
-      totalWithdrawals,
+      totalDeposits, 
+      totalTransfersIn, 
+      totalExpenses, 
+      totalPurchases, 
+      totalSupplierPayments, 
+      totalSalaries, 
+      totalAdvances, 
+      totalCommissions, 
+      totalTransfersOut, 
+      totalWithdrawals, 
       balance: totalIn - totalOut 
     };
   };
@@ -326,7 +374,7 @@ export function TreasuryScreen({
   };
 
   const filteredTransactions = useMemo(() => {
-    let filtered = [...transactions];
+    let filtered = [...unifiedTransactions];
     if (fromDate) {
       filtered = filtered.filter(t => new Date(t.date) >= new Date(fromDate));
     }
@@ -351,11 +399,11 @@ export function TreasuryScreen({
       filtered = filtered.filter(t => t.category === 'deposit' || t.category === 'withdrawal' || t.category === 'partner_deposit' || t.category === 'partner_withdrawal');
     }
     return filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [transactions, fromDate, toDate, categoryFilter]);
+  }, [unifiedTransactions, fromDate, toDate, categoryFilter]);
 
   const totalBranchBalance = useMemo(() => {
     return settings.treasuries.reduce((sum, t) => sum + getTreasuryTotals(t.id).balance, 0);
-  }, [settings.treasuries, transactions]);
+  }, [settings.treasuries, unifiedTransactions]);
 
   const handleExportExcel = () => {
     const headers = ['رقم الحركة', 'التاريخ والوقت', 'الخزينة', 'المستخدم / الكاشير', 'نوع الحركة', 'التصنيف', 'البيان والتفاصيل', 'المبلغ (SAR)'];

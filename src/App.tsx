@@ -304,7 +304,14 @@ export default function App() {
   const [allSalons, setAllSalons] = useState<any[]>(() => SubscriptionService.getSalons());
 
   // Shift State scoped per active branch & persisted in localStorage + Supabase
-  const [branchShifts, setBranchShifts] = useState<Record<string, { isOpen: boolean, date: string, initialCash: number, shiftId?: string }>>(() => {
+  const [branchShifts, setBranchShifts] = useState<Record<string, { 
+    isOpen: boolean, 
+    date: string, 
+    initialCash: number, 
+    shiftId?: string,
+    openedAt?: string,
+    lastClosedAt?: string
+  }>>(() => {
     try {
       const saved = localStorage.getItem('smartcut_work_shifts_state');
       if (saved) return JSON.parse(saved);
@@ -409,6 +416,15 @@ export default function App() {
     if (data.tips) setTips(data.tips);
     if (data.custodies) setCustodies(data.custodies);
     if (data.fingerprintLogs) setFingerprintLogs(data.fingerprintLogs);
+    if (data.settings) {
+      setSettings(prev => ({
+        ...prev,
+        ...data.settings,
+        treasuries: (Array.isArray(data.settings.treasuries) && data.settings.treasuries.length > 0) 
+          ? data.settings.treasuries 
+          : prev.treasuries
+      }));
+    }
   }, []);
 
   // ── 1. Single Mount Startup Lifecycle (Strictly Once) ──────────────────────────
@@ -549,6 +565,41 @@ export default function App() {
           loadedSectionsRef.current.add('services');
           loadedSectionsRef.current.add('products');
 
+          // Pre-load transactions and invoices to guarantee accurate treasuries and shift closing
+          DB.fetchTransactions(sId).then(dbTrxs => {
+            if (dbTrxs && dbTrxs.length > 0) {
+              setTransactions(dbTrxs.map((t: any) => ({
+                ...t, expenseCategory: t.expenseCategory || '', createdBy: t.createdBy || '',
+                userId: t.userId || '', userName: t.userName || '', shiftDate: t.shiftDate || ''
+              })));
+            }
+          }).catch(() => {});
+
+          DB.fetchInvoices(sId).then(dbInvs => {
+            if (dbInvs && dbInvs.length > 0) {
+              setInvoices(dbInvs.map((inv: any) => ({
+                ...inv,
+                vatAmount: inv.vat,
+                cashbackUsed: inv.cashbackUsed ?? 0,
+                paymentMethods: inv.paymentMethods || [],
+                isRemedyInvoice: inv.isRemedy || false,
+                remedyReason: inv.remedyNotes || '',
+                relatedComplaintId: inv.relatedComplaintId || '',
+                originalInvoiceId: inv.originalInvoiceId || '',
+                zatcaQr: inv.zatcaQr || '',
+                zatcaHash: inv.zatcaHash || '',
+                etaSubmissionUuid: inv.etaSubmissionUuid || '',
+              })));
+            }
+          }).catch(() => {});
+
+          if (user?.role === 'owner') {
+            loadedSectionsRef.current.add('owner_portal');
+            DB.loadSectionData('owner_portal', sId).then(data => {
+              applySectionData('owner_portal', data);
+            }).catch(() => {});
+          }
+
           // Check active shift
           DB.getActiveWorkShift(sId, branchIdToUse).then(activeShift => {
             if (activeShift && activeShift.status === 'open') {
@@ -674,7 +725,8 @@ export default function App() {
                   isOpen: true,
                   date: activeShift.shiftDate,
                   initialCash: Number(activeShift.initialCash) || 0,
-                  shiftId: activeShift.id
+                  shiftId: activeShift.id,
+                  openedAt: activeShift.openedAt || (activeShift as any).opened_at || activeShift.createdAt || (activeShift as any).created_at
                 }
               };
               try { localStorage.setItem('smartcut_work_shifts_state', JSON.stringify(updated)); } catch (e) {}
@@ -689,7 +741,8 @@ export default function App() {
                 [bId]: {
                   isOpen: false,
                   date: '',
-                  initialCash: 0
+                  initialCash: 0,
+                  lastClosedAt: new Date().toISOString()
                 }
               };
               try { localStorage.setItem('smartcut_work_shifts_state', JSON.stringify(updated)); } catch (e) {}
@@ -824,6 +877,7 @@ export default function App() {
     else if (activeTab === 'promotions' || activeTab === 'promo-codes') sectionToLoad = 'promotions';
     else if (activeTab === 'tips') sectionToLoad = 'tips';
     else if (activeTab === 'fingerprint-logs' || activeTab === 'fingerprint_logs') sectionToLoad = 'fingerprint';
+    else if (activeTab === 'owner_portal' || activeTab === 'owner') sectionToLoad = 'owner_portal';
 
     if (sectionToLoad && !loadedSectionsRef.current.has(sectionToLoad)) {
       loadedSectionsRef.current.add(sectionToLoad);
@@ -1275,6 +1329,22 @@ export default function App() {
     }
   }, [currentSalonId, settings.salonId, applySectionData]);
 
+  const handleRefreshOwnerPortal = useCallback(async () => {
+    const sId = currentSalonId || settings.salonId;
+    if (!sId) return;
+    setIsDbLoading(true);
+    try {
+      const sectionData = await DB.loadSectionData('owner_portal', sId);
+      if (sectionData) {
+        applySectionData('owner_portal', sectionData);
+      }
+    } catch (e) {
+      console.warn('Error refreshing owner portal data:', e);
+    } finally {
+      setIsDbLoading(false);
+    }
+  }, [currentSalonId, settings.salonId, applySectionData]);
+
 
   const handleSetPartners = (updater: any) => {
     if (checkReadOnlyAndWarn()) return;
@@ -1422,73 +1492,121 @@ export default function App() {
     };
 
     DB.saveWorkShift(newWorkShift);
-    setShiftData({ isOpen: true, date: openShiftForm.date, initialCash: openShiftForm.initialCash, shiftId });
+    setShiftData({ isOpen: true, date: openShiftForm.date, initialCash: openShiftForm.initialCash, shiftId, openedAt: nowIso });
     setShowOpenModal(false);
   };
 
   const handleConfirmCloseShift = () => {
     if (checkReadOnlyAndWarn()) return;
     const activeBranch = branches.find(b => b.id === activeBranchId) || branches[0];
-    const mainTreasury = settings.treasuries.find(t => t.isMain) || settings.treasuries[0];
+    const definedTreasuries = (settings.treasuries && settings.treasuries.length > 0)
+      ? settings.treasuries
+      : [
+          { id: 'main', name: 'الخزنة الرئيسية', isMain: true },
+          { id: 'cash', name: 'كاش (الدرج)', isMain: false },
+          { id: 'card', name: 'شبكة / فيزا', isMain: false }
+        ];
+    const mainTreasury = definedTreasuries.find(t => t.isMain) || definedTreasuries.find(t => t.id === 'main') || definedTreasuries[0];
     const newTransactions: Transaction[] = [];
     const now = (shiftData?.isOpen && shiftData?.date) 
       ? (shiftData.date + 'T' + new Date().toTimeString().split(' ')[0]) 
       : new Date().toISOString();
 
-    settings.treasuries.forEach(t => {
-      if (t.isMain) return;
-      // Filter transactions of this active branch only
-      const tTrx = branchTransactions.filter(trx => trx.treasury === t.id);
-      const income = tTrx.filter(trx => trx.type === 'in').reduce((s, x) => s + x.amount, 0);
-      const outcome = tTrx.filter(trx => trx.type === 'out').reduce((s, x) => s + x.amount, 0);
-      const net = income - outcome;
+    definedTreasuries.forEach(t => {
+      if (t.id === mainTreasury.id) return;
+
+      // 1. Transactions directly in this treasury
+      const tTrx = transactions.filter(trx => 
+        (trx.treasury === t.id || (trx as any).treasuryId === t.id) &&
+        (!trx.salonId || !settings.salonId || trx.salonId === settings.salonId)
+      );
+
+      const invoiceIdsInTrx = new Set(
+        tTrx.filter(trx => trx.type === 'in' && ((trx as any).invoiceId || (trx as any).invoice_id))
+          .map(trx => (trx as any).invoiceId || (trx as any).invoice_id)
+      );
+
+      // 2. Add sales from invoices that don't have separate transaction rows
+      const unrecordedInvoiceSales = branchInvoices.reduce((sum, inv) => {
+        if (inv.status === 'cancelled') return sum;
+        if (invoiceIdsInTrx.has(inv.id)) return sum;
+        const methods = inv.paymentMethods && inv.paymentMethods.length > 0
+          ? inv.paymentMethods
+          : [{ amount: Number(inv.total) || 0, treasuryId: inv.paymentMethod || 'cash' }];
+        const matched = methods.filter((m: any) => m.treasuryId === t.id);
+        return sum + matched.reduce((s: number, m: any) => s + (Number(m.amount) || 0), 0);
+      }, 0);
+
+      const totalIn = tTrx.filter(trx => trx.type === 'in').reduce((s, x) => s + (Number(x.amount) || 0), 0) + unrecordedInvoiceSales;
+      const totalOut = tTrx.filter(trx => trx.type === 'out').reduce((s, x) => s + (Number(x.amount) || 0), 0);
+      const net = Math.round((totalIn - totalOut) * 100) / 100;
 
       if (net > 0) {
         newTransactions.push({
           id: 'TRX-OUT-' + Math.random().toString(36).substr(2,9),
+          salonId: settings.salonId,
           date: now,
           type: 'out',
           amount: net,
           category: 'transfer',
-          description: `تصفير خزينة ${t.name} وتحويل للرئيسية - فرع ${activeBranch?.name || ''}`,
+          description: `تصفير خزينة (${t.name}) ونقل الرصيد بالكامل (${net} ر.س) إلى (${mainTreasury.name}) - فرع ${activeBranch?.name || ''}`,
           treasury: t.id,
           branchId: activeBranchId,
           branchCode: activeBranch?.code,
           createdBy: currentUser?.name || 'الكاشير',
           userId: currentUser?.id,
-          userName: currentUser?.name || 'الكاشير'
+          userName: currentUser?.name || 'الكاشير',
+          shiftDate: shiftData.date
         });
         newTransactions.push({
           id: 'TRX-IN-' + Math.random().toString(36).substr(2,9),
+          salonId: settings.salonId,
           date: now,
           type: 'in',
           amount: net,
           category: 'transfer',
-          description: `تحويل تصفير من ${t.name} - فرع ${activeBranch?.name || ''}`,
+          description: `تحويل تصفير وردية من (${t.name}) بمبلغ (${net} ر.س) إلى (${mainTreasury.name}) - فرع ${activeBranch?.name || ''}`,
           treasury: mainTreasury.id,
           branchId: activeBranchId,
           branchCode: activeBranch?.code,
           createdBy: currentUser?.name || 'الكاشير',
           userId: currentUser?.id,
-          userName: currentUser?.name || 'الكاشير'
+          userName: currentUser?.name || 'الكاشير',
+          shiftDate: shiftData.date
         });
       }
     });
 
     if (newTransactions.length > 0) {
-      handleSetTransactions(prev => [...prev, ...newTransactions]);
+      setTransactions(prev => [...prev, ...newTransactions]);
+      DB.saveTransactions(newTransactions, settings.salonId);
     }
 
     // Persist shift closure in DB
-    const shiftInvoices = branchInvoices.filter(i => i.date.startsWith(shiftData.date));
-    const totalSales = shiftInvoices.reduce((s, i) => s + (i.total || 0), 0);
+    const shiftInvoices = branchInvoices.filter(i => 
+      i.status !== 'cancelled' && 
+      (i.date.startsWith(shiftData.date) || (shiftData.date && (i as any).created_at?.startsWith(shiftData.date)))
+    );
+    const totalSales = shiftInvoices.reduce((s, i) => s + (Number(i.total) || 0), 0);
     const totalCashSales = shiftInvoices.reduce((s, i) => {
-      const cashSplit = i.paymentMethods?.find(pm => pm.treasuryId === 'cash' || pm.treasuryId.includes('cash'))?.amount;
-      return s + (cashSplit || 0);
+      const splits = i.paymentMethods && i.paymentMethods.length > 0
+        ? i.paymentMethods
+        : [{ amount: Number(i.total) || 0, treasuryId: i.paymentMethod || 'cash' }];
+      const cashSplit = splits.find((pm: any) => pm.treasuryId === 'cash' || pm.treasuryId?.includes('cash'))?.amount;
+      return s + (Number(cashSplit) || 0);
     }, 0);
     const totalCardSales = Math.max(0, totalSales - totalCashSales);
-    const shiftExpenses = branchTransactions.filter(t => t.date.startsWith(shiftData.date) && (t.type === 'out' || t.category === 'expense')).reduce((s, t) => s + t.amount, 0);
-    const expectedCash = shiftData.initialCash + totalCashSales - shiftExpenses;
+
+    // Operational shift expenses (exclude internal transfers and zeroing)
+    const shiftExpenses = branchTransactions.filter(t => 
+      t.date.startsWith(shiftData.date) && 
+      (t.type === 'out' || t.category === 'expense') &&
+      t.category !== 'transfer' &&
+      !t.description?.includes('تصفير') &&
+      !t.description?.includes('تحويل')
+    ).reduce((s, t) => s + (Number(t.amount) || 0), 0);
+
+    const expectedCash = (Number(shiftData.initialCash) || 0) + totalCashSales - shiftExpenses;
 
     const closedShift: Partial<WorkShift> = {
       id: (shiftData as any).shiftId || ('SHIFT-' + Math.random().toString(36).substr(2, 9).toUpperCase()),
@@ -1498,7 +1616,7 @@ export default function App() {
       closedAt: now,
       closedByUserId: currentUser?.id,
       closedByUserName: currentUser?.name || 'الكاشير',
-      initialCash: shiftData.initialCash,
+      initialCash: Number(shiftData.initialCash) || 0,
       expectedCash,
       totalSales,
       totalCashSales,
@@ -1511,7 +1629,7 @@ export default function App() {
     // تصفير عداد الأدوار للوردية القادمة ليبدأ من 1
     QueueService.resetShiftQueue(settings.salonId, activeBranchId, shiftData.date);
 
-    setShiftData({ isOpen: false, date: '', initialCash: 0 });
+    setShiftData({ isOpen: false, date: '', initialCash: 0, lastClosedAt: now });
     setShowCloseModal(false);
   };
 
@@ -1637,18 +1755,24 @@ export default function App() {
       });
     }
 
-    // 2. Add transactions for the payments
-    const newTrxs: Transaction[] = paymentSplits
-      .filter(split => split.treasuryId !== 'cashback')
+    // 2. Add transactions for the payments (يدعم السداد الكاش والفيزا والمقسم بالتساوي)
+    const effectiveSplits = (paymentSplits && paymentSplits.length > 0)
+      ? paymentSplits
+      : (invoice.paymentMethods && invoice.paymentMethods.length > 0
+          ? invoice.paymentMethods
+          : (Number(invoice.total) > 0 ? [{ amount: Number(invoice.total), treasuryId: invoice.treasuryId || invoice.paymentMethod || 'cash' }] : []));
+
+    const newTrxs: Transaction[] = effectiveSplits
+      .filter(split => split.treasuryId !== 'cashback' && split.treasuryId !== 'remedy_free' && Number(split.amount) > 0)
       .map(split => ({
-        id: 'TRX-' + Math.random().toString(36).substr(2,9),
+        id: 'TRX-' + Math.random().toString(36).substr(2, 9),
         salonId: settings.salonId,
         date: invoice.date,
         type: 'in',
-        amount: split.amount,
+        amount: Number(split.amount),
         category: 'sales',
-        description: `مبيعات - فاتورة ${invoice.id}`,
-        treasury: split.treasuryId,
+        description: `مبيعات - فاتورة ${invoice.id}${invoice.clientName ? ` (${invoice.clientName})` : ''}`,
+        treasury: split.treasuryId || invoice.treasuryId || invoice.paymentMethod || 'cash',
         branchId: activeBranchId,
         branchCode: activeBranch?.code,
         invoiceId: invoice.id
@@ -1657,7 +1781,7 @@ export default function App() {
     // 2.b. If tip was paid via non-cash method and branch mode is 'instant_cash', deduct tip immediately from Cash Drawer
     const tipMode = settings.tipPayoutMethod || 'instant_cash';
     if (invoice.tipAmount && invoice.tipAmount > 0 && tipMode === 'instant_cash') {
-      const hasNonCashPayment = paymentSplits.some(s => s.treasuryId !== 'cash' && !s.treasuryId.includes('cash') && s.treasuryId !== 'cashback');
+      const hasNonCashPayment = effectiveSplits.some(s => s.treasuryId !== 'cash' && !s.treasuryId.includes('cash') && s.treasuryId !== 'cashback');
       if (hasNonCashPayment) {
         const cashTreasuryId = settings.treasuries.find(t => t.id === 'cash' || t.name.includes('كاش') || t.name.includes('نقد'))?.id || 'cash';
         newTrxs.push({
@@ -1687,8 +1811,10 @@ export default function App() {
     }
 
     // 4. 🔄 حفظ فوري في Supabase لضمان بقاء وتوثيق البيانات
-    DB.saveInvoice(invoiceWithBranch, settings.salonId);
-    if (newTrxs.length > 0) DB.saveTransactions(newTrxs, settings.salonId);
+    DB.saveInvoice(invoiceWithBranch, settings.salonId).catch(err => console.error('DB.saveInvoice error:', err));
+    if (newTrxs.length > 0) {
+      DB.saveTransactions(newTrxs, settings.salonId).catch(err => console.error('DB.saveTransactions error:', err));
+    }
 
     setActiveBookingForPOS(null);
   };
@@ -1858,6 +1984,7 @@ export default function App() {
           settings={settings} 
           isShiftOpen={shiftData.isOpen} 
           shiftDate={shiftData.date} 
+          shiftData={shiftData}
           bookings={branchBookings} 
           setBookings={handleSetBookings} 
           transactions={branchTransactions} 
@@ -1967,6 +2094,7 @@ export default function App() {
           activeBranchId={activeBranchId}
           branches={branches}
           currentUser={currentUser}
+          invoices={branchInvoices}
         />
       );
       
@@ -2101,7 +2229,7 @@ export default function App() {
           onSelectBranch={setActiveBranchId}
           currentUser={currentUser}
           onNavigateScreen={(screenName) => setActiveTab(screenName)}
-          expenses={transactions.filter(t => t.category === 'expense' || t.type === 'expense')}
+          expenses={transactions.filter(t => t.category === 'expense' || t.type === 'expense' || t.type === 'out')}
           purchases={purchaseInvoices}
           supplierPayments={supplierPayments}
           partners={partners}
@@ -2109,6 +2237,10 @@ export default function App() {
           partnerTransactions={partnerTransactions}
           setPartnerTransactions={setPartnerTransactions}
           setTransactions={handleSetTransactions}
+          onRefresh={handleRefreshOwnerPortal}
+          isRefreshing={isDbLoading}
+          shiftData={shiftData}
+          fingerprintLogs={fingerprintLogs}
         />
       );
       default: return <div className="p-6">قريباً...</div>;
@@ -2636,7 +2768,7 @@ export default function App() {
           </header>
 
           {/* Main Body */}
-          <div className="flex-1 overflow-hidden flex flex-col bg-slate-100 relative">
+          <div className={`flex-1 flex flex-col bg-slate-100 relative ${activeTab === 'owner_portal' ? 'overflow-y-auto overflow-x-hidden' : 'overflow-hidden'}`}>
             {isSubscriptionBlocked && (
               <div className="bg-gradient-to-r from-rose-900 via-rose-800 to-rose-900 text-white px-4 py-2 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs font-bold border-b border-rose-950 z-30 shrink-0 shadow-md animate-in fade-in" dir="rtl">
                 <div className="flex items-center gap-2">

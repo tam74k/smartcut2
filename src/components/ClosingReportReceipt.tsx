@@ -19,21 +19,45 @@ export function ClosingReportReceipt({
   const effectiveUserName = userName || settings.ownerName || 'المسؤول';
   // Helper to categorize
   const getStats = (treasuryId: string) => {
-    const tTrx = transactions.filter(t => t.treasury === treasuryId || t.treasury === treasuryId); // Handle both formats if there was a typo in previous code
+    const tTrx = transactions.filter(t => t.treasury === treasuryId || (t as any).treasuryId === treasuryId);
 
-    const income = tTrx.filter(t => t.type === 'in' && (t.category === 'sales' || t.category === 'booking_advance')).reduce((s, x) => s + x.amount, 0);
-    const expenses = tTrx.filter(t => t.type === 'out' && t.category === 'expense').reduce((s, x) => s + x.amount, 0);
-    const salaries = tTrx.filter(t => t.type === 'out' && t.category === 'salary').reduce((s, x) => s + x.amount, 0);
-    const advances = tTrx.filter(t => t.type === 'out' && (t.category === 'hr_advance' || t.category === 'staff_advance')).reduce((s, x) => s + x.amount, 0);
-    const purchases = tTrx.filter(t => t.type === 'out' && t.category === 'purchase').reduce((s, x) => s + x.amount, 0);
-    const supplierPayments = tTrx.filter(t => t.type === 'out' && (t.category === 'supplier_payment' || t.category === 'supplier')).reduce((s, x) => s + x.amount, 0);
-    const commissions = tTrx.filter(t => t.type === 'out' && t.category === 'commission').reduce((s, x) => s + x.amount, 0);
+    // Track invoice IDs that already exist as transactions in tTrx to avoid double counting
+    const invoiceIdsInTrx = new Set(
+      tTrx.filter(t => t.type === 'in' && ((t as any).invoiceId || (t as any).invoice_id))
+        .map(t => (t as any).invoiceId || (t as any).invoice_id)
+    );
+
+    // Sum sales for this treasury from shift invoices not yet recorded as individual transactions
+    const invoiceSales = invoices.reduce((sum, inv) => {
+      if (inv.status === 'cancelled') return sum;
+      if (invoiceIdsInTrx.has(inv.id)) return sum;
+      const methods = inv.paymentMethods && inv.paymentMethods.length > 0
+        ? inv.paymentMethods
+        : [{ amount: Number(inv.total) || 0, treasuryId: inv.paymentMethod || 'cash' }];
+      const matched = methods.filter((pm: any) => pm.treasuryId === treasuryId);
+      return sum + matched.reduce((s: number, m: any) => s + (Number(m.amount) || 0), 0);
+    }, 0);
+
+    const recordedSales = tTrx.filter(t => t.type === 'in' && (
+      t.category === 'sales' || 
+      t.category === 'booking_advance' || 
+      t.category === 'مبيعات' || 
+      t.category === 'مقدم حجز'
+    )).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+
+    const income = recordedSales + invoiceSales;
+    const expenses = tTrx.filter(t => t.type === 'out' && (t.category === 'expense' || t.category === 'مصروفات')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    const salaries = tTrx.filter(t => t.type === 'out' && (t.category === 'salary' || t.category === 'رواتب')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    const advances = tTrx.filter(t => t.type === 'out' && (t.category === 'hr_advance' || t.category === 'staff_advance' || t.category === 'advance' || t.category === 'سلف')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    const purchases = tTrx.filter(t => t.type === 'out' && (t.category === 'purchase' || t.category === 'مشتريات')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    const supplierPayments = tTrx.filter(t => t.type === 'out' && (t.category === 'supplier_payment' || t.category === 'supplier' || t.category === 'سداد مورد')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    const commissions = tTrx.filter(t => t.type === 'out' && (t.category === 'commission' || t.category === 'عمولة')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
     
-    const transfersIn = tTrx.filter(t => t.type === 'in' && t.category === 'transfer').reduce((s, x) => s + x.amount, 0);
-    const transfersOut = tTrx.filter(t => t.type === 'out' && t.category === 'transfer').reduce((s, x) => s + x.amount, 0);
-    const withdrawals = tTrx.filter(t => t.type === 'out' && t.category === 'withdrawal').reduce((s, x) => s + x.amount, 0);
-    const deposits = tTrx.filter(t => t.type === 'in' && t.category === 'deposit').reduce((s, x) => s + x.amount, 0);
-    const initialCashSum = tTrx.filter(t => t.type === 'in' && t.category === 'عهدة افتتاحية').reduce((s, x) => s + x.amount, 0);
+    const transfersIn = tTrx.filter(t => t.type === 'in' && t.category === 'transfer').reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    const transfersOut = tTrx.filter(t => t.type === 'out' && t.category === 'transfer').reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    const withdrawals = tTrx.filter(t => t.type === 'out' && (t.category === 'withdrawal' || t.category === 'سحب')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    const deposits = tTrx.filter(t => t.type === 'in' && (t.category === 'deposit' || t.category === 'إيداع')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    const initialCashSum = tTrx.filter(t => t.type === 'in' && (t.category === 'عهدة افتتاحية' || t.category === 'initial_cash')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
 
     const net = (income + transfersIn + deposits + initialCashSum) - (expenses + salaries + advances + purchases + supplierPayments + commissions + transfersOut + withdrawals);
 
@@ -79,7 +103,7 @@ export function ClosingReportReceipt({
         )}
       </div>
 
-      {settings.treasuries.map(treasury => {
+      {(settings.treasuries || []).map(treasury => {
         const stats = getStats(treasury.id);
         
         // Skip rendering if treasury has absolutely no activity, to save space? 
@@ -111,6 +135,11 @@ export function ClosingReportReceipt({
                 <span>الصافي:</span>
                 <span dir="ltr">{stats.net.toFixed(2)}</span>
               </div>
+              {!treasury.isMain && stats.net > 0 && (
+                <div className="text-[10px] text-emerald-800 bg-emerald-50 rounded p-1 mt-1 text-center font-bold">
+                  🔄 سيتم تصفير هذا الصافي ونقله تلقائياً إلى الخزينة الرئيسية
+                </div>
+              )}
             </div>
           </div>
         );

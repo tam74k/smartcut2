@@ -61,6 +61,7 @@ export const ACTION_CATALOG: ActionMeta[] = [
   { id: 'pos_void', name: 'إلغاء الفاتورة / حذف البنود أثناء البيع', category: 'نقطة البيع والمبيعات', description: 'حذف عناصر من السلة أو إفراغ الفاتورة قبل الدفع' },
   { id: 'pos_reprint', name: 'إعادة طباعة الفواتير السابقة', category: 'نقطة البيع والمبيعات', description: 'طباعة نسخة ثانية من أي فاتورة مبيعات سابقة' },
   { id: 'sales_return', name: 'إنشاء فواتير مرتجع مبيعات', category: 'نقطة البيع والمبيعات', description: 'استرجاع مبالغ فواتير المبيعات وإلغاء تأثيرها المالي' },
+  { id: 'manage_invoices_delete', name: 'حذف فواتير المبيعات نهائياً', category: 'نقطة البيع والمبيعات', description: 'السماح بإظهار واستخدام زر الحذف النهائي للفواتير وإلغاء قيودها المالية' },
   { id: 'manage_queue', name: 'إدارة صف الانتظار والمناداة على العملاء', category: 'نقطة البيع والمبيعات', description: 'التحكم في ترتيب الانتظار، المناداة وتسكين العملاء مع الموظفين' },
 
   // Shifts & Treasuries
@@ -87,6 +88,7 @@ export const ACTION_CATALOG: ActionMeta[] = [
   { id: 'manage_hr', name: 'إدارة سجلات الحضور والانصراف (التايم شيت)', category: 'الموظفون والعملاء', description: 'تسجيل الحضور اليدوي وتعديل سجلات الدوام والأوفرتايم' },
   { id: 'manage_clients', name: 'إدارة وتعديل وحذف بيانات العملاء', category: 'الموظفون والعملاء', description: 'التحكم في قاعدة بيانات العملاء ونقاط الولاء' },
   { id: 'manage_booking_settings', name: 'ضبط إعدادات الحجوزات وإغلاق الساعات والأيام', category: 'الموظفون والعملاء', description: 'التحكم في إغلاق الأيام والساعات وسعة الحجوزات وإتاحة الفنيين' },
+  { id: 'manage_bookings_delete', name: 'حذف الحجوزات والمواعيد نهائياً', category: 'الموظفون والعملاء', description: 'السماح بإظهار واستخدام زر الحذف النهائي للحجز من النظام وقاعدة البيانات' },
 
   // Reports, Analytics & System
   { id: 'view_reports', name: 'الاطلاع على التقارير المالية والتشغيلية', category: 'التقارير والإدارة', description: 'مشاهدة الأرباح والإيرادات ومبيعات الخدمات وإغلاق اليوم' },
@@ -137,7 +139,7 @@ export const DEFAULT_ROLE_PRESETS: Record<UserRole, { screens: string[]; actions
   },
   supervisor: {
     screens: ['dashboard', 'pos', 'queue_calling', 'bookings', 'invoices', 'services', 'warehouse', 'clients', 'employees', 'treasury', 'expenses', 'reports'],
-    actions: ['pos_discount', 'pos_void', 'pos_reprint', 'sales_return', 'manage_queue', 'manage_shifts', 'edit_shift_cash', 'treasury_deposit', 'treasury_withdraw', 'treasury_transfer', 'treasury_view_balance', 'manage_expenses', 'manage_products', 'manage_inventory', 'manage_employees', 'manage_salaries', 'manage_hr', 'manage_clients', 'manage_booking_settings', 'view_reports', 'export_excel']
+    actions: ['pos_discount', 'pos_void', 'pos_reprint', 'sales_return', 'manage_invoices_delete', 'manage_queue', 'manage_shifts', 'edit_shift_cash', 'treasury_deposit', 'treasury_withdraw', 'treasury_transfer', 'treasury_view_balance', 'manage_expenses', 'manage_products', 'manage_inventory', 'manage_employees', 'manage_salaries', 'manage_hr', 'manage_clients', 'manage_booking_settings', 'manage_bookings_delete', 'view_reports', 'export_excel']
   },
   warehouse_manager: {
     screens: ['dashboard', 'warehouse', 'products', 'suppliers', 'purchases', 'inventory'],

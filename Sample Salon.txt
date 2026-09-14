@@ -1,0 +1,372 @@
+
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>نظام إدارة الصالونات ومراكز التجميل | Matix Salon</title>
+<meta name="description" content="نظام إدارة صالونات ومراكز تجميل: حجز مواعيد، نقاط بيع POS، إدارة فريق العمل، اشتراكات وولاء، مخزون مستحضرات، وتقارير أداء. يعمل بدون إنترنت. جرّب مجاناً.">
+<meta name="keywords" content="salon management software, نظام إدارة صالونات, beauty salon POS, نقاط بيع صالون, appointment booking, حجز مواعيد, loyalty cards, بطاقات ولاء, membership management, اشتراكات وعضوية, salon inventory, مخزون صالون, staff management, إدارة فريق عمل, MatixERP, Matix POS">
+<meta property="og:title" content="Matix POS — نظام إدارة الصالونات الذكي">
+<meta property="og:description" content="حجز مواعيد + POS + فريق العمل + ولاء + اشتراكات + مخزون — كل شيء في منصة واحدة.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://matixerp.com/salon/">
+<meta property="og:site_name" content="Matix ERP">
+<meta property="og:image" content="https://matixerp.com/logo-w.png">
+<meta property="og:image:alt" content="Matix ERP">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://matixerp.com/logo-w.png">
+<link rel="canonical" href="https://matixerp.com/salon/">
+
+
+<style type="text/css">@font-face {font-family:'Noto Kufi Arabic';font-style:normal;font-weight:400;src:url(/cf-fonts/v/noto-kufi-arabic/5.2.9/arabic/wght/normal.woff2);unicode-range:U+0600-06FF,U+0750-077F,U+0870-088E,U+0890-0891,U+0897-08E1,U+08E3-08FF,U+200C-200E,U+2010-2011,U+204F,U+2E41,U+FB50-FDFF,U+FE70-FE74,U+FE76-FEFC,U+102E0-102FB,U+10E60-10E7E,U+10EC2-10EC4,U+10EFC-10EFF,U+1EE00-1EE03,U+1EE05-1EE1F,U+1EE21-1EE22,U+1EE24,U+1EE27,U+1EE29-1EE32,U+1EE34-1EE37,U+1EE39,U+1EE3B,U+1EE42,U+1EE47,U+1EE49,U+1EE4B,U+1EE4D-1EE4F,U+1EE51-1EE52,U+1EE54,U+1EE57,U+1EE59,U+1EE5B,U+1EE5D,U+1EE5F,U+1EE61-1EE62,U+1EE64,U+1EE67-1EE6A,U+1EE6C-1EE72,U+1EE74-1EE77,U+1EE79-1EE7C,U+1EE7E,U+1EE80-1EE89,U+1EE8B-1EE9B,U+1EEA1-1EEA3,U+1EEA5-1EEA9,U+1EEAB-1EEBB,U+1EEF0-1EEF1;font-display:swap;}@font-face {font-family:'Noto Kufi Arabic';font-style:normal;font-weight:400;src:url(/cf-fonts/v/noto-kufi-arabic/5.2.9/latin-ext/wght/normal.woff2);unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;font-display:swap;}@font-face {font-family:'Noto Kufi Arabic';font-style:normal;font-weight:400;src:url(/cf-fonts/v/noto-kufi-arabic/5.2.9/latin/wght/normal.woff2);unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;font-display:swap;}@font-face {font-family:'Noto Kufi Arabic';font-style:normal;font-weight:400;src:url(/cf-fonts/v/noto-kufi-arabic/5.2.9/math/wght/normal.woff2);unicode-range:U+0302-0303,U+0305,U+0307-0308,U+0310,U+0312,U+0315,U+031A,U+0326-0327,U+032C,U+032F-0330,U+0332-0333,U+0338,U+033A,U+0346,U+034D,U+0391-03A1,U+03A3-03A9,U+03B1-03C9,U+03D1,U+03D5-03D6,U+03F0-03F1,U+03F4-03F5,U+2016-2017,U+2034-2038,U+203C,U+2040,U+2043,U+2047,U+2050,U+2057,U+205F,U+2070-2071,U+2074-208E,U+2090-209C,U+20D0-20DC,U+20E1,U+20E5-20EF,U+2100-2112,U+2114-2115,U+2117-2121,U+2123-214F,U+2190,U+2192,U+2194-21AE,U+21B0-21E5,U+21F1-21F2,U+21F4-2211,U+2213-2214,U+2216-22FF,U+2308-230B,U+2310,U+2319,U+231C-2321,U+2336-237A,U+237C,U+2395,U+239B-23B7,U+23D0,U+23DC-23E1,U+2474-2475,U+25AF,U+25B3,U+25B7,U+25BD,U+25C1,U+25CA,U+25CC,U+25FB,U+266D-266F,U+27C0-27FF,U+2900-2AFF,U+2B0E-2B11,U+2B30-2B4C,U+2BFE,U+3030,U+FF5B,U+FF5D,U+1D400-1D7FF,U+1EE00-1EEFF;font-display:swap;}@font-face {font-family:'Noto Kufi Arabic';font-style:normal;font-weight:400;src:url(/cf-fonts/v/noto-kufi-arabic/5.2.9/symbols/wght/normal.woff2);unicode-range:U+0001-000C,U+000E-001F,U+007F-009F,U+20DD-20E0,U+20E2-20E4,U+2150-218F,U+2190,U+2192,U+2194-2199,U+21AF,U+21E6-21F0,U+21F3,U+2218-2219,U+2299,U+22C4-22C6,U+2300-243F,U+2440-244A,U+2460-24FF,U+25A0-27BF,U+2800-28FF,U+2921-2922,U+2981,U+29BF,U+29EB,U+2B00-2BFF,U+4DC0-4DFF,U+FFF9-FFFB,U+10140-1018E,U+10190-1019C,U+101A0,U+101D0-101FD,U+102E0-102FB,U+10E60-10E7E,U+1D2C0-1D2D3,U+1D2E0-1D37F,U+1F000-1F0FF,U+1F100-1F1AD,U+1F1E6-1F1FF,U+1F30D-1F30F,U+1F315,U+1F31C,U+1F31E,U+1F320-1F32C,U+1F336,U+1F378,U+1F37D,U+1F382,U+1F393-1F39F,U+1F3A7-1F3A8,U+1F3AC-1F3AF,U+1F3C2,U+1F3C4-1F3C6,U+1F3CA-1F3CE,U+1F3D4-1F3E0,U+1F3ED,U+1F3F1-1F3F3,U+1F3F5-1F3F7,U+1F408,U+1F415,U+1F41F,U+1F426,U+1F43F,U+1F441-1F442,U+1F444,U+1F446-1F449,U+1F44C-1F44E,U+1F453,U+1F46A,U+1F47D,U+1F4A3,U+1F4B0,U+1F4B3,U+1F4B9,U+1F4BB,U+1F4BF,U+1F4C8-1F4CB,U+1F4D6,U+1F4DA,U+1F4DF,U+1F4E3-1F4E6,U+1F4EA-1F4ED,U+1F4F7,U+1F4F9-1F4FB,U+1F4FD-1F4FE,U+1F503,U+1F507-1F50B,U+1F50D,U+1F512-1F513,U+1F53E-1F54A,U+1F54F-1F5FA,U+1F610,U+1F650-1F67F,U+1F687,U+1F68D,U+1F691,U+1F694,U+1F698,U+1F6AD,U+1F6B2,U+1F6B9-1F6BA,U+1F6BC,U+1F6C6-1F6CF,U+1F6D3-1F6D7,U+1F6E0-1F6EA,U+1F6F0-1F6F3,U+1F6F7-1F6FC,U+1F700-1F7FF,U+1F800-1F80B,U+1F810-1F847,U+1F850-1F859,U+1F860-1F887,U+1F890-1F8AD,U+1F8B0-1F8BB,U+1F8C0-1F8C1,U+1F900-1F90B,U+1F93B,U+1F946,U+1F984,U+1F996,U+1F9E9,U+1FA00-1FA6F,U+1FA70-1FA7C,U+1FA80-1FA89,U+1FA8F-1FAC6,U+1FACE-1FADC,U+1FADF-1FAE9,U+1FAF0-1FAF8,U+1FB00-1FBFF;font-display:swap;}@font-face {font-family:'Noto Kufi Arabic';font-style:normal;font-weight:500;src:url(/cf-fonts/v/noto-kufi-arabic/5.2.9/arabic/wght/normal.woff2);unicode-range:U+0600-06FF,U+0750-077F,U+0870-088E,U+0890-0891,U+0897-08E1,U+08E3-08FF,U+200C-200E,U+2010-2011,U+204F,U+2E41,U+FB50-FDFF,U+FE70-FE74,U+FE76-FEFC,U+102E0-102FB,U+10E60-10E7E,U+10EC2-10EC4,U+10EFC-10EFF,U+1EE00-1EE03,U+1EE05-1EE1F,U+1EE21-1EE22,U+1EE24,U+1EE27,U+1EE29-1EE32,U+1EE34-1EE37,U+1EE39,U+1EE3B,U+1EE42,U+1EE47,U+1EE49,U+1EE4B,U+1EE4D-1EE4F,U+1EE51-1EE52,U+1EE54,U+1EE57,U+1EE59,U+1EE5B,U+1EE5D,U+1EE5F,U+1EE61-1EE62,U+1EE64,U+1EE67-1EE6A,U+1EE6C-1EE72,U+1EE74-1EE77,U+1EE79-1EE7C,U+1EE7E,U+1EE80-1EE89,U+1EE8B-1EE9B,U+1EEA1-1EEA3,U+1EEA5-1EEA9,U+1EEAB-1EEBB,U+1EEF0-1EEF1;font-display:swap;}@font-face {font-family:'Noto Kufi Arabic';font-style:normal;font-weight:500;src:url(/cf-fonts/v/noto-kufi-arabic/5.2.9/latin-ext/wght/normal.woff2);unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;font-display:swap;}@font-face {font-family:'Noto Kufi Arabic';font-style:normal;font-weight:500;src:url(/cf-fonts/v/noto-kufi-arabic/5.2.9/math/wght/normal.woff2);unicode-range:U+0302-0303,U+0305,U+0307-0308,U+0310,U+0312,U+0315,U+031A,U+0326-0327,U+032C,U+032F-0330,U+0332-0333,U+0338,U+033A,U+0346,U+034D,U+0391-03A1,U+03A3-03A9,U+03B1-03C9,U+03D1,U+03D5-03D6,U+03F0-03F1,U+03F4-03F5,U+2016-2017,U+2034-2038,U+203C,U+2040,U+2043,U+2047,U+2050,U+2057,U+205F,U+2070-2071,U+2074-208E,U+2090-209C,U+20D0-20DC,U+20E1,U+20E5-20EF,U+2100-2112,U+2114-2115,U+2117-2121,U+2123-214F,U+2190,U+2192,U+2194-21AE,U+21B0-21E5,U+21F1-21F2,U+21F4-2211,U+2213-2214,U+2216-22FF,U+2308-230B,U+2310,U+2319,U+231C-2321,U+2336-237A,U+237C,U+2395,U+239B-23B7,U+23D0,U+23DC-23E1,U+2474-2475,U+25AF,U+25B3,U+25B7,U+25BD,U+25C1,U+25CA,U+25CC,U+25FB,U+266D-266F,U+27C0-27FF,U+2900-2AFF,U+2B0E-2B11,U+2B30-2B4C,U+2BFE,U+3030,U+FF5B,U+FF5D,U+1D400-1D7FF,U+1EE00-1EEFF;font-display:swap;}@font-face {font-family:'Noto Kufi Arabic';font-style:normal;font-weight:500;src:url(/cf-fonts/v/noto-kufi-arabic/5.2.9/symbols/wght/normal.woff2);unicode-range:U+0001-000C,U+000E-001F,U+007F-009F,U+20DD-20E0,U+20E2-20E4,U+2150-218F,U+2190,U+2192,U+2194-2199,U+21AF,U+21E6-21F0,U+21F3,U+2218-2219,U+2299,U+22C4-22C6,U+2300-243F,U+2440-244A,U+2460-24FF,U+25A0-27BF,U+2800-28FF,U+2921-2922,U+2981,U+29BF,U+29EB,U+2B00-2BFF,U+4DC0-4DFF,U+FFF9-FFFB,U+10140-1018E,U+10190-1019C,U+101A0,U+101D0-101FD,U+102E0-102FB,U+10E60-10E7E,U+1D2C0-1D2D3,U+1D2E0-1D37F,U+1F000-1F0FF,U+1F100-1F1AD,U+1F1E6-1F1FF,U+1F30D-1F30F,U+1F315,U+1F31C,U+1F31E,U+1F320-1F32C,U+1F336,U+1F378,U+1F37D,U+1F382,U+1F393-1F39F,U+1F3A7-1F3A8,U+1F3AC-1F3AF,U+1F3C2,U+1F3C4-1F3C6,U+1F3CA-1F3CE,U+1F3D4-1F3E0,U+1F3ED,U+1F3F1-1F3F3,U+1F3F5-1F3F7,U+1F408,U+1F415,U+1F41F,U+1F426,U+1F43F,U+1F441-1F442,U+1F444,U+1F446-1F449,U+1F44C-1F44E,U+1F453,U+1F46A,U+1F47D,U+1F4A3,U+1F4B0,U+1F4B3,U+1F4B9,U+1F4BB,U+1F4BF,U+1F4C8-1F4CB,U+1F4D6,U+1F4DA,U+1F4DF,U+1F4E3-1F4E6,U+1F4EA-1F4ED,U+1F4F7,U+1F4F9-1F4FB,U+1F4FD-1F4FE,U+1F503,U+1F507-1F50B,U+1F50D,U+1F512-1F513,U+1F53E-1F54A,U+1F54F-1F5FA,U+1F610,U+1F650-1F67F,U+1F687,U+1F68D,U+1F691,U+1F694,U+1F698,U+1F6AD,U+1F6B2,U+1F6B9-1F6BA,U+1F6BC,U+1F6C6-1F6CF,U+1F6D3-1F6D7,U+1F6E0-1F6EA,U+1F6F0-1F6F3,U+1F6F7-1F6FC,U+1F700-1F7FF,U+1F800-1F80B,U+1F810-1F847,U+1F850-1F859,U+1F860-1F887,U+1F890-1F8AD,U+1F8B0-1F8BB,U+1F8C0-1F8C1,U+1F900-1F90B,U+1F93B,U+1F946,U+1F984,U+1F996,U+1F9E9,U+1FA00-1FA6F,U+1FA70-1FA7C,U+1FA80-1FA89,U+1FA8F-1FAC6,U+1FACE-1FADC,U+1FADF-1FAE9,U+1FAF0-1FAF8,U+1FB00-1FBFF;font-display:swap;}@font-face {font-family:'Noto Kufi Arabic';font-style:normal;font-weight:500;src:url(/cf-fonts/v/noto-kufi-arabic/5.2.9/latin/wght/normal.woff2);unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;font-display:swap;}@font-face {font-family:'Noto Kufi Arabic';font-style:normal;font-weight:600;src:url(/cf-fonts/v/noto-kufi-arabic/5.2.9/math/wght/normal.woff2);unicode-range:U+0302-0303,U+0305,U+0307-0308,U+0310,U+0312,U+0315,U+031A,U+0326-0327,U+032C,U+032F-0330,U+0332-0333,U+0338,U+033A,U+0346,U+034D,U+0391-03A1,U+03A3-03A9,U+03B1-03C9,U+03D1,U+03D5-03D6,U+03F0-03F1,U+03F4-03F5,U+2016-2017,U+2034-2038,U+203C,U+2040,U+2043,U+2047,U+2050,U+2057,U+205F,U+2070-2071,U+2074-208E,U+2090-209C,U+20D0-20DC,U+20E1,U+20E5-20EF,U+2100-2112,U+2114-2115,U+2117-2121,U+2123-214F,U+2190,U+2192,U+2194-21AE,U+21B0-21E5,U+21F1-21F2,U+21F4-2211,U+2213-2214,U+2216-22FF,U+2308-230B,U+2310,U+2319,U+231C-2321,U+2336-237A,U+237C,U+2395,U+239B-23B7,U+23D0,U+23DC-23E1,U+2474-2475,U+25AF,U+25B3,U+25B7,U+25BD,U+25C1,U+25CA,U+25CC,U+25FB,U+266D-266F,U+27C0-27FF,U+2900-2AFF,U+2B0E-2B11,U+2B30-2B4C,U+2BFE,U+3030,U+FF5B,U+FF5D,U+1D400-1D7FF,U+1EE00-1EEFF;font-display:swap;}@font-face {font-family:'Noto Kufi Arabic';font-style:normal;font-weight:600;src:url(/cf-fonts/v/noto-kufi-arabic/5.2.9/symbols/wght/normal.woff2);unicode-range:U+0001-000C,U+000E-001F,U+007F-009F,U+20DD-20E0,U+20E2-20E4,U+2150-218F,U+2190,U+2192,U+2194-2199,U+21AF,U+21E6-21F0,U+21F3,U+2218-2219,U+2299,U+22C4-22C6,U+2300-243F,U+2440-244A,U+2460-24FF,U+25A0-27BF,U+2800-28FF,U+2921-2922,U+2981,U+29BF,U+29EB,U+2B00-2BFF,U+4DC0-4DFF,U+FFF9-FFFB,U+10140-1018E,U+10190-1019C,U+101A0,U+101D0-101FD,U+102E0-102FB,U+10E60-10E7E,U+1D2C0-1D2D3,U+1D2E0-1D37F,U+1F000-1F0FF,U+1F100-1F1AD,U+1F1E6-1F1FF,U+1F30D-1F30F,U+1F315,U+1F31C,U+1F31E,U+1F320-1F32C,U+1F336,U+1F378,U+1F37D,U+1F382,U+1F393-1F39F,U+1F3A7-1F3A8,U+1F3AC-1F3AF,U+1F3C2,U+1F3C4-1F3C6,U+1F3CA-1F3CE,U+1F3D4-1F3E0,U+1F3ED,U+1F3F1-1F3F3,U+1F3F5-1F3F7,U+1F408,U+1F415,U+1F41F,U+1F426,U+1F43F,U+1F441-1F442,U+1F444,U+1F446-1F449,U+1F44C-1F44E,U+1F453,U+1F46A,U+1F47D,U+1F4A3,U+1F4B0,U+1F4B3,U+1F4B9,U+1F4BB,U+1F4BF,U+1F4C8-1F4CB,U+1F4D6,U+1F4DA,U+1F4DF,U+1F4E3-1F4E6,U+1F4EA-1F4ED,U+1F4F7,U+1F4F9-1F4FB,U+1F4FD-1F4FE,U+1F503,U+1F507-1F50B,U+1F50D,U+1F512-1F513,U+1F53E-1F54A,U+1F54F-1F5FA,U+1F610,U+1F650-1F67F,U+1F687,U+1F68D,U+1F691,U+1F694,U+1F698,U+1F6AD,U+1F6B2,U+1F6B9-1F6BA,U+1F6BC,U+1F6C6-1F6CF,U+1F6D3-1F6D7,U+1F6E0-1F6EA,U+1F6F0-1F6F3,U+1F6F7-1F6FC,U+1F700-1F7FF,U+1F800-1F80B,U+1F810-1F847,U+1F850-1F859,U+1F860-1F887,U+1F890-1F8AD,U+1F8B0-1F8BB,U+1F8C0-1F8C1,U+1F900-1F90B,U+1F93B,U+1F946,U+1F984,U+1F996,U+1F9E9,U+1FA00-1FA6F,U+1FA70-1FA7C,U+1FA80-1FA89,U+1FA8F-1FAC6,U+1FACE-1FADC,U+1FADF-1FAE9,U+1FAF0-1FAF8,U+1FB00-1FBFF;font-display:swap;}@font-face {font-family:'Noto Kufi Arabic';font-style:normal;font-weight:600;src:url(/cf-fonts/v/noto-kufi-arabic/5.2.9/arabic/wght/normal.woff2);unicode-range:U+0600-06FF,U+0750-077F,U+0870-088E,U+0890-0891,U+0897-08E1,U+08E3-08FF,U+200C-200E,U+2010-2011,U+204F,U+2E41,U+FB50-FDFF,U+FE70-FE74,U+FE76-FEFC,U+102E0-102FB,U+10E60-10E7E,U+10EC2-10EC4,U+10EFC-10EFF,U+1EE00-1EE03,U+1EE05-1EE1F,U+1EE21-1EE22,U+1EE24,U+1EE27,U+1EE29-1EE32,U+1EE34-1EE37,U+1EE39,U+1EE3B,U+1EE42,U+1EE47,U+1EE49,U+1EE4B,U+1EE4D-1EE4F,U+1EE51-1EE52,U+1EE54,U+1EE57,U+1EE59,U+1EE5B,U+1EE5D,U+1EE5F,U+1EE61-1EE62,U+1EE64,U+1EE67-1EE6A,U+1EE6C-1EE72,U+1EE74-1EE77,U+1EE79-1EE7C,U+1EE7E,U+1EE80-1EE89,U+1EE8B-1EE9B,U+1EEA1-1EEA3,U+1EEA5-1EEA9,U+1EEAB-1EEBB,U+1EEF0-1EEF1;font-display:swap;}@font-face {font-family:'Noto Kufi Arabic';font-style:normal;font-weight:600;src:url(/cf-fonts/v/noto-kufi-arabic/5.2.9/latin/wght/normal.woff2);unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;font-display:swap;}@font-face {font-family:'Noto Kufi Arabic';font-style:normal;font-weight:600;src:url(/cf-fonts/v/noto-kufi-arabic/5.2.9/latin-ext/wght/normal.woff2);unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;font-display:swap;}@font-face {font-family:'Noto Kufi Arabic';font-style:normal;font-weight:700;src:url(/cf-fonts/v/noto-kufi-arabic/5.2.9/symbols/wght/normal.woff2);unicode-range:U+0001-000C,U+000E-001F,U+007F-009F,U+20DD-20E0,U+20E2-20E4,U+2150-218F,U+2190,U+2192,U+2194-2199,U+21AF,U+21E6-21F0,U+21F3,U+2218-2219,U+2299,U+22C4-22C6,U+2300-243F,U+2440-244A,U+2460-24FF,U+25A0-27BF,U+2800-28FF,U+2921-2922,U+2981,U+29BF,U+29EB,U+2B00-2BFF,U+4DC0-4DFF,U+FFF9-FFFB,U+10140-1018E,U+10190-1019C,U+101A0,U+101D0-101FD,U+102E0-102FB,U+10E60-10E7E,U+1D2C0-1D2D3,U+1D2E0-1D37F,U+1F000-1F0FF,U+1F100-1F1AD,U+1F1E6-1F1FF,U+1F30D-1F30F,U+1F315,U+1F31C,U+1F31E,U+1F320-1F32C,U+1F336,U+1F378,U+1F37D,U+1F382,U+1F393-1F39F,U+1F3A7-1F3A8,U+1F3AC-1F3AF,U+1F3C2,U+1F3C4-1F3C6,U+1F3CA-1F3CE,U+1F3D4-1F3E0,U+1F3ED,U+1F3F1-1F3F3,U+1F3F5-1F3F7,U+1F408,U+1F415,U+1F41F,U+1F426,U+1F43F,U+1F441-1F442,U+1F444,U+1F446-1F449,U+1F44C-1F44E,U+1F453,U+1F46A,U+1F47D,U+1F4A3,U+1F4B0,U+1F4B3,U+1F4B9,U+1F4BB,U+1F4BF,U+1F4C8-1F4CB,U+1F4D6,U+1F4DA,U+1F4DF,U+1F4E3-1F4E6,U+1F4EA-1F4ED,U+1F4F7,U+1F4F9-1F4FB,U+1F4FD-1F4FE,U+1F503,U+1F507-1F50B,U+1F50D,U+1F512-1F513,U+1F53E-1F54A,U+1F54F-1F5FA,U+1F610,U+1F650-1F67F,U+1F687,U+1F68D,U+1F691,U+1F694,U+1F698,U+1F6AD,U+1F6B2,U+1F6B9-1F6BA,U+1F6BC,U+1F6C6-1F6CF,U+1F6D3-1F6D7,U+1F6E0-1F6EA,U+1F6F0-1F6F3,U+1F6F7-1F6FC,U+1F700-1F7FF,U+1F800-1F80B,U+1F810-1F847,U+1F850-1F859,U+1F860-1F887,U+1F890-1F8AD,U+1F8B0-1F8BB,U+1F8C0-1F8C1,U+1F900-1F90B,U+1F93B,U+1F946,U+1F984,U+1F996,U+1F9E9,U+1FA00-1FA6F,U+1FA70-1FA7C,U+1FA80-1FA89,U+1FA8F-1FAC6,U+1FACE-1FADC,U+1FADF-1FAE9,U+1FAF0-1FAF8,U+1FB00-1FBFF;font-display:swap;}@font-face {font-family:'Noto Kufi Arabic';font-style:normal;font-weight:700;src:url(/cf-fonts/v/noto-kufi-arabic/5.2.9/latin/wght/normal.woff2);unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;font-display:swap;}@font-face {font-family:'Noto Kufi Arabic';font-style:normal;font-weight:700;src:url(/cf-fonts/v/noto-kufi-arabic/5.2.9/arabic/wght/normal.woff2);unicode-range:U+0600-06FF,U+0750-077F,U+0870-088E,U+0890-0891,U+0897-08E1,U+08E3-08FF,U+200C-200E,U+2010-2011,U+204F,U+2E41,U+FB50-FDFF,U+FE70-FE74,U+FE76-FEFC,U+102E0-102FB,U+10E60-10E7E,U+10EC2-10EC4,U+10EFC-10EFF,U+1EE00-1EE03,U+1EE05-1EE1F,U+1EE21-1EE22,U+1EE24,U+1EE27,U+1EE29-1EE32,U+1EE34-1EE37,U+1EE39,U+1EE3B,U+1EE42,U+1EE47,U+1EE49,U+1EE4B,U+1EE4D-1EE4F,U+1EE51-1EE52,U+1EE54,U+1EE57,U+1EE59,U+1EE5B,U+1EE5D,U+1EE5F,U+1EE61-1EE62,U+1EE64,U+1EE67-1EE6A,U+1EE6C-1EE72,U+1EE74-1EE77,U+1EE79-1EE7C,U+1EE7E,U+1EE80-1EE89,U+1EE8B-1EE9B,U+1EEA1-1EEA3,U+1EEA5-1EEA9,U+1EEAB-1EEBB,U+1EEF0-1EEF1;font-display:swap;}@font-face {font-family:'Noto Kufi Arabic';font-style:normal;font-weight:700;src:url(/cf-fonts/v/noto-kufi-arabic/5.2.9/latin-ext/wght/normal.woff2);unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;font-display:swap;}@font-face {font-family:'Noto Kufi Arabic';font-style:normal;font-weight:700;src:url(/cf-fonts/v/noto-kufi-arabic/5.2.9/math/wght/normal.woff2);unicode-range:U+0302-0303,U+0305,U+0307-0308,U+0310,U+0312,U+0315,U+031A,U+0326-0327,U+032C,U+032F-0330,U+0332-0333,U+0338,U+033A,U+0346,U+034D,U+0391-03A1,U+03A3-03A9,U+03B1-03C9,U+03D1,U+03D5-03D6,U+03F0-03F1,U+03F4-03F5,U+2016-2017,U+2034-2038,U+203C,U+2040,U+2043,U+2047,U+2050,U+2057,U+205F,U+2070-2071,U+2074-208E,U+2090-209C,U+20D0-20DC,U+20E1,U+20E5-20EF,U+2100-2112,U+2114-2115,U+2117-2121,U+2123-214F,U+2190,U+2192,U+2194-21AE,U+21B0-21E5,U+21F1-21F2,U+21F4-2211,U+2213-2214,U+2216-22FF,U+2308-230B,U+2310,U+2319,U+231C-2321,U+2336-237A,U+237C,U+2395,U+239B-23B7,U+23D0,U+23DC-23E1,U+2474-2475,U+25AF,U+25B3,U+25B7,U+25BD,U+25C1,U+25CA,U+25CC,U+25FB,U+266D-266F,U+27C0-27FF,U+2900-2AFF,U+2B0E-2B11,U+2B30-2B4C,U+2BFE,U+3030,U+FF5B,U+FF5D,U+1D400-1D7FF,U+1EE00-1EEFF;font-display:swap;}@font-face {font-family:'Noto Kufi Arabic';font-style:normal;font-weight:800;src:url(/cf-fonts/v/noto-kufi-arabic/5.2.9/arabic/wght/normal.woff2);unicode-range:U+0600-06FF,U+0750-077F,U+0870-088E,U+0890-0891,U+0897-08E1,U+08E3-08FF,U+200C-200E,U+2010-2011,U+204F,U+2E41,U+FB50-FDFF,U+FE70-FE74,U+FE76-FEFC,U+102E0-102FB,U+10E60-10E7E,U+10EC2-10EC4,U+10EFC-10EFF,U+1EE00-1EE03,U+1EE05-1EE1F,U+1EE21-1EE22,U+1EE24,U+1EE27,U+1EE29-1EE32,U+1EE34-1EE37,U+1EE39,U+1EE3B,U+1EE42,U+1EE47,U+1EE49,U+1EE4B,U+1EE4D-1EE4F,U+1EE51-1EE52,U+1EE54,U+1EE57,U+1EE59,U+1EE5B,U+1EE5D,U+1EE5F,U+1EE61-1EE62,U+1EE64,U+1EE67-1EE6A,U+1EE6C-1EE72,U+1EE74-1EE77,U+1EE79-1EE7C,U+1EE7E,U+1EE80-1EE89,U+1EE8B-1EE9B,U+1EEA1-1EEA3,U+1EEA5-1EEA9,U+1EEAB-1EEBB,U+1EEF0-1EEF1;font-display:swap;}@font-face {font-family:'Noto Kufi Arabic';font-style:normal;font-weight:800;src:url(/cf-fonts/v/noto-kufi-arabic/5.2.9/latin/wght/normal.woff2);unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;font-display:swap;}@font-face {font-family:'Noto Kufi Arabic';font-style:normal;font-weight:800;src:url(/cf-fonts/v/noto-kufi-arabic/5.2.9/math/wght/normal.woff2);unicode-range:U+0302-0303,U+0305,U+0307-0308,U+0310,U+0312,U+0315,U+031A,U+0326-0327,U+032C,U+032F-0330,U+0332-0333,U+0338,U+033A,U+0346,U+034D,U+0391-03A1,U+03A3-03A9,U+03B1-03C9,U+03D1,U+03D5-03D6,U+03F0-03F1,U+03F4-03F5,U+2016-2017,U+2034-2038,U+203C,U+2040,U+2043,U+2047,U+2050,U+2057,U+205F,U+2070-2071,U+2074-208E,U+2090-209C,U+20D0-20DC,U+20E1,U+20E5-20EF,U+2100-2112,U+2114-2115,U+2117-2121,U+2123-214F,U+2190,U+2192,U+2194-21AE,U+21B0-21E5,U+21F1-21F2,U+21F4-2211,U+2213-2214,U+2216-22FF,U+2308-230B,U+2310,U+2319,U+231C-2321,U+2336-237A,U+237C,U+2395,U+239B-23B7,U+23D0,U+23DC-23E1,U+2474-2475,U+25AF,U+25B3,U+25B7,U+25BD,U+25C1,U+25CA,U+25CC,U+25FB,U+266D-266F,U+27C0-27FF,U+2900-2AFF,U+2B0E-2B11,U+2B30-2B4C,U+2BFE,U+3030,U+FF5B,U+FF5D,U+1D400-1D7FF,U+1EE00-1EEFF;font-display:swap;}@font-face {font-family:'Noto Kufi Arabic';font-style:normal;font-weight:800;src:url(/cf-fonts/v/noto-kufi-arabic/5.2.9/symbols/wght/normal.woff2);unicode-range:U+0001-000C,U+000E-001F,U+007F-009F,U+20DD-20E0,U+20E2-20E4,U+2150-218F,U+2190,U+2192,U+2194-2199,U+21AF,U+21E6-21F0,U+21F3,U+2218-2219,U+2299,U+22C4-22C6,U+2300-243F,U+2440-244A,U+2460-24FF,U+25A0-27BF,U+2800-28FF,U+2921-2922,U+2981,U+29BF,U+29EB,U+2B00-2BFF,U+4DC0-4DFF,U+FFF9-FFFB,U+10140-1018E,U+10190-1019C,U+101A0,U+101D0-101FD,U+102E0-102FB,U+10E60-10E7E,U+1D2C0-1D2D3,U+1D2E0-1D37F,U+1F000-1F0FF,U+1F100-1F1AD,U+1F1E6-1F1FF,U+1F30D-1F30F,U+1F315,U+1F31C,U+1F31E,U+1F320-1F32C,U+1F336,U+1F378,U+1F37D,U+1F382,U+1F393-1F39F,U+1F3A7-1F3A8,U+1F3AC-1F3AF,U+1F3C2,U+1F3C4-1F3C6,U+1F3CA-1F3CE,U+1F3D4-1F3E0,U+1F3ED,U+1F3F1-1F3F3,U+1F3F5-1F3F7,U+1F408,U+1F415,U+1F41F,U+1F426,U+1F43F,U+1F441-1F442,U+1F444,U+1F446-1F449,U+1F44C-1F44E,U+1F453,U+1F46A,U+1F47D,U+1F4A3,U+1F4B0,U+1F4B3,U+1F4B9,U+1F4BB,U+1F4BF,U+1F4C8-1F4CB,U+1F4D6,U+1F4DA,U+1F4DF,U+1F4E3-1F4E6,U+1F4EA-1F4ED,U+1F4F7,U+1F4F9-1F4FB,U+1F4FD-1F4FE,U+1F503,U+1F507-1F50B,U+1F50D,U+1F512-1F513,U+1F53E-1F54A,U+1F54F-1F5FA,U+1F610,U+1F650-1F67F,U+1F687,U+1F68D,U+1F691,U+1F694,U+1F698,U+1F6AD,U+1F6B2,U+1F6B9-1F6BA,U+1F6BC,U+1F6C6-1F6CF,U+1F6D3-1F6D7,U+1F6E0-1F6EA,U+1F6F0-1F6F3,U+1F6F7-1F6FC,U+1F700-1F7FF,U+1F800-1F80B,U+1F810-1F847,U+1F850-1F859,U+1F860-1F887,U+1F890-1F8AD,U+1F8B0-1F8BB,U+1F8C0-1F8C1,U+1F900-1F90B,U+1F93B,U+1F946,U+1F984,U+1F996,U+1F9E9,U+1FA00-1FA6F,U+1FA70-1FA7C,U+1FA80-1FA89,U+1FA8F-1FAC6,U+1FACE-1FADC,U+1FADF-1FAE9,U+1FAF0-1FAF8,U+1FB00-1FBFF;font-display:swap;}@font-face {font-family:'Noto Kufi Arabic';font-style:normal;font-weight:800;src:url(/cf-fonts/v/noto-kufi-arabic/5.2.9/latin-ext/wght/normal.woff2);unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;font-display:swap;}@font-face {font-family:'Noto Kufi Arabic';font-style:normal;font-weight:900;src:url(/cf-fonts/v/noto-kufi-arabic/5.2.9/latin/wght/normal.woff2);unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;font-display:swap;}@font-face {font-family:'Noto Kufi Arabic';font-style:normal;font-weight:900;src:url(/cf-fonts/v/noto-kufi-arabic/5.2.9/math/wght/normal.woff2);unicode-range:U+0302-0303,U+0305,U+0307-0308,U+0310,U+0312,U+0315,U+031A,U+0326-0327,U+032C,U+032F-0330,U+0332-0333,U+0338,U+033A,U+0346,U+034D,U+0391-03A1,U+03A3-03A9,U+03B1-03C9,U+03D1,U+03D5-03D6,U+03F0-03F1,U+03F4-03F5,U+2016-2017,U+2034-2038,U+203C,U+2040,U+2043,U+2047,U+2050,U+2057,U+205F,U+2070-2071,U+2074-208E,U+2090-209C,U+20D0-20DC,U+20E1,U+20E5-20EF,U+2100-2112,U+2114-2115,U+2117-2121,U+2123-214F,U+2190,U+2192,U+2194-21AE,U+21B0-21E5,U+21F1-21F2,U+21F4-2211,U+2213-2214,U+2216-22FF,U+2308-230B,U+2310,U+2319,U+231C-2321,U+2336-237A,U+237C,U+2395,U+239B-23B7,U+23D0,U+23DC-23E1,U+2474-2475,U+25AF,U+25B3,U+25B7,U+25BD,U+25C1,U+25CA,U+25CC,U+25FB,U+266D-266F,U+27C0-27FF,U+2900-2AFF,U+2B0E-2B11,U+2B30-2B4C,U+2BFE,U+3030,U+FF5B,U+FF5D,U+1D400-1D7FF,U+1EE00-1EEFF;font-display:swap;}@font-face {font-family:'Noto Kufi Arabic';font-style:normal;font-weight:900;src:url(/cf-fonts/v/noto-kufi-arabic/5.2.9/arabic/wght/normal.woff2);unicode-range:U+0600-06FF,U+0750-077F,U+0870-088E,U+0890-0891,U+0897-08E1,U+08E3-08FF,U+200C-200E,U+2010-2011,U+204F,U+2E41,U+FB50-FDFF,U+FE70-FE74,U+FE76-FEFC,U+102E0-102FB,U+10E60-10E7E,U+10EC2-10EC4,U+10EFC-10EFF,U+1EE00-1EE03,U+1EE05-1EE1F,U+1EE21-1EE22,U+1EE24,U+1EE27,U+1EE29-1EE32,U+1EE34-1EE37,U+1EE39,U+1EE3B,U+1EE42,U+1EE47,U+1EE49,U+1EE4B,U+1EE4D-1EE4F,U+1EE51-1EE52,U+1EE54,U+1EE57,U+1EE59,U+1EE5B,U+1EE5D,U+1EE5F,U+1EE61-1EE62,U+1EE64,U+1EE67-1EE6A,U+1EE6C-1EE72,U+1EE74-1EE77,U+1EE79-1EE7C,U+1EE7E,U+1EE80-1EE89,U+1EE8B-1EE9B,U+1EEA1-1EEA3,U+1EEA5-1EEA9,U+1EEAB-1EEBB,U+1EEF0-1EEF1;font-display:swap;}@font-face {font-family:'Noto Kufi Arabic';font-style:normal;font-weight:900;src:url(/cf-fonts/v/noto-kufi-arabic/5.2.9/latin-ext/wght/normal.woff2);unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;font-display:swap;}@font-face {font-family:'Noto Kufi Arabic';font-style:normal;font-weight:900;src:url(/cf-fonts/v/noto-kufi-arabic/5.2.9/symbols/wght/normal.woff2);unicode-range:U+0001-000C,U+000E-001F,U+007F-009F,U+20DD-20E0,U+20E2-20E4,U+2150-218F,U+2190,U+2192,U+2194-2199,U+21AF,U+21E6-21F0,U+21F3,U+2218-2219,U+2299,U+22C4-22C6,U+2300-243F,U+2440-244A,U+2460-24FF,U+25A0-27BF,U+2800-28FF,U+2921-2922,U+2981,U+29BF,U+29EB,U+2B00-2BFF,U+4DC0-4DFF,U+FFF9-FFFB,U+10140-1018E,U+10190-1019C,U+101A0,U+101D0-101FD,U+102E0-102FB,U+10E60-10E7E,U+1D2C0-1D2D3,U+1D2E0-1D37F,U+1F000-1F0FF,U+1F100-1F1AD,U+1F1E6-1F1FF,U+1F30D-1F30F,U+1F315,U+1F31C,U+1F31E,U+1F320-1F32C,U+1F336,U+1F378,U+1F37D,U+1F382,U+1F393-1F39F,U+1F3A7-1F3A8,U+1F3AC-1F3AF,U+1F3C2,U+1F3C4-1F3C6,U+1F3CA-1F3CE,U+1F3D4-1F3E0,U+1F3ED,U+1F3F1-1F3F3,U+1F3F5-1F3F7,U+1F408,U+1F415,U+1F41F,U+1F426,U+1F43F,U+1F441-1F442,U+1F444,U+1F446-1F449,U+1F44C-1F44E,U+1F453,U+1F46A,U+1F47D,U+1F4A3,U+1F4B0,U+1F4B3,U+1F4B9,U+1F4BB,U+1F4BF,U+1F4C8-1F4CB,U+1F4D6,U+1F4DA,U+1F4DF,U+1F4E3-1F4E6,U+1F4EA-1F4ED,U+1F4F7,U+1F4F9-1F4FB,U+1F4FD-1F4FE,U+1F503,U+1F507-1F50B,U+1F50D,U+1F512-1F513,U+1F53E-1F54A,U+1F54F-1F5FA,U+1F610,U+1F650-1F67F,U+1F687,U+1F68D,U+1F691,U+1F694,U+1F698,U+1F6AD,U+1F6B2,U+1F6B9-1F6BA,U+1F6BC,U+1F6C6-1F6CF,U+1F6D3-1F6D7,U+1F6E0-1F6EA,U+1F6F0-1F6F3,U+1F6F7-1F6FC,U+1F700-1F7FF,U+1F800-1F80B,U+1F810-1F847,U+1F850-1F859,U+1F860-1F887,U+1F890-1F8AD,U+1F8B0-1F8BB,U+1F8C0-1F8C1,U+1F900-1F90B,U+1F93B,U+1F946,U+1F984,U+1F996,U+1F9E9,U+1FA00-1FA6F,U+1FA70-1FA7C,U+1FA80-1FA89,U+1FA8F-1FAC6,U+1FACE-1FADC,U+1FADF-1FAE9,U+1FAF0-1FAF8,U+1FB00-1FBFF;font-display:swap;}@font-face {font-family:'Sora';font-style:normal;font-weight:400;src:url(/cf-fonts/v/sora/5.2.8/latin-ext/wght/normal.woff2);unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;font-display:swap;}@font-face {font-family:'Sora';font-style:normal;font-weight:400;src:url(/cf-fonts/v/sora/5.2.8/latin/wght/normal.woff2);unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;font-display:swap;}@font-face {font-family:'Sora';font-style:normal;font-weight:500;src:url(/cf-fonts/v/sora/5.2.8/latin/wght/normal.woff2);unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;font-display:swap;}@font-face {font-family:'Sora';font-style:normal;font-weight:500;src:url(/cf-fonts/v/sora/5.2.8/latin-ext/wght/normal.woff2);unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;font-display:swap;}@font-face {font-family:'Sora';font-style:normal;font-weight:600;src:url(/cf-fonts/v/sora/5.2.8/latin/wght/normal.woff2);unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;font-display:swap;}@font-face {font-family:'Sora';font-style:normal;font-weight:600;src:url(/cf-fonts/v/sora/5.2.8/latin-ext/wght/normal.woff2);unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;font-display:swap;}@font-face {font-family:'Sora';font-style:normal;font-weight:700;src:url(/cf-fonts/v/sora/5.2.8/latin/wght/normal.woff2);unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;font-display:swap;}@font-face {font-family:'Sora';font-style:normal;font-weight:700;src:url(/cf-fonts/v/sora/5.2.8/latin-ext/wght/normal.woff2);unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;font-display:swap;}@font-face {font-family:'Sora';font-style:normal;font-weight:800;src:url(/cf-fonts/v/sora/5.2.8/latin/wght/normal.woff2);unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;font-display:swap;}@font-face {font-family:'Sora';font-style:normal;font-weight:800;src:url(/cf-fonts/v/sora/5.2.8/latin-ext/wght/normal.woff2);unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;font-display:swap;}</style>
+
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Matix POS Salon & Spa Management","applicationCategory":"BusinessApplication","operatingSystem":"Web, iOS, Android","description":"All-in-one salon and beauty center management system with appointment booking, POS, staff management, loyalty cards, membership subscriptions, product inventory, and performance reports.","offers":{"@type":"Offer","price":"0","priceCurrency":"USD","description":"Free demo"},"aggregateRating":{"@type":"AggregateRating","ratingValue":"4.8","reviewCount":"1240"},"provider":{"@type":"Organization","name":"Sismatix Information Systems","url":"https://sismatix.com"}}
+</script>
+
+<style>
+:root{--bg:#030b14;--bg2:#060f1e;--bg3:#091526;--panel:#0c1d36;--border:rgba(236,72,153,.1);--border2:rgba(236,72,153,.25);--accent:#ec4899;--accent2:#f472b6;--glow:rgba(236,72,153,.3);--text:#8fb3c8;--text2:#4d7a96;--white:#eef6fc;--gold:#fbbf24;--green:#34d399;--purple:#a78bfa;--orange:#fb923c;--red:#f87171;--ar:'Noto Kufi Arabic',sans-serif;--en:'Sora',sans-serif;--radius:14px;--radius-lg:22px}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth;font-size:16px;overflow-x:hidden}body{background:var(--bg);color:var(--white);font-family:var(--ar);line-height:1.7;overflow-x:hidden;width:100%}html[lang="en"] body{font-family:var(--en)}a{text-decoration:none;color:inherit}img{max-width:100%;display:block}ul{list-style:none}
+.container{max-width:1200px;margin:0 auto;padding:0 2rem}
+.section-tag{display:inline-flex;align-items:center;gap:.5rem;background:rgba(236,72,153,.08);border:1px solid rgba(236,72,153,.2);color:var(--accent2);font-size:.72rem;font-weight:700;letter-spacing:.08em;padding:.35rem 1rem;border-radius:999px;margin-bottom:1.2rem}
+.section-tag svg{width:14px;height:14px;flex-shrink:0}
+.section-title{font-size:clamp(1.4rem,2.8vw,2.1rem);font-weight:900;line-height:2;margin-bottom:.8rem}
+.section-sub{color:var(--text);font-size:.9rem;max-width:640px;margin:0 auto 2.5rem}
+.grad-s{background:linear-gradient(135deg,var(--accent),var(--accent2),#f9a8d4);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.text-center{text-align:center}
+.btn-primary{display:inline-flex;align-items:center;gap:.5rem;background:linear-gradient(135deg,var(--accent),#db2777);color:#fff;font-weight:700;font-size:.9rem;padding:.85rem 2rem;border-radius:999px;border:none;cursor:pointer;transition:all .3s;box-shadow:0 0 24px var(--glow)}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 0 40px var(--glow)}
+.btn-ghost{display:inline-flex;align-items:center;gap:.5rem;background:transparent;color:var(--accent2);font-weight:600;font-size:.9rem;padding:.85rem 2rem;border-radius:999px;border:1px solid rgba(236,72,153,.3);cursor:pointer;transition:all .3s}
+.btn-ghost:hover{background:rgba(236,72,153,.08);border-color:var(--accent)}
+
+/* ===== HERO ===== */
+.sal-hero{min-height:90vh;display:flex;align-items:center;position:relative;overflow:hidden;padding:8rem 0 4rem}
+.sal-hero-bg{position:absolute;inset:0;z-index:0;background:radial-gradient(ellipse 70% 50% at 50% 20%,rgba(236,72,153,.1) 0%,transparent 70%),radial-gradient(ellipse 50% 60% at 80% 80%,rgba(167,139,250,.06) 0%,transparent 60%),var(--bg)}
+.sal-hero-grid{position:absolute;inset:0;z-index:0;background-image:linear-gradient(rgba(236,72,153,.02) 1px,transparent 1px),linear-gradient(90deg,rgba(236,72,153,.02) 1px,transparent 1px);background-size:60px 60px;mask-image:radial-gradient(ellipse 80% 70% at 50% 40%,black,transparent)}
+.sal-hero .container{position:relative;z-index:1;text-align:center;max-width:900px}
+.sal-hero h1{font-size:clamp(1.8rem,4vw,3rem);font-weight:900;line-height:2;margin-bottom:1.2rem}
+.sal-hero .hero-desc{color:var(--text);font-size:1rem;line-height:1.9;margin-bottom:1rem;max-width:720px;margin-left:auto;margin-right:auto}
+.sal-hero .hero-sub{color:var(--text2);font-size:.82rem;margin-bottom:2.5rem}
+.hero-btns{display:flex;gap:1rem;justify-content:center;flex-wrap:wrap;margin-bottom:3rem}
+.hero-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:2rem;margin-top:2rem}
+.hero-stat{text-align:center}
+.hero-stat-val{font-size:clamp(1.3rem,2.5vw,1.8rem);font-weight:900;font-family:var(--en);color:var(--accent2)}
+.hero-stat-label{font-size:.72rem;color:var(--text);font-weight:600;margin-top:.2rem}
+
+/* ===== PAIN ===== */
+.pain-section{padding:5rem 0;position:relative}
+.pain-section::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(236,72,153,.2),transparent)}
+.pain-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1.5rem;margin-top:2rem}
+.pain-card{background:linear-gradient(170deg,rgba(248,113,113,.04),rgba(248,113,113,.01));border:1px solid rgba(248,113,113,.12);border-radius:var(--radius);padding:1.5rem;text-align:center;transition:all .3s;position:relative;overflow:hidden}
+.pain-card::before{content:'';position:absolute;top:0;left:50%;transform:translateX(-50%);width:40px;height:2px;background:var(--red);border-radius:2px}
+.pain-card:hover{border-color:rgba(248,113,113,.3);transform:translateY(-4px)}
+.pain-icon{font-size:2rem;margin-bottom:.8rem;display:block}
+.pain-title{font-size:.85rem;font-weight:800;margin-bottom:.4rem;color:var(--white)}
+.pain-desc{font-size:.75rem;color:var(--text);line-height:1.7}
+
+/* ===== FEATURES ===== */
+.features-section{padding:5rem 0;background:var(--bg2);position:relative}
+.features-section::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(236,72,153,.2),transparent)}
+.features-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1.5rem}
+.feat-card{background:linear-gradient(170deg,var(--panel),var(--bg3));border:1px solid var(--border);border-radius:var(--radius-lg);padding:2rem 1.5rem;transition:all .4s;position:relative;overflow:hidden}
+.feat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--accent),var(--accent2));opacity:0;transition:opacity .3s}
+.feat-card:hover::before{opacity:1}
+.feat-card:hover{border-color:rgba(236,72,153,.2);transform:translateY(-6px);box-shadow:0 16px 50px rgba(0,0,0,.3)}
+.feat-emoji{font-size:2rem;margin-bottom:1rem;display:block}
+.feat-title{font-size:.92rem;font-weight:800;margin-bottom:.5rem}
+.feat-desc{font-size:.78rem;color:var(--text);line-height:1.8}
+
+/* ===== DIFFERENTIATORS ===== */
+.diff-section{padding:5rem 0}
+.diff-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1.5rem;margin-top:2rem}
+.diff-card{background:linear-gradient(170deg,var(--panel),var(--bg3));border:1px solid var(--border);border-radius:var(--radius);padding:1.5rem;text-align:center;transition:all .3s}
+.diff-card:hover{border-color:rgba(236,72,153,.2);transform:translateY(-4px)}
+.diff-icon{font-size:2rem;margin-bottom:.6rem;display:block}
+.diff-title{font-size:.85rem;font-weight:800;margin-bottom:.3rem}
+.diff-desc{font-size:.72rem;color:var(--text);line-height:1.7}
+
+/* ===== AI ===== */
+.ai-section{padding:5rem 0;background:var(--bg2);position:relative}
+.ai-section::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(236,72,153,.2),transparent)}
+.ai-inner{display:grid;grid-template-columns:1fr 1fr;gap:4rem;align-items:center}
+.ai-features{display:flex;flex-direction:column;gap:1.2rem}
+.ai-feat{display:flex;gap:1rem;align-items:flex-start;background:rgba(255,255,255,.02);border:1px solid var(--border);border-radius:var(--radius);padding:1.2rem;transition:all .3s}
+.ai-feat:hover{border-color:var(--border2);background:rgba(255,255,255,.04)}
+.ai-feat-icon{width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,rgba(236,72,153,.12),rgba(167,139,250,.12));border:1px solid rgba(236,72,153,.2);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:1.1rem}
+.ai-feat-title{font-size:.85rem;font-weight:800;margin-bottom:.25rem}
+.ai-feat-desc{font-size:.75rem;color:var(--text);line-height:1.7}
+.ai-visual{position:relative}
+.ai-chat-box{background:linear-gradient(170deg,var(--panel),var(--bg3));border:1px solid var(--border);border-radius:var(--radius-lg);padding:1.5rem;box-shadow:0 16px 60px rgba(0,0,0,.4)}
+.ai-chat-header{display:flex;align-items:center;gap:.6rem;padding-bottom:.8rem;border-bottom:1px solid var(--border);margin-bottom:1rem}
+.ai-avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center;font-size:.8rem}
+.ai-chat-name{font-size:.78rem;font-weight:700;color:var(--accent2)}.ai-chat-status{font-size:.6rem;color:var(--green)}
+.ai-messages{display:flex;flex-direction:column;gap:.8rem}
+.ai-msg{max-width:85%;padding:.7rem 1rem;border-radius:12px;font-size:.75rem;line-height:1.7}
+.ai-msg.bot{background:rgba(236,72,153,.06);border:1px solid rgba(236,72,153,.12);align-self:flex-start;color:var(--text)}
+.ai-msg.user{background:rgba(6,182,212,.06);border:1px solid rgba(6,182,212,.12);align-self:flex-end;color:var(--text)}
+
+.stats-banner{padding:3rem 0;background:linear-gradient(135deg,rgba(236,72,153,.06),rgba(167,139,250,.04));border-top:1px solid rgba(236,72,153,.1);border-bottom:1px solid rgba(236,72,153,.1)}
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:2rem;text-align:center}
+.stat-item .stat-val{font-size:clamp(1.5rem,3vw,2.2rem);font-weight:900;font-family:var(--en);color:var(--accent2)}
+.stat-item .stat-label{font-size:.75rem;color:var(--text);font-weight:600;margin-top:.3rem}
+
+.cta-section{padding:5rem 0;text-align:center}
+.cta-box{background:linear-gradient(135deg,rgba(236,72,153,.08),rgba(167,139,250,.05));border:1px solid rgba(236,72,153,.2);border-radius:var(--radius-lg);padding:3.5rem 2rem;position:relative;overflow:hidden}
+.cta-box::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--accent),var(--accent2),var(--purple))}
+.cta-box h2{font-size:clamp(1.3rem,2.5vw,1.8rem);font-weight:900;margin-bottom:.8rem}
+.cta-box p{color:var(--text);font-size:.88rem;margin-bottom:2rem;max-width:500px;margin-left:auto;margin-right:auto}
+.cta-btns{display:flex;gap:1rem;justify-content:center;flex-wrap:wrap}
+
+.faq-section{padding:5rem 0;background:var(--bg2)}
+.faq-list{max-width:750px;margin:2rem auto 0;display:flex;flex-direction:column;gap:.8rem}
+.faq-item{background:linear-gradient(170deg,var(--panel),var(--bg3));border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.faq-q{padding:1.2rem 1.5rem;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:1rem;font-size:.85rem;font-weight:700;transition:color .2s}
+.faq-q:hover{color:var(--accent2)}
+.faq-q svg{width:18px;height:18px;color:var(--text2);transition:transform .3s;flex-shrink:0}
+.faq-item.open .faq-q svg{transform:rotate(180deg)}
+.faq-a{padding:0 1.5rem;max-height:0;overflow:hidden;transition:all .4s}
+.faq-item.open .faq-a{max-height:500px;padding:0 1.5rem 1.2rem}
+.faq-a p{font-size:.8rem;color:var(--text);line-height:1.8}
+
+@media(max-width:1024px){.ai-inner{grid-template-columns:1fr}.hero-stats{grid-template-columns:repeat(2,1fr)}
+  .sal-hero{min-height:auto;padding:7rem 0 3rem}
+  .hero-h1{text-align:center}
+  .hero-sub{text-align:center;margin-left:auto;margin-right:auto}
+  .hero-ctas{justify-content:center}
+  .hero-eyebrow{margin-left:auto;margin-right:auto}
+  .hero-trust{justify-content:center;flex-wrap:wrap}
+}
+@media(max-width:768px){.pain-grid,.features-grid,.diff-grid{grid-template-columns:1fr}.stats-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:480px){.cta-box{padding:2rem 1.2rem}}
+</style>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"الرئيسية","item":"https://matixerp.com/"},{"@type":"ListItem","position":2,"name":"نظام إدارة الصالونات","item":"https://matixerp.com/salon/"}]}
+</script>
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@type": "WebPage",
+ "@id": "https://matixerp.com/salon/#webpage",
+ "url": "https://matixerp.com/salon/",
+ "name": "نظام إدارة الصالونات ومراكز التجميل | Matix Salon",
+ "inLanguage": "ar",
+ "dateModified": "2026-09-14",
+ "isPartOf": {
+  "@type": "WebSite",
+  "@id": "https://matixerp.com/#website",
+  "url": "https://matixerp.com/",
+  "name": "Matix ERP"
+ },
+ "publisher": {
+  "@type": "Organization",
+  "@id": "https://matixerp.com/#organization",
+  "name": "Matix ERP"
+ }
+}
+</script>
+</head>
+<body>
+<div id="matix-header-mount"></div>
+<main id="main-content">
+
+<!-- ===== HERO ===== -->
+<section class="sal-hero">
+  <div class="sal-hero-bg"></div>
+  <div class="sal-hero-grid"></div>
+  <div class="container">
+    <div class="section-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg><span>MATIX POS — نظام إدارة الصالونات</span></div>
+    <h1 data-i18n="hero_h1">صالونك يستحق <span class="grad-s">إدارة أذكى وأجمل</span></h1>
+    <p class="hero-desc" data-i18n="hero_desc">الزبون يحجز موعده أونلاين — يوصل ويلاقي كل شيء جاهز. الكاشير يعرف تاريخ خدماته السابقة ورصيد بطاقة الولاء. المنتجات تنخصم من المخزون مع كل استخدام. وأنت في بيتك تتابع أداء كل موظف وكل فرع — كل ده من نظام واحد يتكلم عربي.</p>
+    <p class="hero-sub" data-i18n="hero_sub">نظام متكامل يُدير صالونك — من حجز الموعد حتى الدفع والمتابعة — بشكل احترافي يليق بعلامتك.</p>
+    <div class="hero-btns">
+      <a href="https://matixerp.com/request-demo-arabic/" class="btn-primary" data-i18n="hero_cta1">💅 جرّب النظام مجاناً</a>
+      <a href="#features" class="btn-ghost" data-i18n="hero_cta2">📋 شاهد المميزات</a>
+    </div>
+    <div class="hero-stats">
+      <div class="hero-stat"><div class="hero-stat-val">300+</div><div class="hero-stat-label" data-i18n="hs1_l">صالون ومركز تجميل</div></div>
+      <div class="hero-stat"><div class="hero-stat-val">50%</div><div class="hero-stat-label" data-i18n="hs2_l">تقليل المواعيد الفائتة</div></div>
+      <div class="hero-stat"><div class="hero-stat-val">24/7</div><div class="hero-stat-label" data-i18n="hs3_l">حجز أونلاين متاح دائماً</div></div>
+      <div class="hero-stat"><div class="hero-stat-val">100%</div><div class="hero-stat-label" data-i18n="hs4_l">متوافق مع الفوترة الإلكترونية</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== PAIN POINTS ===== -->
+<section class="pain-section">
+  <div class="container text-center">
+    <div class="section-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg><span data-i18n="pain_tag">تحديات أصحاب الصالونات</span></div>
+    <h2 class="section-title" data-i18n="pain_h2">هل صالونك يعاني من <span class="grad-s">هذه المشاكل</span>؟</h2>
+    <div class="pain-grid">
+      <div class="pain-card reveal"><span class="pain-icon">📞</span><div class="pain-title" data-i18n="pain1_t">مواعيد ضائعة واتصالات لا تنتهي</div><div class="pain-desc" data-i18n="pain1_d">الزبونة تتصل — الخط مشغول — تتصل بصالون ثاني وتحجز هناك. أو تحجز وتنسى — وكرسي الموظفة فاضي ساعة كاملة. كل موعد فائت هو خسارة مباشرة.</div></div>
+      <div class="pain-card reveal reveal-delay-1"><span class="pain-icon">📊</span><div class="pain-title" data-i18n="pain2_t">ما تعرف أداء كل موظفة</div><div class="pain-desc" data-i18n="pain2_d">مين أكثر موظفة تخدم زبائن؟ مين الزبائن يطلبونها بالاسم؟ مين نسبة مواعيدها الفائتة عالية؟ بدون أرقام، قراراتك في التوظيف والعمولات تبقى بالتخمين.</div></div>
+      <div class="pain-card reveal reveal-delay-2"><span class="pain-icon">💸</span><div class="pain-title" data-i18n="pain3_t">المنتجات تنفذ بدون ما تحس</div><div class="pain-desc" data-i18n="pain3_d">كريم المعالجة نفذ ومحدّش قالك. الزبونة جاية خصيصاً لهذي الخدمة وأنت تعتذر. تخسر الزبونة — وتخسر ثقتها — لأن المخزون ما يتتبع تلقائي.</div></div>
+      <div class="pain-card reveal"><span class="pain-icon">🎫</span><div class="pain-title" data-i18n="pain4_t">بطاقات ولاء بالورق</div><div class="pain-desc" data-i18n="pain4_d">بطاقات ورقية تضيع أو تنسى في البيت. ما تعرف من زبائنك الأوفياء فعلاً ولا كم زيارة عملوا. برنامج الولاء يجب أن يكون رقمي وتلقائي.</div></div>
+      <div class="pain-card reveal reveal-delay-1"><span class="pain-icon">💰</span><div class="pain-title" data-i18n="pain5_t">العمولات والرواتب يدوياً</div><div class="pain-desc" data-i18n="pain5_d">نهاية الشهر تحسب عمولة كل موظفة يدوياً: كم خدمة قدّمت وكم منتج باعت. العملية تأخذ ساعات وأحياناً فيها أخطاء تسبب مشاكل مع الفريق.</div></div>
+      <div class="pain-card reveal reveal-delay-2"><span class="pain-icon">🏪</span><div class="pain-title" data-i18n="pain6_t">فروع ما تتكلم مع بعض</div><div class="pain-desc" data-i18n="pain6_d">كل فرع بنظامه وأرقامه. زبونة عندها رصيد ولاء في فرع وتبي تستخدمه في فرع ثاني — ما تقدر. كل فرع جزيرة والتقارير المجمّعة حلم بعيد.</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== FEATURES ===== -->
+<section class="features-section" id="features">
+  <div class="container text-center">
+    <div class="section-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg><span data-i18n="feat_tag">مكونات النظام</span></div>
+    <h2 class="section-title" data-i18n="feat_h2">كل اللي صالونك محتاجه <span class="grad-s">في مكان واحد</span></h2>
+    <p class="section-sub" data-i18n="feat_sub">من أول ما الزبونة تحجز — حتى ما تدفع وتمشي. كل خطوة مترابطة ومتزامنة.</p>
+    <div class="features-grid">
+      <div class="feat-card reveal"><span class="feat-emoji">🖥️</span><div class="feat-title" data-i18n="f1_t">نقاط البيع — POS</div><div class="feat-desc" data-i18n="f1_d">كاشير مصمم للصالونات — تختار الخدمات والموظفة والزبونة بسرعة. يدعم الدفع النقدي والبطاقة والمختلط. يطبع فاتورة بشعار صالونك. يعمل حتى بدون إنترنت.</div></div>
+      <div class="feat-card reveal reveal-delay-1"><span class="feat-emoji">📅</span><div class="feat-title" data-i18n="f2_t">حجز المواعيد</div><div class="feat-desc" data-i18n="f2_d">الزبونة تحجز أونلاين أو بالواتساب — تختار الخدمة والموظفة والوقت. النظام يتحقق من التوفر تلقائياً ويُرسل تأكيد وتذكير قبل الموعد. نسبة المواعيد الفائتة تنخفض 50%.</div></div>
+      <div class="feat-card reveal reveal-delay-2"><span class="feat-emoji">👩‍💼</span><div class="feat-title" data-i18n="f3_t">إدارة فريق العمل</div><div class="feat-desc" data-i18n="f3_d">لكل موظفة ملفها: جدول دوامها، خدماتها، عمولاتها، أداؤها. النظام يحسب العمولة تلقائياً (نسبة من الخدمة + نسبة من بيع المنتجات). تقارير أداء شهرية لكل موظفة.</div></div>
+      <div class="feat-card reveal"><span class="feat-emoji">⭐</span><div class="feat-title" data-i18n="f4_t">بطاقات الولاء</div><div class="feat-desc" data-i18n="f4_d">بطاقة ولاء رقمية — الزبونة تجمع نقاط مع كل زيارة أو خدمة وتستبدلها بخصومات أو خدمات مجانية. اعرف أكثر زبائنك ولاءً وفعّل عروض خاصة تخليهم يرجعون دائماً.</div></div>
+      <div class="feat-card reveal reveal-delay-1"><span class="feat-emoji">🎟️</span><div class="feat-title" data-i18n="f5_t">الاشتراكات والعضوية</div><div class="feat-desc" data-i18n="f5_d">باقات شهرية أو سنوية: "عضوية ذهبية = 4 جلسات + خصم 20% على المنتجات". النظام يتابع الاستخدام ويُذكّر بالتجديد. بطاقات هدايا رقمية أيضاً.</div></div>
+      <div class="feat-card reveal reveal-delay-2"><span class="feat-emoji">📦</span><div class="feat-title" data-i18n="f6_t">المخزون</div><div class="feat-desc" data-i18n="f6_d">تتبّع مستحضرات التجميل والمنتجات تلقائياً. كل ما تُستخدم كمية في خدمة — تنخصم من المخزون. النظام ينبّهك قبل نفاذ أي منتج. مبيعات التجزئة تنخصم أيضاً تلقائياً.</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== DIFFERENTIATORS ===== -->
+<section class="diff-section" id="diff">
+  <div class="container text-center">
+    <div class="section-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span data-i18n="diff_tag">ليش مختلف</span></div>
+    <h2 class="section-title" data-i18n="diff_h2">مميزات تخلّي صالونك <span class="grad-s">الأول في المنطقة</span></h2>
+    <div class="diff-grid">
+      <div class="diff-card reveal"><span class="diff-icon">🌍</span><div class="diff-title" data-i18n="d1_t">عربي وإنجليزي</div><div class="diff-desc" data-i18n="d1_d">واجهة عربية كاملة — مش ترجمة. الفواتير والتقارير والرسائل بلغة زبائنك. يدعم اللغتين في نفس الشاشة.</div></div>
+      <div class="diff-card reveal reveal-delay-1"><span class="diff-icon">📴</span><div class="diff-title" data-i18n="d2_t">يشتغل بدون إنترنت</div><div class="diff-desc" data-i18n="d2_d">الإنترنت فصل؟ الكاشير يشتغل عادي — الحجوزات والفواتير كلها تشتغل. لما يرجع الاتصال — يتزامن تلقائياً.</div></div>
+      <div class="diff-card reveal reveal-delay-2"><span class="diff-icon">💳</span><div class="diff-title" data-i18n="d3_t">جميع طرق الدفع</div><div class="diff-desc" data-i18n="d3_d">نقدي، بطاقة، Apple Pay، تحويل — والدفع المختلط. يدعم الدفع الجزئي والباقي من رصيد الولاء أو العضوية.</div></div>
+      <div class="diff-card reveal"><span class="diff-icon">📱</span><div class="diff-title" data-i18n="d4_t">تقارير على موبايلك</div><div class="diff-desc" data-i18n="d4_d">أنت في بيتك أو مسافر — تابع إيرادات اليوم، عدد الزبائن، أداء كل موظفة، وحالة المخزون من تطبيقك.</div></div>
+      <div class="diff-card reveal reveal-delay-1"><span class="diff-icon">💰</span><div class="diff-title" data-i18n="d5_t">محاسبة متكاملة</div><div class="diff-desc" data-i18n="d5_d">كل فاتورة تسجّل محاسبياً تلقائياً. مصاريف الصالون والرواتب والإيجار — كل شيء في مكان واحد مع تقارير الأرباح والخسائر.</div></div>
+      <div class="diff-card reveal reveal-delay-2"><span class="diff-icon">🏪</span><div class="diff-title" data-i18n="d6_t">متعدد الفروع</div><div class="diff-desc" data-i18n="d6_d">كل الفروع على نفس النظام — الزبونة تحجز في أي فرع وتستخدم رصيد ولائها في أي فرع. تقارير مجمّعة ومفصّلة.</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== AI ===== -->
+<section class="ai-section" id="ai">
+  <div class="container">
+    <div class="ai-inner">
+      <div>
+        <div class="section-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a4 4 0 0 1 4 4c0 1.95-1.4 3.58-3.25 3.93L12 22"/><path d="M12 2a4 4 0 0 0-4 4c0 1.95 1.4 3.58 3.25 3.93"/><path d="M8 14h8"/><path d="M9 18h6"/></svg><span data-i18n="ai_tag">ذكاء اصطناعي</span></div>
+        <h2 class="section-title" data-i18n="ai_h2">صالونك أذكى <span class="grad-s">مع الذكاء الاصطناعي</span></h2>
+        <div class="ai-features">
+          <div class="ai-feat reveal"><div class="ai-feat-icon">📊</div><div><div class="ai-feat-title" data-i18n="ai1_t">توقّع الأوقات المزدحمة</div><div class="ai-feat-desc" data-i18n="ai1_d">يحلل بيانات الحجوزات ويتنبأ بساعات وأيام الذروة — فتجدول الموظفات بذكاء وتقلل أوقات الانتظار.</div></div></div>
+          <div class="ai-feat reveal reveal-delay-1"><div class="ai-feat-icon">💡</div><div><div class="ai-feat-title" data-i18n="ai2_t">عروض مخصصة لكل زبونة</div><div class="ai-feat-desc" data-i18n="ai2_d">يحلل تاريخ كل زبونة ويقترح عروض تناسبها: "زبونة ما زارتك من 45 يوم — أرسل لها عرض 20% على خدمتها المفضلة".</div></div></div>
+          <div class="ai-feat reveal reveal-delay-2"><div class="ai-feat-icon">⚡</div><div><div class="ai-feat-title" data-i18n="ai3_t">تحليل أداء الموظفات</div><div class="ai-feat-desc" data-i18n="ai3_d">يقارن الإيرادات وعدد الزبائن ونسبة إعادة الحجز لكل موظفة — فتكافئ الأفضل وتطوّر البقية.</div></div></div>
+          <div class="ai-feat reveal reveal-delay-3"><div class="ai-feat-icon">🤖</div><div><div class="ai-feat-title" data-i18n="ai4_t">مساعد الصالون الذكي</div><div class="ai-feat-desc" data-i18n="ai4_d">اسأل: "كم زبونة خدمنا اليوم؟" أو "أي خدمة الأكثر طلباً هذا الشهر؟" واحصل على الإجابة فوراً.</div></div></div>
+        </div>
+      </div>
+      <div class="ai-visual reveal">
+        <div class="ai-chat-box">
+          <div class="ai-chat-header"><div class="ai-avatar">💅</div><div><div class="ai-chat-name">Matix AI Salon</div><div class="ai-chat-status" data-i18n="ai_active">● نشط الآن</div></div></div>
+          <div class="ai-messages">
+            <div class="ai-msg user" data-i18n="ai_q1">كيف أداء الصالون هذا الأسبوع مقارنة بالأسبوع الماضي؟</div>
+            <div class="ai-msg bot" data-i18n="ai_a1">📊 تقرير الأسبوع:<br><br>👥 الزبائن: 184 (↑ 12% عن الأسبوع الماضي)<br>💰 الإيرادات: $8,420 (↑ 15%)<br>⭐ الخدمة الأكثر طلباً: صبغة شعر (42 مرة)<br>🏆 أفضل موظفة: نورة ($2,180 إيرادات)<br><br>📉 ملاحظات:<br>🔴 يوم الأحد كان الأقل (18 زبونة فقط) — فكّر في عرض خاص ليوم الأحد<br>🟡 خدمة الأظافر انخفضت 20% — تحتاج ترويج<br><br>💡 اقتراح: أرسل عرض "خصم 25% على الأظافر كل أحد" — المتوقع زيادة 30% في الحجوزات.</div>
+            <div class="ai-msg user" data-i18n="ai_q2">أرسل العرض لكل زبائن الأظافر عبر واتساب</div>
+            <div class="ai-msg bot" data-i18n="ai_a2">✓ تم تجهيز الحملة:<br><br>📱 رسالة واتساب:<br>"أهلاً [اسم الزبونة] 💅 عرض خاص لك: خصم 25% على جميع خدمات الأظافر كل يوم أحد. احجزي الحين من التطبيق! 🌟"<br><br>👥 عدد المستهدفات: 67 زبونة<br>📅 موعد الإرسال: السبت 6:00 مساءً<br>📝 الحالة: مسودة — بانتظار اعتمادك</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== STATS ===== -->
+<section class="stats-banner"><div class="container"><div class="stats-grid">
+  <div class="stat-item reveal"><div class="stat-val">300+</div><div class="stat-label" data-i18n="stat1_l">صالون ومركز تجميل</div></div>
+  <div class="stat-item reveal reveal-delay-1"><div class="stat-val">50%</div><div class="stat-label" data-i18n="stat2_l">تقليل المواعيد الفائتة</div></div>
+  <div class="stat-item reveal reveal-delay-2"><div class="stat-val">35%</div><div class="stat-label" data-i18n="stat3_l">زيادة في إعادة الحجز</div></div>
+  <div class="stat-item reveal reveal-delay-3"><div class="stat-val">6,000+</div><div class="stat-label" data-i18n="stat4_l">شركة تثق في ماتكس</div></div>
+</div></div></section>
+
+<!-- ===== CTA ===== -->
+<section class="cta-section"><div class="container"><div class="cta-box reveal">
+  <h2 data-i18n="cta_h2">جاهز تُدير صالونك <span class="grad-s">بأسلوب احترافي</span>؟</h2>
+  <p data-i18n="cta_sub">جرّب النظام مجاناً — حمّل خدماتك وموظفاتك وشوف كيف يشتغل من أول يوم.</p>
+  <div class="cta-btns"><a href="https://matixerp.com/request-demo-arabic/" class="btn-primary" data-i18n="cta_btn1">💅 جرّب النظام مجاناً</a><a href="https://web.whatsapp.com/send?phone=96567087771" target="_blank" class="btn-ghost" data-i18n="cta_btn2">💬 تحدث معنا على واتساب</a></div>
+</div></div></section>
+
+<!-- ===== FAQ ===== -->
+<section class="faq-section" id="faq">
+  <div class="container text-center">
+    <div class="section-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><span data-i18n="faq_tag">أسئلة شائعة</span></div>
+    <h2 class="section-title" data-i18n="faq_h2">أسئلة شائعة عن <span class="grad-s">نظام الصالونات</span></h2>
+    <div class="faq-list">
+      <div class="faq-item"><div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span data-i18n="fq1_q">هل الزبونة تقدر تحجز أونلاين بنفسها؟</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div><div class="faq-a"><p data-i18n="fq1_a">نعم، الزبونة تفتح رابط الحجز أو تطلب من واتساب — تختار الخدمة والموظفة والوقت المناسب من الأوقات المتاحة. النظام يتحقق من التوفر تلقائياً ويُرسل تأكيد فوري وتذكير قبل الموعد بيوم وساعة. النتيجة: مواعيد فائتة أقل بـ 50%.</p></div></div>
+      <div class="faq-item"><div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span data-i18n="fq2_q">كيف يحسب النظام عمولات الموظفات؟</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div><div class="faq-a"><p data-i18n="fq2_a">تحدّد نسبة عمولة لكل موظفة أو لكل خدمة أو لكل فئة. النظام يحسب العمولة تلقائياً مع كل فاتورة — خدمات + بيع منتجات. نهاية الشهر تحصل على تقرير عمولات جاهز للصرف بدون حسابات يدوية.</p></div></div>
+      <div class="faq-item"><div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span data-i18n="fq3_q">هل يتتبع المخزون مع كل خدمة؟</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div><div class="faq-a"><p data-i18n="fq3_a">نعم، لكل خدمة تحدد المنتجات المستخدمة والكمية. كل ما تُقدّم الخدمة — المنتجات تنخصم تلقائياً. المنتجات المباعة كتجزئة تنخصم أيضاً. النظام ينبّهك عندما يقترب أي منتج من النفاذ.</p></div></div>
+      <div class="faq-item"><div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span data-i18n="fq4_q">هل يدعم باقات وعضويات؟</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div><div class="faq-a"><p data-i18n="fq4_a">نعم، أنشئ باقات متنوعة: "عضوية ذهبية = 4 جلسات بروتين + خصم 20% على كل شيء" أو "باقة عروس = صبغة + تسريحة + مكياج + أظافر". النظام يتابع الاستخدام ويُذكّر بالتجديد. يدعم بطاقات الهدايا الرقمية أيضاً.</p></div></div>
+      <div class="faq-item"><div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span data-i18n="fq5_q">هل يناسب صالون فرع واحد ومتعدد الفروع؟</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div><div class="faq-a"><p data-i18n="fq5_a">نعم، سواء فرع واحد أو سلسلة فروع — النظام يتكيّف. الخدمات والأسعار متزامنة عبر كل الفروع. الزبونة تحجز وتستخدم ولاءها في أي فرع. تقارير مجمّعة على مستوى السلسلة أو مفصّلة لكل فرع.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[
+{"@type":"Question","name":"Can customers book online by themselves?","acceptedAnswer":{"@type":"Answer","text":"Yes, customers open the booking link or request via WhatsApp — choose service, staff, and time from available slots. System auto-checks availability and sends instant confirmation plus reminders. Result: 50% fewer no-shows."}},
+{"@type":"Question","name":"How does the system calculate staff commissions?","acceptedAnswer":{"@type":"Answer","text":"Set commission rates per staff, service, or category. System auto-calculates with each invoice — services + product sales. Month-end gives you a ready commission report without manual calculations."}},
+{"@type":"Question","name":"Does it track inventory with each service?","acceptedAnswer":{"@type":"Answer","text":"Yes, define products used per service with quantities. Each time a service is performed, products auto-deduct. Retail sales also deduct. System alerts when products approach depletion."}},
+{"@type":"Question","name":"Does it support packages and memberships?","acceptedAnswer":{"@type":"Answer","text":"Yes, create varied packages like 'Gold Membership = 4 protein sessions + 20% off everything'. System tracks usage and sends renewal reminders. Digital gift cards also supported."}},
+{"@type":"Question","name":"Is it suitable for single and multi-branch salons?","acceptedAnswer":{"@type":"Answer","text":"Yes, from one branch to a chain. Services and prices sync across branches. Customers book and use loyalty at any branch. Consolidated or per-branch reports available."}}
+]}
+</script>
+
+<div id="sismatix-form"></div>
+<script src="/contact-form.js"></script>
+
+<script>
+window.PAGE_T = {
+  hero_h1:['صالونك يستحق <span class="grad-s">إدارة أذكى وأجمل</span>','Your Salon Deserves <span class="grad-s">Smarter & Better Management</span>'],
+  hero_desc:['الزبون يحجز أونلاين — يوصل ويلاقي كل شيء جاهز. الكاشير يعرف تاريخ خدماته ورصيد الولاء. المنتجات تنخصم تلقائي. وأنت تتابع كل شيء من موبايلك.','Customer books online — arrives and everything is ready. Cashier knows their service history and loyalty balance. Products auto-deduct. You monitor everything from your phone.'],
+  hero_sub:['نظام متكامل يُدير صالونك — من حجز الموعد حتى الدفع — بشكل احترافي.','Complete system managing your salon — from booking to payment — professionally.'],
+  hero_cta1:['💅 جرّب النظام مجاناً','💅 Try Free'],hero_cta2:['📋 شاهد المميزات','📋 See Features'],
+  hs1_l:['صالون ومركز تجميل','Salons & Beauty Centers'],hs2_l:['تقليل المواعيد الفائتة','No-Show Reduction'],hs3_l:['حجز أونلاين متاح دائماً','Online Booking Always Available'],hs4_l:['متوافق مع الفوترة الإلكترونية','E-Invoicing Compliant'],
+  pain_tag:['تحديات أصحاب الصالونات','Salon Owner Challenges'],pain_h2:['هل صالونك يعاني من <span class="grad-s">هذه المشاكل</span>؟','Is Your Salon Facing <span class="grad-s">These Problems</span>?'],
+  pain1_t:['مواعيد ضائعة واتصالات لا تنتهي','Lost Appointments & Endless Calls'],pain1_d:['الزبونة تتصل — الخط مشغول — تحجز عند المنافس.','Customer calls — line busy — books at competitor.'],
+  pain2_t:['ما تعرف أداء كل موظفة','Unknown Staff Performance'],pain2_d:['مين الأكثر إنتاجاً؟ مين يطلبونها بالاسم؟ بدون أرقام، قراراتك بالتخمين.','Who\'s most productive? Who do clients request? Without numbers, you\'re guessing.'],
+  pain3_t:['المنتجات تنفذ بدون ما تحس','Products Run Out Unnoticed'],pain3_d:['الزبونة جاية لخدمة معينة والمنتج نفذ. تخسر الزبونة وثقتها.','Customer comes for a specific service and the product is out. You lose them and their trust.'],
+  pain4_t:['بطاقات ولاء بالورق','Paper Loyalty Cards'],pain4_d:['بطاقات تضيع أو تُنسى. ما تعرف زبائنك الأوفياء.','Cards get lost or forgotten. You don\'t know your loyal clients.'],
+  pain5_t:['العمولات والرواتب يدوياً','Manual Commission Calculations'],pain5_d:['نهاية الشهر تحسب يدوياً لكل موظفة. ساعات من الحسابات وأخطاء.','Month-end manual calculations per staff. Hours of work and errors.'],
+  pain6_t:['فروع ما تتكلم مع بعض','Branches Don\'t Communicate'],pain6_d:['كل فرع بنظامه. الزبونة ما تقدر تستخدم ولاءها في فرع ثاني.','Each branch has its own system. Customer can\'t use loyalty at another branch.'],
+  feat_tag:['مكونات النظام','System Components'],feat_h2:['كل اللي صالونك محتاجه <span class="grad-s">في مكان واحد</span>','Everything Your Salon Needs <span class="grad-s">in One Place</span>'],
+  feat_sub:['من الحجز حتى الدفع. كل خطوة مترابطة ومتزامنة.','From booking to payment. Every step connected and synced.'],
+  f1_t:['نقاط البيع — POS','Point of Sale — POS'],f1_d:['كاشير مصمم للصالونات — سريع وسهل ويعمل أوفلاين.','POS designed for salons — fast, easy, works offline.'],
+  f2_t:['حجز المواعيد','Appointment Booking'],f2_d:['حجز أونلاين مع تأكيد وتذكير تلقائي — تقلل المواعيد الفائتة 50%.','Online booking with auto confirmation and reminder — cuts no-shows 50%.'],
+  f3_t:['إدارة فريق العمل','Staff Management'],f3_d:['جدول دوام، عمولات تلقائية، تقارير أداء شهرية لكل موظفة.','Schedule, auto commissions, monthly performance reports per staff.'],
+  f4_t:['بطاقات الولاء','Loyalty Cards'],f4_d:['بطاقة رقمية — نقاط مع كل زيارة تُستبدل بخصومات أو خدمات.','Digital card — points per visit redeemable for discounts or services.'],
+  f5_t:['الاشتراكات والعضوية','Subscriptions & Membership'],f5_d:['باقات شهرية وسنوية مع متابعة الاستخدام وتذكير بالتجديد.','Monthly/annual packages with usage tracking and renewal reminders.'],
+  f6_t:['المخزون','Inventory'],f6_d:['منتجات تنخصم تلقائياً مع كل خدمة وكل بيع. تنبيهات قبل النفاذ.','Products auto-deduct with each service and sale. Alerts before depletion.'],
+  diff_tag:['ليش مختلف','Why Different'],diff_h2:['مميزات تخلّي صالونك <span class="grad-s">الأول في المنطقة</span>','Features That Make Your Salon <span class="grad-s">First in the Area</span>'],
+  d1_t:['عربي وإنجليزي','Arabic & English'],d1_d:['مصمم بالعربية — مش ترجمة. فواتير وتقارير بلغتك.','Built in Arabic — not translated. Invoices and reports in your language.'],
+  d2_t:['يشتغل بدون إنترنت','Works Offline'],d2_d:['الكاشير والحجوزات يشتغلون عادي بدون اتصال.','POS and bookings work normally without connection.'],
+  d3_t:['جميع طرق الدفع','All Payment Methods'],d3_d:['نقد، بطاقة، Apple Pay، مختلط، ولاء، عضوية.','Cash, card, Apple Pay, split, loyalty, membership.'],
+  d4_t:['تقارير على موبايلك','Reports on Your Phone'],d4_d:['تابع الإيرادات والزبائن والأداء من أي مكان.','Monitor revenue, clients, and performance from anywhere.'],
+  d5_t:['محاسبة متكاملة','Full Accounting'],d5_d:['كل فاتورة تسجّل محاسبياً — مع تقارير الأرباح والخسائر.','Every invoice auto-posts — with P&L reports.'],
+  d6_t:['متعدد الفروع','Multi-Branch'],d6_d:['فروع متزامنة — ولاء وحجز يعمل في أي فرع.','Synced branches — loyalty and booking works at any branch.'],
+  ai_tag:['ذكاء اصطناعي','AI'],ai_h2:['صالونك أذكى <span class="grad-s">مع الذكاء الاصطناعي</span>','Smarter Salon <span class="grad-s">with AI</span>'],
+  ai1_t:['توقّع الأوقات المزدحمة','Predict Busy Times'],ai1_d:['يتنبأ بساعات الذروة فتجدول الموظفات بذكاء.','Predicts peak hours so you schedule staff smartly.'],
+  ai2_t:['عروض مخصصة لكل زبونة','Personalized Offers'],ai2_d:['يقترح عروض بناءً على تاريخ كل زبونة.','Suggests offers based on each client\'s history.'],
+  ai3_t:['تحليل أداء الموظفات','Staff Performance Analysis'],ai3_d:['يقارن الإيرادات والزبائن ونسبة إعادة الحجز.','Compares revenue, clients, and rebooking rates.'],
+  ai4_t:['مساعد الصالون الذكي','AI Salon Assistant'],ai4_d:['اسأل: "كم زبونة اليوم؟" واحصل على الإجابة فوراً.','Ask: "How many clients today?" and get an instant answer.'],
+  ai_active:['● نشط الآن','● Active Now'],
+  ai_q1:['كيف أداء الصالون هذا الأسبوع؟','How did the salon perform this week?'],
+  ai_a1:['📊 الأسبوع:<br>👥 184 زبونة (↑ 12%)<br>💰 $8,420 (↑ 15%)<br>⭐ الأكثر طلباً: صبغة (42)<br>🏆 الأفضل: نورة ($2,180)<br>📉 الأحد الأقل — اقترح عرض<br>🟡 الأظافر ↓ 20% — تحتاج ترويج','📊 This Week:<br>👥 184 clients (↑ 12%)<br>💰 $8,420 (↑ 15%)<br>⭐ Most requested: Hair color (42)<br>🏆 Top: Noura ($2,180)<br>📉 Sunday lowest — suggest promo<br>🟡 Nails ↓ 20% — needs promotion'],
+  ai_q2:['أرسل العرض لزبائن الأظافر','Send the offer to nail clients'],
+  ai_a2:['✓ حملة واتساب جاهزة:<br>📱 "خصم 25% على الأظافر كل أحد"<br>👥 67 زبونة مستهدفة<br>📅 إرسال: السبت 6 مساءً<br>📝 مسودة — بانتظار اعتمادك','✓ WhatsApp campaign ready:<br>📱 "25% off nails every Sunday"<br>👥 67 targeted clients<br>📅 Send: Saturday 6 PM<br>📝 Draft — awaiting approval'],
+  stat1_l:['صالون ومركز تجميل','Salons & Beauty Centers'],stat2_l:['تقليل المواعيد الفائتة','No-Show Reduction'],stat3_l:['زيادة في إعادة الحجز','Rebooking Increase'],stat4_l:['شركة تثق في ماتكس','Companies Trust Matix'],
+  cta_h2:['جاهز تُدير صالونك <span class="grad-s">بأسلوب احترافي</span>؟','Ready to Manage Your Salon <span class="grad-s">Professionally</span>?'],
+  cta_sub:['جرّب النظام مجاناً — حمّل خدماتك وشوف كيف يشتغل.','Try free — upload your services and see how it works.'],
+  cta_btn1:['💅 جرّب النظام مجاناً','💅 Try Free'],cta_btn2:['💬 تحدث معنا على واتساب','💬 Chat on WhatsApp'],
+  faq_tag:['أسئلة شائعة','FAQ'],faq_h2:['أسئلة شائعة عن <span class="grad-s">نظام الصالونات</span>','FAQ about <span class="grad-s">Salon System</span>'],
+  fq1_q:['هل الزبونة تقدر تحجز أونلاين؟','Can customers book online?'],fq1_a:['نعم، تختار الخدمة والموظفة والوقت مع تأكيد وتذكير تلقائي.','Yes, choose service, staff, and time with auto confirmation and reminder.'],
+  fq2_q:['كيف يحسب العمولات؟','How does it calculate commissions?'],fq2_a:['نسب عمولة لكل موظفة أو خدمة — تتحسب تلقائياً مع كل فاتورة.','Commission rates per staff or service — auto-calculated with each invoice.'],
+  fq3_q:['هل يتتبع المخزون مع كل خدمة؟','Does it track inventory per service?'],fq3_a:['نعم، المنتجات تنخصم تلقائياً مع كل خدمة وكل بيع تجزئة.','Yes, products auto-deduct with each service and retail sale.'],
+  fq4_q:['هل يدعم باقات وعضويات؟','Does it support packages?'],fq4_a:['نعم، باقات متنوعة مع متابعة الاستخدام وتذكير بالتجديد وبطاقات هدايا.','Yes, varied packages with usage tracking, renewal reminders, and gift cards.'],
+  fq5_q:['هل يناسب فرع واحد ومتعدد الفروع؟','Single or multi-branch?'],fq5_a:['نعم، فروع متزامنة — الزبونة تحجز وتستخدم ولاءها في أي فرع.','Yes, synced branches — customer books and uses loyalty at any branch.'],
+};
+</script>
+</main>
+<div id="matix-footer-mount"></div>
+<script src="/matix-shared.js?v=7"></script>
+<script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/v31edd6df95cf4e85bb4c19e7a9bdbcba1788362987495" integrity="sha512-iIg7k2xntmwu6/uSb5tpc/hySgZc4eoL31yB29W6tJFo2akwjPWcEqnCEdJvGexCL0KEQwVYv5BlowfhVz26hg==" data-cf-beacon='{"version":"2024.11.0","token":"c304bc3a23c84bd4895797cccbcff983","r":1,"spa":2}' crossorigin="anonymous"></script>
+</body>
+</html>
