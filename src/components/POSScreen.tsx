@@ -3,18 +3,46 @@ import {
   Search, Plus, Minus, Trash2, User, CreditCard, Banknote, Scissors, 
   Tag, X, Package, Clock, UserCog, Calendar, CheckCircle2, Image as ImageIcon,
   Wrench, ShieldAlert, Camera, Crown, Sparkles, PauseCircle, PlayCircle,
-  FilePlus2, Layers, Zap, AlertCircle, DollarSign
+  FilePlus2, Layers, Zap, AlertCircle, DollarSign, Coffee, Sliders, Save, AlertTriangle
 } from 'lucide-react';
 import { 
   AppSettings, CartItem, ServiceItem, Booking, Invoice, Client, Category, Employee,
-  getClientTier, calculateClientTotalSpend, ClientTierConfig, HeldInvoice, PromoCode, PromoCodeUsage, TipRecord, AdvancePayment 
+  getClientTier, calculateClientTotalSpend, ClientTierConfig, HeldInvoice, PromoCode, PromoCodeUsage, TipRecord, AdvancePayment, ClientPreferences 
 } from '../types';
-import { processImageFile, MAX_IMAGE_SIZE_KB } from '../utils/imageUpload';
+import { processImageFile, MAX_IMAGE_SIZE_KB, compressClientBeforeAfterPhoto } from '../utils/imageUpload';
 import { ComplaintsService } from '../services/complaintsService';
 import { ZatcaService } from '../services/zatcaService';
 import { EtaEgyptService } from '../services/etaEgyptService';
 import { DB } from '../services/db';
 import { SupabaseService } from '../services/supabase';
+
+export const getCartItemPrice = (c: CartItem | any): number => {
+  if (!c) return 0;
+  const p = c?.item?.displayPrice ?? c?.item?.price ?? c?.price ?? 0;
+  const num = Number(p);
+  return isNaN(num) ? 0 : num;
+};
+
+export const normalizeCartItem = (c: any): CartItem => {
+  const price = getCartItemPrice(c);
+  const rawItem = c?.item || {};
+  return {
+    cartId: c?.cartId || Math.random().toString(36).substring(2, 9),
+    quantity: Math.max(1, Number(c?.quantity) || 1),
+    employeeId: c?.employeeId && c?.employeeId !== 'any' ? c?.employeeId : '',
+    referralEmployeeId: c?.referralEmployeeId || '',
+    type: c?.type || rawItem?.type || (rawItem?._isProduct ? 'product' : 'service'),
+    price,
+    item: {
+      ...rawItem,
+      id: rawItem?.id || c?.id || c?.serviceId || c?.productId || 'item',
+      name: rawItem?.name || c?.name || c?.serviceName || 'خدمة',
+      price,
+      displayPrice: price,
+      type: rawItem?.type || c?.type || 'service'
+    }
+  };
+};
 
 export function POSScreen({ 
   settings, 
@@ -38,9 +66,11 @@ export function POSScreen({
   setPromoCodeUsages,
   tips = [],
   setTips,
-  currentUser
+  currentUser,
+  activeBranchId
 }: { 
   settings: AppSettings, 
+  activeBranchId?: string,
   isShiftOpen: boolean,
   shiftDate: string,
   initialBooking?: Booking | null, 
@@ -74,6 +104,58 @@ export function POSScreen({
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const [showAddClientModal, setShowAddClientModal] = useState(false);
   const [newClientForm, setNewClientForm] = useState({ name: '', phone: '', referredByPhone: '', dobDay: '', dobMonth: '' });
+
+  // نافذة تفضيلات العميل (الحلاقة والضيافة)
+  const [showPreferencesModal, setShowPreferencesModal] = useState(false);
+  const [prefForm, setPrefForm] = useState<ClientPreferences>({
+    shavingMethod: 'machine',
+    sugarLevel: 'one_spoon',
+    waterTemperature: 'cold'
+  });
+  const [savePrefSuccess, setSavePrefSuccess] = useState(false);
+
+  const handleOpenPreferencesModal = () => {
+    if (!selectedClient) return;
+    setPrefForm(selectedClient.preferences || {
+      shavingMethod: 'machine',
+      sugarLevel: 'one_spoon',
+      waterTemperature: 'cold'
+    });
+    setSavePrefSuccess(false);
+    setShowPreferencesModal(true);
+  };
+
+  const handleSavePreferencesInPOS = async () => {
+    if (!selectedClient) return;
+
+    const updatedClient: Client = {
+      ...selectedClient,
+      preferences: prefForm
+    };
+
+    setSelectedClient(updatedClient);
+    if (setClients) {
+      setClients(clients.map(c => c.id === updatedClient.id ? updatedClient : c));
+    }
+
+    try {
+      await DB.saveClient(updatedClient);
+      const saved = localStorage.getItem('smartcut_clients');
+      if (saved) {
+        const list: Client[] = JSON.parse(saved);
+        const updatedList = list.map(c => c.id === updatedClient.id ? updatedClient : c);
+        localStorage.setItem('smartcut_clients', JSON.stringify(updatedList));
+      }
+    } catch (e) {
+      console.warn('Failed to save client preferences from POS:', e);
+    }
+
+    setSavePrefSuccess(true);
+    setTimeout(() => {
+      setSavePrefSuccess(false);
+      setShowPreferencesModal(false);
+    }, 900);
+  };
 
   // العميل المرشِّح المستنتج من رقم الهاتف المدخل في نافذة إضافة عميل جديد
   const referrerClientInModal = useMemo(() => {
@@ -204,16 +286,15 @@ export function POSScreen({
 
     fetchHeld();
 
-    // اشتراك لحظي في أحداث الفواتير المعلقة عبر Supabase Realtime
-    const client = SupabaseService.getClient();
-    let channel: any = null;
-    if (client) {
-      channel = client
-        .channel('held_invoices_realtime_pos')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'held_invoices' }, () => {
+    // استماع لحظي عبر BroadcastChannel بين التبويبات بدون WebSockets
+    let bc: BroadcastChannel | null = null;
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      bc = new BroadcastChannel(`smartcut_held_${settings.salonId || 'default'}`);
+      bc.onmessage = (event) => {
+        if (event.data?.type === 'HELD_INVOICES_UPDATED') {
           fetchHeld();
-        })
-        .subscribe();
+        }
+      };
     }
 
     // فحص دوري كل 3 ثوانٍ للتأكد من عدم فوات أي فاتورة جديدة
@@ -222,8 +303,8 @@ export function POSScreen({
     return () => {
       isMounted = false;
       clearInterval(interval);
-      if (channel && client) {
-        client.removeChannel(channel);
+      if (bc) {
+        try { bc.close(); } catch {}
       }
     };
   }, [settings.salonId]);
@@ -317,15 +398,16 @@ export function POSScreen({
       timeStr: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
       client: selectedClient,
       clientSearch,
-      cart,
+      cart: cart.map(normalizeCartItem),
       discount,
-      advanceDeduction,
+      advanceDeduction: Number(advanceDeduction) || 0,
       advancePayments: activeAdvancePayments,
       bookingId: activeBookingId,
       isRemedyInvoice,
       remedyReason,
       beforePhotoUrl,
-      afterPhotoUrl
+      afterPhotoUrl,
+      queueNumber: activeQueueNumber || undefined
     };
     setHeldInvoices(prev => [newHeld, ...prev]);
     DB.saveHeldInvoice(newHeld).catch(e => console.warn('Failed to save held invoice:', e));
@@ -337,9 +419,13 @@ export function POSScreen({
     setAdvanceDeduction(0);
     setActiveAdvancePayments([]);
     setActiveBookingId(undefined);
+    setActiveQueueNumber(null);
     setIsRemedyInvoice(false);
     setBeforePhotoUrl('');
     setAfterPhotoUrl('');
+    try {
+      localStorage.removeItem('smartcut_pos_active_draft');
+    } catch {}
     if (onClearInitial) onClearInitial();
   };
 
@@ -353,15 +439,16 @@ export function POSScreen({
         timeStr: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
         client: selectedClient,
         clientSearch,
-        cart,
+        cart: cart.map(normalizeCartItem),
         discount,
-        advanceDeduction,
+        advanceDeduction: Number(advanceDeduction) || 0,
         advancePayments: activeAdvancePayments,
         bookingId: activeBookingId,
         isRemedyInvoice,
         remedyReason,
         beforePhotoUrl,
-        afterPhotoUrl
+        afterPhotoUrl,
+        queueNumber: activeQueueNumber || undefined
       };
       setHeldInvoices(prev => [newHeld, ...prev]);
       DB.saveHeldInvoice(newHeld).catch(e => console.warn('Failed to save held invoice:', e));
@@ -373,9 +460,13 @@ export function POSScreen({
     setAdvanceDeduction(0);
     setActiveAdvancePayments([]);
     setActiveBookingId(undefined);
+    setActiveQueueNumber(null);
     setIsRemedyInvoice(false);
     setBeforePhotoUrl('');
     setAfterPhotoUrl('');
+    try {
+      localStorage.removeItem('smartcut_pos_active_draft');
+    } catch {}
     if (onClearInitial) onClearInitial();
   };
 
@@ -390,15 +481,16 @@ export function POSScreen({
         timeStr: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
         client: selectedClient,
         clientSearch,
-        cart,
+        cart: cart.map(normalizeCartItem),
         discount,
-        advanceDeduction,
+        advanceDeduction: Number(advanceDeduction) || 0,
         advancePayments: activeAdvancePayments,
         bookingId: activeBookingId,
         isRemedyInvoice,
         remedyReason,
         beforePhotoUrl,
-        afterPhotoUrl
+        afterPhotoUrl,
+        queueNumber: activeQueueNumber || undefined
       };
       setHeldInvoices(prev => [activeAsHeld, ...prev.filter(h => h.id !== held.id)]);
       DB.saveHeldInvoice(activeAsHeld).catch(e => console.warn('Failed to save held invoice:', e));
@@ -407,13 +499,15 @@ export function POSScreen({
     }
     DB.removeHeldInvoice(held.id).catch(e => console.warn('Failed to remove held invoice:', e));
 
-    setCart(held.cart || []);
+    const normalizedCart = (held.cart || []).map(normalizeCartItem);
+    setCart(normalizedCart);
     setSelectedClient(held.client || null);
     setClientSearch(held.clientSearch || (held.client ? held.client.name : ''));
     setDiscount(held.discount || { type: 'fixed', value: 0 });
-    setAdvanceDeduction(held.advanceDeduction || 0);
+    setAdvanceDeduction(Number(held.advanceDeduction) || 0);
     setActiveAdvancePayments(held.advancePayments || []);
     setActiveBookingId(held.bookingId || undefined);
+    if (held.queueNumber) setActiveQueueNumber(held.queueNumber);
     setIsRemedyInvoice(held.isRemedyInvoice || false);
     setRemedyReason(held.remedyReason || '');
     setBeforePhotoUrl(held.beforePhotoUrl || '');
@@ -523,13 +617,16 @@ export function POSScreen({
       setEditingCartId(null);
       return;
     }
+    const newPrice = Number(customPriceInput);
     setCart(cart.map(c => {
       if (c.cartId === cartId) {
         return {
           ...c,
+          price: newPrice,
           item: {
             ...c.item,
-            displayPrice: Number(customPriceInput)
+            price: newPrice,
+            displayPrice: newPrice
           }
         };
       }
@@ -546,14 +643,14 @@ export function POSScreen({
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [completedInvoice, setCompletedInvoice] = useState<Invoice | null>(null);
 
-  const subtotal = cart.reduce((sum, c) => sum + (c.item.displayPrice * c.quantity), 0);
-  const manualDiscountAmount = discount.type === 'percentage' ? subtotal * (discount.value / 100) : discount.value;
+  const subtotal = cart.reduce((sum, c) => sum + (getCartItemPrice(c) * (c.quantity || 1)), 0);
+  const manualDiscountAmount = discount.type === 'percentage' ? subtotal * ((Number(discount.value) || 0) / 100) : (Number(discount.value) || 0);
   const discountAmount = manualDiscountAmount + promoDiscountAmount;
   const totalInclusive = Math.max(0, subtotal - discountAmount);
   const baseTotal = settings.vatEnabled ? totalInclusive / (1 + settings.vatRate / 100) : totalInclusive;
   const vatAmount = settings.vatEnabled ? totalInclusive - baseTotal : 0;
   const totalBeforeAdvance = totalInclusive;
-  const rawFinalTotal = Math.max(0, totalBeforeAdvance - advanceDeduction);
+  const rawFinalTotal = Math.max(0, totalBeforeAdvance - (Number(advanceDeduction) || 0));
   const finalTotal = isRemedyInvoice ? 0 : rawFinalTotal;
 
   // Tips & Change Calculation
@@ -566,16 +663,37 @@ export function POSScreen({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const res = await processImageFile(file);
-    if (res.error) {
-      alert(res.error);
+    // ضغط صورة العميل قبل / بعد بجودة واضحة وحجم فائق الصغر (30-65 KB)
+    const compressed = await compressClientBeforeAfterPhoto(file);
+    if (compressed.error) {
+      alert(compressed.error);
       return;
     }
 
-    if (type === 'before') {
-      setBeforePhotoUrl(res.dataUrl);
-    } else {
-      setAfterPhotoUrl(res.dataUrl);
+    const branchIdToUse = activeBranchId || settings.branchId;
+    const invTempId = 'pos_' + (selectedClient?.id || Math.random().toString(36).substr(2, 7));
+    const oldUrl = type === 'before' ? beforePhotoUrl : afterPhotoUrl;
+
+    const uploadRes = await DB.uploadClientPhoto(
+      compressed.blob,
+      invTempId,
+      type,
+      settings.salonId,
+      branchIdToUse,
+      oldUrl
+    );
+
+    if (uploadRes.error) {
+      alert(uploadRes.error);
+      return;
+    }
+
+    if (uploadRes.url) {
+      if (type === 'before') {
+        setBeforePhotoUrl(uploadRes.url);
+      } else {
+        setAfterPhotoUrl(uploadRes.url);
+      }
     }
   };
 
@@ -638,32 +756,33 @@ export function POSScreen({
         const performer = employees.find(e => e.id === c.employeeId);
         const referrer = employees.find(e => e.id === c.referralEmployeeId);
         let refCommAmt = 0;
-        const matchedService = items.find(s => s.id === c.item.id || s.name === c.item.name);
-        const refCommType = c.item.referralCommissionType || matchedService?.referralCommissionType || 'percentage';
-        const refCommVal = c.item.referralCommissionAmount !== undefined && c.item.referralCommissionAmount > 0 
-          ? c.item.referralCommissionAmount 
+        const matchedService = items.find(s => s.id === c.item?.id || s.name === c.item?.name);
+        const refCommType = c.item?.referralCommissionType || matchedService?.referralCommissionType || 'percentage';
+        const refCommVal = c.item?.referralCommissionAmount !== undefined && c.item?.referralCommissionAmount > 0 
+          ? c.item?.referralCommissionAmount 
           : (matchedService?.referralCommissionAmount || 0);
 
+        const itemPrice = getCartItemPrice(c);
         if (refCommVal > 0 && c.referralEmployeeId) {
           if (refCommType === 'fixed') {
             refCommAmt = refCommVal;
           } else {
-            refCommAmt = (refCommVal / 100) * (c.item.displayPrice || c.price || 0);
+            refCommAmt = (refCommVal / 100) * itemPrice;
           }
         }
 
         return {
           id: c.cartId,
-          itemId: c.item.id,
+          itemId: c.item?.id || c.cartId,
           type: c.type,
           employeeId: c.employeeId,
           referralEmployeeId: c.referralEmployeeId || undefined,
-          serviceName: c.item.name,
+          serviceName: c.item?.name || 'خدمة',
           technicianName: performer?.name || 'غير محدد',
           referralEmployeeName: referrer?.name || undefined,
           referralCommissionAmount: refCommAmt > 0 ? refCommAmt : undefined,
-          price: isRemedyInvoice ? 0 : (c.item.displayPrice || c.price || 0),
-          quantity: c.quantity
+          price: isRemedyInvoice ? 0 : itemPrice,
+          quantity: c.quantity || 1
         };
       }),
       paymentMethods: splits
@@ -708,8 +827,8 @@ export function POSScreen({
       let earnedCashback = 0;
       if (cashbackUsed === 0) {
         cart.forEach(c => {
-          if (c.item.cashbackPercentage) {
-            earnedCashback += (c.item.displayPrice * c.item.cashbackPercentage) / 100;
+          if (c.item?.cashbackPercentage) {
+            earnedCashback += (getCartItemPrice(c) * Number(c.item.cashbackPercentage)) / 100;
           }
         });
       }
@@ -731,11 +850,11 @@ export function POSScreen({
         if (foundReferrer && foundReferrer.id !== selectedClient.id) {
           referrerClientId = foundReferrer.id;
           cart.forEach(c => {
-            if (c.type === 'service' && c.item.clientReferralCashbackAmount && c.item.clientReferralCashbackAmount > 0) {
+            if (c.type === 'service' && c.item?.clientReferralCashbackAmount && c.item.clientReferralCashbackAmount > 0) {
               if (c.item.clientReferralCashbackType === 'fixed') {
                 referrerEarnedCashback += c.item.clientReferralCashbackAmount * (c.quantity || 1);
               } else {
-                referrerEarnedCashback += ((c.item.displayPrice * c.item.clientReferralCashbackAmount) / 100) * (c.quantity || 1);
+                referrerEarnedCashback += ((getCartItemPrice(c) * c.item.clientReferralCashbackAmount) / 100) * (c.quantity || 1);
               }
             }
           });
@@ -792,7 +911,7 @@ export function POSScreen({
     }
 
     if (onCheckoutComplete) {
-      onCheckoutComplete(newInvoice, splits, initialBooking?.id);
+      onCheckoutComplete(newInvoice, splits, activeBookingId || initialBooking?.id);
     }
     
     setCompletedInvoice(newInvoice);
@@ -807,11 +926,15 @@ export function POSScreen({
     setAdvanceDeduction(0);
     setActiveAdvancePayments([]);
     setActiveBookingId(undefined);
+    setActiveQueueNumber(null);
     setDiscount({ type: 'fixed', value: 0 });
     setSplitAmounts({});
     setBeforePhotoUrl('');
     setAfterPhotoUrl('');
     setIsRemedyInvoice(false);
+    try {
+      localStorage.removeItem('smartcut_pos_active_draft');
+    } catch {}
     if(onClearInitial) onClearInitial();
 
     if (settings.printAutomatically) {
@@ -882,6 +1005,9 @@ export function POSScreen({
     setNewClientForm({ name: '', phone: '', referredByPhone: '', dobDay: '', dobMonth: '' });
   };
 
+  // رقم الدور النشط في شاشة الكاشير (عند الفتح التلقائي من شاشة المناداة)
+  const [activeQueueNumber, setActiveQueueNumber] = useState<number | null>(null);
+
   useEffect(() => {
     if (initialBooking) {
       // Find client by phone
@@ -903,16 +1029,17 @@ export function POSScreen({
         // Try to find the actual service item from mock if possible, otherwise construct a mock one
         const foundItem = items.find(i => i.id === s.serviceId);
         const parsedPrice = Number(s.price) || (foundItem ? Number(foundItem.price) : 0);
+        const safePrice = isNaN(parsedPrice) ? 0 : parsedPrice;
         const serviceItem: any = foundItem ? {
           ...foundItem,
           name: s.serviceName || foundItem.name,
-          price: parsedPrice,
-          displayPrice: parsedPrice
+          price: safePrice,
+          displayPrice: safePrice
         } : {
           id: s.serviceId,
           name: s.serviceName,
-          price: parsedPrice,
-          displayPrice: parsedPrice,
+          price: safePrice,
+          displayPrice: safePrice,
           categoryId: 'services',
           isActive: true,
           type: 'service'
@@ -922,22 +1049,25 @@ export function POSScreen({
           cartId: Math.random().toString(36).substring(2, 9),
           item: serviceItem,
           quantity: 1,
-          employeeId: s.technicianId,
-          type: 'service'
+          employeeId: s.technicianId && s.technicianId !== 'any' ? s.technicianId : '',
+          type: 'service',
+          price: safePrice
         };
       }) || [];
       
       setCart(cartItems);
       
-      const advancesSum = initialBooking.advancePayments?.reduce((sum, p) => sum + p.amount, 0) || 0;
+      const advancesSum = initialBooking.advancePayments?.reduce((sum, p) => sum + (Number(p.amount) || 0), 0) || 0;
       setAdvanceDeduction(advancesSum);
       setActiveAdvancePayments(initialBooking.advancePayments || []);
       setActiveBookingId(initialBooking.id);
+      if (initialBooking.queueNumber) {
+        setActiveQueueNumber(initialBooking.queueNumber);
+      }
+
+      if (onClearInitial) onClearInitial();
     }
   }, [initialBooking]);
-
-  // رقم الدور النشط في شاشة الكاشير (عند الفتح التلقائي من شاشة المناداة)
-  const [activeQueueNumber, setActiveQueueNumber] = useState<number | null>(null);
 
   // استكمال وفتح الفاتورة المعلقة تلقائياً عند تمريرها من شاشة المناداة بعد اكتمال الخدمة
   useEffect(() => {
@@ -959,11 +1089,12 @@ export function POSScreen({
         };
       }
 
+      const normalizedCart = (initialHeldInvoice.cart || []).map(normalizeCartItem);
       setSelectedClient(client || null);
       setClientSearch(initialHeldInvoice.clientSearch || client?.name || '');
-      setCart(initialHeldInvoice.cart || []);
+      setCart(normalizedCart);
       setDiscount(initialHeldInvoice.discount || { type: 'fixed', value: 0 });
-      setAdvanceDeduction(initialHeldInvoice.advanceDeduction || 0);
+      setAdvanceDeduction(Number(initialHeldInvoice.advanceDeduction) || 0);
       setActiveAdvancePayments(initialHeldInvoice.advancePayments || []);
       setActiveBookingId(initialHeldInvoice.bookingId || undefined);
       setIsRemedyInvoice(initialHeldInvoice.isRemedyInvoice || false);
@@ -984,13 +1115,78 @@ export function POSScreen({
     }
   }, [initialHeldInvoice, clients]);
 
+  // حفظ الفاتورة النشطة كمسودة محلية تلقائياً لضمان عدم فقدانها عند التنقل بين الشاشات
+  useEffect(() => {
+    if (cart.length > 0 || activeBookingId || (selectedClient && selectedClient.name)) {
+      const draft = {
+        cart,
+        selectedClient,
+        clientSearch,
+        discount,
+        advanceDeduction: Number(advanceDeduction) || 0,
+        activeAdvancePayments,
+        activeBookingId,
+        isRemedyInvoice,
+        remedyReason,
+        beforePhotoUrl,
+        afterPhotoUrl,
+        activeQueueNumber
+      };
+      try {
+        localStorage.setItem('smartcut_pos_active_draft', JSON.stringify(draft));
+      } catch (e) {
+        console.warn('Failed to save POS draft:', e);
+      }
+    } else {
+      try {
+        localStorage.removeItem('smartcut_pos_active_draft');
+      } catch {}
+    }
+  }, [cart, selectedClient, clientSearch, discount, advanceDeduction, activeAdvancePayments, activeBookingId, isRemedyInvoice, remedyReason, beforePhotoUrl, afterPhotoUrl, activeQueueNumber]);
+
+  // استعادة المسودة النشطة عند فتح شاشة الكاشير (إذا لم يتم تمرير حجز جديد أو فاتورة معلقة جديدة)
+  useEffect(() => {
+    if (!initialBooking && !initialHeldInvoice) {
+      try {
+        const savedDraft = localStorage.getItem('smartcut_pos_active_draft');
+        if (savedDraft) {
+          const draft = JSON.parse(savedDraft);
+          if (draft && Array.isArray(draft.cart) && draft.cart.length > 0) {
+            const normalized = draft.cart.map(normalizeCartItem);
+            setCart(normalized);
+            if (draft.selectedClient) setSelectedClient(draft.selectedClient);
+            if (draft.clientSearch) setClientSearch(draft.clientSearch);
+            if (draft.discount) setDiscount(draft.discount);
+            if (draft.advanceDeduction !== undefined) setAdvanceDeduction(Number(draft.advanceDeduction) || 0);
+            if (draft.activeAdvancePayments) setActiveAdvancePayments(draft.activeAdvancePayments);
+            if (draft.activeBookingId) setActiveBookingId(draft.activeBookingId);
+            if (draft.isRemedyInvoice) setIsRemedyInvoice(draft.isRemedyInvoice);
+            if (draft.remedyReason) setRemedyReason(draft.remedyReason);
+            if (draft.beforePhotoUrl) setBeforePhotoUrl(draft.beforePhotoUrl);
+            if (draft.afterPhotoUrl) setAfterPhotoUrl(draft.afterPhotoUrl);
+            if (draft.activeQueueNumber) setActiveQueueNumber(draft.activeQueueNumber);
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to restore POS draft:', e);
+      }
+    }
+  }, []);
+
   const clearBooking = () => {
     setCart([]);
     setClientSearch('');
+    setSelectedClient(null);
     setAdvanceDeduction(0);
     setActiveAdvancePayments([]);
     setActiveBookingId(undefined);
     setActiveQueueNumber(null);
+    setIsRemedyInvoice(false);
+    setBeforePhotoUrl('');
+    setAfterPhotoUrl('');
+    try {
+      localStorage.removeItem('smartcut_pos_active_draft');
+    } catch {}
     if(onClearInitial) onClearInitial();
   };
 
@@ -1406,9 +1602,9 @@ export function POSScreen({
                     }`}>
                       {clientTier ? clientTier.icon : selectedClient.name.charAt(0)}
                     </div>
-                    <div>
+                    <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <p className="text-xs font-black text-slate-900">{selectedClient.name}</p>
+                        <p className="text-xs font-black text-slate-900 truncate">{selectedClient.name}</p>
                         {clientTier && (
                           <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full border shadow-2xs flex items-center gap-0.5 ${clientTier.badgeBg} ${clientTier.badgeText} ${clientTier.badgeBorder}`}>
                             <span>{clientTier.icon}</span>
@@ -1418,6 +1614,31 @@ export function POSScreen({
                         )}
                       </div>
                       <p className="text-[10px] font-mono font-bold text-slate-500" dir="ltr">{selectedClient.phone}</p>
+
+                      {/* Quick preferences preview chips if any */}
+                      {selectedClient.preferences && (selectedClient.preferences.favoriteBeverage || selectedClient.preferences.shavingMethod || selectedClient.preferences.skinSensitivities) && (
+                        <div 
+                          onClick={handleOpenPreferencesModal}
+                          className="flex flex-wrap gap-1 mt-1 cursor-pointer hover:opacity-80 transition-opacity"
+                          title="انقر لتعديل تفضيلات العميل"
+                        >
+                          {selectedClient.preferences.shavingMethod && (
+                            <span className="text-[8px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 px-1.5 py-0.5 rounded-md">
+                              {selectedClient.preferences.shavingMethod === 'machine' ? '⚡ ماكينة' : selectedClient.preferences.shavingMethod === 'blade' ? '🪒 موس' : selectedClient.preferences.shavingMethod === 'scissors_only' ? '✂️ مقص' : '✨ مدمج'}
+                            </span>
+                          )}
+                          {selectedClient.preferences.favoriteBeverage && (
+                            <span className="text-[8px] font-bold bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded-md">
+                              ☕ {selectedClient.preferences.favoriteBeverage}
+                            </span>
+                          )}
+                          {selectedClient.preferences.skinSensitivities && (
+                            <span className="text-[8px] font-bold bg-rose-50 text-rose-700 border border-rose-200 px-1.5 py-0.5 rounded-md">
+                              ⚠️ حساسية بشرة
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                   <button onClick={() => { setSelectedClient(null); setClientSearch(''); setDiscount({ type: 'fixed', value: 0 }); }} className="text-slate-400 hover:text-red-500 p-1 transition-colors">
@@ -1425,14 +1646,24 @@ export function POSScreen({
                   </button>
                 </div>
 
-                {/* Cross-branch summary & points bar */}
-                <div className="flex items-center justify-between text-[9px] bg-slate-50 px-2 py-0.5 rounded-lg border border-slate-100 font-bold">
-                  {canViewClientFinancials ? (
-                    <span className="text-emerald-700">
-                      مجموع الإنفاق: <strong className="font-mono">{clientTotalSpend.toFixed(0)} {settings.currency}</strong>
-                    </span>
-                  ) : <span className="text-slate-400">عميل مسجل ✓</span>}
-                  <span className="text-purple-700">
+                {/* Client preferences button & points bar */}
+                <div className="flex items-center justify-between text-[9px] bg-slate-50 px-2 py-1 rounded-lg border border-slate-100 font-bold gap-2">
+                  <button
+                    type="button"
+                    onClick={handleOpenPreferencesModal}
+                    className="flex items-center gap-1 text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100/90 border border-indigo-200/90 px-2 py-0.5 rounded-md font-bold transition-all cursor-pointer shadow-2xs active:scale-95"
+                    title="عرض وتعديل تفضيلات الحلاقة والضيافة للعميل"
+                  >
+                    <Sliders size={11} className="text-indigo-600 shrink-0" />
+                    <span>تفضيلات العميل</span>
+                    {selectedClient.preferences && Object.values(selectedClient.preferences).some(v => !!v) ? (
+                      <span className="bg-emerald-100 text-emerald-800 text-[8px] px-1 rounded-full font-black">✓ مسجلة</span>
+                    ) : (
+                      <span className="text-slate-400 text-[9px]">✏️</span>
+                    )}
+                  </button>
+
+                  <span className="text-purple-700 shrink-0">
                     كاش باك: <strong className="font-mono">{(selectedClient.cashback !== undefined ? selectedClient.cashback : selectedClient.loyaltyPoints || 0).toFixed(1)} {settings.currency}</strong>
                   </span>
                 </div>
@@ -1453,20 +1684,20 @@ export function POSScreen({
               </div>
             )}
             
-            {initialBooking && (
+            {(initialBooking || activeBookingId) && (
               <button onClick={clearBooking} title="إلغاء الحجز الحالي" className="p-2 bg-red-50 text-red-500 rounded-lg hover:bg-red-100 transition-colors">
                 <X size={16} />
               </button>
             )}
           </div>
-          {(initialBooking || advanceDeduction > 0) && (
+          {(initialBooking || activeBookingId || advanceDeduction > 0) && (
             <div className="flex flex-col gap-1 mt-1.5">
               <div className="bg-emerald-50 text-emerald-800 text-[11px] px-3 py-1.5 rounded-xl font-bold flex justify-between items-center border border-emerald-200">
                 <span className="flex items-center gap-1">
                   <span>💰</span>
                   <span>المدفوع مقدماً (عربون الحجز):</span>
                 </span>
-                <span className="font-mono text-xs font-black text-emerald-700">-{advanceDeduction.toFixed(2)} {settings.currency}</span>
+                <span className="font-mono text-xs font-black text-emerald-700">-{(Number(advanceDeduction) || 0).toFixed(2)} {settings.currency}</span>
               </div>
               {activeAdvancePayments.length > 0 && (
                 <div className="text-[10px] text-emerald-600 px-1 font-semibold flex flex-wrap gap-1">
@@ -1536,17 +1767,17 @@ export function POSScreen({
                               onClick={() => {
                                 if (canEditItemPrice) {
                                   setEditingCartId(c.cartId);
-                                  setCustomPriceInput(c.item.displayPrice);
+                                  setCustomPriceInput(getCartItemPrice(c));
                                 }
                               }}
                               title={canEditItemPrice ? "انقر لتعديل السعر في الفاتورة" : undefined}
                             >
-                              {c.item.displayPrice} {settings.currency}
+                              {getCartItemPrice(c)} {settings.currency}
                               {canEditItemPrice && <span className="text-[9px] text-slate-400 mr-1">✏️</span>}
                             </p>
                             {c.quantity > 1 && (
                               <span className="text-[10px] text-slate-400 font-bold">
-                                (الإجمالي: {(c.item.displayPrice * c.quantity).toFixed(2)} {settings.currency})
+                                (الإجمالي: {(getCartItemPrice(c) * (c.quantity || 1)).toFixed(2)} {settings.currency})
                               </span>
                             )}
                           </div>
@@ -2457,9 +2688,9 @@ export function POSScreen({
               ) : (
                 heldInvoices.map((held, idx) => {
                   const heldCart = held.cart || [];
-                  const heldSubtotal = heldCart.reduce((sum, c) => sum + ((c?.item?.displayPrice || (c as any)?.price || 0) * (c?.quantity || 1)), 0);
-                  const heldDiscountAmt = held.discount?.type === 'percentage' ? heldSubtotal * ((held.discount?.value || 0) / 100) : (held.discount?.value || 0);
-                  const heldTotal = held.isRemedyInvoice ? 0 : Math.max(0, heldSubtotal - heldDiscountAmt - (held.advanceDeduction || 0));
+                  const heldSubtotal = heldCart.reduce((sum, c) => sum + (getCartItemPrice(c) * (c?.quantity || 1)), 0);
+                  const heldDiscountAmt = held.discount?.type === 'percentage' ? heldSubtotal * ((Number(held.discount?.value) || 0) / 100) : (Number(held.discount?.value) || 0);
+                  const heldTotal = held.isRemedyInvoice ? 0 : Math.max(0, heldSubtotal - heldDiscountAmt - (Number(held.advanceDeduction) || 0));
 
                   return (
                     <div key={held.id} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs space-y-3 hover:border-amber-300 transition-all">
@@ -2547,6 +2778,224 @@ export function POSScreen({
                 className="px-4 py-1.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer"
               >
                 إغلاق
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✂️☕ نافذة تفضيلات العميل وإمكانية التعديل عليها */}
+      {showPreferencesModal && selectedClient && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-150">
+            {/* Header */}
+            <div className="p-4 sm:p-5 border-b border-slate-200 bg-gradient-to-r from-indigo-900 via-slate-900 to-indigo-950 text-white flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-500 to-amber-400 text-white flex items-center justify-center shadow-md">
+                  <Scissors size={20} />
+                </div>
+                <div>
+                  <h3 className="font-black text-sm sm:text-base flex items-center gap-2">
+                    <span>تفضيلات العميل: {selectedClient.name}</span>
+                    <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-full font-mono font-bold" dir="ltr">{selectedClient.phone}</span>
+                  </h3>
+                  <p className="text-xs text-indigo-200 mt-0.5">
+                    تخصيص ستايل الحلاقة المفضل، حساسية البشرة، ومشروب الضيافة
+                  </p>
+                </div>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setShowPreferencesModal(false)}
+                className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Content Form */}
+            <div className="p-4 sm:p-5 overflow-y-auto space-y-4 flex-1 custom-scrollbar bg-slate-50">
+              {savePrefSuccess && (
+                <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-800 p-3 rounded-2xl text-xs font-black flex items-center gap-2 animate-in fade-in">
+                  <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                  <span>تم حفظ وتحديث تفضيلات العميل بنجاح في قاعدة البيانات وتظهر لجميع الفروع ✓</span>
+                </div>
+              )}
+
+              {/* 1. Shaving & Hair Preferences */}
+              <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/90 shadow-2xs space-y-3.5">
+                <h4 className="text-xs sm:text-sm font-black text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-2.5">
+                  <Scissors size={16} className="text-indigo-600" />
+                  <span>تفضيلات الحلاقة وقصة الشعر واللحية ✂️</span>
+                </h4>
+
+                {/* Shaving Method Cards */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-2">أداة وطريقة الحلاقة المفضلة للعميل:</label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {[
+                      { id: 'machine', label: 'ماكينة ⚡', desc: 'تجنب الموس الحاد' },
+                      { id: 'blade', label: 'موس كلاسيكي 🪒', desc: 'تنعيم بالموس' },
+                      { id: 'scissors_only', label: 'مقص فقط ✂️', desc: 'قص هادئ بالمقص' },
+                      { id: 'both', label: 'ماكينة + موس ✨', desc: 'حلاقة مدمجة' }
+                    ].map(opt => (
+                      <label
+                        key={opt.id}
+                        onClick={() => setPrefForm({ ...prefForm, shavingMethod: opt.id as any })}
+                        className={`p-2.5 rounded-xl border-2 cursor-pointer transition-all flex flex-col ${
+                          (prefForm.shavingMethod || 'machine') === opt.id
+                            ? 'bg-indigo-50/80 border-indigo-600 ring-2 ring-indigo-600/20'
+                            : 'bg-slate-50 border-slate-200 hover:border-slate-300'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="radio"
+                            name="posShavingMethod"
+                            checked={(prefForm.shavingMethod || 'machine') === opt.id}
+                            onChange={() => setPrefForm({ ...prefForm, shavingMethod: opt.id as any })}
+                            className="text-indigo-600"
+                          />
+                          <span className="font-black text-xs text-slate-900">{opt.label}</span>
+                        </div>
+                        <span className="text-[10px] text-slate-500 mt-1">{opt.desc}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Hair & Beard Style Notes */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      ستايل وقصة الشعر المفضلة:
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={prefForm.hairStyleNotes || ''}
+                      onChange={e => setPrefForm({ ...prefForm, hairStyleNotes: e.target.value })}
+                      placeholder="مثال: تدريج منخفض Fade من الجوانب، تخفيف بسيط من الأعلى، تجنب الجل القوي..."
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs outline-none focus:border-indigo-600 focus:bg-white font-medium"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      ستايل وتحديد اللحية والشارب:
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={prefForm.beardStyleNotes || ''}
+                      onChange={e => setPrefForm({ ...prefForm, beardStyleNotes: e.target.value })}
+                      placeholder="مثال: تحديد دقيق للخطوط، تخفيف نمرة 2، ترك السكسوكة، سنفرة خفيفة..."
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs outline-none focus:border-indigo-600 focus:bg-white font-medium"
+                    />
+                  </div>
+                </div>
+
+                {/* Skin sensitivities */}
+                <div>
+                  <label className="block text-xs font-bold text-rose-700 mb-1 flex items-center gap-1">
+                    <AlertTriangle size={13} className="text-rose-600" />
+                    <span>حساسية البشرة / مواد يتجنبها:</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={prefForm.skinSensitivities || ''}
+                    onChange={e => setPrefForm({ ...prefForm, skinSensitivities: e.target.value })}
+                    placeholder="مثال: حساسية من الكحول بعد الحلاقة (مرطب بارد فقط)، بشرة حساسة للحرارة..."
+                    className="w-full bg-rose-50/40 border border-rose-200 rounded-xl px-3 py-2 text-xs outline-none focus:border-rose-500 focus:bg-white font-medium text-rose-950"
+                  />
+                </div>
+              </div>
+
+              {/* 2. Hospitality & Beverage Preferences */}
+              <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/90 shadow-2xs space-y-3.5">
+                <h4 className="text-xs sm:text-sm font-black text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-2.5">
+                  <Coffee size={16} className="text-amber-700" />
+                  <span>تفضيلات الضيافة والمشروبات ☕</span>
+                </h4>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">المشروب المفضل:</label>
+                    <select
+                      value={prefForm.favoriteBeverage || 'قهوة تركي'}
+                      onChange={e => setPrefForm({ ...prefForm, favoriteBeverage: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-indigo-600 focus:bg-white"
+                    >
+                      <option value="قهوة تركي">☕ قهوة تركي</option>
+                      <option value="إسبريسو">☕ إسبريسو</option>
+                      <option value="قهوة عربية">☕ قهوة عربية</option>
+                      <option value="شاي كرك">🫖 شاي كرك</option>
+                      <option value="شاي أحمر">🫖 شاي أحمر كلاسيكي</option>
+                      <option value="شاي أخضر">🍵 شاي أخضر بالنعناع</option>
+                      <option value="ماء فقط">💧 ماء فقط</option>
+                      <option value="عصير برتقال">🍊 عصير طازج</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">كمية السكر المفضلة:</label>
+                    <select
+                      value={prefForm.sugarLevel || 'one_spoon'}
+                      onChange={e => setPrefForm({ ...prefForm, sugarLevel: e.target.value as any })}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-indigo-600 focus:bg-white"
+                    >
+                      <option value="none">🚫 بدون سكر (سادة)</option>
+                      <option value="half">🥄 نصف ملعقة (سكر خفيف)</option>
+                      <option value="one_spoon">🥄 ملعقة واحدة (مضبوط)</option>
+                      <option value="two_spoons">🥄🥄 ملعقتين</option>
+                      <option value="extra">🍯 زيادة سكر (حلو)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">برودة الماء:</label>
+                    <select
+                      value={prefForm.waterTemperature || 'cold'}
+                      onChange={e => setPrefForm({ ...prefForm, waterTemperature: e.target.value as any })}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-indigo-600 focus:bg-white"
+                    >
+                      <option value="cold">❄️ ماء بارد</option>
+                      <option value="room">💧 ماء عادي (حرارة الغرفة)</option>
+                      <option value="none">لا يطلب ماء</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    ملاحظات عامة لطاقم العمل والاستقبال:
+                  </label>
+                  <input
+                    type="text"
+                    value={prefForm.generalNotes || ''}
+                    onChange={e => setPrefForm({ ...prefForm, generalNotes: e.target.value })}
+                    placeholder="مثال: يفضل عدم الحديث أثناء الجلسة، يفضل الجلوس بالصالة العائلية، عميل دائم..."
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs outline-none focus:border-indigo-600 focus:bg-white font-medium"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="p-3 sm:p-4 border-t border-slate-200 bg-white flex justify-between items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowPreferencesModal(false)}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer transition-colors"
+              >
+                إغلاق
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSavePreferencesInPOS}
+                className="px-5 py-2 rounded-xl text-xs font-black bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-600/20 flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
+              >
+                <Save size={15} />
+                <span>حفظ التفضيلات وتطبيقها فوراً ✓</span>
               </button>
             </div>
           </div>

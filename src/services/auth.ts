@@ -28,6 +28,7 @@ export const SCREEN_CATALOG: ScreenMeta[] = [
   { id: 'barber_portal', name: '✂️ بوابة الفني / الحلاق المستقلة', category: 'الرئيسية', description: 'شاشة خاصة بالفني لمتابعة حجوزاته والعمولات والخدمات والتارجت والدوام والسلف' },
   { id: 'dashboard', name: 'لوحة التحكم والملخص العام', category: 'الرئيسية', description: 'عرض مؤشرات الأداء، الحجوزات السريعة، والإحصائيات العامة' },
   { id: 'pos', name: 'نقطة البيع (الكاشير POS)', category: 'المبيعات', description: 'إنشاء الفواتير، اختيار الخدمات والمنتجات، والدفع وطباعة الفاتورة' },
+  { id: 'kiosk', name: '🎟️ شاشة تسجيل الأدوار وطابور الانتظار (كشك العملاء)', category: 'المبيعات', description: 'شاشة التابلت المخصصة لخدمة العملاء الذاتية لحجز تذاكر الدور وسحب الأرقام' },
   { id: 'queue_calling', name: '📢 شاشة المتابعة والمناداة (طابور الانتظار)', category: 'المبيعات', description: 'متابعة العملاء الحاضرين، تسكينهم مع الموظفين، والمناداة عليهم بالدور' },
   { id: 'bookings', name: 'الحجوزات والمواعيد', category: 'المبيعات', description: 'جدولة مواعيد العملاء مع الفنيين ومتابعة حالة الحجز' },
   { id: 'invoices', name: 'سجل الفواتير والمبيعات', category: 'المبيعات', description: 'استعراض فواتير المبيعات، إعادة الطباعة، وتتبع تفاصيل الدفع' },
@@ -158,6 +159,10 @@ export const DEFAULT_ROLE_PRESETS: Record<UserRole, { screens: string[]; actions
     screens: ['barber_portal'],
     actions: []
   },
+  kiosk: {
+    screens: ['kiosk'],
+    actions: []
+  },
   programmer: {
     screens: ['*'],
     actions: ['*']
@@ -176,6 +181,7 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   cashier: 'كاشير (Cashier)',
   receptionist: 'موظف استقبال (Receptionist)',
   barber: 'فني / حلاق (Barber)',
+  kiosk: 'جهاز حجز الأدوار وطابور الانتظار (Kiosk / تابلت الأرقام)',
   accountant: 'محاسب مالي (Accountant)',
   custom: 'دور مخصص (Custom Role)',
   programmer: 'المبرمج والمطور الرئيسي (Master Developer)'

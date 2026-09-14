@@ -307,17 +307,100 @@ export function SettingsScreen({
     }));
   };
 
+  // Salon Branches Storage Quota Management
+  const [editingStorageBranch, setEditingStorageBranch] = useState<Branch | null>(null);
+  const [newStorageLimitInput, setNewStorageLimitInput] = useState<number>(50);
+  const [syncingBranchId, setSyncingBranchId] = useState<string | null>(null);
+  const [isSyncingAll, setIsSyncingAll] = useState(false);
+
   useEffect(() => {
     loadSalonBranches();
   }, [settings.salonId]);
 
-  const loadSalonBranches = () => {
+  const loadSalonBranches = async () => {
     const list = settings.salonId 
       ? SubscriptionService.getBranches(settings.salonId) 
       : SubscriptionService.getBranches();
     setSalonBranches(list);
     if (setBranches && list && list.length > 0) {
       setBranches(list);
+    }
+
+    try {
+      const cloudBranches = await DB.fetchBranches();
+      if (cloudBranches && cloudBranches.length > 0) {
+        const filtered = settings.salonId ? cloudBranches.filter(b => b.salonId === settings.salonId) : cloudBranches;
+        if (filtered.length > 0) {
+          SubscriptionService.saveBranches(cloudBranches);
+          setSalonBranches(filtered);
+          if (setBranches) setBranches(filtered);
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to refresh cloud branches:', err);
+    }
+  };
+
+  const handleSaveBranchStorageQuota = async () => {
+    if (!editingStorageBranch) return;
+    const newLimit = Math.max(1, newStorageLimitInput);
+    const updatedBranch: Branch = {
+      ...editingStorageBranch,
+      storageLimitMb: newLimit
+    };
+
+    // Save to cloud DB
+    await DB.saveBranch(updatedBranch);
+
+    // Update locally
+    const currentBranches = SubscriptionService.getBranches();
+    const updatedList = currentBranches.map(b => b.id === updatedBranch.id ? updatedBranch : b);
+    SubscriptionService.saveBranches(updatedList);
+    
+    setSalonBranches(prev => prev.map(b => b.id === updatedBranch.id ? updatedBranch : b));
+    if (setBranches) {
+      setBranches(updatedList);
+    }
+
+    setEditingStorageBranch(null);
+    setSuccessMsg(`تم تحديث المساحة التخزينية لفرع (${updatedBranch.name}) إلى ${newLimit} ميجابايت بنجاح`);
+    setShowSuccess(true);
+    setTimeout(() => setShowSuccess(false), 4000);
+  };
+
+  const handleSyncBranchStorage = async (branch: Branch) => {
+    setSyncingBranchId(branch.id);
+    try {
+      const res = await DB.syncBranchStorageUsage(branch.salonId, branch.id);
+      if (res && res.success) {
+        setSalonBranches(prev => prev.map(b => b.id === branch.id ? { ...b, usedStorageBytes: res.usedBytes } : b));
+        setSuccessMsg(`تمت المزامنة بنجاح: الحجم الفعلي لفرع (${branch.name}) هو ${res.usedMb} MB`);
+        setShowSuccess(true);
+        setTimeout(() => setShowSuccess(false), 4000);
+      } else {
+        alert('تعذر استخراج الحجم الفعلي من سوبابيز');
+      }
+    } catch (e) {
+      console.error('Error syncing branch storage:', e);
+    } finally {
+      setSyncingBranchId(null);
+    }
+  };
+
+  const handleSyncAllBranchesStorage = async () => {
+    setIsSyncingAll(true);
+    try {
+      for (const branch of salonBranches) {
+        await DB.syncBranchStorageUsage(branch.salonId, branch.id);
+      }
+      await loadSalonBranches();
+      setSuccessMsg('تمت مزامنة واحتساب المساحات السحابية لجميع الفروع بنجاح');
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 4000);
+    } catch (e) {
+      console.error('Error syncing all branches:', e);
+    } finally {
+      setIsSyncingAll(false);
     }
   };
 
@@ -1274,11 +1357,297 @@ export function SettingsScreen({
                       </span>
                     )}
                   </div>
+
+                  {/* Storage Usage Bar & Actions */}
+                  {(() => {
+                    const limitMb = branch.storageLimitMb || 50;
+                    const usedBytes = branch.usedStorageBytes || 0;
+                    const usedMb = usedBytes / (1024 * 1024);
+                    const pct = Math.min(100, Math.round((usedMb / limitMb) * 100));
+                    const isFull = pct >= 100;
+                    const isWarning = pct >= 80 && !isFull;
+                    const barColor = isFull ? 'bg-rose-500' : isWarning ? 'bg-amber-500' : 'bg-indigo-600';
+
+                    return (
+                      <div className="mt-3 pt-2.5 border-t border-slate-200/80">
+                        <div className="flex items-center justify-between text-xs mb-1.5">
+                          <span className="flex items-center gap-1 text-slate-600 font-semibold text-[11px]">
+                            <HardDrive size={12} className="text-indigo-500" />
+                            <span>مساحة الصور السحابية:</span>
+                          </span>
+                          <span className="font-mono text-[11px] font-bold text-slate-700">
+                            {usedMb.toFixed(2)} / {limitMb} MB
+                          </span>
+                        </div>
+
+                        <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                          <div 
+                            className={`h-1.5 rounded-full transition-all duration-500 ${barColor}`} 
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-between mt-1 text-[10px]">
+                          <span className={isFull ? 'text-rose-600 font-black' : isWarning ? 'text-amber-700 font-bold' : 'text-slate-500'}>
+                            {isFull ? '🚫 ممتلئ (الرفع متوقف)' : isWarning ? '⚠️ قارب على الامتلاء' : '🟢 متاح للرفع'}
+                          </span>
+                          <span className="font-mono font-bold text-slate-500">{pct}%</span>
+                        </div>
+
+                        <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-slate-100">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingStorageBranch(branch);
+                              setNewStorageLimitInput(branch.storageLimitMb || 50);
+                            }}
+                            className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 hover:underline cursor-pointer"
+                          >
+                            <Edit2 size={11} />
+                            <span>تعديل السعة ⚡</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSyncBranchStorage(branch)}
+                            disabled={syncingBranchId === branch.id}
+                            className="text-[10px] font-medium text-slate-500 hover:text-slate-800 flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                            title="مزامنة واحتساب المساحة الفعلية من سوبابيز"
+                          >
+                            <RefreshCw size={10} className={syncingBranchId === branch.id ? 'animate-spin text-indigo-600' : ''} />
+                            <span>{syncingBranchId === branch.id ? 'جاري الفحص...' : 'فحص الحجم 🔄'}</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })}
           </div>
+
+          {/* Section: Storage Quota Comparison Table */}
+          <div className="mt-6 pt-5 border-t border-slate-200">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+              <div>
+                <h4 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
+                  <HardDrive size={16} className="text-indigo-600" />
+                  <span>مقارنة استهلاك المساحات التخزينية السحابية بين الفروع</span>
+                </h4>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  مقارنة سعة تخزين الصور (الخدمات، الموظفين، قبل وبعد) لكل فرع بشكل معزول في Supabase مع إيقاف رفع الصور تلقائياً عند تجاوز الحد المسموح.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleSyncAllBranchesStorage}
+                disabled={isSyncingAll}
+                className="text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 self-start sm:self-auto"
+              >
+                <RefreshCw size={13} className={isSyncingAll ? 'animate-spin' : ''} />
+                <span>{isSyncingAll ? 'جاري مزامنة الفروع...' : 'مزامنة واحتساب سعة الكل سحابياً 🔄'}</span>
+              </button>
+            </div>
+
+            <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-sm">
+              <table className="w-full text-right text-xs">
+                <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
+                  <tr>
+                    <th className="py-2.5 px-3">الفرع</th>
+                    <th className="py-2.5 px-3">الكود</th>
+                    <th className="py-2.5 px-3">المساحة المحددة</th>
+                    <th className="py-2.5 px-3">المستخدم الفعلي</th>
+                    <th className="py-2.5 px-3 min-w-[150px]">مؤشر الاستهلاك</th>
+                    <th className="py-2.5 px-3">حالة الرفع</th>
+                    <th className="py-2.5 px-3 text-center">الإجراءات</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {salonBranches.map(branch => {
+                    const limitMb = branch.storageLimitMb || 50;
+                    const usedBytes = branch.usedStorageBytes || 0;
+                    const usedMb = usedBytes / (1024 * 1024);
+                    const pct = Math.min(100, Math.round((usedMb / limitMb) * 100));
+                    const isFull = pct >= 100;
+                    const isWarning = pct >= 80 && !isFull;
+
+                    return (
+                      <tr key={branch.id} className="hover:bg-slate-50/70 transition-colors">
+                        <td className="py-3 px-3">
+                          <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                            <Building2 size={14} className="text-slate-400" />
+                            <span>{branch.name}</span>
+                            {branch.isMain && (
+                              <span className="bg-emerald-100 text-emerald-800 text-[9px] font-bold px-1.5 py-0.2 rounded">رئيسي</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-3 px-3 font-mono font-bold text-indigo-600 text-[11px]">
+                          {branch.code}
+                        </td>
+                        <td className="py-3 px-3 font-mono font-bold text-slate-800">
+                          {limitMb} MB
+                        </td>
+                        <td className="py-3 px-3 font-mono text-slate-700">
+                          <span className="font-bold">{usedMb.toFixed(2)}</span> MB
+                          <span className="text-[10px] text-slate-400 block font-normal">
+                            ({(usedBytes / 1024).toFixed(0)} KB)
+                          </span>
+                        </td>
+                        <td className="py-3 px-3">
+                          <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden border border-slate-200/60">
+                            <div 
+                              className={`h-2 rounded-full transition-all ${
+                                isFull ? 'bg-rose-500' : isWarning ? 'bg-amber-500' : 'bg-emerald-500'
+                              }`}
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                          <div className="text-[10px] font-mono text-slate-500 mt-1 flex justify-between">
+                            <span>{pct}%</span>
+                            <span>متبقي {(Math.max(0, limitMb - usedMb)).toFixed(1)} MB</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-3">
+                          {isFull ? (
+                            <span className="bg-rose-100 text-rose-800 border border-rose-200 px-2 py-0.5 rounded-full text-[10px] font-black inline-flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-rose-600 animate-ping"></span>
+                              ممتلئ - الرفع متوقف 🚫
+                            </span>
+                          ) : isWarning ? (
+                            <span className="bg-amber-100 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-full text-[10px] font-bold inline-flex items-center gap-1">
+                              قارب على الامتلاء ⚠️
+                            </span>
+                          ) : (
+                            <span className="bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full text-[10px] font-bold inline-flex items-center gap-1">
+                              متاح للرفع 🟢
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingStorageBranch(branch);
+                                setNewStorageLimitInput(branch.storageLimitMb || 50);
+                              }}
+                              className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                              title="تعديل سعة المساحة لهذا الفرع"
+                            >
+                              <Edit2 size={11} />
+                              <span>تعديل المساحة</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSyncBranchStorage(branch)}
+                              disabled={syncingBranchId === branch.id}
+                              className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 rounded-md transition-colors cursor-pointer disabled:opacity-50"
+                              title="مزامنة وحساب الحجم الحقيقي من سوبابيز"
+                            >
+                              <RefreshCw size={13} className={syncingBranchId === branch.id ? 'animate-spin text-indigo-600' : ''} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
+        )}
+
+        {/* Modal: Edit Branch Storage Quota */}
+        {editingStorageBranch && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl border border-slate-200 animate-in fade-in">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+                <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
+                  <HardDrive size={18} className="text-indigo-600" />
+                  <span>تعديل السعة التخزينية للفرع</span>
+                </h3>
+                <button 
+                  type="button" 
+                  onClick={() => setEditingStorageBranch(null)}
+                  className="text-slate-400 hover:text-slate-600"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="mb-4 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                <div className="flex items-center justify-between text-xs font-bold text-slate-800 mb-1">
+                  <span>الفرع: {editingStorageBranch.name}</span>
+                  <span className="font-mono text-indigo-600">({editingStorageBranch.code})</span>
+                </div>
+                <div className="text-[11px] text-slate-500 flex items-center justify-between">
+                  <span>المستخدم حالياً:</span>
+                  <span className="font-mono font-bold text-slate-700">
+                    {((editingStorageBranch.usedStorageBytes || 0) / (1024 * 1024)).toFixed(2)} MB
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-3 mb-5">
+                <label className="block text-xs font-bold text-slate-700">
+                  المساحة المخصصة للفرع (بالميجابايت MB):
+                </label>
+                <div className="flex items-center gap-2">
+                  <input 
+                    type="number"
+                    min="1"
+                    max="10000"
+                    value={newStorageLimitInput}
+                    onChange={e => setNewStorageLimitInput(Math.max(1, parseInt(e.target.value) || 1))}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl font-mono font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none text-center text-lg"
+                  />
+                  <span className="text-xs font-bold text-slate-500">MB</span>
+                </div>
+
+                {/* Preset quick buttons */}
+                <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                  <span className="text-[10px] text-slate-400 w-full">خيارات سريعة:</span>
+                  {[25, 50, 100, 200, 500, 1024].map(mb => (
+                    <button
+                      key={mb}
+                      type="button"
+                      onClick={() => setNewStorageLimitInput(mb)}
+                      className={`text-[11px] px-2.5 py-1 rounded-lg font-mono font-bold border transition-colors ${
+                        newStorageLimitInput === mb 
+                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' 
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200'
+                      }`}
+                    >
+                      {mb >= 1024 ? '1 GB' : `${mb} MB`}
+                    </button>
+                  ))}
+                </div>
+
+                <p className="text-[11px] text-slate-500 bg-amber-50 text-amber-800 p-2.5 rounded-lg border border-amber-200 leading-relaxed">
+                  💡 عند وصول حجم الصور المرفوعة (خدمات، موظفين، قبل وبعد) لهذا الحد، سيمنع النظام رفع أي صور جديدة لهذا الفرع تلقائياً حتى يتم رفع الحد يدوياً من هنا.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 border-t border-slate-100 pt-3">
+                <button
+                  type="button"
+                  onClick={() => setEditingStorageBranch(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveBranchStorageQuota}
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-md transition-all flex items-center gap-1 cursor-pointer"
+                >
+                  <Check size={14} />
+                  <span>حفظ وتحديث المساحة</span>
+                </button>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* Modal: Add New Branch */}

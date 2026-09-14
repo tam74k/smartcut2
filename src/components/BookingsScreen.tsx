@@ -514,7 +514,7 @@ export function BookingsScreen({
 
     const bBranchId = editingBooking?.branchId || activeBranchId || mainBranchId;
     const queueNumber = editingBooking?.queueNumber 
-      || await QueueService.getNextQueueNumberAsync(settings.salonId, bBranchId, newBooking.date);
+      || await QueueService.getNextBookingQueueNumberAsync(settings.salonId, bBranchId, newBooking.date);
 
     const booking: Booking = {
       id: editingBooking ? editingBooking.id : 'B-' + Math.random().toString(36).substr(2, 9).toUpperCase(),
@@ -582,16 +582,19 @@ export function BookingsScreen({
       setClients([matchedClient, ...clients]);
     }
 
-    // إدراج الحجز تلقائياً في شاشة المناداة وفتح فاتورة معلقة بالكاشير
-    try {
-      await QueueService.createTicketFromBooking({
-        booking,
-        salonId: settings.salonId,
-        branchId: bBranchId,
-        client: matchedClient
-      });
-    } catch (err) {
-      console.warn('Failed to auto-create queue ticket for booking:', err);
+    // إذا كان الحجز بتاريخ اليوم، يتم إدراجه في شاشة المناداة دون فتح فاتورة معلقة نهائياً
+    const todayDateStr = new Date().toISOString().split('T')[0];
+    if (newBooking.date === todayDateStr) {
+      try {
+        await QueueService.createTicketFromBooking({
+          booking,
+          salonId: settings.salonId,
+          branchId: bBranchId,
+          client: matchedClient
+        });
+      } catch (err) {
+        console.warn('Failed to sync today booking ticket:', err);
+      }
     }
 
     setShowAddModal(false);
@@ -635,9 +638,9 @@ export function BookingsScreen({
       </div>
       <div style="margin-bottom: 20px; font-size: 14px;">
         ${booking.queueNumber ? `
-          <div style="background: #fef3c7; border: 2px solid #f59e0b; border-radius: 8px; padding: 8px; text-align: center; margin-bottom: 12px;">
-            <span style="font-size: 12px; color: #92400e; font-weight: bold; display: block;">رقم الدور بالصالون</span>
-            <strong style="font-size: 28px; color: #b45309; font-weight: 900;">#${booking.queueNumber}</strong>
+          <div style="background: #eef2ff; border: 2px solid #6366f1; border-radius: 8px; padding: 8px; text-align: center; margin-bottom: 12px;">
+            <span style="font-size: 12px; color: #3730a3; font-weight: bold; display: block;">رقم دور الحجز المسبق</span>
+            <strong style="font-size: 28px; color: #4338ca; font-weight: 900; font-family: monospace;">B-${booking.queueNumber}</strong>
           </div>
         ` : ''}
         <p><strong>رقم الحجز:</strong> ${booking.id}</p>
@@ -681,7 +684,7 @@ export function BookingsScreen({
           <div style="margin-top: 10px; font-size: 12px; background: #f3f4f6; padding: 6px; border-radius: 6px;">
             <strong style="display: block; margin-bottom: 4px;">تفاصيل الدفعات المقدمة:</strong>
             ${(booking.advancePayments || []).map((adv, i) => `
-              <div>• دفعة ${i+1}: ${adv.amount.toFixed(2)} ${settings.currency} (${adv.paymentMethod === 'card' ? 'شبكة/مدى' : adv.paymentMethod === 'transfer' ? 'تحويل بنكي' : 'نقداً'}) - خزينة: ${adv.treasuryName} - تاريخ: ${adv.date}</div>
+              <div>• دفعة ${i+1}: ${adv.amount.toFixed(2)} ${settings.currency} (طريقة الدفع: ${adv.treasuryName || 'نقداً'}) - تاريخ: ${adv.date}</div>
             `).join('')}
           </div>
         ` : ''}
@@ -971,8 +974,8 @@ export function BookingsScreen({
                         <tr key={b.id} className="hover:bg-slate-50 transition-colors">
                           <td className="p-3.5 text-center">
                             {b.queueNumber ? (
-                              <span className="font-mono font-black text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-lg text-xs">
-                                #{b.queueNumber}
+                              <span className="font-mono font-black text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-lg text-xs shadow-2xs">
+                                B-{b.queueNumber}
                               </span>
                             ) : (
                               <span className="text-slate-300 font-mono">-</span>
@@ -1460,9 +1463,16 @@ export function BookingsScreen({
           <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 space-y-4 animate-in fade-in zoom-in duration-150" dir="rtl">
             <div className="flex justify-between items-start border-b border-slate-100 pb-3">
               <div>
-                <span className="text-[10px] font-black font-mono text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
-                  #{selectedBookingDetails.id}
-                </span>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[10px] font-black font-mono text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
+                    #{selectedBookingDetails.id}
+                  </span>
+                  {selectedBookingDetails.queueNumber && (
+                    <span className="text-[11px] font-black font-mono text-indigo-700 bg-indigo-100/70 border border-indigo-200 px-2.5 py-0.5 rounded-full shadow-2xs">
+                      دور B-{selectedBookingDetails.queueNumber}
+                    </span>
+                  )}
+                </div>
                 <h3 className="text-lg font-black text-slate-900 mt-1">{selectedBookingDetails.clientName}</h3>
                 <p className="text-xs text-slate-500 font-mono">{selectedBookingDetails.phone}</p>
               </div>
@@ -1542,9 +1552,9 @@ export function BookingsScreen({
                       <div>
                         <div className="font-bold text-slate-800 flex items-center gap-1.5">
                           <span>دفعة #{idx + 1}:</span>
-                          <span className="text-indigo-600 font-bold">{adv.treasuryName || 'الخزينة'}</span>
-                          <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded">
-                            {adv.paymentMethod === 'card' ? 'مدى/شبكة' : adv.paymentMethod === 'transfer' ? 'تحويل بنكي' : 'نقداً'}
+                          <span className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded font-bold flex items-center gap-1">
+                            <CreditCard size={11} />
+                            <span>{adv.treasuryName || 'طريقة الدفع'}</span>
                           </span>
                         </div>
                         <div className="text-[10px] text-slate-500 font-mono">تاريخ السداد: {adv.date} {adv.notes ? `• ${adv.notes}` : ''}</div>
@@ -1666,35 +1676,23 @@ export function BookingsScreen({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">وسيلة الدفع * 💳</label>
-                  <select
-                    value={quickAdvMethod}
-                    onChange={e => setQuickAdvMethod(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs font-bold focus:border-emerald-600 outline-none"
-                  >
-                    <option value="cash">نقداً (كاش)</option>
-                    <option value="card">مدى / بطاقة</option>
-                    <option value="transfer">تحويل بنكي</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">الخزينة المستلمة * 🏦</label>
-                  <select
-                    value={quickAdvTreasury || settings.treasuries?.[0]?.id || 'cash'}
-                    onChange={e => setQuickAdvTreasury(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs font-bold focus:border-emerald-600 outline-none"
-                  >
-                    {(settings.treasuries || []).map(t => (
-                      <option key={t.id} value={t.id}>{t.name}</option>
-                    ))}
-                    {(!settings.treasuries || settings.treasuries.length === 0) && (
-                      <option value="cash">الخزينة الرئيسية</option>
-                    )}
-                  </select>
-                </div>
+              <div>
+                <label className="block font-bold text-slate-700 mb-1 flex items-center gap-1">
+                  <CreditCard size={14} className="text-emerald-600" />
+                  <span>طريقة الدفع *</span>
+                </label>
+                <select
+                  value={quickAdvTreasury || settings.treasuries?.[0]?.id || 'cash'}
+                  onChange={e => setQuickAdvTreasury(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs font-bold focus:border-emerald-600 outline-none"
+                >
+                  {(settings.treasuries || []).map(t => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                  {(!settings.treasuries || settings.treasuries.length === 0) && (
+                    <option value="cash">نقداً (الخزينة الرئيسية)</option>
+                  )}
+                </select>
               </div>
 
               <div>
@@ -2057,20 +2055,10 @@ export function BookingsScreen({
                     </div>
 
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1">طريقة الدفع * 💳</label>
-                      <select
-                        value={advMethodInput}
-                        onChange={e => setAdvMethodInput(e.target.value)}
-                        className="w-full bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs font-bold focus:border-emerald-600 outline-none"
-                      >
-                        <option value="cash">نقداً (كاش)</option>
-                        <option value="card">مدى / بطاقة</option>
-                        <option value="transfer">تحويل بنكي</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1">الخزينة المستلمة * 🏦</label>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                        <CreditCard size={14} className="text-emerald-600" />
+                        <span>طريقة الدفع *</span>
+                      </label>
                       <select
                         value={advTreasuryInput || settings.treasuries?.[0]?.id || 'cash'}
                         onChange={e => setAdvTreasuryInput(e.target.value)}
@@ -2080,7 +2068,7 @@ export function BookingsScreen({
                           <option key={t.id} value={t.id}>{t.name}</option>
                         ))}
                         {(!settings.treasuries || settings.treasuries.length === 0) && (
-                          <option value="cash">الخزينة الرئيسية</option>
+                          <option value="cash">نقداً (الخزينة الرئيسية)</option>
                         )}
                       </select>
                     </div>
@@ -2095,7 +2083,7 @@ export function BookingsScreen({
                       />
                     </div>
 
-                    <div className="sm:col-span-2">
+                    <div>
                       <label className="block text-[11px] font-bold text-slate-700 mb-1">ملاحظات على الدفعة</label>
                       <input
                         type="text"
@@ -2125,10 +2113,10 @@ export function BookingsScreen({
                           <div>
                             <div className="font-bold text-slate-900 flex items-center gap-1.5">
                               <span className="font-mono text-emerald-700 font-black">{adv.amount.toFixed(2)} {settings.currency}</span>
-                              <span className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded font-bold">
-                                {adv.paymentMethod === 'card' ? 'مدى/شبكة' : adv.paymentMethod === 'transfer' ? 'تحويل بنكي' : 'نقداً'}
+                              <span className="text-[10px] bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.2 rounded font-bold flex items-center gap-1">
+                                <CreditCard size={11} />
+                                <span>{adv.treasuryName || 'طريقة الدفع'}</span>
                               </span>
-                              <span className="text-[10px] text-indigo-600 font-bold">• {adv.treasuryName}</span>
                             </div>
                             <div className="text-[10px] text-slate-500 font-mono">
                               تاريخ: {adv.date} {adv.notes ? `• ${adv.notes}` : ''}

@@ -1,4 +1,4 @@
-export type UserRole = 'programmer' | 'owner' | 'admin' | 'supervisor' | 'cashier' | 'receptionist' | 'barber' | 'accountant' | 'warehouse_manager' | 'custom';
+export type UserRole = 'programmer' | 'owner' | 'admin' | 'supervisor' | 'cashier' | 'receptionist' | 'barber' | 'accountant' | 'warehouse_manager' | 'kiosk' | 'custom';
 
 export type ActionPermission = 
   // POS & Sales
@@ -190,6 +190,8 @@ export interface Branch {
   tipPayoutMethod?: 'instant_cash' | 'pooled_deferred';
   createdAt?: string;
   evolutionInstanceName?: string;
+  storageLimitMb?: number; // الحد الأقصى للمساحة التخزينية بالميجابايت (افتراضي 50MB)
+  usedStorageBytes?: number; // المساحة المستخدمة الفعلية بالبايت
 }
 
 
@@ -605,8 +607,9 @@ export interface AdvancePayment {
 
 export interface ClientPortalAccount {
   id: string;
-  phone: string;
-  email: string;
+  username: string; // اسم المستخدم الفريد (إجباري وغير مكرر)
+  phone?: string;
+  email?: string;
   password?: string;
   name: string;
   country: string;
@@ -614,6 +617,9 @@ export interface ClientPortalAccount {
   isVerified: boolean;
   avatarUrl?: string;
   createdAt: string;
+  salonId?: string; // معرف الصالون الأساسي المرتبط به الحساب
+  salonCode?: string; // كود الصالون الأساسي المرتبط به الحساب
+  linkedSalonCodes?: string[]; // قائمة أكواد الصالونات المرتبطة بهذا العميل
 }
 
 export interface Booking { 
@@ -1216,6 +1222,15 @@ export interface SubscriptionPlan {
   priceUsd3m: number;
   priceUsd6m: number;
   priceUsd12m: number;
+  // 🏢 أسعار إضافة الفرع المرخص المرتبطة بهذه الباقة
+  branchPriceEgp1m?: number;
+  branchPriceEgp3m?: number;
+  branchPriceEgp6m?: number;
+  branchPriceEgp12m?: number;
+  branchPriceUsd1m?: number;
+  branchPriceUsd3m?: number;
+  branchPriceUsd6m?: number;
+  branchPriceUsd12m?: number;
   features?: string[];
   isPopular?: boolean;
   isActive?: boolean;

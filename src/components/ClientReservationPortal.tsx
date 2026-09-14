@@ -112,17 +112,23 @@ export function ClientReservationPortal({
     return null;
   });
 
-  const [authMode, setAuthMode] = useState<'login' | 'register' | 'otp' | 'profile'>('login');
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [authForm, setAuthForm] = useState({
-    phone: '',
-    email: '',
+    username: '',
     password: '',
     name: '',
+    phone: '',
+    email: '',
     referredByPhone: '',
     country: 'المملكة العربية السعودية'
   });
+  const [authError, setAuthError] = useState('');
+  const [authSuccessMsg, setAuthSuccessMsg] = useState('');
+  const [isSubmittingAuth, setIsSubmittingAuth] = useState(false);
+  const [usernameAvailability, setUsernameAvailability] = useState<'checking' | 'available' | 'taken' | 'idle'>('idle');
+  const [showPassword, setShowPassword] = useState(false);
 
-  // العميل المرشِّح المستنتج من رقم الهاتف المدخل في بوابة الحجز
+  // العميل المرشِّح المستنتج من رقم الهاتف أو الكود المدخل في بوابة الحجز
   const referrerClientInPortal = useMemo(() => {
     const rawRef = (authForm.referredByPhone || '').trim();
     if (!rawRef) return null;
@@ -137,15 +143,34 @@ export function ClientReservationPortal({
       return false;
     }) || null;
   }, [authForm.referredByPhone, clients]);
-  
-  // OTP State
-  const [enteredOtp, setEnteredOtp] = useState('');
-  const [generatedOtp, setGeneratedOtp] = useState('');
-  const [otpTimeLeft, setOtpTimeLeft] = useState(60);
-  const [otpError, setOtpError] = useState('');
-  const [otpSuccessMsg, setOtpSuccessMsg] = useState('');
-  const [isSendingOtp, setIsSendingOtp] = useState(false);
-  const [showDemoOtpHelper, setShowDemoOtpHelper] = useState(false);
+
+  // فحص توفر اسم المستخدم تلقائياً عند الكتابة في وضع التسجيل
+  useEffect(() => {
+    if (authMode !== 'register') {
+      setUsernameAvailability('idle');
+      return;
+    }
+    const raw = authForm.username.trim().toLowerCase();
+    if (raw.length < 3) {
+      setUsernameAvailability('idle');
+      return;
+    }
+
+    let isMounted = true;
+    const timer = setTimeout(async () => {
+      setUsernameAvailability('checking');
+      const isAvail = await DB.checkClientUsernameAvailable(raw);
+      if (isMounted) {
+        setUsernameAvailability(isAvail ? 'available' : 'taken');
+      }
+    }, 450);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
+  }, [authForm.username, authMode]);
+
   const [platformLogoUrl, setPlatformLogoUrl] = useState<string>('');
 
   useEffect(() => {
@@ -191,6 +216,7 @@ export function ClientReservationPortal({
   const [portalServices, setPortalServices] = useState<ServiceItem[]>(services);
   const [portalEmployees, setPortalEmployees] = useState<Employee[]>(employees);
   const [portalCategories, setPortalCategories] = useState<Category[]>(categories);
+  const [portalSettings, setPortalSettings] = useState<AppSettings>(settings);
 
   useEffect(() => {
     let isMounted = true;
@@ -227,6 +253,14 @@ export function ClientReservationPortal({
           const srvData = dbServices.status === 'fulfilled' ? dbServices.value : [];
           const empData = dbEmployees.status === 'fulfilled' ? dbEmployees.value : [];
           const catData = dbCategories.status === 'fulfilled' ? dbCategories.value : [];
+
+          if (sData) {
+            setPortalSettings(prev => ({
+              ...prev,
+              ...sData,
+              bookingRules: sData.bookingRules || sData.booking_rules || prev.bookingRules
+            }));
+          }
 
           setSalonInfo({
             id: matched.id,
@@ -284,6 +318,15 @@ export function ClientReservationPortal({
   // Effective Client Country
   const clientCountry = currentClient?.country || authForm.country || salonInfo.country || 'المملكة العربية السعودية';
 
+  // Effective Settings combining incoming settings & scoped portalSettings
+  const effectiveSettings: AppSettings = useMemo(() => {
+    return {
+      ...settings,
+      ...portalSettings,
+      bookingRules: portalSettings.bookingRules || settings.bookingRules
+    };
+  }, [settings, portalSettings]);
+
   // 3. Branches matching Client's Country
   const effectiveBranches = portalBranches.length > 0 ? portalBranches : branches;
   const effectiveServices = portalServices.length > 0 ? portalServices : services;
@@ -297,10 +340,10 @@ export function ClientReservationPortal({
         name: `الفرع الرئيسي (${salonInfo.name})`,
         code: 'B01',
         country: clientCountry,
-        currency: salonInfo.currency || settings.currency || 'SAR',
+        currency: salonInfo.currency || effectiveSettings.currency || 'SAR',
         isMain: true,
-        address: salonInfo.address || settings.address || 'المركز الرئيسي',
-        phone: salonInfo.phone || settings.phone,
+        address: salonInfo.address || effectiveSettings.address || 'المركز الرئيسي',
+        phone: salonInfo.phone || effectiveSettings.phone,
         isActive: true
       }];
     }
@@ -310,7 +353,7 @@ export function ClientReservationPortal({
              clientCountry.trim().toLowerCase().includes(b.country.trim().toLowerCase());
     });
     return filtered.length > 0 ? filtered : effectiveBranches;
-  }, [effectiveBranches, clientCountry, salonInfo, settings]);
+  }, [effectiveBranches, clientCountry, salonInfo, effectiveSettings]);
 
   const [selectedBranchId, setSelectedBranchId] = useState<string>(() => {
     return countryBranches[0]?.id || 'b-main';
@@ -324,24 +367,22 @@ export function ClientReservationPortal({
   }, [countryBranches, selectedBranchId]);
 
   const activeBranch = countryBranches.find(b => b.id === selectedBranchId) || countryBranches[0];
-  const currency = activeBranch?.currency || salonInfo.currency || settings.currency || 'SAR';
+  const currency = activeBranch?.currency || salonInfo.currency || effectiveSettings.currency || 'SAR';
 
   // 4. Branch Specific Services
   const branchServices = useMemo(() => {
-    return effectiveServices.filter(s => {
-      if (s.isActive === false) return false;
-      if (!s.branchId) return true; // universal
-      return s.branchId === selectedBranchId;
-    });
+    const activeSrv = effectiveServices.filter(s => s.isActive !== false);
+    const matching = activeSrv.filter(s => !s.branchId || s.branchId === selectedBranchId);
+    if (matching.length > 0) return matching;
+    return activeSrv; // Fallback so services are never lost if branchId differs
   }, [effectiveServices, selectedBranchId]);
 
   // 5. Branch Specific Employees
   const branchEmployees = useMemo(() => {
-    return effectiveEmployees.filter(e => {
-      if (e.isActive === false || e.isBlacklisted) return false;
-      if (!e.branchId) return true;
-      return e.branchId === selectedBranchId;
-    });
+    const activeStaff = effectiveEmployees.filter(e => e.isActive !== false && !e.isBlacklisted);
+    const matching = activeStaff.filter(e => !e.branchId || e.branchId === selectedBranchId);
+    if (matching.length > 0) return matching;
+    return activeStaff; // Fallback so staff are never lost if branchId differs
   }, [effectiveEmployees, selectedBranchId]);
 
   // Selected Services in Wizard
@@ -357,174 +398,168 @@ export function ClientReservationPortal({
   const [bookingNotes, setBookingNotes] = useState<string>('');
   const [completedBookingResult, setCompletedBookingResult] = useState<Booking | null>(null);
 
-  // OTP Timer Countdown
-  useEffect(() => {
-    let timer: any = null;
-    if (authMode === 'otp' && otpTimeLeft > 0) {
-      timer = setInterval(() => {
-        setOtpTimeLeft(prev => prev - 1);
-      }, 1000);
-    }
-    return () => {
-      if (timer) clearInterval(timer);
-    };
-  }, [authMode, otpTimeLeft]);
-
-  // Handle Send OTP
-  const handleSendOtp = async (targetPhone: string) => {
-    if (!targetPhone || targetPhone.length < 8) {
-      setOtpError('يرجى إدخال رقم هاتف صحيح');
-      return;
-    }
-
-    setIsSendingOtp(true);
-    setOtpError('');
-    setOtpSuccessMsg('');
-
-    // Generate 6-digit OTP
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-    setGeneratedOtp(code);
-    setOtpTimeLeft(60);
-
-    const msg = `🔐 رمز التحقق الخاص بك لتأكيد الدخول والحجز في ${settings.salonName || 'صالون العناية'}:\n\n*${code}*\n\n⚠️ ينتهي الرمز خلال 60 ثانية.`;
-
-    try {
-      if (EvolutionApiService.isConfigured(settings, selectedBranchId)) {
-        const res = await EvolutionApiService.sendTextMessage(settings, targetPhone, msg, selectedBranchId);
-        if (res.success) {
-          setOtpSuccessMsg(`تم إرسال كود التحقق عبر الواتساب إلى الرقم ${targetPhone}`);
-        } else {
-          setOtpSuccessMsg(`تم إنشاء الكود (وضع تجريبي/غير متصل): ${code}`);
-        }
-      } else {
-        setOtpSuccessMsg(`تم إنشاء الكود التجريبي: ${code}`);
-      }
-    } catch (e) {
-      setOtpSuccessMsg(`تم إنشاء الكود التجريبي: ${code}`);
-    }
-
-    setIsSendingOtp(false);
-    setAuthMode('otp');
-  };
-
-  // Handle Verify OTP
-  const handleVerifyOtp = () => {
-    setOtpError('');
-    if (otpTimeLeft <= 0) {
-      setOtpError('انتهت صلاحية رمز التحقق، يرجى طلب رمز جديد');
-      return;
-    }
-    if (enteredOtp.trim() !== generatedOtp.trim()) {
-      setOtpError('رمز التحقق غير صحيح، يرجى التأكد وإعادة المحاولة');
-      return;
-    }
-
-    // OTP Verified! If registering, go to profile completion. If login, finish.
-    setAuthMode('profile');
-  };
-
-  // Handle Complete Registration / Profile
-  const handleSaveProfile = () => {
-    if (!authForm.name.trim()) {
-      setOtpError('يرجى إدخال اسمك الكريم');
-      return;
-    }
-
-    const cleanPhone = authForm.phone.trim();
-    const cleanEmail = authForm.email.trim();
-    const cleanReferredBy = (authForm.referredByPhone && authForm.referredByPhone.trim() !== cleanPhone) 
-      ? authForm.referredByPhone.trim() 
-      : undefined;
-
-    const newAccount: ClientPortalAccount = {
-      id: 'cli-' + Date.now(),
-      phone: cleanPhone,
-      email: cleanEmail,
-      password: authForm.password,
-      name: authForm.name.trim(),
-      country: authForm.country,
-      referredByPhone: cleanReferredBy,
-      isVerified: true,
-      createdAt: new Date().toISOString()
-    };
-
-    setCurrentClient(newAccount);
-    try {
-      localStorage.setItem('smartcut_current_client', JSON.stringify(newAccount));
-      // Also persist to registered clients list
-      const savedList = localStorage.getItem('smartcut_client_accounts');
-      const list: ClientPortalAccount[] = savedList ? JSON.parse(savedList) : [];
-      list.push(newAccount);
-      localStorage.setItem('smartcut_client_accounts', JSON.stringify(list));
-    } catch (e) {}
-
-    // Auto-sync client to Central Salon Clients database if not exists
-    if (onSaveClient) {
-      const existingInSalon = clients.find(c => c.phone && c.phone.trim() === cleanPhone);
-      if (!existingInSalon) {
-        const newSalonClient: Client = {
-          id: 'C-' + Date.now(),
-          name: authForm.name.trim(),
-          phone: cleanPhone,
-          email: cleanEmail,
-          referredByPhone: cleanReferredBy,
-          notes: `عميل مسجل أونلاين عبر كود الصالون (${scopedSalonCode}) - ${authForm.country}`,
-          loyaltyPoints: 0,
-          cashback: 0,
-          createdAt: new Date().toISOString()
-        };
-        onSaveClient(newSalonClient);
-      }
-    }
-
-    // Reset auth modal
-    setAuthMode('login');
-  };
-
-  // Handle Direct Login for existing user via Phone (as Username) & Password
-  const handleDirectLogin = (e: React.FormEvent) => {
+  // Handle New Client Registration (Username + Password)
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    setOtpError('');
+    setAuthError('');
+    setAuthSuccessMsg('');
 
-    const inputPhone = authForm.phone.trim();
+    const cleanUsername = authForm.username.trim().toLowerCase();
+    if (!cleanUsername || cleanUsername.length < 3) {
+      setAuthError('يرجى إدخال اسم مستخدم فريد (3 أحرف أو أرقام على الأقل باللغة الإنجليزية)');
+      return;
+    }
+
+    if (!/^[a-zA-Z0-9_.-]+$/.test(cleanUsername)) {
+      setAuthError('اسم المستخدم يجب أن يحتوي فقط على أحرف إنجليزية وأرقام أو رموز (_ . -) بدون مسافات');
+      return;
+    }
+
+    if (!authForm.password || authForm.password.length < 4) {
+      setAuthError('يرجى إدخال كلمة مرور مكونة من 4 خانات على الأقل');
+      return;
+    }
+
+    if (!authForm.name.trim()) {
+      setAuthError('يرجى إدخال اسمك الكامل');
+      return;
+    }
+
+    setIsSubmittingAuth(true);
 
     try {
-      const savedList = localStorage.getItem('smartcut_client_accounts');
-      const list: ClientPortalAccount[] = savedList ? JSON.parse(savedList) : [];
-      
-      // Match by phone number as username
-      const found = list.find(c => 
-        (c.phone === inputPhone || c.email === inputPhone || c.phone.endsWith(inputPhone) || inputPhone.endsWith(c.phone)) && 
-        (!authForm.password || c.password === authForm.password)
-      );
-
-      if (found) {
-        setCurrentClient(found);
-        localStorage.setItem('smartcut_current_client', JSON.stringify(found));
+      // 1. Verify global uniqueness of username
+      const isAvail = await DB.checkClientUsernameAvailable(cleanUsername);
+      if (!isAvail) {
+        setAuthError('⚠️ اسم المستخدم هذا مستخدم مسبقاً، يرجى اختيار اسم مستخدم فريد آخر');
+        setIsSubmittingAuth(false);
         return;
       }
 
-      // Also check existing salon clients
-      const salonClient = clients.find(c => c.phone && (c.phone === inputPhone || c.phone.endsWith(inputPhone)));
-      if (salonClient) {
-        const synthAccount: ClientPortalAccount = {
-          id: salonClient.id,
-          name: salonClient.name,
-          phone: salonClient.phone,
-          email: salonClient.email || '',
-          password: authForm.password || '123456',
-          country: authForm.country || 'المملكة العربية السعودية',
-          isVerified: true,
-          createdAt: new Date().toISOString()
-        };
-        setCurrentClient(synthAccount);
-        localStorage.setItem('smartcut_current_client', JSON.stringify(synthAccount));
+      const cleanPhone = authForm.phone.trim();
+      const cleanEmail = authForm.email.trim();
+      const cleanReferredBy = (authForm.referredByPhone && authForm.referredByPhone.trim() !== cleanPhone) 
+        ? authForm.referredByPhone.trim() 
+        : undefined;
+
+      const primaryCode = scopedSalonCode || salonInfo.code || settings.salonCode || '';
+      const primarySalonId = salonInfo.id || settings.salonId || '';
+
+      const newAccount: ClientPortalAccount = {
+        id: 'cli-' + Date.now(),
+        username: cleanUsername,
+        password: authForm.password,
+        name: authForm.name.trim(),
+        phone: cleanPhone || undefined,
+        email: cleanEmail || undefined,
+        country: authForm.country,
+        referredByPhone: cleanReferredBy,
+        isVerified: true,
+        createdAt: new Date().toISOString(),
+        salonId: primarySalonId,
+        salonCode: primaryCode,
+        linkedSalonCodes: primaryCode ? [primaryCode] : []
+      };
+
+      // Save to database & localStorage
+      const savedAccount = await DB.saveClientPortalAccount(newAccount);
+      const finalAccount = savedAccount || newAccount;
+
+      setCurrentClient(finalAccount);
+      localStorage.setItem('smartcut_current_client', JSON.stringify(finalAccount));
+
+      // Auto-sync client to Central Salon Clients database if not exists
+      if (onSaveClient && primaryCode) {
+        const existingInSalon = clients.find(c => 
+          (cleanPhone && c.phone && c.phone.trim() === cleanPhone) ||
+          c.name.toLowerCase() === finalAccount.name.toLowerCase()
+        );
+        if (!existingInSalon) {
+          const newSalonClient: Client = {
+            id: 'C-' + Date.now(),
+            name: finalAccount.name,
+            phone: cleanPhone || '',
+            email: cleanEmail || undefined,
+            referredByPhone: cleanReferredBy,
+            notes: `عميل مسجل بالبوابة - اسم مستخدم: (${cleanUsername}) - صالون: (${primaryCode}) - ${authForm.country}`,
+            loyaltyPoints: 0,
+            cashback: 0,
+            createdAt: new Date().toISOString()
+          };
+          onSaveClient(newSalonClient);
+        }
+      }
+
+      setAuthSuccessMsg('تم إنشاء الحساب بنجاح! مرحباً بك ✨');
+    } catch (err: any) {
+      setAuthError('حدث خطأ أثناء حفظ الحساب: ' + (err.message || ''));
+    } finally {
+      setIsSubmittingAuth(false);
+    }
+  };
+
+  // Handle Direct Login (Username + Password)
+  const handleDirectLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    setAuthSuccessMsg('');
+
+    const cleanUsername = authForm.username.trim().toLowerCase();
+    const inputPassword = authForm.password;
+
+    if (!cleanUsername) {
+      setAuthError('يرجى إدخال اسم المستخدم');
+      return;
+    }
+
+    if (!inputPassword) {
+      setAuthError('يرجى إدخال كلمة المرور');
+      return;
+    }
+
+    setIsSubmittingAuth(true);
+
+    try {
+      // 1. Fetch account from Supabase database by unique username
+      let foundAccount: any = await DB.fetchClientPortalAccountByUsername(cleanUsername);
+
+      // Fallback: check local storage accounts
+      if (!foundAccount) {
+        const savedList = localStorage.getItem('smartcut_client_accounts');
+        const list: ClientPortalAccount[] = savedList ? JSON.parse(savedList) : [];
+        foundAccount = list.find(a => (a.username || '').trim().toLowerCase() === cleanUsername) || null;
+      }
+
+      if (!foundAccount) {
+        setAuthError('اسم المستخدم غير مسجل لدينا، يرجى التأكد أو إنشاء حساب جديد ✨');
+        setIsSubmittingAuth(false);
         return;
       }
-    } catch (e) {}
 
-    // If not found, prompt to verify phone with OTP to create new account
-    handleSendOtp(authForm.phone);
+      // 2. Verify password
+      if (foundAccount.password && foundAccount.password !== inputPassword) {
+        setAuthError('كلمة المرور غير صحيحة، يرجى التأكد وإعادة المحاولة');
+        setIsSubmittingAuth(false);
+        return;
+      }
+
+      // 3. Login successful!
+      setCurrentClient(foundAccount);
+      localStorage.setItem('smartcut_current_client', JSON.stringify(foundAccount));
+
+      // 4. Automatically identify and bind the linked salon
+      const clientSalonCode = foundAccount.salonCode || (foundAccount.linkedSalonCodes && foundAccount.linkedSalonCodes[0]);
+      if (clientSalonCode && clientSalonCode !== scopedSalonCode) {
+        setScopedSalonCode(clientSalonCode);
+        localStorage.setItem('smartcut_registered_salon_code', clientSalonCode);
+      }
+
+      setAuthSuccessMsg(`أهلاً بك مجدداً يا ${foundAccount.name}! 🌟`);
+    } catch (err: any) {
+      setAuthError('حدث خطأ أثناء تسجيل الدخول: ' + (err.message || ''));
+    } finally {
+      setIsSubmittingAuth(false);
+    }
   };
 
   // Handle Logout
@@ -566,19 +601,19 @@ export function ClientReservationPortal({
 
   // Check if selected date is fully blocked by administration
   const isSelectedDateBlocked = useMemo(() => {
-    return isDateBlocked(selectedDate, settings);
-  }, [selectedDate, settings]);
+    return isDateBlocked(selectedDate, effectiveSettings);
+  }, [selectedDate, effectiveSettings]);
 
   // Generate Time Slots with dynamic opening/closing hours, shift timings, blocked hours, weekly off, and per-staff hourly capacity
   const timeSlots = useMemo(() => {
     if (isSelectedDateBlocked) return [];
 
     // Dynamically generated from salon opening time to 1 hour before closing
-    const slots = generateSalonTimeSlots(settings);
+    const slots = generateSalonTimeSlots(effectiveSettings);
 
     return slots.map(slot => {
       // 1. Is specific hour blocked by admin?
-      if (isHourBlocked(selectedDate, slot, settings)) {
+      if (isHourBlocked(selectedDate, slot, effectiveSettings)) {
         return { time: slot, isAvailable: false, reason: 'ساعة مغلقة إدارياً' };
       }
 
@@ -586,7 +621,7 @@ export function ClientReservationPortal({
       if (selectedStaffId !== 'any') {
         const emp = branchEmployees.find(e => e.id === selectedStaffId);
         if (emp) {
-          const staffDayCheck = isStaffAvailableOnDate(emp, selectedDate, settings);
+          const staffDayCheck = isStaffAvailableOnDate(emp, selectedDate, effectiveSettings);
           if (!staffDayCheck.available) {
             return { time: slot, isAvailable: false, reason: staffDayCheck.reason };
           }
@@ -601,7 +636,7 @@ export function ClientReservationPortal({
             selectedDate, 
             slot, 
             bookings, 
-            settings, 
+            effectiveSettings, 
             selectedBranchId
           );
           if (staffBookingCheck.isBooked) {
@@ -610,17 +645,31 @@ export function ClientReservationPortal({
         }
       } else {
         // If "Any available staff", check if at least one eligible staff member is free
+        if (branchEmployees.length === 0) {
+          // If no staff registered yet in the branch, allow booking rather than locking out the client
+          return { time: slot, isAvailable: true };
+        }
+
         const availableStaffList = branchEmployees.filter(emp => {
-          const dayOk = isStaffAvailableOnDate(emp, selectedDate, settings).available;
+          const dayOk = isStaffAvailableOnDate(emp, selectedDate, effectiveSettings).available;
           if (!dayOk) return false;
           const hourOk = isStaffAvailableAtTime(emp, slot).available;
           if (!hourOk) return false;
-          const bookedOk = !isStaffBookedAtSlot(emp.id, selectedDate, slot, bookings, settings, selectedBranchId).isBooked;
+          const bookedOk = !isStaffBookedAtSlot(emp.id, selectedDate, slot, bookings, effectiveSettings, selectedBranchId).isBooked;
           return bookedOk;
         });
 
         if (availableStaffList.length === 0) {
-          return { time: slot, isAvailable: false, reason: 'محجوزة' };
+          // Diagnostic: check why no staff is available for this slot
+          const allOff = branchEmployees.every(emp => !isStaffAvailableOnDate(emp, selectedDate, effectiveSettings).available);
+          if (allOff) {
+            return { time: slot, isAvailable: false, reason: 'إجازة أسبوعية' };
+          }
+          const allOutsideShift = branchEmployees.every(emp => !isStaffAvailableAtTime(emp, slot).available);
+          if (allOutsideShift) {
+            return { time: slot, isAvailable: false, reason: 'خارج أوقات العمل' };
+          }
+          return { time: slot, isAvailable: false, reason: 'محجوزة بالكامل' };
         }
       }
 
@@ -629,7 +678,7 @@ export function ClientReservationPortal({
         isAvailable: true
       };
     });
-  }, [bookings, selectedBranchId, selectedDate, selectedStaffId, isSelectedDateBlocked, settings, branchEmployees]);
+  }, [bookings, selectedBranchId, selectedDate, selectedStaffId, isSelectedDateBlocked, effectiveSettings, branchEmployees]);
 
   // Toggle Service Selection
   const toggleService = (serviceId: string) => {
@@ -658,7 +707,7 @@ export function ClientReservationPortal({
       : branchEmployees[0];
 
     const bookingCode = '#SC-' + Math.floor(100000 + Math.random() * 900000);
-    const queueNumber = await QueueService.getNextQueueNumberAsync(settings.salonId, selectedBranchId, selectedDate);
+    const queueNumber = await QueueService.getNextBookingQueueNumberAsync(settings.salonId, selectedBranchId, selectedDate);
 
     const bookingServices: BookingService[] = selectedServicesList.map(s => ({
       id: 'bs-' + Math.random().toString(36).substr(2, 9),
@@ -671,11 +720,11 @@ export function ClientReservationPortal({
 
     const newBooking: Booking = {
       id: 'b-online-' + Date.now(),
-      salonId: settings.salonId,
+      salonId: salonInfo.id || settings.salonId,
       branchId: selectedBranchId,
       clientName: currentClient.name,
-      phone: currentClient.phone,
-      customerEmail: currentClient.email,
+      phone: currentClient.phone || '',
+      customerEmail: currentClient.email || '',
       date: selectedDate,
       time: selectedTimeSlot,
       status: 'pending',
@@ -689,17 +738,15 @@ export function ClientReservationPortal({
     };
 
     // Auto-sync client to Central Salon Clients database if not exists
-    let existingInSalon: Client | undefined;
-    if (onSaveClient && currentClient.phone) {
-      const cleanP = currentClient.phone.trim();
-      existingInSalon = clients.find(c => c.phone && c.phone.trim() === cleanP);
-      if (!existingInSalon) {
+    let existingInSalon = (clients || []).find(c => c.phone && c.phone.trim() === (currentClient.phone || '').trim());
+    if (!existingInSalon && currentClient.phone) {
+      if (onSaveClient) {
         const newSalonClient: Client = {
-          id: currentClient.id || 'C-' + Date.now(),
-          name: currentClient.name.trim(),
-          phone: cleanP,
+          id: 'c-web-' + Date.now(),
+          name: currentClient.name,
+          phone: currentClient.phone,
           email: currentClient.email || '',
-          notes: `عميل أونلاين مسجل من كود صالون (${scopedSalonCode})`,
+          notes: `عميل أونلاين مسجل - اسم مستخدم: (${currentClient.username}) - كود صالون: (${scopedSalonCode})`,
           loyaltyPoints: 0,
           cashback: 0,
           createdAt: new Date().toISOString()
@@ -713,33 +760,38 @@ export function ClientReservationPortal({
     onSaveBooking(newBooking);
     setCompletedBookingResult(newBooking);
 
-    // 2. إدراج الحجز فوراً في شاشة المناداة وفتح فاتورة معلقة
-    try {
-      await QueueService.createTicketFromBooking({
-        booking: newBooking,
-        salonId: settings.salonId,
-        branchId: selectedBranchId,
-        client: existingInSalon || {
-          id: currentClient.id || 'C-' + Date.now(),
-          name: currentClient.name,
-          phone: currentClient.phone,
-          loyaltyPoints: 0,
-          cashback: 0,
-          createdAt: new Date().toISOString()
-        }
-      });
-    } catch (e) {
-      console.warn('Failed to create queue ticket for online booking:', e);
+    // 2. إدراج الحجز في شاشة المناداة إذا كان الحجز بتاريخ اليوم فقط (وبدون فتح أي فاتورة معلقة نهائياً)
+    const todayDateStr = new Date().toISOString().split('T')[0];
+    if (selectedDate === todayDateStr) {
+      try {
+        await QueueService.createTicketFromBooking({
+          booking: newBooking,
+          salonId: salonInfo.id || settings.salonId,
+          branchId: selectedBranchId,
+          client: existingInSalon || {
+            id: currentClient.id || 'C-' + Date.now(),
+            name: currentClient.name,
+            phone: currentClient.phone || '',
+            loyaltyPoints: 0,
+            cashback: 0,
+            createdAt: new Date().toISOString()
+          }
+        });
+      } catch (e) {
+        console.warn('Failed to sync queue ticket for online booking:', e);
+      }
     }
 
     // 3. Send WhatsApp confirmation message via Evolution API
-    const waText = `✨ *${settings.salonName || 'صالون العناية'}*\n\nأهلاً بكِ ${currentClient.name} ✨\nتم استلام طلب حجزك بنجاح وسنقوم بتأكيده فوراً.\n\n🎟️ *رقم دورك المبدئي بالصالون:* #${queueNumber}\n📍 *الفرع:* ${activeBranch.name}\n📅 *الموعد:* ${selectedDate} • ${selectedTimeSlot}\n✂️ *الخبير:* ${assignedStaff?.name || 'طاقم العمل المتميز'}\n📋 *الخدمات:* ${selectedServicesList.map(s => s.name).join('، ')}\n💰 *الإجمالي:* ${totalBookingPrice} ${currency}\n🔖 *كود الحجز:* ${bookingCode}\n\nشكراً لثقتكم بنا ونسعد بخدمتكم دائماً! ❤️`;
+    if (currentClient.phone) {
+      const waText = `✨ *${salonInfo.name || settings.salonName || 'صالون العناية'}*\n\nأهلاً بكِ ${currentClient.name} ✨\nتم استلام طلب حجزك بنجاح وسنقوم بتأكيده فوراً.\n\n🎟️ *رقم دورك المبدئي بالصالون:* B-${queueNumber}\n📍 *الفرع:* ${activeBranch?.name || 'الفرع المحدد'}\n📅 *الموعد:* ${selectedDate} • ${selectedTimeSlot}\n✂️ *الخبير:* ${assignedStaff?.name || 'طاقم العمل المتميز'}\n📋 *الخدمات:* ${selectedServicesList.map(s => s.name).join('، ')}\n💰 *الإجمالي:* ${totalBookingPrice} ${currency}\n🔖 *كود الحجز:* ${bookingCode}\n\nشكراً لثقتكم بنا ونسعد بخدمتكم دائماً! ❤️`;
 
-    try {
-      if (EvolutionApiService.isConfigured(settings, selectedBranchId)) {
-        await EvolutionApiService.sendTextMessage(settings, currentClient.phone, waText, selectedBranchId);
-      }
-    } catch (e) {}
+      try {
+        if (EvolutionApiService.isConfigured(settings, selectedBranchId)) {
+          await EvolutionApiService.sendTextMessage(settings, currentClient.phone, waText, selectedBranchId);
+        }
+      } catch (e) {}
+    }
 
     // Reset wizard
     setSelectedServiceIds([]);
@@ -752,7 +804,10 @@ export function ClientReservationPortal({
   const myBookingsList = useMemo(() => {
     if (!currentClient) return [];
     return bookings.filter(b => {
-      return b.phone === currentClient.phone || (b.customerEmail && b.customerEmail === currentClient.email);
+      const matchPhone = currentClient.phone && b.phone && b.phone.trim() === currentClient.phone.trim();
+      const matchEmail = currentClient.email && b.customerEmail && b.customerEmail.trim().toLowerCase() === currentClient.email.trim().toLowerCase();
+      const matchName = b.clientName && b.clientName.trim().toLowerCase() === currentClient.name.trim().toLowerCase();
+      return matchPhone || matchEmail || matchName;
     }).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
   }, [bookings, currentClient]);
 
@@ -831,147 +886,104 @@ export function ClientReservationPortal({
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl relative overflow-hidden">
             <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none"></div>
 
-            {/* Auth Title */}
-            <div className="text-center mb-6">
+            {/* Auth Header & Salon Info */}
+            <div className="text-center mb-5">
               {(salonInfo.logoUrl || settings.logoUrl || platformLogoUrl) ? (
-                <div className="inline-flex items-center justify-center p-2 rounded-2xl bg-white shadow-xl shadow-emerald-500/20 border border-slate-700 mx-auto mb-2.5 transform hover:scale-110 hover:rotate-3 transition-all duration-300">
+                <div className="inline-flex items-center justify-center p-2 rounded-2xl bg-white shadow-xl shadow-emerald-500/20 border border-slate-700 mx-auto mb-2.5 transform hover:scale-105 transition-all duration-300">
                   <img src={salonInfo.logoUrl || settings.logoUrl || platformLogoUrl} alt="Logo" className="w-12 h-12 object-contain rounded-xl" />
                 </div>
               ) : (
-                <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto mb-2.5 transform hover:scale-110 hover:rotate-6 transition-all duration-300">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto mb-2.5 transform hover:scale-105 transition-all duration-300">
                   <Sparkles size={22} />
                 </div>
               )}
+              
               <h2 className="text-xl font-black text-white">
-                {authMode === 'otp' 
-                  ? '🔐 تأكيد رمز الواتساب (OTP)' 
-                  : authMode === 'profile' 
-                  ? '👤 استكمال بيانات حسابك' 
-                  : authMode === 'register'
-                  ? 'إنشاء حساب عميل جديد ✨'
-                  : 'تسجيل الدخول لبوابة الحجز 🔑'}
+                {authMode === 'login' ? 'تسجيل الدخول لبوابة الحجز 🔑' : 'إنشاء حساب عميل جديد ✨'}
               </h2>
               <p className="text-xs text-slate-400 mt-1 font-medium">
-                {authMode === 'otp' 
-                  ? 'تم إرسال كود التحقق لرقمك عبر الواتساب' 
-                  : authMode === 'profile'
-                  ? 'خطوة أخيرة: أدخل اسمك ودولتك لحفظ حسابك'
-                  : authMode === 'register'
-                  ? 'سجّل برقم جوالك (اسم المستخدم) واستلم كود التحقق'
-                  : 'أدخل رقم جوالك (اسم المستخدم) وكلمة المرور للدخول الفوري'}
+                {authMode === 'login'
+                  ? 'أدخل اسم المستخدم وكلمة المرور للدخول المباشر إلى حسابك وحجز موعدك'
+                  : 'سجّل اسم مستخدم فريد وكلمة مرور لحفظ بياناتك في الصالون وبدء الحجز'}
               </p>
+
+              {scopedSalonCode && (
+                <div className="mt-2.5 inline-flex items-center gap-1.5 bg-slate-950/80 border border-slate-800 px-3 py-1 rounded-full text-[11px] text-slate-400 font-mono">
+                  <Building2 size={12} className="text-emerald-400" />
+                  <span>الصالون: <strong className="text-emerald-400">{salonInfo.name}</strong></span>
+                  <span className="text-slate-600">|</span>
+                  <span className="text-slate-500 font-mono">{scopedSalonCode}</span>
+                </div>
+              )}
             </div>
 
-            {otpError && (
-              <div className="bg-rose-500/10 border border-rose-500/30 text-rose-300 px-3.5 py-2.5 rounded-2xl text-xs font-bold mb-4 flex items-center gap-2">
+            {/* Mode Switcher Tabs */}
+            <div className="grid grid-cols-2 gap-1.5 bg-slate-950 p-1 rounded-2xl border border-slate-800/80 mb-5">
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode('login');
+                  setAuthError('');
+                  setAuthSuccessMsg('');
+                }}
+                className={`py-2 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  authMode === 'login'
+                    ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-600/30'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <KeyRound size={13} />
+                <span>تسجيل الدخول</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode('register');
+                  setAuthError('');
+                  setAuthSuccessMsg('');
+                }}
+                className={`py-2 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  authMode === 'register'
+                    ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-600/30'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Sparkles size={13} />
+                <span>حساب جديد</span>
+              </button>
+            </div>
+
+            {authError && (
+              <div className="bg-rose-500/10 border border-rose-500/30 text-rose-300 px-3.5 py-2.5 rounded-2xl text-xs font-bold mb-4 flex items-center gap-2 animate-in fade-in">
                 <AlertCircle size={15} className="shrink-0 text-rose-400" />
-                <span>{otpError}</span>
+                <span>{authError}</span>
               </div>
             )}
 
-            {otpSuccessMsg && (
-              <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 px-3.5 py-2.5 rounded-2xl text-xs font-bold mb-4 flex items-center gap-2">
+            {authSuccessMsg && (
+              <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 px-3.5 py-2.5 rounded-2xl text-xs font-bold mb-4 flex items-center gap-2 animate-in fade-in">
                 <CheckCircle2 size={15} className="shrink-0 text-emerald-400" />
-                <span>{otpSuccessMsg}</span>
+                <span>{authSuccessMsg}</span>
               </div>
             )}
 
-            {/* FORM 1A: LOGIN (Phone as Username + Password) */}
+            {/* FORM 1: LOGIN (Username + Password) */}
             {authMode === 'login' && (
               <form onSubmit={handleDirectLogin} className="space-y-3.5">
                 <div>
                   <label className="block text-xs font-bold text-slate-300 mb-1">
-                    رقم الجوال (اسم المستخدم) 📱
+                    اسم المستخدم (Username) 👤 *
                   </label>
                   <input
-                    type="tel"
-                    value={authForm.phone}
-                    onChange={e => setAuthForm({ ...authForm, phone: e.target.value })}
-                    placeholder="05XXXXXXXX"
+                    type="text"
+                    value={authForm.username}
+                    onChange={e => setAuthForm({ ...authForm, username: e.target.value.toLowerCase().replace(/\s+/g, '') })}
+                    placeholder="مثال: ahmed99"
                     required
                     className="w-full bg-slate-950 border border-slate-800 text-white rounded-2xl px-4 py-3 text-xs font-bold font-mono outline-none focus:border-emerald-500"
                     dir="ltr"
                     autoFocus
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">
-                    كلمة المرور 🔒
-                  </label>
-                  <input
-                    type="password"
-                    value={authForm.password}
-                    onChange={e => setAuthForm({ ...authForm, password: e.target.value })}
-                    placeholder="••••••••"
-                    required
-                    className="w-full bg-slate-950 border border-slate-800 text-white rounded-2xl px-4 py-3 text-xs font-bold outline-none focus:border-emerald-500 font-mono"
-                    dir="ltr"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black py-3.5 rounded-2xl text-xs shadow-xl shadow-emerald-600/30 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.98]"
-                >
-                  <KeyRound size={15} />
-                  <span>تسجيل الدخول الفوري</span>
-                </button>
-
-                <div className="pt-2 text-center border-t border-slate-800/80">
-                  <p className="text-xs text-slate-400">
-                    عميل جديد؟{' '}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAuthMode('register');
-                        setOtpError('');
-                        setOtpSuccessMsg('');
-                      }}
-                      className="text-emerald-400 hover:text-emerald-300 font-black underline cursor-pointer"
-                    >
-                      إنشاء حساب جديد برقم الجوال والواتساب ✨
-                    </button>
-                  </p>
-                </div>
-              </form>
-            )}
-
-            {/* FORM 1B: REGISTER (Phone + Real Email + Password -> OTP) */}
-            {authMode === 'register' && (
-              <form onSubmit={(e) => {
-                e.preventDefault();
-                handleSendOtp(authForm.phone);
-              }} className="space-y-3.5">
-                <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">
-                    رقم الجوال (سيكون اسم المستخدم الخاص بك) 📱 *
-                  </label>
-                  <input
-                    type="tel"
-                    value={authForm.phone}
-                    onChange={e => setAuthForm({ ...authForm, phone: e.target.value })}
-                    placeholder="05XXXXXXXX"
-                    required
-                    className="w-full bg-slate-950 border border-slate-800 text-white rounded-2xl px-4 py-3 text-xs font-bold font-mono outline-none focus:border-emerald-500"
-                    dir="ltr"
-                    autoFocus
-                  />
-                  <p className="text-[10px] text-slate-500 mt-1">سيتم إرسال كود التحقق عبر الواتساب إلى هذا الرقم للتأكيد.</p>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">
-                    البريد الإلكتروني الحقيقي (لاستلام إشعارات الحجز) ✉️ *
-                  </label>
-                  <input
-                    type="email"
-                    value={authForm.email}
-                    onChange={e => setAuthForm({ ...authForm, email: e.target.value })}
-                    placeholder="client@example.com"
-                    required
-                    className="w-full bg-slate-950 border border-slate-800 text-white rounded-2xl px-4 py-3 text-xs font-bold outline-none focus:border-emerald-500 font-mono"
-                    dir="ltr"
                   />
                 </div>
 
@@ -979,124 +991,139 @@ export function ClientReservationPortal({
                   <label className="block text-xs font-bold text-slate-300 mb-1">
                     كلمة المرور 🔒 *
                   </label>
-                  <input
-                    type="password"
-                    value={authForm.password}
-                    onChange={e => setAuthForm({ ...authForm, password: e.target.value })}
-                    placeholder="••••••••"
-                    required
-                    className="w-full bg-slate-950 border border-slate-800 text-white rounded-2xl px-4 py-3 text-xs font-bold outline-none focus:border-emerald-500 font-mono"
-                    dir="ltr"
-                  />
+                  <div className="relative">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={authForm.password}
+                      onChange={e => setAuthForm({ ...authForm, password: e.target.value })}
+                      placeholder="••••••••"
+                      required
+                      className="w-full bg-slate-950 border border-slate-800 text-white rounded-2xl px-4 py-3 text-xs font-bold outline-none focus:border-emerald-500 font-mono pr-10"
+                      dir="ltr"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 cursor-pointer"
+                    >
+                      {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </button>
+                  </div>
                 </div>
 
                 <button
                   type="submit"
-                  disabled={isSendingOtp}
+                  disabled={isSubmittingAuth}
                   className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black py-3.5 rounded-2xl text-xs shadow-xl shadow-emerald-600/30 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.98] disabled:opacity-50"
                 >
-                  {isSendingOtp ? (
+                  {isSubmittingAuth ? (
                     <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                   ) : (
                     <>
-                      <span>إرسال رمز التحقق عبر الواتساب (OTP)</span>
-                      <Send size={14} className="rotate-180" />
+                      <KeyRound size={15} />
+                      <span>تسجيل الدخول الفوري</span>
                     </>
                   )}
                 </button>
 
                 <div className="pt-2 text-center border-t border-slate-800/80">
                   <p className="text-xs text-slate-400">
-                    لديك حساب بالفعل؟{' '}
+                    عميل جديد في الصالون؟{' '}
                     <button
                       type="button"
                       onClick={() => {
-                        setAuthMode('login');
-                        setOtpError('');
-                        setOtpSuccessMsg('');
+                        setAuthMode('register');
+                        setAuthError('');
+                        setAuthSuccessMsg('');
                       }}
                       className="text-emerald-400 hover:text-emerald-300 font-black underline cursor-pointer"
                     >
-                      تسجيل الدخول 🔑
+                      إنشاء حساب جديد باسم مستخدم وكلمة مرور ✨
                     </button>
                   </p>
                 </div>
               </form>
             )}
 
-            {/* FORM 2: Enter OTP Code (Expires in 60s) */}
-            {authMode === 'otp' && (
-              <div className="space-y-4">
-                <div className="text-center">
-                  <div className="inline-flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/30 text-amber-300 px-3 py-1 rounded-full text-xs font-bold mb-3 font-mono">
-                    <Clock size={13} />
-                    <span>صلاحية الرمز: {Math.floor(otpTimeLeft / 60)}:{(otpTimeLeft % 60).toString().padStart(2, '0')}</span>
+            {/* FORM 2: REGISTER (Username + Password + Name + Country + Optional Phone/Email/Referral) */}
+            {authMode === 'register' && (
+              <form onSubmit={handleRegister} className="space-y-3.5">
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-bold text-slate-300">
+                      اسم المستخدم الفريد (Username) 👤 *
+                    </label>
+                    {usernameAvailability === 'checking' && (
+                      <span className="text-[10px] text-amber-400 font-medium">جاري فحص التوفر... ⏳</span>
+                    )}
+                    {usernameAvailability === 'available' && (
+                      <span className="text-[10px] text-emerald-400 font-black">متاح ومميز ✅</span>
+                    )}
+                    {usernameAvailability === 'taken' && (
+                      <span className="text-[10px] text-rose-400 font-black">مستخدم مسبقاً ⚠️</span>
+                    )}
                   </div>
-
                   <input
                     type="text"
-                    maxLength={6}
-                    value={enteredOtp}
-                    onChange={e => setEnteredOtp(e.target.value)}
-                    placeholder="••••••"
-                    className="w-full max-w-[200px] mx-auto bg-slate-950 border-2 border-emerald-500 text-white text-center rounded-2xl py-3 text-2xl font-black font-mono tracking-widest outline-none focus:ring-4 focus:ring-emerald-500/20"
+                    value={authForm.username}
+                    onChange={e => setAuthForm({ ...authForm, username: e.target.value.toLowerCase().replace(/\s+/g, '') })}
+                    placeholder="مثال: ahmed_pro أو salem99"
+                    required
+                    className={`w-full bg-slate-950 border text-white rounded-2xl px-4 py-3 text-xs font-bold font-mono outline-none transition-all ${
+                      usernameAvailability === 'available'
+                        ? 'border-emerald-500 ring-2 ring-emerald-500/20'
+                        : usernameAvailability === 'taken'
+                        ? 'border-rose-500 ring-2 ring-rose-500/20'
+                        : 'border-slate-800 focus:border-emerald-500'
+                    }`}
                     dir="ltr"
+                    autoFocus
                   />
+                  <p className="text-[10px] text-slate-500 mt-1">يجب أن يكون فريداً بالإنجليزية، وبدونه لا يمكن تسجيل الدخول لاحقاً.</p>
                 </div>
 
-                {/* Demo Helper Button */}
-                {generatedOtp && showDemoOtpHelper && (
-                  <div className="bg-slate-950 p-2.5 rounded-2xl border border-slate-800 text-center">
-                    <p className="text-[10px] text-slate-400 font-bold mb-1">🧪 للاختبار السريع (الرمز المولّد):</p>
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">
+                    كلمة المرور 🔒 *
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={authForm.password}
+                      onChange={e => setAuthForm({ ...authForm, password: e.target.value })}
+                      placeholder="••••••••"
+                      required
+                      className="w-full bg-slate-950 border border-slate-800 text-white rounded-2xl px-4 py-3 text-xs font-bold outline-none focus:border-emerald-500 font-mono pr-10"
+                      dir="ltr"
+                    />
                     <button
                       type="button"
-                      onClick={() => setEnteredOtp(generatedOtp)}
-                      className="bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 font-mono font-black text-xs px-3 py-1 rounded-lg border border-emerald-500/40 cursor-pointer"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 cursor-pointer"
                     >
-                      تعبئة تلقائية: {generatedOtp}
+                      {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
                     </button>
                   </div>
-                )}
+                </div>
 
-                <button
-                  type="button"
-                  onClick={handleVerifyOtp}
-                  disabled={otpTimeLeft <= 0 || !enteredOtp}
-                  className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black py-3.5 rounded-2xl text-xs shadow-xl shadow-emerald-600/30 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40"
-                >
-                  <CheckCircle2 size={16} />
-                  <span>تأكيد الرمز والمتابعة</span>
-                </button>
-
-                {otpTimeLeft <= 0 && (
-                  <button
-                    type="button"
-                    onClick={() => handleSendOtp(authForm.phone)}
-                    className="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-2.5 rounded-2xl text-xs border border-slate-700 cursor-pointer"
-                  >
-                    إعادة إرسال رمز جديد 🔄
-                  </button>
-                )}
-              </div>
-            )}
-
-            {/* FORM 3: Complete Profile Details */}
-            {authMode === 'profile' && (
-              <div className="space-y-3.5">
                 <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">الاسم الكامل 👤</label>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">
+                    الاسم الكامل 👤 *
+                  </label>
                   <input
                     type="text"
                     value={authForm.name}
                     onChange={e => setAuthForm({ ...authForm, name: e.target.value })}
-                    placeholder="أحمد محمد"
+                    placeholder="مثال: أحمد محمد الكعبي"
                     required
                     className="w-full bg-slate-950 border border-slate-800 text-white rounded-2xl px-4 py-3 text-xs font-bold outline-none focus:border-emerald-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">الدولة (لعرض فروع بلدك) 🌍</label>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">
+                    الدولة (لعرض فروع الصالون في بلدك) 🌍 *
+                  </label>
                   <select
                     value={authForm.country}
                     onChange={e => setAuthForm({ ...authForm, country: e.target.value })}
@@ -1111,14 +1138,43 @@ export function ClientReservationPortal({
                 </div>
 
                 <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">
+                    رقم الجوال (اختياري / للتواصل وإشعارات الحجز) 📱
+                  </label>
+                  <input
+                    type="tel"
+                    value={authForm.phone}
+                    onChange={e => setAuthForm({ ...authForm, phone: e.target.value })}
+                    placeholder="05XXXXXXXX"
+                    className="w-full bg-slate-950 border border-slate-800 text-white rounded-2xl px-4 py-3 text-xs font-bold outline-none focus:border-emerald-500 font-mono"
+                    dir="ltr"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1">اختياري - لن يُستخدم لتسجيل الدخول، بل لإرسال تفاصيل الموعد.</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">
+                    البريد الإلكتروني (اختياري) ✉️
+                  </label>
+                  <input
+                    type="email"
+                    value={authForm.email}
+                    onChange={e => setAuthForm({ ...authForm, email: e.target.value })}
+                    placeholder="client@example.com"
+                    className="w-full bg-slate-950 border border-slate-800 text-white rounded-2xl px-4 py-3 text-xs font-bold outline-none focus:border-emerald-500 font-mono"
+                    dir="ltr"
+                  />
+                </div>
+
+                <div>
                   <label className="block text-xs font-bold text-amber-300 mb-1 flex items-center justify-between">
-                    <span>رقم جوال العميل الذي رشحك (اختياري) 🎁</span>
+                    <span>كود / جوال العميل الذي رشحك (اختياري) 🎁</span>
                     {referrerClientInPortal ? (
                       <span className="text-[10px] text-emerald-400 font-extrabold bg-emerald-950/80 border border-emerald-500/30 px-2 py-0.5 rounded-md">
                         تم التعرف على المرشِّح ✅
                       </span>
                     ) : (
-                      <span className="text-[10px] text-amber-400/80 font-normal">كود الترشيح / الإحالة</span>
+                      <span className="text-[10px] text-amber-400/80 font-normal">كود الإحالة</span>
                     )}
                   </label>
                   <input
@@ -1133,9 +1189,6 @@ export function ClientReservationPortal({
                     }`}
                     dir="ltr"
                   />
-                  {authForm.referredByPhone && authForm.referredByPhone.trim() === authForm.phone.trim() && (
-                    <p className="text-[10px] text-rose-400 font-bold mt-1">⚠️ لا يمكنك إدخال رقم جوالك كمرشِح لنفسك.</p>
-                  )}
 
                   {referrerClientInPortal && (
                     <div className="mt-2 p-2.5 bg-emerald-950/40 border border-emerald-500/40 rounded-xl flex items-center justify-between gap-2 text-emerald-200 text-xs animate-in fade-in">
@@ -1156,14 +1209,37 @@ export function ClientReservationPortal({
                 </div>
 
                 <button
-                  type="button"
-                  onClick={handleSaveProfile}
-                  className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black py-3.5 rounded-2xl text-xs shadow-xl shadow-emerald-600/30 flex items-center justify-center gap-2 cursor-pointer"
+                  type="submit"
+                  disabled={isSubmittingAuth || usernameAvailability === 'taken'}
+                  className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black py-3.5 rounded-2xl text-xs shadow-xl shadow-emerald-600/30 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.98] disabled:opacity-50"
                 >
-                  <CheckCircle2 size={16} />
-                  <span>حفظ وبدء الحجز الآن ✨</span>
+                  {isSubmittingAuth ? (
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <>
+                      <CheckCircle2 size={16} />
+                      <span>إنشاء الحساب وبدء الحجز الآن ✨</span>
+                    </>
+                  )}
                 </button>
-              </div>
+
+                <div className="pt-2 text-center border-t border-slate-800/80">
+                  <p className="text-xs text-slate-400">
+                    لديك حساب بالفعل؟{' '}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAuthMode('login');
+                        setAuthError('');
+                        setAuthSuccessMsg('');
+                      }}
+                      className="text-emerald-400 hover:text-emerald-300 font-black underline cursor-pointer"
+                    >
+                      تسجيل الدخول 🔑
+                    </button>
+                  </p>
+                </div>
+              </form>
             )}
           </div>
         </div>
@@ -1431,7 +1507,7 @@ export function ClientReservationPortal({
                   {/* Branch Employees with Photos & Bios */}
                   {branchEmployees.map(emp => {
                     const isSelected = selectedStaffId === emp.id;
-                    const staffAvail = isStaffAvailableOnDate(emp, selectedDate, settings);
+                    const staffAvail = isStaffAvailableOnDate(emp, selectedDate, effectiveSettings);
                     const isUnavailable = !staffAvail.available;
 
                     return (
@@ -1516,7 +1592,7 @@ export function ClientReservationPortal({
                   <div className="bg-rose-500/10 border border-rose-500/30 text-rose-300 p-4 rounded-2xl text-xs font-bold text-center space-y-1">
                     <p className="text-sm">⚠️ الصالون مغلق بالكامل في هذا اليوم</p>
                     <p className="text-[11px] text-rose-400/90 font-normal">
-                      {settings.bookingRules?.blockedDates?.find(b => b.date === selectedDate)?.reason || 'عطلة رسمية أو صيانة دورية - يرجى اختيار تاريخ آخر من الأعلى'}
+                      {effectiveSettings.bookingRules?.blockedDates?.find(b => b.date === selectedDate)?.reason || 'عطلة رسمية أو صيانة دورية - يرجى اختيار تاريخ آخر من الأعلى'}
                     </p>
                   </div>
                 ) : (
@@ -1701,8 +1777,8 @@ export function ClientReservationPortal({
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-black text-white text-sm font-mono">{b.bookingCode || b.id.slice(0, 8)}</span>
                         {b.queueNumber && (
-                          <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono">
-                            🎟️ دور #{b.queueNumber}
+                          <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 font-mono shadow-2xs">
+                            🎟️ دور B-{b.queueNumber}
                           </span>
                         )}
                         <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full ${
@@ -1773,9 +1849,9 @@ export function ClientReservationPortal({
                 كود الحجز الخاص بك: <strong className="text-emerald-400 font-mono text-sm">{completedBookingResult.bookingCode}</strong>
               </p>
               {completedBookingResult.queueNumber && (
-                <div className="mt-2.5 py-2 px-4 bg-amber-500/15 border border-amber-500/40 rounded-2xl inline-block text-amber-300 font-bold text-xs shadow-sm">
+                <div className="mt-2.5 py-2 px-4 bg-indigo-500/15 border border-indigo-500/40 rounded-2xl inline-block text-indigo-300 font-bold text-xs shadow-sm">
                   <span>🎟️ رقم دورك المبدئي بالصالون: </span>
-                  <strong className="font-mono text-base text-amber-400 font-black">#{completedBookingResult.queueNumber}</strong>
+                  <strong className="font-mono text-base text-indigo-400 font-black">B-{completedBookingResult.queueNumber}</strong>
                 </div>
               )}
             </div>

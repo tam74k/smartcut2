@@ -7,13 +7,114 @@ const QUEUE_SEQ_KEY_PREFIX = 'smartcut_queue_seq_';
 
 export const QueueService = {
   /**
-   * توليد الرقم التسلسلي التالي للدور سحابياً مع مطابقة تذاكر الكيوسك والحجوزات وأجهزة الاستقبال
+  /**
+   * تنسيق رقم دور الحجز لتمييزه بحرف B عن أرقام الكيوسك المباشرة
+   * مثال: 1 يصبح B-1، 2 يصبح B-2
    */
-  async getNextQueueNumberAsync(salonId: string, branchId: string = 'b-main', shiftDate?: string): Promise<number> {
-    const today = shiftDate || new Date().toISOString().split('T')[0];
+  formatBookingNumber(queueNumber: number | string | undefined | null): string {
+    if (!queueNumber) return '-';
+    const clean = typeof queueNumber === 'string' ? queueNumber.replace(/[^0-9]/g, '') : queueNumber;
+    return `B-${clean || queueNumber}`;
+  },
+
+  /**
+   * تنسيق رقم الدور للعرض والطباعة حسب المصدر للفصل بين عملاء الكيوسك وعملاء الحجوزات
+   */
+  formatQueueNumber(queueNumber: number | string | undefined | null, source?: string): string {
+    if (!queueNumber) return '-';
+    if (source === 'booking') {
+      return this.formatBookingNumber(queueNumber);
+    }
+    return `#${queueNumber}`;
+  },
+
+  /**
+   * توليد رقم الدور التسلسلي للحجوزات فقط (معزول تماماً عن أرقام الكيوسك):
+   * - يعتمد على تاريخ الحجز (bookingDate)
+   * - إذا كان الحجز بتاريخ اليوم، يأخذ التسلسل التالي لآخر رقم دور حجز لليوم
+   * - إذا كان بتاريخ آخر، يأخذ التسلسل حسب حجوزات ذلك اليوم المحدد
+   * - وعندما نكون في ذلك اليوم، تستكمل الحجوزات بعد آخر رقم حجز سابق
+   */
+  async getNextBookingQueueNumberAsync(salonId: string, branchId: string = 'b-main', bookingDate?: string): Promise<number> {
+    const targetDate = bookingDate ? bookingDate.split('T')[0] : new Date().toISOString().split('T')[0];
     let maxFound = 0;
 
-    // 1. فحص أعلى رقم دور في تذاكر الانتظار السحابية (queue_tickets)
+    // 1. فحص الحجوزات السحابية في جدول bookings لنفس التاريخ المحدد ونفس الفرع
+    try {
+      const client = SupabaseService.getClient();
+      const validSalonId = toSalonUUID(salonId);
+      if (client && validSalonId) {
+        let q = client
+          .from('bookings')
+          .select('queue_number')
+          .eq('salon_id', validSalonId)
+          .eq('date', targetDate);
+
+        if (branchId) {
+          q = q.eq('branch_id', branchId);
+        }
+
+        const { data } = await q;
+        if (data && Array.isArray(data)) {
+          for (const row of data) {
+            if (row.queue_number) {
+              maxFound = Math.max(maxFound, Number(row.queue_number) || 0);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Supabase booking max queue query error:', e);
+    }
+
+    // 2. فحص الحجوزات المخزنة محلياً في المتصفح لنفس التاريخ المحدد
+    try {
+      const savedBookings = localStorage.getItem('smartcut_bookings');
+      if (savedBookings) {
+        const bList: Booking[] = JSON.parse(savedBookings);
+        if (Array.isArray(bList)) {
+          for (const b of bList) {
+            if ((!salonId || b.salonId === salonId) &&
+                (!branchId || b.branchId === branchId) &&
+                b.date === targetDate &&
+                b.queueNumber) {
+              maxFound = Math.max(maxFound, Number(b.queueNumber) || 0);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Local storage booking max queue query error:', e);
+    }
+
+    // 3. فحص عداد تسلسل الحجوزات لهذا التاريخ
+    const seqKey = `smartcut_booking_seq_${salonId || 'default'}_${branchId || 'main'}_${targetDate}`;
+    try {
+      const currentSeq = localStorage.getItem(seqKey);
+      if (currentSeq) {
+        maxFound = Math.max(maxFound, parseInt(currentSeq, 10) || 0);
+      }
+    } catch {}
+
+    const next = maxFound + 1;
+
+    try {
+      localStorage.setItem(seqKey, next.toString());
+    } catch {}
+
+    return next;
+  },
+
+  /**
+   * توليد رقم الدور التسلسلي للكيوسك / العملاء المباشرين (معزول تماماً عن الحجوزات):
+   * - يعتمد على تاريخ الوردية الحالية
+   * - يبحث حصراً في تذاكر الكيوسك (source !== 'booking')
+   */
+  async getNextKioskQueueNumberAsync(salonId: string, branchId: string = 'b-main', shiftDate?: string): Promise<number> {
+    const today = shiftDate ? shiftDate.split('T')[0] : new Date().toISOString().split('T')[0];
+    let maxFound = 0;
+
+    // 1. فحص أعلى رقم دور في تذاكر الانتظار السحابية للكيوسك فقط
     try {
       const client = SupabaseService.getClient();
       const validSalonId = toSalonUUID(salonId);
@@ -23,6 +124,7 @@ export const QueueService = {
           .select('queue_number')
           .eq('salon_id', validSalonId)
           .eq('shift_date', today)
+          .neq('source', 'booking')
           .order('queue_number', { ascending: false })
           .limit(1);
 
@@ -34,59 +136,25 @@ export const QueueService = {
         if (tData && tData.length > 0) {
           maxFound = Math.max(maxFound, Number(tData[0].queue_number) || 0);
         }
-
-        // فحص أعلى رقم دور في جدول الحجوزات السحابي (bookings)
-        let qBookings = client
-          .from('bookings')
-          .select('queue_number')
-          .eq('salon_id', validSalonId)
-          .eq('date', today)
-          .order('queue_number', { ascending: false })
-          .limit(1);
-
-        if (branchId) {
-          qBookings = qBookings.eq('branch_id', branchId);
-        }
-
-        const { data: bData } = await qBookings;
-        if (bData && bData.length > 0) {
-          maxFound = Math.max(maxFound, Number(bData[0].queue_number) || 0);
-        }
       }
     } catch (e) {
-      console.warn('Supabase next queue query fallback:', e);
+      console.warn('Supabase kiosk queue query fallback:', e);
     }
 
-    // 2. فحص التذاكر المخزنة محلياً في المتصفح
+    // 2. فحص التذاكر المخزنة محلياً للكيوسك فقط
     try {
       const localTickets = this.getTickets(salonId, branchId, today);
       for (const t of localTickets) {
-        if (t.queueNumber) maxFound = Math.max(maxFound, Number(t.queueNumber) || 0);
-      }
-    } catch {}
-
-    // 3. فحص الحجوزات المخزنة محلياً في المتصفح
-    try {
-      const savedBookings = localStorage.getItem('smartcut_bookings');
-      if (savedBookings) {
-        const bList = JSON.parse(savedBookings);
-        if (Array.isArray(bList)) {
-          for (const b of bList) {
-            if ((!salonId || b.salonId === salonId) &&
-                (!branchId || b.branchId === branchId) &&
-                (!today || b.date === today) &&
-                b.queueNumber) {
-              maxFound = Math.max(maxFound, Number(b.queueNumber) || 0);
-            }
-          }
+        if (t.source !== 'booking' && t.queueNumber) {
+          maxFound = Math.max(maxFound, Number(t.queueNumber) || 0);
         }
       }
     } catch {}
 
-    // 4. فحص عداد التسلسل المخزن
+    // 3. فحص عداد التسلسل المخزن للكيوسك
+    const seqKey = `${QUEUE_SEQ_KEY_PREFIX}kiosk_${salonId || 'default'}_${branchId || 'main'}_${today}`;
     try {
-      const key = `${QUEUE_SEQ_KEY_PREFIX}${salonId || 'default'}_${branchId || 'main'}_${today}`;
-      const currentSeq = localStorage.getItem(key);
+      const currentSeq = localStorage.getItem(seqKey);
       if (currentSeq) {
         maxFound = Math.max(maxFound, parseInt(currentSeq, 10) || 0);
       }
@@ -95,45 +163,35 @@ export const QueueService = {
     const next = maxFound + 1;
 
     try {
-      const key = `${QUEUE_SEQ_KEY_PREFIX}${salonId || 'default'}_${branchId || 'main'}_${today}`;
-      localStorage.setItem(key, next.toString());
+      localStorage.setItem(seqKey, next.toString());
     } catch {}
 
     return next;
   },
 
   /**
-   * توليد الرقم التسلسلي التالي للدور للفرع والوردية الحالية (يبدأ من 1) محلياً
+   * توليد الرقم التسلسلي التالي للدور (توافق عام)
+   */
+  async getNextQueueNumberAsync(salonId: string, branchId: string = 'b-main', shiftDate?: string): Promise<number> {
+    return this.getNextKioskQueueNumberAsync(salonId, branchId, shiftDate);
+  },
+
+  /**
+   * توليد الرقم التسلسلي التالي للدور محلياً
    */
   getNextQueueNumber(salonId: string, branchId: string = 'b-main', shiftDate?: string): number {
     try {
-      const today = shiftDate || new Date().toISOString().split('T')[0];
+      const today = shiftDate ? shiftDate.split('T')[0] : new Date().toISOString().split('T')[0];
       let maxFound = 0;
 
-      // 1. فحص التذاكر المحلية
       const localTickets = this.getTickets(salonId, branchId, today);
       for (const t of localTickets) {
-        if (t.queueNumber) maxFound = Math.max(maxFound, Number(t.queueNumber) || 0);
-      }
-
-      // 2. فحص الحجوزات المحلية
-      const savedBookings = localStorage.getItem('smartcut_bookings');
-      if (savedBookings) {
-        const bList = JSON.parse(savedBookings);
-        if (Array.isArray(bList)) {
-          for (const b of bList) {
-            if ((!salonId || b.salonId === salonId) &&
-                (!branchId || b.branchId === branchId) &&
-                (!today || b.date === today) &&
-                b.queueNumber) {
-              maxFound = Math.max(maxFound, Number(b.queueNumber) || 0);
-            }
-          }
+        if (t.source !== 'booking' && t.queueNumber) {
+          maxFound = Math.max(maxFound, Number(t.queueNumber) || 0);
         }
       }
 
-      // 3. فحص العداد
-      const key = `${QUEUE_SEQ_KEY_PREFIX}${salonId || 'default'}_${branchId || 'main'}_${today}`;
+      const key = `${QUEUE_SEQ_KEY_PREFIX}kiosk_${salonId || 'default'}_${branchId || 'main'}_${today}`;
       const current = localStorage.getItem(key);
       if (current) {
         maxFound = Math.max(maxFound, parseInt(current, 10) || 0);
@@ -220,29 +278,31 @@ export const QueueService = {
   },
 
   /**
-   * اشتراك لحظي (Real-time WebSockets) في جدول تذاكر الانتظار
+   * استماع لتحديثات تذاكر الانتظار (عبر BroadcastChannel ومزامنة خفيفة بدون WebSockets)
    */
   subscribe(salonId: string, onUpdate: () => void): () => void {
     try {
-      const client = SupabaseService.getClient();
-      if (!client) return () => {};
-
-      const channelName = `queue_tickets_${Date.now()}`;
-      const channel = client
-        .channel(channelName)
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'queue_tickets' },
-          () => {
+      // استخدام BroadcastChannel للمزامنة الفورية بين نوافذ وشاشات المتصفح لنفس الصالون
+      let bc: BroadcastChannel | null = null;
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        bc = new BroadcastChannel(`smartcut_queue_${salonId || 'default'}`);
+        bc.onmessage = (event) => {
+          if (event.data?.type === 'QUEUE_UPDATED') {
             onUpdate();
           }
-        )
-        .subscribe();
+        };
+      }
+
+      // فحص دوري خفيف (كل 4 ثوانٍ) كأمان إضافي لجلب أي تذاكر واردة من السحابة
+      const pollInterval = setInterval(() => {
+        onUpdate();
+      }, 4000);
 
       return () => {
-        try {
-          client.removeChannel(channel);
-        } catch {}
+        if (bc) {
+          try { bc.close(); } catch {}
+        }
+        clearInterval(pollInterval);
       };
     } catch {
       return () => {};
@@ -264,6 +324,15 @@ export const QueueService = {
         updated = [ticket, ...current];
       }
       localStorage.setItem(QUEUE_STORAGE_KEY, JSON.stringify(updated));
+
+      // إرسال إشعار فوري عبر BroadcastChannel للشاشات المفتوحة في نفس المتصفح
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        try {
+          const bc = new BroadcastChannel(`smartcut_queue_${ticket.salonId || 'default'}`);
+          bc.postMessage({ type: 'QUEUE_UPDATED', ticketId: ticket.id });
+          bc.close();
+        } catch {}
+      }
 
       // تزامن سحابي فوري مع Supabase
       try {
@@ -304,6 +373,14 @@ export const QueueService = {
       // إذا كانت الحالة إلغاء أو لم يحضر، يتم حذف/إلغاء الفاتورة المعلقة المقترنة
       if (updates.status === 'cancelled' || updates.status === 'no_show') {
         this.cancelHeldInvoiceForTicket(ticketId);
+      }
+      // إرسال إشعار فوري عبر BroadcastChannel للشاشات المفتوحة في نفس المتصفح
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        try {
+          const bc = new BroadcastChannel(`smartcut_queue_${updatedTicket.salonId || 'default'}`);
+          bc.postMessage({ type: 'QUEUE_UPDATED', ticketId });
+          bc.close();
+        } catch {}
       }
 
       // تزامن سحابي مع Supabase
@@ -393,22 +470,21 @@ export const QueueService = {
   },
 
   /**
-   * تسجيل حجز وإدراجه في طابور الانتظار (Queue Calling Screen) وفواتير POS المعلقة:
-   * 1. إصدار تذكرة انتظار برقم الدور المحدد ومصدرها 'booking'.
-   * 2. إنشاء فاتورة معلقة في الكاشير برقم الدور وبيانات العميل.
+   * تسجيل حجز وإدراجه في طابور الانتظار (Queue Calling Screen):
+   * 1. إصدار تذكرة انتظار برقم الدور المحدد ومصدرها 'booking' مميزة بحرف B.
+   * 2. بناءً على طلب الإدارة: لا يتم فتح أي فاتورة معلقة نهائياً عند إضافة الحجز.
    */
   async createTicketFromBooking(params: {
     booking: Booking;
     salonId?: string;
     branchId?: string;
     client?: Client;
-  }): Promise<{ ticket: QueueTicket; heldInvoice: HeldInvoice }> {
+  }): Promise<{ ticket: QueueTicket }> {
     const { booking } = params;
     const salonId = params.salonId || booking.salonId || '';
     const branchId = params.branchId || booking.branchId || 'b-main';
     const now = new Date();
     const ticketId = 'QT-B-' + booking.id;
-    const heldInvoiceId = 'HELD-B-' + booking.id;
 
     // Services summary
     const servicesText = (booking.services || []).map(s => s.serviceName || (s as any).name).filter(Boolean).join(' + ');
@@ -432,7 +508,8 @@ export const QueueService = {
       status: 'waiting',
       source: 'booking',
       bookingId: booking.id,
-      heldInvoiceId,
+      // لا يتم فتح فاتورة معلقة نهائياً عند إضافة الحجز
+      heldInvoiceId: undefined,
       assignedEmployeeId: firstStaffId,
       assignedEmployeeName: firstStaffName,
       checkInTime: now.toISOString(),
@@ -442,67 +519,8 @@ export const QueueService = {
 
     await this.saveTicket(ticket);
 
-    // إنشاء فاتورة معلقة في شاشة الكاشير
-    const heldInvoice: HeldInvoice = {
-      id: heldInvoiceId,
-      heldAt: now.toISOString(),
-      timeStr: booking.time || now.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
-      client: params.client || {
-        id: 'C-' + Date.now(),
-        name: booking.clientName,
-        phone: booking.phone,
-        loyaltyPoints: 0,
-        cashback: 0,
-        createdAt: now.toISOString()
-      },
-      clientSearch: `${booking.clientName} - ${booking.phone}`,
-      cart: (booking.services || []).map(s => ({
-        cartId: 'item-' + Math.random().toString(36).substr(2, 9),
-        item: {
-          id: s.serviceId,
-          name: s.serviceName,
-          price: s.price,
-          duration: 30
-        },
-        quantity: 1,
-        employeeId: s.technicianId && s.technicianId !== 'any' ? s.technicianId : '',
-        type: 'service',
-        price: s.price
-      })),
-      discount: { type: 'percentage', value: 0 },
-      advanceDeduction: (booking.advancePayments || []).reduce((sum, p) => sum + p.amount, 0),
-      advancePayments: booking.advancePayments || [],
-      bookingId: booking.id,
-      note: `حجز موعد الساعة: ${booking.time || ''} - تذكرة دور #${booking.queueNumber}`,
-      queueNumber: booking.queueNumber,
-      queueTicketId: ticketId,
-      salonId,
-      branchId
-    };
-
-    // حفظ الفاتورة المعلقة محلياً
-    try {
-      const savedInvoices = localStorage.getItem('smartcut_held_invoices');
-      const heldList: HeldInvoice[] = savedInvoices ? JSON.parse(savedInvoices) : [];
-      const existingIdx = heldList.findIndex(h => h.id === heldInvoiceId || h.queueTicketId === ticketId);
-      if (existingIdx >= 0) {
-        heldList[existingIdx] = heldInvoice;
-      } else {
-        heldList.unshift(heldInvoice);
-      }
-      localStorage.setItem('smartcut_held_invoices', JSON.stringify(heldList));
-    } catch (e) {
-      console.warn('Failed to save held invoice for booking ticket locally:', e);
-    }
-
-    // حفظ الفاتورة المعلقة سحابياً في Supabase
-    try {
-      await DB.saveHeldInvoice(heldInvoice);
-    } catch (e) {
-      console.warn('Failed to save held invoice for booking ticket to cloud:', e);
-    }
-
-    return { ticket, heldInvoice };
+    // لا يتم فتح أي فاتورة معلقة إطلاقاً عند إضافة الحجز بناء على رغبة المستخدم
+    return { ticket };
   },
 
   /**
@@ -528,21 +546,14 @@ export const QueueService = {
   },
 
   /**
-   * مزامنة حجوزات اليوم تلقائياً مع شاشة المناداة للتأكد من وجود تذكرة لكل حجز
+   * مزامنة حجوزات اليوم وتحويلها تلقائياً إلى تذاكر انتظار في شاشة المناداة:
    */
-  async syncTodayBookingsToQueue(salonId: string, branchId: string = 'b-main', shiftDate?: string): Promise<void> {
-    const today = shiftDate || new Date().toISOString().split('T')[0];
+  async syncTodayBookingsToQueue(salonId: string, branchId: string = 'b-main'): Promise<void> {
     try {
-      // 1. فحص التذاكر الموجودة حالياً
-      const currentTickets = await this.fetchTicketsAsync(salonId, branchId, today);
-      const existingBookingTicketIds = new Set(
-        currentTickets
-          .filter(t => t.source === 'booking' || t.bookingId)
-          .map(t => t.bookingId || t.id.replace('QT-B-', ''))
-          .filter(Boolean)
-      );
+      const today = new Date().toISOString().split('T')[0];
+      const existingTickets = this.getTickets(salonId, branchId, today);
+      const existingBookingTicketIds = new Set(existingTickets.map(t => t.bookingId).filter(Boolean));
 
-      // 2. جلب حجوزات اليوم من Supabase
       let todayBookings: Booking[] = [];
       const client = SupabaseService.getClient();
       const validSalonId = toSalonUUID(salonId);
@@ -582,7 +593,7 @@ export const QueueService = {
         if (booking.status === 'cancelled') continue;
         if (!existingBookingTicketIds.has(booking.id)) {
           if (!booking.queueNumber) {
-            booking.queueNumber = await this.getNextQueueNumberAsync(salonId, branchId, today);
+            booking.queueNumber = await this.getNextBookingQueueNumberAsync(salonId, branchId, today);
             try {
               if (client) {
                 await client.from('bookings').update({ queue_number: booking.queueNumber }).eq('id', booking.id);

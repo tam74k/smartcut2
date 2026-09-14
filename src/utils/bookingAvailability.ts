@@ -50,19 +50,37 @@ export function minutesToFormattedSlot(totalMinutes: number): string {
   return `${padH}:${padM} ${marker}`;
 }
 
+const ARABIC_DAYS_MAP: Record<string, string> = {
+  'السبت': 'Saturday',
+  'الأحد': 'Sunday',
+  'الاحد': 'Sunday',
+  'الإثنين': 'Monday',
+  'الاثنين': 'Monday',
+  'الثلاثاء': 'Tuesday',
+  'الأربعاء': 'Wednesday',
+  'الاربعاء': 'Wednesday',
+  'الخميس': 'Thursday',
+  'الجمعة': 'Friday'
+};
+
 /**
  * Generates available time slots dynamically from salon opening time to 1 hour before closing time.
- * Step interval is controlled by settings (e.g. every 60 mins if max capacity is 1, or every 30 mins if max capacity is 2).
+ * Supports standard daytime hours as well as night/overnight hours crossing midnight (e.g. 14:00 to 01:00 / 02:00).
  */
 export function generateSalonTimeSlots(settings: AppSettings): string[] {
   const openingStr = settings.bookingRules?.openingTime || '10:00';
   const closingStr = settings.bookingRules?.closingTime || '23:00';
 
-  const openingMin = timeSlotToMinutes(openingStr);
-  const closingMin = timeSlotToMinutes(closingStr);
+  let openingMin = timeSlotToMinutes(openingStr);
+  let closingMin = timeSlotToMinutes(closingStr);
+
+  // If closing is at or before opening (e.g. opens 14:00 and closes at 01:00 AM or 02:00 AM or 00:00 midnight)
+  if (closingMin <= openingMin) {
+    closingMin += 1440; // Spans past midnight into next morning
+  }
 
   // End slots 1 hour (60 minutes) before salon closing
-  const endLimitMin = Math.max(openingMin, closingMin - 60);
+  const endLimitMin = closingMin - 60;
 
   // Determine interval: 30 mins or 60 mins
   let interval = settings.bookingRules?.slotIntervalMinutes;
@@ -92,18 +110,20 @@ export function generateSalonTimeSlots(settings: AppSettings): string[] {
  * Checks if a specific entire date is blocked by administration
  */
 export function isDateBlocked(dateStr: string, settings: AppSettings): boolean {
-  if (!settings.bookingRules?.blockedDates) return false;
-  return settings.bookingRules.blockedDates.some(b => b.date === dateStr);
+  if (!settings.bookingRules?.blockedDates || !Array.isArray(settings.bookingRules.blockedDates)) return false;
+  return settings.bookingRules.blockedDates.some(b => b && b.date && b.date.trim() === (dateStr || '').trim());
 }
 
 /**
  * Checks if a specific time slot on a date is blocked by administration
  */
 export function isHourBlocked(dateStr: string, timeSlot: string, settings: AppSettings): boolean {
-  if (!settings.bookingRules?.blockedHours) return false;
+  if (!settings.bookingRules?.blockedHours || !Array.isArray(settings.bookingRules.blockedHours)) return false;
+  const targetSlotMin = timeSlotToMinutes(timeSlot);
   return settings.bookingRules.blockedHours.some(b => {
-    if (b.date !== dateStr) return false;
-    return b.time === timeSlot || timeSlotToMinutes(b.time) === timeSlotToMinutes(timeSlot);
+    if (!b || !b.date || !b.time) return false;
+    if (b.date.trim() !== (dateStr || '').trim()) return false;
+    return b.time === timeSlot || timeSlotToMinutes(b.time) === targetSlotMin;
   });
 }
 
@@ -120,7 +140,7 @@ export function isStaffAvailableOnDate(
 ): { available: boolean; reason?: string } {
   // 1. Explicit admin block for this staff member on this date
   const staffBlock = settings.bookingRules?.staffUnavailabilities?.find(
-    s => s.employeeId === employee.id && s.date === dateStr
+    s => s && s.employeeId === employee.id && s.date && s.date.trim() === (dateStr || '').trim()
   );
   if (staffBlock) {
     return { available: false, reason: staffBlock.reason || 'إجازة / غير متاح إدارياً' };
@@ -131,12 +151,30 @@ export function isStaffAvailableOnDate(
     return { available: false, reason: 'الموظف غير نشط' };
   }
 
-  // 3. Weekly Day Off Check
-  const d = new Date(dateStr);
-  const dayName = DAYS_MAP[d.getDay()];
-  const weeklyDaysOff = employee.weeklyDaysOff || ['Friday'];
+  // 3. Weekly Day Off Check (Timezone-safe day of week parsing)
+  let dayName = '';
+  const parts = (dateStr || '').split('-');
+  if (parts.length === 3) {
+    const y = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10) - 1;
+    const day = parseInt(parts[2], 10);
+    const d = new Date(y, m, day);
+    dayName = DAYS_MAP[d.getDay()];
+  } else {
+    const d = new Date(dateStr);
+    dayName = DAYS_MAP[d.getDay()];
+  }
 
-  if (weeklyDaysOff.includes(dayName)) {
+  const rawDaysOff = employee.weeklyDaysOff || ['Friday'];
+  const isOffDay = rawDaysOff.some(off => {
+    if (!off) return false;
+    const clean = off.trim();
+    if (clean.toLowerCase() === dayName.toLowerCase()) return true;
+    if (ARABIC_DAYS_MAP[clean]?.toLowerCase() === dayName.toLowerCase()) return true;
+    return false;
+  });
+
+  if (isOffDay) {
     // If there is an explicit attendance/fingerprint log or check-in, allow booking!
     if (hasAttendanceCheckIn) {
       return { available: true };
@@ -150,8 +188,7 @@ export function isStaffAvailableOnDate(
 
 /**
  * Checks if an employee's shift hours cover the requested time slot:
- * e.g. If staff shift is 15:00 - 23:00 (03:00 PM to 11:00 PM),
- * he is UNAVAILABLE before 15:00 (03:00 PM).
+ * Supports standard shifts (e.g. 09:00 to 22:00) as well as night shifts crossing midnight (e.g. 15:00 to 01:00 AM).
  */
 export function isStaffAvailableAtTime(
   employee: Employee,
@@ -159,21 +196,36 @@ export function isStaffAvailableAtTime(
 ): { available: boolean; reason?: string } {
   const slotMin = timeSlotToMinutes(timeSlot);
 
-  // Parse employee shift start and end (defaults: 09:00 to 22:00)
+  // Parse employee shift start and end (defaults: 09:00 to 23:00)
   const shiftStartMin = timeSlotToMinutes(employee.checkInTime || '09:00');
-  const shiftEndMin = timeSlotToMinutes(employee.checkOutTime || '22:00');
+  const shiftEndMin = timeSlotToMinutes(employee.checkOutTime || '23:00');
 
-  if (shiftStartMin && slotMin < shiftStartMin) {
-    return { 
-      available: false, 
-      reason: `دوام الموظف يبدأ الساعة ${employee.checkInTime || '09:00'}` 
-    };
+  // Case A: Standard Shift within same calendar day (e.g. 09:00 - 23:00)
+  if (shiftEndMin > shiftStartMin) {
+    if (shiftStartMin && slotMin < shiftStartMin) {
+      return { 
+        available: false, 
+        reason: `دوام الموظف يبدأ الساعة ${employee.checkInTime || '09:00'}` 
+      };
+    }
+
+    if (shiftEndMin && slotMin >= shiftEndMin) {
+      return { 
+        available: false, 
+        reason: `دوام الموظف ينتهي الساعة ${employee.checkOutTime || '23:00'}` 
+      };
+    }
+
+    return { available: true };
   }
 
-  if (shiftEndMin && slotMin >= shiftEndMin) {
-    return { 
-      available: false, 
-      reason: `دوام الموظف ينتهي الساعة ${employee.checkOutTime || '22:00'}` 
+  // Case B: Cross-midnight night shift (e.g. 15:00 to 02:00 AM)
+  // The employee is working if the slot is at/after start (>= 15:00) OR before end (< 02:00 AM)
+  const isWithinNightShift = (slotMin >= shiftStartMin) || (slotMin < shiftEndMin);
+  if (!isWithinNightShift) {
+    return {
+      available: false,
+      reason: `خارج ساعات دوام الموظف (${employee.checkInTime || '09:00'} - ${employee.checkOutTime || '23:00'})`
     };
   }
 

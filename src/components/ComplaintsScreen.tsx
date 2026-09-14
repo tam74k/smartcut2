@@ -27,10 +27,12 @@ import {
 } from 'lucide-react';
 import { ClientComplaint, Invoice, Employee, Client, AppSettings, AppUser } from '../types';
 import { ComplaintsService } from '../services/complaintsService';
-import { processImageFile, MAX_IMAGE_SIZE_KB } from '../utils/imageUpload';
+import { processImageFile, MAX_IMAGE_SIZE_KB, compressClientBeforeAfterPhoto } from '../utils/imageUpload';
+import { DB } from '../services/db';
 
 interface ComplaintsScreenProps {
   settings: AppSettings;
+  activeBranchId?: string;
   invoices: Invoice[];
   employees: Employee[];
   clients: Client[];
@@ -40,6 +42,7 @@ interface ComplaintsScreenProps {
 
 export function ComplaintsScreen({
   settings,
+  activeBranchId,
   invoices,
   employees,
   clients,
@@ -56,7 +59,6 @@ export function ComplaintsScreen({
   const [showActionModal, setShowActionModal] = useState(false);
   const [showResolveModal, setShowResolveModal] = useState(false);
   const [showPhotoPreview, setShowPhotoPreview] = useState<{ before?: string; after?: string; title: string } | null>(null);
-
   // New Action Form
   const [actionText, setActionText] = useState('');
 
@@ -121,16 +123,37 @@ export function ComplaintsScreen({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const res = await processImageFile(file);
-    if (res.error) {
-      alert(res.error);
+    // ضغط صورة العميل قبل / بعد بجودة واضحة وحجم فائق الصغر
+    const compressed = await compressClientBeforeAfterPhoto(file);
+    if (compressed.error) {
+      alert(compressed.error);
       return;
     }
 
-    if (type === 'before') {
-      setNewForm(prev => ({ ...prev, beforePhotoUrl: res.dataUrl }));
-    } else {
-      setNewForm(prev => ({ ...prev, afterPhotoUrl: res.dataUrl }));
+    const branchIdToUse = activeBranchId || settings.branchId;
+    const complaintTempId = 'cmp_' + Math.random().toString(36).substr(2, 7);
+    const oldUrl = type === 'before' ? newForm.beforePhotoUrl : newForm.afterPhotoUrl;
+
+    const uploadRes = await DB.uploadClientPhoto(
+      compressed.blob,
+      complaintTempId,
+      type,
+      settings.salonId,
+      branchIdToUse,
+      oldUrl
+    );
+
+    if (uploadRes.error) {
+      alert(uploadRes.error);
+      return;
+    }
+
+    if (uploadRes.url) {
+      if (type === 'before') {
+        setNewForm(prev => ({ ...prev, beforePhotoUrl: uploadRes.url }));
+      } else {
+        setNewForm(prev => ({ ...prev, afterPhotoUrl: uploadRes.url }));
+      }
     }
   };
 

@@ -63,7 +63,7 @@ export function QueueCallingScreen({
 
     load();
 
-    // 1. اشتراك لحظي عبر Real-time WebSockets
+    // 1. استماع فوري عبر BroadcastChannel (بدون WebSockets)
     const unsubscribe = QueueService.subscribe(settings.salonId, () => {
       load();
     });
@@ -107,9 +107,11 @@ export function QueueCallingScreen({
     try {
       if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel(); // clear previous
+        const isBooking = ticket.source === 'booking';
+        const numText = isBooking ? `حجز مسبق بي ${ticket.queueNumber}` : `${ticket.queueNumber}`;
         const text = empName 
-          ? `عميل رقم ${ticket.queueNumber}، يرجى التوجه إلى ${empName}`
-          : `عميل رقم ${ticket.queueNumber}`;
+          ? `عميل ${numText}، يرجى التوجه إلى ${empName}`
+          : `عميل ${numText}`;
         
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.lang = 'ar-SA';
@@ -469,7 +471,15 @@ export function QueueCallingScreen({
             {nextWaitingCustomer ? (
               <div>
                 <h2 className="text-xl sm:text-2xl font-black text-white flex items-center gap-2 mt-0.5">
-                  <span className="font-mono text-amber-400 font-black text-2xl">#{nextWaitingCustomer.queueNumber}</span>
+                  {nextWaitingCustomer.source === 'booking' ? (
+                    <span className="font-mono text-indigo-400 font-black text-2xl bg-indigo-950/80 border border-indigo-500/50 px-2.5 py-0.5 rounded-xl shadow-sm">
+                      B-{nextWaitingCustomer.queueNumber}
+                    </span>
+                  ) : (
+                    <span className="font-mono text-amber-400 font-black text-2xl">
+                      #{nextWaitingCustomer.queueNumber}
+                    </span>
+                  )}
                   <span>{nextWaitingCustomer.clientName}</span>
                 </h2>
                 <p className="text-xs text-slate-400 font-mono mt-0.5">
@@ -621,9 +631,15 @@ export function QueueCallingScreen({
                       
                       {/* Queue Number */}
                       <td className="py-3.5 px-4">
-                        <span className="font-mono text-lg font-black text-amber-400 px-2.5 py-1 bg-amber-950/60 border border-amber-800/80 rounded-xl inline-block shadow-sm">
-                          #{ticket.queueNumber}
-                        </span>
+                        {ticket.source === 'booking' ? (
+                          <span className="font-mono text-base font-black text-indigo-300 px-2.5 py-1 bg-indigo-950/80 border border-indigo-700/80 rounded-xl inline-block shadow-sm">
+                            B-{ticket.queueNumber}
+                          </span>
+                        ) : (
+                          <span className="font-mono text-lg font-black text-amber-400 px-2.5 py-1 bg-amber-950/60 border border-amber-800/80 rounded-xl inline-block shadow-sm">
+                            #{ticket.queueNumber}
+                          </span>
+                        )}
                       </td>
 
                       {/* Client Info */}

@@ -12,7 +12,7 @@ import {
   AlertTriangle, Check, X, Printer, UserX, UserCheck, Sparkles, Sliders, Layers,
   Camera, Image as ImageIcon, HeartHandshake, Fingerprint, Package 
 } from 'lucide-react';
-import { processImageFile, MAX_IMAGE_SIZE_KB } from '../utils/imageUpload';
+import { processImageFile, MAX_IMAGE_SIZE_KB, compressEmployeeAvatar } from '../utils/imageUpload';
 import { HRScreen } from './HRScreen';
 import { EmployeeAnalyticsScreen } from './EmployeeAnalyticsScreen';
 import { TipsScreen } from './TipsScreen';
@@ -38,10 +38,12 @@ export function EmployeesScreen({
   fingerprintLogs = [],
   setFingerprintLogs,
   custodies = [],
-  setCustodies
+  setCustodies,
+  activeBranchId
 }: { 
   settings: AppSettings;
   setSettings?: (s: AppSettings) => void;
+  activeBranchId?: string;
   employees: Employee[]; 
   setEmployees: (e: Employee[]) => void;
   transactions?: Transaction[];
@@ -84,7 +86,7 @@ export function EmployeesScreen({
     salaryType: 'salary',
     allowDualCommission: false,
     checkInTime: '09:00',
-    checkOutTime: '18:00',
+    checkOutTime: '23:00',
     weeklyDaysOff: ['Friday'],
     email: '',
     avatarUrl: '',
@@ -99,13 +101,32 @@ export function EmployeesScreen({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const res = await processImageFile(file);
-    if (res.error) {
-      alert(res.error);
+    // ضغط صورة الموظف بجودة فائقة وحجم بالغ الصغر (15-35 KB)
+    const compressed = await compressEmployeeAvatar(file);
+    if (compressed.error) {
+      alert(compressed.error);
       return;
     }
 
-    setFormData(prev => ({ ...prev, avatarUrl: res.dataUrl }));
+    const branchIdToUse = formData.branchId || activeBranchId || settings.branchId;
+    const empId = formData.id || ('emp_' + Math.random().toString(36).substr(2, 7));
+
+    const uploadRes = await DB.uploadEmployeeImage(
+      compressed.blob,
+      empId,
+      formData.avatarUrl,
+      settings.salonId,
+      branchIdToUse
+    );
+
+    if (uploadRes.error) {
+      alert(uploadRes.error);
+      return;
+    }
+
+    if (uploadRes.url) {
+      setFormData(prev => ({ ...prev, avatarUrl: uploadRes.url }));
+    }
   };
 
   // Modals state
@@ -128,7 +149,7 @@ export function EmployeesScreen({
   const [shiftScheduleForm, setShiftScheduleForm] = useState({
     date: defaultDate,
     checkInTime: '09:00',
-    checkOutTime: '18:00',
+    checkOutTime: '23:00',
     weeklyDaysOff: ['Friday'],
     reason: 'تعديل مواعيد العمل والورديات'
   });

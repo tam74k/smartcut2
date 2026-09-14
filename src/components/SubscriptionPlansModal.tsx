@@ -136,36 +136,70 @@ export const SubscriptionPlansModal: React.FC<Props> = ({
     return savings > 0 ? Math.round(savings) : 0;
   };
 
-  // Branch addon price for the chosen cycle & currency
-  const getAddonPrice = (): number => {
-    if (!addon) return currency === 'USD' ? 50 : 1500;
-    let val: any = 0;
-    if (currency === 'USD') {
-      switch (billingCycle) {
-        case '1m': val = addon.priceUsd1m ?? (addon as any).priceUsd_1m ?? (addon as any).price_usd_1m; break;
-        case '3m': val = addon.priceUsd3m ?? (addon as any).priceUsd_3m ?? (addon as any).price_usd_3m; break;
-        case '6m': val = addon.priceUsd6m ?? (addon as any).priceUsd_6m ?? (addon as any).price_usd_6m; break;
-        case '12m': val = addon.priceUsd12m ?? (addon as any).priceUsd_12m ?? (addon as any).price_usd_12m; break;
-      }
-    } else {
-      switch (billingCycle) {
-        case '1m': val = addon.priceEgp1m ?? (addon as any).priceEgp_1m ?? (addon as any).price_egp_1m; break;
-        case '3m': val = addon.priceEgp3m ?? (addon as any).priceEgp_3m ?? (addon as any).price_egp_3m; break;
-        case '6m': val = addon.priceEgp6m ?? (addon as any).priceEgp_6m ?? (addon as any).price_egp_6m; break;
-        case '12m': val = addon.priceEgp12m ?? (addon as any).priceEgp_12m ?? (addon as any).price_egp_12m; break;
-      }
-    }
-    return Number(val) || 0;
-  };
-
   // Selected plan object
   const selectedPlan = useMemo(() => {
     return plans.find(p => p.id === selectedPlanId) || plans[1] || plans[0];
   }, [plans, selectedPlanId]);
 
+  // Branch addon price for the chosen cycle & currency, strictly proportional and tied to the selected plan
+  const getAddonPrice = (plan?: SubscriptionPlan | null): number => {
+    const targetPlan = plan !== undefined ? plan : selectedPlan;
+    if (targetPlan) {
+      let planBranchVal: any = undefined;
+      if (currency === 'USD') {
+        switch (billingCycle) {
+          case '1m': planBranchVal = targetPlan.branchPriceUsd1m; break;
+          case '3m': planBranchVal = targetPlan.branchPriceUsd3m; break;
+          case '6m': planBranchVal = targetPlan.branchPriceUsd6m; break;
+          case '12m': planBranchVal = targetPlan.branchPriceUsd12m; break;
+        }
+      } else {
+        switch (billingCycle) {
+          case '1m': planBranchVal = targetPlan.branchPriceEgp1m; break;
+          case '3m': planBranchVal = targetPlan.branchPriceEgp3m; break;
+          case '6m': planBranchVal = targetPlan.branchPriceEgp6m; break;
+          case '12m': planBranchVal = targetPlan.branchPriceEgp12m; break;
+        }
+      }
+
+      if (planBranchVal !== undefined && planBranchVal !== null && !isNaN(Number(planBranchVal)) && Number(planBranchVal) > 0) {
+        return Number(planBranchVal);
+      }
+
+      // If not explicitly set in the plan, dynamically calculate 2/3 of the base plan price for that cycle
+      const basePlanPrice = getPlanPrice(targetPlan);
+      if (basePlanPrice > 0) {
+        return Math.round((basePlanPrice * 2) / 3);
+      }
+    }
+
+    // Fallback to subscription_addons table if available
+    if (addon) {
+      let val: any = 0;
+      if (currency === 'USD') {
+        switch (billingCycle) {
+          case '1m': val = addon.priceUsd1m ?? (addon as any).priceUsd_1m ?? (addon as any).price_usd_1m; break;
+          case '3m': val = addon.priceUsd3m ?? (addon as any).priceUsd_3m ?? (addon as any).price_usd_3m; break;
+          case '6m': val = addon.priceUsd6m ?? (addon as any).priceUsd_6m ?? (addon as any).price_usd_6m; break;
+          case '12m': val = addon.priceUsd12m ?? (addon as any).priceUsd_12m ?? (addon as any).price_usd_12m; break;
+        }
+      } else {
+        switch (billingCycle) {
+          case '1m': val = addon.priceEgp1m ?? (addon as any).priceEgp_1m ?? (addon as any).price_egp_1m; break;
+          case '3m': val = addon.priceEgp3m ?? (addon as any).priceEgp_3m ?? (addon as any).price_egp_3m; break;
+          case '6m': val = addon.priceEgp6m ?? (addon as any).priceEgp_6m ?? (addon as any).price_egp_6m; break;
+          case '12m': val = addon.priceEgp12m ?? (addon as any).priceEgp_12m ?? (addon as any).price_egp_12m; break;
+        }
+      }
+      return Number(val) || 0;
+    }
+
+    return currency === 'USD' ? 7 : 200;
+  };
+
   // Total Bill calculation
   const planPriceTotal = selectedPlan ? getPlanPrice(selectedPlan) : 0;
-  const addonPricePerBranch = getAddonPrice();
+  const addonPricePerBranch = getAddonPrice(selectedPlan);
   const addonsTotal = additionalBranches * addonPricePerBranch;
   const grandTotal = planPriceTotal + addonsTotal;
   const totalSavings = selectedPlan ? calculateSavings(selectedPlan) : 0;
@@ -187,8 +221,9 @@ export const SubscriptionPlansModal: React.FC<Props> = ({
 🏛️ اسم الصالون: ${salonName}
 📦 الباقة المختارة: ${planName}
 ⏱️ دورة الفوترة: ${cycleLabel}
-🏢 عدد الفروع الإضافية: ${additionalBranches} فرع
-💰 إجمالي الفاتورة: ${Number(grandTotal || 0).toLocaleString()} ${currencyLabel}
+💰 سعر الباقة الأساسية: ${Number(planPriceTotal || 0).toLocaleString()} ${currencyLabel}
+🏢 عدد الفروع الإضافية: ${additionalBranches} فرع ${additionalBranches > 0 ? `(سعر الفرع ${Number(addonPricePerBranch || 0).toLocaleString()} ${currencyLabel} = إجمالي ${Number(addonsTotal || 0).toLocaleString()} ${currencyLabel})` : ''}
+💳 إجمالي الفاتورة المطلوب سدادها: ${Number(grandTotal || 0).toLocaleString()} ${currencyLabel}
 ${totalSavings > 0 ? `🎁 إجمالي التوفير: ${Number(totalSavings || 0).toLocaleString()} ${currencyLabel}\n` : ''}
 يرجى تزويدي ببيانات الدفع (حساب بنكي / فودافون كاش / إنستاباي / رابط فيزا) لإرفاق إيصال التحويل وتأكيد التفعيل فوراً. شكراً لكم!`;
 
@@ -596,9 +631,18 @@ ${totalSavings > 0 ? `🎁 إجمالي التوفير: ${Number(totalSavings ||
                 <p className="text-xs text-slate-500 mt-1 max-w-xl leading-relaxed">
                   تسمح لك رخصة الفرع الإضافي بربط وتشغيل فرع إضافي في النظام مع قاعدة بيانات موحدة ومزامنة حية للمخزون والتقارير.
                 </p>
-                <p className="text-xs font-bold text-indigo-950 mt-1.5">
-                  سعر رخصة الفرع للمدة المختارة: <strong className="text-indigo-600 font-mono font-black">{Number(addonPricePerBranch || 0).toLocaleString()} {currencyLabel}</strong>
-                </p>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs font-bold text-slate-700 mt-2">
+                  <span className="bg-indigo-50 text-indigo-900 px-3 py-1 rounded-xl border border-indigo-100 flex items-center gap-1.5 shadow-2xs">
+                    <span>سعر رخصة الفرع لباقة <strong className="text-indigo-600">({selectedPlan?.planNameAr || 'الباقة المختارة'})</strong>:</span>
+                    <strong className="text-indigo-600 font-mono font-black text-sm">{Number(addonPricePerBranch || 0).toLocaleString()} {currencyLabel}</strong>
+                  </span>
+                  {additionalBranches > 0 && (
+                    <span className="bg-emerald-50 text-emerald-900 px-3 py-1 rounded-xl border border-emerald-100 flex items-center gap-1.5 shadow-2xs">
+                      <span>إجمالي تكلفة الفروع ({additionalBranches} فرع):</span>
+                      <strong className="text-emerald-700 font-mono font-black text-sm">{Number(addonsTotal || 0).toLocaleString()} {currencyLabel}</strong>
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
 

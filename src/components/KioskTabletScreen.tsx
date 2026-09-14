@@ -216,6 +216,7 @@ export function KioskTabletScreen({
 
   // Active Branch
   const [selectedBranchId, setSelectedBranchId] = useState<string>(() => {
+    if (activeUser?.branchId) return activeUser.branchId;
     try {
       const urlParams = new URLSearchParams(window.location.search);
       let bFromUrl = urlParams.get('branchId') || urlParams.get('branch');
@@ -230,6 +231,12 @@ export function KioskTabletScreen({
     } catch {}
     return branches[0]?.id || 'b-main';
   });
+
+  useEffect(() => {
+    if (activeUser?.branchId) {
+      setSelectedBranchId(activeUser.branchId);
+    }
+  }, [activeUser?.branchId]);
 
   const activeBranch = scopedBranches.find(b => b.id === selectedBranchId) || scopedBranches[0];
 
@@ -530,8 +537,8 @@ export function KioskTabletScreen({
         return;
       }
 
-      // Check role authorization (cashier, admin, manager, owner, programmer, supervisor, receptionist)
-      const allowedRoles = ['admin', 'cashier', 'manager', 'owner', 'programmer', 'supervisor', 'receptionist'];
+      // Check role authorization (cashier, admin, manager, owner, programmer, supervisor, receptionist, kiosk)
+      const allowedRoles = ['admin', 'cashier', 'manager', 'owner', 'programmer', 'supervisor', 'receptionist', 'kiosk'];
       if (!allowedRoles.includes(user.role)) {
         setLoginError('هذا الحساب لا يملك صلاحيات وصول الكادر');
         setIsLoggingIn(false);
@@ -701,10 +708,11 @@ export function KioskTabletScreen({
 
           <button
             onClick={() => setShowExitModal(true)}
-            className="p-2.5 bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white rounded-xl transition-colors border border-slate-700/60"
-            title="خروج الموظفين / الإعدادات"
+            className="px-3 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 hover:text-rose-200 rounded-xl transition-colors border border-rose-500/30 flex items-center gap-1.5 text-xs font-black cursor-pointer shadow-sm"
+            title="إغلاق الشاشة وتسجيل الخروج لمنع العبث"
           >
-            <Lock size={18} />
+            <Lock size={15} />
+            <span className="hidden sm:inline">إغلاق الشاشة وخروج 🔒</span>
           </button>
         </div>
       </header>
@@ -1082,27 +1090,47 @@ export function KioskTabletScreen({
                 </div>
 
                 {/* Primary Quick Actions */}
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={handleExitToMainApp}
-                    className="p-3 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs flex flex-col items-center justify-center gap-1.5 shadow cursor-pointer text-center"
-                  >
-                    <LogOut size={18} />
-                    <span>الخروج للنظام الرئيسي</span>
-                    <span className="text-[10px] font-normal opacity-80">(كاشير / إدارة)</span>
-                  </button>
+                {authenticatedStaff.role === 'kiosk' ? (
+                  <div className="space-y-3">
+                    <div className="p-3.5 bg-rose-500/10 border border-rose-500/30 rounded-2xl text-center">
+                      <Lock size={24} className="mx-auto text-rose-400 mb-1.5" />
+                      <h4 className="text-xs font-black text-white mb-1">إغلاق الشاشة ومنع العبث</h4>
+                      <p className="text-[11px] text-slate-300 leading-relaxed">
+                        سيتم إغلاق شاشة حجز الأدوار وتسجيل الخروج من النظام بالكامل لحماية الجهاز من أي عبث.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleExitToMainApp}
+                      className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white font-black text-xs flex items-center justify-center gap-2 shadow-lg shadow-rose-900/30 cursor-pointer transition-all"
+                    >
+                      <LogOut size={16} />
+                      <span>إغلاق الشاشة وتسجيل الخروج من النظام 🔒</span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={handleExitToMainApp}
+                      className="p-3 rounded-xl bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white font-black text-xs flex flex-col items-center justify-center gap-1.5 shadow cursor-pointer text-center"
+                    >
+                      <LogOut size={18} />
+                      <span>إغلاق الشاشة والخروج 🔒</span>
+                      <span className="text-[10px] font-normal opacity-90">(تسجيل الخروج من النظام)</span>
+                    </button>
 
-                  <button
-                    type="button"
-                    onClick={handleLockKiosk}
-                    className="p-3 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 hover:border-slate-600 font-bold text-xs flex flex-col items-center justify-center gap-1.5 cursor-pointer text-center"
-                  >
-                    <Lock size={18} className="text-amber-400" />
-                    <span>قفل شاشة الكيوسك</span>
-                    <span className="text-[10px] text-slate-400 font-normal">تعطيل مؤقت</span>
-                  </button>
-                </div>
+                    <button
+                      type="button"
+                      onClick={handleLockKiosk}
+                      className="p-3 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 hover:border-slate-600 font-bold text-xs flex flex-col items-center justify-center gap-1.5 cursor-pointer text-center"
+                    >
+                      <Lock size={18} className="text-amber-400" />
+                      <span>قفل شاشة الكيوسك</span>
+                      <span className="text-[10px] text-slate-400 font-normal">تعطيل مؤقت</span>
+                    </button>
+                  </div>
+                )}
 
                 {/* Settings Accordion / Panel */}
                 <div className="space-y-3 pt-3 border-t border-slate-800">

@@ -7,12 +7,14 @@ import { DB } from '../services/db';
 
 export function ServicesScreen({ 
   settings, 
+  activeBranchId,
   services, 
   setServices, 
   categories, 
   setCategories 
 }: { 
   settings: any;
+  activeBranchId?: string;
   services: ServiceItem[]; 
   setServices: (s: ServiceItem[]) => void; 
   categories: Category[]; 
@@ -289,17 +291,23 @@ export function ServicesScreen({
 
       // 1. إذا كان المستخدم رفع صورة جديدة (dataUrl) نرفعها لـ Supabase Storage (Bucket: services)
       if (serviceImagePreview && serviceImagePreview.startsWith('data:')) {
+        const branchIdToUse = activeBranchId || settings.branchId;
         const uploadedUrl = await DB.uploadServiceImage(
           serviceImagePreview,
           serviceId,
-          editingService?.imageUrl
+          editingService?.imageUrl,
+          settings.salonId,
+          branchIdToUse
         );
         if (uploadedUrl) {
           finalImageUrl = uploadedUrl;
+        } else {
+          setIsSavingService(false);
+          return;
         }
       } else if (!serviceImagePreview && editingService?.imageUrl) {
         // 2. إذا تم حذف الصورة يدوياً من النموذج نقوم بحذفها من Bucket services
-        await DB.deleteServiceImage(editingService.imageUrl);
+        await DB.deleteServiceImage(editingService.imageUrl, settings.salonId, activeBranchId || settings.branchId);
         finalImageUrl = '';
       }
 

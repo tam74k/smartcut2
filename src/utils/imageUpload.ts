@@ -269,3 +269,189 @@ export function dataUrlToBlob(dataUrl: string): Blob {
     return new Blob([]);
   }
 }
+
+/**
+ * دالة متقدمة لضغط وتصغير صور الموظفين والفنيين (Avatars)
+ * اقتصاص مربع 400x400 بكسل وجودة فائقة وحجم بالغ الصغر (15 - 35 كيلوبايت)
+ */
+export async function compressEmployeeAvatar(file: File): Promise<CompressedServiceImageResult> {
+  return new Promise((resolve) => {
+    if (!file.type.startsWith('image/')) {
+      resolve({
+        blob: new Blob([]),
+        dataUrl: '',
+        fileSizeKb: 0,
+        fileName: file.name,
+        error: 'الملف المختار ليس صورة صالحة.'
+      });
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const targetSize = 400; // أبعاد صورة الفني/الموظف
+        canvas.width = targetSize;
+        canvas.height = targetSize;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          const rawBlob = dataUrlToBlob(e.target?.result as string);
+          resolve({
+            blob: rawBlob,
+            dataUrl: e.target?.result as string,
+            fileSizeKb: Math.round(file.size / 1024),
+            fileName: file.name
+          });
+          return;
+        }
+
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+
+        // اقتصاص مربع من المنتصف (Center Crop) لضمان عدم تشوه الوجه
+        const minEdge = Math.min(img.width, img.height);
+        const sx = (img.width - minEdge) / 2;
+        const sy = (img.height - minEdge) / 2;
+        ctx.drawImage(img, sx, sy, minEdge, minEdge, 0, 0, targetSize, targetSize);
+
+        let mimeType = 'image/webp';
+        let quality = 0.8;
+        let compressedDataUrl = canvas.toDataURL(mimeType, quality);
+
+        if (!compressedDataUrl.startsWith('data:image/webp')) {
+          mimeType = 'image/jpeg';
+          compressedDataUrl = canvas.toDataURL(mimeType, quality);
+        }
+
+        while (compressedDataUrl.length > 50 * 1024 * 1.33 && quality > 0.4) {
+          quality -= 0.1;
+          compressedDataUrl = canvas.toDataURL(mimeType, quality);
+        }
+
+        const blob = dataUrlToBlob(compressedDataUrl);
+        const estimatedKb = Math.round(blob.size / 1024);
+        const cleanBaseName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+        const extension = mimeType === 'image/webp' ? 'webp' : 'jpg';
+
+        resolve({
+          blob,
+          dataUrl: compressedDataUrl,
+          fileSizeKb: estimatedKb,
+          fileName: `emp_${cleanBaseName}.${extension}`
+        });
+      };
+
+      img.onerror = () => {
+        resolve({ blob: new Blob([]), dataUrl: '', fileSizeKb: 0, fileName: file.name, error: 'فشل قراءة بيانات الصورة' });
+      };
+
+      img.src = e.target?.result as string;
+    };
+
+    reader.onerror = () => {
+      resolve({ blob: new Blob([]), dataUrl: '', fileSizeKb: 0, fileName: file.name, error: 'خطأ أثناء تحميل ملف الصورة' });
+    };
+
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * دالة متقدمة لضغط وتصغير صور العملاء (قبل وبعد / Before & After)
+ * حجم أقصى 800 بكسل مع الحفاظ على النسبة والتفاصيل الواضحة بحجم (30 - 65 كيلوبايت)
+ */
+export async function compressClientBeforeAfterPhoto(file: File): Promise<CompressedServiceImageResult> {
+  return new Promise((resolve) => {
+    if (!file.type.startsWith('image/')) {
+      resolve({
+        blob: new Blob([]),
+        dataUrl: '',
+        fileSizeKb: 0,
+        fileName: file.name,
+        error: 'الملف المختار ليس صورة صالحة.'
+      });
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        const maxDimension = 800; // أبعاد مثالية للوضوح والتفاصيل
+        if (width > maxDimension || height > maxDimension) {
+          if (width > height) {
+            height = Math.round((height * maxDimension) / width);
+            width = maxDimension;
+          } else {
+            width = Math.round((width * maxDimension) / height);
+            height = maxDimension;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          const rawBlob = dataUrlToBlob(e.target?.result as string);
+          resolve({
+            blob: rawBlob,
+            dataUrl: e.target?.result as string,
+            fileSizeKb: Math.round(file.size / 1024),
+            fileName: file.name
+          });
+          return;
+        }
+
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, width, height);
+
+        let mimeType = 'image/webp';
+        let quality = 0.78;
+        let compressedDataUrl = canvas.toDataURL(mimeType, quality);
+
+        if (!compressedDataUrl.startsWith('data:image/webp')) {
+          mimeType = 'image/jpeg';
+          compressedDataUrl = canvas.toDataURL(mimeType, quality);
+        }
+
+        while (compressedDataUrl.length > 75 * 1024 * 1.33 && quality > 0.4) {
+          quality -= 0.1;
+          compressedDataUrl = canvas.toDataURL(mimeType, quality);
+        }
+
+        const blob = dataUrlToBlob(compressedDataUrl);
+        const estimatedKb = Math.round(blob.size / 1024);
+        const cleanBaseName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+        const extension = mimeType === 'image/webp' ? 'webp' : 'jpg';
+
+        resolve({
+          blob,
+          dataUrl: compressedDataUrl,
+          fileSizeKb: estimatedKb,
+          fileName: `client_${cleanBaseName}.${extension}`
+        });
+      };
+
+      img.onerror = () => {
+        resolve({ blob: new Blob([]), dataUrl: '', fileSizeKb: 0, fileName: file.name, error: 'فشل قراءة بيانات الصورة' });
+      };
+
+      img.src = e.target?.result as string;
+    };
+
+    reader.onerror = () => {
+      resolve({ blob: new Blob([]), dataUrl: '', fileSizeKb: 0, fileName: file.name, error: 'خطأ أثناء تحميل ملف الصورة' });
+    };
+
+    reader.readAsDataURL(file);
+  });
+}

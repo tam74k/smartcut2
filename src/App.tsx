@@ -440,7 +440,18 @@ export default function App() {
     const initializeApp = async () => {
       try {
         const user = AuthService.getCurrentUser();
-        if (user) setCurrentUser(user);
+        if (user) {
+          setCurrentUser(user);
+          if (user.role === 'programmer') {
+            setActiveTab('saas_subscriptions');
+          } else if (user.role === 'owner') {
+            setActiveTab('owner_portal');
+          } else if (user.role === 'barber') {
+            setActiveTab('barber_portal');
+          } else if (user.role === 'kiosk' || (user.screens?.includes('kiosk') && !user.screens?.includes('*') && user.screens?.length === 1)) {
+            setActiveTab('kiosk');
+          }
+        }
 
         // Fetch Salons list once
         const cloudSalons = await DB.fetchSalons();
@@ -754,22 +765,39 @@ export default function App() {
     const isStation = settings.isReceptionPrinterStation || (typeof window !== 'undefined' && localStorage.getItem('smartcut_is_printer_station') === 'true');
     if (!isStation) return;
 
-    const client = SupabaseService.getClient();
-    if (!client) return;
-
-    const channel = client
-      .channel('smartcut_kiosk_print_jobs')
-      .on('broadcast', { event: 'print_ticket' }, (payload: any) => {
-        const ticketData = payload?.payload?.data;
+    // 1. BroadcastChannel listener (بدون WebSockets)
+    let bc: BroadcastChannel | null = null;
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      bc = new BroadcastChannel('smartcut_kiosk_print_jobs');
+      bc.onmessage = (e) => {
+        const ticketData = e.data?.payload?.data;
         if (ticketData) {
           console.log('[Reception Printer Station] Auto-printing kiosk ticket #', ticketData.queueNumber);
           printQueueSlipDirect(ticketData);
         }
-      })
-      .subscribe();
+      };
+    }
+
+    // 2. Storage event listener (للنوافذ المشتركة)
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'smartcut_last_print_job' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          const ticketData = parsed?.data;
+          if (ticketData) {
+            console.log('[Reception Printer Station] Auto-printing kiosk ticket from storage #', ticketData.queueNumber);
+            printQueueSlipDirect(ticketData);
+          }
+        } catch {}
+      }
+    };
+    window.addEventListener('storage', handleStorage);
 
     return () => {
-      client.removeChannel(channel);
+      if (bc) {
+        try { bc.close(); } catch {}
+      }
+      window.removeEventListener('storage', handleStorage);
     };
   }, [settings.isReceptionPrinterStation]);
 
@@ -1664,6 +1692,7 @@ export default function App() {
       case 'pos': return (
         <POSScreen 
           settings={settings} 
+          activeBranchId={activeBranchId}
           isShiftOpen={shiftData.isOpen} 
           shiftDate={shiftData.date} 
           initialBooking={activeBookingForPOS} 
@@ -1693,6 +1722,7 @@ export default function App() {
       case 'services': return (
         <ServicesScreen 
           settings={settings} 
+          activeBranchId={activeBranchId}
           services={branchServices} 
           setServices={handleSetServices} 
           categories={branchCategories} 
@@ -1739,6 +1769,7 @@ export default function App() {
         <EmployeesScreen 
           settings={settings} 
           setSettings={handleSetSettings} 
+          activeBranchId={activeBranchId}
           employees={branchEmployees} 
           setEmployees={handleSetEmployees} 
           transactions={branchTransactions} 
@@ -1891,6 +1922,7 @@ export default function App() {
       case 'complaints': return (
         <ComplaintsScreen 
           settings={settings}
+          activeBranchId={activeBranchId}
           invoices={branchInvoices}
           employees={branchEmployees}
           clients={salonClients}
@@ -2200,6 +2232,8 @@ export default function App() {
       setActiveTab('owner_portal');
     } else if (u.role === 'barber') {
       setActiveTab('barber_portal');
+    } else if (u.role === 'kiosk' || (u.screens?.includes('kiosk') && !u.screens?.includes('*') && u.screens?.length === 1)) {
+      setActiveTab('kiosk');
     } else {
       setActiveTab(u.screens?.includes('*') ? 'pos' : (u.screens?.[0] || 'pos'));
     }
@@ -2269,8 +2303,12 @@ export default function App() {
     );
   }
 
-  // 3B. STANDALONE TABLET KIOSK CHECK-IN ROUTE (/kiosk or ?kiosk=true)
-  if (isKioskRoute) {
+  // 3B. STANDALONE TABLET KIOSK CHECK-IN ROUTE (/kiosk or ?kiosk=true or dedicated kiosk user)
+  const isDedicatedKioskUser = currentUser?.role === 'kiosk' || 
+    (currentUser && currentUser.screens?.includes('kiosk') && !currentUser.screens?.includes('*') && currentUser.screens?.length === 1) || 
+    activeTab === 'kiosk';
+
+  if (isKioskRoute || (currentUser && isDedicatedKioskUser)) {
     return (
       <KioskTabletScreen
         currentUser={currentUser}
@@ -2281,7 +2319,12 @@ export default function App() {
           handleSetClients((prev: Client[]) => [newClient, ...prev.filter(c => c.id !== newClient.id && c.phone !== newClient.phone)]);
         }}
         onSwitchToMainApp={() => {
-          window.location.href = '/';
+          AuthService.logout();
+          setCurrentUser(null);
+          setIsKioskRoute(false);
+          try {
+            window.history.replaceState({}, '', '/');
+          } catch {}
         }}
       />
     );

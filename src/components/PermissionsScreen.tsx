@@ -212,17 +212,24 @@ export function PermissionsScreen({
     if (!userForm.name.trim() || !userForm.username.trim()) return;
 
     const cleanUsername = userForm.username.trim().toLowerCase();
-    if (AuthService.isUsernameTaken(cleanUsername, editingUser?.id, currentSalonId)) {
-      alert(`⚠️ اسم المستخدم (${userForm.username.trim()}) مستخدم مسبقاً في النظام. يرجى اختيار اسم مستخدم فريد.`);
+    const isTaken = await AuthService.isUsernameTakenAsync(cleanUsername, editingUser?.id);
+    if (isTaken) {
+      alert(`⚠️ اسم المستخدم (${userForm.username.trim()}) مستخدم مسبقاً في النظام. يرجى اختيار اسم مستخدم فريد غير مكرر.`);
       return;
     }
 
     let finalScreens = userForm.screens;
     let finalActions = userForm.actions;
 
-    if (userForm.role === 'admin') {
+    if (userForm.role === 'admin' || userForm.role === 'owner') {
       finalScreens = ['*'];
       finalActions = ['*'];
+    } else if (userForm.role === 'kiosk') {
+      finalScreens = ['kiosk'];
+      finalActions = [];
+      if (!userForm.branchId && branches.length > 0) {
+        userForm.branchId = branches[0].id;
+      }
     } else if (userForm.role === 'custom' && userForm.customRoleId) {
       const selectedCustomRole = roles.find(r => r.id === userForm.customRoleId);
       if (selectedCustomRole) {
@@ -891,6 +898,7 @@ export function PermissionsScreen({
                     <option value="cashier">كاشير (Cashier)</option>
                     <option value="receptionist">موظف استقبال (Receptionist)</option>
                     <option value="barber">فني / حلاق (Barber)</option>
+                    <option value="kiosk">🎟️ جهاز حجز الأدوار وطابور الانتظار (Kiosk / تابلت الأرقام)</option>
                   </optgroup>
                   {roles.length > 0 && (
                     <optgroup label="💎 الأدوار والصلاحيات المخصصة (Custom Roles)">
@@ -913,7 +921,11 @@ export function PermissionsScreen({
                       onChange={e => setUserForm({ ...userForm, branchId: e.target.value })}
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-indigo-500 font-bold text-slate-800"
                     >
-                      <option value="">كافة الفروع (حساب عام / إدارة مالك الصالون)</option>
+                      {userForm.role === 'kiosk' ? (
+                        <option value="" disabled>يرجى اختيار الفرع لجهاز حجز الأدوار</option>
+                      ) : (
+                        <option value="">كافة الفروع (حساب عام / إدارة مالك الصالون)</option>
+                      )}
                       {branches.map(b => (
                         <option key={b.id} value={b.id}>
                           {b.name} ({b.code || b.country}) {b.isMain ? '⭐ رئيسي' : ''}
@@ -921,7 +933,9 @@ export function PermissionsScreen({
                       ))}
                     </select>
                     <p className="text-[10px] text-slate-400 mt-1">
-                      {userForm.branchId ? '⚠️ سيتم تقييد هذا المستخدم بالعمل والاطلاع فقط على هذا الفرع ومنع الانتقال لفروع أخرى.' : '👑 هذا المستخدم يملك صلاحية الاطلاع والتنقل بين كافة الفروع (المالك / الإدارة).'}
+                      {userForm.role === 'kiosk' 
+                        ? '🎟️ سيتم ربط جهاز التابلت فوراً بهذا الفرع لسحب أرقام الانتظار وطباعتها.'
+                        : (userForm.branchId ? '⚠️ سيتم تقييد هذا المستخدم بالعمل والاطلاع فقط على هذا الفرع ومنع الانتقال لفروع أخرى.' : '👑 هذا المستخدم يملك صلاحية الاطلاع والتنقل بين كافة الفروع (المالك / الإدارة).')}
                     </p>
                   </>
                 ) : (
@@ -931,6 +945,18 @@ export function PermissionsScreen({
                   </div>
                 )}
               </div>
+
+              {userForm.role === 'kiosk' && (
+                <div className="sm:col-span-2 p-3 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-amber-900 text-xs font-bold leading-relaxed flex items-start gap-2.5">
+                  <span className="text-base shrink-0">💡</span>
+                  <div>
+                    <div className="font-extrabold text-amber-950 mb-0.5">حساب مخصص لجهاز حجز الأدوار (Kiosk / تابلت الأرقام):</div>
+                    <span>
+                      عند تسجيل الدخول بهذا الحساب من رابط النظام العادي، يتعرف النظام تلقائياً على الصالون والفرع المخصص ويبدأ مباشرة شاشة حجز الأدوار للعملاء. وعند الضغط على زر إغلاق الشاشة يتم تسجيل الخروج بالكامل لمنع أي عبث بالجهاز.
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Custom permission override if custom selected or non-admin */}

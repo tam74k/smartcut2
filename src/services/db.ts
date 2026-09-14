@@ -233,7 +233,10 @@ export async function ensureCoreSchema(): Promise<void> {
       ensureColumn('partners', 'exit_date', 'DATE'),
       ensureColumn('invoices', 'advance_deduction', 'NUMERIC(12,2)'),
       ensureColumn('invoices', 'booking_id', 'VARCHAR(100)'),
-      ensureColumn('bookings', 'advance_payments', 'JSONB')
+      ensureColumn('bookings', 'advance_payments', 'JSONB'),
+      ensureColumn('client_portal_accounts', 'username', 'VARCHAR(100)'),
+      ensureColumn('client_portal_accounts', 'salon_code', 'VARCHAR(50)'),
+      ensureColumn('client_portal_accounts', 'linked_salon_codes', 'JSONB')
     ]);
   } catch { /* Silent fail */ }
 }
@@ -602,6 +605,28 @@ export const DB = {
         }
         if (!Array.isArray(camel.cart)) {
           camel.cart = [];
+        } else {
+          camel.cart = camel.cart.map((c: any) => {
+            const p = Number(c?.item?.displayPrice ?? c?.item?.display_price ?? c?.item?.price ?? c?.price ?? 0);
+            const safePrice = isNaN(p) ? 0 : p;
+            return {
+              ...c,
+              price: safePrice,
+              item: {
+                ...(c?.item || {}),
+                id: c?.item?.id || c?.id || c?.cartId,
+                name: c?.item?.name || c?.name || 'خدمة',
+                price: safePrice,
+                displayPrice: safePrice
+              }
+            };
+          });
+        }
+        if (!camel.advancePayments && camel.advance_payments) {
+          camel.advancePayments = camel.advance_payments;
+        }
+        if (!camel.bookingId && camel.booking_id) {
+          camel.bookingId = camel.booking_id;
         }
         if (!camel.client && (camel.clientName || camel.clientPhone || camel.clientId)) {
           camel.client = {
@@ -631,6 +656,22 @@ export const DB = {
       const validSalonId = toSalonUUID(held.salonId || getSalonId());
       if (!validSalonId) return false;
 
+      const normalizedCart = (held.cart || []).map((c: any) => {
+        const p = Number(c?.item?.displayPrice ?? c?.item?.price ?? c?.price ?? 0);
+        const safePrice = isNaN(p) ? 0 : p;
+        return {
+          ...c,
+          price: safePrice,
+          item: {
+            ...(c?.item || {}),
+            id: c?.item?.id || c?.id || c?.cartId,
+            name: c?.item?.name || c?.name || 'خدمة',
+            price: safePrice,
+            displayPrice: safePrice
+          }
+        };
+      });
+
       const snake: any = {
         id: held.id,
         salon_id: validSalonId,
@@ -639,11 +680,13 @@ export const DB = {
         client_name: held.client?.name || held.clientSearch || 'عميل',
         client_phone: held.client?.phone || '',
         client_search: held.clientSearch || held.client?.name || '',
-        cart: held.cart || [],
-        items: held.cart || [],
+        cart: normalizedCart,
+        items: normalizedCart,
         discount_type: held.discount?.type || 'fixed',
         discount_value: held.discount?.value || 0,
-        advance_deduction: held.advanceDeduction || 0,
+        advance_deduction: Number(held.advanceDeduction) || 0,
+        advance_payments: held.advancePayments || [],
+        booking_id: held.bookingId || null,
         is_remedy_invoice: !!held.isRemedyInvoice,
         remedy_reason: held.remedyReason || null,
         before_photo_url: held.beforePhotoUrl || null,
@@ -652,7 +695,7 @@ export const DB = {
         held_at: held.heldAt || new Date().toISOString(),
         queue_number: held.queueNumber || null,
         queue_ticket_id: held.queueTicketId || null,
-        total: (held.cart || []).reduce((sum, c) => sum + ((c.item?.displayPrice || c.price || 0) * (c.quantity || 1)), 0)
+        total: normalizedCart.reduce((sum, c) => sum + ((Number(c?.item?.displayPrice ?? c?.price) || 0) * (c?.quantity || 1)), 0)
       };
 
       const { error } = await client.from('held_invoices').upsert(snake, { onConflict: 'id' });
@@ -660,6 +703,16 @@ export const DB = {
         console.error('DB.saveHeldInvoice error:', error.message);
         return false;
       }
+
+      // إشعار فوري للشاشات والتبويبات المفتوحة عبر BroadcastChannel
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        try {
+          const bc = new BroadcastChannel(`smartcut_held_${held.salonId || 'default'}`);
+          bc.postMessage({ type: 'HELD_INVOICES_UPDATED', id: held.id });
+          bc.close();
+        } catch {}
+      }
+
       return true;
     } catch (e) {
       console.error('DB.saveHeldInvoice exception:', e);
@@ -675,6 +728,13 @@ export const DB = {
       if (error) {
         console.error('DB.removeHeldInvoice error:', error.message);
         return false;
+      }
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        try {
+          const bc = new BroadcastChannel('smartcut_held_default');
+          bc.postMessage({ type: 'HELD_INVOICES_UPDATED', id });
+          bc.close();
+        } catch {}
       }
       return true;
     } catch (e) {
@@ -758,7 +818,15 @@ export const DB = {
       }
       const { data, error } = await q.order('created_at', { ascending: true });
       if (error) { console.error('DB.fetchBranches:', error.message); return []; }
-      return (data || []).map(toCamel);
+      return (data || []).map(row => {
+        const c = toCamel(row);
+        const st = (typeof row.settings === 'object' && row.settings) ? row.settings : {};
+        return {
+          ...c,
+          storageLimitMb: Number(c.storageLimitMb ?? st.storageLimitMb ?? 50),
+          usedStorageBytes: Number(c.usedStorageBytes ?? st.usedStorageBytes ?? 0)
+        };
+      });
     } catch (e) { return []; }
   },
 
@@ -774,7 +842,7 @@ export const DB = {
       if (validSalonId && branchCode) {
         try {
           const { data: existing } = await client.from('branches')
-            .select('id')
+            .select('id, settings')
             .eq('salon_id', validSalonId)
             .eq('code', branchCode)
             .maybeSingle();
@@ -783,6 +851,10 @@ export const DB = {
           }
         } catch {}
       }
+
+      const currentSettings = (typeof b.settings === 'object' && b.settings) ? b.settings : {};
+      const storageLimitMb = Number(b.storageLimitMb ?? currentSettings.storageLimitMb ?? 50);
+      const usedStorageBytes = Number(b.usedStorageBytes ?? currentSettings.usedStorageBytes ?? 0);
 
       const snap: any = {
         ...(validBranchId ? { id: validBranchId } : (b.id ? { id: b.id } : {})),
@@ -803,6 +875,11 @@ export const DB = {
         is_active: b.isActive !== false,
         status: b.status || 'active',
         evolution_instance_name: b.evolutionInstanceName || null,
+        settings: {
+          ...currentSettings,
+          storageLimitMb,
+          usedStorageBytes
+        },
         updated_at: new Date().toISOString()
       };
 
@@ -858,7 +935,7 @@ export const DB = {
         employee_id: u.employeeId || null,
         password_hash: u.password || u.passwordHash || '123456',
         name: u.name || cleanUsername,
-        role: u.role || 'owner',
+        role: u.role === 'kiosk' ? 'custom' : (u.role || 'owner'),
         custom_role_id: u.customRoleId || null,
         phone: u.phone || null,
         active: u.active !== false,
@@ -1120,6 +1197,149 @@ export const DB = {
     return true;
   },
 
+  // ---- حسابات بوابة حجز العملاء (Client Portal Accounts) ----
+  async fetchClientPortalAccountByUsername(username: string) {
+    const cleanUsername = (username || '').trim().toLowerCase();
+    if (!cleanUsername) return null;
+
+    const client = sb();
+    try {
+      if (client) {
+        const { data, error } = await client
+          .from('client_portal_accounts')
+          .select('*')
+          .ilike('username', cleanUsername)
+          .maybeSingle();
+
+        if (!error && data) {
+          const acc = toCamel(data);
+          if (data.password_hash) acc.password = data.password_hash;
+          return acc;
+        }
+      }
+    } catch (e) {
+      console.warn('DB.fetchClientPortalAccountByUsername error:', e);
+    }
+
+    // Fallback to local storage
+    try {
+      const saved = localStorage.getItem('smartcut_client_accounts');
+      if (saved) {
+        const list = JSON.parse(saved);
+        if (Array.isArray(list)) {
+          const found = list.find((a: any) => (a.username || '').trim().toLowerCase() === cleanUsername);
+          if (found) return found;
+        }
+      }
+    } catch (e) {}
+
+    return null;
+  },
+
+  async checkClientUsernameAvailable(username: string): Promise<boolean> {
+    const cleanUsername = (username || '').trim().toLowerCase();
+    if (!cleanUsername || cleanUsername.length < 3) return false;
+
+    try {
+      const client = sb();
+      if (client) {
+        // 1. Check in client_portal_accounts
+        const { data: portalUser } = await client
+          .from('client_portal_accounts')
+          .select('id')
+          .ilike('username', cleanUsername)
+          .maybeSingle();
+
+        if (portalUser) return false;
+
+        // 2. Also ensure no system staff user uses this username
+        const { data: staffUser } = await client
+          .from('users')
+          .select('id')
+          .ilike('username', cleanUsername)
+          .maybeSingle();
+
+        if (staffUser) return false;
+      }
+    } catch (e) {}
+
+    // Check local storage accounts
+    try {
+      const saved = localStorage.getItem('smartcut_client_accounts');
+      if (saved) {
+        const list = JSON.parse(saved);
+        if (Array.isArray(list)) {
+          const exists = list.some((a: any) => (a.username || '').trim().toLowerCase() === cleanUsername);
+          if (exists) return false;
+        }
+      }
+    } catch (e) {}
+
+    return true;
+  },
+
+  async saveClientPortalAccount(account: any) {
+    const cleanUsername = (account.username || '').trim().toLowerCase();
+    if (!cleanUsername) return null;
+
+    const validSalonId = account.salonId ? toSalonUUID(account.salonId) : null;
+    const client = sb();
+
+    const snap: any = {
+      id: account.id || ('cli-' + Date.now()),
+      username: cleanUsername,
+      password_hash: account.password || account.passwordHash || '',
+      name: account.name?.trim() || cleanUsername,
+      phone: account.phone?.trim() || null,
+      email: account.email?.trim() || null,
+      country: account.country || 'المملكة العربية السعودية',
+      referred_by_phone: account.referredByPhone?.trim() || null,
+      salon_id: validSalonId,
+      salon_code: account.salonCode || null,
+      linked_salon_codes: account.linkedSalonCodes || (account.salonCode ? [account.salonCode] : []),
+      avatar_url: account.avatarUrl || null,
+      is_verified: true,
+      active: true,
+      created_at: account.createdAt || new Date().toISOString()
+    };
+
+    let result = { ...account, username: cleanUsername };
+
+    if (client) {
+      try {
+        const { data, error } = await client
+          .from('client_portal_accounts')
+          .upsert(snap, { onConflict: 'id' })
+          .select()
+          .single();
+
+        if (!error && data) {
+          result = toCamel(data);
+          if (data.password_hash) result.password = data.password_hash;
+        } else if (error) {
+          console.warn('DB.saveClientPortalAccount Supabase error:', error.message);
+        }
+      } catch (e) {
+        console.warn('DB.saveClientPortalAccount exception:', e);
+      }
+    }
+
+    // Always keep localStorage updated as well
+    try {
+      const saved = localStorage.getItem('smartcut_client_accounts');
+      const list: any[] = saved ? JSON.parse(saved) : [];
+      const idx = list.findIndex((a: any) => (a.username || '').trim().toLowerCase() === cleanUsername || a.id === snap.id);
+      if (idx >= 0) {
+        list[idx] = { ...list[idx], ...result };
+      } else {
+        list.push(result);
+      }
+      localStorage.setItem('smartcut_client_accounts', JSON.stringify(list));
+    } catch (e) {}
+
+    return result;
+  },
+
   // ---- الفواتير ----
   async fetchInvoices(salonId?: string) { return DB.fetchAll<any>('invoices', undefined, salonId); },
   async saveInvoice(inv: any, salonId?: string) {
@@ -1307,26 +1527,174 @@ export const DB = {
   },
   async saveServices(list: any[], salonId?: string) { for (const s of list) await DB.saveService(s, salonId); return true; },
 
-  // ---- رفع وحذف صور الخدمات في Supabase Storage (Bucket: services) ----
-  async uploadServiceImage(fileOrBlob: File | Blob | string, serviceId: string, oldImageUrl?: string): Promise<string> {
+  // ---- نظام إدارة ومراقبة المساحات التخزينية للفروع في Supabase Storage ----
+
+  /**
+   * فحص كوتة التخزين المخصصة للفرع
+   */
+  async checkBranchStorageQuota(
+    salonId?: string, 
+    branchId?: string, 
+    newFileSizeBytes: number = 0
+  ): Promise<{ allowed: boolean; currentUsedBytes: number; limitMb: number; message?: string }> {
+    const defaultLimitMb = 50;
+    try {
+      const client = sb();
+      if (!client) {
+        return { allowed: true, currentUsedBytes: 0, limitMb: defaultLimitMb };
+      }
+
+      let targetBranch: any = null;
+      if (branchId) {
+        const { data } = await client.from('branches').select('id, settings').eq('id', branchId).maybeSingle();
+        targetBranch = data;
+      }
+      if (!targetBranch && salonId) {
+        const validSalonId = toSalonUUID(salonId);
+        const { data } = await client.from('branches').select('id, settings').eq('salon_id', validSalonId).limit(1).maybeSingle();
+        targetBranch = data;
+      }
+
+      const st = (typeof targetBranch?.settings === 'object' && targetBranch?.settings) ? targetBranch.settings : {};
+      const limitMb = Number(st.storageLimitMb ?? defaultLimitMb);
+      const currentUsedBytes = Number(st.usedStorageBytes ?? 0);
+      const limitBytes = limitMb * 1024 * 1024;
+
+      if ((currentUsedBytes + newFileSizeBytes) > limitBytes) {
+        const usedMb = (currentUsedBytes / (1024 * 1024)).toFixed(2);
+        return {
+          allowed: false,
+          currentUsedBytes,
+          limitMb,
+          message: `⚠️ تم استنفاذ المساحة التخزينية المخصصة لهذا الفرع (${limitMb} MB). المساحة الحالية المستخدمة: ${usedMb} MB. تم إيقاف رفع الصور لهذا الفرع لتجنب تجاوز الحد المسموح. يمكنك زيادة المساحة التخزينية للفرع من شاشة الإعدادات.`
+        };
+      }
+
+      return { allowed: true, currentUsedBytes, limitMb };
+    } catch (e) {
+      console.warn('DB.checkBranchStorageQuota exception:', e);
+      return { allowed: true, currentUsedBytes: 0, limitMb: defaultLimitMb };
+    }
+  },
+
+  /**
+   * تحديث المساحة المستخدمة للفرع في Supabase وقائمة التخزين المحلي
+   */
+  async updateBranchStorageUsage(salonId?: string, branchId?: string, deltaBytes: number = 0): Promise<void> {
+    if (!deltaBytes) return;
+    try {
+      const client = sb();
+      if (!client) return;
+
+      let targetBranchId = branchId;
+      if (!targetBranchId && salonId) {
+        const validSalonId = toSalonUUID(salonId);
+        const { data } = await client.from('branches').select('id').eq('salon_id', validSalonId).limit(1).maybeSingle();
+        targetBranchId = data?.id;
+      }
+      if (!targetBranchId) return;
+
+      const { data: bData } = await client.from('branches').select('id, settings').eq('id', targetBranchId).maybeSingle();
+      if (!bData) return;
+
+      const currentSettings = (typeof bData.settings === 'object' && bData.settings) ? bData.settings : {};
+      const currentBytes = Number(currentSettings.usedStorageBytes ?? 0);
+      const newBytes = Math.max(0, currentBytes + deltaBytes);
+
+      const updatedSettings = {
+        ...currentSettings,
+        usedStorageBytes: newBytes
+      };
+
+      await client.from('branches').update({ settings: updatedSettings, updated_at: new Date().toISOString() }).eq('id', targetBranchId);
+
+      // تحديث فروع التخزين المحلي فورياً لتحديث الواجهة تلقائياً
+      try {
+        const stored = localStorage.getItem('smartcut_saas_branches');
+        if (stored) {
+          const list: any[] = JSON.parse(stored);
+          const updated = list.map(b => b.id === targetBranchId ? { ...b, usedStorageBytes: newBytes, settings: updatedSettings } : b);
+          localStorage.setItem('smartcut_saas_branches', JSON.stringify(updated));
+        }
+      } catch {}
+    } catch (e) {
+      console.warn('DB.updateBranchStorageUsage error:', e);
+    }
+  },
+
+  /**
+   * مزامنة وإعادة احتساب المساحة التخزينية الفعلية للفرع بمطابقة مجلدات Supabase Storage
+   */
+  async syncBranchStorageUsage(salonId: string, branchId: string): Promise<number> {
+    try {
+      const client = sb();
+      if (!client || !salonId || !branchId) return 0;
+
+      const cleanSalonId = salonId.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const cleanBranchId = branchId.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const categories = ['services', 'employees', 'clients'];
+      let totalBytes = 0;
+
+      for (const cat of categories) {
+        const prefix = `salons/${cleanSalonId}/branches/${cleanBranchId}/${cat}`;
+        try {
+          const { data: files } = await client.storage.from('services').list(prefix, { limit: 1000 });
+          if (files && Array.isArray(files)) {
+            for (const f of files) {
+              if (f.metadata?.size) {
+                totalBytes += Number(f.metadata.size);
+              }
+            }
+          }
+        } catch {}
+      }
+
+      // حفظ الإجمالي الدقيق في الفرع
+      const { data: bData } = await client.from('branches').select('id, settings').eq('id', branchId).maybeSingle();
+      if (bData) {
+        const currentSettings = (typeof bData.settings === 'object' && bData.settings) ? bData.settings : {};
+        const updatedSettings = { ...currentSettings, usedStorageBytes: totalBytes };
+        await client.from('branches').update({ settings: updatedSettings, updated_at: new Date().toISOString() }).eq('id', branchId);
+      }
+
+      return totalBytes;
+    } catch (e) {
+      console.warn('DB.syncBranchStorageUsage error:', e);
+      return 0;
+    }
+  },
+
+  /**
+   * رفع صورة مخصصة لفرع وصالون محددين مع العزل التام للمجلدات والتحقق من الكوتة
+   */
+  async uploadBranchImage(options: {
+    fileOrBlob: File | Blob | string;
+    salonId?: string;
+    branchId?: string;
+    category: 'services' | 'employees' | 'clients';
+    identifier?: string;
+    subType?: string;
+    oldImageUrl?: string;
+  }): Promise<{ url: string; error?: string }> {
+    const { fileOrBlob, category, identifier, subType, oldImageUrl } = options;
     const client = sb();
     if (!client) {
-      return typeof fileOrBlob === 'string' ? fileOrBlob : '';
+      return { url: typeof fileOrBlob === 'string' ? fileOrBlob : '' };
     }
+
+    const salonId = options.salonId || localStorage.getItem('smartcut_active_salon_id') || 'default_salon';
+    const branchId = options.branchId || localStorage.getItem('smartcut_active_branch_id') || 'main_branch';
 
     try {
       await ensureStorageBucket('services');
-
-      // 1. حذف الصورة القديمة للخدمة من الـ Bucket إن وجدت
-      if (oldImageUrl) {
-        await DB.deleteServiceImage(oldImageUrl);
-      }
 
       let blob: Blob;
       let fileExt = 'webp';
 
       if (typeof fileOrBlob === 'string') {
-        if (!fileOrBlob.startsWith('data:')) return fileOrBlob;
+        if (!fileOrBlob.startsWith('data:')) {
+          return { url: fileOrBlob };
+        }
         blob = dataUrlToBlob(fileOrBlob);
         fileExt = fileOrBlob.includes('image/webp') ? 'webp' : 'jpg';
       } else {
@@ -1336,32 +1704,55 @@ export const DB = {
         else fileExt = 'jpg';
       }
 
-      // 2. رفع الصورة الجديدة باسم فريد
-      const cleanId = (serviceId || 'srv').replace(/[^a-zA-Z0-9_-]/g, '_');
-      const fileName = `service_${cleanId}_${Date.now()}.${fileExt}`;
-      const filePath = fileName;
+      // 1. فحص كوتة التخزين المخصصة للفرع
+      const quota = await DB.checkBranchStorageQuota(salonId, branchId, blob.size);
+      if (!quota.allowed) {
+        return { url: '', error: quota.message };
+      }
 
-      const { error } = await client.storage.from('services').upload(filePath, blob, {
+      // 2. حذف الصورة القديمة وتخفيض حجمها من المساحة المستهلكة
+      if (oldImageUrl) {
+        await DB.deleteBranchImage(oldImageUrl, salonId, branchId);
+      }
+
+      // 3. مسار المجلد المنعزل بدقة: salons/{salon_id}/branches/{branch_id}/{category}/{filename}
+      const cleanSalonId = salonId.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const cleanBranchId = branchId.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const cleanId = (identifier || 'img').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const subTypePrefix = subType ? `${subType}_` : '';
+      const fileName = `${cleanId}_${subTypePrefix}${Date.now()}.${fileExt}`;
+      const filePath = `salons/${cleanSalonId}/branches/${cleanBranchId}/${category}/${fileName}`;
+
+      // 4. رفع الملف إلى Supabase Storage
+      const { error: uploadErr } = await client.storage.from('services').upload(filePath, blob, {
         contentType: blob.type || `image/${fileExt}`,
         cacheControl: '3600',
         upsert: true
       });
 
-      if (error) {
-        console.error('DB.uploadServiceImage storage error:', error.message);
-        return typeof fileOrBlob === 'string' ? fileOrBlob : '';
+      if (uploadErr) {
+        console.error('DB.uploadBranchImage error:', uploadErr.message);
+        return { url: typeof fileOrBlob === 'string' ? fileOrBlob : '', error: uploadErr.message };
       }
 
-      // 3. الحصول على الرابط العام المباشر للصورة
+      // 5. استخراج الرابط العام
       const { data: publicUrlData } = client.storage.from('services').getPublicUrl(filePath);
-      return publicUrlData.publicUrl;
-    } catch (err) {
-      console.error('DB.uploadServiceImage exception:', err);
-      return typeof fileOrBlob === 'string' ? fileOrBlob : '';
+      const publicUrl = publicUrlData?.publicUrl || '';
+
+      // 6. زيادة المساحة المستهلكة للفرع
+      await DB.updateBranchStorageUsage(salonId, branchId, blob.size);
+
+      return { url: publicUrl };
+    } catch (err: any) {
+      console.error('DB.uploadBranchImage exception:', err);
+      return { url: typeof fileOrBlob === 'string' ? fileOrBlob : '', error: err?.message || 'خطأ أثناء رفع الصورة' };
     }
   },
 
-  async deleteServiceImage(imageUrl?: string): Promise<boolean> {
+  /**
+   * حذف صورة فرع من Storage وتحديث المساحة المستهلكة
+   */
+  async deleteBranchImage(imageUrl?: string, salonId?: string, branchId?: string): Promise<boolean> {
     if (!imageUrl || typeof imageUrl !== 'string') return true;
     const client = sb();
     if (!client) return false;
@@ -1374,22 +1765,85 @@ export const DB = {
         filePath = imageUrl.split('/services/')[1];
       } else if (imageUrl.startsWith('http')) {
         const parts = imageUrl.split('/');
-        filePath = parts[parts.length - 1];
+        filePath = parts.slice(-5).join('/');
       }
 
       if (filePath && !filePath.startsWith('data:')) {
         const cleanPath = filePath.split('?')[0];
-        const { error } = await client.storage.from('services').remove([cleanPath]);
-        if (error) {
-          console.warn('DB.deleteServiceImage warning:', error.message);
-        }
+        await client.storage.from('services').remove([cleanPath]);
+        // تخفيض متوسط الحجم المقدر في حالة عدم معرفة الحجم الفعلي
+        await DB.updateBranchStorageUsage(salonId, branchId, -40000);
         return true;
       }
       return true;
     } catch (e) {
-      console.error('DB.deleteServiceImage exception:', e);
+      console.warn('DB.deleteBranchImage exception:', e);
       return false;
     }
+  },
+
+  // ---- دوال استدعاء مخصصة لكل نوع صورة ----
+
+  async uploadServiceImage(
+    fileOrBlob: File | Blob | string, 
+    serviceId: string, 
+    oldImageUrl?: string,
+    salonId?: string,
+    branchId?: string
+  ): Promise<string> {
+    const res = await DB.uploadBranchImage({
+      fileOrBlob,
+      salonId,
+      branchId,
+      category: 'services',
+      identifier: serviceId,
+      oldImageUrl
+    });
+    if (res.error) {
+      alert(res.error);
+      return typeof fileOrBlob === 'string' ? fileOrBlob : '';
+    }
+    return res.url;
+  },
+
+  async uploadEmployeeImage(
+    fileOrBlob: File | Blob | string,
+    employeeId: string,
+    oldImageUrl?: string,
+    salonId?: string,
+    branchId?: string
+  ): Promise<{ url: string; error?: string }> {
+    return await DB.uploadBranchImage({
+      fileOrBlob,
+      salonId,
+      branchId,
+      category: 'employees',
+      identifier: employeeId,
+      oldImageUrl
+    });
+  },
+
+  async uploadClientPhoto(
+    fileOrBlob: File | Blob | string,
+    clientOrInvoiceId: string,
+    type: 'before' | 'after',
+    salonId?: string,
+    branchId?: string,
+    oldImageUrl?: string
+  ): Promise<{ url: string; error?: string }> {
+    return await DB.uploadBranchImage({
+      fileOrBlob,
+      salonId,
+      branchId,
+      category: 'clients',
+      identifier: clientOrInvoiceId,
+      subType: type,
+      oldImageUrl
+    });
+  },
+
+  async deleteServiceImage(imageUrl?: string, salonId?: string, branchId?: string): Promise<boolean> {
+    return await DB.deleteBranchImage(imageUrl, salonId, branchId);
   },
 
   async deleteService(serviceId: string, imageUrl?: string): Promise<boolean> {
@@ -1999,6 +2453,15 @@ export const DB = {
               priceUsd3m: Number(camel.priceUsd3m ?? camel.priceUsd_3m ?? row.price_usd_3m ?? 0),
               priceUsd6m: Number(camel.priceUsd6m ?? camel.priceUsd_6m ?? row.price_usd_6m ?? 0),
               priceUsd12m: Number(camel.priceUsd12m ?? camel.priceUsd_12m ?? row.price_usd_12m ?? 0),
+              // أسعار الفروع الإضافية المخصصة لكل باقة (افتراضياً 2/3 سعر الباقة إذا لم تحدد)
+              branchPriceEgp1m: Number(camel.branchPriceEgp1m ?? camel.branchPriceEgp_1m ?? row.branch_price_egp_1m ?? Math.round(((camel.priceEgp1m ?? camel.priceEgp_1m ?? row.price_egp_1m ?? 0) * 2) / 3)),
+              branchPriceEgp3m: Number(camel.branchPriceEgp3m ?? camel.branchPriceEgp_3m ?? row.branch_price_egp_3m ?? Math.round(((camel.priceEgp3m ?? camel.priceEgp_3m ?? row.price_egp_3m ?? 0) * 2) / 3)),
+              branchPriceEgp6m: Number(camel.branchPriceEgp6m ?? camel.branchPriceEgp_6m ?? row.branch_price_egp_6m ?? Math.round(((camel.priceEgp6m ?? camel.priceEgp_6m ?? row.price_egp_6m ?? 0) * 2) / 3)),
+              branchPriceEgp12m: Number(camel.branchPriceEgp12m ?? camel.branchPriceEgp_12m ?? row.branch_price_egp_12m ?? Math.round(((camel.priceEgp12m ?? camel.priceEgp_12m ?? row.price_egp_12m ?? 0) * 2) / 3)),
+              branchPriceUsd1m: Number(camel.branchPriceUsd1m ?? camel.branchPriceUsd_1m ?? row.branch_price_usd_1m ?? Math.round(((camel.priceUsd1m ?? camel.priceUsd_1m ?? row.price_usd_1m ?? 0) * 2) / 3)),
+              branchPriceUsd3m: Number(camel.branchPriceUsd3m ?? camel.branchPriceUsd_3m ?? row.branch_price_usd_3m ?? Math.round(((camel.priceUsd3m ?? camel.priceUsd_3m ?? row.price_usd_3m ?? 0) * 2) / 3)),
+              branchPriceUsd6m: Number(camel.branchPriceUsd6m ?? camel.branchPriceUsd_6m ?? row.branch_price_usd_6m ?? Math.round(((camel.priceUsd6m ?? camel.priceUsd_6m ?? row.price_usd_6m ?? 0) * 2) / 3)),
+              branchPriceUsd12m: Number(camel.branchPriceUsd12m ?? camel.branchPriceUsd_12m ?? row.branch_price_usd_12m ?? Math.round(((camel.priceUsd12m ?? camel.priceUsd_12m ?? row.price_usd_12m ?? 0) * 2) / 3)),
               features: Array.isArray(camel.features) ? camel.features : (typeof camel.features === 'string' ? JSON.parse(camel.features) : []),
               isPopular: Boolean(camel.isPopular ?? row.is_popular),
               isActive: Boolean(camel.isActive ?? row.is_active ?? true),
@@ -2019,14 +2482,22 @@ export const DB = {
         descriptionAr: 'مثالية للصالونات الناشئة والصغيرة ذات الفريق المحدود',
         minEmployees: 2,
         maxEmployees: 5,
-        priceEgp1m: 450,
-        priceEgp3m: 1250,
-        priceEgp6m: 2300,
-        priceEgp12m: 4200,
-        priceUsd1m: 15,
-        priceUsd3m: 40,
-        priceUsd6m: 75,
-        priceUsd12m: 140,
+        priceEgp1m: 300,
+        priceEgp3m: 850,
+        priceEgp6m: 1600,
+        priceEgp12m: 3000,
+        priceUsd1m: 10,
+        priceUsd3m: 28,
+        priceUsd6m: 53,
+        priceUsd12m: 100,
+        branchPriceEgp1m: 200,
+        branchPriceEgp3m: 570,
+        branchPriceEgp6m: 1070,
+        branchPriceEgp12m: 2000,
+        branchPriceUsd1m: 7,
+        branchPriceUsd3m: 19,
+        branchPriceUsd6m: 35,
+        branchPriceUsd12m: 67,
         features: [
           'من 2 إلى 5 موظفين',
           'نقطة بيع سريعة POS وفواتير غير محدودة',
@@ -2046,14 +2517,22 @@ export const DB = {
         descriptionAr: 'الخيار الأكثر طلباً للصالونات المتنامية التي تحتاج ميزات احترافية متكاملة',
         minEmployees: 6,
         maxEmployees: 10,
-        priceEgp1m: 750,
-        priceEgp3m: 2100,
-        priceEgp6m: 3900,
-        priceEgp12m: 6900,
-        priceUsd1m: 25,
-        priceUsd3m: 70,
-        priceUsd6m: 130,
-        priceUsd12m: 230,
+        priceEgp1m: 500,
+        priceEgp3m: 1400,
+        priceEgp6m: 2600,
+        priceEgp12m: 4800,
+        priceUsd1m: 17,
+        priceUsd3m: 47,
+        priceUsd6m: 87,
+        priceUsd12m: 160,
+        branchPriceEgp1m: 330,
+        branchPriceEgp3m: 930,
+        branchPriceEgp6m: 1730,
+        branchPriceEgp12m: 3200,
+        branchPriceUsd1m: 11,
+        branchPriceUsd3m: 31,
+        branchPriceUsd6m: 58,
+        branchPriceUsd12m: 107,
         features: [
           'من 6 إلى 10 موظفين',
           'كافة ميزات باقة البداية',
@@ -2073,14 +2552,22 @@ export const DB = {
         descriptionAr: 'حل متكامل للمنشآت والمراكز الكبرى مع قدرات غير محدودة وتوسع كامل',
         minEmployees: 11,
         maxEmployees: 9999,
-        priceEgp1m: 1250,
-        priceEgp3m: 3500,
-        priceEgp6m: 6500,
-        priceEgp12m: 11500,
-        priceUsd1m: 40,
-        priceUsd3m: 110,
-        priceUsd6m: 210,
-        priceUsd12m: 380,
+        priceEgp1m: 800,
+        priceEgp3m: 2250,
+        priceEgp6m: 4200,
+        priceEgp12m: 7900,
+        priceUsd1m: 27,
+        priceUsd3m: 75,
+        priceUsd6m: 140,
+        priceUsd12m: 264,
+        branchPriceEgp1m: 530,
+        branchPriceEgp3m: 1500,
+        branchPriceEgp6m: 2800,
+        branchPriceEgp12m: 5270,
+        branchPriceUsd1m: 18,
+        branchPriceUsd3m: 50,
+        branchPriceUsd6m: 93,
+        branchPriceUsd12m: 176,
         features: [
           '11 موظفاً فأكثر (سعة غير محدودة)',
           'كافة ميزات باقة التوسع',
@@ -2666,7 +3153,7 @@ export function dbEmployeeToApp(row: any) {
     salaryType: row.salaryType || 'salary',
     allowDualCommission: row.allowDualCommission || false,
     checkInTime: row.checkInTime || '09:00',
-    checkOutTime: row.checkOutTime || '18:00',
+    checkOutTime: row.checkOutTime || '23:00',
     weeklyDaysOff: row.weeklyDaysOff || ['Friday'],
     isActive: row.isActive !== false,
     isBlacklisted: row.isBlacklisted || false,
@@ -2728,7 +3215,7 @@ export function dbUserToApp(row: any): any {
     name: c.name || c.username || 'مستخدم',
     email: c.email || '',
     phone: c.phone || '',
-    role: c.role || 'cashier',
+    role: (c.role === 'kiosk' || (Array.isArray(c.screens) && c.screens.includes('kiosk') && c.screens.length === 1)) ? 'kiosk' : (c.role || 'cashier'),
     customRoleId: c.customRoleId,
     active: c.active !== false,
     screens: Array.isArray(c.screens) ? c.screens : ['*'],

@@ -9,7 +9,9 @@ export interface QueueSlipData {
   branchName?: string;
   clientName: string;
   phone: string;
-  queueNumber: number;
+  queueNumber: number | string;
+  displayQueueNumber?: string;
+  source?: 'kiosk' | 'booking' | 'pos';
   dateStr?: string;
   timeStr?: string;
 }
@@ -236,14 +238,21 @@ export function printQueueSlipDirect(data: QueueSlipData): void {
       <span>الوقت: ${timeStr}</span>
     </div>
 
-    <div class="client-box">
+    <div class="client-name">
       العميل: ${clientDisplayName}
     </div>
 
-    <div class="queue-container">
-      <div class="queue-title">رقم الدور الخاص بك</div>
-      <div class="queue-num">#${data.queueNumber}</div>
-    </div>
+    ${(() => {
+      const isBooking = data.source === 'booking' || (typeof data.queueNumber === 'string' && data.queueNumber.startsWith('B-'));
+      const displayNum = data.displayQueueNumber || (isBooking ? (data.queueNumber.toString().startsWith('B-') ? data.queueNumber : `B-${data.queueNumber}`) : `#${data.queueNumber}`);
+      const titleText = isBooking ? 'رقم دور الحجز المسبق' : 'رقم الدور الخاص بك';
+      return `
+        <div class="queue-container">
+          <div class="queue-title">${titleText}</div>
+          <div class="queue-num">${displayNum}</div>
+        </div>
+      `;
+    })()}
 
     <div class="barcode-wrap">
       ${barcodeSvg}

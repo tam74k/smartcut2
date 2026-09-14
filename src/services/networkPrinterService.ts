@@ -182,23 +182,32 @@ export async function sendToNetworkPrinter(
 }
 
 /**
- * Broadcast print job to reception PC stations via Supabase Realtime
+ * Broadcast print job to reception PC stations via native BroadcastChannel and localStorage events (No WebSockets)
  */
 export async function broadcastKioskPrintJob(data: QueueSlipData, salonId?: string): Promise<boolean> {
   try {
-    const client = SupabaseService.getClient();
-    if (!client) return false;
+    const payload = {
+      data,
+      salonId,
+      sentAt: new Date().toISOString()
+    };
 
-    const channel = client.channel('smartcut_kiosk_print_jobs');
-    await channel.send({
-      type: 'broadcast',
-      event: 'print_ticket',
-      payload: {
-        data,
-        salonId,
-        sentAt: new Date().toISOString()
-      }
-    });
+    // 1. Native BroadcastChannel (فوري للنوافذ والشاشات على نفس المتصفح)
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      try {
+        const bc = new BroadcastChannel('smartcut_kiosk_print_jobs');
+        bc.postMessage({ type: 'print_ticket', payload });
+        bc.close();
+      } catch {}
+    }
+
+    // 2. localStorage storage event (فوري بين أي نوافذ/أجهزة أخرى مفتوحة على نفس المتصفح)
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('smartcut_last_print_job', JSON.stringify({ ...payload, _ts: Date.now() }));
+      } catch {}
+    }
+
     return true;
   } catch (e) {
     console.warn('Broadcast print job error:', e);
