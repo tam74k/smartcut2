@@ -234,18 +234,23 @@ export function EmployeesScreen({
 
       const treasuryName = settings.treasuries.find(t => t.id === quickActionForm.treasuryId)?.name || 'الخزنة الرئيسية';
 
-      if (setTransactions && transactions) {
-        const trx: Transaction = {
-          id: 'TRX-ADV-' + Math.random().toString(36).substring(2, 9),
-          date: quickActionForm.date + 'T' + new Date().toTimeString().split(' ')[0],
-          type: 'out',
-          amount: quickActionForm.amount,
-          category: 'hr_advance',
-          description: `سلفة نقدية للموظف (${emp.name}) - ${quickActionForm.note}`,
-          treasury: quickActionForm.treasuryId
-        };
-        setTransactions([...transactions, trx]);
+      const branchCodeToUse = settings.branches?.find(b => b.id === activeBranchId)?.code || (emp as any).branchCode || 'BR-01';
+      const trx: Transaction = {
+        id: 'TRX-ADV-' + Math.random().toString(36).substring(2, 9),
+        date: quickActionForm.date + 'T' + new Date().toTimeString().split(' ')[0],
+        type: 'out',
+        amount: quickActionForm.amount,
+        category: 'hr_advance',
+        description: `سلفة نقدية للموظف (${emp.name}) - ${quickActionForm.note}`,
+        treasury: quickActionForm.treasuryId,
+        salonId: (emp as any).salonId || settings.salonId,
+        branchId: emp.branchId || activeBranchId,
+        branchCode: branchCodeToUse
+      } as any;
+      if (setTransactions) {
+        setTransactions(prev => [...(prev || []), trx]);
       }
+      DB.saveTransaction(trx, settings.salonId);
 
       const record: EmployeeFinancialRecord = {
         id: 'FIN-' + Math.random().toString(36).substring(2, 9),
@@ -256,10 +261,12 @@ export function EmployeesScreen({
         note: quickActionForm.note || 'سلفة نقدية سريعة'
       };
 
-      setEmployees(employees.map(e => e.id === emp.id ? {
-        ...e,
-        financialRecords: [...(e.financialRecords || []), record]
-      } : e));
+      const updatedEmp = {
+        ...emp,
+        financialRecords: [...(emp.financialRecords || []), record]
+      };
+      setEmployees(employees.map(e => e.id === emp.id ? updatedEmp : e));
+      DB.saveEmployee(updatedEmp, settings.salonId);
 
       // Print 80mm thermal voucher
       const voucherData: FinancialVoucherData = {
@@ -587,18 +594,23 @@ export function EmployeesScreen({
         
         const treasuryName = settings.treasuries.find(t => t.id === advanceForm.treasuryId)?.name || 'الخزنة الرئيسية';
 
-        if (setTransactions && transactions) {
-          const trx: Transaction = {
-            id: 'TRX-ADV-' + Math.random().toString(36).substring(2, 9),
-            date: advanceForm.date + 'T' + new Date().toTimeString().split(' ')[0],
-            type: 'out',
-            amount: advanceForm.amount,
-            category: 'hr_advance',
-            description: `سلفة للموظف ${emp.name} - ${advanceForm.note}`,
-            treasury: advanceForm.treasuryId
-          };
-          setTransactions([...transactions, trx]);
+        const branchCodeToUse = settings.branches?.find(b => b.id === activeBranchId)?.code || (emp as any).branchCode || 'BR-01';
+        const trx: Transaction = {
+          id: 'TRX-ADV-' + Math.random().toString(36).substring(2, 9),
+          date: advanceForm.date + 'T' + new Date().toTimeString().split(' ')[0],
+          type: 'out',
+          amount: advanceForm.amount,
+          category: 'hr_advance',
+          description: `سلفة للموظف ${emp.name} - ${advanceForm.note}`,
+          treasury: advanceForm.treasuryId,
+          salonId: (emp as any).salonId || settings.salonId,
+          branchId: emp.branchId || activeBranchId,
+          branchCode: branchCodeToUse
+        } as any;
+        if (setTransactions) {
+          setTransactions(prev => [...(prev || []), trx]);
         }
+        DB.saveTransaction(trx, settings.salonId);
 
         const record: EmployeeFinancialRecord = {
           id: 'FIN-' + Math.random().toString(36).substring(2, 9),

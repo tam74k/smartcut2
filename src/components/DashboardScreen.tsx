@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { AppSettings, Booking, Invoice, Transaction, PurchaseInvoice, ItemMovement, Branch } from '../types';
 import { 
   TrendingUp, Receipt, CalendarClock, ArrowUpRight, ArrowDownRight, 
@@ -22,7 +22,8 @@ export function DashboardScreen({
   purchaseInvoices = [],
   itemMovements = [],
   activeBranchId,
-  branches = []
+  branches = [],
+  employees = []
 }: { 
   settings: AppSettings, 
   isShiftOpen: boolean, 
@@ -37,7 +38,8 @@ export function DashboardScreen({
   purchaseInvoices?: PurchaseInvoice[],
   itemMovements?: ItemMovement[],
   activeBranchId?: string,
-  branches?: Branch[]
+  branches?: Branch[],
+  employees?: any[]
 }) {
   const [advPaymentModal, setAdvPaymentModal] = useState<string | null>(null);
   const [advAmount, setAdvAmount] = useState('');
@@ -52,11 +54,11 @@ export function DashboardScreen({
   const isMainBranch = !activeBranchId || activeBranchId === mainBranchId || activeBranchId === 'b-main';
 
   const matchesActiveBranch = (itemBranchId?: string) => {
-    if (itemBranchId) {
-      return itemBranchId === activeBranchId;
-    }
-    // Items without explicit branchId belong to the primary/main branch
-    return isMainBranch;
+    if (!itemBranchId) return true; // Items without explicit branchId are visible
+    if (branches.length <= 1) return true; // Single-branch salon
+    if (itemBranchId === activeBranchId) return true;
+    if (isMainBranch && (itemBranchId === mainBranchId || itemBranchId === 'b-main')) return true;
+    return false;
   };
 
   // Branch-specific filtering
@@ -64,7 +66,25 @@ export function DashboardScreen({
   const branchTransactions = transactions.filter(t => matchesActiveBranch((t as any).branchId));
   const branchBookings = bookings.filter(b => matchesActiveBranch((b as any).branchId));
 
-  const shiftBookings = branchBookings.filter(b => isShiftOpen && b.date === shiftDate && b.status !== 'completed' && b.status !== 'cancelled');
+  // Determine Today's date accurately (Local and UTC)
+  const now = new Date();
+  const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const utcToday = now.toISOString().split('T')[0];
+
+  const matchesToday = (dateStr?: string, createdAtStr?: string) => {
+    if (!dateStr && !createdAtStr) return false;
+    const cleanDate = (dateStr || '').trim();
+    const cleanCreated = (createdAtStr || '').trim();
+    return (
+      cleanDate.startsWith(localToday) ||
+      cleanDate.startsWith(utcToday) ||
+      cleanCreated.startsWith(localToday) ||
+      cleanCreated.startsWith(utcToday) ||
+      (Boolean(isShiftOpen && shiftDate) && (cleanDate.startsWith(shiftDate) || cleanCreated.startsWith(shiftDate)))
+    );
+  };
+
+  const shiftBookings = branchBookings.filter(b => matchesToday(b.date, (b as any).createdAt || (b as any).created_at) && b.status !== 'completed' && b.status !== 'cancelled');
   const pendingBookings = branchBookings.filter(b => b.status === 'pending');
 
   const handleConfirmBooking = (bookingId: string) => {
@@ -78,22 +98,100 @@ export function DashboardScreen({
   };
 
   // Compute stats for today based on transactions & invoices
-  const todayTrx = branchTransactions.filter(t => t.date.startsWith(shiftDate));
+  const todayTrx = useMemo(() => {
+    return branchTransactions.filter(t => matchesToday(t.date, (t as any).createdAt || (t as any).created_at));
+  }, [branchTransactions, localToday, utcToday, isShiftOpen, shiftDate]);
   
-  // Pure Today's Sales Revenue (Starts at 0.00, strictly from completed sales invoices without counting opening float)
-  const todayInvoices = branchInvoices.filter(inv => inv.date.startsWith(shiftDate) && inv.status === 'completed');
-  const todaySalesRevenue = isShiftOpen ? todayInvoices.reduce((sum, inv) => sum + (inv.total || 0), 0) : 0;
-  
-  // Total Income (excluding opening float)
-  const totalIncome = isShiftOpen ? todayTrx.filter(t => t.type === 'in' && t.category !== 'عهدة افتتاحية' && t.category !== 'initial_cash' && !t.description?.includes('عهدة بداية') && !t.description?.includes('رصيد افتتاحي')).reduce((sum, t) => sum + t.amount, 0) : 0;
-  
-  // Total Expenses (purchases, expenses, salaries)
-  const totalExpense = isShiftOpen ? todayTrx.filter(t => t.type === 'out' && (t.category === 'expense' || t.category === 'purchase' || t.category === 'salary' || t.category === 'supplier_payment')).reduce((sum, t) => sum + t.amount, 0) : 0;
-  
-  // Total Advances (سلف)
-  const totalAdvancesGiven = isShiftOpen ? todayTrx.filter(t => t.type === 'out' && (t.category === 'staff_advance' || t.category === 'hr_advance')).reduce((sum, t) => sum + t.amount, 0) : 0;
+  // Pure Today's Sales Revenue (strictly from completed/paid sales invoices of today, without opening float)
+  const todayInvoices = useMemo(() => {
+    return branchInvoices.filter(inv => matchesToday(inv.date, (inv as any).createdAt || (inv as any).created_at) && inv.status !== 'cancelled');
+  }, [branchInvoices, localToday, utcToday, isShiftOpen, shiftDate]);
 
-  const todayInvoicesCount = isShiftOpen ? todayInvoices.length : 0;
+  const todaySalesRevenue = useMemo(() => {
+    return todayInvoices.reduce((sum, inv) => sum + (Number(inv.total) || 0), 0);
+  }, [todayInvoices]);
+  
+  // Total Income (excluding opening float and transfers)
+  const totalIncome = useMemo(() => {
+    return todayTrx
+      .filter(t => {
+        if (t.type !== 'in') return false;
+        const cat = (t.category || '').toLowerCase();
+        const desc = (t.description || '').toLowerCase();
+        if (cat === 'عهدة افتتاحية' || cat === 'initial_cash' || desc.includes('عهدة بداية') || desc.includes('رصيد افتتاحي') || desc.includes('عهدة افتتاحية')) return false;
+        if (cat === 'transfer' || desc.includes('تحويل')) return false;
+        return true;
+      })
+      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+  }, [todayTrx]);
+  
+  // Total Expenses (purchases, expenses, bills, operational payouts — excluding staff advances and drawer transfers)
+  const totalExpense = useMemo(() => {
+    return todayTrx
+      .filter(t => {
+        if (t.type !== 'out') return false;
+        const cat = (t.category || '').toLowerCase();
+        const expCat = ((t as any).expenseCategory || '').toLowerCase();
+        const desc = (t.description || '').toLowerCase();
+        if (
+          cat === 'staff_advance' ||
+          cat === 'hr_advance' ||
+          cat === 'advance' ||
+          cat.includes('سلف') ||
+          expCat.includes('سلف') ||
+          desc.includes('سلفة') ||
+          desc.includes('سلف')
+        ) {
+          return false;
+        }
+        if (cat === 'transfer' || desc.includes('تحويل') || desc.includes('تصفير')) return false;
+        return true;
+      })
+      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+  }, [todayTrx]);
+  
+  // Total Advances (سلف الموظفين المصروفة اليوم)
+  const totalAdvancesGiven = useMemo(() => {
+    const fromTrx = todayTrx
+      .filter(t => {
+        if (t.type !== 'out') return false;
+        const cat = (t.category || '').toLowerCase();
+        const expCat = ((t as any).expenseCategory || '').toLowerCase();
+        const desc = (t.description || '').toLowerCase();
+        return (
+          cat === 'staff_advance' ||
+          cat === 'hr_advance' ||
+          cat === 'advance' ||
+          cat.includes('سلف') ||
+          expCat.includes('سلف') ||
+          desc.includes('سلفة') ||
+          desc.includes('سلف')
+        );
+      })
+      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+
+    let fromEmpRecords = 0;
+    if (employees && Array.isArray(employees)) {
+      employees.forEach(emp => {
+        (emp.financialRecords || []).forEach((r: any) => {
+          if (r.type === 'advance' && (r.date || (r as any).createdAt) && matchesToday(r.date, (r as any).createdAt || (r as any).created_at)) {
+            const alreadyInTrx = todayTrx.some(t => 
+              t.type === 'out' && 
+              Math.abs((Number(t.amount) || 0) - (Number(r.amount) || 0)) < 0.01 &&
+              (t.category === 'staff_advance' || t.category === 'hr_advance' || t.category === 'advance' || (t.description && t.description.includes('سلفة')))
+            );
+            if (!alreadyInTrx) {
+              fromEmpRecords += (Number(r.amount) || 0);
+            }
+          }
+        });
+      });
+    }
+
+    return fromTrx + fromEmpRecords;
+  }, [todayTrx, employees, localToday, utcToday, isShiftOpen, shiftDate]);
+
+  const todayInvoicesCount = todayInvoices.length;
 
   const handlePayAdvance = (booking: Booking) => {
     if (!advAmount || isNaN(Number(advAmount))) return;
@@ -185,7 +283,7 @@ export function DashboardScreen({
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
           <div>
             <p className="text-slate-500 text-[12px] font-bold mb-1">مصروفات اليوم</p>
-            <h3 className="text-lg font-extrabold text-slate-800">{totalExpense} <span className="text-sm font-normal">{settings.currency}</span></h3>
+            <h3 className="text-lg font-extrabold text-slate-800 font-mono">{totalExpense.toFixed(2)} <span className="text-sm font-normal text-slate-500">{settings.currency}</span></h3>
           </div>
           <div className="w-10 h-10 rounded-full bg-red-50 text-red-500 flex items-center justify-center">
             <ArrowUpRight size={20} />
@@ -194,7 +292,7 @@ export function DashboardScreen({
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
           <div>
             <p className="text-slate-500 text-[12px] font-bold mb-1">سلف اليوم</p>
-            <h3 className="text-lg font-extrabold text-slate-800">{totalAdvancesGiven} <span className="text-sm font-normal">{settings.currency}</span></h3>
+            <h3 className="text-lg font-extrabold text-slate-800 font-mono">{totalAdvancesGiven.toFixed(2)} <span className="text-sm font-normal text-slate-500">{settings.currency}</span></h3>
           </div>
           <div className="w-10 h-10 rounded-full bg-amber-50 text-amber-500 flex items-center justify-center">
             <ArrowDownRight size={20} />
@@ -207,7 +305,7 @@ export function DashboardScreen({
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4 border-b border-slate-700/80 pb-3">
             <div>
               <h3 className="font-black text-base flex items-center gap-2 text-white">
-                <span>تفاصيل الخزائن والإيرادات لوردية اليوم ({shiftDate})</span>
+                <span>تفاصيل الخزائن والإيرادات لليوم ({isShiftOpen && shiftDate ? `وردية: ${shiftDate}` : localToday})</span>
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">تفصيل دقيق يوضح العهدة الافتتاحية، المبيعات النقدية والشبكة، والمصروفات</p>
             </div>
@@ -451,20 +549,20 @@ export function DashboardScreen({
           <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
             <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
               <CalendarClock className="text-primary" size={18} />
-              حجوزات الوردية الحالية
+              حجوزات اليوم والوردية
             </h3>
             {!isShiftOpen ? (
-              <span className="text-[11px] bg-red-50 text-red-600 px-2 py-1 rounded-md font-bold">الوردية مغلقة</span>
+              <span className="text-[11px] bg-slate-100 text-slate-600 px-2 py-1 rounded-md font-bold">تاريخ اليوم: {localToday}</span>
             ) : (
               <span className="text-[11px] bg-emerald-50 text-primary px-2 py-1 rounded-md font-bold">تاريخ الوردية: {shiftDate}</span>
             )}
           </div>
           
           <div className="flex-1 space-y-3">
-            {(!isShiftOpen || shiftBookings.length === 0) ? (
+            {shiftBookings.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-slate-400 py-10">
                 <CalendarClock size={40} className="mb-2 opacity-50 text-slate-300" />
-                <p className="text-[13px]">{!isShiftOpen ? 'يرجى فتح الوردية لعرض وإدارة الحجوزات' : 'لا توجد حجوزات في هذا التاريخ'}</p>
+                <p className="text-[13px]">لا توجد حجوزات مجدولة لتاريخ اليوم</p>
               </div>
             ) : (
               shiftBookings.map(booking => {

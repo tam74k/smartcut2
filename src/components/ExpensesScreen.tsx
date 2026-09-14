@@ -1,19 +1,22 @@
 import React, { useState } from 'react';
 import { AppSettings, Transaction } from '../types';
 import { Plus, Trash2, Edit2, Receipt, Save, X } from 'lucide-react';
+import { DB } from '../services/db';
 
 export function ExpensesScreen({
   settings,
   setSettings,
   transactions,
   setTransactions,
-  shiftData
+  shiftData,
+  activeBranchId
 }: {
   settings: AppSettings,
   setSettings: (s: AppSettings) => void,
   transactions: Transaction[],
   setTransactions: (t: Transaction[]) => void,
-  shiftData: { isOpen: boolean; date: string; initialCash: number }
+  shiftData: { isOpen: boolean; date: string; initialCash: number },
+  activeBranchId?: string
 }) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
@@ -67,19 +70,25 @@ export function ExpensesScreen({
       return;
     }
 
-    const tDate = transactionDate + 'T' + new Date().toTimeString().split(' ')[0];
+    const effectiveDay = (shiftData && shiftData.isOpen && shiftData.date) 
+      ? shiftData.date 
+      : (transactionDate || new Date().toISOString().split('T')[0]);
+    const tDate = effectiveDay + 'T' + new Date().toTimeString().split(' ')[0];
 
     if (editingExpenseId) {
       setTransactions(transactions.map(t => {
         if (t.id === editingExpenseId) {
-          return {
+          const updated = {
             ...t,
             date: tDate,
             amount: Number(amount),
             expenseCategory: expenseCategory,
             description: description,
-            treasury: treasuryId
+            treasury: treasuryId,
+            shiftDate: shiftData.isOpen ? shiftData.date : (t as any).shiftDate
           };
+          DB.saveTransaction(updated, settings.salonId);
+          return updated;
         }
         return t;
       }));
@@ -92,9 +101,13 @@ export function ExpensesScreen({
         category: 'expense',
         expenseCategory: expenseCategory,
         description: description,
-        treasury: treasuryId
-      };
+        treasury: treasuryId,
+        salonId: settings.salonId,
+        branchId: activeBranchId,
+        shiftDate: shiftData.isOpen ? shiftData.date : undefined
+      } as any;
       setTransactions([newTrx, ...transactions]);
+      DB.saveTransaction(newTrx, settings.salonId);
     }
     setShowAddModal(false);
     setEditingExpenseId(null);

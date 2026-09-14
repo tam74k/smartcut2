@@ -1351,16 +1351,16 @@ export const DB = {
         id: inv.id, salon_id: validSalonId, branch_id: validBranchId,
         branch_code: inv.branchCode || null,
         client_id: inv.clientId || null, client_name: inv.clientName, client_phone: inv.clientPhone || '',
-        date: inv.date, subtotal: inv.subtotal ?? 0, discount: inv.discount ?? 0,
-        discount_type: inv.discountType || 'fixed', vat: inv.vatAmount ?? 0,
+        date: inv.date, subtotal: inv.subtotal ?? inv.total ?? 0, discount: inv.discount ?? 0,
+        discount_type: inv.discountType || 'fixed', vat: inv.vatAmount ?? inv.vat ?? 0,
         cashback_used: inv.cashbackUsed ?? 0,
-        total: inv.total ?? 0, paid: inv.total ?? 0, remaining: 0,
+        total: inv.total ?? 0, paid: inv.paid ?? inv.total ?? 0, remaining: inv.remaining ?? 0,
         advance_deduction: inv.advanceDeduction ?? 0,
         booking_id: inv.bookingId || null,
-        advance_payments: inv.advancePayments || [],
-        payment_method: inv.paymentMethods?.[0]?.treasuryId || 'cash',
-        treasury_id: inv.paymentMethods?.[0]?.treasuryId || 'main',
-        items: inv.items || [], payment_methods: inv.paymentMethods || [],
+        payment_method: inv.paymentMethods?.[0]?.treasuryId || inv.paymentMethod || 'cash',
+        treasury_id: inv.paymentMethods?.[0]?.treasuryId || inv.treasuryId || 'main',
+        items: inv.items || [], 
+        payment_methods: inv.paymentMethods || (inv.paymentMethod ? [{ amount: inv.total || 0, treasuryId: inv.paymentMethod }] : []),
         status: inv.status || 'completed',
         is_cancelled: inv.status === 'cancelled', cancel_reason: null, cancelled_at: null,
         is_remedy: inv.isRemedyInvoice || false, remedy_notes: inv.remedyReason || null,
@@ -1372,7 +1372,13 @@ export const DB = {
         eta_submission_uuid: inv.etaSubmissionUuid || null, eta_status: inv.etaStatus || 'not_submitted',
         created_by: inv.createdBy || null
       };
-      const { error } = await client.from('invoices').upsert(snap, { onConflict: 'id' });
+      let { error } = await client.from('invoices').upsert(snap, { onConflict: 'id' });
+      if (error && error.code === '23503' && snap.client_id) {
+        console.warn('DB.saveInvoice FK warning on client_id, retrying with client_id = null:', error.message);
+        snap.client_id = null;
+        const retry = await client.from('invoices').upsert(snap, { onConflict: 'id' });
+        error = retry.error;
+      }
       if (error) { console.error('DB.saveInvoice error:', error.message); return null; }
       return inv;
     } catch (e) { console.error('DB.saveInvoice exception:', e); return null; }
@@ -1390,7 +1396,7 @@ export const DB = {
         branch_code: (t as any).branchCode || null,
         date: t.date, type: t.type, amount: t.amount, category: t.category,
         expense_category: t.expenseCategory || null, description: t.description,
-        treasury: t.treasury, invoice_id: (t as any).invoiceId || null,
+        treasury: t.treasury, invoice_id: (t as any).invoiceId || (t as any).invoice_id || null,
         created_by: t.createdBy || null, user_id: t.userId || null,
         user_name: t.userName || null, shift_date: t.shiftDate || null
       };

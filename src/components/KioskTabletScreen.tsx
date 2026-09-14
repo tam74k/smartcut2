@@ -96,9 +96,7 @@ function extractKioskSalonCode(): string {
       }
     }
 
-    // 4. Stored salon code if available
-    const saved = localStorage.getItem('smartcut_registered_salon_code');
-    if (saved) return saved.trim().toLowerCase();
+    // 4. Stored salon code should NOT be read here to avoid cross-salon contamination
   } catch {}
   return '';
 }
@@ -111,9 +109,6 @@ export function KioskTabletScreen({
   onSaveClient,
   onSwitchToMainApp
 }: KioskTabletScreenProps) {
-  // كود الصالون من الرابط إن وُجد
-  const urlSalonCode = useMemo(() => extractKioskSalonCode(), []);
-
   // الحساب النشط المسجل دخوله حالياً (سواء ممرر كـ prop أو محفوظ في التخزين المحلي)
   const activeUser = useMemo(() => {
     if (currentUser) return currentUser;
@@ -124,33 +119,44 @@ export function KioskTabletScreen({
     return null;
   }, [currentUser]);
 
-  // Scoped Data State (دعم تخصيص الصالون تلقائياً وفق الكود في الرابط)
+  // كود الصالون من الرابط إن وُجد (فقط إذا لم يكن هناك حساب مسجل دخوله حالياً)
+  const rawUrlCode = useMemo(() => extractKioskSalonCode(), []);
+  const urlSalonCode = activeUser?.salonId ? '' : rawUrlCode;
+
+  // Scoped Data State (دعم تخصيص الصالون تلقائياً وفق الكود في الرابط أو الحساب المسجل)
   const [scopedSettings, setScopedSettings] = useState<AppSettings>(settings);
   const [scopedBranches, setScopedBranches] = useState<Branch[]>(branches);
   const [scopedClients, setScopedClients] = useState<Client[]>(clients);
 
   useEffect(() => {
-    if (!urlSalonCode) {
+    if (activeUser?.salonId) {
+      setScopedSettings(settings);
+    } else if (!urlSalonCode) {
       setScopedSettings(settings);
     }
-  }, [settings, urlSalonCode]);
+  }, [settings, urlSalonCode, activeUser?.salonId]);
 
   useEffect(() => {
-    if (!urlSalonCode) {
+    if (activeUser?.salonId) {
+      const userBranches = branches.filter(b => b.salonId === activeUser.salonId);
+      setScopedBranches(userBranches.length > 0 ? userBranches : branches);
+    } else if (!urlSalonCode) {
       setScopedBranches(branches);
     }
-  }, [branches, urlSalonCode]);
+  }, [branches, urlSalonCode, activeUser?.salonId]);
 
   useEffect(() => {
-    if (!urlSalonCode) {
+    if (activeUser?.salonId) {
+      setScopedClients(clients.filter(c => !c.salonId || c.salonId === activeUser.salonId));
+    } else if (!urlSalonCode) {
       setScopedClients(clients);
     }
-  }, [clients, urlSalonCode]);
+  }, [clients, urlSalonCode, activeUser?.salonId]);
 
-  // تحميل بيانات الصالون والفروع والعملاء تلقائياً عند وجود كود صالون في الرابط
+  // تحميل بيانات الصالون والفروع والعملاء تلقائياً عند وجود كود صالون في الرابط وبدون حساب نشط
   useEffect(() => {
     let isMounted = true;
-    if (!urlSalonCode) return;
+    if (!urlSalonCode || activeUser?.salonId) return;
 
     const resolveSalon = async () => {
       try {
@@ -165,10 +171,6 @@ export function KioskTabletScreen({
         }
 
         if (matched && isMounted) {
-          try {
-            localStorage.setItem('smartcut_registered_salon_code', matched.code || matched.id);
-          } catch {}
-
           const [dbSettings, dbBranches, dbClients] = await Promise.allSettled([
             DB.fetchSettings(matched.id),
             DB.fetchBranches(matched.id),
@@ -179,14 +181,14 @@ export function KioskTabletScreen({
           const bData = dbBranches.status === 'fulfilled' ? dbBranches.value : [];
           const cData = dbClients.status === 'fulfilled' ? dbClients.value : [];
 
-          setScopedSettings(prev => ({
-            ...prev,
+          setScopedSettings({
+            ...settings,
             ...(sData || {}),
             salonId: matched.id,
             salonCode: matched.code,
-            salonName: sData?.salonName || matched.name || 'صالون العناية',
-            logoUrl: sData?.logoUrl || matched.logoUrl || prev.logoUrl
-          }));
+            salonName: (sData?.salonName && sData.salonName !== 'صالون سمارت كت') ? sData.salonName : (matched.name || sData?.salonName || 'الصالون'),
+            logoUrl: (sData?.logoUrl !== undefined && sData?.logoUrl !== null) ? sData.logoUrl : (matched.logoUrl || '')
+          });
 
           if (bData && bData.length > 0) {
             setScopedBranches(bData.map((b: any) => ({
@@ -212,11 +214,15 @@ export function KioskTabletScreen({
 
     resolveSalon();
     return () => { isMounted = false; };
-  }, [urlSalonCode]);
+  }, [urlSalonCode, activeUser?.salonId]);
 
   // Active Branch
   const [selectedBranchId, setSelectedBranchId] = useState<string>(() => {
     if (activeUser?.branchId) return activeUser.branchId;
+    if (activeUser?.salonId) {
+      const uBranch = branches.find(b => b.salonId === activeUser.salonId);
+      if (uBranch) return uBranch.id;
+    }
     try {
       const urlParams = new URLSearchParams(window.location.search);
       let bFromUrl = urlParams.get('branchId') || urlParams.get('branch');
@@ -226,8 +232,6 @@ export function KioskTabletScreen({
         bFromUrl = hashParams.get('branchId') || hashParams.get('branch');
       }
       if (bFromUrl) return bFromUrl;
-      const saved = localStorage.getItem('smartcut_kiosk_branch_id');
-      if (saved) return saved;
     } catch {}
     return branches[0]?.id || 'b-main';
   });
@@ -235,10 +239,25 @@ export function KioskTabletScreen({
   useEffect(() => {
     if (activeUser?.branchId) {
       setSelectedBranchId(activeUser.branchId);
+    } else if (activeUser?.salonId) {
+      const uBranch = scopedBranches.find(b => b.salonId === activeUser.salonId) || branches.find(b => b.salonId === activeUser.salonId);
+      if (uBranch) {
+        setSelectedBranchId(uBranch.id);
+      }
     }
-  }, [activeUser?.branchId]);
+  }, [activeUser?.branchId, activeUser?.salonId, scopedBranches, branches]);
 
-  const activeBranch = scopedBranches.find(b => b.id === selectedBranchId) || scopedBranches[0];
+  const activeBranch = useMemo(() => {
+    if (activeUser?.salonId) {
+      const filtered = scopedBranches.filter(b => b.salonId === activeUser.salonId);
+      const match = filtered.find(b => b.id === selectedBranchId) || branches.find(b => b.salonId === activeUser.salonId && b.id === selectedBranchId);
+      if (match) return match;
+      if (filtered.length > 0) return filtered[0];
+      const anyUserBranch = branches.find(b => b.salonId === activeUser.salonId);
+      if (anyUserBranch) return anyUserBranch;
+    }
+    return scopedBranches.find(b => b.id === selectedBranchId) || branches.find(b => b.id === selectedBranchId) || scopedBranches[0] || branches[0];
+  }, [activeUser?.salonId, selectedBranchId, scopedBranches, branches]);
 
   // Keypad & Input State
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -329,12 +348,14 @@ export function KioskTabletScreen({
     return () => clearInterval(timer);
   }, []);
 
-  // Save selected branch
+  // Save selected branch (only for unauthenticated standalone kiosk)
   useEffect(() => {
     try {
-      localStorage.setItem('smartcut_kiosk_branch_id', selectedBranchId);
+      if (selectedBranchId && !activeUser?.salonId) {
+        localStorage.setItem('smartcut_kiosk_branch_id', selectedBranchId);
+      }
     } catch {}
-  }, [selectedBranchId]);
+  }, [selectedBranchId, activeUser?.salonId]);
 
   // Client Detection Effect when phone number changes
   useEffect(() => {

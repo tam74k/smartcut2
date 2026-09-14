@@ -125,6 +125,13 @@ export function LoginScreen({ onLoginSuccess, settings, onOpenSaaSAdmin }: Login
         const sBranches = (dbBranches && dbBranches.length > 0) ? dbBranches : (salon?.id ? SubscriptionService.getBranches(salon.id) : []);
         const chosenBranch = (user.branchId && sBranches.find(b => b.id === user.branchId)) || sBranches.find(b => b.isMain) || sBranches[0] || (user.branchId ? { id: user.branchId, salonId: salon?.id, name: 'الفرع الرئيسي', code: 'B01', isMain: true, isActive: true, status: 'active' } as any : undefined);
 
+        // تنظيف أي مخلفات لكود صالون أو فرع قديم من التخزين المحلي لمنع التداخل بين الصالونات
+        try {
+          localStorage.removeItem('smartcut_registered_salon_code');
+          localStorage.removeItem('smartcut_kiosk_branch_id');
+          localStorage.removeItem('smartcut_kiosk_is_locked');
+        } catch {}
+
         let customSettings: AppSettings | undefined = undefined;
         if (salon) {
           // Check if custom app_settings exists in DB
@@ -138,7 +145,8 @@ export function LoginScreen({ onLoginSuccess, settings, onOpenSaaSAdmin }: Login
               salonCode: salon.code,
               branchId: chosenBranch?.id,
               branchCode: chosenBranch?.code,
-              salonName: dbSettings.salonName || salon.name
+              salonName: (dbSettings.salonName && dbSettings.salonName !== 'صالون سمارت كت') ? dbSettings.salonName : (salon.name || dbSettings.salonName || 'الصالون'),
+              logoUrl: (dbSettings.logoUrl !== undefined && dbSettings.logoUrl !== null) ? dbSettings.logoUrl : (salon.logoUrl || '')
             };
           } else {
             customSettings = {

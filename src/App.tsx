@@ -482,19 +482,24 @@ export default function App() {
           ]);
 
           if (dbSettings) {
-            setSettings(prev => ({
-              ...prev,
-              ...dbSettings,
-              salonId: sId,
-              salonCode: activeSalon.code || prev.salonCode,
-              salonName: dbSettings.salonName || activeSalon.name || prev.salonName,
-              salonType: dbSettings.salonType || (dbSettings as any)?.salon_type || activeSalon.salonType || (activeSalon as any)?.salon_type || prev.salonType || 'men',
-              phone: activeSalon.phone || prev.phone,
-              country: activeSalon.country || prev.country,
-              currency: activeSalon.currency || prev.currency,
-              treasuries: (Array.isArray(dbSettings.treasuries) && dbSettings.treasuries.length > 0) ? dbSettings.treasuries : prev.treasuries,
-              expenseCategories: (Array.isArray(dbSettings.expenseCategories) && dbSettings.expenseCategories.length > 0) ? dbSettings.expenseCategories : prev.expenseCategories,
-            }));
+            setSettings(prev => {
+              const isDifferentSalon = prev.salonId && prev.salonId !== sId;
+              const base = isDifferentSalon ? {} : prev;
+              return {
+                ...base,
+                ...dbSettings,
+                salonId: sId,
+                salonCode: activeSalon.code || dbSettings.salonCode || '',
+                salonName: (dbSettings.salonName && dbSettings.salonName !== 'صالون سمارت كت') ? dbSettings.salonName : (activeSalon.name || dbSettings.salonName || 'الصالون'),
+                salonType: dbSettings.salonType || (dbSettings as any)?.salon_type || activeSalon.salonType || (activeSalon as any)?.salon_type || 'men',
+                logoUrl: (dbSettings.logoUrl !== undefined && dbSettings.logoUrl !== null) ? dbSettings.logoUrl : (activeSalon.logoUrl || ''),
+                phone: activeSalon.phone || dbSettings.phone || '',
+                country: activeSalon.country || dbSettings.country || 'المملكة العربية السعودية',
+                currency: activeSalon.currency || dbSettings.currency || 'SAR',
+                treasuries: (Array.isArray(dbSettings.treasuries) && dbSettings.treasuries.length > 0) ? dbSettings.treasuries : (prev.treasuries || []),
+                expenseCategories: (Array.isArray(dbSettings.expenseCategories) && dbSettings.expenseCategories.length > 0) ? dbSettings.expenseCategories : (prev.expenseCategories || []),
+              };
+            });
           }
 
           setSubscription({
@@ -1127,9 +1132,7 @@ export default function App() {
       const next = typeof updater === 'function' ? updater(currentSalonInvs) : updater;
       const tagged = next.map(i => ({ ...i, salonId: i.salonId || currentSalonId, branchId: i.branchId || activeBranchId }));
       const other = prev.filter(i => i.salonId && i.salonId !== currentSalonId);
-      const res = [...other, ...tagged];
-      tagged.forEach(inv => DB.saveInvoice(inv));
-      return res;
+      return [...other, ...tagged];
     });
   };
 
@@ -1428,7 +1431,9 @@ export default function App() {
     const activeBranch = branches.find(b => b.id === activeBranchId) || branches[0];
     const mainTreasury = settings.treasuries.find(t => t.isMain) || settings.treasuries[0];
     const newTransactions: Transaction[] = [];
-    const now = new Date().toISOString();
+    const now = (shiftData?.isOpen && shiftData?.date) 
+      ? (shiftData.date + 'T' + new Date().toTimeString().split(' ')[0]) 
+      : new Date().toISOString();
 
     settings.treasuries.forEach(t => {
       if (t.isMain) return;
@@ -1522,9 +1527,10 @@ export default function App() {
       ...invoice,
       salonId: settings.salonId,
       branchId: activeBranchId,
-      branchCode: activeBranch?.code
+      branchCode: activeBranch?.code,
+      paymentMethods: invoice.paymentMethods && invoice.paymentMethods.length > 0 ? invoice.paymentMethods : paymentSplits
     };
-    setInvoices([...invoices, invoiceWithBranch]);
+    setInvoices(prev => [invoiceWithBranch, ...prev.filter(i => i.id !== invoiceWithBranch.id)]);
     
     // Deduct stock & Add Commission
     const updatedProducts = [...products];
@@ -1540,7 +1546,7 @@ export default function App() {
           newMovements.push({
             id: 'MOV-' + Math.random().toString(36).substr(2, 9),
             productId: item.itemId,
-            date: new Date().toISOString(),
+            date: invoice.date,
             type: 'sale',
             referenceId: invoice.id,
             quantityIn: 0,
@@ -1644,7 +1650,8 @@ export default function App() {
         description: `مبيعات - فاتورة ${invoice.id}`,
         treasury: split.treasuryId,
         branchId: activeBranchId,
-        branchCode: activeBranch?.code
+        branchCode: activeBranch?.code,
+        invoiceId: invoice.id
       } as any));
 
     // 2.b. If tip was paid via non-cash method and branch mode is 'instant_cash', deduct tip immediately from Cash Drawer
@@ -1797,6 +1804,7 @@ export default function App() {
           transactions={branchTransactions}
           setTransactions={handleSetTransactions}
           currentUser={currentUser}
+          shiftData={shiftData}
         />
       );
       case 'promo_codes': return (
@@ -1840,6 +1848,7 @@ export default function App() {
           currentUser={currentUser}
           fingerprintLogs={fingerprintLogs}
           setFingerprintLogs={setFingerprintLogs}
+          shiftData={shiftData}
         />
       );
 
@@ -1859,6 +1868,7 @@ export default function App() {
           itemMovements={branchItemMovements} 
           activeBranchId={activeBranchId}
           branches={branches}
+          employees={branchEmployees}
         />
       );
       case 'queue_calling': return (
@@ -1891,6 +1901,7 @@ export default function App() {
           currentUser={currentUser}
           transactions={branchTransactions}
           setTransactions={handleSetTransactions}
+          shiftData={shiftData}
         />
       );
       case 'invoices': return (
@@ -1943,6 +1954,7 @@ export default function App() {
           transactions={branchTransactions} 
           setTransactions={handleSetTransactions} 
           shiftData={shiftData} 
+          activeBranchId={activeBranchId}
         />
       );
       case 'treasury': return (
@@ -2174,6 +2186,16 @@ export default function App() {
     } else if (u.branchId) {
       setActiveBranchId(u.branchId);
     }
+    // تنظيف أي بيانات مؤقتة أو أكواد كيوسك لصالونات أخرى من التخزين المحلي
+    try {
+      localStorage.removeItem('smartcut_registered_salon_code');
+      localStorage.removeItem('smartcut_kiosk_branch_id');
+      localStorage.removeItem('smartcut_kiosk_is_locked');
+      if (salon?.id) {
+        localStorage.setItem('smartcut_active_salon_id', salon.id);
+      }
+    } catch (e) {}
+
     if (customSettings) {
       setSettings(customSettings);
       try {
@@ -2182,17 +2204,20 @@ export default function App() {
     } else if (salon) {
       const dbSettings = await DB.fetchSettings(salon.id);
       setSettings(prev => {
+        const isDifferentSalon = prev.salonId && prev.salonId !== salon.id;
+        const base = isDifferentSalon ? {} : prev;
         const updated: AppSettings = {
-          ...prev,
+          ...base,
           ...(dbSettings || {}),
           salonId: salon.id,
           salonCode: salon.code,
-          salonName: dbSettings?.salonName || salon.name,
-          phone: salon.phone,
-          country: salon.country,
-          currency: salon.currency,
-          ownerEmail: salon.email,
-          evolutionInstanceName: salon.evolutionInstanceName
+          salonName: (dbSettings?.salonName && dbSettings.salonName !== 'صالون سمارت كت') ? dbSettings.salonName : salon.name,
+          logoUrl: (dbSettings?.logoUrl !== undefined && dbSettings.logoUrl !== null) ? dbSettings.logoUrl : (salon.logoUrl || ''),
+          phone: salon.phone || dbSettings?.phone || '',
+          country: salon.country || dbSettings?.country || 'المملكة العربية السعودية',
+          currency: salon.currency || dbSettings?.currency || 'SAR',
+          ownerEmail: salon.email || dbSettings?.ownerEmail || '',
+          evolutionInstanceName: salon.evolutionInstanceName || dbSettings?.evolutionInstanceName || ''
         };
         try {
           localStorage.setItem('smartcut_app_settings', JSON.stringify(updated));
@@ -2319,10 +2344,21 @@ export default function App() {
           handleSetClients((prev: Client[]) => [newClient, ...prev.filter(c => c.id !== newClient.id && c.phone !== newClient.phone)]);
         }}
         onSwitchToMainApp={() => {
+          if (currentUser?.screens && currentUser.screens.length > 1 && !currentUser.screens.includes('*')) {
+            const otherScreen = currentUser.screens.find(s => s !== 'kiosk');
+            if (otherScreen) {
+              setActiveTab(otherScreen);
+              setIsKioskRoute(false);
+              return;
+            }
+          }
           AuthService.logout();
           setCurrentUser(null);
           setIsKioskRoute(false);
           try {
+            localStorage.removeItem('smartcut_registered_salon_code');
+            localStorage.removeItem('smartcut_kiosk_branch_id');
+            localStorage.removeItem('smartcut_kiosk_is_locked');
             window.history.replaceState({}, '', '/');
           } catch {}
         }}

@@ -63,7 +63,11 @@ export function TreasuryScreen({
       return;
     }
 
-    const date = transactionDate + 'T' + new Date().toTimeString().split(' ')[0];
+    const effectiveDay = (shiftData && shiftData.isOpen && shiftData.date) 
+      ? shiftData.date 
+      : (transactionDate || new Date().toISOString().split('T')[0]);
+    const date = effectiveDay + 'T' + new Date().toTimeString().split(' ')[0];
+    const sDate = (shiftData && shiftData.isOpen) ? shiftData.date : undefined;
     
     if (modalType === 'transfer') {
       if (treasuryId === toTreasuryId) {
@@ -83,8 +87,9 @@ export function TreasuryScreen({
         branchCode: activeBranch?.code,
         createdBy: currentUser?.name || 'الكاشير',
         userId: currentUser?.id,
-        userName: currentUser?.name || 'الكاشير'
-      };
+        userName: currentUser?.name || 'الكاشير',
+        shiftDate: sDate
+      } as any;
       const trxIn: Transaction = {
         id: 'TRX-TRF-IN-' + Math.random().toString(36).substring(2,9),
         date,
@@ -97,8 +102,9 @@ export function TreasuryScreen({
         branchCode: activeBranch?.code,
         createdBy: currentUser?.name || 'الكاشير',
         userId: currentUser?.id,
-        userName: currentUser?.name || 'الكاشير'
-      };
+        userName: currentUser?.name || 'الكاشير',
+        shiftDate: sDate
+      } as any;
       
       setTransactions([...transactions, trxOut, trxIn]);
     } else {
@@ -114,8 +120,9 @@ export function TreasuryScreen({
         branchCode: activeBranch?.code,
         createdBy: currentUser?.name || 'الكاشير',
         userId: currentUser?.id,
-        userName: currentUser?.name || 'الكاشير'
-      };
+        userName: currentUser?.name || 'الكاشير',
+        shiftDate: sDate
+      } as any;
       setTransactions([...transactions, trx]);
     }
     
