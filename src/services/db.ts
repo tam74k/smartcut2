@@ -122,40 +122,43 @@ function getSalonId(): string {
 }
 
 // ============================================================
-// 🛡️ نظام الفحص والإنشاء التلقائي للأعمدة (Self-Healing Schema Engine)
+// 🛡️ نظام الفحص والإنشاء التلقائي للأعمدة (Self-Healing Schema Engine) - Hardened Against SQLi
 // ============================================================
 const verifiedColumns = new Set<string>();
+const SAFE_IDENTIFIER_REGEX = /^[a-zA-Z0-9_]+$/;
+const SAFE_TYPE_REGEX = /^(?:TEXT|VARCHAR\(\d+\)|BOOLEAN|INT|INTEGER|BIGINT|NUMERIC\(\d+(?:,\s*\d+)?\)|TIMESTAMPTZ|DATE|JSONB|UUID)$/i;
 
 export async function ensureColumn(table: string, column: string, type: string = 'TEXT'): Promise<boolean> {
-  const cacheKey = `${table}.${column}`;
+  const cleanTable = table.trim();
+  const cleanColumn = column.trim();
+  const cleanType = type.trim();
+
+  // Strict Validation to prevent SQL / DDL injection
+  if (!SAFE_IDENTIFIER_REGEX.test(cleanTable) || !SAFE_IDENTIFIER_REGEX.test(cleanColumn) || !SAFE_TYPE_REGEX.test(cleanType)) {
+    console.warn(`[Security] ensureColumn rejected invalid identifier or type: ${cleanTable}.${cleanColumn} (${cleanType})`);
+    return false;
+  }
+
+  const cacheKey = `${cleanTable}.${cleanColumn}`;
   if (verifiedColumns.has(cacheKey)) return true;
 
   const client = sb();
   if (!client) return false;
 
   try {
-    // 1. Try standard RPC add_column_if_not_exists
+    // Invoke secure parameter-bound RPC
     const { data, error } = await client.rpc('add_column_if_not_exists', {
-      p_table: table,
-      p_column: column,
-      p_type: type
+      p_table: cleanTable,
+      p_column: cleanColumn,
+      p_type: cleanType
     });
     if (!error && (data === true || data === null)) {
       verifiedColumns.add(cacheKey);
       return true;
     }
-  } catch { /* Continue to fallback */ }
-
-  try {
-    // 2. Try exec_sql RPC fallback if available
-    const { error: sqlErr } = await client.rpc('exec_sql', {
-      query: `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${column} ${type};`
-    });
-    if (!sqlErr) {
-      verifiedColumns.add(cacheKey);
-      return true;
-    }
-  } catch { /* RPC not yet created in PostgreSQL */ }
+  } catch {
+    /* Silent fail */
+  }
 
   return false;
 }

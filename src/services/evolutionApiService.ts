@@ -31,6 +31,63 @@ export function formatWhatsAppNumber(phone: string, defaultCountry: string = 'ا
   return cleaned;
 }
 
+/**
+ * Security: Validates external API endpoints to prevent Server-Side Request Forgery (SSRF)
+ * Blocks internal VPC/VPS subnets, loopback, and cloud metadata endpoints in production.
+ */
+export function validateExternalUrl(inputUrl: string): { isValid: boolean; error?: string } {
+  if (!inputUrl || !inputUrl.trim()) {
+    return { isValid: false, error: 'رابط خادم Evolution API غير محدد' };
+  }
+  try {
+    const parsed = new URL(inputUrl.trim());
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      return { isValid: false, error: 'بروتوكول الرابط غير آمن، يجب أن يبدأ بـ http:// أو https://' };
+    }
+
+    const host = parsed.hostname.toLowerCase().trim();
+    const isDev = Boolean(
+      (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) ||
+      (import.meta as any)?.env?.DEV
+    );
+
+    // Block cloud metadata services unconditionally
+    if (host === '169.254.169.254' || host === 'metadata.google.internal') {
+      return { isValid: false, error: 'تم حظر الرابط لأسباب أمنية (Cloud Metadata blocked)' };
+    }
+
+    // In production, block internal private IP ranges & loopbacks
+    if (!isDev) {
+      if (
+        host === 'localhost' ||
+        host === '127.0.0.1' ||
+        host === '0.0.0.0' ||
+        host === '::1' ||
+        host.endsWith('.internal') ||
+        host.endsWith('.local')
+      ) {
+        return { isValid: false, error: 'تم حظر الرابط لأسباب أمنية (Localhost/Loopback blocked in production)' };
+      }
+
+      // Check RFC 1918 private IPv4 subnets
+      if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host) || /^192\.168\.\d{1,3}\.\d{1,3}$/.test(host)) {
+        return { isValid: false, error: 'تم حظر الرابط لأسباب أمنية (Private subnet blocked)' };
+      }
+      const match172 = host.match(/^172\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/);
+      if (match172) {
+        const secondOctet = parseInt(match172[1], 10);
+        if (secondOctet >= 16 && secondOctet <= 31) {
+          return { isValid: false, error: 'تم حظر الرابط لأسباب أمنية (Private subnet blocked)' };
+        }
+      }
+    }
+
+    return { isValid: true };
+  } catch {
+    return { isValid: false, error: 'صيغة رابط Evolution API غير صالحة' };
+  }
+}
+
 export const EvolutionApiService = {
   /**
    * Resolves the Evolution API server URL (from salon settings, platform settings, or fallback)
@@ -79,6 +136,11 @@ export const EvolutionApiService = {
     const apiKey = settings.evolutionApiKey || settings.waApiKey || '';
     const baseUrl = this.getBaseUrl(settings);
 
+    const validation = validateExternalUrl(baseUrl);
+    if (!validation.isValid) {
+      return { connected: false, error: validation.error || 'عنوان السيرفر غير مصرح به' };
+    }
+
     try {
       const res = await fetch(`${baseUrl}/instance/connectionState/${instance}`, {
         headers: {
@@ -119,6 +181,11 @@ export const EvolutionApiService = {
     const apiKey = settings.evolutionApiKey || settings.waApiKey || '';
     const baseUrl = this.getBaseUrl(settings);
     const formattedPhone = formatWhatsAppNumber(phone, settings.country);
+
+    const validation = validateExternalUrl(baseUrl);
+    if (!validation.isValid) {
+      return { success: false, error: validation.error || 'عنوان السيرفر غير مصرح به' };
+    }
 
     try {
       const res = await fetch(`${baseUrl}/message/sendText/${instance}`, {

@@ -3,6 +3,21 @@
  * Supports 80mm / 58mm Thermal Printers and A4 Sheets with ZATCA QR
  */
 
+/**
+ * Sanitizes printable HTML content to prevent XSS execution while preserving styling and structure
+ */
+function sanitizePrintHtml(html: string): string {
+  if (!html) return '';
+  return html
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
+    .replace(/<object\b[^<]*(?:(?!<\/object>)<[^<]*)*<\/object>/gi, '')
+    .replace(/<embed\b[^>]*>/gi, '')
+    .replace(/\son\w+\s*=\s*(['"]).*?\1/gi, '')
+    .replace(/\son\w+\s*=\s*[^>\s]+/gi, '')
+    .replace(/javascript:/gi, '');
+}
+
 export const handlePrintReceipt = (elementId: string, isLandscape: boolean = false, paperSize: '80mm' | '58mm' | 'a4' = '80mm') => {
   const printElement = document.getElementById(elementId);
   if (!printElement) {
@@ -15,6 +30,8 @@ export const handlePrintReceipt = (elementId: string, isLandscape: boolean = fal
     let widthClass = 'w-[76mm]';
     if (paperSize === '58mm') widthClass = 'w-[52mm]';
     if (paperSize === 'a4') widthClass = isLandscape ? 'w-[280mm]' : 'w-[200mm]';
+
+    const safeContent = sanitizePrintHtml(printElement.innerHTML);
 
     printWindow.document.write(`
       <!DOCTYPE html>
@@ -52,7 +69,7 @@ export const handlePrintReceipt = (elementId: string, isLandscape: boolean = fal
         </head>
         <body class="bg-white text-black text-xs" onload="setTimeout(() => { window.print(); window.close(); }, 600)">
           <div class="${widthClass} mx-auto p-2">
-            ${printElement.innerHTML}
+            ${safeContent}
           </div>
         </body>
       </html>
@@ -66,6 +83,7 @@ export const handlePrintReceipt = (elementId: string, isLandscape: boolean = fal
 export const printHtml = (htmlContent: string, title: string = 'طباعة') => {
   const printWindow = window.open('', '_blank');
   if (printWindow) {
+    const safeContent = sanitizePrintHtml(htmlContent);
     printWindow.document.write(`
       <!DOCTYPE html>
       <html dir="rtl" lang="ar">
@@ -100,7 +118,7 @@ export const printHtml = (htmlContent: string, title: string = 'طباعة') => 
         </head>
         <body class="bg-white text-black text-xs" onload="setTimeout(() => { window.print(); window.close(); }, 600)">
           <div class="w-[78mm] mx-auto p-1">
-            ${htmlContent}
+            ${safeContent}
           </div>
         </body>
       </html>

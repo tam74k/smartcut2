@@ -19,6 +19,7 @@ import {
 } from '../utils/bookingAvailability';
 import { QueueService } from '../services/queueService';
 import { DB } from '../services/db';
+import { escapeHtml, sanitizeUrl } from '../utils/sanitize';
 
 export function BookingsScreen({ 
   settings, 
@@ -680,24 +681,24 @@ export function BookingsScreen({
     printWindow.dir = 'rtl';
     printWindow.innerHTML = `
       <div style="text-align: center; margin-bottom: 20px;">
-        ${settings.logoUrl ? '<img src="' + settings.logoUrl + '" style="max-height: 80px; margin: 0 auto 10px;" />' : ''}
-        <h2 style="font-size: 20px; font-weight: bold; margin: 0;">${settings.printerName || 'إشعار حجز موعد'}</h2>
-        <p style="font-size: 14px; margin: 5px 0;">${settings.address || ''}</p>
-        <p style="font-size: 14px; margin: 5px 0;">${settings.phone || ''}</p>
+        ${settings.logoUrl ? '<img src="' + sanitizeUrl(settings.logoUrl) + '" style="max-height: 80px; margin: 0 auto 10px;" />' : ''}
+        <h2 style="font-size: 20px; font-weight: bold; margin: 0;">${escapeHtml(settings.printerName || 'إشعار حجز موعد')}</h2>
+        <p style="font-size: 14px; margin: 5px 0;">${escapeHtml(settings.address || '')}</p>
+        <p style="font-size: 14px; margin: 5px 0;">${escapeHtml(settings.phone || '')}</p>
         <h3 style="font-size: 18px; font-weight: bold; border: 1px solid #000; display: inline-block; padding: 5px 15px; margin-top: 10px;">إيصال حجز موعد مؤكد</h3>
       </div>
       <div style="margin-bottom: 20px; font-size: 14px;">
         ${booking.queueNumber ? `
           <div style="background: #eef2ff; border: 2px solid #6366f1; border-radius: 8px; padding: 8px; text-align: center; margin-bottom: 12px;">
             <span style="font-size: 12px; color: #3730a3; font-weight: bold; display: block;">رقم دور الحجز المسبق</span>
-            <strong style="font-size: 28px; color: #4338ca; font-weight: 900; font-family: monospace;">B-${booking.queueNumber}</strong>
+            <strong style="font-size: 28px; color: #4338ca; font-weight: 900; font-family: monospace;">B-${escapeHtml(booking.queueNumber)}</strong>
           </div>
         ` : ''}
-        <p><strong>رقم الحجز:</strong> ${booking.id}</p>
-        <p><strong>تاريخ الموعد:</strong> ${booking.date}</p>
-        <p><strong>الوقت:</strong> ${booking.time}</p>
-        <p><strong>العميل:</strong> ${booking.clientName}</p>
-        <p><strong>الجوال:</strong> ${booking.phone}</p>
+        <p><strong>رقم الحجز:</strong> ${escapeHtml(booking.id)}</p>
+        <p><strong>تاريخ الموعد:</strong> ${escapeHtml(booking.date)}</p>
+        <p><strong>الوقت:</strong> ${escapeHtml(booking.time)}</p>
+        <p><strong>العميل:</strong> ${escapeHtml(booking.clientName)}</p>
+        <p><strong>الجوال:</strong> ${escapeHtml(booking.phone)}</p>
       </div>
       <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 14px; text-align: right;">
         <thead>
@@ -710,9 +711,9 @@ export function BookingsScreen({
         <tbody>
           ${booking.services.map(s => `
             <tr style="border-bottom: 1px dotted #ccc;">
-              <td style="padding: 8px 0;">${s.serviceName}</td>
-              <td style="padding: 8px 0;">${s.technicianName}</td>
-              <td style="padding: 8px 0; text-align: left;">${s.price.toFixed(2)} ${settings.currency}</td>
+              <td style="padding: 8px 0;">${escapeHtml(s.serviceName)}</td>
+              <td style="padding: 8px 0;">${escapeHtml(s.technicianName)}</td>
+              <td style="padding: 8px 0; text-align: left;">${s.price.toFixed(2)} ${escapeHtml(settings.currency)}</td>
             </tr>
           `).join('')}
         </tbody>
@@ -720,28 +721,28 @@ export function BookingsScreen({
       <div style="margin-bottom: 20px; font-size: 14px;">
         <div style="display: flex; justify-content: space-between; font-weight: bold; border-bottom: 1px dashed #000; padding-bottom: 5px; margin-bottom: 5px;">
           <span>إجمالي الخدمات:</span>
-          <span>${totalAmt.toFixed(2)} ${settings.currency}</span>
+          <span>${totalAmt.toFixed(2)} ${escapeHtml(settings.currency)}</span>
         </div>
         ${totalAdv > 0 ? `
           <div style="display: flex; justify-content: space-between; color: #059669; font-weight: bold; padding-bottom: 5px; margin-bottom: 5px;">
             <span>المسدد مقدماً (عربون):</span>
-            <span>-${totalAdv.toFixed(2)} ${settings.currency}</span>
+            <span>-${totalAdv.toFixed(2)} ${escapeHtml(settings.currency)}</span>
           </div>
           <div style="display: flex; justify-content: space-between; font-size: 16px; font-weight: 900; border-top: 2px solid #000; padding-top: 5px;">
             <span>المتبقي للتحصيل عند الزيارة:</span>
-            <span>${remainingAmt.toFixed(2)} ${settings.currency}</span>
+            <span>${remainingAmt.toFixed(2)} ${escapeHtml(settings.currency)}</span>
           </div>
           <div style="margin-top: 10px; font-size: 12px; background: #f3f4f6; padding: 6px; border-radius: 6px;">
             <strong style="display: block; margin-bottom: 4px;">تفاصيل الدفعات المقدمة:</strong>
             ${(booking.advancePayments || []).map((adv, i) => `
-              <div>• دفعة ${i+1}: ${adv.amount.toFixed(2)} ${settings.currency} (طريقة الدفع: ${adv.treasuryName || 'نقداً'}) - تاريخ: ${adv.date}</div>
+              <div>• دفعة ${i+1}: ${adv.amount.toFixed(2)} ${escapeHtml(settings.currency)} (طريقة الدفع: ${escapeHtml(adv.treasuryName || 'نقداً')}) - تاريخ: ${escapeHtml(adv.date)}</div>
             `).join('')}
           </div>
         ` : ''}
       </div>
       ${settings.bookingNotes ? `
         <div style="margin-top: 30px; text-align: center; font-size: 13px; font-weight: bold; white-space: pre-wrap;">
-          ${settings.bookingNotes}
+          ${escapeHtml(settings.bookingNotes)}
         </div>
       ` : ''}
     `;

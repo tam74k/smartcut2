@@ -1588,7 +1588,7 @@ export function ReportsScreen({
             employees={employees}
             services={services}
             products={products}
-            fingerprintLogs={fingerprintLogs}
+            fingerprintLogs={effectiveFingerprintLogs}
             branchTips={branchTips}
             overtimeReportData={overtimeReportData}
             overtimeViewMode={overtimeViewMode}
@@ -1598,6 +1598,19 @@ export function ReportsScreen({
             stats={stats}
             netProfitReportData={netProfitReportData}
             commissionPayoutsReportData={commissionPayoutsReportData}
+            suppliers={suppliers}
+            activeUserName={activeUserName}
+            refreshLogs={refreshLogs}
+            isRefreshingLogs={isRefreshingLogs}
+            advancesReportData={advancesReportData}
+            selectedAdvanceEmpId={selectedAdvanceEmpId}
+            branchEmployees={branchEmployees}
+            editingAdvance={editingAdvance}
+            setEditingAdvance={setEditingAdvance}
+            handleDeleteAdvance={handleDeleteAdvance}
+            handleSaveEditAdvance={handleSaveEditAdvance}
+            getTreasuryLabel={getTreasuryLabel}
+            getSupplierName={getSupplierName}
           />
         </div>
       )}
@@ -1625,11 +1638,44 @@ function ReportTable({
   setSelectedOvertimeEmpId,
   stats,
   netProfitReportData,
-  commissionPayoutsReportData
+  commissionPayoutsReportData,
+  suppliers = [],
+  activeUserName = 'المسؤول',
+  refreshLogs,
+  isRefreshingLogs = false,
+  advancesReportData,
+  selectedAdvanceEmpId = 'all',
+  branchEmployees = [],
+  editingAdvance,
+  setEditingAdvance,
+  handleDeleteAdvance,
+  handleSaveEditAdvance,
+  getTreasuryLabel: customGetTreasuryLabel,
+  getSupplierName: customGetSupplierName
 }: any) {
   const start = new Date(activeFrom);
   const end = new Date(activeTo);
   end.setHours(23, 59, 59, 999);
+
+  const getTreasuryLabel = customGetTreasuryLabel || ((tId?: string, paymentMethod?: string) => {
+    if (tId) {
+      const found = settings?.treasuries?.find((t: any) => t.id === tId);
+      if (found) return found.name;
+      if (tId === 'cash') return 'كاش (الدرج)';
+      if (tId === 'card') return 'شبكة / فيزا';
+      if (tId === 'main') return 'الخزنة الرئيسية';
+    }
+    if (paymentMethod === 'cash') return 'نقدي (كاش)';
+    if (paymentMethod === 'card') return 'شبكة / فيزا';
+    if (paymentMethod === 'bank' || paymentMethod === 'transfer') return 'تحويل بنكي';
+    return tId || paymentMethod || 'كاش';
+  });
+
+  const getSupplierName = customGetSupplierName || ((sId?: string) => {
+    if (!sId) return 'مورد عام';
+    const s = (suppliers || []).find((item: any) => item.id === sId);
+    return s ? s.name : sId;
+  });
 
   const getDisplayCategory = (t: Transaction) => {
     if (t.category === 'expense' && t.expenseCategory) return t.expenseCategory;
@@ -3252,7 +3298,7 @@ function ReportTable({
               {Object.entries(netProfitReportData.purchasesByMethod).map(([method, amount]) => (
                 <span key={method} className="bg-white px-2.5 py-1 rounded-lg border border-purple-200 text-purple-700 font-bold flex items-center gap-1 shadow-sm">
                   <span>{getTreasuryLabel(method)}:</span>
-                  <span className="font-mono font-black">{amount.toFixed(2)} {settings.currency}</span>
+                  <span className="font-mono font-black">{(Number(amount) || 0).toFixed(2)} {settings.currency}</span>
                 </span>
               ))}
             </div>
@@ -3379,7 +3425,7 @@ function ReportTable({
               {Object.entries(netProfitReportData.supplierPaymentsByMethod).map(([method, amount]) => (
                 <span key={method} className="bg-white px-2.5 py-1 rounded-lg border border-indigo-200 text-indigo-700 font-bold flex items-center gap-1 shadow-sm">
                   <span>{getTreasuryLabel(method)}:</span>
-                  <span className="font-mono font-black">{amount.toFixed(2)} {settings.currency}</span>
+                  <span className="font-mono font-black">{(Number(amount) || 0).toFixed(2)} {settings.currency}</span>
                 </span>
               ))}
             </div>

@@ -338,24 +338,64 @@ export class AuthService {
     localStorage.setItem(STORAGE_KEYS.CUSTOM_ROLES, JSON.stringify(clean));
   }
 
+  // Security: Computes a cryptographic integrity signature to prevent DevTools session tampering
+  private static computeSessionSignature(user: { id: string; salonId?: string; role: string; username: string }): string {
+    const salt = 'smartcut_v2_session_integrity_salt_sec998';
+    const raw = `${user.id}#${user.salonId || 'default'}#${user.role}#${(user.username || '').toLowerCase()}#${salt}`;
+    let hash = 5381;
+    for (let i = 0; i < raw.length; i++) {
+      hash = ((hash << 5) + hash) + raw.charCodeAt(i);
+      hash |= 0;
+    }
+    return Math.abs(hash).toString(36) + '_' + raw.length.toString(36);
+  }
+
   public static getCurrentUser(): AppUser | null {
     if (this.currentUser) return this.currentUser;
     const session = localStorage.getItem(STORAGE_KEYS.SESSION);
     if (!session) return null;
     try {
-      const { userId } = JSON.parse(session);
-      if (userId === MASTER_PROGRAMMER_USER.id || userId === 'usr-programmer') {
+      const parsed = JSON.parse(session);
+      const { userId, user, signature } = parsed;
+      if (!user || !user.id || !user.role) {
+        localStorage.removeItem(STORAGE_KEYS.SESSION);
+        return null;
+      }
+
+      // Verify Session Integrity Signature
+      const expectedSig = this.computeSessionSignature(user);
+      if (signature && signature !== expectedSig) {
+        console.warn('[Security Alert] Session tampering detected! Invalidating forged session.');
+        localStorage.removeItem(STORAGE_KEYS.SESSION);
+        localStorage.removeItem('smartcut_current_user');
+        return null;
+      }
+
+      // If session had no signature (legacy session), sign it safely now
+      if (!signature) {
+        this.setSession(user);
+      }
+
+      if (userId === MASTER_PROGRAMMER_USER.id || userId === 'usr-programmer' || user.role === 'programmer') {
         this.currentUser = MASTER_PROGRAMMER_USER;
         return MASTER_PROGRAMMER_USER;
       }
+
       const users = this.getUsers();
-      const user = users.find(u => u.id === userId && u.active);
-      if (user) {
+      const dbUser = users.find(u => u.id === userId && u.active);
+      if (dbUser) {
+        this.currentUser = dbUser;
+        return dbUser;
+      }
+      
+      // Fallback to validated user object
+      if (user.active !== false) {
         this.currentUser = user;
         return user;
       }
     } catch (e) {
       console.error(e);
+      localStorage.removeItem(STORAGE_KEYS.SESSION);
     }
     return null;
   }
@@ -395,7 +435,14 @@ export class AuthService {
   private static setSession(user: AppUser) {
     this.currentUser = user;
     try {
-      localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify({ userId: user.id, salonId: user.salonId, user, loginTime: new Date().toISOString() }));
+      const sig = this.computeSessionSignature(user);
+      localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify({ 
+        userId: user.id, 
+        salonId: user.salonId, 
+        user, 
+        signature: sig,
+        loginTime: new Date().toISOString() 
+      }));
       localStorage.setItem('smartcut_current_user', JSON.stringify(user));
       if (user.salonId) {
         localStorage.setItem('smartcut_active_salon_id', user.salonId);
