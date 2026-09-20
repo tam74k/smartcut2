@@ -15,6 +15,7 @@ import { ZatcaService } from '../services/zatcaService';
 import { EtaEgyptService } from '../services/etaEgyptService';
 import { DB } from '../services/db';
 import { SupabaseService } from '../services/supabase';
+import { isBarberEmployee, isReferralEligibleEmployee } from '../utils/employeeHelper';
 
 export const getCartItemPrice = (c: CartItem | any): number => {
   if (!c) return 0;
@@ -1243,6 +1244,16 @@ export function POSScreen({
     });
   }, [selectedCategory, searchQuery, items, products, itemTypeFilter, categories]);
 
+  // تصفية الفنيين المنفذين المسموح لهم بتنفيذ الخدمات (حلاق / كوافير فقط)
+  const performerEmployees = useMemo(() => {
+    return (employees || []).filter(e => isBarberEmployee(e));
+  }, [employees]);
+
+  // تصفية موظفي الإحالة وفتح الشغل (حلاق / كوافير - مساعد فقط)
+  const referralEmployees = useMemo(() => {
+    return (employees || []).filter(e => isReferralEligibleEmployee(e));
+  }, [employees]);
+
   const addToCart = (item: any) => {
     if (isSubscriptionBlocked) {
       alert('⛔ الحساب موقوف أو انتهت فترة الاشتراك. النظام يعمل الآن بوضع الاطلاع فقط (Read-Only) ولا يمكن إضافة عناصر للسلة.');
@@ -1816,9 +1827,14 @@ export function POSScreen({
                         onChange={(e) => updateEmployee(c.cartId, e.target.value)}
                       >
                         <option value="">اختر المنفذ...</option>
-                        {employees.filter(e => e.isActive !== false).map(emp => (
+                        {performerEmployees.map(emp => (
                           <option key={emp.id} value={emp.id}>{emp.name}</option>
                         ))}
+                        {c.employeeId && !performerEmployees.some(e => e.id === c.employeeId) && (
+                          <option value={c.employeeId}>
+                            {employees.find(e => e.id === c.employeeId)?.name || c.employeeId}
+                          </option>
+                        )}
                       </select>
                     </div>
 
@@ -1842,9 +1858,14 @@ export function POSScreen({
                           onChange={(e) => updateReferralEmployee(c.cartId, e.target.value)}
                         >
                           <option value="">بدون إحالة...</option>
-                          {employees.filter(e => e.isActive !== false).map(emp => (
+                          {referralEmployees.map(emp => (
                             <option key={emp.id} value={emp.id}>{emp.name}</option>
                           ))}
+                          {c.referralEmployeeId && !referralEmployees.some(e => e.id === c.referralEmployeeId) && (
+                            <option value={c.referralEmployeeId}>
+                              {employees.find(e => e.id === c.referralEmployeeId)?.name || c.referralEmployeeId}
+                            </option>
+                          )}
                         </select>
                       </div>
                     ) : (

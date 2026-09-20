@@ -56,3 +56,76 @@ export function getCommissionModelLabel(emp: Employee): string {
   }
   return `نسبة ثابتة ${emp.commissionRate ?? 0}%`;
 }
+
+/**
+ * فحص ما إذا كان الموظف يتقاضى عمولة ثابتة (نسبة على إجمالي الشغل أو موديل عمولة)
+ */
+export function hasEmployeeFixedCommission(emp?: Employee | null): boolean {
+  if (!emp) return false;
+  if (emp.commissionModel === 'fixed_rate' || emp.commissionModel === 'tiered_brackets' || emp.commissionModel === 'target_based') {
+    return true;
+  }
+  return emp.commissionRate !== undefined && Number(emp.commissionRate) > 0;
+}
+
+/**
+ * حساب عمولة الموظف الإجمالية وفق القواعد المعتمدة:
+ * 1. في حال كان الموظف يتقاضى عمولة ثابتة (نسبة على إجمالي الشغل):
+ *    - إذا تم تحديد خيار (احتساب العمولتين معاً: العمولة الثابتة + عمولة الخدمات):
+ *        تحسب العمولة الثابتة على إجمالي الشغل + عمولة تنفيذ الخدمات + عمولة الإحالة (فتح الشغل).
+ *    - إذا لم يتم تحديد هذا الخيار:
+ *        تحسب العمولة الثابتة على إجمالي الشغل + عمولة الإحالة فقط (فتح الشغل)، مع عدم احتساب عمولة تنفيذ الخدمات.
+ * 2. في حال لم يكن للموظف عمولة ثابتة:
+ *    - تحسب عمولة تنفيذ الخدمات + عمولة الإحالة.
+ */
+export function calculateEmployeeTotalCommission({
+  employee,
+  totalWork,
+  serviceExecutionCommission,
+  referralCommission = 0
+}: {
+  employee?: Employee | null;
+  totalWork: number;
+  serviceExecutionCommission: number;
+  referralCommission?: number;
+}): {
+  fixedCommission: number;
+  serviceExecutionCommission: number;
+  referralCommission: number;
+  totalCommission: number;
+} {
+  const safeTotalWork = Number(totalWork) || 0;
+  const safeServiceComm = Number(serviceExecutionCommission) || 0;
+  const safeRefComm = Number(referralCommission) || 0;
+
+  if (!employee) {
+    return {
+      fixedCommission: 0,
+      serviceExecutionCommission: safeServiceComm,
+      referralCommission: safeRefComm,
+      totalCommission: safeServiceComm + safeRefComm
+    };
+  }
+
+  const hasFixed = hasEmployeeFixedCommission(employee);
+
+  if (hasFixed) {
+    const fixedCommission = calculateEmployeeCommission(employee, safeTotalWork);
+    // إذا تم تحديد الخيار، تحسب عمولة تنفيذ الخدمات مع العمولة الثابتة، وإلا فلا تحسب عمولة التنفيذ
+    const effectiveServiceComm = employee.allowDualCommission ? safeServiceComm : 0;
+    return {
+      fixedCommission,
+      serviceExecutionCommission: effectiveServiceComm,
+      referralCommission: safeRefComm,
+      totalCommission: fixedCommission + effectiveServiceComm + safeRefComm
+    };
+  }
+
+  return {
+    fixedCommission: 0,
+    serviceExecutionCommission: safeServiceComm,
+    referralCommission: safeRefComm,
+    totalCommission: safeServiceComm + safeRefComm
+  };
+}
+

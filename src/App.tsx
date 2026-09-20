@@ -54,6 +54,7 @@ import { SupabaseService } from './services/supabase';
 import { DB, dbClientToApp, dbEmployeeToApp, dbServiceToApp, dbProductToApp, toCamel } from './services/db';
 import { SubscriptionService } from './services/subscriptionService';
 import { QueueService } from './services/queueService';
+import { hasEmployeeFixedCommission } from './utils/commissionHelper';
 import { 
   AppSettings, Transaction, Booking, Invoice, ServiceItem, Category, Employee, Product, AppUser, 
   SaaSSubscription, Branch, Partner, PartnerTransaction, PromoCode, PromoCodeUsage, TipRecord, 
@@ -1691,21 +1692,28 @@ export default function App() {
          // Service execution commission (عمولة التنفيذ)
          const srv = services.find(s => s.id === item.itemId);
          if (srv && (srv.employeeCommissionAmount || srv.employeeCommissionPercentage) && item.employeeId) {
-           let commAmount = 0;
-           if (srv.employeeCommissionAmount) commAmount = srv.employeeCommissionAmount;
-           else if (srv.employeeCommissionPercentage) commAmount = (srv.employeeCommissionPercentage / 100) * item.price;
-           
-           if (commAmount > 0) {
-              newFinancialRecords.push({
-                employeeId: item.employeeId,
-                record: {
-                  id: 'FIN-' + Math.random().toString(36).substr(2, 9),
-                  date: invoice.date,
-                  type: 'commission',
-                  amount: commAmount * (item.quantity || 1),
-                  note: `عمولة تنفيذ خدمة: ${srv.name}`
-                }
-              });
+           const performerEmp = employees.find(e => e.id === item.employeeId);
+           const hasFixedComm = performerEmp && hasEmployeeFixedCommission(performerEmp);
+           // إذا كان للموظف عمولة ثابتة، فلا تحسب عمولة تنفيذ الخدمات إلا في حال تحديد خيار احتساب العمولتين معاً
+           const shouldAwardServiceCommission = !hasFixedComm || performerEmp?.allowDualCommission;
+
+           if (shouldAwardServiceCommission) {
+             let commAmount = 0;
+             if (srv.employeeCommissionAmount) commAmount = srv.employeeCommissionAmount;
+             else if (srv.employeeCommissionPercentage) commAmount = (srv.employeeCommissionPercentage / 100) * item.price;
+             
+             if (commAmount > 0) {
+                newFinancialRecords.push({
+                  employeeId: item.employeeId,
+                  record: {
+                    id: 'FIN-' + Math.random().toString(36).substr(2, 9),
+                    date: invoice.date,
+                    type: 'commission',
+                    amount: commAmount * (item.quantity || 1),
+                    note: `عمولة تنفيذ خدمة: ${srv.name}`
+                  }
+                });
+             }
            }
          }
 
@@ -2379,6 +2387,34 @@ export default function App() {
         loadedSectionsRef.current.add('pos');
         loadedSectionsRef.current.add('services');
         loadedSectionsRef.current.add('products');
+        if (u.role === 'barber') {
+          DB.fetchBookings(salon.id).then(bList => {
+            if (bList && bList.length > 0) {
+              setBookings(bList.map((b: any) => ({
+                ...b, phone: b.clientPhone || b.phone || '',
+                queueNumber: b.queueNumber || b.queue_number || undefined,
+                customerEmail: b.customerEmail || '', advancePayments: b.advancePayments || []
+              })));
+            }
+          }).catch(() => {});
+          DB.fetchInvoices(salon.id).then(dbInvs => {
+            if (dbInvs && dbInvs.length > 0) {
+              setInvoices(dbInvs.map((inv: any) => ({
+                ...inv,
+                vatAmount: inv.vat,
+                cashbackUsed: inv.cashbackUsed ?? 0,
+                paymentMethods: inv.paymentMethods || [],
+                isRemedyInvoice: inv.isRemedy || false,
+                remedyReason: inv.remedyNotes || '',
+                relatedComplaintId: inv.relatedComplaintId || '',
+                originalInvoiceId: inv.originalInvoiceId || '',
+                zatcaQr: inv.zatcaQr || '',
+                zatcaHash: inv.zatcaHash || '',
+                etaSubmissionUuid: inv.etaSubmissionUuid || '',
+              })));
+            }
+          }).catch(() => {});
+        }
       } catch (e) {
         console.warn('Error loading essential data after login:', e);
       }
@@ -2388,7 +2424,7 @@ export default function App() {
       setActiveTab('saas_subscriptions');
     } else if (u.role === 'owner') {
       setActiveTab('owner_portal');
-    } else if (u.role === 'barber') {
+    } else if (u.role === 'barber' || (u.screens?.includes('barber_portal') && !u.screens?.includes('*') && u.screens?.length === 1)) {
       setActiveTab('barber_portal');
     } else if (u.role === 'kiosk' || (u.screens?.includes('kiosk') && !u.screens?.includes('*') && u.screens?.length === 1)) {
       setActiveTab('kiosk');
@@ -2398,7 +2434,7 @@ export default function App() {
   };
 
   // 2. STANDALONE BARBER & TECHNICIAN PORTAL ROUTE (/barber, /staff or barber role)
-  if (isBarberRoute || currentUser?.role === 'barber') {
+  if (isBarberRoute || currentUser?.role === 'barber' || (currentUser?.screens?.includes('barber_portal') && !currentUser?.screens?.includes('*') && currentUser?.screens?.length === 1)) {
     if (!currentUser || (currentUser.role !== 'barber' && currentUser.role !== 'admin' && currentUser.role !== 'programmer')) {
       return (
         <BarberLoginScreen

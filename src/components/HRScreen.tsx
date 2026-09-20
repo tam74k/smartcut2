@@ -15,7 +15,7 @@ import {
 import { ThermalSalarySlip, SalarySlipSummary } from './ThermalSalarySlip';
 import { printHtml } from '../utils/print';
 import { printThermalFinancialVoucher } from './ThermalFinancialVoucher';
-import { calculateEmployeeCommission, getCommissionModelLabel } from '../utils/commissionHelper';
+import { calculateEmployeeCommission, getCommissionModelLabel, calculateEmployeeTotalCommission } from '../utils/commissionHelper';
 import { DB } from '../services/db';
 import { getActiveShiftDate, getEffectiveDateTime, getEffectiveDateOnly } from '../utils/shiftDate';
 
@@ -642,10 +642,6 @@ export function HRScreen({
           });
         });
 
-        const executionCommission = (emp.salaryType === 'commission_only' || emp.allowDualCommission || emp.commissionRate > 0 || emp.commissionModel === 'tiered_brackets')
-          ? calculateEmployeeCommission(emp, workRevenue)
-          : 0;
-
         // 5. Financial records (Advances, Bonuses, Penalties, Direct Service/Referral Commissions, Paid Commissions)
         let advances = 0;
         let bonuses = 0;
@@ -667,7 +663,15 @@ export function HRScreen({
 
         // Combine referral commissions (avoid double-counting if recorded in both invoice item & financial records)
         const totalReferralCommission = Math.max(invoiceReferralCommission, financialReferralCommissions);
-        const totalDailyCommission = executionCommission + totalReferralCommission + directCommissions;
+        
+        // حساب العمولات وفق قواعد النظام (العمولة الثابتة + عمولة الخدمات إذا كان الخيار مفعلاً)
+        const commResult = calculateEmployeeTotalCommission({
+          employee: emp,
+          totalWork: workRevenue,
+          serviceExecutionCommission: directCommissions,
+          referralCommission: totalReferralCommission
+        });
+        const totalDailyCommission = commResult.totalCommission;
 
         // Determine Status, Attendance, Delays, Overtime
         let status: DayTimesheetRow['status'] = 'regular';

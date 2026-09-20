@@ -947,7 +947,12 @@ export const DB = {
         avatar: u.avatar || null,
         updated_at: new Date().toISOString()
       };
-      const { error } = await client.from('users').upsert(snap, { onConflict: 'username' });
+      let { error } = await client.from('users').upsert(snap, { onConflict: 'username' });
+      if (error && error.message && error.message.includes('employee_id')) {
+        delete snap.employee_id;
+        const retry = await client.from('users').upsert(snap, { onConflict: 'username' });
+        error = retry.error;
+      }
       if (error) { 
         console.error('DB.saveUser error:', error.message); 
         return false; 
@@ -3211,6 +3216,7 @@ export function dbEmployeeToApp(row: any) {
     avatarUrl: row.avatarUrl || '',
     publicBio: row.publicBio || '',
     hasOnlineAccount: row.hasOnlineAccount || false,
+    username: row.username || '',
     userId: row.userId || '',
     role: row.role,
     baseSalary: row.baseSalary ?? 0,
@@ -3288,6 +3294,7 @@ export function dbUserToApp(row: any): any {
     phone: c.phone || '',
     role: (c.role === 'kiosk' || (Array.isArray(c.screens) && c.screens.includes('kiosk') && c.screens.length === 1)) ? 'kiosk' : (c.role || 'cashier'),
     customRoleId: c.customRoleId,
+    employeeId: c.employeeId || row.employee_id || '',
     active: c.active !== false,
     screens: Array.isArray(c.screens) ? c.screens : ['*'],
     actions: Array.isArray(c.actions) ? c.actions : ['*'],

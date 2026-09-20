@@ -5,7 +5,7 @@ import {
   DollarSign, BarChart3, Download, Sparkles, UserCheck, Zap, ArrowUpRight, Layers
 } from 'lucide-react';
 import { exportToExcel } from '../utils/exportExcel';
-import { calculateEmployeeCommission, getCommissionModelLabel } from '../utils/commissionHelper';
+import { calculateEmployeeCommission, getCommissionModelLabel, calculateEmployeeTotalCommission } from '../utils/commissionHelper';
 
 export function EmployeeAnalyticsScreen({
   settings,
@@ -121,13 +121,15 @@ export function EmployeeAnalyticsScreen({
         });
       });
 
-      // Model-based calculation on net work revenue (if not already fully captured per-item)
-      const modelCommission = (emp.salaryType === 'commission_only' || emp.allowDualCommission || (emp.commissionRate && emp.commissionRate > 0) || emp.commissionModel === 'tiered_brackets' || emp.commissionModel === 'target_based' || emp.commissionModel === 'fixed_rate')
-        ? calculateEmployeeCommission(emp, revenue)
-        : 0;
+      // حساب العمولات وفق قواعد النظام (العمولة الثابتة + عمولة الخدمات إذا كان الخيار مفعلاً)
+      const commResult = calculateEmployeeTotalCommission({
+        employee: emp,
+        totalWork: revenue,
+        serviceExecutionCommission: invoiceExecutionCommission,
+        referralCommission: invoiceReferralCommission
+      });
 
-      // Base execution commission: higher of per-item sum or model-based calculation
-      const executionCommission = Math.max(invoiceExecutionCommission, modelCommission);
+      const executionCommission = commResult.fixedCommission + commResult.serviceExecutionCommission;
 
       // Financial records (direct commissions, referral commissions recorded via financial_records)
       let finDirectCommissions = 0;
@@ -143,7 +145,7 @@ export function EmployeeAnalyticsScreen({
       });
 
       // Avoid double-counting referral & execution commissions between invoice items and financial records
-      const totalReferralComm = Math.max(invoiceReferralCommission, finReferralCommissions);
+      const totalReferralComm = Math.max(commResult.referralCommission, finReferralCommissions);
       const totalExecutionComm = Math.max(executionCommission, finDirectCommissions);
       const totalCommissions = totalExecutionComm + totalReferralComm;
 

@@ -1,16 +1,16 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { 
   AppSettings, Employee, EmployeeFinancialRecord, EmployeeLeaveRecord, 
   Transaction, Invoice, Booking, SalaryHistoryEntry, EmployeePermissionRecord, 
   EndOfServiceRecord, HRSettings, CommissionTier, TipRecord, FingerprintLog, EmployeeCustody,
-  AppUser, ShiftScheduleEntry
+  AppUser, ShiftScheduleEntry, EMPLOYEE_ROLES
 } from '../types';
 import { 
   Plus, Edit2, Trash2, Save, UserCog, Search, Banknote, CalendarMinus, 
   Gift, DollarSign, XCircle, CheckCircle, Clock, ShieldAlert, TrendingUp, 
   BarChart3, Settings, ShieldCheck, History, Award, Calendar, FileText, 
   AlertTriangle, Check, X, Printer, UserX, UserCheck, Sparkles, Sliders, Layers,
-  Camera, Image as ImageIcon, HeartHandshake, Fingerprint, Package 
+  Camera, Image as ImageIcon, HeartHandshake, Fingerprint, Package, CheckCircle2
 } from 'lucide-react';
 import { processImageFile, MAX_IMAGE_SIZE_KB, compressEmployeeAvatar } from '../utils/imageUpload';
 import { HRScreen } from './HRScreen';
@@ -21,6 +21,7 @@ import { EmployeeCustodyModal } from './EmployeeCustodyModal';
 import { printThermalFinancialVoucher, FinancialVoucherData } from './ThermalFinancialVoucher';
 import { getCommissionModelLabel, calculateEmployeeCommission } from '../utils/commissionHelper';
 import { DB } from '../services/db';
+import { AuthService } from '../services/auth';
 
 export function EmployeesScreen({ 
   settings, 
@@ -70,8 +71,8 @@ export function EmployeesScreen({
   // Default Employee Form Data
   const defaultFormData: Partial<Employee> = {
     name: '',
-    role: 'حلاق محترف',
-    baseSalary: 3000,
+    role: 'حلاق / كوافير',
+    baseSalary: '' as any,
     fingerprintCode: '',
     commissionRate: 0,
     commissionModel: 'none',
@@ -95,7 +96,31 @@ export function EmployeesScreen({
     isBlacklisted: false
   };
   const [formData, setFormData] = useState<Partial<Employee>>(defaultFormData);
+  const [onlineUsername, setOnlineUsername] = useState('');
   const [onlineUserPassword, setOnlineUserPassword] = useState('123456');
+  const [usernameStatus, setUsernameStatus] = useState<'idle' | 'checking' | 'available' | 'taken'>('idle');
+  const checkUsernameTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleUsernameChange = (val: string) => {
+    const cleaned = val.toLowerCase().replace(/[^a-z0-9_.-]/g, '');
+    setOnlineUsername(cleaned);
+    
+    if (!cleaned || cleaned.length < 2) {
+      setUsernameStatus('idle');
+      return;
+    }
+
+    setUsernameStatus('checking');
+    if (checkUsernameTimerRef.current) clearTimeout(checkUsernameTimerRef.current);
+    checkUsernameTimerRef.current = setTimeout(async () => {
+      try {
+        const isTaken = await AuthService.isUsernameTakenAsync(cleaned, undefined, editingId || undefined);
+        setUsernameStatus(isTaken ? 'taken' : 'available');
+      } catch {
+        setUsernameStatus('idle');
+      }
+    }, 400);
+  };
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -392,13 +417,20 @@ export function EmployeesScreen({
 
   const handleEdit = (emp: Employee) => {
     setEditingId(emp.id);
+    const usersList = AuthService.getUsers();
+    const linkedUser = usersList.find(u => u.employeeId === emp.id || (emp.userId && u.id === emp.userId));
+    const uName = linkedUser?.username || (emp as any).username || '';
+    setOnlineUsername(uName);
+    setOnlineUserPassword(linkedUser?.password || '123456');
+    setUsernameStatus(uName ? 'available' : 'idle');
+
     setFormData({
       ...emp,
       commissionRate: emp.commissionRate ?? 0,
       commissionModel: emp.commissionModel || (emp.commissionRate === 0 ? 'none' : 'fixed_rate'),
       email: emp.email || '',
       avatarUrl: emp.avatarUrl || '',
-      hasOnlineAccount: emp.hasOnlineAccount || false,
+      hasOnlineAccount: emp.hasOnlineAccount || Boolean(linkedUser),
       salaryType: emp.salaryType || 'salary',
       allowDualCommission: emp.allowDualCommission || false,
       checkInTime: emp.checkInTime || '09:00',
@@ -415,7 +447,7 @@ export function EmployeesScreen({
     }
   };
 
-  const handleSaveEmployee = () => {
+  const handleSaveEmployee = async () => {
     if (!formData.name || !formData.role) {
       alert('الرجاء إدخال اسم الموظف والمسمى الوظيفي');
       return;
@@ -437,25 +469,50 @@ export function EmployeesScreen({
     }
 
     const employeeId = editingId || ('EMP-' + Math.random().toString(36).substring(2, 9));
+    const cleanUsername = (onlineUsername || '').trim().toLowerCase();
 
-    // Handle online user account creation/linking
-    if (formData.hasOnlineAccount && formData.email) {
+    // Handle online user account validation
+    if (formData.hasOnlineAccount) {
+      if (!cleanUsername || cleanUsername.length < 2) {
+        alert('الرجاء إدخال اسم مستخدم صحيح لحساب الموظف الأونلاين (حرفين على الأقل باللغة الإنجليزية وبدون مسافات).');
+        return;
+      }
+      if (!/^[a-z0-9_.-]+$/.test(cleanUsername)) {
+        alert('اسم المستخدم يجب أن يحتوي على أحرف إنجليزية وأرقام وبدون مسافات (يمكن استخدام _ أو - فقط).');
+        return;
+      }
+
+      const isTaken = await AuthService.isUsernameTakenAsync(cleanUsername, undefined, editingId || undefined);
+      if (isTaken) {
+        alert('❌ اسم المستخدم هذا مستخدم بالفعل في قاعدة البيانات! يرجى اختيار اسم مستخدم آخر فريد.');
+        return;
+      }
+    }
+
+    let userUuid = '';
+    // Handle online user account creation / linking in System and Database
+    if (formData.hasOnlineAccount && cleanUsername) {
       try {
         const storedUsers = localStorage.getItem('smartcut_users');
         const usersList: AppUser[] = storedUsers ? JSON.parse(storedUsers) : [];
-        const existingIdx = usersList.findIndex(u => u.employeeId === employeeId || u.email === formData.email);
+        const existingIdx = usersList.findIndex(u => u.employeeId === employeeId || (editingId && u.employeeId === editingId) || u.username.toLowerCase() === cleanUsername);
         
+        userUuid = existingIdx >= 0 ? usersList[existingIdx].id : DB.generateUUID();
         const onlineUser: AppUser = {
-          id: existingIdx >= 0 ? usersList[existingIdx].id : ('usr-' + Math.random().toString(36).substring(2, 9)),
-          username: formData.email.split('@')[0],
-          email: formData.email,
+          id: userUuid,
+          salonId: (formData as any).salonId || settings?.salonId,
+          salonCode: settings?.salonCode || 'SC-01',
+          branchId: formData.branchId || activeBranchId || settings?.branchId,
+          branchCode: settings?.branchCode || 'BR-01',
+          username: cleanUsername,
+          email: formData.email || `${cleanUsername}@smartcut.app`,
           password: onlineUserPassword || '123456',
           name: formData.name,
           role: 'barber',
           employeeId: employeeId,
           phone: '',
-          active: true,
-          screens: ['bookings', 'employees'],
+          active: formData.isActive !== false,
+          screens: ['barber_portal'],
           actions: []
         };
 
@@ -465,8 +522,24 @@ export function EmployeesScreen({
           usersList.push(onlineUser);
         }
         localStorage.setItem('smartcut_users', JSON.stringify(usersList));
+        AuthService.saveUser(onlineUser);
+        await DB.saveUser(onlineUser);
       } catch (err) {
         console.error('Failed to link online user:', err);
+      }
+    } else if (!formData.hasOnlineAccount && editingId) {
+      // If user unchecks online account, deactivate linked user in System & DB
+      try {
+        const storedUsers = localStorage.getItem('smartcut_users');
+        const usersList: AppUser[] = storedUsers ? JSON.parse(storedUsers) : [];
+        const existingUser = usersList.find(u => u.employeeId === editingId);
+        if (existingUser) {
+          const deactivated = { ...existingUser, active: false };
+          AuthService.saveUser(deactivated);
+          await DB.saveUser(deactivated);
+        }
+      } catch (err) {
+        console.error('Failed to deactivate online user:', err);
       }
     }
 
@@ -497,6 +570,8 @@ export function EmployeesScreen({
       const updatedEmp = { 
         ...existingEmp, 
         ...formData,
+        username: formData.hasOnlineAccount ? cleanUsername : (existingEmp?.username || ''),
+        userId: formData.hasOnlineAccount ? (userUuid || existingEmp?.userId) : undefined,
         shiftScheduleHistory: updatedHistory
       } as Employee;
 
@@ -507,6 +582,8 @@ export function EmployeesScreen({
         ...formData,
         id: employeeId,
         salonId: (formData as any).salonId || settings?.salonId,
+        username: formData.hasOnlineAccount ? cleanUsername : undefined,
+        userId: formData.hasOnlineAccount ? userUuid : undefined,
         fingerprintCode: formData.fingerprintCode || String(employees.length + 1),
         financialRecords: [],
         leaveRecords: [],
@@ -536,6 +613,9 @@ export function EmployeesScreen({
     }
     setEditingId(null);
     setFormData(defaultFormData);
+    setOnlineUsername('');
+    setOnlineUserPassword('123456');
+    setUsernameStatus('idle');
   };
 
   const toggleDayOff = (day: string) => {
@@ -1011,14 +1091,20 @@ export function EmployeesScreen({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">المسمى الوظيفي</label>
-                  <input 
-                    type="text" 
-                    value={formData.role || ''} 
+                  <label className="block text-xs font-bold text-slate-700 mb-1">المسمى الوظيفي *</label>
+                  <select 
+                    value={formData.role || 'حلاق / كوافير'} 
                     onChange={e => setFormData({ ...formData, role: e.target.value })}
-                    placeholder="مصفف شعر / حلاق"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none"
-                  />
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none cursor-pointer"
+                  >
+                    <option value="">اختر المسمى الوظيفي...</option>
+                    {EMPLOYEE_ROLES.map(r => (
+                      <option key={r} value={r}>{r}</option>
+                    ))}
+                    {formData.role && !(EMPLOYEE_ROLES as readonly string[]).includes(formData.role) && (
+                      <option value={formData.role}>{formData.role}</option>
+                    )}
+                  </select>
                 </div>
 
                 <div>
@@ -1070,8 +1156,11 @@ export function EmployeesScreen({
                   <label className="block text-xs font-bold text-slate-700 mb-1">الراتب الأساسي الشهري ({settings.currency})</label>
                   <input 
                     type="number" 
-                    value={formData.baseSalary || 0} 
-                    onChange={e => setFormData({ ...formData, baseSalary: Number(e.target.value) })}
+                    min="0"
+                    step="any"
+                    value={formData.baseSalary !== undefined && formData.baseSalary !== null ? formData.baseSalary : ''} 
+                    onChange={e => setFormData({ ...formData, baseSalary: e.target.value === '' ? ('' as any) : Number(e.target.value) })}
+                    placeholder="0.00"
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:border-indigo-600 outline-none"
                   />
                 </div>
@@ -1288,26 +1377,70 @@ export function EmployeesScreen({
               {formData.hasOnlineAccount && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-indigo-100/80 animate-in fade-in">
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">البريد الإلكتروني لتسجيل الدخول (مطلوب)</label>
-                    <input 
-                      type="email"
-                      required={formData.hasOnlineAccount}
-                      value={formData.email || ''}
-                      onChange={e => setFormData({ ...formData, email: e.target.value })}
-                      placeholder="employee@salon.com"
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-semibold focus:border-indigo-600 outline-none"
-                    />
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-[11px] font-bold text-slate-700">
+                        اسم المستخدم لتسجيل الدخول (Username فريد) <span className="text-rose-500">*</span>
+                      </label>
+                      {usernameStatus === 'checking' && (
+                        <span className="text-[10px] text-slate-400 font-bold flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-ping"></span>
+                          جاري الفحص...
+                        </span>
+                      )}
+                      {usernameStatus === 'available' && (
+                        <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5">
+                          <CheckCircle2 size={12} />
+                          اسم متاح
+                        </span>
+                      )}
+                      {usernameStatus === 'taken' && (
+                        <span className="text-[10px] text-rose-600 font-bold flex items-center gap-0.5">
+                          <XCircle size={12} />
+                          محجوز مسبقاً!
+                        </span>
+                      )}
+                    </div>
+                    <div className="relative">
+                      <input 
+                        type="text"
+                        required={formData.hasOnlineAccount}
+                        value={onlineUsername}
+                        onChange={e => handleUsernameChange(e.target.value)}
+                        placeholder="barber_ahmed"
+                        className={`w-full bg-white border rounded-xl px-3 py-1.5 text-xs font-mono font-bold focus:ring-2 focus:ring-indigo-500/20 outline-none ${
+                          usernameStatus === 'taken' ? 'border-rose-400 text-rose-700 bg-rose-50/20' : usernameStatus === 'available' ? 'border-emerald-400 text-slate-800' : 'border-slate-200'
+                        }`}
+                        dir="ltr"
+                      />
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      أحرف إنجليزية وأرقام بدون مسافات (يُستخدم لتسجيل الدخول من الشاشة الرئيسية)
+                    </p>
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">كلمة مرور حساب الموظف</label>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      كلمة مرور حساب الموظف (Password) <span className="text-rose-500">*</span>
+                    </label>
                     <input 
                       type="text"
+                      required={formData.hasOnlineAccount}
                       value={onlineUserPassword}
                       onChange={e => setOnlineUserPassword(e.target.value)}
                       placeholder="123456"
                       className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-mono font-bold focus:border-indigo-600 outline-none"
+                      dir="ltr"
                     />
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      كلمة المرور الافتراضية للحساب (123456 أو كلمة مخصصة)
+                    </p>
+                  </div>
+
+                  <div className="sm:col-span-2 bg-indigo-100/50 border border-indigo-200/70 rounded-xl p-2.5 flex items-start gap-2">
+                    <span className="text-indigo-600 text-sm mt-0.5 shrink-0">💡</span>
+                    <p className="text-[11px] text-indigo-950 font-medium leading-relaxed">
+                      <strong>طريقة الدخول:</strong> يدخل الفني مباشرة من <strong>شاشة الدخول الأساسية للبرنامج</strong> باسم المستخدم وكلمة المرور هذه بدون أي شاشات تسجيل دخول مخصصة، وبعد الدخول تفتح له <strong>بوابة الفني المستقلة</strong> فقط ومعزولة بالكامل بدون الوصول لأي بيانات فني آخر أو أقسام الصالون العامة.
+                    </p>
                   </div>
                 </div>
               )}
@@ -1323,7 +1456,7 @@ export function EmployeesScreen({
                   className="w-4 h-4 text-indigo-600 rounded"
                 />
                 <span className="text-xs font-bold text-slate-700">
-                  احتساب العمولتين معاً (عمولة الخدمات + عمولة المنتجات) لهذا الموظف (خاص بالإدارة 🛡️)
+                  احتساب العمولتين معاً (العمولة الثابتة + عمولة الخدمات) لهذا الموظف (خاص بالإدارة 🛡️)
                 </span>
               </label>
 
@@ -1331,7 +1464,7 @@ export function EmployeesScreen({
                 {editingId && (
                   <button
                     type="button"
-                    onClick={() => { setEditingId(null); setFormData(defaultFormData); }}
+                    onClick={() => { setEditingId(null); setFormData(defaultFormData); setOnlineUsername(''); setOnlineUserPassword('123456'); setUsernameStatus('idle'); }}
                     className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold"
                   >
                     إلغاء
@@ -1417,11 +1550,18 @@ export function EmployeesScreen({
                       <td className="p-3 font-mono text-slate-500">{emp.checkInTime || '09:00'} - {emp.checkOutTime || '18:00'}</td>
                       <td className="p-3">
                         {emp.hasOnlineAccount ? (
-                          <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded text-[10px] font-black flex items-center gap-1 w-fit">
-                            <span>🌐 مفعل</span>
-                          </span>
+                          <div className="flex flex-col gap-0.5">
+                            <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded text-[10px] font-black flex items-center gap-1 w-fit">
+                              <span>🌐 مفعل</span>
+                            </span>
+                            {(emp.username || (emp as any).username) && (
+                              <span className="text-[10px] font-mono font-bold text-slate-500" dir="ltr">
+                                @{emp.username || (emp as any).username}
+                              </span>
+                            )}
+                          </div>
                         ) : (
-                          <span className="text-slate-400 text-[10px]">غير مرتبط</span>
+                          <span className="text-slate-400 text-[10px]">غير مفعل</span>
                         )}
                       </td>
                       <td className="p-3">

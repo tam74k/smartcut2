@@ -9,7 +9,7 @@ import { IncomeReportReceipt } from './IncomeReportReceipt';
 import { CustodyReportReceipt } from './CustodyReportReceipt';
 import { exportToExcel } from '../utils/exportExcel';
 import { handlePrintReceipt } from '../utils/print';
-import { calculateEmployeeCommission } from '../utils/commissionHelper';
+import { calculateEmployeeCommission, calculateEmployeeTotalCommission } from '../utils/commissionHelper';
 import { DB } from '../services/db';
 
 export function ReportsScreen({ 
@@ -2206,6 +2206,20 @@ function ReportTable({
           }
         });
       }
+    });
+
+    // إعادة احتساب العمولات وفق قواعد النظام (العمولة الثابتة + عمولة الخدمات إذا كان الخيار مفعلاً)
+    Object.values(empsMap).forEach((entry: any) => {
+      const emp = employees.find((e: any) => e.name === entry.name);
+      const commResult = calculateEmployeeTotalCommission({
+        employee: emp,
+        totalWork: entry.totalWork,
+        serviceExecutionCommission: entry.executionCommission,
+        referralCommission: entry.openingCommission
+      });
+      entry.executionCommission = commResult.fixedCommission + commResult.serviceExecutionCommission;
+      entry.openingCommission = commResult.referralCommission;
+      entry.totalCommission = commResult.totalCommission;
     });
 
     const empList = Object.values(empsMap).sort((a, b) => b.totalWork - a.totalWork);

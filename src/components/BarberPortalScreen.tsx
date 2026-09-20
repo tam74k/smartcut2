@@ -47,26 +47,51 @@ export function BarberPortalScreen({
   const [completingBookingId, setCompletingBookingId] = useState<string | null>(null);
   const [showCopyFeedback, setShowCopyFeedback] = useState(false);
 
-  // 1. Identify the logged in Employee
+  // 1. Identify the logged in Employee (STRICT ISOLATION - NO DATA MIXING)
   const currentEmployee = useMemo(() => {
+    // 1. Direct match by employeeId (Primary & Most Accurate)
     if (currentUser.employeeId) {
       const found = employees.find(e => e.id === currentUser.employeeId);
       if (found) return found;
     }
-    // Match by name or fallback to first employee
-    const matchName = employees.find(e => e.name.toLowerCase().includes(currentUser.name.toLowerCase()) || currentUser.name.toLowerCase().includes(e.name.toLowerCase()));
-    if (matchName) return matchName;
-    return employees[0] || {
-      id: 'e-default',
+    // 2. Match by user ID link
+    if (currentUser.id) {
+      const foundByUserId = employees.find(e => e.userId === currentUser.id);
+      if (foundByUserId) return foundByUserId;
+    }
+    // 3. Match by unique username
+    if (currentUser.username) {
+      const cleanU = currentUser.username.trim().toLowerCase();
+      const foundByUser = employees.find(e => 
+        ((e as any).username && (e as any).username.trim().toLowerCase() === cleanU)
+      );
+      if (foundByUser) return foundByUser;
+    }
+    // 4. Match by exact trimmed name only
+    if (currentUser.name && currentUser.name.trim()) {
+      const cleanName = currentUser.name.trim().toLowerCase();
+      const matchName = employees.find(e => e.name && e.name.trim().toLowerCase() === cleanName);
+      if (matchName) return matchName;
+    }
+
+    // 5. STRICT FALLBACK: Return an isolated empty employee profile so other employees' data is NEVER exposed!
+    return {
+      id: currentUser.employeeId || `isolated-${currentUser.id || 'unlinked'}`,
       name: currentUser.name || 'فني الكوافير',
       role: 'فني حلاقة ومصفف شعر',
-      baseSalary: 3000,
-      commissionRate: 15,
-      target: 200,
+      baseSalary: 0,
+      commissionRate: 0,
+      commissionModel: 'none',
+      target: 0,
       targetType: 'daily' as const,
-      availableVacations: 21,
-      fingerprintCode: '101'
-    };
+      availableVacations: 0,
+      fingerprintCode: '',
+      financialRecords: [],
+      leaveRecords: [],
+      salaryHistory: [],
+      shiftScheduleHistory: [],
+      permissionRecords: []
+    } as Employee;
   }, [currentUser, employees]);
 
   const currency = settings.currency || 'SAR';
@@ -107,10 +132,14 @@ export function BarberPortalScreen({
     return { start: customStartDate, end: customEndDate, label: `من ${customStartDate} إلى ${customEndDate}` };
   }, [period, customStartDate, customEndDate]);
 
-  // 3. Filter Bookings scheduled with this Technician
+  // 3. Filter Bookings scheduled with this Technician (STRICT ISOLATION)
   const myBookings = useMemo(() => {
+    if (!currentEmployee?.id || currentEmployee.id.startsWith('isolated-')) return [];
     return bookings.filter(b => {
-      const hasMe = b.services?.some(s => s.technicianId === currentEmployee.id || s.technicianName === currentEmployee.name);
+      const hasMe = b.services?.some(s => 
+        (s.technicianId && s.technicianId === currentEmployee.id) ||
+        (!s.technicianId && s.technicianName && s.technicianName.trim().toLowerCase() === currentEmployee.name.trim().toLowerCase())
+      );
       return hasMe;
     });
   }, [bookings, currentEmployee]);
@@ -130,8 +159,9 @@ export function BarberPortalScreen({
     return myBookings.filter(b => b.date === todayStr).length;
   }, [myBookings, todayStr]);
 
-  // 4. Performed Services & Commissions (Calculated with CLIENT PRICE STRICTLY HIDDEN)
+  // 4. Performed Services & Commissions (Calculated with CLIENT PRICE STRICTLY HIDDEN - STRICT ISOLATION)
   const performedServices = useMemo(() => {
+    if (!currentEmployee?.id || currentEmployee.id.startsWith('isolated-')) return [];
     const list: {
       id: string;
       invoiceId: string;
@@ -148,9 +178,9 @@ export function BarberPortalScreen({
       if (invDate < dateRange.start || invDate > dateRange.end) return;
 
       inv.items?.forEach((item: any, idx: number) => {
-        const isMyService = item.employeeId === currentEmployee.id || 
-                            item.employeeName === currentEmployee.name ||
-                            item.technicianName === currentEmployee.name;
+        const isMyService = (item.employeeId && item.employeeId === currentEmployee.id) || 
+                            (!item.employeeId && item.employeeName && item.employeeName.trim().toLowerCase() === currentEmployee.name.trim().toLowerCase()) ||
+                            (!item.employeeId && item.technicianName && item.technicianName.trim().toLowerCase() === currentEmployee.name.trim().toLowerCase());
 
         if (isMyService) {
           // Calculate commission for this item without exposing base item price
@@ -180,12 +210,16 @@ export function BarberPortalScreen({
     return performedServices.reduce((sum, s) => sum + s.commissionAmount, 0);
   }, [performedServices]);
 
-  // All-time Commission Earned
+  // All-time Commission Earned (STRICT ISOLATION)
   const allTimeCommissionEarned = useMemo(() => {
+    if (!currentEmployee?.id || currentEmployee.id.startsWith('isolated-')) return 0;
     let sum = 0;
     invoices.forEach(inv => {
       inv.items?.forEach((item: any) => {
-        if (item.employeeId === currentEmployee.id || item.employeeName === currentEmployee.name || item.technicianName === currentEmployee.name) {
+        const isMyService = (item.employeeId && item.employeeId === currentEmployee.id) || 
+                            (!item.employeeId && item.employeeName && item.employeeName.trim().toLowerCase() === currentEmployee.name.trim().toLowerCase()) ||
+                            (!item.employeeId && item.technicianName && item.technicianName.trim().toLowerCase() === currentEmployee.name.trim().toLowerCase());
+        if (isMyService) {
           let comm = item.commission || 0;
           if (!comm && currentEmployee.commissionRate && item.price) {
             comm = (item.price * (item.quantity || 1) * currentEmployee.commissionRate) / 100;

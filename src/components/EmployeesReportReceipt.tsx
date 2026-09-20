@@ -1,5 +1,5 @@
 import { AppSettings, Invoice, Employee, ServiceItem } from '../types';
-import { calculateEmployeeCommission } from '../utils/commissionHelper';
+import { calculateEmployeeCommission, calculateEmployeeTotalCommission } from '../utils/commissionHelper';
 
 export interface EmployeeWorkCommissionSummary {
   name: string;
@@ -113,6 +113,20 @@ export function EmployeesReportReceipt({
         }
       });
     }
+  });
+
+  // إعادة احتساب العمولات وفق قواعد النظام (العمولة الثابتة + عمولة الخدمات إذا كان الخيار مفعلاً)
+  Object.entries(empsMap).forEach(([name, data]) => {
+    const emp = employees.find(e => e.name === name);
+    const commResult = calculateEmployeeTotalCommission({
+      employee: emp,
+      totalWork: data.totalWork,
+      serviceExecutionCommission: data.executionCommission,
+      referralCommission: data.openingCommission
+    });
+    data.executionCommission = commResult.fixedCommission + commResult.serviceExecutionCommission;
+    data.openingCommission = commResult.referralCommission;
+    data.totalCommission = commResult.totalCommission;
   });
 
   const sortedEmps = Object.entries(empsMap).sort((a, b) => b[1].totalWork - a[1].totalWork);

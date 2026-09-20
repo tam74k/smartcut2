@@ -20,6 +20,7 @@ import {
 import { QueueService } from '../services/queueService';
 import { DB } from '../services/db';
 import { escapeHtml, sanitizeUrl } from '../utils/sanitize';
+import { isBarberEmployee } from '../utils/employeeHelper';
 
 export function BookingsScreen({ 
   settings, 
@@ -2051,7 +2052,7 @@ export function BookingsScreen({
                         className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-indigo-600 shadow-xs"
                       >
                         <option value="">اختر الموظف...</option>
-                        {employees.filter(e => e.isActive !== false).map(e => (
+                        {employees.filter(e => isBarberEmployee(e)).map(e => (
                           <option key={e.id} value={e.id}>{e.name} ({e.role})</option>
                         ))}
                       </select>

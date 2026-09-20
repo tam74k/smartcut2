@@ -380,6 +380,16 @@ export interface CommissionTier {
   percentage: number;
 }
 
+export const EMPLOYEE_ROLES = [
+  'حلاق / كوافير',
+  'مساعد',
+  'كاشير',
+  'اداري',
+  'عامل'
+] as const;
+
+export type StandardEmployeeRole = typeof EMPLOYEE_ROLES[number];
+
 export interface Employee { 
   id: string; 
   salonId?: string;
@@ -389,6 +399,7 @@ export interface Employee {
   avatarUrl?: string;
   publicBio?: string; // نبذة وملاحظة تظهر للعملاء في تطبيق الحجز الأونلاين
   hasOnlineAccount?: boolean;
+  username?: string;
   userId?: string;
   role: string; 
   baseSalary: number; 

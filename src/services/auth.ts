@@ -252,17 +252,17 @@ export class AuthService {
     return users.some(u => u.username.toLowerCase() === clean && u.id !== excludeUserId);
   }
 
-  public static async isUsernameTakenAsync(username: string, excludeUserId?: string): Promise<boolean> {
+  public static async isUsernameTakenAsync(username: string, excludeUserId?: string, excludeEmployeeId?: string): Promise<boolean> {
     const clean = username.trim().toLowerCase();
     if (!clean) return false;
     if (clean === 'programmer' || clean === 'master') return true;
     const users = this.getUsers();
-    if (users.some(u => u.username.toLowerCase() === clean && u.id !== excludeUserId)) {
+    if (users.some(u => u.username.toLowerCase() === clean && u.id !== excludeUserId && (!excludeEmployeeId || u.employeeId !== excludeEmployeeId))) {
       return true;
     }
     try {
       const dbUsers = await DB.fetchUsers();
-      return dbUsers.some(u => u.username.toLowerCase() === clean && u.id !== excludeUserId);
+      return dbUsers.some(u => u.username.toLowerCase() === clean && u.id !== excludeUserId && (!excludeEmployeeId || u.employeeId !== excludeEmployeeId));
     } catch {
       return false;
     }
