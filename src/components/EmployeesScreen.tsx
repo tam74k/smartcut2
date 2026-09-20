@@ -1435,13 +1435,6 @@ export function EmployeesScreen({
                       كلمة المرور الافتراضية للحساب (123456 أو كلمة مخصصة)
                     </p>
                   </div>
-
-                  <div className="sm:col-span-2 bg-indigo-100/50 border border-indigo-200/70 rounded-xl p-2.5 flex items-start gap-2">
-                    <span className="text-indigo-600 text-sm mt-0.5 shrink-0">💡</span>
-                    <p className="text-[11px] text-indigo-950 font-medium leading-relaxed">
-                      <strong>طريقة الدخول:</strong> يدخل الفني مباشرة من <strong>شاشة الدخول الأساسية للبرنامج</strong> باسم المستخدم وكلمة المرور هذه بدون أي شاشات تسجيل دخول مخصصة، وبعد الدخول تفتح له <strong>بوابة الفني المستقلة</strong> فقط ومعزولة بالكامل بدون الوصول لأي بيانات فني آخر أو أقسام الصالون العامة.
-                    </p>
-                  </div>
                 </div>
               )}
             </div>
