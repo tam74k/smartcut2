@@ -2080,6 +2080,8 @@ export default function App() {
           products={branchProducts}
           setProducts={handleSetProducts}
           setItemMovements={handleSetItemMovements}
+          employees={branchEmployees}
+          services={branchServices}
         />
       );
 

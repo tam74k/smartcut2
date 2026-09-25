@@ -1,10 +1,12 @@
 import { useState, useMemo } from 'react';
-import { AppSettings, Invoice, Transaction, Client, Branch, Product } from '../types';
+import { AppSettings, Invoice, Transaction, Client, Branch, Product, Employee, ServiceItem } from '../types';
 import { 
   Search, Filter, Printer, XCircle, Edit, CheckCircle, ChevronDown, 
-  ChevronUp, Image as ImageIcon, Wrench, Eye, X, Trash2, RotateCcw
+  ChevronUp, Image as ImageIcon, Wrench, Eye, X, Trash2, RotateCcw,
+  FileSpreadsheet
 } from 'lucide-react';
 import { DB } from '../services/db';
+import { InvoicesImportModal } from './InvoicesImportModal';
 
 export function InvoicesScreen({ 
   settings, 
@@ -20,6 +22,8 @@ export function InvoicesScreen({
   products = [],
   setProducts,
   setItemMovements,
+  employees = [],
+  services = [],
 }: { 
   settings: AppSettings;
   invoices: Invoice[];
@@ -34,7 +38,10 @@ export function InvoicesScreen({
   products?: Product[];
   setProducts?: (p: Product[] | ((prev: Product[]) => Product[])) => void;
   setItemMovements?: (m: any[] | ((prev: any[]) => any[])) => void;
+  employees?: Employee[];
+  services?: ServiceItem[];
 }) {
+  const [showImportModal, setShowImportModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -339,10 +346,19 @@ export function InvoicesScreen({
           </div>
           <button 
             onClick={() => setShowFilters(!showFilters)}
-            className={`bg-white border border-slate-200 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-slate-50 shadow-sm transition-colors ${showFilters ? 'text-primary border-primary/50' : 'text-slate-700'}`}
+            className={`bg-white border border-slate-200 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-slate-50 shadow-sm transition-colors cursor-pointer ${showFilters ? 'text-primary border-primary/50' : 'text-slate-700'}`}
           >
             <Filter size={16} /> تصفية
             {showFilters ? <ChevronUp size={16}/> : <ChevronDown size={16}/>}
+          </button>
+
+          <button 
+            onClick={() => setShowImportModal(true)}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-xs transition-all cursor-pointer active:scale-95"
+            title="سحب واستيراد فواتير سابقة من ملف إكسل .xlsx مكون من ورقتي عمل"
+          >
+            <FileSpreadsheet size={16} />
+            <span>سحب من إكسل</span>
           </button>
         </div>
       </div>
@@ -869,6 +885,32 @@ export function InvoicesScreen({
             </div>
           </div>
         </div>
+      )}
+
+      {showImportModal && (
+        <InvoicesImportModal
+          isOpen={showImportModal}
+          onClose={() => setShowImportModal(false)}
+          settings={settings}
+          existingInvoices={invoices}
+          clients={clients}
+          employees={employees}
+          services={services}
+          products={products}
+          activeBranchId={activeBranchId}
+          currentUser={currentUser}
+          onImportComplete={(newInvoices, newClients) => {
+            // تحديث الفواتير في الواجهة
+            setInvoices([
+              ...newInvoices, 
+              ...invoices.filter(old => !newInvoices.some(n => n.id.trim().toUpperCase() === old.id.trim().toUpperCase()))
+            ]);
+            // تحديث العملاء إن وجد عملاء جدد
+            if (newClients.length > 0 && setClients) {
+              setClients([...clients, ...newClients]);
+            }
+          }}
+        />
       )}
 
     </div>
