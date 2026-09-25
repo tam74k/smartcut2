@@ -355,8 +355,18 @@ export default function App() {
   // Extended Features Stores
   const [partners, setPartners] = useState<Partner[]>([]);
   const [partnerTransactions, setPartnerTransactions] = useState<PartnerTransaction[]>([]);
-  const [promoCodes, setPromoCodes] = useState<PromoCode[]>([]);
-  const [promoCodeUsages, setPromoCodeUsages] = useState<PromoCodeUsage[]>([]);
+  const [promoCodes, setPromoCodes] = useState<PromoCode[]>(() => {
+    try {
+      const saved = localStorage.getItem('smartcut_promo_codes');
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+  const [promoCodeUsages, setPromoCodeUsages] = useState<PromoCodeUsage[]>(() => {
+    try {
+      const saved = localStorage.getItem('smartcut_promo_code_usages');
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
   const [tips, setTips] = useState<TipRecord[]>([]);
   const [custodies, setCustodies] = useState<EmployeeCustody[]>([]);
   const [fingerprintLogs, setFingerprintLogs] = useState<FingerprintLog[]>([]);
@@ -559,6 +569,14 @@ export default function App() {
             if (essentialData.suppliers) setSuppliers(essentialData.suppliers);
             if (essentialData.purchaseInvoices) setPurchaseInvoices(essentialData.purchaseInvoices);
             if (essentialData.supplierPayments) setSupplierPayments(essentialData.supplierPayments);
+            if (essentialData.promoCodes && Array.isArray(essentialData.promoCodes)) {
+              setPromoCodes(essentialData.promoCodes);
+              try { localStorage.setItem('smartcut_promo_codes', JSON.stringify(essentialData.promoCodes)); } catch (e) {}
+            }
+            if (essentialData.promoCodeUsages && Array.isArray(essentialData.promoCodeUsages)) {
+              setPromoCodeUsages(essentialData.promoCodeUsages);
+              try { localStorage.setItem('smartcut_promo_code_usages', JSON.stringify(essentialData.promoCodeUsages)); } catch (e) {}
+            }
           }
 
           // Mark essential sections as loaded
@@ -875,7 +893,7 @@ export default function App() {
     else if (activeTab === 'employees' || activeTab === 'hr' || activeTab === 'permissions' || activeTab === 'employee-analytics') sectionToLoad = 'hr';
     else if (activeTab === 'warehouse' || activeTab === 'suppliers' || activeTab === 'purchases' || activeTab === 'inventory') sectionToLoad = 'warehouse';
     else if (activeTab === 'partners') sectionToLoad = 'partners';
-    else if (activeTab === 'promotions' || activeTab === 'promo-codes') sectionToLoad = 'promotions';
+    else if (activeTab === 'promotions' || activeTab === 'promo-codes' || activeTab === 'promo_codes') sectionToLoad = 'promotions';
     else if (activeTab === 'tips') sectionToLoad = 'tips';
     else if (activeTab === 'fingerprint-logs' || activeTab === 'fingerprint_logs') sectionToLoad = 'fingerprint';
     else if (activeTab === 'owner_portal' || activeTab === 'owner') sectionToLoad = 'owner_portal';
@@ -1369,6 +1387,7 @@ export default function App() {
     if (checkReadOnlyAndWarn()) return;
     setPromoCodes(prev => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
+      try { localStorage.setItem('smartcut_promo_codes', JSON.stringify(next)); } catch (e) {}
       next.forEach((pc: any) => DB.savePromoCode(pc));
       return next;
     });
@@ -1378,6 +1397,7 @@ export default function App() {
     if (checkReadOnlyAndWarn()) return;
     setPromoCodeUsages(prev => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
+      try { localStorage.setItem('smartcut_promo_code_usages', JSON.stringify(next)); } catch (e) {}
       next.forEach((pu: any) => DB.savePromoCodeUsage(pu));
       return next;
     });
@@ -1853,8 +1873,9 @@ export default function App() {
           invoices={branchInvoices}
           isSubscriptionBlocked={isSubscriptionBlocked}
           promoCodes={promoCodes}
+          setPromoCodes={handleSetPromoCodes}
           promoCodeUsages={promoCodeUsages}
-          setPromoCodeUsages={setPromoCodeUsages}
+          setPromoCodeUsages={handleSetPromoCodeUsages}
           tips={tips}
           setTips={setTips}
           currentUser={currentUser}
@@ -1945,8 +1966,10 @@ export default function App() {
         <PromoCodesScreen 
           settings={settings}
           promoCodes={promoCodes}
-          setPromoCodes={setPromoCodes}
+          setPromoCodes={handleSetPromoCodes}
           promoCodeUsages={promoCodeUsages}
+          setPromoCodeUsages={handleSetPromoCodeUsages}
+          invoices={branchInvoices}
           currentUser={currentUser}
         />
       );
@@ -2014,6 +2037,8 @@ export default function App() {
           activeBranchId={activeBranchId}
           employees={branchEmployees}
           clients={salonClients}
+          bookings={branchBookings}
+          services={branchServices}
           onNavigateScreen={(screenName) => setActiveTab(screenName)}
           onCompleteAndOpenPOS={(heldInvoice) => {
             setActiveHeldInvoiceForPOS(heldInvoice);

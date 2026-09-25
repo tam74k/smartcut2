@@ -5,11 +5,12 @@ import {
   Sparkles, Plus, ExternalLink, RefreshCw, Radio, UserX, ArrowRight, Eye, Play,
   Printer
 } from 'lucide-react';
-import { AppSettings, Branch, Employee, QueueTicket, Client, HeldInvoice } from '../types';
+import { AppSettings, Branch, Employee, QueueTicket, Client, HeldInvoice, Booking, ServiceItem } from '../types';
 import { QueueService } from '../services/queueService';
 import { AuthService } from '../services/auth';
 import { printQueueSlipDirect } from '../utils/printQueueSlip';
 import { DB } from '../services/db';
+import { isBarberEmployee } from '../utils/employeeHelper';
 
 interface QueueCallingScreenProps {
   settings: AppSettings;
@@ -17,6 +18,8 @@ interface QueueCallingScreenProps {
   activeBranchId: string;
   employees: Employee[];
   clients: Client[];
+  bookings?: Booking[];
+  services?: ServiceItem[];
   onNavigateScreen?: (screen: string) => void;
   onCompleteAndOpenPOS?: (heldInvoice: HeldInvoice | null, ticket: QueueTicket) => void;
 }
@@ -27,6 +30,8 @@ export function QueueCallingScreen({
   activeBranchId,
   employees,
   clients,
+  bookings = [],
+  services = [],
   onNavigateScreen,
   onCompleteAndOpenPOS
 }: QueueCallingScreenProps) {
@@ -44,6 +49,12 @@ export function QueueCallingScreen({
   // Assign Employee Modal
   const [assigningTicket, setAssigningTicket] = useState<QueueTicket | null>(null);
   const [selectedEmpId, setSelectedEmpId] = useState('');
+
+  // تصفية الفنيين / الحلاقين المنفذين للخدمات
+  const performerEmployees = useMemo(() => {
+    const barbers = (employees || []).filter(e => isBarberEmployee(e));
+    return barbers.length > 0 ? barbers : employees;
+  }, [employees]);
 
   // Auto-refresh & Supabase Real-time Sync
   useEffect(() => {
@@ -81,10 +92,11 @@ export function QueueCallingScreen({
   const activeBranch = branches.find(b => b.id === selectedBranchId) || branches[0];
 
   // Sound Chime & Arabic Text-to-Speech
+  // القراءة الصوتية لرقم العميل يجب ان تنادي برقم العميل وان يتوجه الى الفني وينطق اسمه
   const announceCustomer = (ticket: QueueTicket, empName?: string) => {
     if (!soundEnabled) return;
 
-    // 1. Play synthesized chime
+    // 1. نغمة تنبيه صوتية (Chime)
     try {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       if (AudioCtx) {
@@ -103,24 +115,24 @@ export function QueueCallingScreen({
       }
     } catch {}
 
-    // 2. Arabic Voice TTS Announcement
+    // 2. المناداة الصوتية باللغة العربية: تنادي برقم العميل وتوجهه إلى الفني وتنطق اسمه
     try {
       if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel(); // clear previous
-        const isBooking = ticket.source === 'booking';
-        const numText = isBooking ? `حجز مسبق بي ${ticket.queueNumber}` : `${ticket.queueNumber}`;
-        const text = empName 
-          ? `عميل ${numText}، يرجى التوجه إلى ${empName}`
-          : `عميل ${numText}`;
+        window.speechSynthesis.cancel(); // مسح أي نداء سابق
+        
+        const cleanEmpName = empName?.trim();
+        const text = cleanEmpName 
+          ? `عميل رقم ${ticket.queueNumber}، يرجى التوجه إلى الفني ${cleanEmpName}`
+          : `عميل رقم ${ticket.queueNumber}، يرجى التوجه إلى الفني`;
         
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.lang = 'ar-SA';
         utterance.rate = 0.9;
         utterance.pitch = 1.0;
 
-        // Try to pick an Arabic voice if available
+        // اختيار صوت عربي من المتصفح إن وجد
         const voices = window.speechSynthesis.getVoices();
-        const arVoice = voices.find(v => v.lang.startsWith('ar'));
+        const arVoice = voices.find(v => v.lang.startsWith('ar') || v.lang.includes('Arabic'));
         if (arVoice) utterance.voice = arVoice;
 
         setTimeout(() => {
@@ -130,6 +142,117 @@ export function QueueCallingScreen({
     } catch (e) {
       console.warn('Speech synthesis failed:', e);
     }
+  };
+
+  // إنشاء أو تحديث فاتورة معلقة للعميل عند المناداة وحفظها سحابياً ومحلياً
+  const createOrUpdateHeldInvoice = async (ticket: QueueTicket, emp?: Employee | null): Promise<HeldInvoice> => {
+    const now = new Date();
+    const heldInvoiceId = ticket.heldInvoiceId || ('HOLD-' + Math.random().toString(36).substr(2, 6).toUpperCase());
+
+    // العثور على العميل أو إنشاؤه
+    const existingClient = clients.find(c => (ticket.clientId && c.id === ticket.clientId) || (ticket.phone && c.phone === ticket.phone));
+    const clientObj: Client = existingClient ? {
+      ...existingClient,
+      cashback: Number(existingClient.cashback ?? existingClient.loyaltyPoints ?? 0)
+    } : {
+      id: ticket.clientId || ('C-' + Math.random().toString(36).substr(2, 6)),
+      salonId: settings.salonId,
+      branchId: selectedBranchId,
+      name: ticket.clientName,
+      phone: ticket.phone,
+      totalVisits: 1,
+      totalSpent: 0,
+      points: 0,
+      cashback: 0,
+      createdAt: now.toISOString()
+    };
+
+    let cartItems: any[] = [];
+    let advanceDeduction = 0;
+    let advancePayments: any[] | undefined = undefined;
+
+    // إذا كانت التذكرة مقترنة بحجز مسبق، نجلب خدمات الحجز والعربون إن وجد
+    if (ticket.bookingId) {
+      const b = bookings.find(item => item.id === ticket.bookingId);
+      if (b) {
+        if (b.advancePayment && b.advancePayment > 0) {
+          advanceDeduction = b.advancePayment;
+          advancePayments = [{
+            id: 'ADV-' + b.id,
+            amount: b.advancePayment,
+            date: b.date,
+            treasuryId: 'cash'
+          }];
+        }
+
+        if (Array.isArray(b.services) && b.services.length > 0) {
+          cartItems = b.services.map((bs: any, idx: number) => {
+            const matchedService = services.find(s => s.id === bs.serviceId || s.name === bs.serviceName);
+            const price = Number(bs.price ?? matchedService?.price ?? 0);
+            const performerId = emp?.id || (bs.technicianId && bs.technicianId !== 'any' ? bs.technicianId : undefined);
+            const performerName = emp?.name || (bs.technicianName && bs.technicianName !== 'أي خبير متاح' ? bs.technicianName : undefined);
+
+            return {
+              cartId: 'CART-' + (idx + 1) + '-' + Math.random().toString(36).substr(2, 5),
+              type: 'service',
+              employeeId: performerId,
+              employeeName: performerName,
+              quantity: 1,
+              price: price,
+              item: matchedService || {
+                id: bs.serviceId || ('SRV-' + Math.random().toString(36).substr(2, 5)),
+                name: bs.serviceName || 'خدمة',
+                price: price,
+                displayPrice: price,
+                duration: bs.duration || 30
+              }
+            };
+          });
+        }
+      }
+    }
+
+    const heldInvoice: HeldInvoice = {
+      id: heldInvoiceId,
+      heldAt: now.toISOString(),
+      timeStr: now.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
+      client: clientObj,
+      clientSearch: `${clientObj.name} - ${clientObj.phone}`,
+      cart: cartItems,
+      discount: { type: 'percentage', value: 0 },
+      advanceDeduction,
+      advancePayments,
+      bookingId: ticket.bookingId,
+      queueNumber: ticket.queueNumber,
+      queueTicketId: ticket.id,
+      salonId: settings.salonId,
+      branchId: selectedBranchId,
+      note: `تذكرة دور #${ticket.queueNumber} - مناداة`
+    };
+
+    // حفظ في التخزين المحلي لـ POS
+    try {
+      const savedInvoices = localStorage.getItem('smartcut_held_invoices');
+      const heldList: HeldInvoice[] = savedInvoices ? JSON.parse(savedInvoices) : [];
+      const filtered = heldList.filter(h => h.id !== heldInvoice.id && h.queueTicketId !== ticket.id);
+      localStorage.setItem('smartcut_held_invoices', JSON.stringify([heldInvoice, ...filtered]));
+    } catch (e) {
+      console.warn('Failed to save held invoice locally:', e);
+    }
+
+    // حفظ في قاعدة البيانات السحابية Supabase مباشرة لظهورها فوراً في شاشة الكاشير
+    try {
+      await DB.saveHeldInvoice(heldInvoice);
+    } catch (e) {
+      console.warn('Failed to save held invoice to cloud DB:', e);
+    }
+
+    // ربط التذكرة برقم الفاتورة المعلقة
+    if (ticket.heldInvoiceId !== heldInvoice.id) {
+      await QueueService.updateTicket(ticket.id, { heldInvoiceId: heldInvoice.id });
+    }
+
+    return heldInvoice;
   };
 
   // Next Waiting Customer
@@ -159,14 +282,37 @@ export function QueueCallingScreen({
   };
 
   // Call Specific Customer (Manual or Out of order)
-  const handleCallSpecific = async (ticket: QueueTicket) => {
+  const handleCallSpecific = async (ticket: QueueTicket, empOverride?: Employee) => {
+    let emp = empOverride;
+    if (!emp && ticket.assignedEmployeeId) {
+      emp = employees.find(e => e.id === ticket.assignedEmployeeId);
+    }
+    if (!emp && ticket.assignedEmployeeName) {
+      emp = employees.find(e => e.name === ticket.assignedEmployeeName);
+    }
+
+    // إذا لم يكن العميل مسكناً مع فني، نفتح نافذة التسكين ليتم اختيار الفني والمناداة عليه باسمه
+    if (!emp) {
+      setAssigningTicket(ticket);
+      setSelectedEmpId(performerEmployees[0]?.id || employees[0]?.id || '');
+      return;
+    }
+
     const updated = await QueueService.updateTicket(ticket.id, {
       status: 'called',
-      calledAt: new Date().toISOString()
+      calledAt: new Date().toISOString(),
+      assignedEmployeeId: emp.id,
+      assignedEmployeeName: emp.name
     });
+
     if (updated) {
       setTickets(prev => prev.map(t => t.id === ticket.id ? updated : t));
-      announceCustomer(updated, updated.assignedEmployeeName);
+
+      // فتح فاتورة معلقة للعميل فوراً وحفظها في قاعدة البيانات السحابية والمحلية
+      await createOrUpdateHeldInvoice(updated, emp);
+
+      // المناداة الصوتية بالصيغة المحددة (تنادي برقم العميل وتوجهه للفني وتذكر اسمه)
+      announceCustomer(updated, emp.name);
     }
   };
 
@@ -176,11 +322,17 @@ export function QueueCallingScreen({
     const emp = employees.find(e => e.id === selectedEmpId);
     const updated = await QueueService.updateTicket(assigningTicket.id, {
       status: 'in_service',
+      calledAt: new Date().toISOString(),
       assignedEmployeeId: emp?.id || undefined,
       assignedEmployeeName: emp?.name || undefined
     });
+
     if (updated) {
       setTickets(prev => prev.map(t => t.id === assigningTicket.id ? updated : t));
+
+      // فتح فاتورة معلقة للعميل فوراً وحفظها في قاعدة البيانات السحابية والمحلية
+      await createOrUpdateHeldInvoice(updated, emp);
+
       if (emp) {
         announceCustomer(updated, emp.name);
       }
@@ -672,37 +824,65 @@ export function QueueCallingScreen({
 
                       {/* Assigned Employee */}
                       <td className="py-3.5 px-4">
-                        {ticket.assignedEmployeeName ? (
+                        {!isDone && !isNoShow ? (
+                          <select
+                            value={ticket.assignedEmployeeId || ''}
+                            onChange={async (e) => {
+                              const empId = e.target.value;
+                              const emp = employees.find(x => x.id === empId);
+                              const updated = await QueueService.updateTicket(ticket.id, {
+                                assignedEmployeeId: emp?.id || undefined,
+                                assignedEmployeeName: emp?.name || undefined
+                              });
+                              if (updated) {
+                                setTickets(prev => prev.map(t => t.id === ticket.id ? updated : t));
+                              }
+                            }}
+                            className="bg-slate-800 border border-slate-700 hover:border-cyan-500 text-cyan-300 rounded-xl px-2.5 py-1 text-xs outline-none cursor-pointer font-bold transition-colors"
+                          >
+                            <option value="">-- اختر الفني --</option>
+                            {performerEmployees.map(emp => (
+                              <option key={emp.id} value={emp.id}>{emp.name}</option>
+                            ))}
+                          </select>
+                        ) : ticket.assignedEmployeeName ? (
                           <span className="text-[11px] font-bold text-cyan-300 flex items-center gap-1">
                             <Scissors size={12} />
                             <span>{ticket.assignedEmployeeName}</span>
                           </span>
                         ) : (
                           <span className="text-[10px] text-slate-500 font-medium">
-                            غير مسكن بعد
+                            غير مسكن
                           </span>
                         )}
                       </td>
 
                       {/* Status Badge */}
                       <td className="py-3.5 px-4">
-                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border inline-flex items-center gap-1 ${
-                          isWaiting
-                            ? 'bg-amber-950 text-amber-300 border-amber-800'
-                            : isCalled
-                            ? 'bg-indigo-950 text-indigo-300 border-indigo-800 animate-pulse'
-                            : isInService
-                            ? 'bg-cyan-950 text-cyan-300 border-cyan-800'
-                            : isDone
-                            ? 'bg-emerald-950 text-emerald-300 border-emerald-800'
-                            : 'bg-rose-950 text-rose-300 border-rose-800'
-                        }`}>
-                          {isWaiting && 'في الانتظار ⏳'}
-                          {isCalled && 'تم النداء عليه 📢'}
-                          {isInService && 'قيد الخدمة ✂️'}
-                          {isDone && 'مكتمل ✅'}
-                          {isNoShow && 'لم يحضر ❌'}
-                        </span>
+                        <div className="flex flex-col gap-1 items-start">
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border inline-flex items-center gap-1 ${
+                            isWaiting
+                              ? 'bg-amber-950 text-amber-300 border-amber-800'
+                              : isCalled
+                              ? 'bg-indigo-950 text-indigo-300 border-indigo-800 animate-pulse'
+                              : isInService
+                              ? 'bg-cyan-950 text-cyan-300 border-cyan-800'
+                              : isDone
+                              ? 'bg-emerald-950 text-emerald-300 border-emerald-800'
+                              : 'bg-rose-950 text-rose-300 border-rose-800'
+                          }`}>
+                            {isWaiting && 'في الانتظار ⏳'}
+                            {isCalled && 'تم النداء عليه 📢'}
+                            {isInService && 'قيد الخدمة ✂️'}
+                            {isDone && 'مكتمل ✅'}
+                            {isNoShow && 'لم يحضر ❌'}
+                          </span>
+                          {ticket.heldInvoiceId && (
+                            <span className="px-2 py-0.5 rounded-md text-[9px] font-black bg-amber-500/10 text-amber-400 border border-amber-500/30 flex items-center gap-1 shadow-sm">
+                              فاتورة معلقة ✓
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {/* Actions */}
@@ -713,10 +893,15 @@ export function QueueCallingScreen({
                           {!isDone && !isNoShow && (
                             <button
                               onClick={() => handleCallSpecific(ticket)}
-                              title="المناداة الصوتية على هذا العميل"
-                              className="p-1.5 bg-amber-500/20 hover:bg-amber-500 text-amber-300 hover:text-slate-950 rounded-lg transition-all border border-amber-500/40 cursor-pointer"
+                              title="المناداة الصوتية على العميل وفتح فاتورة معلقة تلقائياً"
+                              className={`px-2.5 py-1 rounded-lg transition-all border flex items-center gap-1.5 font-black text-xs cursor-pointer shadow-sm active:scale-95 ${
+                                isCalled
+                                  ? 'bg-indigo-600 hover:bg-indigo-500 text-white border-indigo-400'
+                                  : 'bg-amber-500 hover:bg-amber-400 text-slate-950 border-amber-400'
+                              }`}
                             >
-                              <Volume2 size={13} />
+                              <Volume2 size={13} className="shrink-0" />
+                              <span>{isCalled ? 'إعادة نداء' : 'مناداة'}</span>
                             </button>
                           )}
 
@@ -725,7 +910,7 @@ export function QueueCallingScreen({
                             <button
                               onClick={() => {
                                 setAssigningTicket(ticket);
-                                setSelectedEmpId(ticket.assignedEmployeeId || employees[0]?.id || '');
+                                setSelectedEmpId(ticket.assignedEmployeeId || performerEmployees[0]?.id || employees[0]?.id || '');
                               }}
                               title="تسكين العميل مع موظف / بدء الخدمة"
                               className="p-1.5 bg-cyan-950 hover:bg-cyan-600 text-cyan-300 hover:text-white rounded-lg transition-all border border-cyan-800 cursor-pointer"
@@ -824,22 +1009,45 @@ export function QueueCallingScreen({
             </div>
 
             <div className="mb-5">
-              <label className="block text-[11px] font-bold text-slate-300 mb-1.5">اختر الموظف / الفني للتسكين:</label>
+              <label className="block text-[11px] font-bold text-slate-300 mb-2">اختر الفني / الحلاق المنفذ:</label>
+              
+              {/* Quick Select Buttons */}
+              <div className="grid grid-cols-2 gap-2 mb-3">
+                {performerEmployees.map(emp => {
+                  const isSelected = selectedEmpId === emp.id;
+                  return (
+                    <button
+                      key={emp.id}
+                      type="button"
+                      onClick={() => setSelectedEmpId(emp.id)}
+                      className={`p-2.5 rounded-xl border text-right transition-all flex items-center justify-between cursor-pointer ${
+                        isSelected 
+                          ? 'bg-amber-500/20 border-amber-400 text-amber-300 font-black ring-1 ring-amber-400' 
+                          : 'bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-600'
+                      }`}
+                    >
+                      <span className="text-xs font-bold">{emp.name}</span>
+                      <span className="text-[10px] text-slate-400">{emp.role || 'فني'}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
               <select
                 value={selectedEmpId}
                 onChange={e => setSelectedEmpId(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-white outline-none focus:border-amber-400 font-bold"
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-amber-400 font-bold"
               >
-                <option value="">-- اختر الموظف للتسكين --</option>
-                {employees.map(emp => (
+                <option value="">-- أو اختر من القائمة --</option>
+                {performerEmployees.map(emp => (
                   <option key={emp.id} value={emp.id}>{emp.name} ({emp.role || 'فني'})</option>
                 ))}
               </select>
-              <p className="text-[10px] text-slate-400 mt-1.5 leading-relaxed">
-                • <strong>حفظ التسكين فقط:</strong> يوزع العميل على الموظف مسبقاً مع إبقائه في قائمة الانتظار دون بدء الخدمة ودون إطلاق نداء صوتي.
-                <br />
-                • <strong>تسكين وبدء الخدمة:</strong> ينقل العميل إلى حالة "قيد الخدمة" فوراً ويطلق النداء الصوتي.
-              </p>
+
+              <div className="text-[10px] text-slate-400 mt-2.5 leading-relaxed bg-slate-800/60 p-2.5 rounded-xl border border-slate-700/60 space-y-1">
+                <p>• <strong>تسكين ومناداة:</strong> ينادي صوتياً: "عميل رقم (...) يرجى التوجه إلى الفني (...)" ويفتح فاتورة معلقة تلقائياً في الكاشير.</p>
+                <p>• <strong>حفظ التسكين فقط:</strong> يربط العميل بالفني ويبقى في الانتظار دون نداء صوتي.</p>
+              </div>
             </div>
 
             <div className="flex flex-col gap-2">
@@ -856,16 +1064,16 @@ export function QueueCallingScreen({
                   <span>حفظ التسكين فقط</span>
                 </button>
 
-                {/* تسكين وبدء الخدمة فوراً مع المناداة الصوتية */}
+                {/* تسكين ومناداة العميل مع فتح فاتورة معلقة */}
                 <button
                   type="button"
                   onClick={handleConfirmAssign}
                   disabled={!selectedEmpId}
                   className="py-2.5 px-3 rounded-xl text-xs font-black text-slate-950 bg-amber-500 hover:bg-amber-400 cursor-pointer shadow disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5 transition-all active:scale-95"
-                  title="تسكين العميل ونقله لقيد الخدمة وإطلاق النداء الصوتي"
+                  title="تسكين العميل، إطلاق النداء الصوتي باسم الفني، وفتح فاتورة معلقة"
                 >
-                  <Scissors size={14} className="text-slate-950 shrink-0" />
-                  <span>تسكين وبدء الخدمة</span>
+                  <Volume2 size={14} className="text-slate-950 shrink-0" />
+                  <span>تسكين ومناداة (فاتورة معلقة)</span>
                 </button>
               </div>
 

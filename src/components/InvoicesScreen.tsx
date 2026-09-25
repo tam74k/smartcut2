@@ -427,13 +427,13 @@ export function InvoicesScreen({
                       return treasury ? <div key={pm.treasuryId}>{treasury.name} ({pm.amount})</div> : null;
                     }) || '-'}
                   </td>
-                  <td className="px-6 py-4 text-center font-bold text-red-500">{inv.discount > 0 ? inv.discount.toFixed(2) : '-'}</td>
-                  <td className="px-6 py-4 text-center font-bold text-blue-600">{inv.cashbackUsed > 0 ? inv.cashbackUsed.toFixed(2) : '-'}</td>
+                  <td className="px-6 py-4 text-center font-bold text-red-500">{Number(inv.discount || 0) > 0 ? Number(inv.discount).toFixed(2) : '-'}</td>
+                  <td className="px-6 py-4 text-center font-bold text-blue-600">{Number(inv.cashbackUsed || 0) > 0 ? Number(inv.cashbackUsed).toFixed(2) : '-'}</td>
                   <td className="px-6 py-4 font-bold text-slate-800">
-                    <div>{inv.total.toFixed(2)} {settings.currency}</div>
-                    {inv.advanceDeduction !== undefined && inv.advanceDeduction > 0 && (
+                    <div>{Number(inv.total || 0).toFixed(2)} {settings.currency}</div>
+                    {inv.advanceDeduction !== undefined && Number(inv.advanceDeduction || 0) > 0 && (
                       <div className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 inline-block mt-0.5">
-                        (عربون: {inv.advanceDeduction.toFixed(2)})
+                        (عربون: {Number(inv.advanceDeduction || 0).toFixed(2)})
                       </div>
                     )}
                     {inv.isRemedyInvoice && <div className="text-[10px] text-purple-700 font-bold">(0.00 إصلاح)</div>}
@@ -658,13 +658,13 @@ export function InvoicesScreen({
             <div className="p-6 overflow-y-auto max-h-[80vh]">
               <div className="text-center mb-6">
                 <p className="text-slate-500 text-sm mb-1">المبلغ المطلوب</p>
-                <p className="text-3xl font-extrabold text-primary">{showPayModal.total.toFixed(2)} <span className="text-sm">{settings.currency}</span></p>
+                <p className="text-3xl font-extrabold text-primary">{Number(showPayModal?.total || 0).toFixed(2)} <span className="text-sm">{settings.currency}</span></p>
               </div>
 
               {(() => {
                 const client = showPayModal.clientId ? clients.find(c => c.id === showPayModal.clientId) : null;
-                const maxCashback = client ? client.loyaltyPoints : 0;
-                const remainingToPay = showPayModal.total - (cashbackToUse || 0);
+                const maxCashback = Number(client?.cashback ?? client?.loyaltyPoints ?? 0);
+                const remainingToPay = Math.max(0, Number(showPayModal?.total || 0) - (cashbackToUse || 0));
 
                 return (
                   <>
@@ -672,18 +672,18 @@ export function InvoicesScreen({
                       <div className="mb-4 bg-blue-50 p-4 rounded-xl border border-blue-100">
                         <div className="flex justify-between items-center mb-2">
                           <span className="text-sm font-bold text-blue-800">رصيد الكاش باك المتوفر:</span>
-                          <span className="text-sm font-bold text-blue-600">{maxCashback.toFixed(2)} {settings.currency}</span>
+                          <span className="text-sm font-bold text-blue-600">{Number(maxCashback || 0).toFixed(2)} {settings.currency}</span>
                         </div>
                         <label className="block text-xs font-bold text-blue-700 mb-1">المبلغ المستخدم من الكاش باك:</label>
                         <input 
                           type="number" 
-                          max={Math.min(maxCashback, showPayModal.total)}
+                          max={Math.min(maxCashback, Number(showPayModal?.total || 0))}
                           min={0}
                           value={cashbackToUse}
                           onChange={(e) => {
                             let val = Number(e.target.value);
                             if (val > maxCashback) val = maxCashback;
-                            if (val > showPayModal.total) val = showPayModal.total;
+                            if (val > Number(showPayModal?.total || 0)) val = Number(showPayModal?.total || 0);
                             if (val < 0) val = 0;
                             setCashbackToUse(val);
                           }}
@@ -696,7 +696,7 @@ export function InvoicesScreen({
                       <>
                         <div className="mb-4 text-center">
                           <span className="text-sm font-bold text-slate-600">المبلغ المتبقي للدفع: </span>
-                          <span className="text-lg font-bold text-primary">{remainingToPay.toFixed(2)} {settings.currency}</span>
+                          <span className="text-lg font-bold text-primary">{Number(remainingToPay || 0).toFixed(2)} {settings.currency}</span>
                         </div>
                         <label className="block text-sm font-bold text-slate-700 mb-2">طريقة الدفع (الخزينة)</label>
                         <div className="space-y-2">

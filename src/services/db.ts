@@ -38,14 +38,15 @@ export function toSalonUUID(id?: string | null): string {
     if (parsed?.salonId && UUID_REGEX.test(parsed.salonId)) return parsed.salonId;
     if (parsed?.salon_id && UUID_REGEX.test(parsed.salon_id)) return parsed.salon_id;
 
-    if (id) {
-      const storedSalons = localStorage.getItem('smartcut_salons');
-      if (storedSalons) {
-        const salonsList = JSON.parse(storedSalons);
-        if (Array.isArray(salonsList) && salonsList.length > 0) {
-          const match = salonsList.find((sl: any) => sl.id === id || sl.code?.toLowerCase() === id.toLowerCase() || sl.salonCode?.toLowerCase() === id.toLowerCase());
+    const storedSalons = localStorage.getItem('smartcut_saas_salons') || localStorage.getItem('smartcut_salons');
+    if (storedSalons) {
+      const salonsList = JSON.parse(storedSalons);
+      if (Array.isArray(salonsList) && salonsList.length > 0) {
+        if (id) {
+          const match = salonsList.find((sl: any) => sl.id === id || sl.code?.toLowerCase() === id.toLowerCase() || sl.salonCode?.toLowerCase() === id.toLowerCase() || sl.name === id);
           if (match && UUID_REGEX.test(match.id)) return match.id;
         }
+        if (UUID_REGEX.test(salonsList[0].id)) return salonsList[0].id;
       }
     }
   } catch (e) {}
@@ -116,6 +117,14 @@ function getSalonId(): string {
     const parsed = s ? JSON.parse(s) : null;
     if (parsed?.salonId && UUID_REGEX.test(parsed.salonId)) return parsed.salonId;
     if (parsed?.salon_id && UUID_REGEX.test(parsed.salon_id)) return parsed.salon_id;
+
+    const storedSalons = localStorage.getItem('smartcut_saas_salons') || localStorage.getItem('smartcut_salons');
+    if (storedSalons) {
+      const salonsList = JSON.parse(storedSalons);
+      if (Array.isArray(salonsList) && salonsList.length > 0 && UUID_REGEX.test(salonsList[0].id)) {
+        return salonsList[0].id;
+      }
+    }
 
     return '';
   } catch { return ''; }
@@ -2332,17 +2341,35 @@ export const DB = {
   },
   async savePromoCode(pc: any) {
     const client = sb(); if (!client || !pc) return null;
-    const validSalonId = toSalonUUID(pc.salonId || getSalonId());
+    let validSalonId = toSalonUUID(pc.salonId || getSalonId());
+    if (!validSalonId) {
+      try {
+        const { data: salons } = await client.from('salons').select('id').limit(1);
+        if (salons && salons.length > 0) validSalonId = salons[0].id;
+      } catch {}
+    }
+    if (!validSalonId) {
+      console.error('DB.savePromoCode error: No valid salon_id found to link promo code');
+      return null;
+    }
     try {
       const snap: any = {
-        id: pc.id, salon_id: validSalonId, code: pc.code?.trim().toUpperCase(),
-        discount_type: pc.discountType || 'percentage', discount_value: pc.discountValue ?? 0,
-        max_discount_amount: pc.maxDiscountAmount || null,
+        id: pc.id,
+        salon_id: validSalonId,
+        code: pc.code?.trim().toUpperCase(),
+        discount_type: pc.discountType || 'percentage',
+        discount_value: Number(pc.discountValue) || 0,
+        max_discount_amount: pc.maxDiscountAmount ? Number(pc.maxDiscountAmount) : null,
         start_date: toDateOrNull(pc.startDate) || new Date().toISOString().split('T')[0],
         end_date: toDateOrNull(pc.endDate) || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
-        max_uses_total: pc.maxUsesTotal || null, uses_count: pc.usesCount ?? 0,
-        is_active: pc.isActive !== false, notes: pc.notes || null,
-        created_by: pc.createdBy || null, updated_at: new Date().toISOString()
+        max_uses_total: pc.maxUsesTotal ? Number(pc.maxUsesTotal) : null,
+        usage_limit: pc.maxUsesTotal ? Number(pc.maxUsesTotal) : null,
+        uses_count: Number(pc.usesCount) || 0,
+        times_used: Number(pc.usesCount) || 0,
+        is_active: pc.isActive !== false,
+        notes: pc.notes || null,
+        created_by: pc.createdBy || null,
+        updated_at: new Date().toISOString()
       };
       const { error } = await client.from('promo_codes').upsert(snap, { onConflict: 'id' });
       if (error) { console.error('DB.savePromoCode error:', error.message); return null; }
@@ -2359,12 +2386,27 @@ export const DB = {
   },
   async savePromoCodeUsage(u: any) {
     const client = sb(); if (!client || !u) return null;
-    const validSalonId = toSalonUUID(u.salonId || getSalonId());
+    let validSalonId = toSalonUUID(u.salonId || getSalonId());
+    if (!validSalonId) {
+      try {
+        const { data: salons } = await client.from('salons').select('id').limit(1);
+        if (salons && salons.length > 0) validSalonId = salons[0].id;
+      } catch {}
+    }
+    if (!validSalonId) {
+      console.error('DB.savePromoCodeUsage error: No valid salon_id found');
+      return null;
+    }
     try {
       const snap: any = {
-        id: u.id, salon_id: validSalonId, promo_code_id: u.promoCodeId,
-        code: u.code, client_phone: u.clientPhone, client_name: u.clientName || null,
-        invoice_id: u.invoiceId || null, discount_applied: u.discountApplied ?? 0,
+        id: u.id,
+        salon_id: validSalonId,
+        promo_code_id: u.promoCodeId,
+        code: u.code,
+        client_phone: u.clientPhone,
+        client_name: u.clientName || null,
+        invoice_id: u.invoiceId || null,
+        discount_applied: Number(u.discountApplied) || 0,
         used_at: u.usedAt || new Date().toISOString()
       };
       const { error } = await client.from('promo_code_usages').upsert(snap, { onConflict: 'id' });
@@ -2957,7 +2999,7 @@ export const DB = {
     console.log('⚡ [Fast Startup] تحميل البيانات الأساسية للصالون:', validSalonId);
     
     // Fetch ONLY essential catalog needed for POS & basic operations concurrently
-    const [categories, services, employees, clients, products, suppliers, purchaseInvoices, supplierPayments] = await Promise.all([
+    const [categories, services, employees, clients, products, suppliers, purchaseInvoices, supplierPayments, promoCodes, promoCodeUsages] = await Promise.all([
       DB.fetchAll<any>('categories', undefined, validSalonId),
       DB.fetchAll<any>('services', undefined, validSalonId),
       DB.fetchAll<any>('employees', undefined, validSalonId),
@@ -2967,6 +3009,8 @@ export const DB = {
       DB.fetchAll<any>('suppliers', undefined, validSalonId),
       DB.fetchAll<any>('purchase_invoices', undefined, validSalonId),
       DB.fetchAll<any>('supplier_payments', undefined, validSalonId),
+      DB.fetchAll<any>('promo_codes', undefined, validSalonId),
+      DB.fetchAll<any>('promo_code_usages', undefined, validSalonId)
     ]);
 
     return {
@@ -2977,7 +3021,9 @@ export const DB = {
       products,
       suppliers,
       purchaseInvoices,
-      supplierPayments
+      supplierPayments,
+      promoCodes,
+      promoCodeUsages
     };
   },
 
@@ -3104,7 +3150,8 @@ export const DB = {
         };
       }
       case 'promotions':
-      case 'promo-codes': {
+      case 'promo-codes':
+      case 'promo_codes': {
         const [promoCodes, promoCodeUsages] = await Promise.all([
           DB.fetchAll<any>('promo_codes', undefined, validSalonId),
           DB.fetchAll<any>('promo_code_usages', undefined, validSalonId)

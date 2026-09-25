@@ -63,6 +63,7 @@ export function POSScreen({
   setEmployees,
   isSubscriptionBlocked,
   promoCodes = [],
+  setPromoCodes,
   promoCodeUsages = [],
   setPromoCodeUsages,
   tips = [],
@@ -88,6 +89,7 @@ export function POSScreen({
   setEmployees?: (e: Employee[]) => void,
   isSubscriptionBlocked?: boolean,
   promoCodes?: PromoCode[],
+  setPromoCodes?: (updater: PromoCode[] | ((prev: PromoCode[]) => PromoCode[])) => void,
   promoCodeUsages?: PromoCodeUsage[],
   setPromoCodeUsages?: (updater: PromoCodeUsage[] | ((prev: PromoCodeUsage[]) => PromoCodeUsage[])) => void,
   tips?: TipRecord[],
@@ -236,7 +238,6 @@ export function POSScreen({
   // Promo Code State
   const [promoCodeInput, setPromoCodeInput] = useState('');
   const [appliedPromo, setAppliedPromo] = useState<PromoCode | null>(null);
-  const [promoDiscountAmount, setPromoDiscountAmount] = useState(0);
   const [promoError, setPromoError] = useState<string | null>(null);
 
   // In-cart custom price editing state
@@ -535,21 +536,29 @@ export function POSScreen({
     return getClientTier(selectedClient, invoices, settings.tierSettings);
   }, [selectedClient, invoices, settings.tierSettings]);
 
-  // Automatically apply Tier discount when client is identified
+  // Automatically apply Tier discount when client is identified (only when no promo code is active)
   useEffect(() => {
-    if (selectedClient) {
+    if (selectedClient && !appliedPromo) {
       const tier = getClientTier(selectedClient, invoices, settings.tierSettings);
       if (tier && tier.discountPercentage > 0) {
         setDiscount({ type: 'percentage', value: tier.discountPercentage });
       }
     }
-  }, [selectedClient, invoices, settings.tierSettings]);
+  }, [selectedClient, invoices, settings.tierSettings, appliedPromo]);
 
   // Handle Apply Promo Code
   const handleApplyPromoCode = () => {
     setPromoError(null);
     const clean = promoCodeInput.trim().toUpperCase();
     if (!clean) return;
+
+    // التحقق من تحديد العميل أولاً لضمان عدم تكرار استخدام الكود لنفس العميل
+    const clientPhone = (selectedClient?.phone || clientSearch || '').replace(/\D/g, '');
+    const clientName = (selectedClient?.name || clientSearch || '').trim();
+    if (!selectedClient && !clientPhone && !clientName) {
+      setPromoError('يرجى تحديد العميل أو إدخال رقم الهاتف أولاً للتحقق من الكود');
+      return;
+    }
 
     const found = promoCodes.find(p => p.code?.toUpperCase() === clean);
     if (!found) {
@@ -577,40 +586,72 @@ export function POSScreen({
       return;
     }
 
-    // Check if client has used this code already
-    const clientPhone = selectedClient?.phone || clientSearch?.replace(/\D/g, '');
-    if (clientPhone) {
-      const alreadyUsed = promoCodeUsages.some(u => 
-        u.code?.toUpperCase() === clean && 
-        u.clientPhone?.replace(/\D/g, '') === clientPhone.replace(/\D/g, '')
-      );
-      if (alreadyUsed) {
-        setPromoError('تم استخدام هذا الكود مسبقاً لهذا العميل');
-        return;
-      }
+    // التحقق من استخدام هذا العميل للكود من قبل (سواء في سجل الاستخدامات أو في فواتير سابقة غير ملغاة)
+    const alreadyUsedInUsages = promoCodeUsages.some(u => {
+      if (u.code?.toUpperCase() !== clean && u.promoCodeId !== found.id) return false;
+      const uPhone = (u.clientPhone || '').replace(/\D/g, '');
+      if (clientPhone && uPhone && uPhone === clientPhone) return true;
+      if (clientName && u.clientName && u.clientName.trim().toLowerCase() === clientName.toLowerCase()) return true;
+      return false;
+    });
+
+    const alreadyUsedInInvoices = invoices.some(inv => {
+      if (inv.status === 'cancelled') return false;
+      if (inv.promoCode?.toUpperCase() !== clean) return false;
+      const invPhone = (inv.clientPhone || '').replace(/\D/g, '');
+      if (clientPhone && invPhone && invPhone === clientPhone) return true;
+      if (selectedClient?.id && inv.clientId === selectedClient.id) return true;
+      if (clientName && inv.clientName && inv.clientName.trim().toLowerCase() === clientName.toLowerCase()) return true;
+      return false;
+    });
+
+    if (alreadyUsedInUsages || alreadyUsedInInvoices) {
+      setPromoError('كود مستخدم من قبل');
+      return;
     }
 
-    // Calculate discount
-    let promoDisc = 0;
-    if (found.discountType === 'percentage') {
-      promoDisc = subtotal * (found.discountValue / 100);
-      if (found.maxDiscountAmount && promoDisc > found.maxDiscountAmount) {
-        promoDisc = found.maxDiscountAmount;
-      }
-    } else {
-      promoDisc = Math.min(subtotal, found.discountValue);
-    }
+    // عند تطبيق البرومو كود: إلغاء وتصفير الخصم اليدوي
+    setDiscount({ type: 'fixed', value: 0 });
 
     setAppliedPromo(found);
-    setPromoDiscountAmount(promoDisc);
     setPromoCodeInput('');
   };
 
   const handleRemovePromo = () => {
     setAppliedPromo(null);
-    setPromoDiscountAmount(0);
     setPromoError(null);
   };
+
+  // التحقق عند تغيير العميل في حال كان هناك كود برومو مطبق
+  useEffect(() => {
+    if (appliedPromo) {
+      const clientPhone = (selectedClient?.phone || clientSearch || '').replace(/\D/g, '');
+      const clientName = (selectedClient?.name || clientSearch || '').trim();
+      if (clientPhone || clientName) {
+        const clean = appliedPromo.code?.toUpperCase();
+        const alreadyUsed = promoCodeUsages.some(u => {
+          if (u.code?.toUpperCase() !== clean && u.promoCodeId !== appliedPromo.id) return false;
+          const uPhone = (u.clientPhone || '').replace(/\D/g, '');
+          if (clientPhone && uPhone && uPhone === clientPhone) return true;
+          if (clientName && u.clientName && u.clientName.trim().toLowerCase() === clientName.toLowerCase()) return true;
+          return false;
+        }) || invoices.some(inv => {
+          if (inv.status === 'cancelled') return false;
+          if (inv.promoCode?.toUpperCase() !== clean) return false;
+          const invPhone = (inv.clientPhone || '').replace(/\D/g, '');
+          if (clientPhone && invPhone && invPhone === clientPhone) return true;
+          if (selectedClient?.id && inv.clientId === selectedClient.id) return true;
+          if (clientName && inv.clientName && inv.clientName.trim().toLowerCase() === clientName.toLowerCase()) return true;
+          return false;
+        });
+
+        if (alreadyUsed) {
+          setAppliedPromo(null);
+          setPromoError('كود مستخدم من قبل');
+        }
+      }
+    }
+  }, [selectedClient, clientSearch]);
 
   // In-cart custom price update
   const handleSaveCustomPrice = (cartId: string) => {
@@ -645,8 +686,24 @@ export function POSScreen({
   const [completedInvoice, setCompletedInvoice] = useState<Invoice | null>(null);
 
   const subtotal = cart.reduce((sum, c) => sum + (getCartItemPrice(c) * (c.quantity || 1)), 0);
-  const manualDiscountAmount = discount.type === 'percentage' ? subtotal * ((Number(discount.value) || 0) / 100) : (Number(discount.value) || 0);
-  const discountAmount = manualDiscountAmount + promoDiscountAmount;
+
+  // حساب خصم البرومو كود تلقائياً بناءً على إجمالي السلة
+  let promoDiscountAmount = 0;
+  if (appliedPromo) {
+    if (appliedPromo.discountType === 'percentage') {
+      promoDiscountAmount = subtotal * (appliedPromo.discountValue / 100);
+      if (appliedPromo.maxDiscountAmount && promoDiscountAmount > appliedPromo.maxDiscountAmount) {
+        promoDiscountAmount = appliedPromo.maxDiscountAmount;
+      }
+    } else {
+      promoDiscountAmount = Math.min(subtotal, appliedPromo.discountValue);
+    }
+  }
+
+  // عند استخدام البرومو كود أو في فاتورة الإصلاح، لا يسمح بعمل خصم يدوي (0)
+  const rawManualDiscount = discount.type === 'percentage' ? subtotal * ((Number(discount.value) || 0) / 100) : (Number(discount.value) || 0);
+  const manualDiscountAmount = (isRemedyInvoice || appliedPromo) ? 0 : rawManualDiscount;
+  const discountAmount = isRemedyInvoice ? subtotal : (appliedPromo ? promoDiscountAmount : manualDiscountAmount);
   const totalInclusive = Math.max(0, subtotal - discountAmount);
   const baseTotal = settings.vatEnabled ? totalInclusive / (1 + settings.vatRate / 100) : totalInclusive;
   const vatAmount = settings.vatEnabled ? totalInclusive - baseTotal : 0;
@@ -830,9 +887,9 @@ export function POSScreen({
     };
 
     if (selectedClient && !isRemedyInvoice) {
-      // 1. كاش باك العميل المباشر: الفاتورة التي يتم استخدام الكاش باك في سدادها لا يحتسب عليها كاش باك
+      // 1. كاش باك العميل المباشر: الفاتورة التي يتم استخدام الكاش باك في سدادها أو تطبيق برومو كود عليها لا تحتسب ضمن الكاش باك
       let earnedCashback = 0;
-      if (cashbackUsed === 0) {
+      if (cashbackUsed === 0 && !appliedPromo) {
         cart.forEach(c => {
           if (c.item?.cashbackPercentage) {
             earnedCashback += (getCartItemPrice(c) * Number(c.item.cashbackPercentage)) / 100;
@@ -840,7 +897,7 @@ export function POSScreen({
         });
       }
 
-      // 2. كاش باك ترشيح وإحالة العميل (يُمنح للعميل المرشِح على أول فاتورة فقط للعميل الجديد)
+      // 2. كاش باك ترشيح وإحالة العميل (يُمنح للعميل المرشِح على أول فاتورة فقط للعميل الجديد بشرط عدم استخدام برومو كود)
       let referrerClientPhone = selectedClient.referredByPhone?.trim();
       if (referrerClientPhone === selectedClient.phone?.trim()) {
         referrerClientPhone = undefined; // منع الترشيح الذاتي
@@ -852,7 +909,7 @@ export function POSScreen({
       let referrerEarnedCashback = 0;
       let referrerClientId: string | undefined = undefined;
 
-      if (referrerClientPhone && isFirstInvoice) {
+      if (referrerClientPhone && isFirstInvoice && !appliedPromo) {
         const foundReferrer = clients.find(cl => cl.phone && cl.phone.trim() === referrerClientPhone);
         if (foundReferrer && foundReferrer.id !== selectedClient.id) {
           referrerClientId = foundReferrer.id;
@@ -917,6 +974,35 @@ export function POSScreen({
       DB.saveTip(newTip);
     }
 
+    // حفظ استخدام البرومو كود وتحديث عدد استخداماته
+    if (appliedPromo) {
+      const newUsage: PromoCodeUsage = {
+        id: 'PCU-' + Math.random().toString(36).substring(2, 9).toUpperCase(),
+        salonId: settings.salonId,
+        promoCodeId: appliedPromo.id,
+        code: appliedPromo.code,
+        clientPhone: selectedClient?.phone || clientSearch?.replace(/\D/g, '') || '',
+        clientName: selectedClient?.name || clientSearch || undefined,
+        invoiceId: newInvoice.id,
+        discountApplied: promoDiscountAmount,
+        usedAt: new Date().toISOString()
+      };
+
+      if (setPromoCodeUsages) {
+        setPromoCodeUsages(prev => [...prev, newUsage]);
+      }
+      DB.savePromoCodeUsage(newUsage);
+
+      const updatedPromo: PromoCode = {
+        ...appliedPromo,
+        usesCount: (appliedPromo.usesCount || 0) + 1
+      };
+      if (setPromoCodes) {
+        setPromoCodes(prev => prev.map(p => p.id === appliedPromo.id ? updatedPromo : p));
+      }
+      DB.savePromoCode(updatedPromo);
+    }
+
     if (onCheckoutComplete) {
       onCheckoutComplete(newInvoice, splits, activeBookingId || initialBooking?.id);
     }
@@ -935,6 +1021,9 @@ export function POSScreen({
     setActiveBookingId(undefined);
     setActiveQueueNumber(null);
     setDiscount({ type: 'fixed', value: 0 });
+    setAppliedPromo(null);
+    setPromoCodeInput('');
+    setPromoError(null);
     setSplitAmounts({});
     setBeforePhotoUrl('');
     setAfterPhotoUrl('');
@@ -1538,7 +1627,7 @@ export function POSScreen({
                         {phoneSuggestions.map((client, idx) => {
                           const isHighlighted = idx === highlightedIndex;
                           const tier = getClientTier(client, invoices, settings.tierSettings);
-                          const cashbackVal = client.cashback !== undefined ? client.cashback : (client.loyaltyPoints || 0);
+                          const cashbackVal = Number(client.cashback ?? client.loyaltyPoints ?? 0);
 
                           return (
                             <button
@@ -1574,7 +1663,7 @@ export function POSScreen({
 
                               <div className="text-left shrink-0">
                                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-purple-50 text-purple-700 border border-purple-100 font-mono block">
-                                  كاش باك: {cashbackVal.toFixed(0)} {settings.currency}
+                                  كاش باك: {Number(cashbackVal || 0).toFixed(0)} {settings.currency}
                                 </span>
                               </div>
                             </button>
@@ -1681,7 +1770,7 @@ export function POSScreen({
                   </button>
 
                   <span className="text-purple-700 shrink-0">
-                    كاش باك: <strong className="font-mono">{(selectedClient.cashback !== undefined ? selectedClient.cashback : selectedClient.loyaltyPoints || 0).toFixed(1)} {settings.currency}</strong>
+                    كاش باك: <strong className="font-mono">{Number(selectedClient.cashback ?? selectedClient.loyaltyPoints ?? 0).toFixed(1)} {settings.currency}</strong>
                   </span>
                 </div>
               </div>
@@ -1918,21 +2007,35 @@ export function POSScreen({
             </div>
 
             <div className="flex justify-between items-center text-slate-600">
-              <span>الخصم:</span>
+              <span className="flex items-center gap-1">
+                <span>الخصم:</span>
+                {appliedPromo && (
+                  <span className="text-[9px] text-amber-700 bg-amber-50 px-1 py-0.5 rounded border border-amber-200 font-bold">
+                    غير متاح مع البرومو كود
+                  </span>
+                )}
+              </span>
               <div className="flex items-center gap-1">
                 <input 
                   type="number" 
-                  disabled={isRemedyInvoice}
-                  value={isRemedyInvoice ? subtotal : (discount.value || '')}
-                  onChange={(e) => setDiscount({...discount, value: Number(e.target.value)})}
-                  className="w-12 border border-slate-200 rounded px-1 py-0.5 text-center text-xs outline-none focus:border-primary disabled:bg-slate-100 font-mono font-bold"
+                  disabled={isRemedyInvoice || Boolean(appliedPromo)}
+                  value={isRemedyInvoice ? subtotal : (appliedPromo ? 0 : (discount.value || ''))}
+                  onChange={(e) => {
+                    if (appliedPromo) return;
+                    setDiscount({...discount, value: Number(e.target.value)});
+                  }}
+                  className="w-12 border border-slate-200 rounded px-1 py-0.5 text-center text-xs outline-none focus:border-primary disabled:bg-slate-100 disabled:text-slate-400 font-mono font-bold"
                   placeholder="0"
+                  title={appliedPromo ? "لا يسمح بعمل خصم يدوي عند استخدام برومو كود" : undefined}
                 />
                 <select 
-                  disabled={isRemedyInvoice}
+                  disabled={isRemedyInvoice || Boolean(appliedPromo)}
                   value={discount.type}
-                  onChange={(e) => setDiscount({...discount, type: e.target.value as 'percentage'|'fixed'})}
-                  className="border border-slate-200 rounded px-0.5 text-[10px] outline-none cursor-pointer"
+                  onChange={(e) => {
+                    if (appliedPromo) return;
+                    setDiscount({...discount, type: e.target.value as 'percentage'|'fixed'});
+                  }}
+                  className="border border-slate-200 rounded px-0.5 text-[10px] outline-none cursor-pointer disabled:bg-slate-100 disabled:text-slate-400"
                 >
                   <option value="fixed">{settings.currency}</option>
                   <option value="percentage">%</option>
@@ -1979,7 +2082,7 @@ export function POSScreen({
               <div className="flex items-center justify-between text-xs font-bold text-purple-900 bg-purple-100/80 px-2 py-1 rounded-lg">
                 <span className="flex items-center gap-1">
                   <Tag size={13} className="text-purple-700" />
-                  <span>تم تطبيق الكود: <strong>{appliedPromo.code}</strong> (-{promoDiscountAmount.toFixed(2)} {settings.currency})</span>
+                  <span>تم تطبيق الكود: <strong>{appliedPromo.code}</strong> (-{Number(promoDiscountAmount || 0).toFixed(2)} {settings.currency})</span>
                 </span>
                 <button
                   type="button"
@@ -2000,10 +2103,10 @@ export function POSScreen({
           </div>
 
           {/* Tier Discount Banner if active */}
-          {clientTier && clientTier.discountPercentage > 0 && discount.value === clientTier.discountPercentage && discount.type === 'percentage' && !isRemedyInvoice && (
+          {!appliedPromo && clientTier && clientTier.discountPercentage > 0 && discount.value === clientTier.discountPercentage && discount.type === 'percentage' && !isRemedyInvoice && (
             <div className="text-[10px] font-black bg-amber-50 text-amber-900 px-2 py-0.5 rounded-lg border border-amber-300 flex items-center justify-between">
               <span>{clientTier.icon} خصم مستوى {clientTier.name}:</span>
-              <span className="font-mono">-{manualDiscountAmount.toFixed(2)} {settings.currency} ({clientTier.discountPercentage}%)</span>
+              <span className="font-mono">-{Number(manualDiscountAmount || 0).toFixed(2)} {settings.currency} ({clientTier.discountPercentage}%)</span>
             </div>
           )}
 
@@ -2754,7 +2857,7 @@ export function POSScreen({
 
                         <div className="text-left">
                           <span className="text-sm font-black font-mono text-primary">
-                            {heldTotal.toFixed(2)} {settings.currency}
+                            {Number(heldTotal || 0).toFixed(2)} {settings.currency}
                           </span>
                           <p className="text-[10px] text-slate-400 font-semibold">{heldCart.length} أصناف / خدمات</p>
                         </div>

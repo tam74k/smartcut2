@@ -518,25 +518,25 @@ export function PartnersScreen({
     for (const p of activePartners) {
       if (p.sharePercentage <= 0) continue;
 
-      const grossShare = Number(((pool * p.sharePercentage) / 100).toFixed(2));
+      const grossShare = Number((((Number(pool) || 0) * (Number(p.sharePercentage) || 0)) / 100).toFixed(2));
 
       // Calculate total drawings within the year
       const partnerYearDrawings = partnerTransactions
         .filter(t => t.partnerId === p.id && t.type === 'withdrawal' && t.date.startsWith(String(settleYear)))
-        .reduce((s, t) => s + (t.amount || 0), 0);
+        .reduce((s, t) => s + (Number(t.amount) || 0), 0);
 
-      const priorDebit = p.debitBalance || 0;
+      const priorDebit = Number(p.debitBalance) || 0;
       const netSettlement = grossShare - partnerYearDrawings - priorDebit;
 
       let payable = 0;
       let carriedDebit = 0;
 
-      if (netSettlement >= 0) {
-        payable = Number(netSettlement.toFixed(2));
+      if (!isNaN(netSettlement) && netSettlement >= 0) {
+        payable = Number((netSettlement || 0).toFixed(2));
         carriedDebit = 0;
-      } else {
+      } else if (!isNaN(netSettlement)) {
         payable = 0;
-        carriedDebit = Number(Math.abs(netSettlement).toFixed(2));
+        carriedDebit = Number(Math.abs(netSettlement || 0).toFixed(2));
       }
 
       const dist: ProfitDistribution = {
