@@ -10,7 +10,7 @@ import {
   Scissors, CheckCircle2, AlertCircle, Sparkles, Filter, 
   List, Grid3X3, Eye, CalendarDays, ArrowRight, Sliders, 
   CalendarOff, ShieldAlert, Trash2, Lock, ShieldCheck, Check,
-  DollarSign, Wallet, CreditCard, Banknote, XCircle
+  DollarSign, Wallet, CreditCard, Banknote, XCircle, FileSpreadsheet
 } from 'lucide-react';
 import { 
   isDateBlocked, isHourBlocked, isStaffAvailableOnDate, 
@@ -21,6 +21,7 @@ import { QueueService } from '../services/queueService';
 import { DB } from '../services/db';
 import { escapeHtml, sanitizeUrl } from '../utils/sanitize';
 import { isBarberEmployee } from '../utils/employeeHelper';
+import { BookingsImportModal } from './BookingsImportModal';
 
 export function BookingsScreen({ 
   settings, 
@@ -72,6 +73,9 @@ export function BookingsScreen({
 
   // Primary Screen Tab: 'table' (default) | 'calendar'
   const [activeMainTab, setActiveMainTab] = useState<'table' | 'calendar'>('table');
+
+  // Excel Import Modal State
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   // Matching Client info during manual booking creation
   const [matchingClientInfo, setMatchingClientInfo] = useState<Client | null>(null);
@@ -836,6 +840,16 @@ export function BookingsScreen({
               <span>إعدادات وتوافر الحجوزات ⚙️</span>
             </button>
           )}
+
+          {/* Excel Import Button */}
+          <button
+            onClick={() => setIsImportModalOpen(true)}
+            className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 px-3.5 py-2.5 rounded-2xl text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+            title="سحب حجوزات سابقة من ملف إكسل (نظام الورقتين المعتمد)"
+          >
+            <FileSpreadsheet size={15} className="text-emerald-600" />
+            <span>سحب من إكسل</span>
+          </button>
 
           {/* Global New Booking Button */}
           <button
@@ -2831,6 +2845,31 @@ export function BookingsScreen({
           </div>
         </div>
       )}
+
+      {/* Bookings Excel Import Modal */}
+      <BookingsImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        settings={settings}
+        existingBookings={bookings}
+        clients={clients}
+        employees={employees}
+        services={services}
+        activeBranchId={activeBranchId}
+        currentUser={currentUser}
+        shiftData={shiftData}
+        onImportComplete={(newB, newC, newT) => {
+          if (newB.length > 0) {
+            setBookings([...newB, ...bookings]);
+          }
+          if (newC.length > 0 && setClients) {
+            setClients([...clients, ...newC]);
+          }
+          if (newT.length > 0 && setTransactions) {
+            setTransactions(prev => [...prev, ...newT]);
+          }
+        }}
+      />
 
     </div>
   );

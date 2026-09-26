@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { AppSettings, Transaction } from '../types';
-import { Plus, Trash2, Edit2, Receipt, Save, X } from 'lucide-react';
+import { Plus, Trash2, Edit2, Receipt, Save, X, FileSpreadsheet } from 'lucide-react';
 import { DB } from '../services/db';
+import { ExpensesImportModal } from './ExpensesImportModal';
 
 export function ExpensesScreen({
   settings,
@@ -24,6 +25,7 @@ export function ExpensesScreen({
   const [expenseToDelete, setExpenseToDelete] = useState<string | null>(null);
   const [categoryToDelete, setCategoryToDelete] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   // New Expense State
   const [amount, setAmount] = useState<number | ''>('');
@@ -156,6 +158,14 @@ export function ExpensesScreen({
           <p className="text-slate-500 text-sm mt-1">إدارة وتسجيل المصروفات وبنود الصرف الأساسية</p>
         </div>
         <div className="flex gap-3">
+          <button 
+            onClick={() => setIsImportModalOpen(true)} 
+            className="bg-emerald-50 border border-emerald-200 text-emerald-800 hover:bg-emerald-100 px-4 py-2.5 rounded-lg font-bold flex items-center gap-2 shadow-sm transition-colors cursor-pointer"
+            title="سحب قيود المصروفات من ملف إكسل"
+          >
+            <FileSpreadsheet size={18} className="text-emerald-600" />
+            <span>سحب من إكسل</span>
+          </button>
           <button onClick={() => setShowCategoriesModal(true)} className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 px-4 py-2.5 rounded-lg font-bold flex items-center gap-2 shadow-sm transition-colors">
             <Edit2 size={18} /> إدارة بنود الصرف
           </button>
@@ -349,6 +359,21 @@ export function ExpensesScreen({
           </div>
         </div>
       )}
+
+      {/* Expenses Excel Import Modal */}
+      <ExpensesImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        settings={settings}
+        setSettings={setSettings}
+        activeBranchId={activeBranchId}
+        shiftData={shiftData}
+        onImportComplete={(newT, newCats) => {
+          if (newT.length > 0) {
+            setTransactions([...newT, ...transactions]);
+          }
+        }}
+      />
     </div>
   );
 }

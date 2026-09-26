@@ -5,10 +5,11 @@ import {
   Calendar, Phone, DollarSign, FileText, Printer, CheckCircle2, 
   Clock, Sparkles, User, Scissors, Coffee, Crown, ShieldCheck, 
   HeartHandshake, Sliders, ChevronLeft, Save, Droplets, Zap,
-  TrendingUp, Award, HelpCircle
+  TrendingUp, Award, HelpCircle, FileSpreadsheet
 } from 'lucide-react';
 import { handlePrintReceipt } from '../utils/print';
 import { DB } from '../services/db';
+import { ClientsImportModal } from './ClientsImportModal';
 
 export function ClientsScreen({ 
   settings, 
@@ -28,6 +29,7 @@ export function ClientsScreen({
   const [profileActiveTab, setProfileActiveTab] = useState<'overview' | 'preferences' | 'invoices'>('overview');
   const [viewInvoiceDetails, setViewInvoiceDetails] = useState<Invoice | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   
   // Temporary Preferences state while editing in modal
   const [prefForm, setPrefForm] = useState<ClientPreferences>({});
@@ -205,6 +207,14 @@ export function ClientsScreen({
               className="bg-white border border-slate-200 rounded-xl pr-9 pl-4 py-2 text-xs font-semibold focus:outline-none focus:border-indigo-600 w-full shadow-2xs" 
             />
           </div>
+          <button 
+            onClick={() => setIsImportModalOpen(true)}
+            className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+            title="سحب قاعدة العملاء من ملف إكسل مع كشف المكرر"
+          >
+            <FileSpreadsheet size={16} className="text-emerald-600" />
+            <span>سحب من إكسل</span>
+          </button>
           <button 
             onClick={() => setShowAddModal(true)}
             className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-extrabold flex items-center gap-2 shadow-sm transition-all cursor-pointer"
@@ -1096,6 +1106,25 @@ export function ClientsScreen({
           </form>
         </div>
       )}
+
+      {/* Clients Excel Import Modal */}
+      <ClientsImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        settings={settings}
+        existingClients={clients}
+        onImportComplete={(added, updated) => {
+          let currentList = [...clients];
+          if (updated.length > 0) {
+            const updatedMap = new Map(updated.map(u => [u.id, u]));
+            currentList = currentList.map(c => updatedMap.get(c.id) || c);
+          }
+          if (added.length > 0) {
+            currentList = [...added, ...currentList];
+          }
+          setClients(currentList);
+        }}
+      />
     </div>
   );
 }

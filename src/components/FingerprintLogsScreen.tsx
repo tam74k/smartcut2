@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { AppSettings, FingerprintLog, Employee } from '../types';
-import { Fingerprint, Clock, RefreshCw, CheckCircle2, User, Search, Filter } from 'lucide-react';
+import { Fingerprint, Clock, RefreshCw, CheckCircle2, User, Search, Filter, FileSpreadsheet } from 'lucide-react';
 import { DB } from '../services/db';
+import { FingerprintImportModal } from './FingerprintImportModal';
 
 interface FingerprintLogsScreenProps {
   settings: AppSettings;
@@ -25,6 +26,7 @@ export function FingerprintLogsScreen({
   const [localLogs, setLocalLogs] = useState<FingerprintLog[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState<string>('');
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   const incomingLogs = (fingerprintLogs && fingerprintLogs.length > 0) 
     ? fingerprintLogs 
@@ -122,7 +124,17 @@ export function FingerprintLogsScreen({
           </div>
         </div>
 
-        <div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setIsImportModalOpen(true)}
+            className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+            title="سحب حركات البصمة من ملف إكسل ورفعها إلى التايم شيت"
+          >
+            <FileSpreadsheet size={15} className="text-emerald-600" />
+            <span>سحب من إكسل إلى التايم شيت</span>
+          </button>
+
           <button
             type="button"
             onClick={() => fetchLogsDirectly(true)}
@@ -224,6 +236,22 @@ export function FingerprintLogsScreen({
           </div>
         )}
       </div>
+
+      {/* Fingerprint Excel Import Modal */}
+      <FingerprintImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        settings={settings}
+        employees={employees}
+        existingLogs={displayLogs}
+        onImportComplete={(newLogs) => {
+          if (newLogs.length > 0) {
+            setLocalLogs(prev => [...newLogs, ...prev]);
+            if (setFingerprintLogs) setFingerprintLogs(prev => [...newLogs, ...prev]);
+            if (setLogs) setLogs(prev => [...newLogs, ...prev]);
+          }
+        }}
+      />
     </div>
   );
 }

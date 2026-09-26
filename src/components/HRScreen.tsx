@@ -9,7 +9,7 @@ import {
   RotateCcw, Sparkles, Plus, CheckSquare, Square, FileText, Ban, ShieldAlert,
   ChevronLeft, ChevronRight, Download, DollarSign, Award, ArrowUpRight, Check, X, Wallet,
   Edit, Trash2, TrendingUp, History, Percent, Coins, Palmtree, RefreshCw, DoorOpen, Timer,
-  ShieldCheck, Briefcase
+  ShieldCheck, Briefcase, FileSpreadsheet
 } from 'lucide-react';
 
 import { ThermalSalarySlip, SalarySlipSummary } from './ThermalSalarySlip';
@@ -18,6 +18,7 @@ import { printThermalFinancialVoucher } from './ThermalFinancialVoucher';
 import { calculateEmployeeCommission, getCommissionModelLabel, calculateEmployeeTotalCommission } from '../utils/commissionHelper';
 import { DB } from '../services/db';
 import { getActiveShiftDate, getEffectiveDateTime, getEffectiveDateOnly } from '../utils/shiftDate';
+import { FingerprintImportModal } from './FingerprintImportModal';
 
 // Helper to reliably match date strings (YYYY-MM-DD) across ISO strings, space-delimited timestamps, and local timezone
 const isSameDay = (ts?: string, targetDateStr?: string): boolean => {
@@ -272,6 +273,7 @@ export function HRScreen({
   // Auto-Refresh & Manual Refresh State
   const [isRefreshingLogs, setIsRefreshingLogs] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState<string>('');
+  const [isFingerprintImportOpen, setIsFingerprintImportOpen] = useState(false);
 
   // Fetch / Sync fingerprint logs directly from Supabase with auto-refresh every 10s and visibility change
   const refreshFingerprintLogs = async (showLoadingState = false) => {
@@ -1966,6 +1968,17 @@ export function HRScreen({
 
         {/* Action Buttons Toolbar */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* Excel Fingerprint Import to Timesheet */}
+          <button
+            type="button"
+            onClick={() => setIsFingerprintImportOpen(true)}
+            className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+            title="سحب حركات البصمة من ملف إكسل ورفعها للتايم شيت مباشرة"
+          >
+            <FileSpreadsheet size={14} className="text-emerald-600" />
+            <span>سحب بصمات من إكسل 📥</span>
+          </button>
+
           {/* Manual Refresh Button */}
           <button
             type="button"
@@ -4508,6 +4521,25 @@ export function HRScreen({
           </div>
         </div>
       )}
+
+      {/* Fingerprint Excel Import Modal */}
+      <FingerprintImportModal
+        isOpen={isFingerprintImportOpen}
+        onClose={() => setIsFingerprintImportOpen(false)}
+        settings={settings}
+        employees={employees}
+        existingLogs={effectiveFingerprintLogs}
+        activeBranchId={activeBranchId}
+        onImportComplete={(newLogs) => {
+          if (newLogs.length > 0) {
+            setLocalLogs(prev => [...newLogs, ...prev]);
+            if (setFingerprintLogs) {
+              setFingerprintLogs(prev => [...newLogs, ...prev]);
+            }
+            refreshFingerprintLogs();
+          }
+        }}
+      />
 
     </div>
   );
