@@ -1434,12 +1434,14 @@ export const DB = {
     const validSalonId = toSalonUUID(salonId || b.salonId || getSalonId());
     const validBranchId = toBranchUUID((b as any).branchId);
     try {
+      const allowedSources = ['pos', 'online', 'kiosk', 'app'];
+      const safeSource = allowedSources.includes(b.source) ? b.source : 'pos';
       const snap: any = {
         id: b.id, salon_id: validSalonId, branch_id: validBranchId,
         branch_code: (b as any).branchCode || null,
-        client_id: b.clientId || null, client_name: b.clientName, client_phone: b.phone,
+        client_id: b.clientId || null, client_name: b.clientName || 'عميل نقدي', client_phone: b.phone || b.clientPhone || '0000000000',
         customer_email: b.customerEmail || null, booking_code: b.bookingCode || null,
-        source: b.source || 'pos', services: b.services || [],
+        source: safeSource, services: b.services || [],
         total_amount: b.totalAmount ?? 0,
         date: b.date, time: b.time, status: b.status || 'confirmed',
         queue_number: b.queueNumber || null,

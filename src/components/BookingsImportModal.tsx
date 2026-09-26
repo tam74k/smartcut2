@@ -251,6 +251,12 @@ export function BookingsImportModal({
           row['رقم الهاتف'] || 
           row['الهاتف'] || 
           row['الجوال'] || 
+          row['رقم الجوال'] || 
+          row['رقم جوال العميل'] || 
+          row['الموبايل'] || 
+          row['موبايل'] || 
+          row['تليفون'] || 
+          row['رقم التليفون'] || 
           row['Phone'] || 
           row['Mobile'] || ''
         ).trim().replace(/\D/g, '');
@@ -525,9 +531,10 @@ export function BookingsImportModal({
       // تجهيز كائن الحجز
       const booking: Booking = {
         id: candidate.id.startsWith('B-') ? candidate.id : `B-${candidate.id}`,
+        salonId: settings.salonId,
         bookingCode: candidate.id,
         clientName: candidate.clientName,
-        phone: candidate.clientPhone,
+        phone: candidate.clientPhone || '0000000000',
         date: candidate.date,
         time: candidate.time,
         status: candidate.status,
@@ -536,12 +543,16 @@ export function BookingsImportModal({
         totalAmount: candidate.totalAmount,
         notes: candidate.notes,
         branchId: effectiveBranchId,
-        source: 'excel_import'
+        source: 'pos'
       };
 
-      newBookingsList.push(booking);
       try {
-        await DB.saveBooking(booking, settings.salonId);
+        const saved = await DB.saveBooking(booking, settings.salonId);
+        if (saved) {
+          newBookingsList.push(booking);
+        } else {
+          console.error('Failed to save imported booking to DB:', booking.id);
+        }
       } catch (e) {
         console.error('Error saving imported booking:', e);
       }
@@ -552,6 +563,8 @@ export function BookingsImportModal({
         if (!clientAlreadyAdded) {
           const newClient: Client = {
             id: 'cli-' + Math.random().toString(36).substr(2, 9),
+            salonId: settings.salonId,
+            branchId: effectiveBranchId,
             name: candidate.clientName,
             phone: candidate.clientPhone,
             isVip: false,
@@ -574,7 +587,11 @@ export function BookingsImportModal({
     setIsImporting(false);
     onImportComplete(newBookingsList, newClientsList, newTransactionsList);
     onClose();
-    alert(`🎉 تم استيراد ${newBookingsList.length} حجز بنجاح ومزامنتها مع قاعدة البيانات!`);
+    if (newBookingsList.length > 0) {
+      alert(`🎉 تم استيراد ${newBookingsList.length} حجز بنجاح ومزامنتها مع قاعدة البيانات!`);
+    } else {
+      alert('⚠️ لم يتم حفظ أي حجز. يرجى التحقق من صحة البيانات وسجلات الأخطاء.');
+    }
   };
 
   if (!isOpen) return null;
