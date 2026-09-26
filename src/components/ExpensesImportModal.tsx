@@ -51,8 +51,6 @@ export function ExpensesImportModal({
   const [candidates, setCandidates] = useState<ParsedExpenseCandidate[]>([]);
   const [searchFilter, setSearchFilter] = useState('');
 
-  if (!isOpen) return null;
-
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (!selectedFile) return;
@@ -251,6 +249,8 @@ export function ExpensesImportModal({
     onClose();
     alert(`🎉 تم استيراد ${newTransactions.length} قيد مصروف بنجاح وتحديث الحسابات والخزائن في قاعدة البيانات!`);
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/70 backdrop-blur-xs font-sans overflow-hidden" dir="rtl">

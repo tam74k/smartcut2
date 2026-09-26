@@ -66,8 +66,6 @@ export function InvoicesImportModal({
   const [expandedInvoiceId, setExpandedInvoiceId] = useState<string | null>(null);
   const [searchFilter, setSearchFilter] = useState('');
 
-  if (!isOpen) return null;
-
   // Handle file selection and multi-sheet reading
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
@@ -283,21 +281,58 @@ export function InvoicesImportModal({
             });
           });
         } else {
-          // في حال لم يكن هناك تفاصيل لهذه الفاتورة في الورقة الثانية، ننشئ بنداً افتراضياً
-          errors.push('لا توجد بنود تفصيلية في الورقة الثانية، تم إدراج بند افتراضي بمبلغ صفر.');
-          invoiceItems.push({
-            id: `${normId}-1`,
-            type: 'service',
-            serviceName: 'خدمات سابقة عامة',
-            technicianName: 'فني الصالون',
-            quantity: 1,
-            price: 0
-          });
+          // في حال لم يكن هناك تفاصيل لهذه الفاتورة في الورقة الثانية، نفحص هل الإجمالي محدد في ورقة الرأس
+          const rawHeaderTotal = Number(
+            hRow['إجمالي الفاتورة'] || 
+            hRow['إجمالي الفاتورة (ر.س)'] || 
+            hRow['المبلغ الإجمالي'] || 
+            hRow['المجموع'] || 
+            hRow['المبلغ'] || 
+            hRow['Total'] || 
+            hRow['Total Amount'] || 
+            hRow['Invoice Total'] || 0
+          );
+
+          if (rawHeaderTotal > 0) {
+            invoiceItems.push({
+              id: `${normId}-1`,
+              type: 'service',
+              serviceName: 'خدمات سابقة عامة',
+              technicianName: 'فني الصالون',
+              quantity: 1,
+              price: Math.max(0, rawHeaderTotal + discount)
+            });
+          } else {
+            errors.push('لا توجد بنود تفصيلية في الورقة الثانية، تم إدراج بند افتراضي بمبلغ صفر.');
+            invoiceItems.push({
+              id: `${normId}-1`,
+              type: 'service',
+              serviceName: 'خدمات سابقة عامة',
+              technicianName: 'فني الصالون',
+              quantity: 1,
+              price: 0
+            });
+          }
         }
 
         // الحسابات المالية التلقائية
-        const subtotal = invoiceItems.reduce((sum, it) => sum + (it.price * (it.quantity || 1)), 0);
-        const total = Math.max(0, subtotal - discount);
+        let subtotal = invoiceItems.reduce((sum, it) => sum + (it.price * (it.quantity || 1)), 0);
+        const rawHeaderTotal = Number(
+          hRow['إجمالي الفاتورة'] || 
+          hRow['إجمالي الفاتورة (ر.س)'] || 
+          hRow['المبلغ الإجمالي'] || 
+          hRow['المجموع'] || 
+          hRow['المبلغ'] || 
+          hRow['Total'] || 0
+        );
+
+        if (subtotal === 0 && rawHeaderTotal > 0) {
+          subtotal = rawHeaderTotal + discount;
+        }
+
+        const total = rawHeaderTotal > 0 && Math.abs(rawHeaderTotal - Math.max(0, subtotal - discount)) < 0.01 
+          ? rawHeaderTotal 
+          : Math.max(0, subtotal - discount);
         const vatRate = settings.vatEnabled ? (settings.vatRate || 15) : 0;
         const vatAmount = settings.vatEnabled ? (total - (total / (1 + vatRate / 100))) : 0;
 
@@ -453,6 +488,8 @@ export function InvoicesImportModal({
       setIsImporting(false);
     }
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-3 sm:p-6 overflow-y-auto">

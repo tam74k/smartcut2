@@ -51,8 +51,6 @@ export function FingerprintImportModal({
   const [skipDuplicates, setSkipDuplicates] = useState(true);
   const [searchFilter, setSearchFilter] = useState('');
 
-  if (!isOpen) return null;
-
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (!selectedFile) return;
@@ -270,6 +268,8 @@ export function FingerprintImportModal({
     onClose();
     alert(`🎉 تم استيراد وتحديث ${newLogs.length} حركة بصمة في سجل الدوام والتايم شيت بنجاح!`);
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/70 backdrop-blur-xs font-sans overflow-hidden" dir="rtl">

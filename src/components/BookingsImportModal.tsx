@@ -64,8 +64,6 @@ export function BookingsImportModal({
   const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null);
   const [searchFilter, setSearchFilter] = useState('');
 
-  if (!isOpen) return null;
-
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (!selectedFile) return;
@@ -249,6 +247,31 @@ export function BookingsImportModal({
 
           totalAmt += price;
         });
+
+        // قراءة إجمالي الحجز من ورقة رأس الحجز إن وجد
+        const rawHeaderTotal = Math.max(0, Number(
+          row['إجمالي مبلغ الحجز'] || 
+          row['إجمالي مبلغ الحجز (ر.س)'] || 
+          row['إجمالي الحجز'] || 
+          row['المبلغ الإجمالي'] || 
+          row['المجموع'] || 
+          row['Total'] || 
+          row['Total Amount'] || 0
+        ) || 0);
+
+        if (bookingServices.length === 0 && rawHeaderTotal > 0) {
+          bookingServices.push({
+            id: 'BS-' + Math.random().toString(36).substr(2, 9),
+            serviceId: 'SRV-GEN',
+            serviceName: 'خدمات حجز سابقة',
+            price: rawHeaderTotal,
+            technicianId: '',
+            technicianName: 'غير محدد'
+          });
+          totalAmt = rawHeaderTotal;
+        } else if (rawHeaderTotal > 0 && totalAmt === 0) {
+          totalAmt = rawHeaderTotal;
+        }
 
         // التحقق من الأخطاء
         const validationErrors: string[] = [];
@@ -441,6 +464,8 @@ export function BookingsImportModal({
     onClose();
     alert(`🎉 تم استيراد ${newBookingsList.length} حجز بنجاح ومزامنتها مع قاعدة البيانات!`);
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/70 backdrop-blur-xs font-sans overflow-hidden" dir="rtl">
