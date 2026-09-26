@@ -30,6 +30,18 @@ interface ParsedClientCandidate {
   validationErrors: string[];
 }
 
+function safeParseNumber(val: any): number {
+  if (val === undefined || val === null || val === '') return 0;
+  if (typeof val === 'number') return isNaN(val) ? 0 : val;
+  const str = String(val).replace(/,/g, '').trim();
+  const match = str.match(/-?\d+(\.\d+)?/);
+  if (match) {
+    const parsed = parseFloat(match[0]);
+    return isNaN(parsed) ? 0 : parsed;
+  }
+  return 0;
+}
+
 export function ClientsImportModal({
   isOpen,
   onClose,
@@ -116,20 +128,20 @@ export function ClientsImportModal({
         const isVip = vipRaw === 'نعم' || vipRaw === 'yes' || vipRaw === 'true' || vipRaw === '1';
 
         // نقاط الولاء
-        const loyaltyPoints = Math.max(0, Number(
+        const loyaltyPoints = Math.max(0, safeParseNumber(
           row['رصيد نقاط الولاء'] || 
           row['نقاط الولاء'] || 
           row['النقاط'] || 
           row['Points'] || 0
-        ) || 0);
+        ));
 
         // كاش باك
-        const cashback = Math.max(0, Number(
+        const cashback = Math.max(0, safeParseNumber(
           row['رصيد كاش باك (ر.س)'] || 
           row['رصيد كاش باك'] || 
           row['كاش باك'] || 
           row['Cashback'] || 0
-        ) || 0);
+        ));
 
         // ملاحظات وتفضيلات
         const notes = String(

@@ -31,6 +31,18 @@ interface ParsedExpenseCandidate {
   validationErrors: string[];
 }
 
+function safeParseNumber(val: any): number {
+  if (val === undefined || val === null || val === '') return 0;
+  if (typeof val === 'number') return isNaN(val) ? 0 : val;
+  const str = String(val).replace(/,/g, '').trim();
+  const match = str.match(/-?\d+(\.\d+)?/);
+  if (match) {
+    const parsed = parseFloat(match[0]);
+    return isNaN(parsed) ? 0 : parsed;
+  }
+  return 0;
+}
+
 export function ExpensesImportModal({
   isOpen,
   onClose,
@@ -86,11 +98,15 @@ export function ExpensesImportModal({
         }
 
         // المبلغ
-        const amountRaw = Math.max(0, Number(
+        const amountRaw = Math.max(0, safeParseNumber(
           row['المبلغ (ر.س)'] || 
           row['المبلغ'] || 
-          row['Amount'] || 0
-        ) || 0);
+          row['قيمة المصروف (ر.س)'] || 
+          row['قيمة المصروف'] || 
+          row['قيمة المصروف (${settings.currency})'] || 
+          row['Amount'] || 
+          row['Total'] || 0
+        ));
 
         // بند الصرف
         const categoryRaw = String(

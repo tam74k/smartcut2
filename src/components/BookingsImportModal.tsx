@@ -39,6 +39,125 @@ interface ParsedBookingCandidate {
   validationErrors: string[];
 }
 
+function safeParseNumber(val: any): number {
+  if (val === undefined || val === null || val === '') return 0;
+  if (typeof val === 'number') return isNaN(val) ? 0 : val;
+  const str = String(val).replace(/,/g, '').trim();
+  const match = str.match(/-?\d+(\.\d+)?/);
+  if (match) {
+    const parsed = parseFloat(match[0]);
+    return isNaN(parsed) ? 0 : parsed;
+  }
+  return 0;
+}
+
+function extractBookingItemPrice(dRow: any): number {
+  if (!dRow || typeof dRow !== 'object') return 0;
+
+  const exactKeys = [
+    'سعر الخدمة', 'سعر الخدمه', 'سعر الخدمة (ر.س)', 'سعر الخدمه (ر.س)',
+    'السعر', 'السعر (ر.س)', 'سعر',
+    'المبلغ', 'القيمة', 'القيمه',
+    'Price', 'price', 'Amount', 'amount', 'Service Price'
+  ];
+
+  for (const k of exactKeys) {
+    if (dRow[k] !== undefined && dRow[k] !== null && dRow[k] !== '') {
+      const num = safeParseNumber(dRow[k]);
+      if (num > 0) return num;
+    }
+  }
+
+  for (const key of Object.keys(dRow)) {
+    const val = dRow[key];
+    if (val === undefined || val === null || val === '') continue;
+
+    const cleanKey = key.trim().toLowerCase()
+      .replace(/[إأآا]/g, 'ا')
+      .replace(/[ةه]/g, 'ه')
+      .replace(/[\(\)\[\]\/\-\_]/g, ' ')
+      .replace(/\s+/g, ' ');
+
+    if (cleanKey.includes('خصم') || cleanKey.includes('عربون') || cleanKey.includes('كمي') || cleanKey.includes('عدد')) continue;
+
+    if (
+      cleanKey.includes('سعر الخدمه') ||
+      cleanKey.includes('سعر') ||
+      cleanKey === 'السعر' ||
+      cleanKey.includes('price') ||
+      cleanKey === 'amount'
+    ) {
+      const num = safeParseNumber(val);
+      if (num > 0) return num;
+    }
+  }
+
+  return 0;
+}
+
+function extractBookingHeaderTotal(hRow: any): number {
+  if (!hRow || typeof hRow !== 'object') return 0;
+
+  const exactKeys = [
+    'إجمالي مبلغ الحجز', 'اجمالي مبلغ الحجز', 'إجمالي مبلغ الحجز (ر.س)', 'اجمالي مبلغ الحجز (ر.س)',
+    'إجمالي الحجز', 'اجمالي الحجز', 'إجمالي الحجز (ر.س)', 'اجمالي الحجز (ر.س)',
+    'المبلغ الإجمالي', 'المبلغ الاجمالي', 'المبلغ الإجمالي (ر.س)', 'المبلغ الاجمالي (ر.س)',
+    'إجمالي المبلغ', 'اجمالي المبلغ', 'إجمالي المبلغ (ر.س)', 'اجمالي المبلغ (ر.س)',
+    'المبلغ', 'المبلغ (ر.س)', 'المجموع', 'المجموع (ر.س)', 'الإجمالي', 'الاجمالي',
+    'Total', 'Total Amount', 'Booking Total', 'Grand Total', 'Amount'
+  ];
+
+  for (const k of exactKeys) {
+    if (hRow[k] !== undefined && hRow[k] !== null && hRow[k] !== '') {
+      const num = safeParseNumber(hRow[k]);
+      if (num > 0) return num;
+    }
+  }
+
+  for (const key of Object.keys(hRow)) {
+    const val = hRow[key];
+    if (val === undefined || val === null || val === '') continue;
+
+    const cleanKey = key.trim().toLowerCase()
+      .replace(/[إأآا]/g, 'ا')
+      .replace(/[ةه]/g, 'ه')
+      .replace(/[\(\)\[\]\/\-\_]/g, ' ')
+      .replace(/\s+/g, ' ');
+
+    if (
+      cleanKey.includes('خصم') || 
+      cleanKey.includes('عربون') || 
+      cleanKey.includes('هاتف') || 
+      cleanKey.includes('جوال') || 
+      cleanKey.includes('تاريخ') || 
+      cleanKey.includes('وقت') || 
+      cleanKey.includes('رقم')
+    ) {
+      continue;
+    }
+
+    if (
+      cleanKey.includes('اجمالي مبلغ الحجز') || 
+      cleanKey.includes('اجمالي الحجز') || 
+      cleanKey.includes('المبلغ الاجمالي') || 
+      cleanKey.includes('اجمالي المبلغ') || 
+      cleanKey.includes('اجمالي') || 
+      cleanKey.includes('مجموع') || 
+      cleanKey === 'مبلغ' || 
+      cleanKey === 'المبلغ' || 
+      cleanKey === 'total' || 
+      cleanKey === 'booking total' || 
+      cleanKey === 'total amount' || 
+      cleanKey === 'amount'
+    ) {
+      const num = safeParseNumber(val);
+      if (num > 0) return num;
+    }
+  }
+
+  return 0;
+}
+
 export function BookingsImportModal({
   isOpen,
   onClose,
@@ -180,13 +299,13 @@ export function BookingsImportModal({
         }
 
         // العربون والخزينة
-        const advAmt = Math.max(0, Number(
+        const advAmt = Math.max(0, safeParseNumber(
           row['قيمة العربون'] || 
           row['العربون'] || 
           row['الدفعة المقدمة'] || 
           row['Advance'] || 
           row['Deposit'] || 0
-        ) || 0);
+        ));
 
         const advTreasury = String(
           row['الخزينة المستلمة للعربون'] || 
@@ -211,11 +330,7 @@ export function BookingsImportModal({
             `خدمة ${dIdx + 1}`
           ).trim();
 
-          const price = Math.max(0, Number(
-            dRow['سعر الخدمة'] || 
-            dRow['السعر'] || 
-            dRow['Price'] || 0
-          ) || 0);
+          const price = extractBookingItemPrice(dRow);
 
           const techName = String(
             dRow['اسم الفني / الموظف'] || 
@@ -249,28 +364,25 @@ export function BookingsImportModal({
         });
 
         // قراءة إجمالي الحجز من ورقة رأس الحجز إن وجد
-        const rawHeaderTotal = Math.max(0, Number(
-          row['إجمالي مبلغ الحجز'] || 
-          row['إجمالي مبلغ الحجز (ر.س)'] || 
-          row['إجمالي الحجز'] || 
-          row['المبلغ الإجمالي'] || 
-          row['المجموع'] || 
-          row['Total'] || 
-          row['Total Amount'] || 0
-        ) || 0);
+        const rawHeaderTotal = extractBookingHeaderTotal(row);
 
-        if (bookingServices.length === 0 && rawHeaderTotal > 0) {
-          bookingServices.push({
-            id: 'BS-' + Math.random().toString(36).substr(2, 9),
-            serviceId: 'SRV-GEN',
-            serviceName: 'خدمات حجز سابقة',
-            price: rawHeaderTotal,
-            technicianId: '',
-            technicianName: 'غير محدد'
-          });
-          totalAmt = rawHeaderTotal;
-        } else if (rawHeaderTotal > 0 && totalAmt === 0) {
-          totalAmt = rawHeaderTotal;
+        if (rawHeaderTotal > 0) {
+          if (bookingServices.length === 0) {
+            bookingServices.push({
+              id: 'BS-' + Math.random().toString(36).substr(2, 9),
+              serviceId: 'SRV-GEN',
+              serviceName: 'خدمات حجز سابقة',
+              price: rawHeaderTotal,
+              technicianId: '',
+              technicianName: 'غير محدد'
+            });
+            totalAmt = rawHeaderTotal;
+          } else if (totalAmt === 0) {
+            bookingServices[0].price = rawHeaderTotal;
+            totalAmt = rawHeaderTotal;
+          } else {
+            totalAmt = rawHeaderTotal;
+          }
         }
 
         // التحقق من الأخطاء

@@ -40,6 +40,137 @@ interface ParsedInvoiceCandidate {
   validationErrors: string[];
 }
 
+function safeParseNumber(val: any): number {
+  if (val === undefined || val === null || val === '') return 0;
+  if (typeof val === 'number') return isNaN(val) ? 0 : val;
+  const str = String(val).replace(/,/g, '').trim();
+  const match = str.match(/-?\d+(\.\d+)?/);
+  if (match) {
+    const parsed = parseFloat(match[0]);
+    return isNaN(parsed) ? 0 : parsed;
+  }
+  return 0;
+}
+
+function extractItemUnitPrice(dRow: any): number {
+  if (!dRow || typeof dRow !== 'object') return 0;
+
+  const exactKeys = [
+    'سعر الوحدة', 'سعر الوحده', 'سعر الوحدة (ر.س)', 'سعر الوحده (ر.س)',
+    'سعر الخدمة', 'سعر الخدمه', 'سعر الخدمة (ر.س)', 'سعر الخدمه (ر.س)',
+    'سعر المنتج', 'سعر المنتج (ر.س)',
+    'السعر', 'السعر (ر.س)', 'سعر',
+    'المبلغ', 'القيمة', 'القيمه',
+    'Unit Price', 'Price', 'UnitPrice', 'price', 'amount', 'Amount'
+  ];
+
+  for (const k of exactKeys) {
+    if (dRow[k] !== undefined && dRow[k] !== null && dRow[k] !== '') {
+      const num = safeParseNumber(dRow[k]);
+      if (num > 0) return num;
+    }
+  }
+
+  for (const key of Object.keys(dRow)) {
+    const val = dRow[key];
+    if (val === undefined || val === null || val === '') continue;
+
+    const cleanKey = key.trim().toLowerCase()
+      .replace(/[إأآا]/g, 'ا')
+      .replace(/[ةه]/g, 'ه')
+      .replace(/[\(\)\[\]\/\-\_]/g, ' ')
+      .replace(/\s+/g, ' ');
+
+    if (cleanKey.includes('خصم') || cleanKey.includes('كمي') || cleanKey.includes('عدد')) continue;
+
+    if (
+      cleanKey.includes('سعر الوحده') ||
+      cleanKey.includes('سعر الخدمه') ||
+      cleanKey.includes('سعر المنتج') ||
+      cleanKey.includes('سعر') ||
+      cleanKey === 'السعر' ||
+      cleanKey.includes('price') ||
+      cleanKey === 'amount'
+    ) {
+      const num = safeParseNumber(val);
+      if (num > 0) return num;
+    }
+  }
+
+  return 0;
+}
+
+function extractInvoiceHeaderTotal(hRow: any): number {
+  if (!hRow || typeof hRow !== 'object') return 0;
+
+  const exactKeys = [
+    'إجمالي الفاتورة', 'اجمالي الفاتورة', 'اجمالي الفاتوره', 'إجمالي الفاتوره',
+    'إجمالي الفاتورة (ر.س)', 'اجمالي الفاتورة (ر.س)', 'اجمالي الفاتوره (ر.س)', 'إجمالي الفاتوره (ر.س)',
+    'إجمالي المبلغ', 'اجمالي المبلغ', 'إجمالي المبلغ (ر.س)', 'اجمالي المبلغ (ر.س)',
+    'المبلغ الإجمالي', 'المبلغ الاجمالي', 'المبلغ الإجمالي (ر.س)', 'المبلغ الاجمالي (ر.س)',
+    'صافي الفاتورة', 'صافي الفاتوره', 'صافي الفاتورة (ر.س)', 'صافي الفاتوره (ر.س)',
+    'قيمة الفاتورة', 'قيمة الفاتوره', 'قيمة الفاتورة (ر.س)', 'قيمة الفاتوره (ر.س)',
+    'المبلغ', 'المبلغ (ر.س)', 'الإجمالي', 'الاجمالي', 'المجموع', 'المجموع (ر.س)',
+    'Total', 'Total Amount', 'Invoice Total', 'Grand Total', 'Net Total', 'Amount'
+  ];
+
+  for (const k of exactKeys) {
+    if (hRow[k] !== undefined && hRow[k] !== null && hRow[k] !== '') {
+      const num = safeParseNumber(hRow[k]);
+      if (num > 0) return num;
+    }
+  }
+
+  for (const key of Object.keys(hRow)) {
+    const val = hRow[key];
+    if (val === undefined || val === null || val === '') continue;
+
+    const cleanKey = key.trim().toLowerCase()
+      .replace(/[إأآا]/g, 'ا')
+      .replace(/[ةه]/g, 'ه')
+      .replace(/[\(\)\[\]\/\-\_]/g, ' ')
+      .replace(/\s+/g, ' ');
+
+    if (
+      cleanKey.includes('خصم') || 
+      cleanKey.includes('عربون') || 
+      cleanKey.includes('هاتف') || 
+      cleanKey.includes('جوال') || 
+      cleanKey.includes('تاريخ') || 
+      cleanKey.includes('وقت') || 
+      cleanKey.includes('رقم') || 
+      cleanKey.includes('ضريب') ||
+      cleanKey.includes('كمي') ||
+      cleanKey.includes('عدد')
+    ) {
+      continue;
+    }
+
+    if (
+      cleanKey.includes('اجمالي الفاتوره') || 
+      cleanKey.includes('اجمالي المبلغ') || 
+      cleanKey.includes('المبلغ الاجمالي') || 
+      cleanKey.includes('صافي الفاتوره') || 
+      cleanKey.includes('قيمه الفاتوره') || 
+      cleanKey.includes('اجمالي') || 
+      cleanKey.includes('مجموع') || 
+      cleanKey === 'مبلغ' || 
+      cleanKey === 'المبلغ' || 
+      cleanKey === 'total' || 
+      cleanKey === 'invoice total' || 
+      cleanKey === 'total amount' || 
+      cleanKey === 'grand total' || 
+      cleanKey === 'net total' || 
+      cleanKey === 'amount'
+    ) {
+      const num = safeParseNumber(val);
+      if (num > 0) return num;
+    }
+  }
+
+  return 0;
+}
+
 export function InvoicesImportModal({
   isOpen,
   onClose,
@@ -192,8 +323,8 @@ export function InvoicesImportModal({
         }
 
         // الخصم
-        const rawDiscount = Number(hRow['قيمة الخصم'] || hRow['الخصم'] || hRow['Discount'] || hRow['discount'] || 0);
-        const discount = isNaN(rawDiscount) || rawDiscount < 0 ? 0 : rawDiscount;
+        const rawDiscount = safeParseNumber(hRow['قيمة الخصم'] || hRow['الخصم'] || hRow['Discount'] || hRow['discount'] || 0);
+        const discount = Math.max(0, rawDiscount);
 
         // الحالة
         const rawStatus = String(hRow['حالة الفاتورة'] || hRow['الحالة'] || hRow['Status'] || hRow['status'] || '').trim().toLowerCase();
@@ -229,9 +360,9 @@ export function InvoicesImportModal({
             const isProduct = rawType.includes('منتج') || rawType.includes('product') || products.some(p => p.name.trim().toLowerCase() === rawItemName.toLowerCase());
             const itemType: 'service' | 'product' = isProduct ? 'product' : 'service';
 
-            const qty = Math.max(1, Number(dRow['الكمية'] || dRow['العدد'] || dRow['Quantity'] || dRow['Qty'] || 1) || 1);
-            const unitPrice = Math.max(0, Number(dRow['سعر الوحدة'] || dRow['السعر'] || dRow['Price'] || dRow['Unit Price'] || 0) || 0);
-            const lineDiscount = Math.max(0, Number(dRow['خصم البند'] || dRow['خصم'] || dRow['Line Discount'] || 0) || 0);
+            const qty = Math.max(1, safeParseNumber(dRow['الكمية'] || dRow['العدد'] || dRow['Quantity'] || dRow['Qty'] || 1) || 1);
+            const unitPrice = extractItemUnitPrice(dRow);
+            const lineDiscount = Math.max(0, safeParseNumber(dRow['خصم البند'] || dRow['خصم'] || dRow['Line Discount'] || 0) || 0);
             const effectivePrice = Math.max(0, unitPrice - (lineDiscount / qty));
 
             // مطابقة الفني / الموظف
@@ -282,16 +413,7 @@ export function InvoicesImportModal({
           });
         } else {
           // في حال لم يكن هناك تفاصيل لهذه الفاتورة في الورقة الثانية، نفحص هل الإجمالي محدد في ورقة الرأس
-          const rawHeaderTotal = Number(
-            hRow['إجمالي الفاتورة'] || 
-            hRow['إجمالي الفاتورة (ر.س)'] || 
-            hRow['المبلغ الإجمالي'] || 
-            hRow['المجموع'] || 
-            hRow['المبلغ'] || 
-            hRow['Total'] || 
-            hRow['Total Amount'] || 
-            hRow['Invoice Total'] || 0
-          );
+          const rawHeaderTotal = extractInvoiceHeaderTotal(hRow);
 
           if (rawHeaderTotal > 0) {
             invoiceItems.push({
@@ -317,22 +439,32 @@ export function InvoicesImportModal({
 
         // الحسابات المالية التلقائية
         let subtotal = invoiceItems.reduce((sum, it) => sum + (it.price * (it.quantity || 1)), 0);
-        const rawHeaderTotal = Number(
-          hRow['إجمالي الفاتورة'] || 
-          hRow['إجمالي الفاتورة (ر.س)'] || 
-          hRow['المبلغ الإجمالي'] || 
-          hRow['المجموع'] || 
-          hRow['المبلغ'] || 
-          hRow['Total'] || 0
-        );
+        const rawHeaderTotal = extractInvoiceHeaderTotal(hRow);
 
-        if (subtotal === 0 && rawHeaderTotal > 0) {
-          subtotal = rawHeaderTotal + discount;
+        if (rawHeaderTotal > 0) {
+          if (invoiceItems.length === 0) {
+            invoiceItems.push({
+              id: `${normId}-1`,
+              type: 'service',
+              serviceName: 'خدمات سابقة عامة',
+              technicianName: 'فني الصالون',
+              quantity: 1,
+              price: Math.max(0, rawHeaderTotal + discount)
+            });
+            subtotal = Math.max(0, rawHeaderTotal + discount);
+          } else if (subtotal === 0) {
+            invoiceItems[0].price = Math.max(0, rawHeaderTotal + discount);
+            subtotal = Math.max(0, rawHeaderTotal + discount);
+          }
         }
 
-        const total = rawHeaderTotal > 0 && Math.abs(rawHeaderTotal - Math.max(0, subtotal - discount)) < 0.01 
-          ? rawHeaderTotal 
-          : Math.max(0, subtotal - discount);
+        const total = rawHeaderTotal > 0 ? rawHeaderTotal : Math.max(0, subtotal - discount);
+        if (subtotal === 0 && total > 0) {
+          subtotal = total + discount;
+          if (invoiceItems.length > 0 && invoiceItems[0].price === 0) {
+            invoiceItems[0].price = subtotal;
+          }
+        }
         const vatRate = settings.vatEnabled ? (settings.vatRate || 15) : 0;
         const vatAmount = settings.vatEnabled ? (total - (total / (1 + vatRate / 100))) : 0;
 
