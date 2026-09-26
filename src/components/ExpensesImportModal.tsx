@@ -43,6 +43,63 @@ function safeParseNumber(val: any): number {
   return 0;
 }
 
+function extractExpenseAmount(row: any): number {
+  if (!row || typeof row !== 'object') return 0;
+
+  const exactKeys = [
+    'المبلغ', 'المبلغ (ر.س)', 'المبلغ (ج.م)', 'المبلغ ($)',
+    'قيمة المصروف', 'قيمة المصروف (ر.س)', 'قيمة المصروف (ج.م)', 'قيمة المصروف ($)',
+    'Amount', 'Total', 'Expense Amount', 'Cost', 'السعر', 'السعر (ر.س)', 'السعر (ج.م)'
+  ];
+
+  for (const k of exactKeys) {
+    if (row[k] !== undefined && row[k] !== null && row[k] !== '') {
+      const num = safeParseNumber(row[k]);
+      if (num > 0) return num;
+    }
+  }
+
+  for (const key of Object.keys(row)) {
+    const val = row[key];
+    if (val === undefined || val === null || val === '') continue;
+
+    const cleanKey = key.trim().toLowerCase()
+      .replace(/[إأآا]/g, 'ا')
+      .replace(/[ةه]/g, 'ه')
+      .replace(/[\(\)\[\]\/\-\_]/g, ' ')
+      .replace(/\s+/g, ' ');
+
+    if (
+      cleanKey.includes('تاريخ') || 
+      cleanKey.includes('وقت') || 
+      cleanKey.includes('رقم') || 
+      cleanKey.includes('مرجع') || 
+      cleanKey.includes('بيان') || 
+      cleanKey.includes('وصف') || 
+      cleanKey.includes('خزين') || 
+      cleanKey.includes('بند') || 
+      cleanKey.includes('تصنيف')
+    ) {
+      continue;
+    }
+
+    if (
+      cleanKey.includes('قيمه المصروف') ||
+      cleanKey.includes('مبلغ المصروف') ||
+      cleanKey.includes('مبلغ') ||
+      cleanKey.includes('المبلغ') ||
+      cleanKey === 'amount' ||
+      cleanKey === 'total' ||
+      cleanKey === 'cost'
+    ) {
+      const num = safeParseNumber(val);
+      if (num > 0) return num;
+    }
+  }
+
+  return 0;
+}
+
 export function ExpensesImportModal({
   isOpen,
   onClose,
@@ -98,15 +155,7 @@ export function ExpensesImportModal({
         }
 
         // المبلغ
-        const amountRaw = Math.max(0, safeParseNumber(
-          row['المبلغ (ر.س)'] || 
-          row['المبلغ'] || 
-          row['قيمة المصروف (ر.س)'] || 
-          row['قيمة المصروف'] || 
-          row['قيمة المصروف (${settings.currency})'] || 
-          row['Amount'] || 
-          row['Total'] || 0
-        ));
+        const amountRaw = extractExpenseAmount(row);
 
         // بند الصرف
         const categoryRaw = String(

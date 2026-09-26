@@ -136,12 +136,26 @@ export function ClientsImportModal({
         ));
 
         // كاش باك
-        const cashback = Math.max(0, safeParseNumber(
-          row['رصيد كاش باك (ر.س)'] || 
-          row['رصيد كاش باك'] || 
-          row['كاش باك'] || 
-          row['Cashback'] || 0
-        ));
+        let cashbackRaw = 0;
+        const exactCashbackKeys = [
+          'رصيد كاش باك', 'رصيد كاش باك (ر.س)', 'رصيد كاش باك (ج.م)', 'رصيد كاش باك ($)',
+          'كاش باك', 'كاش باك (ر.س)', 'كاش باك (ج.م)', 'Cashback', 'cashback'
+        ];
+        for (const k of exactCashbackKeys) {
+          if (row[k] !== undefined && row[k] !== null && row[k] !== '') {
+            cashbackRaw = safeParseNumber(row[k]);
+            if (cashbackRaw > 0) break;
+          }
+        }
+        if (cashbackRaw === 0) {
+          for (const k of Object.keys(row)) {
+            if (k.includes('كاش باك') || k.toLowerCase().includes('cashback')) {
+              cashbackRaw = safeParseNumber(row[k]);
+              if (cashbackRaw > 0) break;
+            }
+          }
+        }
+        const cashback = Math.max(0, cashbackRaw);
 
         // ملاحظات وتفضيلات
         const notes = String(

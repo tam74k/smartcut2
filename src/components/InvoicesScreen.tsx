@@ -8,6 +8,21 @@ import {
 import { DB } from '../services/db';
 import { InvoicesImportModal } from './InvoicesImportModal';
 
+export const getEffectiveInvoiceTotal = (inv: Invoice | any): number => {
+  if (!inv) return 0;
+  if (inv.total !== undefined && inv.total !== null && Number(inv.total) > 0) {
+    return Number(inv.total);
+  }
+  if (inv.subtotal !== undefined && inv.subtotal !== null && Number(inv.subtotal) > 0) {
+    return Math.max(0, Number(inv.subtotal) - Number(inv.discount || 0));
+  }
+  if (Array.isArray(inv.items) && inv.items.length > 0) {
+    const sum = inv.items.reduce((acc: number, it: any) => acc + (Number(it.price || 0) * (Number(it.quantity) || 1)), 0);
+    if (sum > 0) return Math.max(0, sum - Number(inv.discount || 0));
+  }
+  return Number(inv.total || 0);
+};
+
 export function InvoicesScreen({ 
   settings, 
   invoices, 
@@ -45,6 +60,7 @@ export function InvoicesScreen({
   const [searchQuery, setSearchQuery] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [branchFilter, setBranchFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'cancelled' | 'unpaid'>('all');
   const [paymentFilter, setPaymentFilter] = useState<string>('all');
   const [showFilters, setShowFilters] = useState(false);
@@ -289,11 +305,14 @@ export function InvoicesScreen({
   const isMainBranch = !activeBranchId || activeBranchId === mainBranchId || activeBranchId === 'b-main';
 
   const matchesActiveBranch = (itemBranchId?: string) => {
+    if (branchFilter !== 'all') {
+      return itemBranchId === branchFilter;
+    }
     if (!itemBranchId) return true;
     if (!branches || branches.length <= 1) return true;
     if (itemBranchId === activeBranchId) return true;
     if (isMainBranch) return true;
-    return false;
+    return true;
   };
 
   const filteredInvoices = useMemo(() => {
@@ -302,7 +321,7 @@ export function InvoicesScreen({
       if (!matchesActiveBranch(inv.branchId)) return false;
 
       // Date filter
-      const invDateStr = inv.date.split('T')[0];
+      const invDateStr = (inv.date || '').split('T')[0];
       if (dateFrom && invDateStr < dateFrom) return false;
       if (dateTo && invDateStr > dateTo) return false;
       
@@ -317,14 +336,14 @@ export function InvoicesScreen({
       // Search
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
-        return inv.id.toLowerCase().includes(q) || 
-               inv.clientName.toLowerCase().includes(q) || 
+        return (inv.id || '').toLowerCase().includes(q) || 
+               (inv.clientName || '').toLowerCase().includes(q) || 
                (inv.clientPhone && inv.clientPhone.includes(q));
       }
       
       return true;
     }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [invoices, dateFrom, dateTo, statusFilter, paymentFilter, searchQuery, activeBranchId, isMainBranch]);
+  }, [invoices, dateFrom, dateTo, statusFilter, paymentFilter, searchQuery, activeBranchId, isMainBranch, branchFilter]);
 
   return (
     <div className="p-8 w-full h-full flex flex-col bg-slate-50">
@@ -364,7 +383,22 @@ export function InvoicesScreen({
       </div>
 
       {showFilters && (
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mb-6 grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className={`bg-white p-4 rounded-xl border border-slate-200 shadow-sm mb-6 grid grid-cols-1 ${branches && branches.length > 1 ? 'md:grid-cols-5' : 'md:grid-cols-4'} gap-4`}>
+          {branches && branches.length > 1 && (
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">الفرع</label>
+              <select 
+                value={branchFilter} 
+                onChange={e => setBranchFilter(e.target.value)} 
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary font-medium"
+              >
+                <option value="all">جميع الفروع ({invoices.length})</option>
+                {branches.map(b => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">من تاريخ</label>
             <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary" />
@@ -446,7 +480,7 @@ export function InvoicesScreen({
                   <td className="px-6 py-4 text-center font-bold text-red-500">{Number(inv.discount || 0) > 0 ? Number(inv.discount).toFixed(2) : '-'}</td>
                   <td className="px-6 py-4 text-center font-bold text-blue-600">{Number(inv.cashbackUsed || 0) > 0 ? Number(inv.cashbackUsed).toFixed(2) : '-'}</td>
                   <td className="px-6 py-4 font-bold text-slate-800">
-                    <div>{Number(inv.total || 0).toFixed(2)} {settings.currency}</div>
+                    <div>{getEffectiveInvoiceTotal(inv).toFixed(2)} {settings.currency}</div>
                     {inv.advanceDeduction !== undefined && Number(inv.advanceDeduction || 0) > 0 && (
                       <div className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 inline-block mt-0.5">
                         (عربون: {Number(inv.advanceDeduction || 0).toFixed(2)})
@@ -620,7 +654,7 @@ export function InvoicesScreen({
                           )}
                           <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '15px', marginTop: '5px', paddingTop: '5px', borderTop: '1px solid #000' }}>
                             <span>الصافي المدفوع اليوم:</span>
-                            <span>{inv.total.toFixed(2)} {settings.currency}</span>
+                            <span>{getEffectiveInvoiceTotal(inv).toFixed(2)} {settings.currency}</span>
                           </div>
                           {inv.paymentMethods && inv.paymentMethods.length > 0 && (
                             <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed #ccc', fontSize: '12px' }}>

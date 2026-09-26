@@ -596,19 +596,26 @@ export default function App() {
 
           DB.fetchInvoices(sId).then(dbInvs => {
             if (dbInvs && dbInvs.length > 0) {
-              setInvoices(dbInvs.map((inv: any) => ({
-                ...inv,
-                vatAmount: inv.vat,
-                cashbackUsed: inv.cashbackUsed ?? 0,
-                paymentMethods: inv.paymentMethods || [],
-                isRemedyInvoice: inv.isRemedy || false,
-                remedyReason: inv.remedyNotes || '',
-                relatedComplaintId: inv.relatedComplaintId || '',
-                originalInvoiceId: inv.originalInvoiceId || '',
-                zatcaQr: inv.zatcaQr || '',
-                zatcaHash: inv.zatcaHash || '',
-                etaSubmissionUuid: inv.etaSubmissionUuid || '',
-              })));
+              setInvoices(dbInvs.map((inv: any) => {
+                const totalNum = Number(inv.total ?? inv.totalAmount ?? inv.netAmount ?? inv.subtotal ?? 0);
+                const subtotalNum = Number(inv.subtotal ?? inv.total ?? totalNum);
+                return {
+                  ...inv,
+                  total: totalNum,
+                  subtotal: subtotalNum,
+                  paid: Number(inv.paid ?? totalNum),
+                  vatAmount: inv.vatAmount ?? inv.vat ?? 0,
+                  cashbackUsed: inv.cashbackUsed ?? 0,
+                  paymentMethods: inv.paymentMethods || [],
+                  isRemedyInvoice: inv.isRemedy || false,
+                  remedyReason: inv.remedyNotes || '',
+                  relatedComplaintId: inv.relatedComplaintId || '',
+                  originalInvoiceId: inv.originalInvoiceId || '',
+                  zatcaQr: inv.zatcaQr || '',
+                  zatcaHash: inv.zatcaHash || '',
+                  etaSubmissionUuid: inv.etaSubmissionUuid || '',
+                };
+              }));
             }
           }).catch(() => {});
 
@@ -2426,19 +2433,26 @@ export default function App() {
           }).catch(() => {});
           DB.fetchInvoices(salon.id).then(dbInvs => {
             if (dbInvs && dbInvs.length > 0) {
-              setInvoices(dbInvs.map((inv: any) => ({
-                ...inv,
-                vatAmount: inv.vat,
-                cashbackUsed: inv.cashbackUsed ?? 0,
-                paymentMethods: inv.paymentMethods || [],
-                isRemedyInvoice: inv.isRemedy || false,
-                remedyReason: inv.remedyNotes || '',
-                relatedComplaintId: inv.relatedComplaintId || '',
-                originalInvoiceId: inv.originalInvoiceId || '',
-                zatcaQr: inv.zatcaQr || '',
-                zatcaHash: inv.zatcaHash || '',
-                etaSubmissionUuid: inv.etaSubmissionUuid || '',
-              })));
+              setInvoices(dbInvs.map((inv: any) => {
+                const totalNum = Number(inv.total ?? inv.totalAmount ?? inv.netAmount ?? inv.subtotal ?? 0);
+                const subtotalNum = Number(inv.subtotal ?? inv.total ?? totalNum);
+                return {
+                  ...inv,
+                  total: totalNum,
+                  subtotal: subtotalNum,
+                  paid: Number(inv.paid ?? totalNum),
+                  vatAmount: inv.vatAmount ?? inv.vat ?? 0,
+                  cashbackUsed: inv.cashbackUsed ?? 0,
+                  paymentMethods: inv.paymentMethods || [],
+                  isRemedyInvoice: inv.isRemedy || false,
+                  remedyReason: inv.remedyNotes || '',
+                  relatedComplaintId: inv.relatedComplaintId || '',
+                  originalInvoiceId: inv.originalInvoiceId || '',
+                  zatcaQr: inv.zatcaQr || '',
+                  zatcaHash: inv.zatcaHash || '',
+                  etaSubmissionUuid: inv.etaSubmissionUuid || '',
+                };
+              }));
             }
           }).catch(() => {});
         }
