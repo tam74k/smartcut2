@@ -1458,6 +1458,7 @@ export const DB = {
     const list = await DB.fetchAll<any>('employees', undefined, salonId);
     return (list || []).map(emp => ({
       ...emp,
+      baseSalary: Number(emp.baseSalary ?? emp.base_salary ?? 0),
       commissionModel: emp.commissionModel || (emp.commissionRate === 0 ? 'none' : 'fixed_rate')
     }));
   },
@@ -1485,7 +1486,7 @@ export const DB = {
         has_online_account: e.hasOnlineAccount || false,
         user_id: e.userId || null, 
         role: e.role, 
-        base_salary: e.baseSalary ?? 0,
+        base_salary: Number(e.baseSalary ?? 0),
         fingerprint_code: e.fingerprintCode || null, 
         commission_rate: e.commissionRate !== undefined && e.commissionRate !== null ? Number(e.commissionRate) : 0,
         commission_model: dbCommissionModel,

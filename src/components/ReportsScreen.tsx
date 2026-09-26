@@ -2740,8 +2740,7 @@ function ReportTable({
                       <td className="py-3 px-4 text-slate-400 font-mono text-center">{idx + 1}</td>
                       <td className="py-3 px-4 font-mono font-bold text-slate-700">{row.empCode}</td>
                       <td className="py-3 px-4 font-bold text-slate-900">{row.empName}</td>
-                      <td className="py-3 px-4 text-slate-600">{row.role}</td>
-                      <td className="py-3 px-4 font-mono text-slate-700">{row.baseSalary > 0 ? `${row.baseSalary.toFixed(2)} ${settings.currency}` : 'نسبة فقط'}</td>
+                      <td className="py-3 px-4 font-mono text-slate-700">{Number(row.baseSalary || 0) > 0 ? `${Number(row.baseSalary).toFixed(2)} ${settings.currency}` : 'نسبة فقط'}</td>
                       <td className="py-3 px-4">
                         <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md text-[11px] font-bold border border-indigo-200">
                           {row.rateType === 'custom_fixed_amount' ? `${row.customHourlyRate} ${settings.currency}/ساعة (مبلغ محدد)` : row.rateType}

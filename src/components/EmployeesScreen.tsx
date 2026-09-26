@@ -1533,7 +1533,7 @@ export function EmployeesScreen({
                         </span>
                       </td>
                       <td className="p-3 font-mono font-bold">
-                        {emp.salaryType === 'commission_only' ? '0.00' : `${emp.baseSalary?.toFixed(2)} ${settings.currency}`}
+                        {emp.salaryType === 'commission_only' ? '0.00' : `${Number(emp.baseSalary || 0).toFixed(2)} ${settings.currency}`}
                       </td>
                       <td className="p-3 font-bold text-emerald-700">
                         <span className="bg-emerald-50 text-emerald-800 px-2 py-0.5 rounded text-[10px] border border-emerald-200">

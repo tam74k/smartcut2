@@ -3158,7 +3158,7 @@ export function HRScreen({
                   >
                     {activeEmployees.map(emp => (
                       <option key={emp.id} value={emp.id}>
-                        {emp.name} — الراتب الحالي: {emp.baseSalary?.toFixed(2) || '0.00'} {settings.currency}
+                        {emp.name} — الراتب الحالي: {Number(emp.baseSalary || 0).toFixed(2)} {settings.currency}
                       </option>
                     ))}
                   </select>
@@ -3204,7 +3204,7 @@ export function HRScreen({
                             <span className="font-bold text-slate-800">{emp.name}</span>
                           </div>
                           <span className="font-mono text-slate-500 text-[11px]">
-                            الراتب: {emp.baseSalary?.toFixed(2) || '0.00'} {settings.currency}
+                            الراتب: {Number(emp.baseSalary || 0).toFixed(2)} {settings.currency}
                           </span>
                         </label>
                       );
@@ -3725,7 +3725,7 @@ export function HRScreen({
                   <option value="">-- اختر الموظف --</option>
                   {activeEmployees.map(emp => (
                     <option key={emp.id} value={emp.id}>
-                      {emp.name} (كود: {emp.fingerprintCode || emp.id} | راتب: {emp.baseSalary?.toFixed(2) || '0.00'} {settings.currency})
+                      {emp.name} (كود: {emp.fingerprintCode || emp.id} | راتب: {Number(emp.baseSalary || 0).toFixed(2)} {settings.currency})
                     </option>
                   ))}
                 </select>
@@ -4461,7 +4461,7 @@ export function HRScreen({
                           {emp.name}
                         </td>
                         <td className="p-2 border-l border-slate-200 font-mono">
-                          {emp.baseSalary?.toFixed(2)}
+                          {Number(emp.baseSalary || 0).toFixed(2)}
                         </td>
                         <td className="p-2 border-l border-slate-200 font-bold text-emerald-700">
                           {presentCount} يوم

@@ -718,7 +718,7 @@ export function BookingsScreen({
             <tr style="border-bottom: 1px dotted #ccc;">
               <td style="padding: 8px 0;">${escapeHtml(s.serviceName)}</td>
               <td style="padding: 8px 0;">${escapeHtml(s.technicianName)}</td>
-              <td style="padding: 8px 0; text-align: left;">${s.price.toFixed(2)} ${escapeHtml(settings.currency)}</td>
+              <td style="padding: 8px 0; text-align: left;">${Number(s.price || 0).toFixed(2)} ${escapeHtml(settings.currency)}</td>
             </tr>
           `).join('')}
         </tbody>
@@ -726,21 +726,21 @@ export function BookingsScreen({
       <div style="margin-bottom: 20px; font-size: 14px;">
         <div style="display: flex; justify-content: space-between; font-weight: bold; border-bottom: 1px dashed #000; padding-bottom: 5px; margin-bottom: 5px;">
           <span>إجمالي الخدمات:</span>
-          <span>${totalAmt.toFixed(2)} ${escapeHtml(settings.currency)}</span>
+          <span>${Number(totalAmt || 0).toFixed(2)} ${escapeHtml(settings.currency)}</span>
         </div>
         ${totalAdv > 0 ? `
           <div style="display: flex; justify-content: space-between; color: #059669; font-weight: bold; padding-bottom: 5px; margin-bottom: 5px;">
             <span>المسدد مقدماً (عربون):</span>
-            <span>-${totalAdv.toFixed(2)} ${escapeHtml(settings.currency)}</span>
+            <span>-${Number(totalAdv || 0).toFixed(2)} ${escapeHtml(settings.currency)}</span>
           </div>
           <div style="display: flex; justify-content: space-between; font-size: 16px; font-weight: 900; border-top: 2px solid #000; padding-top: 5px;">
             <span>المتبقي للتحصيل عند الزيارة:</span>
-            <span>${remainingAmt.toFixed(2)} ${escapeHtml(settings.currency)}</span>
+            <span>${Number(remainingAmt || 0).toFixed(2)} ${escapeHtml(settings.currency)}</span>
           </div>
           <div style="margin-top: 10px; font-size: 12px; background: #f3f4f6; padding: 6px; border-radius: 6px;">
             <strong style="display: block; margin-bottom: 4px;">تفاصيل الدفعات المقدمة:</strong>
             ${(booking.advancePayments || []).map((adv, i) => `
-              <div>• دفعة ${i+1}: ${adv.amount.toFixed(2)} ${escapeHtml(settings.currency)} (طريقة الدفع: ${escapeHtml(adv.treasuryName || 'نقداً')}) - تاريخ: ${escapeHtml(adv.date)}</div>
+              <div>• دفعة ${i+1}: ${Number(adv.amount || 0).toFixed(2)} ${escapeHtml(settings.currency)} (طريقة الدفع: ${escapeHtml(adv.treasuryName || 'نقداً')}) - تاريخ: ${escapeHtml(adv.date)}</div>
             `).join('')}
           </div>
         ` : ''}
@@ -1587,7 +1587,7 @@ export function BookingsScreen({
                       <div className="text-[10px] text-slate-500">الفني: {s.technicianName}</div>
                     </div>
                     <div className="font-mono font-black text-slate-800">
-                      {s.price.toFixed(2)} {settings.currency}
+                      {Number(s.price || 0).toFixed(2)} {settings.currency}
                     </div>
                   </div>
                 ))}
@@ -1635,7 +1635,7 @@ export function BookingsScreen({
                         <div className="text-[10px] text-slate-500 font-mono">تاريخ السداد: {adv.date} {adv.notes ? `• ${adv.notes}` : ''}</div>
                       </div>
                       <div className="font-mono font-black text-emerald-700">
-                        {adv.amount.toFixed(2)} {settings.currency}
+                        {Number(adv.amount || 0).toFixed(2)} {settings.currency}
                       </div>
                     </div>
                   ))}
@@ -2199,7 +2199,7 @@ export function BookingsScreen({
                         <div key={adv.id} className="flex justify-between items-center bg-white p-2 rounded-xl border border-emerald-100 text-xs shadow-2xs">
                           <div>
                             <div className="font-bold text-slate-900 flex items-center gap-1.5">
-                              <span className="font-mono text-emerald-700 font-black">{adv.amount.toFixed(2)} {settings.currency}</span>
+                              <span className="font-mono text-emerald-700 font-black">{Number(adv.amount || 0).toFixed(2)} {settings.currency}</span>
                               <span className="text-[10px] bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.2 rounded font-bold flex items-center gap-1">
                                 <CreditCard size={11} />
                                 <span>{adv.treasuryName || 'طريقة الدفع'}</span>
@@ -2229,15 +2229,15 @@ export function BookingsScreen({
               <div className="space-y-0.5">
                 <div className="text-xs font-bold text-slate-600">
                   إجمالي الخدمات: <span className="font-mono text-slate-900 text-sm font-black">
-                    {(newBooking.services || []).reduce((sum, s) => sum + s.price, 0).toFixed(2)} {settings.currency}
+                    {(newBooking.services || []).reduce((sum, s) => sum + Number(s.price || 0), 0).toFixed(2)} {settings.currency}
                   </span>
                 </div>
                 {((newBooking.advancePayments || []).length > 0) && (
                   <div className="text-xs font-bold text-emerald-700 flex items-center gap-2">
-                    <span>العربون: -{(newBooking.advancePayments || []).reduce((sum, a) => sum + (a.amount || 0), 0).toFixed(2)} {settings.currency}</span>
+                    <span>العربون: -{(newBooking.advancePayments || []).reduce((sum, a) => sum + Number(a.amount || 0), 0).toFixed(2)} {settings.currency}</span>
                     <span className="text-slate-400">|</span>
                     <span className="text-indigo-700 font-black">
-                      المتبقي: {Math.max(0, (newBooking.services || []).reduce((sum, s) => sum + s.price, 0) - (newBooking.advancePayments || []).reduce((sum, a) => sum + (a.amount || 0), 0)).toFixed(2)} {settings.currency}
+                      المتبقي: {Math.max(0, (newBooking.services || []).reduce((sum, s) => sum + Number(s.price || 0), 0) - (newBooking.advancePayments || []).reduce((sum, a) => sum + Number(a.amount || 0), 0)).toFixed(2)} {settings.currency}
                     </span>
                   </div>
                 )}
