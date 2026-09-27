@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { AppSettings, Supplier, SupplierPayment, PurchaseInvoice, Transaction } from '../types';
 import { Plus, Edit2, Trash2, Search, ArrowDownRight, ArrowUpRight, Printer, X, FileText } from 'lucide-react';
+import { DB } from '../services/db';
 
 export function SuppliersScreen({
   settings,
@@ -27,6 +28,8 @@ export function SuppliersScreen({
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddSupplierModal, setShowAddSupplierModal] = useState(false);
   const [editingSupplierId, setEditingSupplierId] = useState<string | null>(null);
+  const [supplierToDelete, setSupplierToDelete] = useState<Supplier | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   
   const [supplierForm, setSupplierForm] = useState({ name: '', phone: '', email: '', address: '', initialBalance: '' });
   
@@ -57,9 +60,25 @@ export function SuppliersScreen({
     setEditingSupplierId(null);
   };
 
-  const deleteSupplier = (id: string) => {
-    if (true) {
+  const confirmDeleteSupplier = async () => {
+    if (!supplierToDelete) return;
+    const id = supplierToDelete.id;
+    setIsDeleting(true);
+    try {
+      // حذف المورد نهائياً من قاعدة بيانات Supabase وفك ارتباط أي فواتير
+      await DB.deleteSupplier(id);
+
+      // تحديث الحالة المحلية
       setSuppliers(suppliers.filter(s => s.id !== id));
+      if (supplierPayments && setSupplierPayments) {
+        setSupplierPayments(supplierPayments.filter(sp => sp.supplierId !== id));
+      }
+      setSupplierToDelete(null);
+    } catch (e) {
+      console.error('Failed to delete supplier:', e);
+      alert('حدث خطأ أثناء حذف المورد من قاعدة البيانات');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -156,7 +175,7 @@ export function SuppliersScreen({
                           <FileText size={14} /> كشف حساب
                         </button>
                         <button onClick={() => { setSupplierForm({ name: s.name, phone: s.phone, email: s.email || '', address: s.address || '', initialBalance: '' }); setEditingSupplierId(s.id); setShowAddSupplierModal(true); }} className="text-blue-500 hover:bg-blue-50 p-1.5 rounded"><Edit2 size={16} /></button>
-                        <button onClick={() => deleteSupplier(s.id)} className="text-red-500 hover:bg-red-50 p-1.5 rounded"><Trash2 size={16} /></button>
+                        <button onClick={() => setSupplierToDelete(s)} className="text-red-500 hover:bg-red-50 p-1.5 rounded transition-colors" title="حذف المورد"><Trash2 size={16} /></button>
                       </div>
                     </td>
                   </tr>
@@ -311,6 +330,37 @@ export function SuppliersScreen({
                 <span>الرصيد المتبقي للمورد:</span>
                 <span>{statementSupplier.currentBalance.toFixed(2)} {settings.currency}</span>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Supplier Confirmation Modal */}
+      {supplierToDelete && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" dir="rtl">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden p-6 text-center animate-in fade-in duration-150">
+            <div className="w-12 h-12 rounded-full bg-red-50 text-red-600 flex items-center justify-center mx-auto mb-4">
+              <Trash2 size={24} />
+            </div>
+            <h3 className="font-bold text-lg text-slate-800 mb-2">تأكيد حذف المورد</h3>
+            <p className="text-slate-600 text-sm mb-6">
+              هل أنت متأكد من حذف المورد <span className="font-bold text-slate-900">"{supplierToDelete.name}"</span> نهائياً؟ سيتم حذفه من قاعدة البيانات السحابية وفك ارتباط سجلاته.
+            </p>
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setSupplierToDelete(null)} 
+                disabled={isDeleting}
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold py-2.5 rounded-xl transition-colors cursor-pointer disabled:opacity-50"
+              >
+                إلغاء
+              </button>
+              <button 
+                onClick={confirmDeleteSupplier} 
+                disabled={isDeleting}
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-xl transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
+              >
+                {isDeleting ? 'جارٍ الحذف...' : 'تأكيد الحذف'}
+              </button>
             </div>
           </div>
         </div>

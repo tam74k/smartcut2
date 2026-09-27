@@ -1145,6 +1145,8 @@ export interface Product {
   currentStock: number;
   commission: number;
   barcode?: string;
+  supplierId?: string;
+  supplierName?: string;
 }
 
 export interface Supplier {

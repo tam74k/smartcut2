@@ -1923,7 +1923,8 @@ export const DB = {
       sell_price: p.sellPrice ?? 0, cost_price: p.costPrice ?? 0,
       reorder_limit: p.reorderLimit ?? 5, opening_stock: p.openingStock ?? 0,
       current_stock: p.currentStock ?? 0, commission: p.commission ?? 0,
-      barcode: p.barcode || null, is_active: p.isActive !== false
+      barcode: p.barcode || null, is_active: p.isActive !== false,
+      supplier_id: p.supplierId || null
     }, { onConflict: 'id' });
     if (error) { console.error('DB.saveProduct error:', error.message); return null; }
     return p;
@@ -1931,7 +1932,13 @@ export const DB = {
   async saveProducts(list: any[], salonId?: string) { for (const p of list) await DB.saveProduct(p, salonId); return true; },
 
   // ---- الموردون ----
-  async fetchSuppliers(salonId?: string) { return DB.fetchAll<any>('suppliers', undefined, salonId); },
+  async fetchSuppliers(salonId?: string) { 
+    const list = await DB.fetchAll<any>('suppliers', undefined, salonId); 
+    return (list || []).map(s => ({
+      ...s,
+      currentBalance: Number(s.currentBalance ?? s.current_balance ?? 0)
+    }));
+  },
   async saveSupplier(s: any, salonId?: string) {
     const client = sb(); if (!client || !s) return null;
     const validSalonId = toSalonUUID(salonId || s.salonId || getSalonId());
@@ -1941,6 +1948,26 @@ export const DB = {
     }, { onConflict: 'id' });
     if (error) { console.error('DB.saveSupplier error:', error.message); return null; }
     return s;
+  },
+  async deleteSupplier(supplierId: string): Promise<boolean> {
+    const client = sb(); if (!client || !supplierId) return false;
+    try {
+      // 1. فك ارتباط فواتير الشراء المسجلة على هذا المورد
+      try {
+        await client.from('purchase_invoices').update({ supplier_id: null }).eq('supplier_id', supplierId);
+      } catch (e) {}
+      // 2. حذف سندات الصرف التابعة لهذا المورد لتفادي خطأ القيود المرتبطة
+      try {
+        await client.from('supplier_payments').delete().eq('supplier_id', supplierId);
+      } catch (e) {}
+      // 3. حذف المورد نهائياً من قاعدة بيانات Supabase
+      const { error } = await client.from('suppliers').delete().eq('id', supplierId);
+      if (error) { console.error('DB.deleteSupplier error:', error.message); return false; }
+      return true;
+    } catch (e) { console.error('DB.deleteSupplier exception:', e); return false; }
+  },
+  async deleteProduct(productId: string): Promise<boolean> {
+    return DB.remove('products', productId);
   },
 
   // ---- فواتير الشراء ----
@@ -3384,6 +3411,8 @@ export function dbProductToApp(row: any): any {
     currentStock: Number(c.currentStock ?? row.current_stock ?? 0),
     commission: Number(c.commission ?? 0),
     barcode: c.barcode || row.barcode || '',
+    supplierId: c.supplierId || row.supplier_id || undefined,
+    supplierName: c.supplierName || row.supplier_name || undefined,
     salonId: c.salonId || row.salon_id || undefined,
     branchId: c.branchId || row.branch_id || undefined,
     isActive: c.isActive !== false && row.is_active !== false

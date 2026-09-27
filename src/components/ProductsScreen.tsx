@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Package, Search, Plus, Edit2, Trash2, X, AlertTriangle, TrendingDown, FileSpreadsheet, Download, Upload, Check, Sparkles, AlertCircle, Printer, QrCode } from 'lucide-react';
-import { AppSettings, Product, Category, Employee } from '../types';
+import { AppSettings, Product, Category, Employee, Supplier } from '../types';
 import { downloadProductsTemplate, readExcelFile } from '../utils/excelHelper';
 import { BarcodePrintModal } from './BarcodePrintModal';
+import { DB } from '../services/db';
 
 export function ProductsScreen({ 
   settings, 
@@ -10,6 +11,8 @@ export function ProductsScreen({
   setProducts, 
   categories, 
   employees, 
+  suppliers = [],
+  setSuppliers,
   shiftData
 }: { 
   settings: AppSettings;
@@ -17,6 +20,8 @@ export function ProductsScreen({
   setProducts: (p: Product[]) => void;
   categories: Category[];
   employees: Employee[];
+  suppliers?: Supplier[];
+  setSuppliers?: (s: Supplier[]) => void;
   shiftData: { isOpen: boolean; date: string; initialCash: number };
 }) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -38,6 +43,7 @@ export function ProductsScreen({
   const [formData, setFormData] = useState({
     name: '',
     categoryId: categories[0]?.id || '',
+    supplierId: '',
     sellPrice: '',
     costPrice: '',
     reorderLimit: '',
@@ -74,6 +80,7 @@ export function ProductsScreen({
     setFormData({
       name: p.name,
       categoryId: p.categoryId,
+      supplierId: p.supplierId || '',
       sellPrice: p.sellPrice.toString(),
       costPrice: p.costPrice.toString(),
       reorderLimit: p.reorderLimit.toString(),
@@ -97,6 +104,8 @@ export function ProductsScreen({
     if (isNaN(sPrice) || sPrice < 0) return setErrorMsg('الرجاء إدخال سعر بيع صحيح');
     if (isNaN(cPrice) || cPrice < 0) return setErrorMsg('الرجاء إدخال سعر تكلفة صحيح');
 
+    const matchedSup = suppliers.find(s => s.id === formData.supplierId);
+
     if (editingProductId) {
       setProducts(products.map(p => {
         if (p.id === editingProductId) {
@@ -106,6 +115,8 @@ export function ProductsScreen({
             ...p,
             name: formData.name,
             categoryId: formData.categoryId,
+            supplierId: formData.supplierId || undefined,
+            supplierName: matchedSup?.name || undefined,
             sellPrice: sPrice,
             costPrice: cPrice,
             reorderLimit: rLimit,
@@ -121,6 +132,8 @@ export function ProductsScreen({
         id: 'PRD-' + Math.random().toString(36).substr(2, 9),
         name: formData.name,
         categoryId: formData.categoryId,
+        supplierId: formData.supplierId || undefined,
+        supplierName: matchedSup?.name || undefined,
         sellPrice: sPrice,
         costPrice: cPrice,
         reorderLimit: rLimit,
@@ -189,6 +202,8 @@ export function ProductsScreen({
     if (importedRows.length === 0) return;
 
     const newProducts: Product[] = [];
+    const currentSuppliersList = [...suppliers];
+    let addedSuppliersCount = 0;
 
     importedRows.forEach((row, idx) => {
       const name = String(row['اسم المنتج'] || row['المنتج'] || row['Product Name'] || row['name'] || '').trim();
@@ -196,6 +211,26 @@ export function ProductsScreen({
 
       const catName = String(row['اسم التصنيف'] || row['التصنيف'] || row['Category'] || row['category'] || '').trim();
       const category = categories.find(c => c.name.toLowerCase() === catName.toLowerCase()) || categories[0];
+
+      // قراءة المورد والربط به
+      const supplierRawName = String(row['اسم المورد'] || row['المورد'] || row['Supplier'] || row['supplier'] || '').trim();
+      let matchedSupplier: Supplier | undefined;
+      
+      if (supplierRawName) {
+        matchedSupplier = currentSuppliersList.find(s => normalizeText(s.name) === normalizeText(supplierRawName));
+        if (!matchedSupplier) {
+          // تسجيل المورد تلقائياً إذا لم يكن مضافاً مسبقاً
+          matchedSupplier = {
+            id: 'SUP-' + Math.random().toString(36).substr(2, 9) + '-' + (idx + 1),
+            name: supplierRawName,
+            phone: '0000000000',
+            currentBalance: 0
+          };
+          currentSuppliersList.push(matchedSupplier);
+          addedSuppliersCount++;
+          DB.saveSupplier(matchedSupplier);
+        }
+      }
 
       const sellPrice = Number(row['سعر البيع (ر.س)'] || row['سعر البيع'] || row['Sell Price'] || row['sellPrice'] || 0);
       const costPrice = Number(row['سعر التكلفة (ر.س)'] || row['سعر التكلفة'] || row['Cost Price'] || row['costPrice'] || 0);
@@ -208,6 +243,8 @@ export function ProductsScreen({
         id: 'PRD-' + Math.random().toString(36).substr(2, 9) + '-' + idx,
         name,
         categoryId: category?.id || 'cat-general',
+        supplierId: matchedSupplier?.id,
+        supplierName: matchedSupplier?.name || (supplierRawName || undefined),
         sellPrice: isNaN(sellPrice) ? 0 : sellPrice,
         costPrice: isNaN(costPrice) ? 0 : costPrice,
         openingStock: isNaN(openingStock) ? 0 : openingStock,
@@ -223,11 +260,15 @@ export function ProductsScreen({
       return;
     }
 
+    if (addedSuppliersCount > 0 && setSuppliers) {
+      setSuppliers(currentSuppliersList);
+    }
+
     setProducts([...products, ...newProducts]);
     setShowImportModal(false);
     setImportedRows([]);
     setImportFileName('');
-    alert(`تم استيراد ${newProducts.length} منتج بنجاح!`);
+    alert(`تم استيراد ${newProducts.length} منتج بنجاح!${addedSuppliersCount > 0 ? ` (وتم تسجيل ${addedSuppliersCount} مورد جديد تلقائياً)` : ''}`);
   };
 
   return (
@@ -265,7 +306,14 @@ export function ProductsScreen({
             setErrorMsg('');
             setEditingProductId(null);
             setFormData({
-              name: '', categoryId: categories[0]?.id || '', sellPrice: '', costPrice: '', reorderLimit: '', openingStock: '', commission: ''
+              name: '', 
+              categoryId: categories.find(c => c.id !== 'all' && c.type === 'product')?.id || categories[0]?.id || '', 
+              supplierId: '',
+              sellPrice: '', 
+              costPrice: '', 
+              reorderLimit: '5', 
+              openingStock: '0', 
+              commission: '0'
             });
             setShowAddModal(true);
           }} className="bg-primary hover:bg-primary-dark text-white px-5 py-2.5 rounded-lg font-bold flex items-center gap-2 shadow-sm transition-colors cursor-pointer">
@@ -303,6 +351,7 @@ export function ProductsScreen({
             <tr className="bg-slate-50 border-b border-slate-200 text-slate-500">
               <th className="p-4 font-bold">اسم المنتج</th>
               <th className="p-4 font-bold">التصنيف</th>
+              <th className="p-4 font-bold">المورد</th>
               <th className="p-4 font-bold">سعر البيع</th>
               <th className="p-4 font-bold">سعر التكلفة</th>
               <th className="p-4 font-bold">أول المدة</th>
@@ -316,13 +365,16 @@ export function ProductsScreen({
           <tbody>
             {filteredProducts.length === 0 ? (
               <tr>
-                <td colSpan={10} className="p-8 text-center text-slate-400">لا توجد منتجات مسجلة</td>
+                <td colSpan={11} className="p-8 text-center text-slate-400">لا توجد منتجات مسجلة</td>
               </tr>
             ) : (
               filteredProducts.map(p => (
                 <tr key={p.id} className="border-b border-slate-100 hover:bg-slate-50">
                   <td className="p-4 font-bold text-slate-800">{p.name}</td>
                   <td className="p-4 text-slate-600">{categories.find(c => c.id === p.categoryId)?.name}</td>
+                  <td className="p-4 text-slate-600 font-medium">
+                    {suppliers.find(s => s.id === p.supplierId)?.name || p.supplierName || '—'}
+                  </td>
                   <td className="p-4 font-bold text-emerald-600">{p.sellPrice.toFixed(2)}</td>
                   <td className="p-4 font-bold text-rose-600">{p.costPrice.toFixed(2)}</td>
                   <td className="p-4 text-slate-600">{p.openingStock}</td>
@@ -380,6 +432,13 @@ export function ProductsScreen({
                   <label className="block text-sm font-bold text-slate-700 mb-1">التصنيف</label>
                   <select value={formData.categoryId} onChange={e => setFormData({...formData, categoryId: e.target.value})} className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary">
                     {categories.filter(c => c.id !== 'all' && c.type === 'product').map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-1">المورد</label>
+                  <select value={formData.supplierId} onChange={e => setFormData({...formData, supplierId: e.target.value})} className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary">
+                    <option value="">بدون مورد (غير محدد)</option>
+                    {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
                 </div>
                 <div>
@@ -626,6 +685,7 @@ export function ProductsScreen({
                       <tr>
                         <th className="p-2">المنتج</th>
                         <th className="p-2">التصنيف</th>
+                        <th className="p-2">المورد</th>
                         <th className="p-2">سعر البيع</th>
                         <th className="p-2">التكلفة</th>
                         <th className="p-2">المخزون</th>
@@ -636,6 +696,7 @@ export function ProductsScreen({
                         <tr key={i}>
                           <td className="p-2 font-bold text-slate-800">{r['اسم المنتج'] || r['المنتج'] || r['name']}</td>
                           <td className="p-2 text-slate-600">{r['اسم التصنيف'] || r['التصنيف'] || r['category'] || '-'}</td>
+                          <td className="p-2 text-indigo-600 font-medium">{r['اسم المورد'] || r['المورد'] || r['Supplier'] || '-'}</td>
                           <td className="p-2 font-mono text-emerald-600 font-bold">{r['سعر البيع (ر.س)'] || r['سعر البيع'] || r['sellPrice']}</td>
                           <td className="p-2 font-mono text-slate-500 font-bold">{r['سعر التكلفة (ر.س)'] || r['سعر التكلفة'] || r['costPrice']}</td>
                           <td className="p-2 font-bold text-slate-700">{r['المخزون الافتتاحي'] || r['المخزون'] || 0}</td>

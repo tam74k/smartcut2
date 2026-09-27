@@ -248,6 +248,8 @@ export function WarehouseScreen({
           setProducts={setProducts}
           categories={categories}
           employees={employees}
+          suppliers={suppliers}
+          setSuppliers={setSuppliers}
           shiftData={{
             isOpen: shiftData.isOpen,
             date: shiftData.date,

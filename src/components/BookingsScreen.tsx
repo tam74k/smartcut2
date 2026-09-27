@@ -882,8 +882,16 @@ export function BookingsScreen({
         <div className="space-y-5 animate-in fade-in duration-200">
           
           {/* Quick Summary Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            <div 
+              onClick={() => setStatusFilter('all')}
+              className={`bg-white p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
+                statusFilter === 'all' 
+                  ? 'border-indigo-400 ring-2 ring-indigo-100 shadow-sm' 
+                  : 'border-slate-200 shadow-xs hover:border-slate-300'
+              }`}
+              title="عرض كل الحجوزات"
+            >
               <div>
                 <p className="text-slate-500 text-[11px] font-bold">إجمالي الحجوزات</p>
                 <h4 className="text-xl font-black text-slate-900 mt-0.5">{bookings.length}</h4>
@@ -893,7 +901,15 @@ export function BookingsScreen({
               </div>
             </div>
 
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
+            <div 
+              onClick={() => setStatusFilter(statusFilter === 'confirmed' ? 'all' : 'confirmed')}
+              className={`bg-white p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
+                statusFilter === 'confirmed' 
+                  ? 'border-emerald-400 ring-2 ring-emerald-100 shadow-sm' 
+                  : 'border-slate-200 shadow-xs hover:border-slate-300'
+              }`}
+              title="تصفية الحجوزات المؤكدة"
+            >
               <div>
                 <p className="text-emerald-600 text-[11px] font-bold">حجوزات مؤكدة</p>
                 <h4 className="text-xl font-black text-emerald-700 mt-0.5">
@@ -905,7 +921,15 @@ export function BookingsScreen({
               </div>
             </div>
 
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
+            <div 
+              onClick={() => setStatusFilter(statusFilter === 'pending' ? 'all' : 'pending')}
+              className={`bg-white p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
+                statusFilter === 'pending' 
+                  ? 'border-amber-400 ring-2 ring-amber-100 shadow-sm' 
+                  : 'border-slate-200 shadow-xs hover:border-slate-300'
+              }`}
+              title="تصفية الحجوزات قيد الانتظار"
+            >
               <div>
                 <p className="text-amber-600 text-[11px] font-bold">قيد الانتظار</p>
                 <h4 className="text-xl font-black text-amber-700 mt-0.5">
@@ -917,7 +941,15 @@ export function BookingsScreen({
               </div>
             </div>
 
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
+            <div 
+              onClick={() => setStatusFilter(statusFilter === 'completed' ? 'all' : 'completed')}
+              className={`bg-white p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
+                statusFilter === 'completed' 
+                  ? 'border-blue-400 ring-2 ring-blue-100 shadow-sm' 
+                  : 'border-slate-200 shadow-xs hover:border-slate-300'
+              }`}
+              title="تصفية الحجوزات المكتملة"
+            >
               <div>
                 <p className="text-blue-600 text-[11px] font-bold">حجوزات مكتملة</p>
                 <h4 className="text-xl font-black text-blue-700 mt-0.5">
@@ -926,6 +958,26 @@ export function BookingsScreen({
               </div>
               <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
                 🛒
+              </div>
+            </div>
+
+            <div 
+              onClick={() => setStatusFilter(statusFilter === 'cancelled' ? 'all' : 'cancelled')}
+              className={`bg-white p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
+                statusFilter === 'cancelled' 
+                  ? 'border-rose-400 ring-2 ring-rose-100 shadow-sm' 
+                  : 'border-slate-200 shadow-xs hover:border-slate-300'
+              }`}
+              title="تصفية الحجوزات الملغية"
+            >
+              <div>
+                <p className="text-rose-600 text-[11px] font-bold">حجوزات ملغية</p>
+                <h4 className="text-xl font-black text-rose-700 mt-0.5">
+                  {bookings.filter(b => b.status === 'cancelled').length}
+                </h4>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center font-bold">
+                <XCircle size={18} />
               </div>
             </div>
           </div>

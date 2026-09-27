@@ -1197,6 +1197,11 @@ export default function App() {
     setProducts(prev => {
       const currentSalonProds = prev.filter(p => !p.salonId || p.salonId === currentSalonId);
       const next = typeof updater === 'function' ? updater(currentSalonProds) : updater;
+
+      // رصد وحذف أي منتج تم حذفه من قاعدة بيانات Supabase
+      const removed = currentSalonProds.filter(oldP => !next.some(newP => newP.id === oldP.id));
+      removed.forEach(p => DB.deleteProduct(p.id));
+
       const tagged = next.map(p => ({ ...p, salonId: p.salonId || currentSalonId, branchId: p.branchId || activeBranchId }));
       const other = prev.filter(p => p.salonId && p.salonId !== currentSalonId);
       const res = [...other, ...tagged];
@@ -1260,6 +1265,13 @@ export default function App() {
     setSuppliers(prev => {
       const currentSalonSuppliers = prev.filter((s: any) => !(s as any).salonId || (s as any).salonId === currentSalonId);
       const next = typeof updater === 'function' ? updater(currentSalonSuppliers) : updater;
+
+      // رصد وحذف أي مورد تم استبعاده من قاعدة بيانات Supabase
+      const removed = currentSalonSuppliers.filter((oldS: any) => !next.some((newS: any) => newS.id === oldS.id));
+      removed.forEach((s: any) => {
+        DB.deleteSupplier(s.id);
+      });
+
       const tagged = next.map((s: any) => ({ ...s, salonId: s.salonId || currentSalonId, branchId: s.branchId || activeBranchId }));
       const other = prev.filter((s: any) => (s as any).salonId && (s as any).salonId !== currentSalonId);
       const res = [...other, ...tagged];
