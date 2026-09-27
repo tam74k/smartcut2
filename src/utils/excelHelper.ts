@@ -39,7 +39,7 @@ export async function readTwoSheetExcelFile(file: File): Promise<{
     reader.onload = (e) => {
       try {
         const data = new Uint8Array(e.target?.result as ArrayBuffer);
-        const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+        const workbook = XLSX.read(data, { type: 'array', cellDates: false });
         const sheetNames = workbook.SheetNames;
 
         if (sheetNames.length === 0) {
@@ -91,55 +91,141 @@ export async function readTwoSheetExcelFile(file: File): Promise<{
 }
 
 /**
- * معالجة التواريخ من مختلف صيغ إكسل (أرقام تسلسلية، نصوص، كائنات Date)
+ * الحصول على تاريخ اليوم الحالي بصيغة نصية محلية YYYY-MM-DD بدون أي تحويلات UTC أو توقيت
+ */
+export function getTodayLocalDateString(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * دالة صارمة لمعالجة التواريخ من مختلف صيغ إكسل:
+ * 1. إرجاع التاريخ كنص محلي صريح بصيغة YYYY-MM-DD حصراً.
+ * 2. تجريد كامل لبيانات المنطقة الزمنية (Timezone) وعدم استخدام toISOString() إطلاقاً لتفادي تراجع اليوم للخلف.
+ * 3. دعم الأرقام التسلسلية لإكسل (Excel Serial Number) حسابياً بدون تلاعب بالتوقيت.
  */
 export function parseExcelDate(val: any): string {
-  if (!val) return new Date().toISOString();
-
-  if (val instanceof Date && !isNaN(val.getTime())) {
-    return val.toISOString();
+  if (val === undefined || val === null || val === '') {
+    return getTodayLocalDateString();
   }
 
-  // إذا كان رقماً تسلسلياً خاصاً بإكسل (Excel Serial Number)
-  if (typeof val === 'number' && val > 1000) {
-    try {
-      const utcDays = Math.floor(val - 25569);
-      const utcValue = utcDays * 86400;
-      const dateInfo = new Date(utcValue * 1000);
-      const fractionalDay = val - Math.floor(val) + 0.0000001;
-      let totalSeconds = Math.floor(86400 * fractionalDay);
-      const seconds = totalSeconds % 60;
-      totalSeconds -= seconds;
-      const hours = Math.floor(totalSeconds / (60 * 60));
-      const minutes = Math.floor(totalSeconds / 60) % 60;
-      dateInfo.setHours(hours, minutes, seconds);
-      if (!isNaN(dateInfo.getTime())) return dateInfo.toISOString();
-    } catch {}
+  // 1. إذا كان رقماً تسلسلياً خاصاً بإكسل (Excel Serial Number)
+  if (typeof val === 'number') {
+    if (val > 0) {
+      try {
+        const parsed = (XLSX as any).SSF?.parse_date_code ? (XLSX as any).SSF.parse_date_code(val) : null;
+        if (parsed && parsed.y && parsed.m && parsed.d) {
+          const y = String(parsed.y);
+          const m = String(parsed.m).padStart(2, '0');
+          const d = String(parsed.d).padStart(2, '0');
+          return `${y}-${m}-${d}`;
+        }
+      } catch {}
+      // حساب احتياطي بدون تأثر بالمنطقة الزمنية (إضافة 12 ساعة كعازل)
+      try {
+        const ms = Math.round((val - 25569) * 86400 * 1000);
+        const noonDate = new Date(ms + 12 * 3600 * 1000);
+        const y = noonDate.getUTCFullYear();
+        const m = String(noonDate.getUTCMonth() + 1).padStart(2, '0');
+        const d = String(noonDate.getUTCDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+      } catch {}
+    }
+  }
+
+  // 2. إذا كان كائناً من نوع Date
+  if (val instanceof Date && !isNaN(val.getTime())) {
+    // إضافة 12 ساعة تضمن بقاء اليوم ثابتاً في أي منطقة زمنية بالعالم
+    const noonDate = new Date(val.getTime() + 12 * 3600 * 1000);
+    const y = noonDate.getUTCFullYear();
+    const m = String(noonDate.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(noonDate.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
   }
 
   const str = String(val).trim();
-  // فحص تاريخ بصيغة YYYY-MM-DD أو YYYY/MM/DD
-  if (/^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}/.test(str)) {
-    const d = new Date(str.replace(/\//g, '-'));
-    if (!isNaN(d.getTime())) return d.toISOString();
+  if (!str) return getTodayLocalDateString();
+
+  // 3. فحص صيغة YYYY-MM-DD أو YYYY/MM/DD أو YYYY.MM.DD (تجريد أي وقت أو منطقة زمنية بعدها)
+  const ymdMatch = str.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  if (ymdMatch) {
+    const y = ymdMatch[1];
+    const m = ymdMatch[2].padStart(2, '0');
+    const d = ymdMatch[3].padStart(2, '0');
+    return `${y}-${m}-${d}`;
   }
 
-  // فحص تاريخ بصيغة DD-MM-YYYY أو DD/MM/YYYY
-  const parts = str.split(/[-/.]/);
-  if (parts.length === 3 && parts[0].length <= 2 && parts[2].length === 4) {
-    const day = parts[0].padStart(2, '0');
-    const month = parts[1].padStart(2, '0');
-    const year = parts[2];
-    const d = new Date(`${year}-${month}-${day}`);
-    if (!isNaN(d.getTime())) return d.toISOString();
+  // 4. فحص صيغة DD-MM-YYYY أو DD/MM/YYYY أو DD.MM.YYYY
+  const dmyMatch = str.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
+  if (dmyMatch) {
+    const d = dmyMatch[1].padStart(2, '0');
+    const m = dmyMatch[2].padStart(2, '0');
+    const y = dmyMatch[3];
+    return `${y}-${m}-${d}`;
   }
 
-  const parsed = new Date(str);
-  if (!isNaN(parsed.getTime())) {
-    return parsed.toISOString();
+  // 5. إذا كانت سلسلة رقمية تسلسلية (مثل "46296")
+  const numVal = Number(str);
+  if (!isNaN(numVal) && numVal > 1000) {
+    try {
+      const parsed = (XLSX as any).SSF?.parse_date_code ? (XLSX as any).SSF.parse_date_code(numVal) : null;
+      if (parsed && parsed.y && parsed.m && parsed.d) {
+        const y = String(parsed.y);
+        const m = String(parsed.m).padStart(2, '0');
+        const d = String(parsed.d).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+      }
+    } catch {}
   }
 
-  return new Date().toISOString();
+  // 6. محاولة معالجة كـ Date مع إضافة 12 ساعة (عازل الظهيرة) بدون استخدام toISOString()
+  try {
+    const parsed = new Date(str);
+    if (!isNaN(parsed.getTime())) {
+      const noonDate = new Date(parsed.getTime() + 12 * 3600 * 1000);
+      const y = noonDate.getUTCFullYear();
+      const m = String(noonDate.getUTCMonth() + 1).padStart(2, '0');
+      const d = String(noonDate.getUTCDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+  } catch {}
+
+  return getTodayLocalDateString();
+}
+
+/**
+ * دالة استخراج التاريخ والوقت مع إجبار التوقيت على الظهيرة T12:00:00 عند الحاجة:
+ * تضمن الصمود أمام أي عمليات تحويل أو إزاحة في المناطق الزمنية بدون تراجع يوم للخلف.
+ */
+export function parseExcelDateTime(val: any, explicitTime?: string): string {
+  const datePart = parseExcelDate(val);
+
+  if (explicitTime && typeof explicitTime === 'string') {
+    const cleanTime = explicitTime.trim();
+    if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(cleanTime)) {
+      const parts = cleanTime.split(':');
+      const h = parts[0].padStart(2, '0');
+      const m = parts[1].padStart(2, '0');
+      const s = (parts[2] || '00').padStart(2, '0');
+      return `${datePart}T${h}:${m}:${s}`;
+    }
+  }
+
+  if (typeof val === 'string') {
+    const timeMatch = val.match(/\b(\d{1,2}):(\d{2})(?::(\d{2}))?\b/);
+    if (timeMatch) {
+      const h = timeMatch[1].padStart(2, '0');
+      const m = timeMatch[2].padStart(2, '0');
+      const s = (timeMatch[3] || '00').padStart(2, '0');
+      return `${datePart}T${h}:${m}:${s}`;
+    }
+  }
+
+  // القاعدة الصارمة 3: إذا كان الوقت مطلوباً يُجبر على الظهيرة T12:00:00 للصمود أمام أي Timezone
+  return `${datePart}T12:00:00`;
 }
 
 export function downloadXLSX(filename: string, sheetName: string, headers: string[], rows: (string | number)[][]) {

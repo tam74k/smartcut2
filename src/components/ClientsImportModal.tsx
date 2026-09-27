@@ -4,7 +4,7 @@ import {
   X, AlertCircle, RefreshCw, Users, Crown, Phone, Mail, Calendar, Sparkles
 } from 'lucide-react';
 import { AppSettings, Client } from '../types';
-import { readExcelFile, downloadClientsTemplate, parseExcelDate } from '../utils/excelHelper';
+import { readExcelFile, downloadClientsTemplate, parseExcelDate, getTodayLocalDateString } from '../utils/excelHelper';
 import { DB } from '../services/db';
 
 interface ClientsImportModalProps {
@@ -106,13 +106,12 @@ export function ClientsImportModal({
           row['Email'] || ''
         ).trim();
 
-        // تاريخ الميلاد
+        // تاريخ الميلاد (تجريد أي Timezone والاعتماد على YYYY-MM-DD محلي)
         const rawDob = row['تاريخ الميلاد (YYYY-MM-DD)'] || row['تاريخ الميلاد'] || row['الميلاد'] || row['DOB'] || row['Date of Birth'];
         let dobStr = '';
         if (rawDob) {
           try {
-            const iso = parseExcelDate(rawDob);
-            dobStr = iso.split('T')[0];
+            dobStr = parseExcelDate(rawDob);
           } catch {
             dobStr = '';
           }
@@ -271,12 +270,12 @@ export function ClientsImportModal({
           email: c.email || undefined,
           dob: c.dob || undefined,
           isVip: c.isVip,
-          vipSince: c.isVip ? new Date().toISOString().split('T')[0] : undefined,
+          vipSince: c.isVip ? getTodayLocalDateString() : undefined,
           loyaltyPoints: c.loyaltyPoints,
           cashback: c.cashback,
           notes: c.notes || undefined,
-          lastVisit: new Date().toISOString().split('T')[0],
-          createdAt: new Date().toISOString(),
+          lastVisit: getTodayLocalDateString(),
+          createdAt: `${getTodayLocalDateString()}T12:00:00`,
           branchId: effectiveBranchId
         };
         addedList.push(newClient);

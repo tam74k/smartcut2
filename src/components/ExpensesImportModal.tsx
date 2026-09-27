@@ -4,7 +4,7 @@ import {
   X, AlertCircle, RefreshCw, DollarSign, Tag, Landmark, Calendar, FileText
 } from 'lucide-react';
 import { AppSettings, Transaction } from '../types';
-import { readExcelFile, downloadExpensesTemplate, parseExcelDate } from '../utils/excelHelper';
+import { readExcelFile, downloadExpensesTemplate, parseExcelDate, getTodayLocalDateString } from '../utils/excelHelper';
 import { DB } from '../services/db';
 
 interface ExpensesImportModalProps {
@@ -144,14 +144,13 @@ export function ExpensesImportModal({
       const parsed: ParsedExpenseCandidate[] = [];
 
       rows.forEach((row: any, idx: number) => {
-        // التاريخ
+        // التاريخ (تجريد Timezone واعتماد YYYY-MM-DD محلي بحت)
         const rawDate = row['تاريخ المصروف (YYYY-MM-DD)'] || row['تاريخ المصروف'] || row['التاريخ'] || row['Date'];
         let dateStr = '';
         try {
-          const iso = parseExcelDate(rawDate);
-          dateStr = iso.split('T')[0];
+          dateStr = parseExcelDate(rawDate);
         } catch {
-          dateStr = shiftData?.isOpen ? shiftData.date : new Date().toISOString().split('T')[0];
+          dateStr = shiftData?.isOpen ? shiftData.date : getTodayLocalDateString();
         }
 
         // المبلغ
@@ -260,9 +259,8 @@ export function ExpensesImportModal({
 
     for (let i = 0; i < toImport.length; i++) {
       const c = toImport[i];
-      setImportProgress({ current: i + 1, total: toImport.length });
-
-      const fullDateTime = `${c.date}T${new Date().toTimeString().split(' ')[0]}`;
+      // إجبار التوقيت على الظهيرة T12:00:00 لحماية القيد المالي من أي إزاحة مناطق زمنية
+      const fullDateTime = `${c.date}T12:00:00`;
       const effectiveShiftDate = (shiftData && shiftData.isOpen && shiftData.date) ? shiftData.date : c.date;
 
       const fullDesc = [c.description, c.referenceNo ? `(مرجع: ${c.referenceNo})` : '', c.notes ? `- ${c.notes}` : '']

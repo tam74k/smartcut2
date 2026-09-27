@@ -5,7 +5,7 @@ import {
   Calendar, Scissors, Info, ArrowRight, Eye, Clock, ShieldCheck
 } from 'lucide-react';
 import { AppSettings, Booking, BookingService, AdvancePayment, Client, Employee, ServiceItem, Transaction, Branch } from '../types';
-import { readTwoSheetExcelFile, downloadBookingsTemplate, parseExcelDate } from '../utils/excelHelper';
+import { readTwoSheetExcelFile, downloadBookingsTemplate, parseExcelDate, getTodayLocalDateString } from '../utils/excelHelper';
 import { DB } from '../services/db';
 
 interface BookingsImportModalProps {
@@ -261,14 +261,13 @@ export function BookingsImportModal({
           row['Mobile'] || ''
         ).trim().replace(/\D/g, '');
 
-        // معالجة التاريخ والوقت
+        // معالجة التاريخ والوقت (تجريد أي Timezone والاعتماد على YYYY-MM-DD محلي بحت)
         const rawDate = row['تاريخ الحجز (YYYY-MM-DD)'] || row['تاريخ الحجز'] || row['التاريخ'] || row['Date'] || row['Booking Date'];
         let dateParsed = '';
         try {
-          const iso = parseExcelDate(rawDate);
-          dateParsed = iso.split('T')[0];
+          dateParsed = parseExcelDate(rawDate);
         } catch {
-          dateParsed = new Date().toISOString().split('T')[0];
+          dateParsed = getTodayLocalDateString();
         }
 
         let timeParsed = String(
@@ -503,11 +502,11 @@ export function BookingsImportModal({
           notes: `عربون مستورد لحجز #${candidate.id}`
         });
 
-        // إنشاء قيد مالي للعربون
+        // إنشاء قيد مالي للعربون مع إجبار التوقيت على الظهيرة T12:00:00 لحمايته من أي إزاحة مناطق زمنية
         const effectiveShiftDate = (shiftData && shiftData.isOpen && shiftData.date) ? shiftData.date : candidate.date;
         const trx: Transaction = {
           id: 'TRX-ADV-' + Math.random().toString(36).substr(2, 9),
-          date: `${candidate.date}T${candidate.time}:00`,
+          date: `${candidate.date}T12:00:00`,
           shiftDate: effectiveShiftDate,
           type: 'in',
           amount: candidate.advanceAmount,
@@ -571,7 +570,7 @@ export function BookingsImportModal({
             loyaltyPoints: 0,
             cashback: 0,
             lastVisit: candidate.date,
-            createdAt: new Date().toISOString(),
+            createdAt: `${candidate.date}T12:00:00`,
             notes: 'تمت إضافته تلقائياً عبر استيراد الحجوزات السابقة من إكسل'
           };
           newClientsList.push(newClient);

@@ -5,7 +5,7 @@ import {
   Receipt, Scissors, Tag, Info, ArrowRight, Eye
 } from 'lucide-react';
 import { AppSettings, Invoice, InvoiceItem, Client, Employee, ServiceItem, Product } from '../types';
-import { readTwoSheetExcelFile, downloadInvoicesTemplate, parseExcelDate } from '../utils/excelHelper';
+import { readTwoSheetExcelFile, downloadInvoicesTemplate, parseExcelDate, parseExcelDateTime, getTodayLocalDateString } from '../utils/excelHelper';
 import { DB } from '../services/db';
 
 interface InvoicesImportModalProps {
@@ -273,9 +273,9 @@ export function InvoicesImportModal({
         const normId = rawId.toUpperCase();
         const isExisting = existingIds.has(normId);
 
-        // استخراج التاريخ
+        // استخراج التاريخ (تجريد Timezone وفرض الظهيرة T12:00:00 لحمايته من أي انزياح)
         const rawDate = hRow['تاريخ الفاتورة'] || hRow['التاريخ'] || hRow['تاريخ'] || hRow['Date'] || hRow['Invoice Date'] || hRow['date'];
-        const invoiceDate = parseExcelDate(rawDate);
+        const invoiceDate = parseExcelDateTime(rawDate);
 
         // العميل
         const clientName = String(
@@ -540,7 +540,7 @@ export function InvoicesImportModal({
     setImportProgress({ current: 0, total: targetCandidates.length });
 
     try {
-      const now = new Date().toISOString();
+      const now = `${getTodayLocalDateString()}T12:00:00`;
       const newClientsMap = new Map<string, Client>();
       const existingClientPhones = new Set(
         clients.filter(c => c.phone).map(c => c.phone.replace(/\D/g, ''))

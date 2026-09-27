@@ -1364,11 +1364,18 @@ export const DB = {
     const validSalonId = toSalonUUID(salonId || inv.salonId || getSalonId());
     const validBranchId = toBranchUUID(inv.branchId);
     try {
+      let safeDate = inv.date;
+      if (typeof safeDate === 'string') {
+        const trimmed = safeDate.trim();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+          safeDate = `${trimmed}T12:00:00`;
+        }
+      }
       const snap: any = {
         id: inv.id, salon_id: validSalonId, branch_id: validBranchId,
         branch_code: inv.branchCode || null,
         client_id: inv.clientId || null, client_name: inv.clientName, client_phone: inv.clientPhone || '',
-        date: inv.date, subtotal: inv.subtotal ?? inv.total ?? 0, discount: inv.discount ?? 0,
+        date: safeDate, subtotal: inv.subtotal ?? inv.total ?? 0, discount: inv.discount ?? 0,
         discount_type: inv.discountType || 'fixed', vat: inv.vatAmount ?? inv.vat ?? 0,
         cashback_used: inv.cashbackUsed ?? 0,
         total: inv.total ?? 0, paid: inv.paid ?? inv.total ?? 0, remaining: inv.remaining ?? 0,
@@ -1408,14 +1415,22 @@ export const DB = {
     const validSalonId = toSalonUUID(salonId || t.salonId || getSalonId());
     const validBranchId = toBranchUUID((t as any).branchId);
     try {
+      let safeDate = t.date;
+      if (typeof safeDate === 'string') {
+        const trimmed = safeDate.trim();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+          safeDate = `${trimmed}T12:00:00`;
+        }
+      }
+      const safeShiftDate = typeof t.shiftDate === 'string' ? t.shiftDate.split('T')[0].trim() : (t.shiftDate || null);
       const snap: any = {
         id: t.id, salon_id: validSalonId, branch_id: validBranchId,
         branch_code: (t as any).branchCode || null,
-        date: t.date, type: t.type, amount: t.amount, category: t.category,
+        date: safeDate, type: t.type, amount: t.amount, category: t.category,
         expense_category: t.expenseCategory || null, description: t.description,
         treasury: t.treasury, invoice_id: (t as any).invoiceId || (t as any).invoice_id || null,
         created_by: t.createdBy || null, user_id: t.userId || null,
-        user_name: t.userName || null, shift_date: t.shiftDate || null
+        user_name: t.userName || null, shift_date: safeShiftDate
       };
       const { error } = await client.from('transactions').upsert(snap, { onConflict: 'id' });
       if (error) { console.error('DB.saveTransaction error:', error.message); return null; }
@@ -1436,6 +1451,8 @@ export const DB = {
     try {
       const allowedSources = ['pos', 'online', 'kiosk', 'app'];
       const safeSource = allowedSources.includes(b.source) ? b.source : 'pos';
+      // فرض نص محلي YYYY-MM-DD بحت لعمود DATE وتجريد أي توقيت أو منطقة زمنية
+      const safeDate = typeof b.date === 'string' ? b.date.split('T')[0].trim() : b.date;
       const snap: any = {
         id: b.id, salon_id: validSalonId, branch_id: validBranchId,
         branch_code: (b as any).branchCode || null,
@@ -1443,7 +1460,7 @@ export const DB = {
         customer_email: b.customerEmail || null, booking_code: b.bookingCode || null,
         source: safeSource, services: b.services || [],
         total_amount: b.totalAmount ?? 0,
-        date: b.date, time: b.time, status: b.status || 'confirmed',
+        date: safeDate, time: b.time, status: b.status || 'confirmed',
         queue_number: b.queueNumber || null,
         advance_payments: b.advancePayments || [], notes: b.notes || null
       };

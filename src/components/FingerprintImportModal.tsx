@@ -5,7 +5,7 @@ import {
   FileSpreadsheet, ShieldCheck, ArrowDownLeft, ArrowUpRight
 } from 'lucide-react';
 import { AppSettings, FingerprintLog, Employee } from '../types';
-import { readExcelFile, downloadFingerprintLogsTemplate, parseExcelDate } from '../utils/excelHelper';
+import { readExcelFile, downloadFingerprintLogsTemplate, parseExcelDate, parseExcelDateTime, getTodayLocalDateString } from '../utils/excelHelper';
 import { DB } from '../services/db';
 
 interface FingerprintImportModalProps {
@@ -98,16 +98,13 @@ export function FingerprintImportModal({
 
         let isoTimestamp = '';
         try {
-          isoTimestamp = parseExcelDate(rawTime);
+          isoTimestamp = parseExcelDateTime(rawTime);
         } catch {
-          isoTimestamp = new Date().toISOString();
+          isoTimestamp = `${getTodayLocalDateString()}T12:00:00`;
         }
 
-        const dateObj = new Date(isoTimestamp);
-        const dateStr = !isNaN(dateObj.getTime()) ? isoTimestamp.split('T')[0] : new Date().toISOString().split('T')[0];
-        const timeStr = !isNaN(dateObj.getTime()) 
-          ? isoTimestamp.split('T')[1]?.slice(0, 8) || '00:00:00'
-          : '00:00:00';
+        const dateStr = isoTimestamp.split('T')[0] || getTodayLocalDateString();
+        const timeStr = isoTimestamp.split('T')[1]?.slice(0, 8) || '00:00:00';
 
         // 3. الاتجاه (دخول / خروج)
         const directionRaw = String(
