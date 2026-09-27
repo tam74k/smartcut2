@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { AppSettings, Transaction, Invoice, Branch, TipRecord, AppUser } from '../types';
+import { AppSettings, Transaction, Invoice, Branch, TipRecord, AppUser, Booking } from '../types';
 import { Calendar, FileBarChart, Download, TrendingUp, TrendingDown, DollarSign, Printer, CheckCircle2, Clock, Wallet, Coins, ShoppingCart, Truck, Edit2, Trash2, RefreshCw, AlertTriangle, User, X, Check, Save } from 'lucide-react';
 import { ClosingReportReceipt } from './ClosingReportReceipt';
 import { ServicesReportReceipt } from './ServicesReportReceipt';
@@ -29,7 +29,8 @@ export function ReportsScreen({
   suppliers = [],
   currentUser,
   setEmployees,
-  setTransactions
+  setTransactions,
+  bookings = []
 }: { 
   settings: AppSettings, 
   transactions: Transaction[], 
@@ -47,7 +48,8 @@ export function ReportsScreen({
   suppliers?: any[],
   currentUser?: AppUser | null,
   setEmployees?: (employees: any[]) => void,
-  setTransactions?: (transactions: any[]) => void
+  setTransactions?: (transactions: any[]) => void,
+  bookings?: Booking[]
 }) {
 
   const date = new Date();
@@ -1864,6 +1866,10 @@ function ReportTable({
     const filteredInvoices = invoices.filter((i: Invoice) => {
       const iDateStr = i.date.split('T')[0]; return iDateStr >= activeFrom && iDateStr <= activeTo;
     });
+    const filteredBookings = (bookings || []).filter((b: any) => {
+      const bDateStr = (b.date || (b as any).createdAt || '').split('T')[0];
+      return bDateStr >= activeFrom && bDateStr <= activeTo;
+    });
 
     const dateLabel = start.toISOString().split('T')[0] === end.toISOString().split('T')[0] 
       ? start.toISOString().split('T')[0] 
@@ -1879,6 +1885,7 @@ function ReportTable({
             settings={settings} 
             transactions={filteredTransactions} 
             invoices={filteredInvoices} 
+            bookings={filteredBookings}
             dateLabel={dateLabel} 
             userName={activeUserName}
           />

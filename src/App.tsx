@@ -2206,6 +2206,7 @@ export default function App() {
           currentUser={currentUser}
           setEmployees={handleSetEmployees}
           setTransactions={handleSetTransactions}
+          bookings={branchBookings}
         />
 
       );
@@ -2906,8 +2907,9 @@ export default function App() {
               <div className="bg-white shadow-sm p-4 w-full rounded-2xl">
                 <ClosingReportReceipt 
                   settings={settings}
-                  transactions={transactions.filter(t => t.date.startsWith(shiftData.date))}
-                  invoices={invoices.filter(i => i.date.startsWith(shiftData.date))}
+                  transactions={transactions.filter(t => (t.shiftDate && shiftData.date && t.shiftDate === shiftData.date) || t.date.startsWith(shiftData.date))}
+                  invoices={invoices.filter(i => (i.shiftDate && shiftData.date && i.shiftDate === shiftData.date) || i.date.startsWith(shiftData.date))}
+                  bookings={branchBookings}
                   dateLabel={shiftData.date}
                   initialCash={shiftData.initialCash}
                   userName={currentUser?.name || user?.name || settings.ownerName || 'المسؤول'}

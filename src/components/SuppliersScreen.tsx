@@ -43,8 +43,17 @@ export function SuppliersScreen({
   const handleSaveSupplier = () => {
     if (!supplierForm.name || !supplierForm.phone) return;
     
+    const balanceNum = Number(supplierForm.initialBalance) || 0;
+
     if (editingSupplierId) {
-      setSuppliers(suppliers.map(s => s.id === editingSupplierId ? { ...s, name: supplierForm.name, phone: supplierForm.phone, email: supplierForm.email, address: supplierForm.address } : s));
+      setSuppliers(suppliers.map(s => s.id === editingSupplierId ? { 
+        ...s, 
+        name: supplierForm.name, 
+        phone: supplierForm.phone, 
+        email: supplierForm.email, 
+        address: supplierForm.address,
+        currentBalance: balanceNum
+      } : s));
     } else {
       const newSupplier: Supplier = {
         id: 'SUP-' + Math.random().toString(36).substr(2, 9),
@@ -52,7 +61,7 @@ export function SuppliersScreen({
         phone: supplierForm.phone,
         email: supplierForm.email,
         address: supplierForm.address,
-        currentBalance: Number(supplierForm.initialBalance) || 0
+        currentBalance: balanceNum
       };
       setSuppliers([...suppliers, newSupplier]);
     }
@@ -174,7 +183,23 @@ export function SuppliersScreen({
                         <button onClick={() => { setStatementSupplier(s); setStatementFrom(''); setStatementTo(''); }} className="bg-blue-100 text-blue-600 px-3 py-1 rounded-md text-sm font-bold flex items-center gap-1">
                           <FileText size={14} /> كشف حساب
                         </button>
-                        <button onClick={() => { setSupplierForm({ name: s.name, phone: s.phone, email: s.email || '', address: s.address || '', initialBalance: '' }); setEditingSupplierId(s.id); setShowAddSupplierModal(true); }} className="text-blue-500 hover:bg-blue-50 p-1.5 rounded"><Edit2 size={16} /></button>
+                        <button 
+                          onClick={() => { 
+                            setSupplierForm({ 
+                              name: s.name, 
+                              phone: s.phone, 
+                              email: s.email || '', 
+                              address: s.address || '', 
+                              initialBalance: s.currentBalance !== undefined && s.currentBalance !== null ? s.currentBalance.toString() : '0' 
+                            }); 
+                            setEditingSupplierId(s.id); 
+                            setShowAddSupplierModal(true); 
+                          }} 
+                          className="text-blue-500 hover:bg-blue-50 p-1.5 rounded transition-colors"
+                          title="تعديل بيانات المورد"
+                        >
+                          <Edit2 size={16} />
+                        </button>
                         <button onClick={() => setSupplierToDelete(s)} className="text-red-500 hover:bg-red-50 p-1.5 rounded transition-colors" title="حذف المورد"><Trash2 size={16} /></button>
                       </div>
                     </td>
@@ -218,7 +243,7 @@ export function SuppliersScreen({
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
             <div className="p-4 border-b border-slate-100 flex justify-between items-center">
-              <h3 className="font-bold text-lg">{editingSupplierId ? 'تعديل مورد' : 'إضافة مورد جديد'}</h3>
+              <h3 className="font-bold text-lg">{editingSupplierId ? 'تعديل بيانات مورد' : 'إضافة مورد جديد'}</h3>
               <button onClick={() => setShowAddSupplierModal(false)} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
             </div>
             <div className="p-4 space-y-4">
@@ -230,12 +255,27 @@ export function SuppliersScreen({
                 <label className="block text-sm font-bold text-slate-700 mb-1">رقم الجوال</label>
                 <input type="text" value={supplierForm.phone} onChange={e => setSupplierForm({...supplierForm, phone: e.target.value})} className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary" />
               </div>
-              {!editingSupplierId && (
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">الرصيد الافتتاحي (مديونية لنا)</label>
-                  <input type="number" value={supplierForm.initialBalance} onChange={e => setSupplierForm({...supplierForm, initialBalance: e.target.value})} className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary" />
-                </div>
-              )}
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">البريد الإلكتروني (اختياري)</label>
+                <input type="email" value={supplierForm.email} onChange={e => setSupplierForm({...supplierForm, email: e.target.value})} className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary" />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">العنوان (اختياري)</label>
+                <input type="text" value={supplierForm.address} onChange={e => setSupplierForm({...supplierForm, address: e.target.value})} className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary" />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">
+                  {editingSupplierId ? 'الرصيد الافتتاحي / الحالي (المديونية)' : 'الرصيد الافتتاحي (المديونية)'}
+                </label>
+                <input 
+                  type="number" 
+                  step="any"
+                  value={supplierForm.initialBalance} 
+                  onChange={e => setSupplierForm({...supplierForm, initialBalance: e.target.value})} 
+                  placeholder="0.00"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary font-mono" 
+                />
+              </div>
               <button onClick={handleSaveSupplier} className="w-full bg-primary text-white font-bold py-3 rounded-lg hover:bg-primary-dark transition-colors">حفظ</button>
             </div>
           </div>

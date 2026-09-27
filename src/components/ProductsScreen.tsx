@@ -17,7 +17,7 @@ export function ProductsScreen({
 }: { 
   settings: AppSettings;
   products: Product[]; 
-  setProducts: (p: Product[]) => void;
+  setProducts: (p: Product[] | ((prev: Product[]) => Product[])) => void;
   categories: Category[];
   employees: Employee[];
   suppliers?: Supplier[];
@@ -32,6 +32,8 @@ export function ProductsScreen({
   const [importedRows, setImportedRows] = useState<any[]>([]);
   const [importFileName, setImportFileName] = useState('');
   const [importError, setImportError] = useState('');
+  const [isImporting, setIsImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState({ current: 0, total: 0 });
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [showDispenseModal, setShowDispenseModal] = useState(false);
@@ -198,77 +200,114 @@ export function ProductsScreen({
     }
   };
 
-  const handleExecuteImport = () => {
-    if (importedRows.length === 0) return;
+  const handleExecuteImport = async () => {
+    if (importedRows.length === 0 || isImporting) return;
 
-    const newProducts: Product[] = [];
-    const currentSuppliersList = [...suppliers];
-    let addedSuppliersCount = 0;
+    setIsImporting(true);
+    setImportError('');
+    setImportProgress({ current: 0, total: importedRows.length });
 
-    importedRows.forEach((row, idx) => {
-      const name = String(row['اسم المنتج'] || row['المنتج'] || row['Product Name'] || row['name'] || '').trim();
-      if (!name) return;
+    try {
+      const newProducts: Product[] = [];
+      const currentSuppliersList = [...suppliers];
+      let addedSuppliersCount = 0;
+      let successCount = 0;
 
-      const catName = String(row['اسم التصنيف'] || row['التصنيف'] || row['Category'] || row['category'] || '').trim();
-      const category = categories.find(c => c.name.toLowerCase() === catName.toLowerCase()) || categories[0];
+      for (let idx = 0; idx < importedRows.length; idx++) {
+        const row = importedRows[idx];
+        setImportProgress({ current: idx + 1, total: importedRows.length });
 
-      // قراءة المورد والربط به
-      const supplierRawName = String(row['اسم المورد'] || row['المورد'] || row['Supplier'] || row['supplier'] || '').trim();
-      let matchedSupplier: Supplier | undefined;
-      
-      if (supplierRawName) {
-        matchedSupplier = currentSuppliersList.find(s => normalizeText(s.name) === normalizeText(supplierRawName));
-        if (!matchedSupplier) {
-          // تسجيل المورد تلقائياً إذا لم يكن مضافاً مسبقاً
-          matchedSupplier = {
-            id: 'SUP-' + Math.random().toString(36).substr(2, 9) + '-' + (idx + 1),
-            name: supplierRawName,
-            phone: '0000000000',
-            currentBalance: 0
-          };
-          currentSuppliersList.push(matchedSupplier);
-          addedSuppliersCount++;
-          DB.saveSupplier(matchedSupplier);
+        const name = String(row['اسم المنتج'] || row['المنتج'] || row['Product Name'] || row['name'] || '').trim();
+        if (!name) continue;
+
+        const catName = String(row['اسم التصنيف'] || row['التصنيف'] || row['Category'] || row['category'] || '').trim();
+        let matchedCategory = categories.find(c => normalizeText(c.name) === normalizeText(catName));
+        
+        // إذا لم يكن التصنيف موجوداً، ابحث عن أول تصنيف صالح للمنتجات أو اترك الحقل فارغاً
+        if (!matchedCategory && catName) {
+          matchedCategory = categories.find(c => c.id !== 'all' && c.type === 'product') || categories[0];
         }
+
+        // قراءة المورد والربط به
+        const supplierRawName = String(row['اسم المورد'] || row['المورد'] || row['Supplier'] || row['supplier'] || '').trim();
+        let matchedSupplier: Supplier | undefined;
+        
+        if (supplierRawName) {
+          matchedSupplier = currentSuppliersList.find(s => normalizeText(s.name) === normalizeText(supplierRawName));
+          if (!matchedSupplier) {
+            // تسجيل المورد تلقائياً إذا لم يكن مضافاً مسبقاً
+            matchedSupplier = {
+              id: 'SUP-' + Math.random().toString(36).substr(2, 9) + '-' + (idx + 1),
+              name: supplierRawName,
+              phone: '0000000000',
+              currentBalance: 0
+            };
+            currentSuppliersList.push(matchedSupplier);
+            addedSuppliersCount++;
+            await DB.saveSupplier(matchedSupplier, settings.salonId);
+          }
+        }
+
+        const sellPrice = Number(row['سعر البيع (ر.س)'] || row['سعر البيع'] || row['Sell Price'] || row['sellPrice'] || 0);
+        const costPrice = Number(row['سعر التكلفة (ر.س)'] || row['سعر التكلفة'] || row['Cost Price'] || row['costPrice'] || 0);
+        const openingStock = Number(row['المخزون الافتتاحي'] || row['المخزون'] || row['Opening Stock'] || 0);
+        const reorderLimit = Number(row['حد إعادة الطلب'] || row['حد الطلب'] || row['Reorder Limit'] || 5);
+        const commission = Number(row['نسبة عمولة البيع (%)'] || row['العمولة'] || row['Commission'] || 0);
+        const barcode = String(row['الباركود'] || row['Barcode'] || '').trim();
+
+        const prodItem: Product = {
+          id: 'PRD-' + Math.random().toString(36).substr(2, 9) + '-' + Date.now() + '-' + idx,
+          name,
+          categoryId: matchedCategory?.id || '',
+          supplierId: matchedSupplier?.id,
+          supplierName: matchedSupplier?.name || (supplierRawName || undefined),
+          sellPrice: isNaN(sellPrice) ? 0 : sellPrice,
+          costPrice: isNaN(costPrice) ? 0 : costPrice,
+          openingStock: isNaN(openingStock) ? 0 : openingStock,
+          currentStock: isNaN(openingStock) ? 0 : openingStock,
+          reorderLimit: isNaN(reorderLimit) ? 5 : reorderLimit,
+          commission: isNaN(commission) ? 0 : commission,
+          barcode: barcode || undefined,
+          ...(settings.salonId ? { salonId: settings.salonId } : {}),
+          ...(settings.branchId ? { branchId: settings.branchId } : {})
+        };
+
+        // رفع المنتج مباشرة إلى قاعدة بيانات Supabase
+        const saved = await DB.saveProduct(prodItem, settings.salonId);
+        if (saved) {
+          successCount++;
+        }
+        newProducts.push(prodItem);
       }
 
-      const sellPrice = Number(row['سعر البيع (ر.س)'] || row['سعر البيع'] || row['Sell Price'] || row['sellPrice'] || 0);
-      const costPrice = Number(row['سعر التكلفة (ر.س)'] || row['سعر التكلفة'] || row['Cost Price'] || row['costPrice'] || 0);
-      const openingStock = Number(row['المخزون الافتتاحي'] || row['المخزون'] || row['Opening Stock'] || 0);
-      const reorderLimit = Number(row['حد إعادة الطلب'] || row['حد الطلب'] || row['Reorder Limit'] || 5);
-      const commission = Number(row['نسبة عمولة البيع (%)'] || row['العمولة'] || row['Commission'] || 0);
-      const barcode = String(row['الباركود'] || row['Barcode'] || '').trim();
+      if (newProducts.length === 0) {
+        setImportError('لم يتم العثور على منتجات صالحة للاستيراد في الملف.');
+        setIsImporting(false);
+        return;
+      }
 
-      newProducts.push({
-        id: 'PRD-' + Math.random().toString(36).substr(2, 9) + '-' + idx,
-        name,
-        categoryId: category?.id || 'cat-general',
-        supplierId: matchedSupplier?.id,
-        supplierName: matchedSupplier?.name || (supplierRawName || undefined),
-        sellPrice: isNaN(sellPrice) ? 0 : sellPrice,
-        costPrice: isNaN(costPrice) ? 0 : costPrice,
-        openingStock: isNaN(openingStock) ? 0 : openingStock,
-        currentStock: isNaN(openingStock) ? 0 : openingStock,
-        reorderLimit: isNaN(reorderLimit) ? 5 : reorderLimit,
-        commission: isNaN(commission) ? 0 : commission,
-        barcode: barcode || undefined
+      if (addedSuppliersCount > 0 && setSuppliers) {
+        setSuppliers(currentSuppliersList);
+      }
+
+      // تحديث الحالة المحلية للمنتجات
+      setProducts(prev => {
+        const prevList = Array.isArray(prev) ? prev : [];
+        const existingIds = new Set(prevList.map(p => p.id));
+        const uniqueNew = newProducts.filter(p => !existingIds.has(p.id));
+        return [...prevList, ...uniqueNew];
       });
-    });
 
-    if (newProducts.length === 0) {
-      setImportError('لم يتم العثور على منتجات صالحة للاستيراد في الملف.');
-      return;
+      setShowImportModal(false);
+      setImportedRows([]);
+      setImportFileName('');
+      alert(`تم استيراد ورفع ${successCount} منتج بنجاح إلى قاعدة البيانات!${addedSuppliersCount > 0 ? ` (وتم تسجيل ${addedSuppliersCount} مورد جديد تلقائياً)` : ''}`);
+    } catch (err: any) {
+      console.error('Error during import execution:', err);
+      setImportError('حدث خطأ أثناء رفع المنتجات لقاعدة البيانات: ' + (err.message || ''));
+    } finally {
+      setIsImporting(false);
     }
-
-    if (addedSuppliersCount > 0 && setSuppliers) {
-      setSuppliers(currentSuppliersList);
-    }
-
-    setProducts([...products, ...newProducts]);
-    setShowImportModal(false);
-    setImportedRows([]);
-    setImportFileName('');
-    alert(`تم استيراد ${newProducts.length} منتج بنجاح!${addedSuppliersCount > 0 ? ` (وتم تسجيل ${addedSuppliersCount} مورد جديد تلقائياً)` : ''}`);
   };
 
   return (
@@ -712,19 +751,29 @@ export function ProductsScreen({
             <div className="pt-3 border-t border-slate-100 flex gap-2">
               <button
                 type="button"
+                disabled={isImporting}
                 onClick={() => setShowImportModal(false)}
-                className="flex-1 py-2.5 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 cursor-pointer"
+                className="flex-1 py-2.5 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 cursor-pointer"
               >
                 إلغاء
               </button>
               <button
                 type="button"
-                disabled={importedRows.length === 0}
+                disabled={importedRows.length === 0 || isImporting}
                 onClick={handleExecuteImport}
                 className="flex-1 py-2.5 rounded-xl text-xs font-extrabold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-emerald-600/20 cursor-pointer flex items-center justify-center gap-1.5"
               >
-                <Check size={15} />
-                <span>تنفيذ الاستيراد إلى النظام</span>
+                {isImporting ? (
+                  <>
+                    <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin inline-block ml-1"></span>
+                    <span>جاري الرفع إلى قاعدة البيانات ({importProgress.current} / {importProgress.total})...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check size={15} />
+                    <span>تنفيذ الاستيراد والرفع للنظام</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

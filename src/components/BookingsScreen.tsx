@@ -171,6 +171,30 @@ export function BookingsScreen({
   const [quickAdvDate, setQuickAdvDate] = useState<string>(defaultBookingDate);
   const [quickAdvNotes, setQuickAdvNotes] = useState<string>('');
 
+  // List of treasuries ensuring Main Treasury (الخزنة الرئيسية) is always available
+  const availableTreasuries = useMemo(() => {
+    const rawList = settings.treasuries || [];
+    const mainFound = rawList.find(t => 
+      t.isMain || 
+      t.id === 'main' || 
+      t.id === 'cash' || 
+      t.name.includes('الرئيسية') ||
+      t.name.includes('الدرج')
+    );
+
+    if (!mainFound) {
+      return [
+        { id: 'cash', name: 'الخزنة الرئيسية (نقداً)', isMain: true },
+        ...rawList
+      ];
+    }
+
+    return [
+      mainFound,
+      ...rawList.filter(t => t.id !== mainFound.id)
+    ];
+  }, [settings.treasuries]);
+
   // Filtered services for autocomplete search
   const filteredServicesForBooking = useMemo(() => {
     if (!serviceSearchQuery.trim()) return services;
@@ -376,6 +400,11 @@ export function BookingsScreen({
 
   // Quick Open Modal on Empty Slot Click
   const handleEmptySlotClick = (dateStr: string, slotTime: string, technicianId?: string) => {
+    if (!shiftData?.isOpen) {
+      alert('لا يمكن تسجيل حجز جديد والوردية مغلقة. يرجى فتح وردية أولاً من شاشة الورديات.');
+      return;
+    }
+    const openShiftDate = (shiftData && shiftData.isOpen && shiftData.date) ? shiftData.date : dateStr;
     setEditingBooking(null);
     setServiceSearchQuery('');
     setServiceToAdd('');
@@ -383,13 +412,15 @@ export function BookingsScreen({
     setNewBooking({
       clientName: '',
       phone: '',
-      date: dateStr,
+      date: openShiftDate,
       time: slotTime,
       status: 'confirmed',
       services: [],
       advancePayments: [],
       totalAmount: 0
     });
+    setAdvTreasuryInput(availableTreasuries[0]?.id || 'cash');
+    setAdvDateInput(openShiftDate);
     if (technicianId && technicianId !== 'all') {
       setTechToAdd(technicianId);
     }
@@ -427,10 +458,10 @@ export function BookingsScreen({
       alert('يرجى إدخال مبلغ صحيح للدفعة المقدمة');
       return;
     }
-    const currentTreasuries = settings.treasuries || [];
+    const currentTreasuries = availableTreasuries;
     const tId = advTreasuryInput || (currentTreasuries[0]?.id || 'cash');
     const selectedTreasuryObj = currentTreasuries.find(t => t.id === tId);
-    const tName = selectedTreasuryObj?.name || (tId === 'cash' ? 'الخزينة النقدية' : 'الخزينة');
+    const tName = selectedTreasuryObj?.name || (tId === 'cash' ? 'الخزنة الرئيسية (نقداً)' : 'الخزينة');
 
     const effectiveShiftDate = (shiftData && shiftData.isOpen && shiftData.date) ? shiftData.date : undefined;
     const advDate = effectiveShiftDate || advDateInput || new Date().toISOString().split('T')[0];
@@ -471,10 +502,10 @@ export function BookingsScreen({
       return;
     }
 
-    const currentTreasuries = settings.treasuries || [];
+    const currentTreasuries = availableTreasuries;
     const tId = quickAdvTreasury || (currentTreasuries[0]?.id || 'cash');
     const selectedTreasuryObj = currentTreasuries.find(t => t.id === tId);
-    const tName = selectedTreasuryObj?.name || (tId === 'cash' ? 'الخزينة النقدية' : 'الخزينة');
+    const tName = selectedTreasuryObj?.name || (tId === 'cash' ? 'الخزنة الرئيسية (نقداً)' : 'الخزينة');
     const effectiveShiftDate = (shiftData && shiftData.isOpen && shiftData.date) ? shiftData.date : undefined;
     const advDate = effectiveShiftDate || quickAdvDate || new Date().toISOString().split('T')[0];
 
@@ -530,20 +561,29 @@ export function BookingsScreen({
 
   // Save Booking
   const saveBooking = async () => {
+    if (!editingBooking && !shiftData?.isOpen) {
+      alert('لا يمكن تسجيل حجز جديد والوردية مغلقة. يرجى فتح وردية أولاً من شاشة الورديات.');
+      return;
+    }
+
     if (!newBooking.clientName || !newBooking.phone || !newBooking.date || !newBooking.time) {
       alert('يرجى ملء جميع الحقول الإلزامية: رقم الجوال، اسم العميل، التاريخ، والوقت');
       return;
     }
 
+    const effectiveBookingDate = (!editingBooking && shiftData?.isOpen && shiftData.date)
+      ? shiftData.date
+      : newBooking.date!;
+
     const bBranchId = editingBooking?.branchId || activeBranchId || mainBranchId;
     const queueNumber = editingBooking?.queueNumber 
-      || await QueueService.getNextBookingQueueNumberAsync(settings.salonId, bBranchId, newBooking.date);
+      || await QueueService.getNextBookingQueueNumberAsync(settings.salonId, bBranchId, effectiveBookingDate);
 
     const booking: Booking = {
       id: editingBooking ? editingBooking.id : 'B-' + Math.random().toString(36).substr(2, 9).toUpperCase(),
       clientName: newBooking.clientName!,
       phone: newBooking.phone!,
-      date: newBooking.date!,
+      date: effectiveBookingDate,
       time: newBooking.time!,
       status: newBooking.status || 'confirmed',
       services: newBooking.services || [],
@@ -854,17 +894,24 @@ export function BookingsScreen({
           {/* Global New Booking Button */}
           <button
             onClick={() => {
+              if (!shiftData?.isOpen) {
+                alert('لا يمكن تسجيل حجز جديد والوردية مغلقة. يرجى فتح وردية أولاً من شاشة الورديات.');
+                return;
+              }
+              const openShiftDate = (shiftData && shiftData.isOpen && shiftData.date) ? shiftData.date : formatDateToYMD(currentDate);
               setEditingBooking(null);
               setNewBooking({
                 clientName: '',
                 phone: '',
-                date: formatDateToYMD(currentDate),
+                date: openShiftDate,
                 time: '10:00',
                 status: 'confirmed',
                 services: [],
                 advancePayments: [],
                 totalAmount: 0
               });
+              setAdvTreasuryInput(availableTreasuries[0]?.id || 'cash');
+              setAdvDateInput(openShiftDate);
               setShowAddModal(true);
             }}
             className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-2xl text-xs font-black flex items-center gap-1.5 shadow-md shadow-indigo-600/20 transition-all cursor-pointer"
@@ -1657,10 +1704,15 @@ export function BookingsScreen({
                   <button
                     type="button"
                     onClick={() => {
+                      if (!shiftData?.isOpen) {
+                        alert('لا يمكن سداد دفعة مقدمة والوردية مغلقة. يرجى فتح وردية أولاً من شاشة الورديات.');
+                        return;
+                      }
+                      const openShiftDate = (shiftData && shiftData.isOpen && shiftData.date) ? shiftData.date : new Date().toISOString().split('T')[0];
                       setQuickAdvAmount('');
-                      setQuickAdvTreasury(settings.treasuries?.[0]?.id || 'cash');
+                      setQuickAdvTreasury(availableTreasuries[0]?.id || 'cash');
                       setQuickAdvMethod('cash');
-                      setQuickAdvDate(new Date().toISOString().split('T')[0]);
+                      setQuickAdvDate(openShiftDate);
                       setQuickAdvNotes('');
                       setShowQuickAdvanceModal(true);
                     }}
@@ -1821,16 +1873,13 @@ export function BookingsScreen({
                   <span>طريقة الدفع *</span>
                 </label>
                 <select
-                  value={quickAdvTreasury || settings.treasuries?.[0]?.id || 'cash'}
+                  value={quickAdvTreasury || availableTreasuries[0]?.id || 'cash'}
                   onChange={e => setQuickAdvTreasury(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs font-bold focus:border-emerald-600 outline-none"
                 >
-                  {(settings.treasuries || []).map(t => (
+                  {availableTreasuries.map(t => (
                     <option key={t.id} value={t.id}>{t.name}</option>
                   ))}
-                  {(!settings.treasuries || settings.treasuries.length === 0) && (
-                    <option value="cash">نقداً (الخزينة الرئيسية)</option>
-                  )}
                 </select>
               </div>
 
@@ -1960,14 +2009,34 @@ export function BookingsScreen({
                 {/* 3. Date & Time Slots */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">تاريخ الموعد * 📅</label>
+                    <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
+                      <span>تاريخ الموعد * 📅</span>
+                      {!editingBooking && shiftData?.isOpen && (
+                        <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-1.5 py-0.5 rounded">
+                          تلقائي من الوردية
+                        </span>
+                      )}
+                    </label>
                     <input
                       type="date"
                       value={newBooking.date}
-                      onChange={e => setNewBooking({ ...newBooking, date: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none"
+                      onChange={e => {
+                        if (!editingBooking && shiftData?.isOpen) return;
+                        setNewBooking({ ...newBooking, date: e.target.value });
+                      }}
+                      readOnly={!editingBooking && shiftData?.isOpen}
+                      className={`w-full border rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none ${
+                        !editingBooking && shiftData?.isOpen
+                          ? 'bg-slate-100 text-slate-600 cursor-not-allowed border-slate-200'
+                          : 'bg-slate-50 border-slate-200'
+                      }`}
                       required
                     />
+                    {!editingBooking && shiftData?.isOpen && (
+                      <p className="text-[10px] text-emerald-700 mt-1 font-bold">
+                        تاريخ الوردية المفتوحة: {shiftData.date}
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1">وقت الموعد * ⏰</label>
@@ -2199,16 +2268,13 @@ export function BookingsScreen({
                         <span>طريقة الدفع *</span>
                       </label>
                       <select
-                        value={advTreasuryInput || settings.treasuries?.[0]?.id || 'cash'}
+                        value={advTreasuryInput || availableTreasuries[0]?.id || 'cash'}
                         onChange={e => setAdvTreasuryInput(e.target.value)}
                         className="w-full bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs font-bold focus:border-emerald-600 outline-none"
                       >
-                        {(settings.treasuries || []).map(t => (
+                        {availableTreasuries.map(t => (
                           <option key={t.id} value={t.id}>{t.name}</option>
                         ))}
-                        {(!settings.treasuries || settings.treasuries.length === 0) && (
-                          <option value="cash">نقداً (الخزينة الرئيسية)</option>
-                        )}
                       </select>
                     </div>
 

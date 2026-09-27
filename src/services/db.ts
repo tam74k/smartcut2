@@ -1917,16 +1917,58 @@ export const DB = {
     const client = sb(); if (!client || !p) return null;
     const validSalonId = toSalonUUID(salonId || p.salonId || getSalonId());
     const validBranchId = toBranchUUID(p.branchId);
-    const { error } = await client.from('products').upsert({
-      id: p.id, salon_id: validSalonId, branch_id: validBranchId,
-      category_id: p.categoryId || null, name: p.name,
-      sell_price: p.sellPrice ?? 0, cost_price: p.costPrice ?? 0,
-      reorder_limit: p.reorderLimit ?? 5, opening_stock: p.openingStock ?? 0,
-      current_stock: p.currentStock ?? 0, commission: p.commission ?? 0,
-      barcode: p.barcode || null, is_active: p.isActive !== false,
-      supplier_id: p.supplierId || null
-    }, { onConflict: 'id' });
-    if (error) { console.error('DB.saveProduct error:', error.message); return null; }
+
+    const payload: any = {
+      id: p.id,
+      salon_id: validSalonId,
+      branch_id: validBranchId,
+      category_id: p.categoryId || null,
+      name: p.name,
+      sell_price: Number(p.sellPrice ?? 0),
+      cost_price: Number(p.costPrice ?? 0),
+      reorder_limit: Number(p.reorderLimit ?? 5),
+      opening_stock: Number(p.openingStock ?? 0),
+      current_stock: Number(p.currentStock ?? 0),
+      commission: Number(p.commission ?? 0),
+      barcode: p.barcode || null,
+      is_active: p.isActive !== false
+    };
+
+    if (p.supplierId) {
+      payload.supplier_id = p.supplierId;
+    }
+
+    let { error } = await client.from('products').upsert(payload, { onConflict: 'id' });
+
+    // 1. معالجة غياب عمود supplier_id إن لم يكن مضافاً بعد في قاعدة بيانات العميل
+    if (error && (error.message.includes('supplier_id') || error.message.includes('PGRST204') || (error as any).code === '42703')) {
+      console.warn('DB.saveProduct: supplier_id column missing in Supabase, retrying without supplier_id and triggering ensureColumn...');
+      ensureColumn('products', 'supplier_id', 'VARCHAR(100)').catch(() => {});
+      delete payload.supplier_id;
+      const retry = await client.from('products').upsert(payload, { onConflict: 'id' });
+      error = retry.error;
+    }
+
+    // 2. معالجة قيد المفتاح الأجنبي للتصنيف category_id
+    if (error && (error.message.includes('category_id') || error.message.includes('foreign key') || (error as any).code === '23503')) {
+      console.warn('DB.saveProduct: foreign key violation on category_id, retrying with category_id = null...');
+      payload.category_id = null;
+      const retry = await client.from('products').upsert(payload, { onConflict: 'id' });
+      error = retry.error;
+    }
+
+    // 3. معالجة قيد المفتاح الأجنبي للفرع branch_id
+    if (error && (error.message.includes('branch_id') || (error as any).code === '23503')) {
+      console.warn('DB.saveProduct: foreign key violation on branch_id, retrying with branch_id = null...');
+      payload.branch_id = null;
+      const retry = await client.from('products').upsert(payload, { onConflict: 'id' });
+      error = retry.error;
+    }
+
+    if (error) { 
+      console.error('DB.saveProduct error:', error.message); 
+      return null; 
+    }
     return p;
   },
   async saveProducts(list: any[], salonId?: string) { for (const p of list) await DB.saveProduct(p, salonId); return true; },
