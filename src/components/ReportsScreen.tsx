@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { AppSettings, Transaction, Invoice, Branch, TipRecord, AppUser, Booking } from '../types';
-import { Calendar, FileBarChart, Download, TrendingUp, TrendingDown, DollarSign, Printer, CheckCircle2, Clock, Wallet, Coins, ShoppingCart, Truck, Edit2, Trash2, RefreshCw, AlertTriangle, User, X, Check, Save } from 'lucide-react';
+import { Calendar, FileBarChart, Download, TrendingUp, TrendingDown, DollarSign, Printer, CheckCircle2, Clock, Wallet, Coins, ShoppingCart, Truck, Edit2, Trash2, RefreshCw, AlertTriangle, User, X, Check, Save, MapPin } from 'lucide-react';
 import { ClosingReportReceipt } from './ClosingReportReceipt';
 import { ServicesReportReceipt } from './ServicesReportReceipt';
 import { EmployeesReportReceipt } from './EmployeesReportReceipt';
@@ -11,6 +11,7 @@ import { exportToExcel } from '../utils/exportExcel';
 import { handlePrintReceipt } from '../utils/print';
 import { calculateEmployeeCommission, calculateEmployeeTotalCommission } from '../utils/commissionHelper';
 import { DB } from '../services/db';
+import { getBookingAdvances, getBookingTotalAdvances } from './BookingsScreen';
 
 export function ReportsScreen({ 
   settings, 
@@ -66,6 +67,8 @@ export function ReportsScreen({
   const [overtimeViewMode, setOvertimeViewMode] = useState<'summary' | 'detailed'>('summary');
   const [selectedOvertimeEmpId, setSelectedOvertimeEmpId] = useState<string>('all');
   const [selectedAdvanceEmpId, setSelectedAdvanceEmpId] = useState<string>('all');
+  const [unpaidBookingsFilter, setUnpaidBookingsFilter] = useState<'all' | 'unpaid_only' | 'paid_only'>('all');
+  const [unpaidBookingsSearch, setUnpaidBookingsSearch] = useState('');
 
   const [localFingerprintLogs, setLocalFingerprintLogs] = useState<any[]>(fingerprintLogs || []);
   const [isRefreshingLogs, setIsRefreshingLogs] = useState<boolean>(false);
@@ -892,6 +895,117 @@ export function ReportsScreen({
     }
   };
 
+  // ---- حسابات تقرير المبالغ المتبقية والغير مسددة في الحجوزات (Unpaid Bookings Report) ----
+  const unpaidBookingsReportData = useMemo(() => {
+    if (!activeFrom || !activeTo) {
+      return {
+        rows: [] as any[],
+        totalAmountSum: 0,
+        totalPaidSum: 0,
+        totalUnpaidSum: 0,
+        unpaidBookingsCount: 0,
+        fullyPaidBookingsCount: 0,
+        totalCount: 0
+      };
+    }
+
+    // 1. Filter bookings by branch and date range
+    const periodBookings = (bookings || []).filter(b => {
+      if (!matchesActiveBranch((b as any).branchId)) return false;
+      const bDate = (b.date ? b.date.split('T')[0].trim() : '');
+      if (activeFrom && bDate < activeFrom) return false;
+      if (activeTo && bDate > activeTo) return false;
+      if (b.status === 'cancelled') return false;
+      return true;
+    });
+
+    // 2. Map booking rows with calculated paid & unpaid amounts
+    const mappedRows = periodBookings.map(b => {
+      const total = Number(b.totalAmount) || 0;
+      const advances = getBookingAdvances(b);
+      const paid = getBookingTotalAdvances(b);
+      const unpaid = Math.max(0, total - paid);
+
+      const servicesText = (b.services && b.services.length > 0)
+        ? b.services.map((s: any) => s.serviceName || s.name).filter(Boolean).join(' + ')
+        : '-';
+
+      const staffText = (b.services && b.services.length > 0)
+        ? b.services.map((s: any) => s.technicianName).filter(Boolean).join(', ')
+        : '-';
+
+      let statusBadge = { label: 'مؤكد', bg: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+      if (b.status === 'pending') statusBadge = { label: 'معلق', bg: 'bg-amber-50 text-amber-700 border-amber-200' };
+      else if (b.status === 'completed') statusBadge = { label: 'مكتمل', bg: 'bg-blue-50 text-blue-700 border-blue-200' };
+      else if (b.status === 'cancelled') statusBadge = { label: 'ملغي', bg: 'bg-rose-50 text-rose-700 border-rose-200' };
+
+      return {
+        id: b.id,
+        bookingCode: b.bookingCode || `#${b.id.slice(-6)}`,
+        clientName: b.clientName || 'عميل نقدي',
+        phone: b.phone || '-',
+        date: (b.date ? b.date.split('T')[0].trim() : ''),
+        time: b.time || '-',
+        servicesText,
+        staffText,
+        totalAmount: total,
+        paidAmount: paid,
+        unpaidAmount: unpaid,
+        status: b.status,
+        statusBadge,
+        statusText: statusBadge.label,
+        location: b.location || '',
+        notes: b.notes || '',
+        advances,
+        rawBooking: b
+      };
+    });
+
+    // 3. Filter by unpaidBookingsFilter
+    let filtered = mappedRows;
+    if (unpaidBookingsFilter === 'unpaid_only') {
+      filtered = filtered.filter(r => r.unpaidAmount > 0.001);
+    } else if (unpaidBookingsFilter === 'paid_only') {
+      filtered = filtered.filter(r => r.unpaidAmount <= 0.001);
+    }
+
+    // 4. Filter by search
+    if (unpaidBookingsSearch.trim()) {
+      const q = unpaidBookingsSearch.toLowerCase().trim();
+      filtered = filtered.filter(r => 
+        r.clientName.toLowerCase().includes(q) ||
+        r.phone.includes(q) ||
+        r.bookingCode.toLowerCase().includes(q) ||
+        r.servicesText.toLowerCase().includes(q) ||
+        (r.location && r.location.toLowerCase().includes(q))
+      );
+    }
+
+    // Sort by date then time descending
+    filtered.sort((a, b) => {
+      const aKey = (a.date || '') + (a.time || '');
+      const bKey = (b.date || '') + (b.time || '');
+      return bKey.localeCompare(aKey);
+    });
+
+    // 5. Totals
+    const totalAmountSum = filtered.reduce((s, r) => s + r.totalAmount, 0);
+    const totalPaidSum = filtered.reduce((s, r) => s + r.paidAmount, 0);
+    const totalUnpaidSum = filtered.reduce((s, r) => s + r.unpaidAmount, 0);
+    const unpaidBookingsCount = filtered.filter(r => r.unpaidAmount > 0.001).length;
+    const fullyPaidBookingsCount = filtered.filter(r => r.unpaidAmount <= 0.001).length;
+
+    return {
+      rows: filtered,
+      totalAmountSum,
+      totalPaidSum,
+      totalUnpaidSum,
+      unpaidBookingsCount,
+      fullyPaidBookingsCount,
+      totalCount: filtered.length
+    };
+  }, [bookings, activeBranchId, isMainBranch, activeFrom, activeTo, unpaidBookingsFilter, unpaidBookingsSearch]);
+
   const handleExport = () => {
     const filename = `تقرير_${activeReportType}_${activeFrom}_${activeTo}`;
     if (activeReportType === 'income') {
@@ -1025,6 +1139,48 @@ export function ReportsScreen({
         b.note
       ]);
       exportToExcel(filename, 'تقرير_صافي_الأرباح_وقائمة_الدخل', headers, rows);
+    } else if (activeReportType === 'unpaid_bookings') {
+      const headers = [
+        'رقم الحجز',
+        'اسم العميل',
+        'رقم الجوال',
+        'تاريخ الحجز',
+        'الوقت',
+        'الأعمال المطلوبة',
+        'المبلغ الإجمالي',
+        'المسدد (العربون)',
+        'غير المسدد (المتبقي)',
+        'حالة الحجز',
+        'مكان الحجز'
+      ];
+      const rows = unpaidBookingsReportData.rows.map(r => [
+        r.bookingCode,
+        r.clientName,
+        r.phone,
+        r.date,
+        r.time,
+        r.servicesText,
+        r.totalAmount.toFixed(2),
+        r.paidAmount.toFixed(2),
+        r.unpaidAmount.toFixed(2),
+        r.statusText,
+        r.location || '-'
+      ]);
+      // Total summary row at bottom
+      rows.push([
+        'المجموع الإجمالي',
+        `عدد الحجوزات: ${unpaidBookingsReportData.rows.length}`,
+        '',
+        `من ${activeFrom} إلى ${activeTo}`,
+        '',
+        '',
+        unpaidBookingsReportData.totalAmountSum.toFixed(2),
+        unpaidBookingsReportData.totalPaidSum.toFixed(2),
+        unpaidBookingsReportData.totalUnpaidSum.toFixed(2),
+        '',
+        ''
+      ]);
+      exportToExcel(filename, 'المبالغ المتبقية في الحجوزات', headers, rows);
     } else {
       const headers = ['البيان', 'القيمة'];
       const rows = [
@@ -1073,6 +1229,7 @@ export function ReportsScreen({
             <label className="block text-xs font-bold text-slate-500 mb-1">نوع التقرير</label>
             <select value={reportType} onChange={(e) => setReportType(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary font-semibold text-slate-700 bg-white">
               <option value="net_profit">💎 تقرير الأرباح الصافية (معادلة صافي الربح وقائمة الدخل)</option>
+              <option value="unpaid_bookings">📅 تقرير المبالغ المتبقية والغير مسددة في الحجوزات</option>
               <option value="income">تقرير الدخل التفصيلي</option>
               <option value="closing">تقرير إغلاق اليوم</option>
               <option value="employees">أعمال وعمولات الموظفين</option>
@@ -1163,6 +1320,54 @@ export function ReportsScreen({
                   <option key={emp.id} value={emp.id}>{emp.name} ({emp.role || 'موظف'})</option>
                 ))}
               </select>
+            </div>
+          </div>
+        )}
+
+        {/* Sub-filters for Unpaid Bookings Report */}
+        {reportType === 'unpaid_bookings' && (
+          <div className="mt-4 pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 animate-in fade-in">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-bold text-slate-600">تصفية الحجوزات:</span>
+              <div className="flex bg-slate-100 p-1 rounded-xl gap-1">
+                <button
+                  type="button"
+                  onClick={() => setUnpaidBookingsFilter('all')}
+                  className={`py-1.5 px-3 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                    unpaidBookingsFilter === 'all' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  الكل ({unpaidBookingsReportData.totalCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUnpaidBookingsFilter('unpaid_only')}
+                  className={`py-1.5 px-3 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                    unpaidBookingsFilter === 'unpaid_only' ? 'bg-white text-rose-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  المتبقي غير مسدد فقط ⚠️ ({unpaidBookingsReportData.unpaidBookingsCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUnpaidBookingsFilter('paid_only')}
+                  className={`py-1.5 px-3 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                    unpaidBookingsFilter === 'paid_only' ? 'bg-white text-emerald-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  مسددة بالكامل ✅ ({unpaidBookingsReportData.fullyPaidBookingsCount})
+                </button>
+              </div>
+            </div>
+
+            <div className="w-full sm:w-72">
+              <input
+                type="text"
+                value={unpaidBookingsSearch}
+                onChange={(e) => setUnpaidBookingsSearch(e.target.value)}
+                placeholder="🔍 بحث بالعميل أو الجوال أو رقم الحجز..."
+                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-primary"
+              />
             </div>
           </div>
         )}
@@ -1352,6 +1557,68 @@ export function ReportsScreen({
 
           </div>
 
+        </div>
+      ) : isGenerated && activeReportType === 'unpaid_bookings' ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm border-r-4 border-r-rose-500 flex justify-between items-center">
+            <div>
+              <p className="text-slate-500 text-xs font-bold mb-1">المتبقي غير المسدد (الذمم المطلوبة)</p>
+              <h4 className="text-2xl font-black text-rose-600 font-mono">
+                {unpaidBookingsReportData.totalUnpaidSum.toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
+              </h4>
+              <p className="text-[11px] font-semibold text-rose-700 mt-0.5">
+                مطلوب تحصيله عند إتمام الحجز
+              </p>
+            </div>
+            <div className="w-11 h-11 rounded-xl bg-rose-50 flex items-center justify-center text-rose-600">
+              <AlertTriangle size={22} />
+            </div>
+          </div>
+
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm border-r-4 border-r-emerald-500 flex justify-between items-center">
+            <div>
+              <p className="text-slate-500 text-xs font-bold mb-1">إجمالي المسدد (العربونات)</p>
+              <h4 className="text-2xl font-black text-emerald-600 font-mono">
+                {unpaidBookingsReportData.totalPaidSum.toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
+              </h4>
+              <p className="text-[11px] font-semibold text-emerald-700 mt-0.5">
+                تم توريدها للخزائن كدفعات مقدمة
+              </p>
+            </div>
+            <div className="w-11 h-11 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600">
+              <DollarSign size={22} />
+            </div>
+          </div>
+
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm border-r-4 border-r-indigo-500 flex justify-between items-center">
+            <div>
+              <p className="text-slate-500 text-xs font-bold mb-1">إجمالي قيمة الحجوزات</p>
+              <h4 className="text-2xl font-black text-indigo-700 font-mono">
+                {unpaidBookingsReportData.totalAmountSum.toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
+              </h4>
+              <p className="text-[11px] font-semibold text-slate-500 mt-0.5">
+                إجمالي قيمة الأعمال والخدمات
+              </p>
+            </div>
+            <div className="w-11 h-11 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
+              <Calendar size={22} />
+            </div>
+          </div>
+
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm border-r-4 border-r-amber-500 flex justify-between items-center">
+            <div>
+              <p className="text-slate-500 text-xs font-bold mb-1">حجوزات بها متبقي</p>
+              <h4 className="text-2xl font-black text-amber-700 font-mono">
+                {unpaidBookingsReportData.unpaidBookingsCount} <span className="text-xs font-normal text-slate-400">حجز من {unpaidBookingsReportData.totalCount}</span>
+              </h4>
+              <p className="text-[11px] font-semibold text-amber-700 mt-0.5">
+                {unpaidBookingsReportData.fullyPaidBookingsCount} حجز مسدد بالكامل
+              </p>
+            </div>
+            <div className="w-11 h-11 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600">
+              <Clock size={22} />
+            </div>
+          </div>
         </div>
       ) : isGenerated && activeReportType === 'advances' ? (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -1613,6 +1880,7 @@ export function ReportsScreen({
             handleSaveEditAdvance={handleSaveEditAdvance}
             getTreasuryLabel={getTreasuryLabel}
             getSupplierName={getSupplierName}
+            unpaidBookingsReportData={unpaidBookingsReportData}
           />
         </div>
       )}
@@ -1653,7 +1921,8 @@ function ReportTable({
   handleDeleteAdvance,
   handleSaveEditAdvance,
   getTreasuryLabel: customGetTreasuryLabel,
-  getSupplierName: customGetSupplierName
+  getSupplierName: customGetSupplierName,
+  unpaidBookingsReportData
 }: any) {
   const start = new Date(activeFrom);
   const end = new Date(activeTo);
@@ -3515,6 +3784,170 @@ function ReportTable({
               )}
             </table>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* ---------------- UNPAID BOOKINGS REPORT TABLE ---------------- */
+  if (reportType === 'unpaid_bookings') {
+    const data = unpaidBookingsReportData || {
+      rows: [],
+      totalAmountSum: 0,
+      totalPaidSum: 0,
+      totalUnpaidSum: 0,
+      unpaidBookingsCount: 0,
+      fullyPaidBookingsCount: 0,
+      totalCount: 0
+    };
+
+    return (
+      <div id="report-receipt-container" className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden p-6 animate-in fade-in">
+        {/* Header (Screen & Print) */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 pb-4 border-b border-slate-200">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xl font-black text-slate-800">📅 تقرير المبالغ المتبقية والغير مسددة في الحجوزات</span>
+              <span className="bg-indigo-50 text-indigo-700 font-bold text-xs px-2.5 py-1 rounded-lg border border-indigo-200">
+                {data.rows.length} حجز
+              </span>
+            </div>
+            <p className="text-slate-400 text-xs mt-1">
+              الفترة الزمنية: من <span className="font-mono font-bold text-slate-700">{activeFrom}</span> إلى <span className="font-mono font-bold text-slate-700">{activeTo}</span> • {settings.salonName}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="px-3.5 py-1.5 rounded-xl text-xs font-black bg-rose-50 text-rose-800 border border-rose-200">
+              إجمالي غير المسدد: <span className="font-mono text-sm">{data.totalUnpaidSum.toFixed(2)} {settings.currency}</span>
+            </div>
+            <div className="px-3.5 py-1.5 rounded-xl text-xs font-black bg-emerald-50 text-emerald-800 border border-emerald-200">
+              إجمالي المسدد: <span className="font-mono text-sm">{data.totalPaidSum.toFixed(2)} {settings.currency}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Printable/Exportable Table */}
+        <div className="overflow-x-auto rounded-xl border border-slate-200">
+          <table className="w-full text-right text-xs">
+            <thead className="bg-slate-800 text-white font-bold text-[11px]">
+              <tr>
+                <th className="py-3 px-3 text-center w-10">#</th>
+                <th className="py-3 px-3">رقم الحجز</th>
+                <th className="py-3 px-3">اسم العميل</th>
+                <th className="py-3 px-3">تاريخ الحجز</th>
+                <th className="py-3 px-3">الأعمال المطلوبة</th>
+                <th className="py-3 px-3 text-center">المبلغ الإجمالي</th>
+                <th className="py-3 px-3 text-center">المسدد (العربون)</th>
+                <th className="py-3 px-3 text-center">غير المسدد (المتبقي)</th>
+                <th className="py-3 px-3 text-center">الحالة</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
+              {data.rows.map((row: any, idx: number) => {
+                const isUnpaid = row.unpaidAmount > 0.001;
+                return (
+                  <tr key={row.id || idx} className={`hover:bg-slate-50 transition-colors ${isUnpaid ? 'bg-rose-50/20' : ''}`}>
+                    <td className="py-3 px-3 text-center text-slate-400 font-mono text-[11px]">
+                      {idx + 1}
+                    </td>
+                    <td className="py-3 px-3">
+                      <div className="font-mono font-bold text-indigo-700">{row.bookingCode}</div>
+                      {row.location && (
+                        <div className="text-[10px] text-slate-500 flex items-center gap-0.5 mt-0.5" title="مكان الحجز">
+                          <MapPin size={10} className="text-slate-400" />
+                          <span>{row.location}</span>
+                        </div>
+                      )}
+                    </td>
+                    <td className="py-3 px-3">
+                      <div className="font-bold text-slate-900">{row.clientName}</div>
+                      <div className="text-[10px] font-mono text-slate-400" dir="ltr">{row.phone}</div>
+                    </td>
+                    <td className="py-3 px-3">
+                      <div className="font-mono font-bold text-slate-800">{row.date}</div>
+                      <div className="text-[10px] font-mono text-slate-400" dir="ltr">{row.time}</div>
+                    </td>
+                    <td className="py-3 px-3 max-w-xs">
+                      <div className="font-bold text-slate-800 leading-snug">{row.servicesText}</div>
+                      {row.staffText && row.staffText !== '-' && (
+                        <div className="text-[10px] text-slate-500 mt-0.5">الموظف: {row.staffText}</div>
+                      )}
+                    </td>
+                    <td className="py-3 px-3 text-center font-mono font-black text-slate-900 text-sm">
+                      {row.totalAmount.toFixed(2)} <span className="text-[10px] font-normal text-slate-400">{settings.currency}</span>
+                    </td>
+                    <td className="py-3 px-3 text-center">
+                      <div className="font-mono font-black text-emerald-700 text-sm">
+                        {row.paidAmount.toFixed(2)} <span className="text-[10px] font-normal text-slate-400">{settings.currency}</span>
+                      </div>
+                      {row.advances && row.advances.length > 0 && (
+                        <div className="text-[10px] text-slate-500 mt-0.5 flex flex-wrap justify-center gap-1">
+                          {row.advances.map((adv: any, aIdx: number) => (
+                            <span key={adv.id || aIdx} className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-1 rounded text-[9px] font-semibold">
+                              عربون {aIdx + 1}: {Number(adv.amount || 0).toFixed(0)} ({adv.treasuryName || adv.paymentMethod || 'كاش'})
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </td>
+                    <td className="py-3 px-3 text-center">
+                      {isUnpaid ? (
+                        <div className="inline-flex flex-col items-center">
+                          <span className="font-mono font-black text-rose-600 text-sm">
+                            {row.unpaidAmount.toFixed(2)} <span className="text-[10px] font-normal text-slate-400">{settings.currency}</span>
+                          </span>
+                          <span className="bg-rose-100 text-rose-800 text-[9px] font-bold px-1.5 py-0.5 rounded-full mt-0.5 border border-rose-200">
+                            متبقي غير مسدد
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-200">
+                          مسدد بالكامل ✅
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3 px-3 text-center">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${row.statusBadge.bg}`}>
+                        {row.statusBadge.label}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+
+              {data.rows.length === 0 && (
+                <tr>
+                  <td colSpan={9} className="py-12 text-center text-slate-400 font-bold">
+                    لا توجد حجوزات مسجلة مطابقة للشروط خلال هذه الفترة
+                  </td>
+                </tr>
+              )}
+            </tbody>
+
+            {/* Totals Row (مجاميع بالأسفل) */}
+            {data.rows.length > 0 && (
+              <tfoot className="bg-slate-100 font-black text-slate-900 border-t-2 border-slate-300 text-xs">
+                <tr>
+                  <td colSpan={5} className="py-3.5 px-3 text-center font-black text-sm text-slate-800">
+                    المجاميع الكلية للفترة المحددة ({data.rows.length} حجز)
+                  </td>
+                  <td className="py-3.5 px-3 font-mono text-center font-black text-sm text-indigo-900">
+                    {data.totalAmountSum.toFixed(2)} {settings.currency}
+                  </td>
+                  <td className="py-3.5 px-3 font-mono text-center font-black text-sm text-emerald-800">
+                    {data.totalPaidSum.toFixed(2)} {settings.currency}
+                  </td>
+                  <td className="py-3.5 px-3 font-mono text-center font-black text-sm text-rose-700">
+                    {data.totalUnpaidSum.toFixed(2)} {settings.currency}
+                  </td>
+                  <td className="py-3.5 px-3 text-center text-[11px] text-slate-500 font-bold">
+                    {data.unpaidBookingsCount} متبقي | {data.fullyPaidBookingsCount} مسدد
+                  </td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
         </div>
       </div>
     );
