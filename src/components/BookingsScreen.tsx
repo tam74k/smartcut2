@@ -10,7 +10,8 @@ import {
   Scissors, CheckCircle2, AlertCircle, Sparkles, Filter, 
   List, Grid3X3, Eye, CalendarDays, ArrowRight, Sliders, 
   CalendarOff, ShieldAlert, Trash2, Lock, ShieldCheck, Check,
-  DollarSign, Wallet, CreditCard, Banknote, XCircle, FileSpreadsheet
+  DollarSign, Wallet, CreditCard, Banknote, XCircle, FileSpreadsheet,
+  MapPin
 } from 'lucide-react';
 import { 
   isDateBlocked, isHourBlocked, isStaffAvailableOnDate, 
@@ -163,6 +164,7 @@ export function BookingsScreen({
     date: defaultBookingDate,
     time: '10:00',
     status: 'confirmed',
+    location: '',
     services: [],
     advancePayments: [],
     totalAmount: 0
@@ -432,6 +434,7 @@ export function BookingsScreen({
       date: openShiftDate,
       time: slotTime,
       status: 'confirmed',
+      location: '',
       services: [],
       advancePayments: [],
       totalAmount: 0
@@ -440,6 +443,8 @@ export function BookingsScreen({
     setAdvDateInput(openShiftDate);
     if (technicianId && technicianId !== 'all') {
       setTechToAdd(technicianId);
+    } else {
+      setTechToAdd('');
     }
     setShowAddModal(true);
   };
@@ -447,25 +452,25 @@ export function BookingsScreen({
   // Add Service to Booking Form
   const addServiceToBooking = () => {
     const srv = services.find(s => s.id === serviceToAdd);
+    if (!srv) return;
     const emp = employees.find(e => e.id === techToAdd);
-    if (srv && emp) {
-      const bs = {
-        id: Math.random().toString(36).substr(2, 9),
-        serviceId: srv.id,
-        serviceName: srv.name,
-        technicianId: emp.id,
-        technicianName: emp.name,
-        price: srv.price
-      };
-      setNewBooking({
-        ...newBooking,
-        services: [...(newBooking.services || []), bs],
-        totalAmount: (newBooking.totalAmount || 0) + bs.price
-      });
-      setServiceToAdd('');
-      setServiceSearchQuery('');
-      setIsServiceDropdownOpen(false);
-    }
+    const bs = {
+      id: Math.random().toString(36).substr(2, 9),
+      serviceId: srv.id,
+      serviceName: srv.name,
+      technicianId: emp ? emp.id : '',
+      technicianName: emp ? emp.name : 'غير محدد',
+      price: srv.price
+    };
+    setNewBooking({
+      ...newBooking,
+      services: [...(newBooking.services || []), bs],
+      totalAmount: (newBooking.totalAmount || 0) + bs.price
+    });
+    setServiceToAdd('');
+    setServiceSearchQuery('');
+    setTechToAdd('');
+    setIsServiceDropdownOpen(false);
   };
 
   // Helper to add advance payment inside Add/Edit modal
@@ -603,6 +608,7 @@ export function BookingsScreen({
       date: effectiveBookingDate,
       time: newBooking.time!,
       status: newBooking.status || 'confirmed',
+      location: newBooking.location?.trim() || undefined,
       services: newBooking.services || [],
       advancePayments: newBooking.advancePayments || [],
       totalAmount: (newBooking.services || []).reduce((sum, s) => sum + s.price, 0),
@@ -690,7 +696,7 @@ export function BookingsScreen({
 
   const handleEdit = (b: Booking) => {
     setEditingBooking(b);
-    setNewBooking({ ...b, advancePayments: b.advancePayments || [] });
+    setNewBooking({ ...b, location: b.location || '', advancePayments: b.advancePayments || [] });
     setShowAddModal(true);
     setSelectedBookingDetails(null);
   };
@@ -923,10 +929,12 @@ export function BookingsScreen({
                 date: openShiftDate,
                 time: '10:00',
                 status: 'confirmed',
+                location: '',
                 services: [],
                 advancePayments: [],
                 totalAmount: 0
               });
+              setTechToAdd('');
               setAdvTreasuryInput(availableTreasuries[0]?.id || 'cash');
               setAdvDateInput(openShiftDate);
               setShowAddModal(true);
@@ -1164,11 +1172,17 @@ export function BookingsScreen({
                             )}
                           </td>
                           <td className="p-3.5">
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="font-bold text-slate-900">{b.clientName}</span>
                               {b.source === 'online' && (
                                 <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 text-[9px] font-black px-1.5 py-0.2 rounded-md shadow-2xs">
                                   🌐 أونلاين
+                                </span>
+                              )}
+                              {b.location && (
+                                <span className="bg-slate-100 text-slate-700 border border-slate-200 text-[9px] font-bold px-1.5 py-0.5 rounded-md flex items-center gap-0.5" title="مكان الحجز">
+                                  <MapPin size={10} className="text-indigo-600" />
+                                  <span>{b.location}</span>
                                 </span>
                               )}
                             </div>
@@ -1679,7 +1693,7 @@ export function BookingsScreen({
             </div>
 
             {/* Date & Time info */}
-            <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 flex justify-between items-center text-xs">
+            <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 flex flex-wrap justify-between items-center gap-2 text-xs">
               <div className="flex items-center gap-1.5 font-bold text-slate-700">
                 <CalendarIcon size={15} className="text-indigo-600" />
                 <span>{selectedBookingDetails.date}</span>
@@ -1688,6 +1702,12 @@ export function BookingsScreen({
                 <Clock size={15} className="text-indigo-600" />
                 <span>{selectedBookingDetails.time}</span>
               </div>
+              {selectedBookingDetails.location && (
+                <div className="flex items-center gap-1 font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-lg text-[11px]">
+                  <MapPin size={13} className="text-indigo-600" />
+                  <span>{selectedBookingDetails.location}</span>
+                </div>
+              )}
               <div>
                 <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${getStatusBadge(selectedBookingDetails.status).bg}`}>
                   {getStatusBadge(selectedBookingDetails.status).label}
@@ -2067,18 +2087,43 @@ export function BookingsScreen({
                     </select>
                   </div>
                 </div>
-                <div className="col-span-2">
-                  <label className="block text-xs font-bold text-slate-700 mb-1">حالة الحجز</label>
-                  <select
-                    value={newBooking.status}
-                    onChange={e => setNewBooking({ ...newBooking, status: e.target.value as any })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none"
-                  >
-                    <option value="confirmed">مؤكد</option>
-                    <option value="pending">قيد الانتظار</option>
-                    <option value="completed">مكتمل</option>
-                    <option value="cancelled">ملغي</option>
-                  </select>
+                <div className="col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">حالة الحجز</label>
+                    <select
+                      value={newBooking.status}
+                      onChange={e => setNewBooking({ ...newBooking, status: e.target.value as any })}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none"
+                    >
+                      <option value="confirmed">مؤكد</option>
+                      <option value="pending">قيد الانتظار</option>
+                      <option value="completed">مكتمل</option>
+                      <option value="cancelled">ملغي</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
+                      <span className="flex items-center gap-1">
+                        <MapPin size={13} className="text-indigo-600" />
+                        <span>مكان الحجز</span>
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-normal">اختياري</span>
+                    </label>
+                    <input
+                      type="text"
+                      list="booking-locations-list"
+                      value={newBooking.location || ''}
+                      onChange={e => setNewBooking({ ...newBooking, location: e.target.value })}
+                      placeholder="مثال: داخل الصالون، منزل العميل، فندق..."
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none text-slate-800 placeholder:font-normal placeholder:text-slate-400"
+                    />
+                    <datalist id="booking-locations-list">
+                      <option value="داخل الصالون" />
+                      <option value="منزل العميل" />
+                      <option value="فندق / خارجي" />
+                      <option value="قاعة مناسبات" />
+                    </datalist>
+                  </div>
                 </div>
               </div>
 
@@ -2150,11 +2195,6 @@ export function BookingsScreen({
                                       setServiceToAdd(s.id);
                                       setServiceSearchQuery(s.name);
                                       setIsServiceDropdownOpen(false);
-                                      // If no tech is selected yet, default to first active employee
-                                      if (!techToAdd && employees.length > 0) {
-                                        const firstActive = employees.find(e => e.isActive !== false);
-                                        if (firstActive) setTechToAdd(firstActive.id);
-                                      }
                                     }}
                                     className={`w-full text-right px-3 py-2 rounded-xl text-xs flex items-center justify-between transition-all cursor-pointer ${
                                       isSelected 
@@ -2193,15 +2233,16 @@ export function BookingsScreen({
 
                     {/* 2. EMPLOYEE SELECTOR */}
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                        الموظف المنفذ *
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center justify-between">
+                        <span>الموظف المنفذ</span>
+                        <span className="text-[10px] text-slate-400 font-normal">اختياري</span>
                       </label>
                       <select
                         value={techToAdd}
                         onChange={e => setTechToAdd(e.target.value)}
                         className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-indigo-600 shadow-xs"
                       >
-                        <option value="">اختر الموظف...</option>
+                        <option value="">(غير محدد)</option>
                         {employees.filter(e => isBarberEmployee(e)).map(e => (
                           <option key={e.id} value={e.id}>{e.name} ({e.role})</option>
                         ))}
@@ -2213,7 +2254,7 @@ export function BookingsScreen({
                   <button
                     type="button"
                     onClick={addServiceToBooking}
-                    disabled={!serviceToAdd || !techToAdd}
+                    disabled={!serviceToAdd}
                     className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white py-2 rounded-xl text-xs font-black cursor-pointer shadow-sm transition-all flex items-center justify-center gap-1.5"
                   >
                     <span>+ إضافة الخدمة إلى جدول الموعد</span>

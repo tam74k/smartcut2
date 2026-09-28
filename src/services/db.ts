@@ -246,6 +246,7 @@ export async function ensureCoreSchema(): Promise<void> {
       ensureColumn('invoices', 'advance_deduction', 'NUMERIC(12,2)'),
       ensureColumn('invoices', 'booking_id', 'VARCHAR(100)'),
       ensureColumn('bookings', 'advance_payments', 'JSONB'),
+      ensureColumn('bookings', 'location', 'TEXT'),
       ensureColumn('client_portal_accounts', 'username', 'VARCHAR(100)'),
       ensureColumn('client_portal_accounts', 'salon_code', 'VARCHAR(50)'),
       ensureColumn('client_portal_accounts', 'linked_salon_codes', 'JSONB')
@@ -1485,9 +1486,17 @@ export const DB = {
         date: safeDate, time: rawTime.length >= 5 ? rawTime.substring(0, 5) : rawTime, status: b.status || 'confirmed',
         created_at: b.createdAt || b.created_at || appointmentDateTime,
         queue_number: b.queueNumber || null,
-        advance_payments: cleanAdvances, notes: b.notes || null
+        advance_payments: cleanAdvances, notes: b.notes || null,
+        location: b.location || null
       };
-      const { error } = await client.from('bookings').upsert(snap, { onConflict: 'id' });
+      let { error } = await client.from('bookings').upsert(snap, { onConflict: 'id' });
+      if (error && error.message && error.message.includes('location')) {
+        console.warn('DB.saveBooking: location column missing in Supabase, retrying without location and creating column...');
+        ensureColumn('bookings', 'location', 'TEXT').catch(() => {});
+        delete snap.location;
+        const retry = await client.from('bookings').upsert(snap, { onConflict: 'id' });
+        error = retry.error;
+      }
       if (error) { console.error('DB.saveBooking error:', error.message); return null; }
       return b;
     } catch (e) { console.error('DB.saveBooking exception:', e); return null; }

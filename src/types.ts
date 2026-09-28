@@ -648,6 +648,7 @@ export interface Booking {
   services: BookingService[]; 
   totalAmount: number; 
   notes?: string;
+  location?: string;
   source?: 'online' | 'pos' | 'phone';
   bookingCode?: string;
   queueNumber?: number;

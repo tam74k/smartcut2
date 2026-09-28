@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { 
   FileSpreadsheet, Upload, Download, CheckCircle2, AlertTriangle, 
   X, AlertCircle, RefreshCw, ChevronDown, ChevronUp, Users, DollarSign,
-  Calendar, Scissors, Info, ArrowRight, Eye, Clock, ShieldCheck
+  Calendar, Scissors, Info, ArrowRight, Eye, Clock, ShieldCheck, MapPin
 } from 'lucide-react';
 import { AppSettings, Booking, BookingService, AdvancePayment, Client, Employee, ServiceItem, Transaction, Branch } from '../types';
 import { readTwoSheetExcelFile, downloadBookingsTemplate, parseExcelDate, parseExcelTime, getTodayLocalDateString } from '../utils/excelHelper';
@@ -29,6 +29,7 @@ interface ParsedBookingCandidate {
   clientName: string;
   clientPhone: string;
   status: 'confirmed' | 'pending' | 'completed' | 'cancelled';
+  location?: string;
   notes: string;
   advanceAmount: number;
   advanceTreasury: string;
@@ -43,7 +44,10 @@ interface ParsedBookingCandidate {
 function safeParseNumber(val: any): number {
   if (val === undefined || val === null || val === '') return 0;
   if (typeof val === 'number') return isNaN(val) ? 0 : val;
-  const str = String(val).replace(/,/g, '').trim();
+  const str = String(val)
+    .replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d).toString())
+    .replace(/,/g, '')
+    .trim();
   const match = str.match(/-?\d+(\.\d+)?/);
   if (match) {
     const parsed = parseFloat(match[0]);
@@ -164,39 +168,58 @@ function extractRowAdvances(row: any, bookingDate: string, bookingCode: string, 
 
   const resolvePaymentMethodAndTreasury = (rawVal: any, defaultType: 'cash' | 'card') => {
     const val = String(rawVal || '').trim();
-    const lower = val.toLowerCase();
+    const lower = val.toLowerCase()
+      .replace(/[إأآا]/g, 'ا')
+      .replace(/[ةه]/g, 'ه');
 
-    // مطابقة خزينة محددة من الإعدادات
-    const matched = treasuries.find(t => 
-      (t.id && t.id.toLowerCase() === lower) || 
-      (t.name && t.name.trim().toLowerCase() === lower)
-    );
-    if (matched) {
-      const isCard = (matched.id && (matched.id.includes('card') || matched.id.includes('mada'))) || 
-                     (matched.name && (matched.name.includes('شبكة') || matched.name.includes('مدى')));
-      return {
-        treasuryId: matched.id,
-        treasuryName: matched.name,
-        paymentMethod: isCard ? 'card' : 'cash'
-      };
-    }
+    if (val) {
+      // مطابقة مباشرة مع اسم أو معرف أي خزينة من إعدادات الصالون
+      const matched = treasuries.find(t => 
+        (t.id && t.id.toLowerCase() === lower) || 
+        (t.name && t.name.trim().toLowerCase().replace(/[إأآا]/g, 'ا').replace(/[ةه]/g, 'ه') === lower)
+      );
+      if (matched) {
+        const isCard = (matched.id && (matched.id.includes('card') || matched.id.includes('mada') || matched.id.includes('bank'))) || 
+                       (matched.name && (matched.name.includes('شبكة') || matched.name.includes('مدى') || matched.name.includes('بنك') || matched.name.includes('تحويل')));
+        return {
+          treasuryId: matched.id,
+          treasuryName: matched.name,
+          paymentMethod: isCard ? 'card' : 'cash'
+        };
+      }
 
-    if (lower.includes('شبك') || lower.includes('مدى') || lower.includes('بطاق') || lower.includes('card') || lower.includes('mada') || lower.includes('bank') || lower.includes('بنك')) {
-      const cardTreasury = treasuries.find(t => t.id?.includes('card') || t.id?.includes('mada') || t.name?.includes('شبكة') || t.name?.includes('مدى'));
-      return {
-        treasuryId: cardTreasury?.id || 'card',
-        treasuryName: cardTreasury?.name || 'شبكة / مدى',
-        paymentMethod: 'card'
-      };
-    }
+      if (
+        lower.includes('شبك') || lower.includes('مدى') || lower.includes('بطاق') || 
+        lower.includes('card') || lower.includes('mada') || lower.includes('bank') || 
+        lower.includes('بنك') || lower.includes('تحويل') || lower.includes('فيزا') || 
+        lower.includes('visa') || lower.includes('master') || lower.includes('انستاباي') || 
+        lower.includes('instapay') || lower.includes('فودافون') || lower.includes('vodafone') || 
+        lower.includes('فوري') || lower.includes('fawry') || lower.includes('stc')
+      ) {
+        const cardTreasury = treasuries.find(t => 
+          t.id?.includes('card') || t.id?.includes('mada') || t.id?.includes('bank') || 
+          t.name?.includes('شبكة') || t.name?.includes('مدى') || t.name?.includes('بنك')
+        );
+        return {
+          treasuryId: cardTreasury?.id || 'card',
+          treasuryName: cardTreasury?.name || (lower.includes('تحويل') || lower.includes('بنك') ? 'تحويل بنكي' : 'شبكة / مدى'),
+          paymentMethod: 'card'
+        };
+      }
 
-    if (lower.includes('كاش') || lower.includes('نقد') || lower.includes('درج') || lower.includes('cash')) {
-      const cashTreasury = treasuries.find(t => t.id === 'cash' || t.name?.includes('كاش') || t.name?.includes('درج')) || treasuries.find(t => !t.isMain);
-      return {
-        treasuryId: cashTreasury?.id || 'cash',
-        treasuryName: cashTreasury?.name || 'كاش (الدرج)',
-        paymentMethod: 'cash'
-      };
+      if (
+        lower.includes('كاش') || lower.includes('نقد') || lower.includes('درج') || 
+        lower.includes('cash') || lower.includes('خزينه') || lower.includes('خزينة')
+      ) {
+        const cashTreasury = treasuries.find(t => 
+          t.id === 'cash' || t.name?.includes('كاش') || t.name?.includes('درج') || t.name?.includes('نقد')
+        ) || treasuries.find(t => !t.isMain);
+        return {
+          treasuryId: cashTreasury?.id || 'cash',
+          treasuryName: cashTreasury?.name || 'كاش (الدرج)',
+          paymentMethod: 'cash'
+        };
+      }
     }
 
     if (defaultType === 'card') {
@@ -216,13 +239,18 @@ function extractRowAdvances(row: any, bookingDate: string, bookingCode: string, 
     }
   };
 
-  const findValue = (candidates: string[]) => {
+  const findValue = (candidates: string[], isSingleMode: boolean = false) => {
     for (const key of Object.keys(row)) {
       const clean = key.trim().toLowerCase()
         .replace(/[إأآا]/g, 'ا')
         .replace(/[ةه]/g, 'ه')
         .replace(/[\(\)\[\]\/\-\_]/g, ' ')
         .replace(/\s+/g, ' ');
+
+      if (isSingleMode && (/\b1\b|1|١|\b2\b|2|٢/.test(clean))) {
+        continue;
+      }
+
       for (const cand of candidates) {
         const cleanCand = cand.trim().toLowerCase()
           .replace(/[إأآا]/g, 'ا')
@@ -239,9 +267,19 @@ function extractRowAdvances(row: any, bookingDate: string, bookingCode: string, 
   };
 
   // 1. عربون 1 وطريقة دفع 1
-  const rawAdv1 = findValue(['عربون 1', 'عربون1', 'العربون 1', 'العربون1', 'قيمة عربون 1', 'قيمه عربون 1', 'قيمة العربون 1', 'advance 1', 'deposit 1']);
+  const rawAdv1 = findValue([
+    'عربون 1', 'عربون1', 'العربون 1', 'العربون1', 
+    'قيمة عربون 1', 'قيمه عربون 1', 'قيمة العربون 1', 'قيمه العربون 1', 
+    'مبلغ عربون 1', 'مبلغ العربون 1',
+    'advance 1', 'deposit 1', 'advance payment 1', 'down payment 1'
+  ]);
   const amt1 = safeParseNumber(rawAdv1);
-  const rawMethod1 = findValue(['طريقة دفع 1', 'طريقه دفع 1', 'طريقة الدفع 1', 'طريقه الدفع 1', 'خزينة 1', 'خزينه 1', 'الخزينة 1', 'الخزينه 1', 'payment method 1', 'treasury 1']);
+  const rawMethod1 = findValue([
+    'طريقة دفع 1', 'طريقه دفع 1', 'طريقة الدفع 1', 'طريقه الدفع 1', 
+    'خزينة 1', 'خزينه 1', 'الخزينة 1', 'الخزينه 1', 
+    'طريقة دفع عربون 1', 'طريقه دفع عربون 1',
+    'payment method 1', 'treasury 1', 'method 1'
+  ]);
 
   if (amt1 > 0) {
     const { treasuryId, treasuryName, paymentMethod } = resolvePaymentMethodAndTreasury(rawMethod1, 'cash');
@@ -256,9 +294,19 @@ function extractRowAdvances(row: any, bookingDate: string, bookingCode: string, 
   }
 
   // 2. عربون 2 وطريقة دفع 2
-  const rawAdv2 = findValue(['عربون 2', 'عربون2', 'العربون 2', 'العربون2', 'قيمة عربون 2', 'قيمه عربون 2', 'قيمة العربون 2', 'advance 2', 'deposit 2']);
+  const rawAdv2 = findValue([
+    'عربون 2', 'عربون2', 'العربون 2', 'العربون2', 
+    'قيمة عربون 2', 'قيمه عربون 2', 'قيمة العربون 2', 'قيمه العربون 2', 
+    'مبلغ عربون 2', 'مبلغ العربون 2',
+    'advance 2', 'deposit 2', 'advance payment 2', 'down payment 2'
+  ]);
   const amt2 = safeParseNumber(rawAdv2);
-  const rawMethod2 = findValue(['طريقة دفع 2', 'طريقه دفع 2', 'طريقة الدفع 2', 'طريقه الدفع 2', 'خزينة 2', 'خزينه 2', 'الخزينة 2', 'الخزينه 2', 'payment method 2', 'treasury 2']);
+  const rawMethod2 = findValue([
+    'طريقة دفع 2', 'طريقه دفع 2', 'طريقة الدفع 2', 'طريقه الدفع 2', 
+    'خزينة 2', 'خزينه 2', 'الخزينة 2', 'الخزينه 2', 
+    'طريقة دفع عربون 2', 'طريقه دفع عربون 2',
+    'payment method 2', 'treasury 2', 'method 2'
+  ]);
 
   if (amt2 > 0) {
     const { treasuryId, treasuryName, paymentMethod } = resolvePaymentMethodAndTreasury(rawMethod2, 'card');
@@ -274,10 +322,18 @@ function extractRowAdvances(row: any, bookingDate: string, bookingCode: string, 
 
   // 3. عربون مفرد تقليدي (في حال عدم وجود عربون 1 أو 2)
   if (result.length === 0) {
-    const rawSingleAdv = findValue(['قيمة العربون', 'قيمه العربون', 'العربون', 'عربون', 'الدفعة المقدمة', 'الدفعه المقدمه', 'advance', 'deposit']);
+    const rawSingleAdv = findValue([
+      'قيمة العربون', 'قيمه العربون', 'العربون', 'عربون', 
+      'الدفعة المقدمة', 'الدفعه المقدمه', 'دفعة مقدمة', 'دفعه مقدمه',
+      'advance', 'deposit', 'down payment'
+    ], true);
     const singleAmt = safeParseNumber(rawSingleAdv);
     if (singleAmt > 0) {
-      const rawSingleMethod = findValue(['الخزينة المستلمة للعربون', 'الخزينه المستلمه للعربون', 'الخزينة', 'الخزينه', 'طريقة الدفع', 'طريقه الدفع', 'طريقة دفع', 'طريقه دفع', 'treasury', 'payment method']);
+      const rawSingleMethod = findValue([
+        'الخزينة المستلمة للعربون', 'الخزينه المستلمه للعربون', 'الخزينة', 'الخزينه', 
+        'طريقة الدفع', 'طريقه الدفع', 'طريقة دفع', 'طريقه دفع', 
+        'treasury', 'payment method'
+      ], true);
       const { treasuryId, treasuryName, paymentMethod } = resolvePaymentMethodAndTreasury(rawSingleMethod, 'cash');
       result.push({
         id: `ADV-${bookingCode || 'IMP'}-${Math.random().toString(36).substr(2, 6)}`,
@@ -431,6 +487,17 @@ export function BookingsImportModal({
           status = 'pending';
         }
 
+        // مكان الحجز (اختياري)
+        const locationRaw = String(
+          row['مكان الحجز (اختياري)'] || 
+          row['مكان الحجز'] || 
+          row['المكان'] || 
+          row['الموقع'] || 
+          row['مكان'] || 
+          row['Location'] || 
+          row['Venue'] || ''
+        ).trim();
+
         // العربون والخزينة (سحب عربون 1 وعربون 2 وطرق الدفع أو العربون المفرد)
         const rowAdvances = extractRowAdvances(row, dateParsed, rowIdRaw, settings.treasuries || []);
         const advAmt = rowAdvances.reduce((sum, a) => sum + (Number(a.amount) || 0), 0);
@@ -457,6 +524,7 @@ export function BookingsImportModal({
           const price = extractBookingItemPrice(dRow);
 
           const techName = String(
+            dRow['اسم الفني / الموظف (اختياري)'] ||
             dRow['اسم الفني / الموظف'] || 
             dRow['اسم الموظف'] || 
             dRow['الفني'] || 
@@ -470,18 +538,19 @@ export function BookingsImportModal({
             s.name.trim().toLowerCase() === sName.toLowerCase()
           );
 
-          // مطابقة الفني مع موظفي الصالون
-          const matchedEmp = employees.find(e => 
+          // مطابقة الفني مع موظفي الصالون (يدعم اختيار افتراضي "غير محدد" واختياري)
+          const isUnassignedTech = !techName || techName === 'غير محدد' || techName === '(غير محدد)';
+          const matchedEmp = !isUnassignedTech ? employees.find(e => 
             e.name.trim().toLowerCase() === techName.toLowerCase()
-          );
+          ) : null;
 
           bookingServices.push({
             id: 'BS-' + Math.random().toString(36).substr(2, 9),
             serviceId: matchedService ? matchedService.id : ('SRV-' + Math.random().toString(36).substr(2, 7)),
             serviceName: matchedService ? matchedService.name : sName,
             price: price,
-            technicianId: matchedEmp ? matchedEmp.id : (techName ? 'EMP-EXT' : ''),
-            technicianName: matchedEmp ? matchedEmp.name : (techName || 'غير محدد')
+            technicianId: matchedEmp ? matchedEmp.id : '',
+            technicianName: matchedEmp ? matchedEmp.name : (isUnassignedTech ? 'غير محدد' : techName)
           });
 
           totalAmt += price;
@@ -532,6 +601,7 @@ export function BookingsImportModal({
           clientName: clientNameRaw,
           clientPhone: clientPhoneRaw,
           status,
+          location: locationRaw || undefined,
           notes,
           advanceAmount: advAmt,
           advanceTreasury: advTreasury,
@@ -665,6 +735,7 @@ export function BookingsImportModal({
         date: candidate.date,
         time: candidate.time,
         status: candidate.status,
+        location: candidate.location || undefined,
         services: candidate.services,
         advancePayments: advances,
         totalAmount: candidate.totalAmount,
@@ -805,6 +876,73 @@ export function BookingsImportModal({
             </div>
           )}
 
+          {/* Guide / Instructions for Excel Structure */}
+          {candidates.length === 0 && !isReading && (
+            <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4 shadow-xs">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                    <Info size={16} />
+                  </div>
+                  <h4 className="text-xs font-black text-slate-800">
+                    دليل هيكل ملف الإكسل المعتمد لسحب الحجوزات:
+                  </h4>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => downloadBookingsTemplate(settings.currency || 'ر.س')}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-xl transition-all cursor-pointer"
+                >
+                  <Download size={13} />
+                  <span>تنزيل ملف العينة (.xlsx)</span>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                {/* Sheet 1: Header */}
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-black text-slate-900 flex items-center gap-1.5">
+                      <span className="w-5 h-5 rounded-full bg-emerald-600 text-white text-[10px] flex items-center justify-center font-bold">1</span>
+                      <span>ورقة «رأس الحجز»</span>
+                    </span>
+                    <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-bold">البيانات العامة</span>
+                  </div>
+                  <ul className="text-slate-600 text-[11px] space-y-1 list-disc list-inside">
+                    <li><strong className="text-slate-800">رقم الحجز:</strong> كود فريد لكل حجز (مثال: B-1001).</li>
+                    <li><strong className="text-slate-800">تاريخ الحجز:</strong> بصيغة (YYYY-MM-DD).</li>
+                    <li><strong className="text-slate-800">وقت الحجز:</strong> بصيغة (HH:mm) مثل 14:30.</li>
+                    <li><strong className="text-slate-800">اسم وجوال العميل:</strong> لحفظ وربط العميل تلقائياً.</li>
+                    <li><strong className="text-slate-800">حالة الحجز:</strong> (مؤكد / مكتمل / ملغي / انتظار).</li>
+                    <li><strong className="text-indigo-600">مكان الحجز (اختياري):</strong> داخل الصالون، منزل العميل، فندق...</li>
+                    <li><strong className="text-emerald-700">عربون 1 وطريقة دفع 1:</strong> المبلغ + طريقة الدفع (كاش/شبكة/تحويل).</li>
+                    <li><strong className="text-emerald-700">عربون 2 وطريقة دفع 2:</strong> عربون إضافي اختياري بطريقة دفع مستقلة.</li>
+                  </ul>
+                </div>
+
+                {/* Sheet 2: Details */}
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-black text-slate-900 flex items-center gap-1.5">
+                      <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] flex items-center justify-center font-bold">2</span>
+                      <span>ورقة «تفاصيل الحجز»</span>
+                    </span>
+                    <span className="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded font-bold">الخدمات والفنيين</span>
+                  </div>
+                  <ul className="text-slate-600 text-[11px] space-y-1 list-disc list-inside">
+                    <li><strong className="text-slate-800">رقم الحجز:</strong> نفس كود الحجز من الورقة الأولى للربط.</li>
+                    <li><strong className="text-slate-800">اسم الخدمة:</strong> اسم الخدمة المطلوب تنفيذها.</li>
+                    <li><strong className="text-slate-800">سعر الخدمة:</strong> القيمة المالية للخدمة.</li>
+                    <li><strong className="text-indigo-600">اسم الفني / الموظف (اختياري):</strong> اسم الموظف المنفذ، ويمكن تركه فارغاً أو كتابة (غير محدد) ليتم اعتماده كحجز بدون فني محدد.</li>
+                  </ul>
+                  <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg text-[10px] text-amber-800">
+                    💡 <strong>ملاحظة هامة:</strong> يتم قراءة العرابين وتوزيعها تلقائياً على القيود المالية للخزائن، وخصمها من الفاتورة عند تحويل الحجز إلى POS.
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Statistics Bar (If data parsed) */}
           {candidates.length > 0 && (
             <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
@@ -896,8 +1034,9 @@ export function BookingsImportModal({
                       <th className="py-2.5 px-3">التاريخ والوقت</th>
                       <th className="py-2.5 px-3">العميل والجوال</th>
                       <th className="py-2.5 px-3">الحالة</th>
+                      <th className="py-2.5 px-3">مكان الحجز</th>
                       <th className="py-2.5 px-3 text-center">الخدمات ({stats.totalServices})</th>
-                      <th className="py-2.5 px-3">العربون</th>
+                      <th className="py-2.5 px-3">العربون (1 و 2)</th>
                       <th className="py-2.5 px-3">الإجمالي</th>
                       <th className="py-2.5 px-3 text-center">المطابقة والتفاصيل</th>
                     </tr>
@@ -940,6 +1079,16 @@ export function BookingsImportModal({
                                  c.status === 'pending' ? 'انتظار' : 'مؤكد'}
                               </span>
                             </td>
+                            <td className="py-2.5 px-3">
+                              {c.location ? (
+                                <span className="inline-flex items-center gap-1 bg-slate-100 text-slate-700 px-2 py-0.5 rounded-lg text-[10px] font-bold border border-slate-200">
+                                  <MapPin size={11} className="text-indigo-600" />
+                                  <span>{c.location}</span>
+                                </span>
+                              ) : (
+                                <span className="text-slate-300 font-mono">-</span>
+                              )}
+                            </td>
                             <td className="py-2.5 px-3 text-center">
                               <button
                                 onClick={() => setExpandedBookingId(isExpanded ? null : c.id)}
@@ -950,8 +1099,21 @@ export function BookingsImportModal({
                                 {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                               </button>
                             </td>
-                            <td className="py-2.5 px-3 font-bold text-indigo-700">
-                              {c.advanceAmount > 0 ? `${c.advanceAmount} ${settings.currency}` : '--'}
+                            <td className="py-2.5 px-3">
+                              {c.advanceAmount > 0 ? (
+                                <div>
+                                  <div className="font-bold text-emerald-700">{c.advanceAmount} {settings.currency}</div>
+                                  <div className="flex flex-wrap gap-1 mt-0.5">
+                                    {c.advances.map((adv, aIdx) => (
+                                      <span key={aIdx} className="text-[9px] bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.2 rounded font-semibold">
+                                        ع{aIdx + 1}: {adv.amount} ({adv.treasuryName || adv.paymentMethod})
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              ) : (
+                                <span className="text-slate-400 font-mono">--</span>
+                              )}
                             </td>
                             <td className="py-2.5 px-3 font-black text-slate-900">
                               {c.totalAmount} {settings.currency}
@@ -976,12 +1138,22 @@ export function BookingsImportModal({
                           {/* Expanded Service Details */}
                           {isExpanded && (
                             <tr className="bg-slate-100/70">
-                              <td colSpan={8} className="p-3">
-                                <div className="bg-white rounded-xl p-3 border border-slate-200 space-y-2">
-                                  <div className="flex items-center justify-between text-xs font-bold text-slate-700 border-b border-slate-100 pb-1.5">
-                                    <span>تفاصيل خدمات الحجز #{c.id}</span>
+                              <td colSpan={9} className="p-3">
+                                <div className="bg-white rounded-xl p-3 border border-slate-200 space-y-2.5">
+                                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-bold text-slate-700 border-b border-slate-100 pb-2">
+                                    <div className="flex items-center gap-3">
+                                      <span>تفاصيل خدمات الحجز #{c.id}</span>
+                                      {c.location && (
+                                        <span className="flex items-center gap-1 text-[11px] text-indigo-700 font-semibold bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
+                                          <MapPin size={12} />
+                                          <span>مكان الحجز: {c.location}</span>
+                                        </span>
+                                      )}
+                                    </div>
                                     {c.notes && <span className="text-[11px] text-slate-500 font-normal">ملاحظات: {c.notes}</span>}
                                   </div>
+
+                                  {/* Services Cards */}
                                   {c.services.length === 0 ? (
                                     <p className="text-xs text-slate-400 py-1">لا توجد أسطر خدمات مرفقة في الورقة الثانية لهذا الحجز.</p>
                                   ) : (
@@ -990,9 +1162,26 @@ export function BookingsImportModal({
                                         <div key={sIdx} className="bg-slate-50 border border-slate-200/80 p-2 rounded-lg flex items-center justify-between text-xs">
                                           <div>
                                             <span className="font-bold text-slate-800 block">{srv.serviceName}</span>
-                                            <span className="text-[10px] text-slate-500">الفني: {srv.technicianName}</span>
+                                            <span className="text-[10px] text-slate-500">
+                                              الفني: <strong className={srv.technicianName === 'غير محدد' ? 'text-amber-600' : 'text-slate-700'}>{srv.technicianName}</strong>
+                                            </span>
                                           </div>
                                           <span className="font-black text-emerald-700">{srv.price} {settings.currency}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+
+                                  {/* Advances Breakdown Cards if advances exist */}
+                                  {c.advances.length > 0 && (
+                                    <div className="border-t border-slate-100 pt-2 flex flex-wrap items-center gap-2 text-xs">
+                                      <span className="font-bold text-slate-700 text-[11px]">العرابين المقيدة:</span>
+                                      {c.advances.map((adv, aIdx) => (
+                                        <div key={aIdx} className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded-lg text-[11px] flex items-center gap-1.5 font-bold">
+                                          <span>عربون {aIdx + 1}:</span>
+                                          <span className="font-mono">{adv.amount} {settings.currency}</span>
+                                          <span className="text-slate-400">|</span>
+                                          <span className="text-emerald-700 font-semibold">{adv.treasuryName || adv.paymentMethod}</span>
                                         </div>
                                       ))}
                                     </div>
