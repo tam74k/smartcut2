@@ -370,6 +370,18 @@ export const DB = {
             });
           } catch {}
         }
+        if (table === 'bookings' || camel?.advancePayments !== undefined || camel?.advance_payments !== undefined) {
+          let advs = camel.advancePayments || camel.advance_payments;
+          if (typeof advs === 'string') {
+            try { advs = JSON.parse(advs); } catch { advs = []; }
+          }
+          if (!Array.isArray(advs)) advs = [];
+          camel.advancePayments = advs;
+          if (typeof camel?.services === 'string') {
+            try { camel.services = JSON.parse(camel.services); } catch { camel.services = []; }
+          }
+          if (!Array.isArray(camel.services)) camel.services = [];
+        }
         return camel;
       }) as T[];
     } catch (e) { console.error(`DB.fetchAll[${table}] exception:`, e); return []; }
@@ -1453,6 +1465,16 @@ export const DB = {
       const safeSource = allowedSources.includes(b.source) ? b.source : 'pos';
       // فرض نص محلي YYYY-MM-DD بحت لعمود DATE وتجريد أي توقيت أو منطقة زمنية
       const safeDate = typeof b.date === 'string' ? b.date.split('T')[0].trim() : b.date;
+      const rawTime = b.time ? String(b.time).trim() : '10:00';
+      const safeTime = rawTime.length === 5 ? `${rawTime}:00` : (rawTime.length >= 8 ? rawTime.substring(0, 8) : `${rawTime.padStart(5, '0')}:00`);
+      const appointmentDateTime = `${safeDate}T${safeTime}`;
+
+      let cleanAdvances = b.advancePayments || b.advance_payments || [];
+      if (typeof cleanAdvances === 'string') {
+        try { cleanAdvances = JSON.parse(cleanAdvances); } catch { cleanAdvances = []; }
+      }
+      if (!Array.isArray(cleanAdvances)) cleanAdvances = [];
+
       const snap: any = {
         id: b.id, salon_id: validSalonId, branch_id: validBranchId,
         branch_code: (b as any).branchCode || null,
@@ -1460,9 +1482,10 @@ export const DB = {
         customer_email: b.customerEmail || null, booking_code: b.bookingCode || null,
         source: safeSource, services: b.services || [],
         total_amount: b.totalAmount ?? 0,
-        date: safeDate, time: b.time, status: b.status || 'confirmed',
+        date: safeDate, time: rawTime.length >= 5 ? rawTime.substring(0, 5) : rawTime, status: b.status || 'confirmed',
+        created_at: b.createdAt || b.created_at || appointmentDateTime,
         queue_number: b.queueNumber || null,
-        advance_payments: b.advancePayments || [], notes: b.notes || null
+        advance_payments: cleanAdvances, notes: b.notes || null
       };
       const { error } = await client.from('bookings').upsert(snap, { onConflict: 'id' });
       if (error) { console.error('DB.saveBooking error:', error.message); return null; }

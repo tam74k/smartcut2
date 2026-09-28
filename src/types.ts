@@ -651,6 +651,8 @@ export interface Booking {
   source?: 'online' | 'pos' | 'phone';
   bookingCode?: string;
   queueNumber?: number;
+  createdAt?: string;
+  created_at?: string;
 }
 
 export interface CartItem { 

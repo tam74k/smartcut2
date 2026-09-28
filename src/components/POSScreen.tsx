@@ -1153,9 +1153,20 @@ export function POSScreen({
       
       setCart(cartItems);
       
-      const advancesSum = initialBooking.advancePayments?.reduce((sum, p) => sum + (Number(p.amount) || 0), 0) || 0;
+      let safeAdvances: AdvancePayment[] = [];
+      const rawAdv = initialBooking.advancePayments || (initialBooking as any).advance_payments;
+      if (Array.isArray(rawAdv)) {
+        safeAdvances = rawAdv;
+      } else if (typeof rawAdv === 'string') {
+        try {
+          const parsed = JSON.parse(rawAdv);
+          if (Array.isArray(parsed)) safeAdvances = parsed;
+        } catch {}
+      }
+
+      const advancesSum = safeAdvances.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
       setAdvanceDeduction(advancesSum);
-      setActiveAdvancePayments(initialBooking.advancePayments || []);
+      setActiveAdvancePayments(safeAdvances);
       setActiveBookingId(initialBooking.id);
       if (initialBooking.queueNumber) {
         setActiveQueueNumber(initialBooking.queueNumber);

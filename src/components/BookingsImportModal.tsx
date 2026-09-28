@@ -5,7 +5,7 @@ import {
   Calendar, Scissors, Info, ArrowRight, Eye, Clock, ShieldCheck
 } from 'lucide-react';
 import { AppSettings, Booking, BookingService, AdvancePayment, Client, Employee, ServiceItem, Transaction, Branch } from '../types';
-import { readTwoSheetExcelFile, downloadBookingsTemplate, parseExcelDate, getTodayLocalDateString } from '../utils/excelHelper';
+import { readTwoSheetExcelFile, downloadBookingsTemplate, parseExcelDate, parseExcelTime, getTodayLocalDateString } from '../utils/excelHelper';
 import { DB } from '../services/db';
 
 interface BookingsImportModalProps {
@@ -32,6 +32,7 @@ interface ParsedBookingCandidate {
   notes: string;
   advanceAmount: number;
   advanceTreasury: string;
+  advances: AdvancePayment[];
   services: BookingService[];
   totalAmount: number;
   isExisting: boolean;
@@ -158,6 +159,140 @@ function extractBookingHeaderTotal(hRow: any): number {
   return 0;
 }
 
+function extractRowAdvances(row: any, bookingDate: string, bookingCode: string, treasuries: any[] = []): AdvancePayment[] {
+  const result: AdvancePayment[] = [];
+
+  const resolvePaymentMethodAndTreasury = (rawVal: any, defaultType: 'cash' | 'card') => {
+    const val = String(rawVal || '').trim();
+    const lower = val.toLowerCase();
+
+    // مطابقة خزينة محددة من الإعدادات
+    const matched = treasuries.find(t => 
+      (t.id && t.id.toLowerCase() === lower) || 
+      (t.name && t.name.trim().toLowerCase() === lower)
+    );
+    if (matched) {
+      const isCard = (matched.id && (matched.id.includes('card') || matched.id.includes('mada'))) || 
+                     (matched.name && (matched.name.includes('شبكة') || matched.name.includes('مدى')));
+      return {
+        treasuryId: matched.id,
+        treasuryName: matched.name,
+        paymentMethod: isCard ? 'card' : 'cash'
+      };
+    }
+
+    if (lower.includes('شبك') || lower.includes('مدى') || lower.includes('بطاق') || lower.includes('card') || lower.includes('mada') || lower.includes('bank') || lower.includes('بنك')) {
+      const cardTreasury = treasuries.find(t => t.id?.includes('card') || t.id?.includes('mada') || t.name?.includes('شبكة') || t.name?.includes('مدى'));
+      return {
+        treasuryId: cardTreasury?.id || 'card',
+        treasuryName: cardTreasury?.name || 'شبكة / مدى',
+        paymentMethod: 'card'
+      };
+    }
+
+    if (lower.includes('كاش') || lower.includes('نقد') || lower.includes('درج') || lower.includes('cash')) {
+      const cashTreasury = treasuries.find(t => t.id === 'cash' || t.name?.includes('كاش') || t.name?.includes('درج')) || treasuries.find(t => !t.isMain);
+      return {
+        treasuryId: cashTreasury?.id || 'cash',
+        treasuryName: cashTreasury?.name || 'كاش (الدرج)',
+        paymentMethod: 'cash'
+      };
+    }
+
+    if (defaultType === 'card') {
+      const cardTreasury = treasuries.find(t => t.id?.includes('card') || t.id?.includes('mada') || t.name?.includes('شبكة') || t.name?.includes('مدى'));
+      return {
+        treasuryId: cardTreasury?.id || 'card',
+        treasuryName: cardTreasury?.name || 'شبكة / مدى',
+        paymentMethod: 'card'
+      };
+    } else {
+      const cashTreasury = treasuries.find(t => t.id === 'cash' || t.name?.includes('كاش') || t.name?.includes('درج')) || treasuries.find(t => !t.isMain) || treasuries[0];
+      return {
+        treasuryId: cashTreasury?.id || 'cash',
+        treasuryName: cashTreasury?.name || 'كاش (الدرج)',
+        paymentMethod: 'cash'
+      };
+    }
+  };
+
+  const findValue = (candidates: string[]) => {
+    for (const key of Object.keys(row)) {
+      const clean = key.trim().toLowerCase()
+        .replace(/[إأآا]/g, 'ا')
+        .replace(/[ةه]/g, 'ه')
+        .replace(/[\(\)\[\]\/\-\_]/g, ' ')
+        .replace(/\s+/g, ' ');
+      for (const cand of candidates) {
+        const cleanCand = cand.trim().toLowerCase()
+          .replace(/[إأآا]/g, 'ا')
+          .replace(/[ةه]/g, 'ه')
+          .replace(/[\(\)\[\]\/\-\_]/g, ' ')
+          .replace(/\s+/g, ' ');
+        if (clean === cleanCand || clean.includes(cleanCand)) {
+          const val = row[key];
+          if (val !== undefined && val !== null && val !== '') return val;
+        }
+      }
+    }
+    return undefined;
+  };
+
+  // 1. عربون 1 وطريقة دفع 1
+  const rawAdv1 = findValue(['عربون 1', 'عربون1', 'العربون 1', 'العربون1', 'قيمة عربون 1', 'قيمه عربون 1', 'قيمة العربون 1', 'advance 1', 'deposit 1']);
+  const amt1 = safeParseNumber(rawAdv1);
+  const rawMethod1 = findValue(['طريقة دفع 1', 'طريقه دفع 1', 'طريقة الدفع 1', 'طريقه الدفع 1', 'خزينة 1', 'خزينه 1', 'الخزينة 1', 'الخزينه 1', 'payment method 1', 'treasury 1']);
+
+  if (amt1 > 0) {
+    const { treasuryId, treasuryName, paymentMethod } = resolvePaymentMethodAndTreasury(rawMethod1, 'cash');
+    result.push({
+      id: `ADV-${bookingCode || 'IMP'}-1-${Math.random().toString(36).substr(2, 6)}`,
+      date: bookingDate,
+      amount: amt1,
+      treasuryId,
+      treasuryName,
+      paymentMethod
+    });
+  }
+
+  // 2. عربون 2 وطريقة دفع 2
+  const rawAdv2 = findValue(['عربون 2', 'عربون2', 'العربون 2', 'العربون2', 'قيمة عربون 2', 'قيمه عربون 2', 'قيمة العربون 2', 'advance 2', 'deposit 2']);
+  const amt2 = safeParseNumber(rawAdv2);
+  const rawMethod2 = findValue(['طريقة دفع 2', 'طريقه دفع 2', 'طريقة الدفع 2', 'طريقه الدفع 2', 'خزينة 2', 'خزينه 2', 'الخزينة 2', 'الخزينه 2', 'payment method 2', 'treasury 2']);
+
+  if (amt2 > 0) {
+    const { treasuryId, treasuryName, paymentMethod } = resolvePaymentMethodAndTreasury(rawMethod2, 'card');
+    result.push({
+      id: `ADV-${bookingCode || 'IMP'}-2-${Math.random().toString(36).substr(2, 6)}`,
+      date: bookingDate,
+      amount: amt2,
+      treasuryId,
+      treasuryName,
+      paymentMethod
+    });
+  }
+
+  // 3. عربون مفرد تقليدي (في حال عدم وجود عربون 1 أو 2)
+  if (result.length === 0) {
+    const rawSingleAdv = findValue(['قيمة العربون', 'قيمه العربون', 'العربون', 'عربون', 'الدفعة المقدمة', 'الدفعه المقدمه', 'advance', 'deposit']);
+    const singleAmt = safeParseNumber(rawSingleAdv);
+    if (singleAmt > 0) {
+      const rawSingleMethod = findValue(['الخزينة المستلمة للعربون', 'الخزينه المستلمه للعربون', 'الخزينة', 'الخزينه', 'طريقة الدفع', 'طريقه الدفع', 'طريقة دفع', 'طريقه دفع', 'treasury', 'payment method']);
+      const { treasuryId, treasuryName, paymentMethod } = resolvePaymentMethodAndTreasury(rawSingleMethod, 'cash');
+      result.push({
+        id: `ADV-${bookingCode || 'IMP'}-${Math.random().toString(36).substr(2, 6)}`,
+        date: bookingDate,
+        amount: singleAmt,
+        treasuryId,
+        treasuryName,
+        paymentMethod
+      });
+    }
+  }
+
+  return result;
+}
+
 export function BookingsImportModal({
   isOpen,
   onClose,
@@ -270,20 +405,13 @@ export function BookingsImportModal({
           dateParsed = getTodayLocalDateString();
         }
 
-        let timeParsed = String(
-          row['وقت الحجز (HH:mm)'] || 
+        const rawTime = row['وقت الحجز (HH:mm)'] || 
           row['وقت الحجز'] || 
           row['الوقت'] || 
           row['Time'] || 
-          '10:00'
-        ).trim();
-        // تنسيق الوقت
-        if (!/^\d{1,2}:\d{2}$/.test(timeParsed)) {
-          timeParsed = '10:00';
-        } else {
-          const [h, m] = timeParsed.split(':');
-          timeParsed = `${h.padStart(2, '0')}:${m.padStart(2, '0')}`;
-        }
+          row['Booking Time'] ||
+          '10:00';
+        const timeParsed = parseExcelTime(rawTime, '10:00');
 
         // الحالة
         const statusRaw = String(
@@ -303,21 +431,12 @@ export function BookingsImportModal({
           status = 'pending';
         }
 
-        // العربون والخزينة
-        const advAmt = Math.max(0, safeParseNumber(
-          row['قيمة العربون'] || 
-          row['العربون'] || 
-          row['الدفعة المقدمة'] || 
-          row['Advance'] || 
-          row['Deposit'] || 0
-        ));
-
-        const advTreasury = String(
-          row['الخزينة المستلمة للعربون'] || 
-          row['الخزينة'] || 
-          row['Treasury'] || 
-          settings.treasuries[0]?.id || 'الخزينة الرئيسية'
-        ).trim();
+        // العربون والخزينة (سحب عربون 1 وعربون 2 وطرق الدفع أو العربون المفرد)
+        const rowAdvances = extractRowAdvances(row, dateParsed, rowIdRaw, settings.treasuries || []);
+        const advAmt = rowAdvances.reduce((sum, a) => sum + (Number(a.amount) || 0), 0);
+        const advTreasury = rowAdvances.length > 0 
+          ? rowAdvances.map(a => `${a.treasuryName}: ${a.amount}`).join(' + ')
+          : 'كاش (الدرج)';
 
         const notes = String(row['ملاحظات'] || row['Notes'] || '').trim();
 
@@ -416,6 +535,7 @@ export function BookingsImportModal({
           notes,
           advanceAmount: advAmt,
           advanceTreasury: advTreasury,
+          advances: rowAdvances,
           services: bookingServices,
           totalAmount: totalAmt,
           isExisting,
@@ -485,49 +605,57 @@ export function BookingsImportModal({
       const candidate = toImport[i];
       setImportProgress({ current: i + 1, total: toImport.length });
 
-      // معالجة العربون
-      const advances: AdvancePayment[] = [];
-      if (candidate.advanceAmount > 0) {
-        const advId = 'ADV-' + Math.random().toString(36).substr(2, 9);
-        const treasuryObj = settings.treasuries?.find(t => 
-          t.name.trim().toLowerCase() === candidate.advanceTreasury.toLowerCase() || t.id === candidate.advanceTreasury
-        ) || settings.treasuries?.[0];
+      // معالجة العربون والخزينة
+      const apptTime = candidate.time && candidate.time.length === 5 ? `${candidate.time}:00` : (candidate.time || '10:00:00');
+      const appointmentDateTime = `${candidate.date}T${apptTime}`;
 
+      const advances: AdvancePayment[] = (candidate.advances && candidate.advances.length > 0)
+        ? candidate.advances
+        : [];
+
+      // إذا كانت مصفوفة العرابين فارغة ولكن يوجد مبلغ عربون إجمالي
+      if (advances.length === 0 && candidate.advanceAmount > 0) {
         advances.push({
-          id: advId,
-          amount: candidate.advanceAmount,
+          id: `ADV-${candidate.id}-${Math.random().toString(36).substr(2, 6)}`,
           date: candidate.date,
-          method: 'cash',
-          treasuryId: treasuryObj?.id || candidate.advanceTreasury,
-          notes: `عربون مستورد لحجز #${candidate.id}`
-        });
-
-        // إنشاء قيد مالي للعربون مع إجبار التوقيت على الظهيرة T12:00:00 لحمايته من أي إزاحة مناطق زمنية
-        const effectiveShiftDate = (shiftData && shiftData.isOpen && shiftData.date) ? shiftData.date : candidate.date;
-        const trx: Transaction = {
-          id: 'TRX-ADV-' + Math.random().toString(36).substr(2, 9),
-          date: `${candidate.date}T12:00:00`,
-          shiftDate: effectiveShiftDate,
-          type: 'in',
           amount: candidate.advanceAmount,
-          category: 'مقدم حجز',
-          description: `دفعة مقدمة / عربون مستورد لحجز #${candidate.id} - العميل: ${candidate.clientName}`,
-          treasury: treasuryObj?.id || 'cash',
-          createdBy: currentUser?.name || 'استيراد إكسل',
-          userId: currentUser?.id,
-          userName: currentUser?.name || 'استيراد إكسل',
-          branchId: effectiveBranchId,
-          salonId: settings.salonId
-        };
-        newTransactionsList.push(trx);
-        try {
-          await DB.saveTransaction(trx);
-        } catch (e) {
-          console.warn('Failed to save advance transaction:', e);
+          treasuryId: 'cash',
+          treasuryName: 'كاش (الدرج)',
+          paymentMethod: 'cash'
+        });
+      }
+
+      // إنشاء قيد مالي لكل عربون في الخزينة المعنية وتاريخ الوردية
+      const effectiveShiftDate = (shiftData && shiftData.isOpen && shiftData.date) ? shiftData.date : candidate.date;
+      for (const adv of advances) {
+        if (adv.amount > 0) {
+          const trx: Transaction = {
+            id: 'TRX-' + (adv.id || Math.random().toString(36).substr(2, 9)),
+            date: appointmentDateTime,
+            shiftDate: effectiveShiftDate,
+            type: 'in',
+            amount: adv.amount,
+            category: 'مقدم حجز',
+            description: `دفعة مقدمة / عربون مستورد لحجز #${candidate.id} (${adv.treasuryName || adv.paymentMethod}) - العميل: ${candidate.clientName}`,
+            treasury: adv.treasuryId || 'cash',
+            paymentMethod: adv.paymentMethod || 'cash',
+            createdBy: currentUser?.name || 'استيراد إكسل',
+            userId: currentUser?.id,
+            userName: currentUser?.name || 'استيراد إكسل',
+            branchId: effectiveBranchId,
+            salonId: settings.salonId,
+            relatedBookingId: candidate.id.startsWith('B-') ? candidate.id : `B-${candidate.id}`
+          };
+          newTransactionsList.push(trx);
+          try {
+            await DB.saveTransaction(trx);
+          } catch (e) {
+            console.warn('Failed to save advance transaction:', e);
+          }
         }
       }
 
-      // تجهيز كائن الحجز
+      // تجهيز كائن الحجز مع تثبيت توقيت الموعد المحلي التام
       const booking: Booking = {
         id: candidate.id.startsWith('B-') ? candidate.id : `B-${candidate.id}`,
         salonId: settings.salonId,
@@ -542,7 +670,8 @@ export function BookingsImportModal({
         totalAmount: candidate.totalAmount,
         notes: candidate.notes,
         branchId: effectiveBranchId,
-        source: 'pos'
+        source: 'pos',
+        createdAt: appointmentDateTime
       };
 
       try {

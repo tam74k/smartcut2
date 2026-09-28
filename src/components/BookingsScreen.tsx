@@ -23,6 +23,23 @@ import { escapeHtml, sanitizeUrl } from '../utils/sanitize';
 import { isBarberEmployee } from '../utils/employeeHelper';
 import { BookingsImportModal } from './BookingsImportModal';
 
+export function getBookingAdvances(b: any): AdvancePayment[] {
+  if (!b) return [];
+  const raw = b.advancePayments || b.advance_payments;
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {}
+  }
+  return [];
+}
+
+export function getBookingTotalAdvances(b: any): number {
+  return getBookingAdvances(b).reduce((sum, a) => sum + (Number(a.amount) || 0), 0);
+}
+
 export function BookingsScreen({ 
   settings, 
   setSettings,
@@ -171,28 +188,22 @@ export function BookingsScreen({
   const [quickAdvDate, setQuickAdvDate] = useState<string>(defaultBookingDate);
   const [quickAdvNotes, setQuickAdvNotes] = useState<string>('');
 
-  // List of treasuries ensuring Main Treasury (الخزنة الرئيسية) is always available
+  // List of operational payment methods / treasuries excluding the Main Treasury (الخزينة الرئيسية)
   const availableTreasuries = useMemo(() => {
-    const rawList = settings.treasuries || [];
-    const mainFound = rawList.find(t => 
-      t.isMain || 
-      t.id === 'main' || 
-      t.id === 'cash' || 
-      t.name.includes('الرئيسية') ||
-      t.name.includes('الدرج')
+    const rawList = (settings.treasuries || []).filter(t => 
+      !t.isMain && 
+      t.id !== 'main' && 
+      !t.name.includes('الرئيسية')
     );
 
-    if (!mainFound) {
+    if (rawList.length === 0) {
       return [
-        { id: 'cash', name: 'الخزنة الرئيسية (نقداً)', isMain: true },
-        ...rawList
+        { id: 'cash', name: 'كاش (الدرج)', isMain: false },
+        { id: 'card', name: 'شبكة / مدى', isMain: false }
       ];
     }
 
-    return [
-      mainFound,
-      ...rawList.filter(t => t.id !== mainFound.id)
-    ];
+    return rawList;
   }, [settings.treasuries]);
 
   // Filtered services for autocomplete search
@@ -332,8 +343,9 @@ export function BookingsScreen({
       if (!matchesActiveBranch((b as any).branchId)) return false;
 
       // Date range filter
-      if (dateFrom && b.date < dateFrom) return false;
-      if (dateTo && b.date > dateTo) return false;
+      const bDate = b.date ? b.date.split('T')[0].trim() : '';
+      if (dateFrom && bDate < dateFrom) return false;
+      if (dateTo && bDate > dateTo) return false;
 
       // Status filter
       if (statusFilter !== 'all' && b.status !== statusFilter) return false;
@@ -354,7 +366,11 @@ export function BookingsScreen({
       }
 
       return true;
-    }).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
+    }).sort((a, b) => {
+      const aKey = (a.date ? a.date.split('T')[0].trim() : '') + (a.time || '');
+      const bKey = (b.date ? b.date.split('T')[0].trim() : '') + (b.time || '');
+      return bKey.localeCompare(aKey);
+    });
   }, [bookings, dateFrom, dateTo, statusFilter, selectedTech, searchQuery, activeBranchId, isMainBranch]);
 
   // Filtered Bookings for Calendar View
@@ -390,8 +406,9 @@ export function BookingsScreen({
     const map = new Map<string, Booking[]>();
     calendarFilteredBookings.forEach(b => {
       if (!b.date) return;
+      const bDate = b.date.split('T')[0].trim();
       const hourPart = b.time ? b.time.substring(0, 2) + ':00' : '10:00';
-      const key = `${b.date}_${hourPart}`;
+      const key = `${bDate}_${hourPart}`;
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(b);
     });
@@ -461,7 +478,7 @@ export function BookingsScreen({
     const currentTreasuries = availableTreasuries;
     const tId = advTreasuryInput || (currentTreasuries[0]?.id || 'cash');
     const selectedTreasuryObj = currentTreasuries.find(t => t.id === tId);
-    const tName = selectedTreasuryObj?.name || (tId === 'cash' ? 'الخزنة الرئيسية (نقداً)' : 'الخزينة');
+    const tName = selectedTreasuryObj?.name || (tId === 'cash' ? 'كاش (الدرج)' : 'طريقة الدفع');
 
     const effectiveShiftDate = (shiftData && shiftData.isOpen && shiftData.date) ? shiftData.date : undefined;
     const advDate = effectiveShiftDate || advDateInput || new Date().toISOString().split('T')[0];
@@ -505,7 +522,7 @@ export function BookingsScreen({
     const currentTreasuries = availableTreasuries;
     const tId = quickAdvTreasury || (currentTreasuries[0]?.id || 'cash');
     const selectedTreasuryObj = currentTreasuries.find(t => t.id === tId);
-    const tName = selectedTreasuryObj?.name || (tId === 'cash' ? 'الخزنة الرئيسية (نقداً)' : 'الخزينة');
+    const tName = selectedTreasuryObj?.name || (tId === 'cash' ? 'كاش (الدرج)' : 'طريقة الدفع');
     const effectiveShiftDate = (shiftData && shiftData.isOpen && shiftData.date) ? shiftData.date : undefined;
     const advDate = effectiveShiftDate || quickAdvDate || new Date().toISOString().split('T')[0];
 
@@ -571,9 +588,9 @@ export function BookingsScreen({
       return;
     }
 
-    const effectiveBookingDate = (!editingBooking && shiftData?.isOpen && shiftData.date)
+    const effectiveBookingDate = newBooking.date || ((!editingBooking && shiftData?.isOpen && shiftData.date)
       ? shiftData.date
-      : newBooking.date!;
+      : defaultBookingDate);
 
     const bBranchId = editingBooking?.branchId || activeBranchId || mainBranchId;
     const queueNumber = editingBooking?.queueNumber 
@@ -1165,15 +1182,15 @@ export function BookingsScreen({
                             {b.services?.map(s => s.technicianName).join(', ') || '-'}
                           </td>
                           <td className="p-3.5 font-mono text-slate-800 font-bold" dir="ltr">
-                            {b.time} • {b.date}
+                            {b.time} • {b.date?.split('T')[0] || b.date}
                           </td>
                           <td className="p-3.5 text-center font-mono font-black text-slate-900">
                             <div>{b.totalAmount} {settings.currency}</div>
-                            {((b.advancePayments || []).length > 0) && (
+                            {getBookingTotalAdvances(b) > 0 && (
                               <div className="mt-1 inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-md text-[10px] font-bold">
-                                <span>عربون: {b.advancePayments.reduce((s, a) => s + (a.amount || 0), 0)}</span>
+                                <span>عربون: {getBookingTotalAdvances(b)}</span>
                                 <span className="text-slate-400">|</span>
-                                <span>متبقي: {Math.max(0, b.totalAmount - b.advancePayments.reduce((s, a) => s + (a.amount || 0), 0))}</span>
+                                <span>متبقي: {Math.max(0, b.totalAmount - getBookingTotalAdvances(b))}</span>
                               </div>
                             )}
                           </td>
@@ -1187,7 +1204,10 @@ export function BookingsScreen({
                               {b.status !== 'completed' && b.status !== 'cancelled' && (
                                 <>
                                   <button
-                                    onClick={() => onToPOS(b)}
+                                    onClick={() => onToPOS({
+                                      ...b,
+                                      advancePayments: getBookingAdvances(b)
+                                    })}
                                     className="bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1.5 rounded-xl text-[11px] font-black flex items-center gap-1 shadow-xs cursor-pointer"
                                     title="تحويل مباشر لنقطة البيع POS"
                                   >
@@ -1439,10 +1459,10 @@ export function BookingsScreen({
                                     <span>{b.time}</span>
                                     <span className="font-bold text-slate-700">{b.totalAmount} {settings.currency}</span>
                                   </div>
-                                  {((b.advancePayments || []).length > 0) && (
+                                  {getBookingTotalAdvances(b) > 0 && (
                                     <div className="mt-1 text-[9px] font-bold text-emerald-700 bg-emerald-100/70 rounded px-1 py-0.5 flex justify-between">
-                                      <span>عربون: {b.advancePayments.reduce((s, a) => s + (a.amount || 0), 0)}</span>
-                                      <span>متبقي: {Math.max(0, b.totalAmount - b.advancePayments.reduce((s, a) => s + (a.amount || 0), 0))}</span>
+                                      <span>عربون: {getBookingTotalAdvances(b)}</span>
+                                      <span>متبقي: {Math.max(0, b.totalAmount - getBookingTotalAdvances(b))}</span>
                                     </div>
                                   )}
                                 </div>
@@ -1498,7 +1518,7 @@ export function BookingsScreen({
                       {activeTechs.map(emp => {
                         const dateStr = formatDateToYMD(currentDate);
                         const empBookings = calendarFilteredBookings.filter(b => 
-                          b.date === dateStr &&
+                          (b.date?.split('T')[0] || b.date) === dateStr &&
                           (b.time ? b.time.substring(0, 2) + ':00' : '10:00') === timeSlot &&
                           b.services?.some(s => s.technicianId === emp.id)
                         );
@@ -1529,10 +1549,10 @@ export function BookingsScreen({
                                       <span>{b.time}</span>
                                       <span className="font-black text-slate-800">{b.totalAmount} {settings.currency}</span>
                                     </div>
-                                    {((b.advancePayments || []).length > 0) && (
+                                    {getBookingTotalAdvances(b) > 0 && (
                                       <div className="mt-1 text-[9px] font-bold text-emerald-700 bg-emerald-100/70 rounded px-1.5 py-0.5 flex justify-between">
-                                        <span>عربون: {b.advancePayments.reduce((s, a) => s + (a.amount || 0), 0)}</span>
-                                        <span>متبقي: {Math.max(0, b.totalAmount - b.advancePayments.reduce((s, a) => s + (a.amount || 0), 0))}</span>
+                                        <span>عربون: {getBookingTotalAdvances(b)}</span>
+                                        <span>متبقي: {Math.max(0, b.totalAmount - getBookingTotalAdvances(b))}</span>
                                       </div>
                                     )}
                                   </div>
@@ -1571,7 +1591,7 @@ export function BookingsScreen({
               <div className="grid grid-cols-7 divide-x divide-y divide-slate-100 border-b border-slate-100">
                 {getMonthGrid(currentDate).map((cell, idx) => {
                   const isToday = cell.dateStr === formatDateToYMD(new Date());
-                  const dayBookings = calendarFilteredBookings.filter(b => b.date === cell.dateStr);
+                  const dayBookings = calendarFilteredBookings.filter(b => (b.date?.split('T')[0] || b.date) === cell.dateStr);
 
                   return (
                     <div
@@ -1724,16 +1744,16 @@ export function BookingsScreen({
                 )}
               </div>
 
-              {(selectedBookingDetails.advancePayments || []).length > 0 ? (
+              {getBookingAdvances(selectedBookingDetails).length > 0 ? (
                 <div className="space-y-1.5 max-h-32 overflow-y-auto">
-                  {selectedBookingDetails.advancePayments.map((adv, idx) => (
+                  {getBookingAdvances(selectedBookingDetails).map((adv, idx) => (
                     <div key={adv.id || idx} className="p-2 bg-white rounded-xl border border-emerald-100 flex justify-between items-center text-xs shadow-2xs">
                       <div>
                         <div className="font-bold text-slate-800 flex items-center gap-1.5">
                           <span>دفعة #{idx + 1}:</span>
                           <span className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded font-bold flex items-center gap-1">
                             <CreditCard size={11} />
-                            <span>{adv.treasuryName || 'طريقة الدفع'}</span>
+                            <span>{adv.treasuryName || (adv.paymentMethod === 'card' ? 'شبكة / مدى' : 'كاش (الدرج)') || 'طريقة الدفع'}</span>
                           </span>
                         </div>
                         <div className="text-[10px] text-slate-500 font-mono">تاريخ السداد: {adv.date} {adv.notes ? `• ${adv.notes}` : ''}</div>
@@ -1759,18 +1779,18 @@ export function BookingsScreen({
                   {selectedBookingDetails.totalAmount} {settings.currency}
                 </span>
               </div>
-              {((selectedBookingDetails.advancePayments || []).length > 0) && (
+              {getBookingTotalAdvances(selectedBookingDetails) > 0 && (
                 <>
                   <div className="flex justify-between items-center text-emerald-700">
                     <span>إجمالي العربون المسدد:</span>
                     <span className="text-sm font-mono font-black">
-                      -{(selectedBookingDetails.advancePayments || []).reduce((s, a) => s + (a.amount || 0), 0).toFixed(2)} {settings.currency}
+                      -{getBookingTotalAdvances(selectedBookingDetails).toFixed(2)} {settings.currency}
                     </span>
                   </div>
                   <div className="flex justify-between items-center text-slate-900 bg-slate-100 p-2.5 rounded-xl border border-slate-200">
                     <span className="font-black">المتبقي للدفع عند الزيارة:</span>
                     <span className="text-base text-indigo-700 font-mono font-black">
-                      {Math.max(0, selectedBookingDetails.totalAmount - (selectedBookingDetails.advancePayments || []).reduce((s, a) => s + (a.amount || 0), 0)).toFixed(2)} {settings.currency}
+                      {Math.max(0, selectedBookingDetails.totalAmount - getBookingTotalAdvances(selectedBookingDetails)).toFixed(2)} {settings.currency}
                     </span>
                   </div>
                 </>
@@ -1783,7 +1803,10 @@ export function BookingsScreen({
                 <>
                   <button
                     onClick={() => {
-                      onToPOS(selectedBookingDetails);
+                      onToPOS({
+                        ...selectedBookingDetails,
+                        advancePayments: getBookingAdvances(selectedBookingDetails)
+                      });
                       setSelectedBookingDetails(null);
                     }}
                     className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
@@ -2013,28 +2036,20 @@ export function BookingsScreen({
                       <span>تاريخ الموعد * 📅</span>
                       {!editingBooking && shiftData?.isOpen && (
                         <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-1.5 py-0.5 rounded">
-                          تلقائي من الوردية
+                          افتراضي من الوردية
                         </span>
                       )}
                     </label>
                     <input
                       type="date"
                       value={newBooking.date}
-                      onChange={e => {
-                        if (!editingBooking && shiftData?.isOpen) return;
-                        setNewBooking({ ...newBooking, date: e.target.value });
-                      }}
-                      readOnly={!editingBooking && shiftData?.isOpen}
-                      className={`w-full border rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none ${
-                        !editingBooking && shiftData?.isOpen
-                          ? 'bg-slate-100 text-slate-600 cursor-not-allowed border-slate-200'
-                          : 'bg-slate-50 border-slate-200'
-                      }`}
+                      onChange={e => setNewBooking({ ...newBooking, date: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none"
                       required
                     />
                     {!editingBooking && shiftData?.isOpen && (
-                      <p className="text-[10px] text-emerald-700 mt-1 font-bold">
-                        تاريخ الوردية المفتوحة: {shiftData.date}
+                      <p className="text-[10px] text-slate-500 mt-1">
+                        تاريخ الوردية المفتوحة: {shiftData.date} (يمكنك تغيير التاريخ لحجز موعد مستقبلي)
                       </p>
                     )}
                   </div>

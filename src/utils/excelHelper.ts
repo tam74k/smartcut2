@@ -228,6 +228,100 @@ export function parseExcelDateTime(val: any, explicitTime?: string): string {
   return `${datePart}T12:00:00`;
 }
 
+/**
+ * دالة استخراج وتنسيق وقت الحجز من مختلف صيغ إكسل (24h, 12h AM/PM, أو كسور إكسل العشرية):
+ * ترجع الوقت بصيغة HH:mm بدقة متناهية وبدون أي تراجع.
+ */
+export function parseExcelTime(val: any, defaultTime: string = '10:00'): string {
+  if (val === undefined || val === null || val === '') return defaultTime;
+  
+  if (typeof val === 'number') {
+    let fraction = val;
+    if (fraction >= 1) fraction = fraction % 1;
+    const totalMinutes = Math.round(fraction * 24 * 60);
+    const h = Math.floor(totalMinutes / 60) % 24;
+    const m = totalMinutes % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  }
+
+  const str = String(val).trim();
+
+  // Match 24h: 14:30 or 14:30:00
+  const match24 = str.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (match24) {
+    const h = parseInt(match24[1], 10);
+    const m = parseInt(match24[2], 10);
+    if (h >= 0 && h < 24 && m >= 0 && m < 60) {
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    }
+  }
+
+  // Match 12h: 2:30 PM or 02:30 ص / م
+  const match12 = str.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(am|pm|AM|PM|ص|م)?$/i);
+  if (match12) {
+    let h = parseInt(match12[1], 10);
+    const m = parseInt(match12[2], 10);
+    const period = (match12[3] || '').toLowerCase();
+    if (period === 'pm' || period === 'م') {
+      if (h < 12) h += 12;
+    } else if (period === 'am' || period === 'ص') {
+      if (h === 12) h = 0;
+    }
+    if (h >= 0 && h < 24 && m >= 0 && m < 60) {
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    }
+  }
+
+  // Check if string contains number that is a decimal
+  const num = parseFloat(str);
+  if (!isNaN(num) && num > 0 && num < 1) {
+    const totalMinutes = Math.round(num * 24 * 60);
+    const h = Math.floor(totalMinutes / 60) % 24;
+    const m = totalMinutes % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  }
+
+  return defaultTime;
+}
+
+/**
+ * تحديد المنطقة الزمنية المعتمدة بناءً على الدولة أو العملة (القاهرة لمصر، الرياض للسعودية، إلخ)
+ */
+export function getCountryTimeZone(country?: string, currency?: string): string {
+  const c = (country || '').trim().toLowerCase();
+  const cur = (currency || '').trim().toUpperCase();
+
+  if (c.includes('مصر') || c.includes('egypt') || cur === 'EGP') {
+    return 'Africa/Cairo';
+  }
+  if (c.includes('سعود') || c.includes('saudi') || cur === 'SAR') {
+    return 'Asia/Riyadh';
+  }
+  if (c.includes('إمارات') || c.includes('امارات') || c.includes('uae') || cur === 'AED') {
+    return 'Asia/Dubai';
+  }
+  if (c.includes('كويت') || c.includes('kuwait') || cur === 'KWD') {
+    return 'Asia/Kuwait';
+  }
+  if (c.includes('قطر') || c.includes('qatar') || cur === 'QAR') {
+    return 'Asia/Qatar';
+  }
+  if (c.includes('بحرين') || c.includes('bahrain') || cur === 'BHD') {
+    return 'Asia/Bahrain';
+  }
+  if (c.includes('عمان') || c.includes('oman') || cur === 'OMR') {
+    return 'Asia/Muscat';
+  }
+  if (c.includes('أردن') || c.includes('اردن') || c.includes('jordan') || cur === 'JOD') {
+    return 'Asia/Amman';
+  }
+  if (c.includes('عراق') || c.includes('iraq') || cur === 'IQD') {
+    return 'Asia/Baghdad';
+  }
+  return 'Asia/Riyadh';
+}
+
+
 export function downloadXLSX(filename: string, sheetName: string, headers: string[], rows: (string | number)[][]) {
   const data = [headers, ...rows];
   const worksheet = XLSX.utils.aoa_to_sheet(data);
@@ -382,16 +476,18 @@ export function downloadBookingsTemplate(currency: string = 'ر.س') {
     'رقم هاتف العميل',
     'حالة الحجز (مؤكد/مكتمل/ملغي)',
     `إجمالي مبلغ الحجز (${currency})`,
-    `قيمة العربون (${currency})`,
-    'الخزينة المستلمة للعربون',
+    `عربون 1 (${currency})`,
+    'طريقة دفع 1 (كاش/شبكة)',
+    `عربون 2 (${currency})`,
+    'طريقة دفع 2 (كاش/شبكة)',
     'ملاحظات'
   ];
 
   const rowsSheet1 = [
-    ['B-1001', '2026-10-01', '14:30', 'محمد العتيبي', '0551122334', 'مؤكد', 180, 20, 'الخزينة الرئيسية', 'حجز VIP - تجهيز عريس'],
-    ['B-1002', '2026-10-01', '16:00', 'سالم القحطاني', '0569988776', 'مؤكد', 60, 0, '', 'يفضل شاي أخضر'],
-    ['B-1003', '2026-10-02', '11:00', 'فيصل الدوسري', '0501234567', 'مكتمل', 210, 50, 'الشبكة / مدى', 'تم تقديم الخدمة'],
-    ['B-1004', '2026-10-02', '18:15', 'أحمد العنزي', '0543322110', 'مؤكد', 50, 0, '', '']
+    ['B-1001', '2026-10-01', '14:30', 'محمد العتيبي', '0551122334', 'مؤكد', 180, 50, 'كاش (الدرج)', 30, 'شبكة / مدى', 'حجز VIP - تجهيز عريس'],
+    ['B-1002', '2026-10-01', '16:00', 'سالم القحطاني', '0569988776', 'مؤكد', 60, 0, '', 0, '', 'يفضل شاي أخضر'],
+    ['B-1003', '2026-10-02', '11:00', 'فيصل الدوسري', '0501234567', 'مكتمل', 210, 100, 'شبكة / مدى', 0, '', 'تم دفع العربون بالشبكة'],
+    ['B-1004', '2026-10-02', '18:15', 'أحمد العنزي', '0543322110', 'مؤكد', 50, 0, '', 0, '', '']
   ];
 
   const ws1 = XLSX.utils.aoa_to_sheet([headersSheet1, ...rowsSheet1]);
@@ -403,8 +499,10 @@ export function downloadBookingsTemplate(currency: string = 'ر.س') {
     { wch: 18 }, // الهاتف
     { wch: 22 }, // الحالة
     { wch: 20 }, // إجمالي مبلغ الحجز
-    { wch: 18 }, // العربون
-    { wch: 24 }, // الخزينة
+    { wch: 18 }, // عربون 1
+    { wch: 22 }, // طريقة دفع 1
+    { wch: 18 }, // عربون 2
+    { wch: 22 }, // طريقة دفع 2
     { wch: 30 }  // ملاحظات
   ];
   XLSX.utils.book_append_sheet(wb, ws1, 'رأس الحجز');
