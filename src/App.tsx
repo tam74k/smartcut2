@@ -2149,6 +2149,7 @@ export default function App() {
           branches={branches}
           currentUser={currentUser}
           invoices={branchInvoices}
+          bookings={branchBookings}
         />
       );
       

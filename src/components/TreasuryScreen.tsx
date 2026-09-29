@@ -1,9 +1,10 @@
 import { useState, useMemo } from 'react';
-import { AppSettings, Transaction, Treasury, Branch, AppUser, Invoice } from '../types';
-import { Wallet, ArrowDownRight, ArrowUpRight, ArrowRightLeft, XCircle, Download, Building2, Trash2, Loader2 } from 'lucide-react';
+import { AppSettings, Transaction, Treasury, Branch, AppUser, Invoice, Booking } from '../types';
+import { Wallet, ArrowDownRight, ArrowUpRight, ArrowRightLeft, XCircle, Download, Building2, Trash2, Loader2, CalendarCheck } from 'lucide-react';
 import { exportToExcel } from '../utils/exportExcel';
 import { AuthService } from '../services/auth';
 import { DB } from '../services/db';
+import { getBookingAdvances } from './BookingsScreen';
 
 export function TreasuryScreen({ 
   settings, 
@@ -13,7 +14,8 @@ export function TreasuryScreen({
   activeBranchId,
   branches = [],
   currentUser,
-  invoices = []
+  invoices = [],
+  bookings = []
 }: { 
   settings: AppSettings, 
   shiftData: { isOpen: boolean, date: string, initialCash: number },
@@ -22,7 +24,8 @@ export function TreasuryScreen({
   activeBranchId?: string,
   branches?: Branch[],
   currentUser?: AppUser | null,
-  invoices?: Invoice[]
+  invoices?: Invoice[],
+  bookings?: Booking[]
 }) {
   const [modalType, setModalType] = useState<'deposit' | 'withdraw' | 'transfer' | null>(null);
   
@@ -267,6 +270,44 @@ export function TreasuryScreen({
 
     return [...transactions, ...syntheticTrxs];
   }, [transactions, invoices, settings.salonId, activeBranchId, activeBranch]);
+
+  // ---- مقدمات الحجوزات المحصلة في تاريخ الوردية حسب طريقة الدفع ----
+  const bookingAdvancesSummary = useMemo(() => {
+    const shiftDate = shiftData?.date || '';
+    if (!shiftDate) return { total: 0, byTreasury: [] as { treasuryId: string; treasuryName: string; amount: number; count: number }[], totalCount: 0 };
+
+    const treasuryMap: Record<string, { treasuryId: string; treasuryName: string; amount: number; count: number }> = {};
+
+    (bookings || []).forEach(b => {
+      if (b.status === 'cancelled') return;
+      const advances = getBookingAdvances(b);
+      advances.forEach(adv => {
+        const advDate = adv.date ? adv.date.split('T')[0].trim() : '';
+        if (advDate !== shiftDate) return;
+        const amt = Number(adv.amount) || 0;
+        if (amt <= 0) return;
+
+        const tId = adv.treasuryId || adv.paymentMethod || 'cash';
+        // Determine treasury name
+        let tName = adv.treasuryName || '';
+        if (!tName) {
+          const found = settings.treasuries?.find(t => t.id === tId);
+          tName = found ? found.name : (tId === 'cash' ? 'كاش (الدرج)' : tId === 'card' ? 'شبكة / مدى' : tId === 'transfer' ? 'تحويل بنكي' : tId);
+        }
+
+        if (!treasuryMap[tId]) {
+          treasuryMap[tId] = { treasuryId: tId, treasuryName: tName, amount: 0, count: 0 };
+        }
+        treasuryMap[tId].amount += amt;
+        treasuryMap[tId].count += 1;
+      });
+    });
+
+    const byTreasury = Object.values(treasuryMap).sort((a, b) => b.amount - a.amount);
+    const total = byTreasury.reduce((s, r) => s + r.amount, 0);
+    const totalCount = byTreasury.reduce((s, r) => s + r.count, 0);
+    return { total, byTreasury, totalCount };
+  }, [bookings, shiftData?.date, settings.treasuries]);
 
   const getTreasuryTotals = (tId: string) => {
     const trxs = unifiedTransactions.filter(t => t.treasury === tId || (t as any).treasuryId === tId);
@@ -593,6 +634,95 @@ export function TreasuryScreen({
           );
         })}
       </div>
+
+      {/* ===== مقدمات الحجوزات المحصلة في الوردية الحالية ===== */}
+      {shiftData?.isOpen && shiftData?.date && (
+        <div className="mb-6 bg-white rounded-2xl border border-emerald-200 shadow-sm overflow-hidden">
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 px-5 py-4 bg-gradient-to-l from-emerald-50 to-teal-50 border-b border-emerald-100">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-sm">
+                <CalendarCheck size={20} />
+              </div>
+              <div>
+                <h3 className="font-black text-slate-800 text-sm flex items-center gap-2">
+                  مقدمات الحجوزات (العربونات) المحصلة
+                  <span className="bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-black px-2 py-0.5 rounded-full">
+                    {shiftData.date}
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  إجمالي العربونات المستلمة في تاريخ الوردية الحالية مصنفةً حسب طريقة الدفع
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-col items-end gap-1">
+              <span className="text-2xl font-black text-emerald-700 font-mono">
+                {bookingAdvancesSummary.total.toFixed(2)}
+                <span className="text-base font-bold text-slate-500 mr-1">{settings.currency}</span>
+              </span>
+              <span className="text-[11px] text-slate-500 font-semibold">
+                {bookingAdvancesSummary.totalCount} دفعة مقدمة من {(bookings || []).filter(b => b.status !== 'cancelled').length} حجز
+              </span>
+            </div>
+          </div>
+
+          {/* Content */}
+          <div className="p-4">
+            {bookingAdvancesSummary.byTreasury.length === 0 ? (
+              <div className="text-center py-6 text-slate-400">
+                <CalendarCheck size={32} className="mx-auto mb-2 opacity-40" />
+                <p className="text-sm font-bold">لا توجد مقدمات حجوزات مسجلة في تاريخ هذه الوردية ({shiftData.date})</p>
+                <p className="text-xs mt-1">سيظهر هنا إجمالي العربونات المحصلة فور تسجيلها</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                {bookingAdvancesSummary.byTreasury.map(entry => {
+                  const treasury = settings.treasuries.find(t => t.id === entry.treasuryId);
+                  const isCash = entry.treasuryId === 'cash' || entry.treasuryName.includes('كاش') || entry.treasuryName.includes('نقد');
+                  const isCard = entry.treasuryId === 'card' || entry.treasuryName.includes('شبكة') || entry.treasuryName.includes('مدى') || entry.treasuryName.includes('فيزا');
+                  const isTransfer = entry.treasuryId === 'transfer' || entry.treasuryName.includes('تحويل') || entry.treasuryName.includes('بنكي');
+                  
+                  const colorClass = isCash
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                    : isCard
+                    ? 'bg-blue-50 border-blue-200 text-blue-800'
+                    : isTransfer
+                    ? 'bg-purple-50 border-purple-200 text-purple-800'
+                    : 'bg-slate-50 border-slate-200 text-slate-800';
+                  
+                  const iconEmoji = isCash ? '💵' : isCard ? '💳' : isTransfer ? '🏦' : '🪙';
+
+                  return (
+                    <div key={entry.treasuryId} className={`p-4 rounded-xl border ${colorClass} flex flex-col gap-2`}>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xl">{iconEmoji}</span>
+                        <span className="font-bold text-sm truncate">{entry.treasuryName}</span>
+                      </div>
+                      <div className="font-black text-xl font-mono">
+                        {entry.amount.toFixed(2)}
+                        <span className="text-xs font-normal text-slate-500 mr-1">{settings.currency}</span>
+                      </div>
+                      <div className="text-[11px] font-semibold opacity-70">
+                        {entry.count} دفعة مقدمة
+                      </div>
+                      {/* Progress bar relative to total */}
+                      {bookingAdvancesSummary.total > 0 && (
+                        <div className="w-full h-1.5 bg-black/10 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-current rounded-full"
+                            style={{ width: `${Math.min(100, (entry.amount / bookingAdvancesSummary.total) * 100)}%` }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Transactions History */}
       <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
