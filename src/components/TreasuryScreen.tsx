@@ -318,7 +318,12 @@ export function TreasuryScreen({
       .reduce((sum, t) => sum + t.amount, 0);
 
     const totalSales = trxs
-      .filter(t => t.type === 'in' && (t.category === 'sales' || t.category === 'مبيعات' || t.category === 'booking_advance' || t.category === 'advance'))
+      .filter(t => t.type === 'in' && (t.category === 'sales' || t.category === 'مبيعات'))
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    // مقدمات الحجز (العربون) - بند مستقل واضح لأنها أموال دخلت فعلياً للمحل
+    const totalBookingAdvances = trxs
+      .filter(t => t.type === 'in' && (t.category === 'مقدم حجز' || t.category === 'booking_advance' || t.category === 'advance'))
       .reduce((sum, t) => sum + t.amount, 0);
 
     const totalDeposits = trxs
@@ -370,6 +375,7 @@ export function TreasuryScreen({
       totalOut, 
       totalCustody, 
       totalSales, 
+      totalBookingAdvances,
       totalDeposits, 
       totalTransfersIn, 
       totalExpenses, 
@@ -390,8 +396,9 @@ export function TreasuryScreen({
       مبيعات: 'مبيعات',
       'عهدة افتتاحية': 'عهدة افتتاحية',
       initial_cash: 'عهدة افتتاحية',
-      advance: 'سلفة / عربون',
-      booking_advance: 'عربون حجز',
+      advance: 'سلفة موظف',
+      booking_advance: 'مقدمات حجز',
+      'مقدم حجز': 'مقدمات حجز',
       hr_advance: 'سلفة موظف',
       staff_advance: 'سلفة موظف',
       expense: 'مصروفات',
@@ -427,7 +434,7 @@ export function TreasuryScreen({
     if (categoryFilter === 'custody') {
       filtered = filtered.filter(t => t.category === 'عهدة افتتاحية' || t.category === 'initial_cash');
     } else if (categoryFilter === 'sales') {
-      filtered = filtered.filter(t => t.category === 'sales' || t.category === 'مبيعات' || t.category === 'booking_advance');
+      filtered = filtered.filter(t => t.category === 'sales' || t.category === 'مبيعات' || t.category === 'booking_advance' || t.category === 'مقدم حجز');
     } else if (categoryFilter === 'expense') {
       filtered = filtered.filter(t => t.category === 'expense' || t.category === 'مصروفات');
     } else if (categoryFilter === 'purchases') {
@@ -526,7 +533,7 @@ export function TreasuryScreen({
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-8">
         {settings.treasuries.map((treasury, idx) => {
           const { 
-            totalIn, totalOut, totalCustody, totalSales, 
+            totalIn, totalOut, totalCustody, totalSales, totalBookingAdvances,
             totalExpenses, totalPurchases, totalSupplierPayments, 
             totalSalaries, totalAdvances, balance 
           } = getTreasuryTotals(treasury.id);
@@ -575,6 +582,11 @@ export function TreasuryScreen({
                   {totalSales > 0 && (
                     <span className="bg-emerald-500/25 text-emerald-100 px-2 py-0.5 rounded-md border border-emerald-400/30">
                       مبيعات: {totalSales.toFixed(0)}
+                    </span>
+                  )}
+                  {totalBookingAdvances > 0 && (
+                    <span className="bg-teal-400/25 text-teal-100 px-2 py-0.5 rounded-md border border-teal-400/30">
+                      📅 مقدمات حجز: {totalBookingAdvances.toFixed(0)}
                     </span>
                   )}
                   {totalExpenses > 0 && (

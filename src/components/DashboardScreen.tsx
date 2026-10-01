@@ -134,10 +134,19 @@ export function DashboardScreen({
     return branchInvoices.filter(inv => matchesCurrentShift(inv.date, (inv as any).createdAt || (inv as any).created_at, (inv as any).shiftId) && inv.status !== 'cancelled');
   }, [branchInvoices, isShiftOpen, shiftDate, shiftData]);
 
+  // مقدمات الحجز المحصلة في الوردية الحالية (تُحتسب ضمن مبيعات اليوم لأنها فلوس دخلت فعلياً للمحل)
+  const todayBookingAdvances = useMemo(() => {
+    if (!isShiftOpen) return 0;
+    return todayTrx
+      .filter(t => t.type === 'in' && (t.category === 'مقدم حجز' || t.category === 'booking_advance'))
+      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+  }, [todayTrx, isShiftOpen]);
+
   const todaySalesRevenue = useMemo(() => {
     if (!isShiftOpen) return 0;
-    return todayInvoices.reduce((sum, inv) => sum + (Number(inv.total) || 0), 0);
-  }, [todayInvoices, isShiftOpen]);
+    const invoicesTotal = todayInvoices.reduce((sum, inv) => sum + (Number(inv.total) || 0), 0);
+    return invoicesTotal + todayBookingAdvances;
+  }, [todayInvoices, todayBookingAdvances, isShiftOpen]);
 
   const todayInvoicesCount = useMemo(() => {
     if (!isShiftOpen) return 0;
@@ -368,8 +377,9 @@ export function DashboardScreen({
               }, 0);
 
               const custody = tTrx.filter(trx => trx.type === 'in' && (trx.category === 'عهدة افتتاحية' || trx.category === 'initial_cash')).reduce((sum, trx) => sum + trx.amount, 0);
-              const sales = tTrx.filter(trx => trx.type === 'in' && (trx.category === 'sales' || trx.category === 'مبيعات' || trx.category === 'مقدم حجز')).reduce((sum, trx) => sum + trx.amount, 0) + unrecordedSales;
-              const otherIn = tTrx.filter(trx => trx.type === 'in' && trx.category !== 'عهدة افتتاحية' && trx.category !== 'initial_cash' && trx.category !== 'sales' && trx.category !== 'مبيعات' && trx.category !== 'مقدم حجز').reduce((sum, trx) => sum + trx.amount, 0);
+              const bookingAdvancesAmt = tTrx.filter(trx => trx.type === 'in' && (trx.category === 'مقدم حجز' || trx.category === 'booking_advance')).reduce((sum, trx) => sum + trx.amount, 0);
+              const sales = tTrx.filter(trx => trx.type === 'in' && (trx.category === 'sales' || trx.category === 'مبيعات')).reduce((sum, trx) => sum + trx.amount, 0) + unrecordedSales;
+              const otherIn = tTrx.filter(trx => trx.type === 'in' && trx.category !== 'عهدة افتتاحية' && trx.category !== 'initial_cash' && trx.category !== 'sales' && trx.category !== 'مبيعات' && trx.category !== 'مقدم حجز' && trx.category !== 'booking_advance').reduce((sum, trx) => sum + trx.amount, 0);
               const income = tTrx.filter(trx => trx.type === 'in').reduce((sum, trx) => sum + trx.amount, 0) + unrecordedSales;
               const outcome = tTrx.filter(trx => trx.type === 'out').reduce((sum, trx) => sum + trx.amount, 0);
               const net = income - outcome;
@@ -417,6 +427,17 @@ export function DashboardScreen({
                       <span className="text-emerald-400 font-bold font-mono">+{sales.toFixed(2)} {settings.currency}</span>
                     </div>
 
+                    {/* Booking Advances Row - مقدمات حجز (بند مستقل وواضح) */}
+                    {bookingAdvancesAmt > 0 && (
+                      <div className="flex justify-between items-center bg-teal-500/15 border border-teal-400/30 px-2.5 py-1.5 rounded-xl text-teal-200 font-extrabold">
+                        <span className="flex items-center gap-1">
+                          <span>📅</span>
+                          <span>مقدمات حجز:</span>
+                        </span>
+                        <span className="font-mono text-teal-100 font-black">+{bookingAdvancesAmt.toFixed(2)} {settings.currency}</span>
+                      </div>
+                    )}
+
                     {/* Other Inflows */}
                     {otherIn > 0 && (
                       <div className="flex justify-between items-center text-slate-300">
@@ -444,6 +465,7 @@ export function DashboardScreen({
                   </div>
                 </div>
               );
+
             })}
           </div>
         </div>

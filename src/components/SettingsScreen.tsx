@@ -2965,6 +2965,27 @@ export function SettingsScreen({
               />
             </div>
           </div>
+
+          {/* 📅 ملاحظات وتنبيهات إيصال الحجز (تخصيص لكل صالون) */}
+          <div className="mt-4 pt-4 border-t border-slate-100">
+            <label className="block text-[12px] font-bold text-slate-700 mb-1 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <span>📅</span>
+                <span>ملاحظات وشروط إيصال الحجز (تظهر في أسفل إيصال الحجز)</span>
+              </span>
+              <span className="text-[11px] text-indigo-600 font-bold bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200">
+                مخصصة لكل صالون
+              </span>
+            </label>
+            <textarea
+              rows={3}
+              value={settings.bookingNotes || ''}
+              onChange={(e) => handleChange('bookingNotes', e.target.value)}
+              placeholder="اكتب هنا الشروط أو الملاحظات التي تود ظهورها أسفل إيصال الحجز (مثال: يرجى الحضور قبل الموعد بـ 10 دقائق... في حال التأخر أكثر من 15 دقيقة يتم إلغاء الحجز تلقائياً... العربون غير قابل للاسترداد في حال عدم الحضور)."
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-[13px] focus:border-primary outline-none resize-y transition-colors"
+            />
+            <p className="text-[11px] text-slate-400 mt-1">تُكتب هنا أي شروط أو تعليمات خاصة بالصالون لتظهر مطبوعة أسفل إيصال الحجز للعملاء وتختلف من صالون إلى صالون.</p>
+          </div>
         </div>
 
         {/* 🖨️ Network & Kiosk Thermal Printer Setup */}

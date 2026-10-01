@@ -613,7 +613,8 @@ export function BookingsScreen({
       advancePayments: newBooking.advancePayments || [],
       totalAmount: (newBooking.services || []).reduce((sum, s) => sum + s.price, 0),
       branchId: bBranchId,
-      queueNumber
+      queueNumber,
+      createdAt: editingBooking?.createdAt || (newBooking.createdAt as string) || new Date().toISOString()
     };
 
     // Calculate newly added advance payments to generate financial transactions
@@ -743,6 +744,43 @@ export function BookingsScreen({
     const totalAmt = booking.services.reduce((sum, s) => sum + s.price, 0);
     const remainingAmt = Math.max(0, totalAmt - totalAdv);
 
+    // Format creation date & time (تاريخ ووقت إنشاء الحجز)
+    const createdRaw = booking.createdAt || (booking as any).created_at;
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    let createdDateTimeStr = '';
+    if (createdRaw) {
+      const d = new Date(createdRaw);
+      if (!isNaN(d.getTime())) {
+        const datePart = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+        const hours = d.getHours();
+        const minutes = pad(d.getMinutes());
+        const ampm = hours >= 12 ? 'م' : 'ص';
+        const formattedHours = pad(hours % 12 || 12);
+        createdDateTimeStr = `${datePart} ${formattedHours}:${minutes} ${ampm}`;
+      }
+    }
+    if (!createdDateTimeStr) {
+      const d = new Date();
+      const datePart = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+      const hours = d.getHours();
+      const minutes = pad(d.getMinutes());
+      const ampm = hours >= 12 ? 'م' : 'ص';
+      const formattedHours = pad(hours % 12 || 12);
+      createdDateTimeStr = `${datePart} ${formattedHours}:${minutes} ${ampm}`;
+    }
+
+    // Clean address to ensure "جمهورية مصر العربية" is completely removed
+    const branchObj = branches?.find(b => b.id === (booking.branchId || activeBranchId));
+    const rawAddress = branchObj?.address || settings.address || '';
+    const cleanAddress = rawAddress
+      .replace(/جمهورية مصر العربية/gi, '')
+      .replace(/^[\s,-]+|[\s,-]+$/g, '')
+      .trim();
+    const contactPhone = settings.phone || '';
+
+    // Salon title from database
+    const salonTitle = settings.salonName || 'صالون سمارت كت';
+
     const printWindow = document.createElement('div');
     printWindow.id = 'print-booking-receipt';
     printWindow.className = 'hidden print:block fixed inset-0 bg-white z-[9999] p-8 text-black';
@@ -750,9 +788,7 @@ export function BookingsScreen({
     printWindow.innerHTML = `
       <div style="text-align: center; margin-bottom: 20px;">
         ${settings.logoUrl ? '<img src="' + sanitizeUrl(settings.logoUrl) + '" style="max-height: 80px; margin: 0 auto 10px;" />' : ''}
-        <h2 style="font-size: 20px; font-weight: bold; margin: 0;">${escapeHtml(settings.printerName || 'إشعار حجز موعد')}</h2>
-        <p style="font-size: 14px; margin: 5px 0;">${escapeHtml(settings.address || '')}</p>
-        <p style="font-size: 14px; margin: 5px 0;">${escapeHtml(settings.phone || '')}</p>
+        <h2 style="font-size: 20px; font-weight: bold; margin: 0;">${escapeHtml(salonTitle)}</h2>
         <h3 style="font-size: 18px; font-weight: bold; border: 1px solid #000; display: inline-block; padding: 5px 15px; margin-top: 10px;">إيصال حجز موعد مؤكد</h3>
       </div>
       <div style="margin-bottom: 20px; font-size: 14px;">
@@ -772,7 +808,6 @@ export function BookingsScreen({
         <thead>
           <tr style="border-bottom: 2px solid #000;">
             <th style="padding: 8px 0;">الخدمة</th>
-            <th style="padding: 8px 0;">الموظف / الفني</th>
             <th style="padding: 8px 0; text-align: left;">السعر</th>
           </tr>
         </thead>
@@ -780,7 +815,6 @@ export function BookingsScreen({
           ${booking.services.map(s => `
             <tr style="border-bottom: 1px dotted #ccc;">
               <td style="padding: 8px 0;">${escapeHtml(s.serviceName)}</td>
-              <td style="padding: 8px 0;">${escapeHtml(s.technicianName)}</td>
               <td style="padding: 8px 0; text-align: left;">${Number(s.price || 0).toFixed(2)} ${escapeHtml(settings.currency)}</td>
             </tr>
           `).join('')}
@@ -809,10 +843,17 @@ export function BookingsScreen({
         ` : ''}
       </div>
       ${settings.bookingNotes ? `
-        <div style="margin-top: 30px; text-align: center; font-size: 13px; font-weight: bold; white-space: pre-wrap;">
+        <div style="margin-top: 25px; padding: 10px; border: 1px dashed #666; border-radius: 6px; text-align: center; font-size: 13px; font-weight: bold; white-space: pre-wrap; background: #fafafa;">
           ${escapeHtml(settings.bookingNotes)}
         </div>
       ` : ''}
+      <div style="margin-top: 25px; padding-top: 12px; border-top: 1px dashed #000; text-align: center; font-size: 12px; line-height: 1.6;">
+        ${cleanAddress ? `<p style="margin: 3px 0;"><strong>العنوان:</strong> ${escapeHtml(cleanAddress)}</p>` : ''}
+        ${contactPhone ? `<p style="margin: 3px 0;"><strong>أرقام التواصل:</strong> ${escapeHtml(contactPhone)}</p>` : ''}
+        <p style="margin: 6px 0 0; font-size: 11px; color: #444;">
+          <strong>تاريخ ووقت إنشاء الحجز:</strong> ${createdDateTimeStr}
+        </p>
+      </div>
     `;
     document.body.appendChild(printWindow);
     window.print();
