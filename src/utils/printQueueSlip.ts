@@ -19,7 +19,7 @@ export interface QueueSlipData {
 /**
  * Generate a clean, crisp Code 39 Barcode SVG string (100% offline, zero dependencies)
  */
-function generateCode39Svg(text: string, height: number = 30): string {
+export function generateCode39Svg(text: string, height: number = 30): string {
   const clean = text.replace(/[^0-9A-Z\-]/gi, '').toUpperCase() || '123456789';
   const fullText = `*${clean}*`;
 

@@ -1141,17 +1141,34 @@ export function POSScreen({
           type: 'service'
         };
         
+        const lineDiscount = s.discountType === 'percentage' 
+          ? (safePrice * Math.min(100, Math.max(0, Number(s.discountValue) || 0))) / 100 
+          : Math.min(safePrice, Math.max(0, Number(s.discountValue) || 0));
+        const effectivePrice = Math.max(0, safePrice - lineDiscount);
+        
         return {
           cartId: Math.random().toString(36).substring(2, 9),
-          item: serviceItem,
+          item: {
+            ...serviceItem,
+            price: effectivePrice,
+            displayPrice: effectivePrice
+          },
           quantity: 1,
           employeeId: s.technicianId && s.technicianId !== 'any' ? s.technicianId : '',
           type: 'service',
-          price: safePrice
+          price: effectivePrice
         };
       }) || [];
       
       setCart(cartItems);
+
+      // تطبيق الخصم الإضافي العام للحجز إن وجد
+      if (initialBooking.discountValue && Number(initialBooking.discountValue) > 0) {
+        setDiscount({
+          type: initialBooking.discountType || 'fixed',
+          value: Number(initialBooking.discountValue)
+        });
+      }
       
       let safeAdvances: AdvancePayment[] = [];
       const rawAdv = initialBooking.advancePayments || (initialBooking as any).advance_payments;

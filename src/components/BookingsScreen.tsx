@@ -23,6 +23,78 @@ import { DB } from '../services/db';
 import { escapeHtml, sanitizeUrl } from '../utils/sanitize';
 import { isBarberEmployee } from '../utils/employeeHelper';
 import { BookingsImportModal } from './BookingsImportModal';
+import { generateCode39Svg } from '../utils/printQueueSlip';
+
+// Format time string (e.g. "14:30" or "09:00") into 12-hour format with AM/PM (ص / م)
+export function formatTo12Hour(timeStr?: string): string {
+  if (!timeStr) return '';
+  const clean = timeStr.trim();
+  if (clean.includes('ص') || clean.includes('م') || /am|pm/i.test(clean)) {
+    return clean;
+  }
+  const parts = clean.split(':');
+  if (parts.length >= 2) {
+    let hours = parseInt(parts[0], 10);
+    const minutes = parts[1].padStart(2, '0').substring(0, 2);
+    if (!isNaN(hours)) {
+      const ampm = hours >= 12 ? 'م' : 'ص';
+      const h12 = hours % 12 || 12;
+      return `${h12.toString().padStart(2, '0')}:${minutes} ${ampm}`;
+    }
+  }
+  return clean;
+}
+
+// Calculate discount amount for a single service line
+export function calculateServiceLineDiscount(s: any): number {
+  const base = Number(s.price || 0);
+  const val = Number(s.discountValue || 0);
+  if (val <= 0) return 0;
+  if (s.discountType === 'percentage') {
+    return (base * Math.min(100, Math.max(0, val))) / 100;
+  }
+  return Math.min(base, Math.max(0, val));
+}
+
+// Calculate final price for a service line after its discount
+export function calculateServiceLinePrice(s: any): number {
+  const base = Number(s.price || 0);
+  return Math.max(0, base - calculateServiceLineDiscount(s));
+}
+
+// Calculate comprehensive booking financial totals including item discounts and general discount
+export function calculateBookingTotals(b: Partial<Booking>) {
+  const services = b.services || [];
+  const grossServices = services.reduce((sum, s) => sum + Number(s.price || 0), 0);
+  const lineDiscounts = services.reduce((sum, s) => sum + calculateServiceLineDiscount(s), 0);
+  const subtotalAfterLines = Math.max(0, grossServices - lineDiscounts);
+
+  let generalDiscount = 0;
+  const genVal = Number(b.discountValue || 0);
+  if (genVal > 0) {
+    if (b.discountType === 'percentage') {
+      generalDiscount = (subtotalAfterLines * Math.min(100, Math.max(0, genVal))) / 100;
+    } else {
+      generalDiscount = Math.min(subtotalAfterLines, Math.max(0, genVal));
+    }
+  }
+
+  const totalDiscounts = lineDiscounts + generalDiscount;
+  const netTotal = Math.max(0, subtotalAfterLines - generalDiscount);
+  const advances = (b.advancePayments || []).reduce((sum, a) => sum + Number(a.amount || 0), 0);
+  const remaining = Math.max(0, netTotal - advances);
+
+  return {
+    grossServices,
+    lineDiscounts,
+    subtotalAfterLines,
+    generalDiscount,
+    totalDiscounts,
+    netTotal,
+    advances,
+    remaining
+  };
+}
 
 export function getBookingAdvances(b: any): AdvancePayment[] {
   if (!b) return [];
@@ -167,7 +239,9 @@ export function BookingsScreen({
     location: '',
     services: [],
     advancePayments: [],
-    totalAmount: 0
+    totalAmount: 0,
+    discountType: 'fixed',
+    discountValue: 0
   });
 
   const [serviceToAdd, setServiceToAdd] = useState('');
@@ -358,13 +432,16 @@ export function BookingsScreen({
         if (!matchesTech) return false;
       }
 
-      // Search query
+      // Search query (name, phone, service, booking ID / barcode)
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matchesClient = b.clientName?.toLowerCase().includes(q);
         const matchesPhone = b.phone?.includes(q);
         const matchesService = b.services?.some(s => s.serviceName?.toLowerCase().includes(q));
-        if (!matchesClient && !matchesPhone && !matchesService) return false;
+        const matchesId = b.id?.toLowerCase().includes(q)
+          || (b.bookingCode && b.bookingCode.toLowerCase().includes(q))
+          || (b.queueNumber && `b-${b.queueNumber}`.toLowerCase().includes(q));
+        if (!matchesClient && !matchesPhone && !matchesService && !matchesId) return false;
       }
 
       return true;
@@ -396,7 +473,10 @@ export function BookingsScreen({
         const matchesClient = b.clientName?.toLowerCase().includes(q);
         const matchesPhone = b.phone?.includes(q);
         const matchesService = b.services?.some(s => s.serviceName?.toLowerCase().includes(q));
-        if (!matchesClient && !matchesPhone && !matchesService) return false;
+        const matchesId = b.id?.toLowerCase().includes(q)
+          || (b.bookingCode && b.bookingCode.toLowerCase().includes(q))
+          || (b.queueNumber && `b-${b.queueNumber}`.toLowerCase().includes(q));
+        if (!matchesClient && !matchesPhone && !matchesService && !matchesId) return false;
       }
 
       return true;
@@ -437,7 +517,9 @@ export function BookingsScreen({
       location: '',
       services: [],
       advancePayments: [],
-      totalAmount: 0
+      totalAmount: 0,
+      discountType: 'fixed',
+      discountValue: 0
     });
     setAdvTreasuryInput(availableTreasuries[0]?.id || 'cash');
     setAdvDateInput(openShiftDate);
@@ -454,18 +536,22 @@ export function BookingsScreen({
     const srv = services.find(s => s.id === serviceToAdd);
     if (!srv) return;
     const emp = employees.find(e => e.id === techToAdd);
-    const bs = {
+    const bs: BookingService = {
       id: Math.random().toString(36).substr(2, 9),
       serviceId: srv.id,
       serviceName: srv.name,
       technicianId: emp ? emp.id : '',
       technicianName: emp ? emp.name : 'غير محدد',
-      price: srv.price
+      price: srv.price,
+      discountType: 'fixed',
+      discountValue: 0
     };
+    const updatedServices = [...(newBooking.services || []), bs];
+    const totals = calculateBookingTotals({ ...newBooking, services: updatedServices });
     setNewBooking({
       ...newBooking,
-      services: [...(newBooking.services || []), bs],
-      totalAmount: (newBooking.totalAmount || 0) + bs.price
+      services: updatedServices,
+      totalAmount: totals.netTotal
     });
     setServiceToAdd('');
     setServiceSearchQuery('');
@@ -601,6 +687,7 @@ export function BookingsScreen({
     const queueNumber = editingBooking?.queueNumber 
       || await QueueService.getNextBookingQueueNumberAsync(settings.salonId, bBranchId, effectiveBookingDate);
 
+    const totals = calculateBookingTotals(newBooking);
     const booking: Booking = {
       id: editingBooking ? editingBooking.id : 'B-' + Math.random().toString(36).substr(2, 9).toUpperCase(),
       clientName: newBooking.clientName!,
@@ -611,10 +698,12 @@ export function BookingsScreen({
       location: newBooking.location?.trim() || undefined,
       services: newBooking.services || [],
       advancePayments: newBooking.advancePayments || [],
-      totalAmount: (newBooking.services || []).reduce((sum, s) => sum + s.price, 0),
+      totalAmount: totals.netTotal,
+      discountType: newBooking.discountType || 'fixed',
+      discountValue: Number(newBooking.discountValue || 0),
       branchId: bBranchId,
       queueNumber,
-      createdAt: editingBooking?.createdAt || (newBooking.createdAt as string) || new Date().toISOString()
+      createdAt: editingBooking?.createdAt || (editingBooking as any)?.created_at || (newBooking.createdAt as string) || new Date().toISOString()
     };
 
     // Calculate newly added advance payments to generate financial transactions
@@ -662,7 +751,7 @@ export function BookingsScreen({
     if (setClients && newBooking.phone && !matchedClient) {
       const cleanInput = newBooking.phone.trim();
       matchedClient = {
-        id: 'C-' + Date.now(),
+        id: 'c-' + Date.now(),
         name: newBooking.clientName.trim(),
         phone: cleanInput,
         email: newBooking.customerEmail || '',
@@ -693,11 +782,23 @@ export function BookingsScreen({
     setEditingBooking(null);
     setSelectedBookingDetails(null);
     setMatchingClientInfo(null);
+
+    // عند تعديل الحجز أو حفظه لأول مرة تظهر مباشرة شاشة الإيصال لطباعته
+    setTimeout(() => {
+      printBooking(booking);
+    }, 150);
   };
 
   const handleEdit = (b: Booking) => {
     setEditingBooking(b);
-    setNewBooking({ ...b, location: b.location || '', advancePayments: b.advancePayments || [] });
+    setNewBooking({ 
+      ...b, 
+      createdAt: b.createdAt || (b as any).created_at,
+      location: b.location || '', 
+      advancePayments: b.advancePayments || [],
+      discountType: b.discountType || 'fixed',
+      discountValue: b.discountValue || 0
+    });
     setShowAddModal(true);
     setSelectedBookingDetails(null);
   };
@@ -740,11 +841,11 @@ export function BookingsScreen({
 
   // Print Booking Receipt
   const printBooking = (booking: Booking) => {
-    const totalAdv = (booking.advancePayments || []).reduce((sum, a) => sum + (a.amount || 0), 0);
-    const totalAmt = booking.services.reduce((sum, s) => sum + s.price, 0);
-    const remainingAmt = Math.max(0, totalAmt - totalAdv);
+    const totals = calculateBookingTotals(booking);
+    const totalAdv = totals.advances;
+    const remainingAmt = totals.remaining;
 
-    // Format creation date & time (تاريخ ووقت إنشاء الحجز)
+    // Format creation date & time (تاريخ ووقت إنشاء الحجز) - 12-hour format
     const createdRaw = booking.createdAt || (booking as any).created_at;
     const pad = (n: number) => n.toString().padStart(2, '0');
     let createdDateTimeStr = '';
@@ -756,7 +857,7 @@ export function BookingsScreen({
         const minutes = pad(d.getMinutes());
         const ampm = hours >= 12 ? 'م' : 'ص';
         const formattedHours = pad(hours % 12 || 12);
-        createdDateTimeStr = `${datePart} ${formattedHours}:${minutes} ${ampm}`;
+        createdDateTimeStr = `${datePart} - ${formattedHours}:${minutes} ${ampm}`;
       }
     }
     if (!createdDateTimeStr) {
@@ -766,7 +867,7 @@ export function BookingsScreen({
       const minutes = pad(d.getMinutes());
       const ampm = hours >= 12 ? 'م' : 'ص';
       const formattedHours = pad(hours % 12 || 12);
-      createdDateTimeStr = `${datePart} ${formattedHours}:${minutes} ${ampm}`;
+      createdDateTimeStr = `${datePart} - ${formattedHours}:${minutes} ${ampm}`;
     }
 
     // Clean address to ensure "جمهورية مصر العربية" is completely removed
@@ -781,78 +882,139 @@ export function BookingsScreen({
     // Salon title from database
     const salonTitle = settings.salonName || 'صالون سمارت كت';
 
+    // Barcode for booking ID
+    const barcodeCode = booking.id || 'B000000';
+    const barcodeSvg = generateCode39Svg(barcodeCode, 34);
+
     const printWindow = document.createElement('div');
     printWindow.id = 'print-booking-receipt';
     printWindow.className = 'hidden print:block fixed inset-0 bg-white z-[9999] p-8 text-black';
     printWindow.dir = 'rtl';
     printWindow.innerHTML = `
-      <div style="text-align: center; margin-bottom: 20px;">
+      <div style="text-align: center; margin-bottom: 12px;">
         ${settings.logoUrl ? '<img src="' + sanitizeUrl(settings.logoUrl) + '" style="max-height: 80px; margin: 0 auto 10px;" />' : ''}
-        <h2 style="font-size: 20px; font-weight: bold; margin: 0;">${escapeHtml(salonTitle)}</h2>
-        <h3 style="font-size: 18px; font-weight: bold; border: 1px solid #000; display: inline-block; padding: 5px 15px; margin-top: 10px;">إيصال حجز موعد مؤكد</h3>
+        <h2 style="font-size: 20px; font-weight: bold; margin: 0; color: #000;">${escapeHtml(salonTitle)}</h2>
+        <h3 style="font-size: 17px; font-weight: bold; border: 1.5px solid #000; display: inline-block; padding: 5px 15px; margin-top: 10px; color: #000;">إيصال حجز موعد مؤكد</h3>
       </div>
-      <div style="margin-bottom: 20px; font-size: 14px;">
+
+      <!-- Barcode section (باركود لسهولة البحث والتنفيذ) -->
+      <div style="text-align: center; margin: 10px 0 15px; padding: 4px; background: #fff;">
+        <div style="max-width: 250px; margin: 0 auto;">
+          ${barcodeSvg}
+        </div>
+        <div style="font-family: monospace; font-size: 13px; font-weight: 900; letter-spacing: 2px; color: #000; margin-top: 2px;">
+          ${escapeHtml(barcodeCode)}
+        </div>
+      </div>
+
+      <div style="margin-bottom: 18px; font-size: 14px; color: #000; line-height: 1.6;">
         ${booking.queueNumber ? `
           <div style="background: #eef2ff; border: 2px solid #6366f1; border-radius: 8px; padding: 8px; text-align: center; margin-bottom: 12px;">
             <span style="font-size: 12px; color: #3730a3; font-weight: bold; display: block;">رقم دور الحجز المسبق</span>
             <strong style="font-size: 28px; color: #4338ca; font-weight: 900; font-family: monospace;">B-${escapeHtml(booking.queueNumber)}</strong>
           </div>
         ` : ''}
-        <p><strong>رقم الحجز:</strong> ${escapeHtml(booking.id)}</p>
-        <p><strong>تاريخ الموعد:</strong> ${escapeHtml(booking.date)}</p>
-        <p><strong>الوقت:</strong> ${escapeHtml(booking.time)}</p>
-        <p><strong>العميل:</strong> ${escapeHtml(booking.clientName)}</p>
-        <p><strong>الجوال:</strong> ${escapeHtml(booking.phone)}</p>
+        <p style="margin: 3px 0;"><strong>رقم الحجز:</strong> <span style="color: #000; font-weight: bold; font-family: monospace;">${escapeHtml(booking.id)}</span></p>
+        <p style="margin: 3px 0;"><strong>تاريخ الموعد:</strong> <span style="color: #000; font-weight: 900;">${escapeHtml(booking.date)}</span></p>
+        <p style="margin: 3px 0;"><strong>الوقت:</strong> <span style="color: #000; font-weight: 900;">${escapeHtml(formatTo12Hour(booking.time))}</span></p>
+        <p style="margin: 3px 0;"><strong>العميل:</strong> <span style="color: #000; font-weight: bold;">${escapeHtml(booking.clientName)}</span></p>
+        <p style="margin: 3px 0;"><strong>مكان الحجز:</strong> <span style="color: #000; font-weight: bold;">${escapeHtml(booking.location || 'داخل الصالون')}</span></p>
+        <p style="margin: 3px 0;"><strong>الهاتف:</strong> <span style="color: #000; font-weight: bold;">${escapeHtml(booking.phone)}</span></p>
       </div>
-      <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 14px; text-align: right;">
+
+      <table style="width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 14px; text-align: right; color: #000;">
         <thead>
           <tr style="border-bottom: 2px solid #000;">
-            <th style="padding: 8px 0;">الخدمة</th>
-            <th style="padding: 8px 0; text-align: left;">السعر</th>
+            <th style="padding: 8px 0; color: #000;">الخدمة</th>
+            <th style="padding: 8px 0; text-align: left; color: #000;">السعر</th>
           </tr>
         </thead>
         <tbody>
-          ${booking.services.map(s => `
-            <tr style="border-bottom: 1px dotted #ccc;">
-              <td style="padding: 8px 0;">${escapeHtml(s.serviceName)}</td>
-              <td style="padding: 8px 0; text-align: left;">${Number(s.price || 0).toFixed(2)} ${escapeHtml(settings.currency)}</td>
-            </tr>
-          `).join('')}
+          ${booking.services.map(s => {
+            const lineDisc = calculateServiceLineDiscount(s);
+            const lineFinal = calculateServiceLinePrice(s);
+            return `
+              <tr style="border-bottom: 1px dotted #ccc;">
+                <td style="padding: 8px 0;">
+                  <div style="font-weight: bold; color: #000;">${escapeHtml(s.serviceName)}</div>
+                  ${lineDisc > 0 ? `
+                    <div style="font-size: 11px; color: #dc2626; font-weight: bold;">
+                      خصم: -${lineDisc.toFixed(2)} ${s.discountType === 'percentage' ? '(' + (s.discountValue || 0) + '%)' : escapeHtml(settings.currency)}
+                    </div>
+                  ` : ''}
+                </td>
+                <td style="padding: 8px 0; text-align: left; vertical-align: top;">
+                  <div style="font-weight: 900; font-family: monospace; color: #000;">${lineFinal.toFixed(2)} ${escapeHtml(settings.currency)}</div>
+                  ${lineDisc > 0 ? `
+                    <div style="font-size: 11px; color: #888; text-decoration: line-through; font-family: monospace;">${Number(s.price || 0).toFixed(2)}</div>
+                  ` : ''}
+                </td>
+              </tr>
+            `;
+          }).join('')}
         </tbody>
       </table>
-      <div style="margin-bottom: 20px; font-size: 14px;">
-        <div style="display: flex; justify-content: space-between; font-weight: bold; border-bottom: 1px dashed #000; padding-bottom: 5px; margin-bottom: 5px;">
-          <span>إجمالي الخدمات:</span>
-          <span>${Number(totalAmt || 0).toFixed(2)} ${escapeHtml(settings.currency)}</span>
-        </div>
-        ${totalAdv > 0 ? `
-          <div style="display: flex; justify-content: space-between; color: #059669; font-weight: bold; padding-bottom: 5px; margin-bottom: 5px;">
-            <span>المسدد مقدماً (عربون):</span>
-            <span>-${Number(totalAdv || 0).toFixed(2)} ${escapeHtml(settings.currency)}</span>
+
+      <div style="margin-bottom: 18px; font-size: 14px; color: #000;">
+        ${totals.totalDiscounts > 0 ? `
+          <div style="display: flex; justify-content: space-between; font-weight: bold; padding-bottom: 4px; margin-bottom: 4px; color: #444;">
+            <span>إجمالي الخدمات (قبل الخصم):</span>
+            <span style="font-family: monospace;">${totals.grossServices.toFixed(2)} ${escapeHtml(settings.currency)}</span>
           </div>
-          <div style="display: flex; justify-content: space-between; font-size: 16px; font-weight: 900; border-top: 2px solid #000; padding-top: 5px;">
+        ` : ''}
+
+        ${totals.lineDiscounts > 0 ? `
+          <div style="display: flex; justify-content: space-between; color: #dc2626; font-weight: bold; padding-bottom: 4px; margin-bottom: 4px;">
+            <span>خصومات بنود الخدمات:</span>
+            <span style="font-family: monospace;">-${totals.lineDiscounts.toFixed(2)} ${escapeHtml(settings.currency)}</span>
+          </div>
+        ` : ''}
+
+        ${totals.generalDiscount > 0 ? `
+          <div style="display: flex; justify-content: space-between; color: #dc2626; font-weight: bold; padding-bottom: 4px; margin-bottom: 4px;">
+            <span>خصم إضافي على الحجز (${booking.discountType === 'percentage' ? (booking.discountValue || 0) + '%' : 'مبلغ ثابت'}):</span>
+            <span style="font-family: monospace;">-${totals.generalDiscount.toFixed(2)} ${escapeHtml(settings.currency)}</span>
+          </div>
+        ` : ''}
+
+        <div style="display: flex; justify-content: space-between; font-weight: bold; border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 6px 0; margin-bottom: 6px;">
+          <span>إجمالي الحجز الصافي:</span>
+          <span style="font-family: monospace; font-size: 15px; font-weight: 900;">${totals.netTotal.toFixed(2)} ${escapeHtml(settings.currency)}</span>
+        </div>
+
+        ${totalAdv > 0 ? `
+          <div style="display: flex; justify-content: space-between; color: #059669; font-weight: bold; padding-bottom: 4px; margin-bottom: 4px;">
+            <span>المسدد مقدماً (عربون):</span>
+            <span style="font-family: monospace;">-${totalAdv.toFixed(2)} ${escapeHtml(settings.currency)}</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 16px; font-weight: 900; border-top: 2px solid #000; padding-top: 6px; color: #000;">
             <span>المتبقي للتحصيل عند الزيارة:</span>
-            <span>${Number(remainingAmt || 0).toFixed(2)} ${escapeHtml(settings.currency)}</span>
+            <span style="font-family: monospace;">${remainingAmt.toFixed(2)} ${escapeHtml(settings.currency)}</span>
           </div>
           <div style="margin-top: 10px; font-size: 12px; background: #f3f4f6; padding: 6px; border-radius: 6px;">
-            <strong style="display: block; margin-bottom: 4px;">تفاصيل الدفعات المقدمة:</strong>
+            <strong style="display: block; margin-bottom: 4px; color: #000;">تفاصيل الدفعات المقدمة:</strong>
             ${(booking.advancePayments || []).map((adv, i) => `
-              <div>• دفعة ${i+1}: ${Number(adv.amount || 0).toFixed(2)} ${escapeHtml(settings.currency)} (طريقة الدفع: ${escapeHtml(adv.treasuryName || 'نقداً')}) - تاريخ: ${escapeHtml(adv.date)}</div>
+              <div>• دفعة ${i+1}: ${Number(adv.amount || 0).toFixed(2)} ${escapeHtml(settings.currency)} (${escapeHtml(adv.treasuryName || 'نقداً')}) - تاريخ: ${escapeHtml(adv.date)}</div>
             `).join('')}
           </div>
         ` : ''}
       </div>
+
+      <!-- تاريخ ووقت إنشاء الحجز أعلى الملاحظات بخط واضح بلون أسود -->
+      <div style="margin-top: 16px; margin-bottom: 12px; padding: 8px 12px; background: #fff; border: 1.5px solid #000; border-radius: 6px; text-align: center;">
+        <span style="font-size: 13px; font-weight: bold; color: #000;">تاريخ ووقت إنشاء الحجز: </span>
+        <span style="font-family: monospace; font-size: 14px; font-weight: 900; color: #000;">${createdDateTimeStr}</span>
+      </div>
+
       ${settings.bookingNotes ? `
-        <div style="margin-top: 25px; padding: 10px; border: 1px dashed #666; border-radius: 6px; text-align: center; font-size: 13px; font-weight: bold; white-space: pre-wrap; background: #fafafa;">
+        <div style="margin-top: 10px; padding: 10px; border: 1px dashed #000; border-radius: 6px; text-align: center; font-size: 13px; font-weight: bold; white-space: pre-wrap; background: #fafafa; color: #000;">
           ${escapeHtml(settings.bookingNotes)}
         </div>
       ` : ''}
-      <div style="margin-top: 25px; padding-top: 12px; border-top: 1px dashed #000; text-align: center; font-size: 12px; line-height: 1.6;">
+
+      <div style="margin-top: 20px; padding-top: 10px; border-top: 1px dashed #000; text-align: center; font-size: 12px; line-height: 1.6; color: #000;">
         ${cleanAddress ? `<p style="margin: 3px 0;"><strong>العنوان:</strong> ${escapeHtml(cleanAddress)}</p>` : ''}
         ${contactPhone ? `<p style="margin: 3px 0;"><strong>أرقام التواصل:</strong> ${escapeHtml(contactPhone)}</p>` : ''}
-        <p style="margin: 6px 0 0; font-size: 11px; color: #444;">
-          <strong>تاريخ ووقت إنشاء الحجز:</strong> ${createdDateTimeStr}
-        </p>
       </div>
     `;
     document.body.appendChild(printWindow);
@@ -1741,7 +1903,7 @@ export function BookingsScreen({
               </div>
               <div className="flex items-center gap-1.5 font-mono font-bold text-slate-700">
                 <Clock size={15} className="text-indigo-600" />
-                <span>{selectedBookingDetails.time}</span>
+                <span>{formatTo12Hour(selectedBookingDetails.time)}</span>
               </div>
               {selectedBookingDetails.location && (
                 <div className="flex items-center gap-1 font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-lg text-[11px]">
@@ -1760,17 +1922,29 @@ export function BookingsScreen({
             <div>
               <h4 className="text-xs font-black text-slate-800 mb-2">الخدمات والموظفون:</h4>
               <div className="space-y-1.5 max-h-40 overflow-y-auto">
-                {selectedBookingDetails.services?.map(s => (
-                  <div key={s.id} className="p-2.5 bg-slate-50 rounded-xl border border-slate-100 flex justify-between items-center text-xs">
-                    <div>
-                      <div className="font-bold text-slate-900">{s.serviceName}</div>
-                      <div className="text-[10px] text-slate-500">الفني: {s.technicianName}</div>
+                {selectedBookingDetails.services?.map(s => {
+                  const lineDisc = calculateServiceLineDiscount(s);
+                  const lineFinal = calculateServiceLinePrice(s);
+                  return (
+                    <div key={s.id} className="p-2.5 bg-slate-50 rounded-xl border border-slate-100 flex justify-between items-center text-xs">
+                      <div>
+                        <div className="font-bold text-slate-900">{s.serviceName}</div>
+                        <div className="text-[10px] text-slate-500">الفني: {s.technicianName}</div>
+                        {lineDisc > 0 && (
+                          <div className="text-[10px] text-rose-600 font-bold">
+                            خصم: -{lineDisc.toFixed(2)} {s.discountType === 'percentage' ? '(' + (s.discountValue || 0) + '%)' : settings.currency}
+                          </div>
+                        )}
+                      </div>
+                      <div className="text-left font-mono font-black text-slate-800">
+                        <div>{lineFinal.toFixed(2)} {settings.currency}</div>
+                        {lineDisc > 0 && (
+                          <div className="text-[10px] text-slate-400 line-through">{Number(s.price || 0).toFixed(2)}</div>
+                        )}
+                      </div>
                     </div>
-                    <div className="font-mono font-black text-slate-800">
-                      {Number(s.price || 0).toFixed(2)} {settings.currency}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
@@ -1833,30 +2007,53 @@ export function BookingsScreen({
             </div>
 
             {/* Total Price & Advance Breakdown */}
-            <div className="pt-2 border-t border-slate-100 space-y-1.5 font-bold text-xs">
-              <div className="flex justify-between items-center text-slate-600">
-                <span>إجمالي الخدمات:</span>
-                <span className="text-sm text-slate-900 font-mono font-black">
-                  {selectedBookingDetails.totalAmount} {settings.currency}
-                </span>
-              </div>
-              {getBookingTotalAdvances(selectedBookingDetails) > 0 && (
-                <>
-                  <div className="flex justify-between items-center text-emerald-700">
-                    <span>إجمالي العربون المسدد:</span>
-                    <span className="text-sm font-mono font-black">
-                      -{getBookingTotalAdvances(selectedBookingDetails).toFixed(2)} {settings.currency}
+            {(() => {
+              const totals = calculateBookingTotals(selectedBookingDetails);
+              return (
+                <div className="pt-2 border-t border-slate-100 space-y-1.5 font-bold text-xs">
+                  {totals.totalDiscounts > 0 && (
+                    <div className="flex justify-between items-center text-slate-500">
+                      <span>إجمالي الخدمات (قبل الخصم):</span>
+                      <span className="font-mono">{totals.grossServices.toFixed(2)} {settings.currency}</span>
+                    </div>
+                  )}
+                  {totals.lineDiscounts > 0 && (
+                    <div className="flex justify-between items-center text-rose-600">
+                      <span>خصومات بنود الخدمات:</span>
+                      <span className="font-mono">-{totals.lineDiscounts.toFixed(2)} {settings.currency}</span>
+                    </div>
+                  )}
+                  {totals.generalDiscount > 0 && (
+                    <div className="flex justify-between items-center text-rose-600">
+                      <span>خصم إضافي على الحجز ({selectedBookingDetails.discountType === 'percentage' ? (selectedBookingDetails.discountValue || 0) + '%' : 'مبلغ ثابت'}):</span>
+                      <span className="font-mono">-{totals.generalDiscount.toFixed(2)} {settings.currency}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between items-center text-slate-900 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+                    <span className="font-black">صافي قيمة الحجز:</span>
+                    <span className="text-sm font-mono font-black text-indigo-900">
+                      {totals.netTotal.toFixed(2)} {settings.currency}
                     </span>
                   </div>
-                  <div className="flex justify-between items-center text-slate-900 bg-slate-100 p-2.5 rounded-xl border border-slate-200">
-                    <span className="font-black">المتبقي للدفع عند الزيارة:</span>
-                    <span className="text-base text-indigo-700 font-mono font-black">
-                      {Math.max(0, selectedBookingDetails.totalAmount - getBookingTotalAdvances(selectedBookingDetails)).toFixed(2)} {settings.currency}
-                    </span>
-                  </div>
-                </>
-              )}
-            </div>
+                  {totals.advances > 0 && (
+                    <>
+                      <div className="flex justify-between items-center text-emerald-700">
+                        <span>إجمالي العربون المسدد:</span>
+                        <span className="text-sm font-mono font-black">
+                          -{totals.advances.toFixed(2)} {settings.currency}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center text-slate-900 bg-indigo-50/70 p-2.5 rounded-xl border border-indigo-200">
+                        <span className="font-black">المتبقي للدفع عند الزيارة:</span>
+                        <span className="text-base text-indigo-700 font-mono font-black">
+                          {totals.remaining.toFixed(2)} {settings.currency}
+                        </span>
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Actions */}
             <div className="pt-2 flex flex-wrap gap-2">
@@ -2302,35 +2499,123 @@ export function BookingsScreen({
                   </button>
                 </div>
 
-                {/* Services List */}
-                <div className="space-y-1.5 max-h-40 overflow-y-auto">
-                  {newBooking.services?.map(s => (
-                    <div key={s.id} className="flex justify-between items-center bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-xs">
-                      <div>
-                        <div className="font-bold text-slate-900">{s.serviceName}</div>
-                        <div className="text-[10px] text-slate-500">الفني: {s.technicianName}</div>
+                {/* Services List with Discount per line */}
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {newBooking.services?.map(s => {
+                    const lineDisc = calculateServiceLineDiscount(s);
+                    const lineFinal = calculateServiceLinePrice(s);
+                    return (
+                      <div key={s.id} className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/80 text-xs space-y-1.5">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <div className="font-bold text-slate-900">{s.serviceName}</div>
+                            <div className="text-[10px] text-slate-500">الفني: {s.technicianName}</div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-bold text-slate-700">{s.price} {settings.currency}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = newBooking.services?.filter(sx => sx.id !== s.id) || [];
+                                const totals = calculateBookingTotals({ ...newBooking, services: updated });
+                                setNewBooking({
+                                  ...newBooking,
+                                  services: updated,
+                                  totalAmount: totals.netTotal
+                                });
+                              }}
+                              className="text-rose-500 hover:text-rose-700 cursor-pointer p-0.5"
+                              title="حذف الخدمة"
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* خصم سطر الخدمة */}
+                        <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-slate-200/60 bg-white/70 px-2 py-1 rounded-lg">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[11px] font-bold text-slate-600">خصم السطر:</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.5"
+                              value={s.discountValue ?? ''}
+                              onChange={e => {
+                                const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
+                                const updated = (newBooking.services || []).map(sx => sx.id === s.id ? { ...sx, discountValue: val } : sx);
+                                const totals = calculateBookingTotals({ ...newBooking, services: updated });
+                                setNewBooking({ ...newBooking, services: updated, totalAmount: totals.netTotal });
+                              }}
+                              placeholder="0"
+                              className="w-14 bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs text-center font-mono font-bold outline-none focus:border-indigo-600"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const nextType = s.discountType === 'percentage' ? 'fixed' : 'percentage';
+                                const updated = (newBooking.services || []).map(sx => sx.id === s.id ? { ...sx, discountType: nextType } : sx);
+                                const totals = calculateBookingTotals({ ...newBooking, services: updated });
+                                setNewBooking({ ...newBooking, services: updated, totalAmount: totals.netTotal });
+                              }}
+                              className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 cursor-pointer"
+                              title="تبديل الخصم: نسبة مئوية أو مبلغ ثابت"
+                            >
+                              {s.discountType === 'percentage' ? '%' : settings.currency}
+                            </button>
+                          </div>
+                          <div className="text-[11px] font-bold text-slate-700">
+                            الصافي: <span className="font-mono text-emerald-700 font-black">{lineFinal.toFixed(2)} {settings.currency}</span>
+                            {lineDisc > 0 && (
+                              <span className="text-[10px] text-rose-500 mr-1 font-mono">(-{lineDisc.toFixed(2)})</span>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <span className="font-mono font-bold text-slate-800">{s.price} {settings.currency}</span>
-                        <button
-                          type="button"
-                          onClick={() => setNewBooking({
-                            ...newBooking,
-                            services: newBooking.services?.filter(sx => sx.id !== s.id)
-                          })}
-                          className="text-rose-500 hover:text-rose-700 cursor-pointer"
-                        >
-                          <X size={14} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                   {(!newBooking.services || newBooking.services.length === 0) && (
                     <div className="text-center text-xs text-slate-400 py-3 bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
                       لم يتم إضافة أي خدمات بعد
                     </div>
                   )}
                 </div>
+
+                {/* خصم إضافي على إجمالي الحجز (نسبة أو مبلغ) */}
+                {(newBooking.services || []).length > 0 && (
+                  <div className="bg-indigo-50/50 p-2.5 rounded-xl border border-indigo-100 flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <div className="font-bold text-indigo-950 flex items-center gap-1.5">
+                      <span>🏷️</span>
+                      <span>خصم إضافي على إجمالي الحجز:</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.5"
+                        value={newBooking.discountValue ?? ''}
+                        onChange={e => {
+                          const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
+                          const totals = calculateBookingTotals({ ...newBooking, discountValue: val });
+                          setNewBooking({ ...newBooking, discountValue: val, totalAmount: totals.netTotal });
+                        }}
+                        placeholder="0"
+                        className="w-16 bg-white border border-indigo-200 rounded-lg px-2 py-1 text-xs text-center font-mono font-bold focus:border-indigo-600 outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextType = newBooking.discountType === 'percentage' ? 'fixed' : 'percentage';
+                          const totals = calculateBookingTotals({ ...newBooking, discountType: nextType });
+                          setNewBooking({ ...newBooking, discountType: nextType, totalAmount: totals.netTotal });
+                        }}
+                        className="px-2 py-1 text-[11px] font-bold rounded-lg bg-indigo-100 border border-indigo-200 text-indigo-800 hover:bg-indigo-200 cursor-pointer transition-colors"
+                      >
+                        {newBooking.discountType === 'percentage' ? 'نسبة مئوية (%)' : `مبلغ ثابت (${settings.currency})`}
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* 5. ADVANCE PAYMENTS SECTION (العربون والدفعات المقدمة) */}
                 <div className="bg-emerald-50/50 p-3.5 rounded-2xl border border-emerald-200 space-y-3">
@@ -2441,22 +2726,34 @@ export function BookingsScreen({
             </div>
 
             <div className="p-4 border-t border-slate-100 bg-slate-50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-              <div className="space-y-0.5">
-                <div className="text-xs font-bold text-slate-600">
-                  إجمالي الخدمات: <span className="font-mono text-slate-900 text-sm font-black">
-                    {(newBooking.services || []).reduce((sum, s) => sum + Number(s.price || 0), 0).toFixed(2)} {settings.currency}
-                  </span>
-                </div>
-                {((newBooking.advancePayments || []).length > 0) && (
-                  <div className="text-xs font-bold text-emerald-700 flex items-center gap-2">
-                    <span>العربون: -{(newBooking.advancePayments || []).reduce((sum, a) => sum + Number(a.amount || 0), 0).toFixed(2)} {settings.currency}</span>
-                    <span className="text-slate-400">|</span>
-                    <span className="text-indigo-700 font-black">
-                      المتبقي: {Math.max(0, (newBooking.services || []).reduce((sum, s) => sum + Number(s.price || 0), 0) - (newBooking.advancePayments || []).reduce((sum, a) => sum + Number(a.amount || 0), 0)).toFixed(2)} {settings.currency}
-                    </span>
+              {(() => {
+                const totals = calculateBookingTotals(newBooking);
+                return (
+                  <div className="space-y-0.5">
+                    <div className="text-xs font-bold text-slate-600 flex flex-wrap items-center gap-2">
+                      <span>إجمالي الخدمات: <span className="font-mono text-slate-900 font-bold">{totals.grossServices.toFixed(2)} {settings.currency}</span></span>
+                      {totals.totalDiscounts > 0 && (
+                        <span className="text-rose-600 font-mono font-bold text-[11px]">
+                          (إجمالي الخصم: -{totals.totalDiscounts.toFixed(2)})
+                        </span>
+                      )}
+                      <span className="text-slate-300">|</span>
+                      <span className="text-indigo-900 font-black">
+                        الصافي: <span className="font-mono text-sm">{totals.netTotal.toFixed(2)} {settings.currency}</span>
+                      </span>
+                    </div>
+                    {((newBooking.advancePayments || []).length > 0) && (
+                      <div className="text-xs font-bold text-emerald-700 flex items-center gap-2">
+                        <span>العربون: -{totals.advances.toFixed(2)} {settings.currency}</span>
+                        <span className="text-slate-400">|</span>
+                        <span className="text-indigo-700 font-black">
+                          المتبقي: {totals.remaining.toFixed(2)} {settings.currency}
+                        </span>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                );
+              })()}
               <div className="flex gap-2 w-full sm:w-auto">
                 <button
                   type="button"

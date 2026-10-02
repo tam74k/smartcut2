@@ -605,6 +605,8 @@ export interface BookingService {
   technicianId: string; 
   technicianName: string; 
   price: number; 
+  discountType?: 'percentage' | 'fixed';
+  discountValue?: number;
 }
 
 export interface AdvancePayment { 
@@ -654,6 +656,8 @@ export interface Booking {
   queueNumber?: number;
   createdAt?: string;
   created_at?: string;
+  discountType?: 'percentage' | 'fixed';
+  discountValue?: number;
 }
 
 export interface CartItem { 
