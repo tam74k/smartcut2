@@ -2221,7 +2221,7 @@ export function ReportsScreen({
             </div>
           </div>
         </div>
-      ) : isGenerated && (
+      ) : isGenerated && activeReportType !== 'inactive_clients' && activeReportType !== 'sales_returns' && activeReportType !== 'unpaid_bookings' ? (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm border-r-4 border-r-emerald-500 flex justify-between items-center">
             <div>
@@ -2251,7 +2251,7 @@ export function ReportsScreen({
             </div>
           </div>
         </div>
-      )}
+      ) : null}
 
       {/* Report Data Placeholder / Table */}
       {!isGenerated ? (
