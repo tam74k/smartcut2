@@ -827,6 +827,8 @@ export interface AppSettings {
   tipsDirectCashDeduction?: boolean; // خصم البقشيش من الكاش مباشرة
   tipPayoutMethod?: 'instant_cash' | 'pooled_deferred'; // طريقة صرف وسداد الإكراميات (فوري كاش أو مجمع مؤجل)
   allowNonCashTips?: boolean; // السماح بالبقشيش عبر طرق الدفع غير النقدية (فيزا / شبكة / تحويل)
+  inactiveClientsTrackingEnabled?: boolean; // تفعيل متابعة العملاء المنقطعين عن الحضور
+  inactiveClientsDays?: number; // عدد أيام الانقطاع المعتمدة لتصنيف العميل كمنقطع (الافتراضي 60)
 }
 
 

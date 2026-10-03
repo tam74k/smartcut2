@@ -186,6 +186,8 @@ export default function App() {
           bookingNotes: '',
           showDashboardAnalytics: true,
           showEmployeeAnalytics: true,
+          inactiveClientsTrackingEnabled: s.inactiveClientsTrackingEnabled ?? true,
+          inactiveClientsDays: Number(s.inactiveClientsDays) || 60,
           treasuries: [
             { id: 'main', name: 'الخزنة الرئيسية', isMain: true },
             { id: 'cash', name: 'كاش (الدرج)', isMain: false },
@@ -221,6 +223,8 @@ export default function App() {
       bookingNotes: '',
       showDashboardAnalytics: true,
       showEmployeeAnalytics: true,
+      inactiveClientsTrackingEnabled: true,
+      inactiveClientsDays: 60,
       treasuries: [
         { id: 'main', name: 'الخزنة الرئيسية', isMain: true },
         { id: 'cash', name: 'كاش (الدرج)', isMain: false },
@@ -2452,6 +2456,7 @@ export default function App() {
           setTransactions={handleSetTransactions}
           bookings={branchBookings}
           salesReturns={branchSalesReturns}
+          clients={salonClients}
         />
 
       );

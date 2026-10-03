@@ -5,7 +5,7 @@ import {
   Edit2, Shield, Cloud, Sparkles, RefreshCw, X, Check, Database, Download, 
   Upload, HardDrive, AlertTriangle, FileCheck, RefreshCcw, Landmark, FileSpreadsheet,
   QrCode, Key, Send, CheckCircle2, ShieldCheck, HelpCircle, Building2, Layers, Clock, DollarSign,
-  Printer, Wifi, Laptop, Lock
+  Printer, Wifi, Laptop, Lock, UserX
 } from 'lucide-react';
 
 import { AuthService, ROLE_LABELS } from '../services/auth';
@@ -1964,6 +1964,125 @@ export function SettingsScreen({
             </div>
           );
         })()}
+
+        {/* ============================================================ */}
+        {/* 👥⏳ Inactive Clients Tracking Settings (متابعة العملاء المنقطعين) */}
+        {/* ============================================================ */}
+        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-5">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-rose-500 to-amber-500 text-white flex items-center justify-center font-black shadow-md">
+                <UserX size={20} />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                  <span>متابعة العملاء المنقطعين عن الحضور (Inactive Clients Tracking)</span>
+                  <span className="text-[10px] font-extrabold bg-rose-100 text-rose-800 px-2.5 py-0.5 rounded-full">
+                    إعادة تنشيط العملاء
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  تحديد معيار الانقطاع (عدد الأيام بدون زيارة) لرصد العملاء الغائبين واستخراج تقرير دوري لمراسلتهم وإعادتهم للصالون
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${
+                (settings.inactiveClientsTrackingEnabled ?? true) 
+                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200' 
+                  : 'bg-slate-50 text-slate-500 border-slate-200'
+              }`}>
+                {(settings.inactiveClientsTrackingEnabled ?? true) ? 'المتابعة مفعلة 🟢' : 'معطلة ⚪'}
+              </span>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  className="sr-only peer"
+                  checked={settings.inactiveClientsTrackingEnabled ?? true}
+                  onChange={(e) => handleChange('inactiveClientsTrackingEnabled', e.target.checked)}
+                />
+                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-500"></div>
+              </label>
+            </div>
+          </div>
+
+          {(settings.inactiveClientsTrackingEnabled ?? true) && (
+            <div className="space-y-4 animate-in fade-in duration-300">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-center">
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2">
+                  <label className="block text-xs font-bold text-slate-800">
+                    مدة الانقطاع المعتمدة لتصنيف العميل كمنقطع (بالأيام):
+                  </label>
+                  <div className="flex items-center gap-3">
+                    <div className="relative flex-1">
+                      <input 
+                        type="number"
+                        min="1"
+                        max="3650"
+                        value={settings.inactiveClientsDays ?? 60}
+                        onChange={(e) => {
+                          const val = Math.max(1, parseInt(e.target.value) || 1);
+                          handleChange('inactiveClientsDays', val);
+                        }}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm font-mono font-black text-rose-600 outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-100"
+                        placeholder="60"
+                      />
+                      <span className="absolute left-3 top-2.5 text-xs text-slate-400 font-bold">يوم</span>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-slate-500 font-medium">
+                    القيمة الافتراضية المقترحة هي <span className="font-bold text-slate-700">60 يوماً</span> (شهران). يمكنك تغييرها لأي رقم تفضله.
+                  </p>
+                </div>
+
+                {/* Quick Presets */}
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2">
+                  <label className="block text-xs font-bold text-slate-800">
+                    خيارات جاهزة وسريعة للاختيار:
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {[
+                      { days: 30, label: '30 يوم (شهر)' },
+                      { days: 45, label: '45 يوم' },
+                      { days: 60, label: '60 يوم (شهران)' },
+                      { days: 90, label: '90 يوم (3 أشهر)' },
+                    ].map(preset => {
+                      const isSelected = (settings.inactiveClientsDays ?? 60) === preset.days;
+                      return (
+                        <button
+                          key={preset.days}
+                          type="button"
+                          onClick={() => handleChange('inactiveClientsDays', preset.days)}
+                          className={`py-2 px-2 rounded-xl text-xs font-black transition-all cursor-pointer border ${
+                            isSelected 
+                              ? 'bg-rose-500 text-white border-rose-600 shadow-sm' 
+                              : 'bg-white text-slate-700 border-slate-200 hover:border-rose-300 hover:bg-rose-50/50'
+                          }`}
+                        >
+                          {preset.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    اضغط على أي زر لتعيين المدة فوراً أو اكتب الرقم الذي تريده في الحقل المقابل.
+                  </p>
+                </div>
+              </div>
+
+              {/* Informative Help Box */}
+              <div className="p-3.5 bg-amber-50/80 rounded-2xl border border-amber-200 text-xs text-amber-950 font-bold flex items-start gap-2.5">
+                <span className="text-base shrink-0">💡</span>
+                <span className="leading-relaxed">
+                  يتم ربط هذه المدة ({settings.inactiveClientsDays ?? 60} يوماً) تلقائياً بـ 
+                  <strong className="text-amber-900 mx-1 underline">تقرير العملاء المنقطعين عن الزيارة</strong>
+                  في شاشة التقارير، ليتم تزويدك بقائمة وافية بهؤلاء العملاء مع تواريخ آخر زياراتهم، وإجمالي إنفاقهم، وزر مباشر لمراسلتهم عبر واتساب لتقديم عروض عودة حصرية.
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* ============================================================ */}
         {/* HR, Attendance, Overtime, Delays & Permissions Settings */}

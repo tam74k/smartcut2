@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
-import { AppSettings, Transaction, Invoice, Branch, TipRecord, AppUser, Booking, SalesReturn } from '../types';
-import { Calendar, FileBarChart, Download, TrendingUp, TrendingDown, DollarSign, Printer, CheckCircle2, Clock, Wallet, Coins, ShoppingCart, Truck, Edit2, Trash2, RefreshCw, AlertTriangle, User, X, Check, Save, MapPin, RotateCcw, Package, Scissors } from 'lucide-react';
+import { AppSettings, Transaction, Invoice, Branch, TipRecord, AppUser, Booking, SalesReturn, Client, getClientTier } from '../types';
+import { Calendar, FileBarChart, Download, TrendingUp, TrendingDown, DollarSign, Printer, CheckCircle2, Clock, Wallet, Coins, ShoppingCart, Truck, Edit2, Trash2, RefreshCw, AlertTriangle, User, X, Check, Save, MapPin, RotateCcw, Package, Scissors, UserX, MessageSquare, Phone, Sparkles, Copy, Gift, Crown } from 'lucide-react';
 import { ClosingReportReceipt } from './ClosingReportReceipt';
 import { ServicesReportReceipt } from './ServicesReportReceipt';
 import { EmployeesReportReceipt } from './EmployeesReportReceipt';
@@ -33,7 +33,8 @@ export function ReportsScreen({
   setEmployees,
   setTransactions,
   bookings = [],
-  salesReturns = []
+  salesReturns = [],
+  clients = []
 }: { 
   settings: AppSettings, 
   transactions: Transaction[], 
@@ -53,7 +54,8 @@ export function ReportsScreen({
   setEmployees?: (employees: any[]) => void,
   setTransactions?: (transactions: any[]) => void,
   bookings?: Booking[],
-  salesReturns?: SalesReturn[]
+  salesReturns?: SalesReturn[],
+  clients?: Client[]
 }) {
 
   const date = new Date();
@@ -75,6 +77,18 @@ export function ReportsScreen({
   const [returnsFilterType, setReturnsFilterType] = useState<'all' | 'products' | 'services'>('all');
   const [returnsTreasuryFilter, setReturnsTreasuryFilter] = useState<string>('all');
   const [returnsSearch, setReturnsSearch] = useState<string>('');
+  const [inactiveClientsMinDays, setInactiveClientsMinDays] = useState<number>(() => {
+    return Number(settings.inactiveClientsDays) || 60;
+  });
+  const [inactiveClientsSearch, setInactiveClientsSearch] = useState<string>('');
+  const [inactiveClientsSort, setInactiveClientsSort] = useState<'days_desc' | 'days_asc' | 'spent_desc' | 'visits_desc'>('days_desc');
+  const [inactiveClientsFilterMode, setInactiveClientsFilterMode] = useState<'all' | 'visited_only' | 'registered_never_visited'>('all');
+
+  useEffect(() => {
+    if (settings.inactiveClientsDays) {
+      setInactiveClientsMinDays(Number(settings.inactiveClientsDays));
+    }
+  }, [settings.inactiveClientsDays]);
 
   const [localFingerprintLogs, setLocalFingerprintLogs] = useState<any[]>(fingerprintLogs || []);
   const [isRefreshingLogs, setIsRefreshingLogs] = useState<boolean>(false);
@@ -1026,6 +1040,146 @@ export function ReportsScreen({
     };
   }, [bookings, activeBranchId, isMainBranch, activeFrom, activeTo, unpaidBookingsFilter, unpaidBookingsSearch]);
 
+  const inactiveClientsReportData = useMemo(() => {
+    const minDays = Number(inactiveClientsMinDays) || Number(settings.inactiveClientsDays) || 60;
+    const nowTime = Date.now();
+    const allClientsList = clients || [];
+
+    // Map each client with their metrics
+    const mapped = allClientsList.map(client => {
+      // Find matching invoices for this client
+      const clientInvs = branchInvoices.filter(inv => {
+        if (!inv || inv.status === 'cancelled') return false;
+        if (client.id && inv.clientId === client.id) return true;
+        if (client.phone && inv.clientPhone && client.phone.replace(/\D/g, '') === inv.clientPhone.replace(/\D/g, '')) return true;
+        if (client.name && inv.clientName && client.name.trim().toLowerCase() === inv.clientName.trim().toLowerCase()) return true;
+        return false;
+      });
+
+      // Find matching bookings
+      const clientBks = (bookings || []).filter(b => {
+        if (!b || b.status === 'cancelled') return false;
+        if (client.id && b.clientId === client.id) return true;
+        if (client.phone && b.clientPhone && client.phone.replace(/\D/g, '') === b.clientPhone.replace(/\D/g, '')) return true;
+        if (client.name && b.clientName && client.name.trim().toLowerCase() === b.clientName.trim().toLowerCase()) return true;
+        return false;
+      });
+
+      // Find candidate dates
+      const candidateDates: number[] = [];
+
+      clientInvs.forEach(inv => {
+        if (inv.date) {
+          const t = new Date(inv.date).getTime();
+          if (!isNaN(t)) candidateDates.push(t);
+        }
+      });
+
+      clientBks.forEach(bk => {
+        if (bk.date) {
+          const dStr = bk.time ? `${bk.date}T${bk.time}` : bk.date;
+          const t = new Date(dStr).getTime();
+          if (!isNaN(t) && t <= nowTime) candidateDates.push(t);
+        }
+      });
+
+      if (client.lastVisit) {
+        const t = new Date(client.lastVisit).getTime();
+        if (!isNaN(t)) candidateDates.push(t);
+      }
+
+      const hasVisited = candidateDates.length > 0;
+      let lastVisitTime = hasVisited ? Math.max(...candidateDates) : 0;
+      let lastVisitDateStr = hasVisited ? new Date(lastVisitTime).toISOString().split('T')[0] : '';
+
+      let daysAbsent = 0;
+      if (hasVisited) {
+        daysAbsent = Math.max(0, Math.floor((nowTime - lastVisitTime) / (1000 * 60 * 60 * 24)));
+      } else if (client.createdAt) {
+        const regTime = new Date(client.createdAt).getTime();
+        if (!isNaN(regTime)) {
+          daysAbsent = Math.max(0, Math.floor((nowTime - regTime) / (1000 * 60 * 60 * 24)));
+        } else {
+          daysAbsent = 999;
+        }
+      } else {
+        daysAbsent = 999;
+      }
+
+      // Calculate total spending & visit count
+      const totalSpend = clientInvs.reduce((sum, inv) => {
+        const val = inv.paidAmount !== undefined ? Number(inv.paidAmount) : Number(inv.total) || 0;
+        return sum + val;
+      }, 0);
+      const visitsCount = clientInvs.length;
+      const avgTicket = visitsCount > 0 ? totalSpend / visitsCount : 0;
+      const tier = getClientTier(client, branchInvoices, settings.tierSettings);
+
+      return {
+        client,
+        hasVisited,
+        lastVisitTime,
+        lastVisitDateStr,
+        daysAbsent,
+        visitsCount,
+        totalSpend,
+        avgTicket,
+        tier
+      };
+    });
+
+    // Filter by minDays
+    let filtered = mapped.filter(r => r.daysAbsent >= minDays);
+
+    // Filter by filter mode
+    if (inactiveClientsFilterMode === 'visited_only') {
+      filtered = filtered.filter(r => r.hasVisited);
+    } else if (inactiveClientsFilterMode === 'registered_never_visited') {
+      filtered = filtered.filter(r => !r.hasVisited);
+    }
+
+    // Filter by search term
+    if (inactiveClientsSearch.trim()) {
+      const q = inactiveClientsSearch.toLowerCase().trim();
+      const qDigits = q.replace(/\D/g, '');
+      filtered = filtered.filter(r => {
+        const nameMatch = r.client.name.toLowerCase().includes(q);
+        const phoneMatch = qDigits ? (r.client.phone || '').replace(/\D/g, '').includes(qDigits) : false;
+        const notesMatch = r.client.notes ? r.client.notes.toLowerCase().includes(q) : false;
+        return nameMatch || phoneMatch || notesMatch;
+      });
+    }
+
+    // Sort
+    filtered.sort((a, b) => {
+      if (inactiveClientsSort === 'days_desc') return b.daysAbsent - a.daysAbsent;
+      if (inactiveClientsSort === 'days_asc') return a.daysAbsent - b.daysAbsent;
+      if (inactiveClientsSort === 'spent_desc') return b.totalSpend - a.totalSpend;
+      if (inactiveClientsSort === 'visits_desc') return b.visitsCount - a.visitsCount;
+      return b.daysAbsent - a.daysAbsent;
+    });
+
+    // Summary KPIs
+    const totalInactiveCount = filtered.length;
+    const totalAllClients = allClientsList.length;
+    const inactivePercentage = totalAllClients > 0 ? (totalInactiveCount / totalAllClients) * 100 : 0;
+    const sumDays = filtered.reduce((s, r) => s + (r.daysAbsent < 999 ? r.daysAbsent : minDays), 0);
+    const avgDaysAbsent = totalInactiveCount > 0 ? Math.round(sumDays / totalInactiveCount) : 0;
+    const totalPreviousRevenue = filtered.reduce((s, r) => s + r.totalSpend, 0);
+    const vipOrRoyalCount = filtered.filter(r => r.tier.id === 'vip' || r.tier.id === 'royal' || r.client.isVip).length;
+
+    return {
+      rows: filtered,
+      totalInactiveCount,
+      totalAllClients,
+      inactivePercentage,
+      avgDaysAbsent,
+      totalPreviousRevenue,
+      vipOrRoyalCount,
+      minDays
+    };
+  }, [clients, branchInvoices, bookings, inactiveClientsMinDays, settings.inactiveClientsDays, settings.tierSettings, inactiveClientsFilterMode, inactiveClientsSearch, inactiveClientsSort]);
+
   const handleExport = () => {
     const filename = `تقرير_${activeReportType}_${activeFrom}_${activeTo}`;
     if (activeReportType === 'income') {
@@ -1235,6 +1389,50 @@ export function ReportsScreen({
         ''
       ]);
       exportToExcel(filename, 'تقرير مرتجعات المبيعات', headers, rows);
+    } else if (activeReportType === 'inactive_clients') {
+      const headers = [
+        'اسم العميل',
+        'رقم الجوال',
+        'تاريخ آخر زيارة',
+        'أيام الانقطاع',
+        'حالة الزيارة',
+        'مستوى العميل',
+        'عدد الزيارات السابقة',
+        'إجمالي الإنفاق السابق',
+        'متوسط الفاتورة',
+        'نقاط الولاء',
+        'الكاش باك',
+        'ملاحظات'
+      ];
+      const rows = inactiveClientsReportData.rows.map(r => [
+        r.client.name,
+        r.client.phone || '-',
+        r.hasVisited ? r.lastVisitDateStr : 'لم يزر بعد',
+        r.daysAbsent >= 999 ? 'غير محدد' : r.daysAbsent,
+        r.hasVisited ? 'سبق له الزيارة' : 'مسجل جديد بدون زيارات',
+        r.tier.name,
+        r.visitsCount,
+        r.totalSpend.toFixed(2),
+        r.avgTicket.toFixed(2),
+        r.client.loyaltyPoints || 0,
+        (r.client.cashback || 0).toFixed(2),
+        r.client.notes || '-'
+      ]);
+      rows.push([
+        'المجموع الإجمالي',
+        `عدد العملاء: ${inactiveClientsReportData.totalInactiveCount}`,
+        '',
+        `متوسط الغياب: ${inactiveClientsReportData.avgDaysAbsent} يوم`,
+        '',
+        '',
+        '',
+        inactiveClientsReportData.totalPreviousRevenue.toFixed(2),
+        '',
+        '',
+        '',
+        ''
+      ]);
+      exportToExcel(filename, `العملاء_المنقطعين_${inactiveClientsReportData.minDays}_يوم`, headers, rows);
     } else {
       const headers = ['البيان', 'القيمة'];
       const rows = [
@@ -1282,6 +1480,7 @@ export function ReportsScreen({
           <div>
             <label className="block text-xs font-bold text-slate-500 mb-1">نوع التقرير</label>
             <select value={reportType} onChange={(e) => setReportType(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary font-semibold text-slate-700 bg-white">
+              <option value="inactive_clients">👥 تقرير العملاء المنقطعين عن الزيارة (إعادة التنشيط)</option>
               <option value="net_profit">💎 تقرير الأرباح الصافية (معادلة صافي الربح وقائمة الدخل)</option>
               <option value="sales_returns">🔄 تقرير مرتجعات المبيعات والبنود المستردة</option>
               <option value="unpaid_bookings">📅 تقرير المبالغ المتبقية والغير مسددة في الحجوزات</option>
@@ -1464,6 +1663,125 @@ export function ReportsScreen({
                 onChange={(e) => setReturnsSearch(e.target.value)}
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary text-xs"
               />
+            </div>
+          </div>
+        )}
+
+        {/* Sub-filters for Inactive Clients Report */}
+        {reportType === 'inactive_clients' && (
+          <div className="mt-4 pt-4 border-t border-slate-100 flex flex-col gap-4 animate-in fade-in">
+            <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+              {/* Presets and Min Days Input */}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-black text-slate-700 flex items-center gap-1.5 bg-rose-50 text-rose-800 px-2.5 py-1 rounded-lg border border-rose-200">
+                  <UserX size={15} className="text-rose-600" />
+                  <span>معيار الانقطاع (أيام الغياب):</span>
+                </span>
+                
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="number"
+                    min="1"
+                    max="1000"
+                    value={inactiveClientsMinDays}
+                    onChange={(e) => setInactiveClientsMinDays(Math.max(1, parseInt(e.target.value) || 1))}
+                    className="w-20 bg-white border border-rose-300 rounded-xl px-2.5 py-1.5 text-xs font-mono font-black text-rose-600 outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-100 text-center shadow-2xs"
+                  />
+                  <span className="text-xs text-slate-500 font-bold">يوم فأكثر</span>
+                </div>
+
+                {/* Preset Chips */}
+                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+                  {[30, 45, 60, 90, 120].map(d => (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() => setInactiveClientsMinDays(d)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                        inactiveClientsMinDays === d 
+                          ? 'bg-rose-500 text-white shadow-xs' 
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
+                      }`}
+                    >
+                      {d} يوم
+                    </button>
+                  ))}
+                </div>
+
+                {/* Reset to Settings Default */}
+                {inactiveClientsMinDays !== (Number(settings.inactiveClientsDays) || 60) && (
+                  <button
+                    type="button"
+                    onClick={() => setInactiveClientsMinDays(Number(settings.inactiveClientsDays) || 60)}
+                    className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 underline flex items-center gap-1 mr-1 cursor-pointer"
+                    title="استعادة المدة المسجلة في الإعدادات العامة"
+                  >
+                    <RefreshCw size={12} />
+                    <span>الافتراضي من الإعدادات ({settings.inactiveClientsDays || 60} يوم)</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Search Box */}
+              <div className="w-full md:w-80">
+                <input
+                  type="text"
+                  value={inactiveClientsSearch}
+                  onChange={(e) => setInactiveClientsSearch(e.target.value)}
+                  placeholder="🔍 بحث باسم العميل أو الجوال أو ملاحظات..."
+                  className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-rose-500 shadow-2xs"
+                />
+              </div>
+            </div>
+
+            {/* Filter Modes & Sorting */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100 text-xs">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-slate-500 font-bold">نوع العملاء:</span>
+                <div className="flex bg-slate-100 p-1 rounded-xl gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setInactiveClientsFilterMode('all')}
+                    className={`px-3 py-1 rounded-lg font-black transition-all cursor-pointer ${
+                      inactiveClientsFilterMode === 'all' ? 'bg-white text-rose-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    الكل ({inactiveClientsReportData.rows.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInactiveClientsFilterMode('visited_only')}
+                    className={`px-3 py-1 rounded-lg font-black transition-all cursor-pointer ${
+                      inactiveClientsFilterMode === 'visited_only' ? 'bg-white text-amber-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    سبق لهم الزيارة وانقطعوا
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInactiveClientsFilterMode('registered_never_visited')}
+                    className={`px-3 py-1 rounded-lg font-black transition-all cursor-pointer ${
+                      inactiveClientsFilterMode === 'registered_never_visited' ? 'bg-white text-purple-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    مسجلين ولم يزوروا بعد
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-slate-500 font-bold">الترتيب حسب:</span>
+                <select
+                  value={inactiveClientsSort}
+                  onChange={(e) => setInactiveClientsSort(e.target.value as any)}
+                  className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 font-bold text-slate-700 outline-none focus:border-rose-500 text-xs shadow-2xs"
+                >
+                  <option value="days_desc">⏳ الأطول غياباً وانقطاعاً أولاً</option>
+                  <option value="days_asc">⏱️ الأحدث انقطاعاً أولاً</option>
+                  <option value="spent_desc">💰 الأعلى إنفاقاً سابقاً (كبار العملاء أولاً)</option>
+                  <option value="visits_desc">🔁 الأكثر زيارات سابقة أولاً</option>
+                </select>
+              </div>
             </div>
           </div>
         )}
@@ -1977,6 +2295,7 @@ export function ReportsScreen({
             getTreasuryLabel={getTreasuryLabel}
             getSupplierName={getSupplierName}
             unpaidBookingsReportData={unpaidBookingsReportData}
+            inactiveClientsReportData={inactiveClientsReportData}
           />
         </div>
       )}
@@ -2018,7 +2337,8 @@ function ReportTable({
   handleSaveEditAdvance,
   getTreasuryLabel: customGetTreasuryLabel,
   getSupplierName: customGetSupplierName,
-  unpaidBookingsReportData
+  unpaidBookingsReportData,
+  inactiveClientsReportData
 }: any) {
   const start = new Date(activeFrom);
   const end = new Date(activeTo);
@@ -4292,6 +4612,301 @@ function ReportTable({
                   </td>
                   <td colSpan={2} className="py-3.5 px-3 text-[11px] text-slate-500 font-bold">
                     صافي المبيعات المحققة: {netSales.toFixed(2)} {settings.currency}
+                  </td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      </div>
+    );
+  }
+
+  if (reportType === 'inactive_clients') {
+    const data = inactiveClientsReportData;
+    return (
+      <div id="report-receipt-container" className="p-4 sm:p-6 space-y-6">
+        {/* Banner Header */}
+        <div className="bg-gradient-to-r from-rose-900 via-slate-900 to-rose-950 text-white p-6 rounded-3xl shadow-lg border border-rose-800/40 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-80 h-80 bg-rose-500/10 rounded-full blur-3xl pointer-events-none"></div>
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative z-10">
+            <div>
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs font-black mb-2">
+                <UserX size={14} />
+                <span>إعادة تنشيط العملاء والتواصل المباشر</span>
+              </div>
+              <h3 className="text-xl sm:text-2xl font-black text-white">
+                تقرير العملاء المنقطعين عن الزيارة (Inactive Clients Retention)
+              </h3>
+              <p className="text-xs text-rose-100/80 mt-1.5 max-w-2xl font-medium leading-relaxed">
+                قائمة حصرية بالعملاء الذين لم يسجلوا أي فاتورة أو زيارة منذ <strong className="text-white underline font-bold">{data.minDays} يوماً</strong> فأكثر (المعيار المعتمد في الإعدادات: {settings.inactiveClientsDays || 60} يوم). يتيح لك هذا التقرير التواصل معهم مباشرة عبر الواتساب وتقديم عروض ترويجية لعودتهم.
+              </p>
+            </div>
+
+            <div className="bg-white/10 backdrop-blur-md px-6 py-4 rounded-2xl border border-white/20 text-center shrink-0">
+              <p className="text-xs text-rose-200 font-bold mb-0.5">العملاء المنقطعين المرصودين</p>
+              <div className="text-3xl font-black font-mono text-white">
+                {data.totalInactiveCount}
+                <span className="text-xs font-normal text-rose-200 mr-1.5">عميل</span>
+              </div>
+              <div className="text-[11px] font-bold text-rose-200 mt-1">
+                يشكلون <span className="font-mono text-amber-300 font-black">{data.inactivePercentage.toFixed(1)}%</span> من قاعدة العملاء
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 4 Summary KPI Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Card 1: Count */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs border-r-4 border-r-rose-500 flex items-center justify-between">
+            <div>
+              <p className="text-slate-500 text-xs font-bold mb-1">إجمالي العملاء المنقطعين</p>
+              <h4 className="text-2xl font-black text-rose-600 font-mono">
+                {data.totalInactiveCount} <span className="text-xs font-normal text-slate-400">عميل</span>
+              </h4>
+              <p className="text-[10px] text-slate-400 font-bold mt-1">من إجمالي {data.totalAllClients} عميل مسجل</p>
+            </div>
+            <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center">
+              <UserX size={24} />
+            </div>
+          </div>
+
+          {/* Card 2: Average Days Absent */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs border-r-4 border-r-amber-500 flex items-center justify-between">
+            <div>
+              <p className="text-slate-500 text-xs font-bold mb-1">متوسط فترة الغياب والانقطاع</p>
+              <h4 className="text-2xl font-black text-amber-600 font-mono">
+                {data.avgDaysAbsent} <span className="text-xs font-normal text-slate-400">يوم</span>
+              </h4>
+              <p className="text-[10px] text-slate-400 font-bold mt-1">المعيار المعتمد: {data.minDays} يوم غياب</p>
+            </div>
+            <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center">
+              <Clock size={24} />
+            </div>
+          </div>
+
+          {/* Card 3: Previous Revenue */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs border-r-4 border-r-emerald-500 flex items-center justify-between">
+            <div>
+              <p className="text-slate-500 text-xs font-bold mb-1">إجمالي إنفاقهم التاريخي</p>
+              <h4 className="text-2xl font-black text-emerald-600 font-mono">
+                {data.totalPreviousRevenue.toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
+              </h4>
+              <p className="text-[10px] text-slate-400 font-bold mt-1">إيرادات يمكن استعادتها بإعادة تنشيطهم</p>
+            </div>
+            <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+              <DollarSign size={24} />
+            </div>
+          </div>
+
+          {/* Card 4: VIP / High Spenders */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs border-r-4 border-r-purple-500 flex items-center justify-between">
+            <div>
+              <p className="text-slate-500 text-xs font-bold mb-1">عملاء VIP ومميزين منقطعين</p>
+              <h4 className="text-2xl font-black text-purple-600 font-mono">
+                {data.vipOrRoyalCount} <span className="text-xs font-normal text-slate-400">عميل مميز</span>
+              </h4>
+              <p className="text-[10px] text-slate-400 font-bold mt-1">أولوية أولى للاتصال والمتابعة الخاصة</p>
+            </div>
+            <div className="w-12 h-12 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center">
+              <Crown size={24} />
+            </div>
+          </div>
+        </div>
+
+        {/* Data Table */}
+        <div className="overflow-x-auto border border-slate-200 rounded-2xl bg-white shadow-xs">
+          <table className="w-full text-right text-xs">
+            <thead className="bg-slate-900 text-white font-bold text-[11px]">
+              <tr>
+                <th className="py-3.5 px-3 text-center">#</th>
+                <th className="py-3.5 px-3">العميل والمستوى</th>
+                <th className="py-3.5 px-3">رقم الجوال</th>
+                <th className="py-3.5 px-3">تاريخ آخر زيارة</th>
+                <th className="py-3.5 px-3 text-center">مدة الانقطاع</th>
+                <th className="py-3.5 px-3 text-center">الزيارات السابقة</th>
+                <th className="py-3.5 px-3 text-center">إجمالي الإنفاق</th>
+                <th className="py-3.5 px-3 text-center">متوسط الفاتورة</th>
+                <th className="py-3.5 px-3 text-center">النقاط والكاش باك</th>
+                <th className="py-3.5 px-3">ملاحظات</th>
+                <th className="py-3.5 px-3 text-center print:hidden">إجراء إعادة التنشيط</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 font-medium">
+              {data.rows.map((row: any, idx: number) => {
+                const client = row.client;
+                const phoneClean = (client.phone || '').replace(/[^0-9]/g, '');
+                const salonName = settings.salonName || 'صالون سمارت كت';
+                const messageText = encodeURIComponent(
+                  `مرحباً بك أستاذ ${client.name} 🌸\n` +
+                  `اشتقنا لزيارتك في ${salonName}!\n` +
+                  `يسعدنا دعوتك لتشريفنا قريباً مع خصم خاص وخدمة مميزة على حجزك القادم ✨\n` +
+                  `بانتظار زيارتك ونسعد دائماً بخدمتك!`
+                );
+                const waUrl = phoneClean ? `https://wa.me/${phoneClean}?text=${messageText}` : '';
+
+                // Absense badge style
+                const isVeryLong = row.daysAbsent >= 120;
+                const isMediumLong = row.daysAbsent >= 60;
+                const badgeColor = isVeryLong
+                  ? 'bg-rose-100 text-rose-800 border-rose-300'
+                  : isMediumLong
+                  ? 'bg-amber-100 text-amber-900 border-amber-300'
+                  : 'bg-yellow-50 text-yellow-800 border-yellow-200';
+
+                return (
+                  <tr key={client.id || idx} className="hover:bg-slate-50/80 transition-colors">
+                    <td className="py-3.5 px-3 text-center font-mono text-slate-400 text-[11px]">{idx + 1}</td>
+                    
+                    {/* Client Name & Tier */}
+                    <td className="py-3.5 px-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center font-black text-slate-700 shrink-0">
+                          {row.tier.id !== 'standard' ? row.tier.icon : client.name.charAt(0)}
+                        </div>
+                        <div>
+                          <div className="font-extrabold text-slate-900 flex items-center gap-1.5">
+                            <span>{client.name}</span>
+                            {client.isVip && (
+                              <span className="text-amber-500" title="عميل VIP">👑</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1 mt-0.5">
+                            <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded border ${row.tier.badgeBg} ${row.tier.badgeText} ${row.tier.badgeBorder}`}>
+                              {row.tier.name}
+                            </span>
+                            {!row.hasVisited && (
+                              <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-purple-50 text-purple-700 border border-purple-200">
+                                جديد لم يزر بعد
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+
+                    {/* Phone */}
+                    <td className="py-3.5 px-3">
+                      {client.phone ? (
+                        <div className="flex items-center gap-1.5 font-mono text-xs text-slate-700 font-bold" dir="ltr">
+                          <span>{client.phone}</span>
+                        </div>
+                      ) : (
+                        <span className="text-slate-400 font-normal">-</span>
+                      )}
+                    </td>
+
+                    {/* Last Visit Date */}
+                    <td className="py-3.5 px-3 text-slate-600 font-mono">
+                      {row.hasVisited ? (
+                        <div>
+                          <div className="font-bold text-slate-800">{row.lastVisitDateStr}</div>
+                          <div className="text-[10px] text-slate-400 font-sans">آخر فاتورة مسجلة</div>
+                        </div>
+                      ) : (
+                        <span className="text-slate-400 text-[11px]">لا توجد زيارات سابقة</span>
+                      )}
+                    </td>
+
+                    {/* Days Absent Badge */}
+                    <td className="py-3.5 px-3 text-center">
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono font-black border ${badgeColor}`}>
+                        <Clock size={11} />
+                        <span>{row.daysAbsent >= 999 ? 'غير محدد' : `${row.daysAbsent} يوم`}</span>
+                      </span>
+                    </td>
+
+                    {/* Visits Count */}
+                    <td className="py-3.5 px-3 text-center font-mono font-black text-slate-800">
+                      {row.visitsCount}
+                    </td>
+
+                    {/* Total Spend */}
+                    <td className="py-3.5 px-3 text-center font-mono font-black text-emerald-700 text-sm">
+                      {row.totalSpend.toFixed(2)} <span className="text-[10px] font-normal text-slate-400">{settings.currency}</span>
+                    </td>
+
+                    {/* Average Ticket */}
+                    <td className="py-3.5 px-3 text-center font-mono font-bold text-slate-700">
+                      {row.avgTicket.toFixed(2)} <span className="text-[10px] font-normal text-slate-400">{settings.currency}</span>
+                    </td>
+
+                    {/* Loyalty Points & Cashback */}
+                    <td className="py-3.5 px-3 text-center">
+                      <div className="flex flex-col items-center gap-0.5">
+                        <span className="text-[10px] font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md border border-purple-200">
+                          🎁 {client.loyaltyPoints || 0} نقطة
+                        </span>
+                        {(client.cashback || 0) > 0 && (
+                          <span className="text-[10px] font-mono font-bold text-emerald-600">
+                            كاش باك: {client.cashback} {settings.currency}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+
+                    {/* Notes */}
+                    <td className="py-3.5 px-3 max-w-xs text-slate-500 text-[11px] truncate" title={client.notes || ''}>
+                      {client.notes || '-'}
+                    </td>
+
+                    {/* Quick WhatsApp Action Button */}
+                    <td className="py-3.5 px-3 text-center print:hidden">
+                      {waUrl ? (
+                        <a
+                          href={waUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-xs transition-all cursor-pointer"
+                          title="إرسال رسالة ترحيبية ودعوة عودة عبر واتساب"
+                        >
+                          <MessageSquare size={14} />
+                          <span>دعوة عودة 💬</span>
+                        </a>
+                      ) : (
+                        <span className="text-slate-400 text-[10px]">بدون جوال</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+
+              {data.rows.length === 0 && (
+                <tr>
+                  <td colSpan={11} className="py-16 text-center">
+                    <div className="w-16 h-16 mx-auto rounded-3xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-3">
+                      <CheckCircle2 size={32} />
+                    </div>
+                    <h4 className="text-base font-black text-slate-800 mb-1">
+                      لا يوجد عملاء منقطعين تنطبق عليهم شروط المدة ({data.minDays} يوم)
+                    </h4>
+                    <p className="text-xs text-slate-500 max-w-md mx-auto">
+                      جميع عملائك زاروا الصالون خلال هذه الفترة المحددة أو يمكنك تقليل مدة الانقطاع من شريط التصفية بالأعلى لرؤية فئات أخرى.
+                    </p>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+
+            {/* Table Footer Totals */}
+            {data.rows.length > 0 && (
+              <tfoot className="bg-slate-100 font-black text-slate-900 border-t-2 border-slate-300 text-xs">
+                <tr>
+                  <td colSpan={4} className="py-3.5 px-3 text-center font-black text-sm text-slate-800">
+                    المجاميع الكلية للعملاء المنقطعين ({data.rows.length} عميل)
+                  </td>
+                  <td className="py-3.5 px-3 font-mono text-center font-black text-xs text-amber-800">
+                    متوسط: {data.avgDaysAbsent} يوم
+                  </td>
+                  <td className="py-3.5 px-3 text-center font-mono font-black text-slate-800">
+                    {data.rows.reduce((s: number, r: any) => s + r.visitsCount, 0)} زيارة
+                  </td>
+                  <td className="py-3.5 px-3 font-mono text-center font-black text-base text-emerald-800">
+                    {data.totalPreviousRevenue.toFixed(2)} {settings.currency}
+                  </td>
+                  <td colSpan={4} className="py-3.5 px-3 text-[11px] text-slate-500 font-bold">
+                    معيار الفلترة: {data.minDays} يوم غياب • المعيار المسجل بالإعدادات: {settings.inactiveClientsDays || 60} يوم
                   </td>
                 </tr>
               </tfoot>

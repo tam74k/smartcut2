@@ -249,7 +249,9 @@ export async function ensureCoreSchema(): Promise<void> {
       ensureColumn('bookings', 'location', 'TEXT'),
       ensureColumn('client_portal_accounts', 'username', 'VARCHAR(100)'),
       ensureColumn('client_portal_accounts', 'salon_code', 'VARCHAR(50)'),
-      ensureColumn('client_portal_accounts', 'linked_salon_codes', 'JSONB')
+      ensureColumn('client_portal_accounts', 'linked_salon_codes', 'JSONB'),
+      ensureColumn('app_settings', 'inactive_clients_tracking_enabled', 'BOOLEAN'),
+      ensureColumn('app_settings', 'inactive_clients_days', 'INT')
     ]);
   } catch { /* Silent fail */ }
 }
@@ -1135,6 +1137,8 @@ export const DB = {
         ai_provider: settings.aiProvider || 'builtin',
         ai_api_key: settings.aiApiKey || null,
         ai_model: settings.aiModel || null,
+        inactive_clients_tracking_enabled: settings.inactiveClientsTrackingEnabled ?? true,
+        inactive_clients_days: Number(settings.inactiveClientsDays) || 60,
         updated_at: new Date().toISOString()
       };
       // Check if existing record exists for this salon
