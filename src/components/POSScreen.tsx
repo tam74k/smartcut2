@@ -3,7 +3,7 @@ import {
   Search, Plus, Minus, Trash2, User, CreditCard, Banknote, Scissors, 
   Tag, X, Package, Clock, UserCog, Calendar, CheckCircle2, Image as ImageIcon,
   Wrench, ShieldAlert, Camera, Crown, Sparkles, PauseCircle, PlayCircle,
-  FilePlus2, Layers, Zap, AlertCircle, DollarSign, Coffee, Sliders, Save, AlertTriangle, RotateCcw
+  FilePlus2, Layers, Zap, AlertCircle, DollarSign, Coffee, Sliders, Save, AlertTriangle, RotateCcw, QrCode
 } from 'lucide-react';
 import { 
   AppSettings, CartItem, ServiceItem, Booking, Invoice, Client, Category, Employee,
@@ -1411,8 +1411,9 @@ export function POSScreen({
       });
     }
     if (searchQuery) {
+      const q = searchQuery.trim().toLowerCase();
       filtered = filtered.filter(i => 
-        i.name.includes(searchQuery) || (i.barcode && i.barcode === searchQuery)
+        i.name.toLowerCase().includes(q) || (i.barcode && i.barcode.toLowerCase().includes(q))
       );
     }
 
@@ -1606,6 +1607,117 @@ export function POSScreen({
     setCart(cart.filter(c => c.cartId !== cartId));
   };
 
+  const playBarcodeBeep = () => {
+    try {
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(1760, audioCtx.currentTime);
+      gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.1);
+    } catch {}
+  };
+
+  const handleBarcodeScan = (rawCode: string): boolean => {
+    if (isSubscriptionBlocked) return false;
+    const code = rawCode.trim().toLowerCase();
+    if (!code) return false;
+
+    // 1. Search products (retail)
+    const matchedProduct = products.find(p => 
+      (!p.productType || p.productType === 'retail') && 
+      p.barcode && p.barcode.trim().toLowerCase() === code
+    );
+
+    if (matchedProduct) {
+      // Check if product already exists in cart, increment quantity
+      const existingItem = cart.find(c => c.type === 'product' && c.item.id === matchedProduct.id);
+      if (existingItem) {
+        updateQuantity(existingItem.cartId, 1);
+      } else {
+        addToCart({
+          ...matchedProduct,
+          _isProduct: true,
+          displayPrice: matchedProduct.sellPrice,
+          originalPrice: matchedProduct.sellPrice
+        });
+      }
+      playBarcodeBeep();
+      return true;
+    }
+
+    // 2. Search services (by barcode)
+    const matchedService = items.find(s => 
+      s.isActive !== false && 
+      s.barcode && s.barcode.trim().toLowerCase() === code
+    );
+
+    if (matchedService) {
+      const origPrice = Number(matchedService.price) || 0;
+      const rawDiscount = Number(matchedService.discountPrice);
+      const hasDiscount = !isNaN(rawDiscount) && rawDiscount > 0 && rawDiscount < origPrice;
+      const effectivePrice = hasDiscount ? rawDiscount : origPrice;
+
+      addToCart({
+        ...matchedService,
+        _isProduct: false,
+        displayPrice: effectivePrice,
+        originalPrice: origPrice
+      });
+      playBarcodeBeep();
+      return true;
+    }
+
+    return false;
+  };
+
+  // Global barcode scanner listener
+  useEffect(() => {
+    let barcodeBuffer = '';
+    let lastKeyTime = 0;
+
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
+
+      const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+      const isInput = activeTag === 'input' || activeTag === 'textarea' || (document.activeElement as HTMLElement)?.isContentEditable;
+
+      // If activeElement is another input (client phone, notes, etc.), do not intercept unless it's pos-search-input
+      if (isInput && !(document.activeElement as HTMLElement)?.classList.contains('pos-search-input')) {
+        return;
+      }
+
+      const now = Date.now();
+      if (now - lastKeyTime > 120) {
+        barcodeBuffer = '';
+      }
+      lastKeyTime = now;
+
+      if (e.key === 'Enter') {
+        const trimmed = barcodeBuffer.trim();
+        if (trimmed.length >= 2) {
+          const handled = handleBarcodeScan(trimmed);
+          if (handled) {
+            e.preventDefault();
+            barcodeBuffer = '';
+            setSearchQuery('');
+          }
+        }
+        barcodeBuffer = '';
+      } else if (e.key.length === 1) {
+        barcodeBuffer += e.key;
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [products, items, cart, isSubscriptionBlocked]);
+
   if (!isShiftOpen) {
     return (
       <div className="flex flex-col h-full w-full bg-slate-50 items-center justify-center p-6 text-center">
@@ -1632,10 +1744,39 @@ export function POSScreen({
             <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
             <input 
               type="text"
-              placeholder="ابحث عن خدمة أو مرر الباركود..."
-              className="w-full bg-white border border-slate-200 rounded-xl pr-10 pl-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-sm text-slate-700"
+              placeholder="ابحث عن خدمة/منتج أو امسح الباركود..."
+              className="pos-search-input w-full bg-white border border-slate-200 rounded-xl pr-10 pl-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-sm text-slate-700"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSearchQuery(val);
+                const code = val.trim().toLowerCase();
+                if (code) {
+                  const isExactBarcode = products.some(p => (!p.productType || p.productType === 'retail') && p.barcode && p.barcode.trim().toLowerCase() === code) ||
+                                        items.some(s => s.barcode && s.barcode.trim().toLowerCase() === code);
+                  if (isExactBarcode) {
+                    const handled = handleBarcodeScan(code);
+                    if (handled) {
+                      setSearchQuery('');
+                    }
+                  }
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  const code = searchQuery.trim().toLowerCase();
+                  if (!code) return;
+                  const handled = handleBarcodeScan(code);
+                  if (handled) {
+                    setSearchQuery('');
+                  } else if (filteredItems.length === 1) {
+                    addToCart(filteredItems[0]);
+                    playBarcodeBeep();
+                    setSearchQuery('');
+                  }
+                }
+              }}
             />
           </div>
 
@@ -1724,6 +1865,12 @@ export function POSScreen({
 
                   <div className="w-full">
                     <h4 className="font-extrabold text-slate-800 text-xs mb-1 leading-tight line-clamp-2">{item.name}</h4>
+                    {item.barcode && (
+                      <div className="inline-flex items-center gap-0.5 font-mono text-[9px] text-slate-400 bg-slate-50 px-1 py-0.5 rounded border border-slate-100 mb-1 max-w-full truncate" title={`باركود: ${item.barcode}`}>
+                        <QrCode size={9} className="text-slate-400 shrink-0" />
+                        <span className="truncate">{item.barcode}</span>
+                      </div>
+                    )}
                     {item.hasDiscount ? (
                       <div className="flex flex-col items-center">
                         <p className="text-emerald-600 font-black text-xs font-mono">{item.discountPrice} {settings.currency}</p>

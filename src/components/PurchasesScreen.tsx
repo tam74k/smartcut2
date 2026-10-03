@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { AppSettings, PurchaseInvoice, Supplier, Product, Transaction, ItemMovement, PurchaseInvoiceItem } from '../types';
-import { Plus, Trash2, Search, Printer, X, ShoppingCart } from 'lucide-react';
+import { Plus, Trash2, Search, Printer, X, ShoppingCart, QrCode } from 'lucide-react';
 import { getEffectiveDateTime } from '../utils/shiftDate';
 
 export function PurchasesScreen({
@@ -191,7 +191,23 @@ export function PurchasesScreen({
 
   const filteredInvoices = purchaseInvoices.filter(i => i.id.includes(searchQuery) || suppliers.find(s => s.id === i.supplierId)?.name.includes(searchQuery));
   
-  const productSearchResults = products.filter(p => p.name.includes(productSearch) || (p as any).barcode === productSearch);
+  const normalizeText = (text: string) => {
+    return (text || '')
+      .toLowerCase()
+      .trim()
+      .replace(/[أإآ]/g, 'ا')
+      .replace(/ة/g, 'ه')
+      .replace(/ى/g, 'ي');
+  };
+
+  const productSearchResults = useMemo(() => {
+    const q = normalizeText(productSearch);
+    if (!q) return [];
+    return products.filter(p => 
+      normalizeText(p.name).includes(q) || 
+      (p.barcode && p.barcode.toLowerCase().trim().includes(productSearch.toLowerCase().trim()))
+    );
+  }, [products, productSearch]);
 
   return (
     <div className="p-6">
@@ -255,15 +271,71 @@ export function PurchasesScreen({
               {/* Items Section */}
               <div className="w-2/3 border-l border-slate-100 pl-6">
                 <div className="mb-4 relative">
-                  <label className="block text-sm font-bold text-slate-700 mb-1">البحث عن منتج (اسم أو باركود)</label>
-                  <input type="text" value={productSearch} onChange={e => setProductSearch(e.target.value)} placeholder="بحث..." className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary" />
+                  <label className="block text-sm font-bold text-slate-700 mb-1 flex items-center gap-1.5">
+                    <QrCode size={15} className="text-primary" />
+                    البحث عن منتج (بالاسم أو مسح الباركود)
+                  </label>
+                  <div className="relative">
+                    <input 
+                      type="text" 
+                      value={productSearch} 
+                      onChange={e => {
+                        const val = e.target.value;
+                        setProductSearch(val);
+                        const code = val.trim().toLowerCase();
+                        if (code) {
+                          const exact = products.find(p => p.barcode && p.barcode.trim().toLowerCase() === code);
+                          if (exact) {
+                            handleSelectProduct(exact);
+                            setProductSearch('');
+                          }
+                        }
+                      }} 
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          const code = productSearch.trim().toLowerCase();
+                          if (!code) return;
+                          const exact = products.find(p => 
+                            (p.barcode && p.barcode.trim().toLowerCase() === code) || 
+                            normalizeText(p.name) === normalizeText(code)
+                          ) || (productSearchResults.length === 1 ? productSearchResults[0] : null);
+                          if (exact) {
+                            handleSelectProduct(exact);
+                            setProductSearch('');
+                          }
+                        }
+                      }}
+                      placeholder="ابحث باسم المنتج أو مرر الباركود..." 
+                      className="w-full border border-slate-200 rounded-lg pr-9 pl-3 py-2 outline-none focus:border-primary text-sm" 
+                    />
+                    <Search size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  </div>
                   
                   {productSearch && productSearchResults.length > 0 && !selectedProduct && (
-                    <div className="absolute top-full left-0 right-0 bg-white border border-slate-200 shadow-lg rounded-lg mt-1 z-10 max-h-40 overflow-y-auto">
+                    <div className="absolute top-full left-0 right-0 bg-white border border-slate-200 shadow-xl rounded-xl mt-1 z-20 max-h-56 overflow-y-auto">
                       {productSearchResults.map(p => (
-                        <div key={p.id} onClick={() => handleSelectProduct(p)} className="p-2 hover:bg-slate-50 cursor-pointer border-b border-slate-50 flex justify-between">
-                          <span className="font-bold text-sm">{p.name}</span>
-                          <span className="text-xs text-slate-500">مخزون: {p.currentStock}</span>
+                        <div 
+                          key={p.id} 
+                          onClick={() => {
+                            handleSelectProduct(p);
+                            setProductSearch('');
+                          }} 
+                          className="p-3 hover:bg-slate-50 cursor-pointer border-b border-slate-100 flex items-center justify-between transition-colors"
+                        >
+                          <div>
+                            <span className="font-bold text-sm text-slate-800">{p.name}</span>
+                            {p.barcode && (
+                              <div className="flex items-center gap-1 font-mono text-[11px] text-slate-500 mt-0.5">
+                                <QrCode size={11} className="text-slate-400" />
+                                <span>{p.barcode}</span>
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 text-xs">
+                            <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-medium">مخزون: {p.currentStock}</span>
+                            <span className="font-bold text-primary">{p.costPrice.toFixed(2)} {settings.currency}</span>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -274,6 +346,12 @@ export function PurchasesScreen({
                   <div className="bg-slate-50 p-3 rounded-lg mb-4 flex gap-3 items-end">
                     <div className="flex-1">
                       <p className="font-bold text-sm text-primary">{selectedProduct.name}</p>
+                      {selectedProduct.barcode && (
+                        <span className="text-[11px] font-mono text-slate-500 flex items-center gap-1">
+                          <QrCode size={10} className="text-slate-400" />
+                          {selectedProduct.barcode}
+                        </span>
+                      )}
                     </div>
                     <div className="w-20">
                       <label className="block text-xs font-bold text-slate-600 mb-1">الكمية</label>
@@ -298,17 +376,28 @@ export function PurchasesScreen({
                     </tr>
                   </thead>
                   <tbody>
-                    {invoiceItems.map((item, idx) => (
-                      <tr key={idx} className="border-b border-slate-100">
-                        <td className="p-2">{products.find(p => p.id === item.productId)?.name}</td>
-                        <td className="p-2">{item.quantity}</td>
-                        <td className="p-2">{item.costPrice.toFixed(2)}</td>
-                        <td className="p-2 font-bold">{item.total.toFixed(2)}</td>
-                        <td className="p-2 text-left">
-                          <button onClick={() => handleRemoveItem(idx)} className="text-red-500 hover:text-red-700"><X size={14}/></button>
-                        </td>
-                      </tr>
-                    ))}
+                    {invoiceItems.map((item, idx) => {
+                      const prod = products.find(p => p.id === item.productId);
+                      return (
+                        <tr key={idx} className="border-b border-slate-100">
+                          <td className="p-2">
+                            <div className="font-bold text-slate-800">{prod?.name || item.productId}</div>
+                            {prod?.barcode && (
+                              <div className="text-[11px] font-mono text-slate-400 flex items-center gap-1">
+                                <QrCode size={10} className="text-slate-400" />
+                                {prod.barcode}
+                              </div>
+                            )}
+                          </td>
+                          <td className="p-2">{item.quantity}</td>
+                          <td className="p-2">{item.costPrice.toFixed(2)}</td>
+                          <td className="p-2 font-bold">{item.total.toFixed(2)}</td>
+                          <td className="p-2 text-left">
+                            <button onClick={() => handleRemoveItem(idx)} className="text-red-500 hover:text-red-700"><X size={14}/></button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

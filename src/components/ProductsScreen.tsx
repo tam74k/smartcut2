@@ -51,8 +51,22 @@ export function ProductsScreen({
     costPrice: '',
     reorderLimit: '',
     openingStock: '',
-    commission: ''
+    commission: '',
+    barcode: ''
   });
+
+  const generateUniqueBarcode = () => {
+    let code = '';
+    let exists = true;
+    let attempts = 0;
+    while (exists && attempts < 100) {
+      attempts++;
+      const randomDigits = Math.floor(100000000 + Math.random() * 900000000).toString();
+      code = '628' + randomDigits;
+      exists = products.some(p => p.barcode === code && p.id !== editingProductId);
+    }
+    setFormData(prev => ({ ...prev, barcode: code }));
+  };
 
   const [dispenseData, setDispenseData] = useState({
     date: shiftData.isOpen ? shiftData.date : new Date().toISOString().split('T')[0],
@@ -94,7 +108,8 @@ export function ProductsScreen({
       costPrice: p.costPrice.toString(),
       reorderLimit: p.reorderLimit.toString(),
       openingStock: p.openingStock.toString(),
-      commission: (pType === 'raw_material' && !p.commission) ? '0' : p.commission.toString()
+      commission: (pType === 'raw_material' && !p.commission) ? '0' : p.commission.toString(),
+      barcode: p.barcode || ''
     });
     setErrorMsg('');
     setShowAddModal(true);
@@ -115,6 +130,7 @@ export function ProductsScreen({
     if (isNaN(cPrice) || cPrice < 0) return setErrorMsg('الرجاء إدخال سعر تكلفة صحيح');
 
     const matchedSup = suppliers.find(s => s.id === formData.supplierId);
+    const cleanBarcode = formData.barcode.trim() || undefined;
 
     if (editingProductId) {
       setProducts(products.map(p => {
@@ -133,7 +149,8 @@ export function ProductsScreen({
             reorderLimit: rLimit,
             openingStock: oStock,
             currentStock: p.currentStock + diff,
-            commission: comm
+            commission: comm,
+            barcode: cleanBarcode
           };
         }
         return p;
@@ -152,6 +169,7 @@ export function ProductsScreen({
         openingStock: oStock,
         currentStock: oStock,
         commission: comm,
+        barcode: cleanBarcode,
         ...(settings.salonId ? { salonId: settings.salonId } : {}),
         ...(settings.branchId ? { branchId: settings.branchId } : {})
       };
@@ -370,7 +388,8 @@ export function ProductsScreen({
               costPrice: '', 
               reorderLimit: '5', 
               openingStock: '0', 
-              commission: '0'
+              commission: '0',
+              barcode: ''
             });
             setShowAddModal(true);
           }} className="bg-primary hover:bg-primary-dark text-white px-5 py-2.5 rounded-lg font-bold flex items-center gap-2 shadow-sm transition-colors cursor-pointer">
@@ -437,7 +456,17 @@ export function ProductsScreen({
             ) : (
               filteredProducts.map(p => (
                 <tr key={p.id} className="border-b border-slate-100 hover:bg-slate-50">
-                  <td className="p-4 font-bold text-slate-800">{p.name}</td>
+                  <td className="p-4">
+                    <div className="font-bold text-slate-800">{p.name}</div>
+                    {p.barcode ? (
+                      <div className="inline-flex items-center gap-1 font-mono text-[11px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200 mt-1" title="باركود المنتج">
+                        <QrCode size={11} className="text-slate-400 shrink-0" />
+                        <span>{p.barcode}</span>
+                      </div>
+                    ) : (
+                      <div className="text-[10px] text-slate-400 mt-0.5">بدون باركود</div>
+                    )}
+                  </td>
                   <td className="p-4 whitespace-nowrap">
                     {p.productType === 'raw_material' ? (
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-extrabold bg-amber-50 text-amber-700 border border-amber-200 shadow-xs">
@@ -558,9 +587,46 @@ export function ProductsScreen({
                   </div>
                 </div>
 
-                <div className="col-span-2">
+                <div className="col-span-2 sm:col-span-1">
                   <label className="block text-sm font-bold text-slate-700 mb-1">اسم المنتج</label>
                   <input type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary" />
+                </div>
+
+                <div className="col-span-2 sm:col-span-1">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-sm font-bold text-slate-700 flex items-center gap-1.5">
+                      <QrCode size={15} className="text-primary" />
+                      الباركود (Barcode)
+                    </label>
+                    <button 
+                      type="button" 
+                      onClick={generateUniqueBarcode}
+                      className="text-xs text-primary hover:text-primary-dark font-bold flex items-center gap-1 bg-primary/10 hover:bg-primary/20 px-2.5 py-0.5 rounded-lg transition-colors cursor-pointer"
+                      title="توليد باركود تلقائي فريد للمنتج"
+                    >
+                      <Sparkles size={12} />
+                      توليد تلقائي
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <input 
+                      type="text" 
+                      value={formData.barcode} 
+                      onChange={e => setFormData({...formData, barcode: e.target.value})} 
+                      placeholder="امسح الباركود أو اكتبه..." 
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary font-mono text-sm tracking-wider" 
+                    />
+                    {formData.barcode && (
+                      <button 
+                        type="button"
+                        onClick={() => setFormData({...formData, barcode: ''})}
+                        className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500"
+                        title="مسح"
+                      >
+                        <X size={15} />
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-bold text-slate-700 mb-1">التصنيف</label>
@@ -662,66 +728,158 @@ export function ProductsScreen({
 
               <h4 className="font-bold text-slate-800 mb-3 border-b border-slate-100 pb-2">تفاصيل الأصناف المنصرفة</h4>
               
+              {/* Quick Barcode Scanner for Dispense */}
+              <div className="bg-indigo-50/70 p-3 rounded-xl border border-indigo-100 mb-4 flex items-center gap-3">
+                <QrCode className="text-indigo-600 shrink-0" size={22} />
+                <div className="flex-1">
+                  <input 
+                    type="text"
+                    placeholder="مسح باركود الصنف للصرف المباشر السريع (اضغط Enter بعد المسح)..."
+                    className="w-full bg-white border border-indigo-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600/30 font-medium"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        const inputEl = e.currentTarget;
+                        const code = inputEl.value.trim().toLowerCase();
+                        if (!code) return;
+                        const found = products.find(p => 
+                          (p.barcode && p.barcode.trim().toLowerCase() === code) || 
+                          p.name.toLowerCase() === code
+                        );
+                        if (found) {
+                          setErrorMsg('');
+                          // Check if first empty row exists
+                          const emptyIdx = dispenseData.items.findIndex(it => !it.productId);
+                          if (emptyIdx !== -1) {
+                            const updated = [...dispenseData.items];
+                            updated[emptyIdx].productId = found.id;
+                            setDispenseData({ ...dispenseData, items: updated });
+                          } else {
+                            // Check if this product is already in items list, increment quantity
+                            const existIdx = dispenseData.items.findIndex(it => it.productId === found.id);
+                            if (existIdx !== -1) {
+                              const updated = [...dispenseData.items];
+                              updated[existIdx].quantity += 1;
+                              setDispenseData({ ...dispenseData, items: updated });
+                            } else {
+                              setDispenseData({
+                                ...dispenseData,
+                                items: [...dispenseData.items, { productId: found.id, quantity: 1, employeeId: employees[0]?.id || '' }]
+                              });
+                            }
+                          }
+                          inputEl.value = '';
+                        } else {
+                          setErrorMsg(`لم يتم العثور على أي منتج يطابق الباركود: "${code}"`);
+                        }
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+
               <div className="space-y-3">
-                {dispenseData.items.map((item, idx) => (
-                  <div key={idx} className="flex gap-3 items-end bg-white p-3 border border-slate-200 rounded-xl">
-                    <div className="flex-1">
-                      <label className="block text-xs font-bold text-slate-500 mb-1">الصنف</label>
-                      <input 
-                        list={`products-list`}
-                        value={products.find(p => p.id === item.productId)?.name || item.productId}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          const found = products.find(p => p.name === val);
-                          const updated = [...dispenseData.items];
-                          updated[idx].productId = found ? found.id : val;
+                {dispenseData.items.map((item, idx) => {
+                  const currentProd = products.find(p => p.id === item.productId);
+                  return (
+                    <div key={idx} className="flex gap-3 items-end bg-white p-3 border border-slate-200 rounded-xl">
+                      <div className="flex-1">
+                        <label className="block text-xs font-bold text-slate-500 mb-1">الصنف (الاسم أو الباركود)</label>
+                        <input 
+                          list={`products-list`}
+                          value={currentProd?.name || item.productId}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            const qClean = val.trim().toLowerCase();
+                            const found = products.find(p => 
+                              p.name.toLowerCase() === qClean || 
+                              (p.barcode && p.barcode.trim().toLowerCase() === qClean) ||
+                              p.id === val
+                            );
+                            const updated = [...dispenseData.items];
+                            updated[idx].productId = found ? found.id : val;
+                            setDispenseData({...dispenseData, items: updated});
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              const val = (e.target as HTMLInputElement).value;
+                              const qClean = val.trim().toLowerCase();
+                              const found = products.find(p => 
+                                (p.barcode && p.barcode.trim().toLowerCase() === qClean) ||
+                                p.name.toLowerCase() === qClean ||
+                                p.id === val
+                              );
+                              if (found) {
+                                const updated = [...dispenseData.items];
+                                updated[idx].productId = found.id;
+                                setDispenseData({...dispenseData, items: updated});
+                              }
+                            }
+                          }}
+                          className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary text-sm"
+                          placeholder="ابحث بالاسم أو امسح الباركود..."
+                        />
+                        {currentProd && (
+                          <div className="flex items-center gap-2 mt-1">
+                            {currentProd.barcode && (
+                              <span className="text-[10px] font-mono text-slate-500 flex items-center gap-1">
+                                <QrCode size={10} className="text-slate-400" />
+                                {currentProd.barcode}
+                              </span>
+                            )}
+                            <span className="text-[10px] text-slate-500">
+                              (المتاح بالمخزون: {currentProd.currentStock})
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="w-24">
+                        <label className="block text-xs font-bold text-slate-500 mb-1">الكمية</label>
+                        <input 
+                          type="number" 
+                          min="1"
+                          value={item.quantity}
+                          onChange={e => {
+                            const updated = [...dispenseData.items];
+                            updated[idx].quantity = Number(e.target.value);
+                            setDispenseData({...dispenseData, items: updated});
+                          }}
+                          className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary text-sm text-center" 
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <label className="block text-xs font-bold text-slate-500 mb-1">الموظف المستلم</label>
+                        <select 
+                          value={item.employeeId}
+                          onChange={e => {
+                            const updated = [...dispenseData.items];
+                            updated[idx].employeeId = e.target.value;
+                            setDispenseData({...dispenseData, items: updated});
+                          }}
+                          className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary text-sm"
+                        >
+                          <option value="">-- اختر الموظف --</option>
+                          {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+                        </select>
+                      </div>
+                      {dispenseData.items.length > 1 && (
+                        <button onClick={() => {
+                          const updated = dispenseData.items.filter((_, i) => i !== idx);
                           setDispenseData({...dispenseData, items: updated});
-                        }}
-                        className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary text-sm"
-                        placeholder="ابحث عن الصنف..."
-                      />
+                        }} className="h-[38px] px-3 bg-red-50 text-red-500 hover:bg-red-100 rounded-lg transition-colors">
+                          <Trash2 size={16} />
+                        </button>
+                      )}
                     </div>
-                    <div className="w-24">
-                      <label className="block text-xs font-bold text-slate-500 mb-1">الكمية</label>
-                      <input 
-                        type="number" 
-                        min="1"
-                        value={item.quantity}
-                        onChange={e => {
-                          const updated = [...dispenseData.items];
-                          updated[idx].quantity = Number(e.target.value);
-                          setDispenseData({...dispenseData, items: updated});
-                        }}
-                        className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary text-sm text-center" 
-                      />
-                    </div>
-                    <div className="flex-1">
-                      <label className="block text-xs font-bold text-slate-500 mb-1">الموظف المستلم</label>
-                      <select 
-                        value={item.employeeId}
-                        onChange={e => {
-                          const updated = [...dispenseData.items];
-                          updated[idx].employeeId = e.target.value;
-                          setDispenseData({...dispenseData, items: updated});
-                        }}
-                        className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary text-sm"
-                      >
-                        <option value="">-- اختر الموظف --</option>
-                        {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
-                      </select>
-                    </div>
-                    {dispenseData.items.length > 1 && (
-                      <button onClick={() => {
-                        const updated = dispenseData.items.filter((_, i) => i !== idx);
-                        setDispenseData({...dispenseData, items: updated});
-                      }} className="h-[38px] px-3 bg-red-50 text-red-500 hover:bg-red-100 rounded-lg transition-colors">
-                        <Trash2 size={16} />
-                      </button>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
                 <datalist id="products-list">
-                  {products.map(p => <option key={p.id} value={p.name} />)}
+                  {products.map(p => (
+                    <option key={p.id} value={p.name}>
+                      {p.barcode ? `[باركود: ${p.barcode}] ` : ''}(المتاح: {p.currentStock})
+                    </option>
+                  ))}
                 </datalist>
                 
                 <button onClick={() => {

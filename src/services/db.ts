@@ -251,7 +251,8 @@ export async function ensureCoreSchema(): Promise<void> {
       ensureColumn('client_portal_accounts', 'salon_code', 'VARCHAR(50)'),
       ensureColumn('client_portal_accounts', 'linked_salon_codes', 'JSONB'),
       ensureColumn('app_settings', 'inactive_clients_tracking_enabled', 'BOOLEAN'),
-      ensureColumn('app_settings', 'inactive_clients_days', 'INT')
+      ensureColumn('app_settings', 'inactive_clients_days', 'INT'),
+      ensureColumn('products', 'barcode', 'VARCHAR(100)')
     ]);
   } catch { /* Silent fail */ }
 }
@@ -2001,6 +2002,15 @@ export const DB = {
       console.warn('DB.saveProduct: supplier_id column missing in Supabase, retrying without supplier_id and triggering ensureColumn...');
       ensureColumn('products', 'supplier_id', 'VARCHAR(100)').catch(() => {});
       delete payload.supplier_id;
+      const retry = await client.from('products').upsert(payload, { onConflict: 'id' });
+      error = retry.error;
+    }
+
+    // 1.1 معالجة غياب عمود barcode إن لم يكن مضافاً بعد
+    if (error && (error.message.includes('barcode') || (error as any).code === '42703')) {
+      console.warn('DB.saveProduct: barcode column missing in Supabase, retrying without barcode...');
+      ensureColumn('products', 'barcode', 'VARCHAR(100)').catch(() => {});
+      delete payload.barcode;
       const retry = await client.from('products').upsert(payload, { onConflict: 'id' });
       error = retry.error;
     }
