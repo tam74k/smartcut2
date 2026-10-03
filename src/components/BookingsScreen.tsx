@@ -2416,89 +2416,98 @@ export function BookingsScreen({
       {/* ADD / EDIT BOOKING MODAL */}
       {/* ========================================================================= */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in duration-150" dir="rtl">
-            <div className="flex justify-between items-center p-5 border-b border-slate-100 bg-slate-50/50">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
-                  <CalendarIcon size={18} />
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-2 sm:p-4 md:p-6 overflow-y-auto">
+          <div className="bg-white rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col max-h-[92vh] sm:max-h-[90vh] my-auto animate-in fade-in zoom-in duration-150" dir="rtl">
+            <div className="flex justify-between items-center px-4 py-3.5 sm:px-6 sm:py-4 border-b border-slate-100 bg-slate-50/70 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold shadow-xs">
+                  <CalendarIcon size={20} />
                 </div>
-                <h2 className="text-base font-black text-slate-900">
-                  {editingBooking ? 'تعديل بيانات الحجز' : 'حجز موعد جديد'}
-                </h2>
+                <div>
+                  <h2 className="text-sm sm:text-base font-black text-slate-900">
+                    {editingBooking ? 'تعديل بيانات الحجز' : 'حجز موعد جديد'}
+                  </h2>
+                  <p className="text-[10px] sm:text-[11px] text-slate-500 font-medium">
+                    تسجيل وتنسيق المواعيد مع ربط الخدمات والمنتجات والعربون
+                  </p>
+                </div>
               </div>
               <button
                 onClick={() => setShowAddModal(false)}
-                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 cursor-pointer"
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 hover:text-slate-800 transition-colors cursor-pointer text-sm font-bold"
               >
                 ✕
               </button>
             </div>
 
-            <div className="p-6 overflow-y-auto space-y-4">
-              <div className="space-y-3">
-                {/* 1. FIRST FIELD: Phone Number with Instant Lookup */}
-                <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-2">
-                  <label className="block text-xs font-bold text-slate-800">
-                    رقم الموبايل (اسم المستخدم والبحث الفوري) * 📱
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="tel"
-                      value={newBooking.phone || ''}
-                      onChange={e => handlePhoneChange(e.target.value)}
-                      className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm font-mono font-bold focus:border-indigo-600 outline-none text-slate-900 shadow-xs"
-                      placeholder="أدخل رقم الموبايل مثلاً: 05XXXXXXXX"
-                      required
-                      dir="ltr"
-                      autoFocus
-                    />
+            <div className="p-3 sm:p-5 md:p-6 overflow-y-auto space-y-4">
+              {/* 1. TOP CARD: CLIENT & SCHEDULE INFORMATION */}
+              <div className="bg-slate-50/80 p-3 sm:p-4 rounded-2xl border border-slate-200/80 space-y-3">
+                {/* Row 1: Phone & Client Name */}
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+                  {/* Phone with Auto Lookup */}
+                  <div className="md:col-span-7 space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-800">
+                      رقم الموبايل (البحث الفوري واسترجاع البيانات) * 📱
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="tel"
+                        value={newBooking.phone || ''}
+                        onChange={e => handlePhoneChange(e.target.value)}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 sm:py-2.5 text-xs sm:text-sm font-mono font-bold focus:border-indigo-600 outline-none text-slate-900 shadow-xs"
+                        placeholder="أدخل رقم الموبايل مثلاً: 05XXXXXXXX"
+                        required
+                        dir="ltr"
+                        autoFocus
+                      />
+                    </div>
+
+                    {/* Matching Client Found Banner */}
+                    {matchingClientInfo ? (
+                      <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-800 p-2 sm:p-2.5 rounded-xl text-xs flex items-center justify-between animate-in fade-in">
+                        <div className="flex items-center gap-2">
+                          <span className="text-base">✨</span>
+                          <div>
+                            <p className="font-black text-emerald-900">عميل مسجل: {matchingClientInfo.name}</p>
+                            <p className="text-[10px] text-emerald-700 font-bold">
+                              نقاط الولاء: {matchingClientInfo.loyaltyPoints || 0} نقطة • الكاش باك: {matchingClientInfo.cashback || 0} {settings.currency}
+                            </p>
+                          </div>
+                        </div>
+                        <span className="bg-emerald-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full shrink-0">
+                          تم الاسترجاع ✓
+                        </span>
+                      </div>
+                    ) : newBooking.phone && newBooking.phone.trim().length >= 8 ? (
+                      <p className="text-[11px] text-indigo-600 font-bold">
+                        💡 عميل جديد — سيتم تسجيله تلقائياً في قاعدة عملاء الصالون عند حفظ الحجز
+                      </p>
+                    ) : null}
                   </div>
 
-                  {/* Matching Client Found Banner */}
-                  {matchingClientInfo ? (
-                    <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-800 p-2.5 rounded-xl text-xs flex items-center justify-between animate-in fade-in">
-                      <div className="flex items-center gap-2">
-                        <span className="text-base">✨</span>
-                        <div>
-                          <p className="font-black text-emerald-900">عميل مسجل: {matchingClientInfo.name}</p>
-                          <p className="text-[10px] text-emerald-700 font-bold">
-                            نقاط الولاء: {matchingClientInfo.loyaltyPoints || 0} نقطة • الكاش باك: {matchingClientInfo.cashback || 0} {settings.currency}
-                          </p>
-                        </div>
-                      </div>
-                      <span className="bg-emerald-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full">
-                        تم الاسترجاع ✓
-                      </span>
-                    </div>
-                  ) : newBooking.phone && newBooking.phone.trim().length >= 8 ? (
-                    <p className="text-[11px] text-indigo-600 font-bold">
-                      💡 عميل جديد — سيتم تسجيله تلقائياً في قاعدة عملاء الصالون عند حفظ الحجز
-                    </p>
-                  ) : null}
+                  {/* Client Name */}
+                  <div className="md:col-span-5 space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-700">اسم العميل * 👤</label>
+                    <input
+                      type="text"
+                      value={newBooking.clientName || ''}
+                      onChange={e => setNewBooking({ ...newBooking, clientName: e.target.value })}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 sm:py-2.5 text-xs sm:text-sm font-bold focus:border-indigo-600 outline-none shadow-xs text-slate-900"
+                      placeholder="اسم العميل..."
+                      required
+                    />
+                  </div>
                 </div>
 
-                {/* 2. Client Name */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">اسم العميل * 👤</label>
-                  <input
-                    type="text"
-                    value={newBooking.clientName || ''}
-                    onChange={e => setNewBooking({ ...newBooking, clientName: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none"
-                    placeholder="اسم العميل..."
-                    required
-                  />
-                </div>
-
-                {/* 3. Date & Time Slots */}
-                <div className="grid grid-cols-2 gap-3">
+                {/* Row 2: Date, Time, Status, Location */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-3 pt-2 border-t border-slate-200/60">
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center justify-between">
                       <span>تاريخ الموعد * 📅</span>
                       {!editingBooking && shiftData?.isOpen && (
-                        <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-1.5 py-0.5 rounded">
-                          افتراضي من الوردية
+                        <span className="text-[9px] text-emerald-700 font-bold bg-emerald-100/70 px-1 py-0.2 rounded">
+                          الوردية
                         </span>
                       )}
                     </label>
@@ -2506,21 +2515,22 @@ export function BookingsScreen({
                       type="date"
                       value={newBooking.date}
                       onChange={e => setNewBooking({ ...newBooking, date: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none"
+                      className="w-full bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 sm:py-2 text-xs font-bold focus:border-indigo-600 outline-none shadow-xs"
                       required
                     />
                     {!editingBooking && shiftData?.isOpen && (
-                      <p className="text-[10px] text-slate-500 mt-1">
-                        تاريخ الوردية المفتوحة: {shiftData.date} (يمكنك تغيير التاريخ لحجز موعد مستقبلي)
+                      <p className="text-[9px] text-slate-400 mt-0.5 truncate">
+                        وردية: {shiftData.date}
                       </p>
                     )}
                   </div>
+
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">وقت الموعد * ⏰</label>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">وقت الموعد * ⏰</label>
                     <select
                       value={newBooking.time}
                       onChange={e => setNewBooking({ ...newBooking, time: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:border-indigo-600 outline-none"
+                      className="w-full bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 sm:py-2 text-xs font-mono font-bold focus:border-indigo-600 outline-none shadow-xs"
                       required
                     >
                       {generateSalonTimeSlots(settings).map(t => (
@@ -2528,14 +2538,13 @@ export function BookingsScreen({
                       ))}
                     </select>
                   </div>
-                </div>
-                <div className="col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
+
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">حالة الحجز</label>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">حالة الحجز</label>
                     <select
                       value={newBooking.status}
                       onChange={e => setNewBooking({ ...newBooking, status: e.target.value as any })}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none"
+                      className="w-full bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 sm:py-2 text-xs font-bold focus:border-indigo-600 outline-none shadow-xs"
                     >
                       <option value="confirmed">مؤكد</option>
                       <option value="pending">قيد الانتظار</option>
@@ -2543,21 +2552,22 @@ export function BookingsScreen({
                       <option value="cancelled">ملغي</option>
                     </select>
                   </div>
+
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center justify-between">
                       <span className="flex items-center gap-1">
-                        <MapPin size={13} className="text-indigo-600" />
+                        <MapPin size={12} className="text-indigo-600" />
                         <span>مكان الحجز</span>
                       </span>
-                      <span className="text-[10px] text-slate-400 font-normal">اختياري</span>
+                      <span className="text-[9px] text-slate-400 font-normal">اختياري</span>
                     </label>
                     <input
                       type="text"
                       list="booking-locations-list"
                       value={newBooking.location || ''}
                       onChange={e => setNewBooking({ ...newBooking, location: e.target.value })}
-                      placeholder="مثال: داخل الصالون، منزل العميل، فندق..."
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none text-slate-800 placeholder:font-normal placeholder:text-slate-400"
+                      placeholder="داخل الصالون، خارجي..."
+                      className="w-full bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 sm:py-2 text-xs font-bold focus:border-indigo-600 outline-none text-slate-800 shadow-xs placeholder:font-normal placeholder:text-slate-400"
                     />
                     <datalist id="booking-locations-list">
                       <option value="داخل الصالون" />
@@ -2569,725 +2579,774 @@ export function BookingsScreen({
                 </div>
               </div>
 
-              {/* Add Services & Products Sub-Section with Searchable Autocomplete */}
-              <div className="border-t border-slate-100 pt-4 mt-2">
-                <h3 className="text-xs font-black text-slate-800 mb-2.5 flex items-center justify-between">
-                  <span>إضافة الخدمات والمنتجات للحجز:</span>
-                  <span className="text-[10px] text-slate-400 font-normal">بحث ذكي وإكمال تلقائي 🔍</span>
-                </h3>
-
-                {/* Switcher: إضافة خدمة / إضافة منتج */}
-                <div className="flex items-center gap-2 mb-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setItemTypeToAdd('service');
-                      setTechToAdd('');
-                      setServiceQtyToAdd('1');
-                    }}
-                    className={`flex-1 py-2 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                      itemTypeToAdd === 'service'
-                        ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/20'
-                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                    }`}
-                  >
-                    <span>✂️ إضافة خدمة</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setItemTypeToAdd('product');
-                      setTechToAdd('');
-                      setServiceQtyToAdd('1');
-                    }}
-                    className={`flex-1 py-2 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                      itemTypeToAdd === 'product'
-                        ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/20'
-                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                    }`}
-                  >
-                    <ShoppingBag size={14} />
-                    <span>🛍️ إضافة منتج</span>
-                  </button>
-                </div>
+              {/* 2. SERVICES, PRODUCTS & ADVANCES RESPONSIVE GRID */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-5 items-start">
                 
-                {itemTypeToAdd === 'service' ? (
-                  /* ============ FORM: ADD SERVICE ============ */
-                  <div className="space-y-2.5 mb-3 bg-slate-50 p-3 rounded-2xl border border-slate-200">
-                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
-                      
-                      {/* 1. SERVICE SEARCHABLE AUTOCOMPLETE */}
-                      <div className="relative sm:col-span-6">
-                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                          الخدمة (ابحث بالاسم أو السعر) *
-                        </label>
-                        <div className="relative">
-                          <input
-                            type="text"
-                            value={serviceSearchQuery}
-                            onChange={e => {
-                              setServiceSearchQuery(e.target.value);
-                              setIsServiceDropdownOpen(true);
-                              const exactMatch = services.find(s => s.name.toLowerCase() === e.target.value.toLowerCase().trim());
-                              if (exactMatch) {
-                                setServiceToAdd(exactMatch.id);
-                              } else {
-                                setServiceToAdd('');
-                              }
-                            }}
-                            onFocus={() => setIsServiceDropdownOpen(true)}
-                            placeholder="🔍 اكتب اسم الخدمة أو السعر..."
-                            className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none text-slate-900 shadow-xs"
-                          />
-                          {serviceSearchQuery && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setServiceSearchQuery('');
-                                setServiceToAdd('');
-                                setIsServiceDropdownOpen(true);
-                              }}
-                              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-md text-xs cursor-pointer"
-                            >
-                              ✕
-                            </button>
-                          )}
-                        </div>
+                {/* RIGHT COLUMN (7 of 12 on desktop): Services & Products Selection and List */}
+                <div className="lg:col-span-7 bg-white p-3 sm:p-4 rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
+                  <h3 className="text-xs font-black text-slate-800 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <span>✂️</span>
+                      <span>الخدمات والمنتجات المطلوبة في الموعد:</span>
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-normal">بحث ذكي وإكمال تلقائي 🔍</span>
+                  </h3>
 
-                        {/* Dropdown Menu for Autocomplete */}
-                        {isServiceDropdownOpen && (
-                          <>
-                            <div 
-                              className="fixed inset-0 z-40" 
-                              onClick={() => setIsServiceDropdownOpen(false)}
-                            />
-                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 max-h-48 overflow-y-auto p-1.5 space-y-1 text-right">
-                              {filteredServicesForBooking.length > 0 ? (
-                                filteredServicesForBooking.map(s => {
-                                  const isSelected = serviceToAdd === s.id;
-                                  return (
-                                    <button
-                                      key={s.id}
-                                      type="button"
-                                      onClick={() => {
-                                        setServiceToAdd(s.id);
-                                        setServiceSearchQuery(s.name);
-                                        setIsServiceDropdownOpen(false);
-                                      }}
-                                      className={`w-full text-right px-3 py-2 rounded-xl text-xs flex items-center justify-between transition-all cursor-pointer ${
-                                        isSelected 
-                                          ? 'bg-indigo-50 text-indigo-900 font-black border border-indigo-200' 
-                                          : 'hover:bg-slate-100 text-slate-800'
-                                      }`}
-                                    >
-                                      <div className="flex flex-col">
-                                        <span className="font-bold">{s.name}</span>
-                                        {s.category && (
-                                          <span className="text-[10px] text-slate-400">{s.category}</span>
-                                        )}
-                                      </div>
-                                      <div className="flex items-center gap-2">
-                                        <span className="bg-emerald-50 text-emerald-700 font-mono font-black px-2 py-0.5 rounded-lg text-[11px] border border-emerald-200">
-                                          {s.price} {settings.currency}
-                                        </span>
-                                        {s.durationMinutes && (
-                                          <span className="bg-slate-100 text-slate-500 text-[10px] px-1.5 py-0.5 rounded-md font-medium">
-                                            {s.durationMinutes} د
-                                          </span>
-                                        )}
-                                      </div>
-                                    </button>
-                                  );
-                                })
-                              ) : (
-                                <div className="p-3 text-center text-xs text-slate-400">
-                                  لا توجد خدمات مطابقة لـ "{serviceSearchQuery}"
-                                </div>
-                              )}
-                            </div>
-                          </>
-                        )}
-                      </div>
-
-                      {/* 2. EMPLOYEE SELECTOR */}
-                      <div className="sm:col-span-4">
-                        <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center justify-between">
-                          <span>الموظف المنفذ</span>
-                          <span className="text-[10px] text-slate-400 font-normal">اختياري</span>
-                        </label>
-                        <select
-                          value={techToAdd}
-                          onChange={e => setTechToAdd(e.target.value)}
-                          className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-indigo-600 shadow-xs"
-                        >
-                          <option value="">(غير محدد)</option>
-                          {employees.filter(e => isBarberEmployee(e)).map(e => (
-                            <option key={e.id} value={e.id}>{e.name} ({e.role})</option>
-                          ))}
-                        </select>
-                      </div>
-
-                      {/* 3. QUANTITY INPUT (كتابة مباشرة ورقم افتراضي 1) */}
-                      <div className="sm:col-span-2">
-                        <label className="block text-[11px] font-bold text-slate-700 mb-1 text-center">
-                          الكمية
-                        </label>
-                        <input
-                          type="number"
-                          min="1"
-                          step="1"
-                          value={serviceQtyToAdd}
-                          onChange={e => setServiceQtyToAdd(e.target.value)}
-                          onBlur={() => {
-                            const parsed = parseInt(serviceQtyToAdd, 10);
-                            if (isNaN(parsed) || parsed < 1) {
-                              setServiceQtyToAdd('1');
-                            }
-                          }}
-                          className="w-full bg-white border border-slate-300 rounded-xl px-2 py-2 text-xs font-black text-center outline-none focus:border-indigo-600 shadow-xs font-mono"
-                          placeholder="1"
-                          title="الكمية المطلوبة (قابلة للكتابة المباشرة)"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Add Service Button */}
+                  {/* Switcher: إضافة خدمة / إضافة منتج */}
+                  <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={addServiceToBooking}
-                      disabled={!serviceToAdd}
-                      className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white py-2 rounded-xl text-xs font-black cursor-pointer shadow-sm transition-all flex items-center justify-center gap-1.5"
+                      onClick={() => {
+                        setItemTypeToAdd('service');
+                        setTechToAdd('');
+                        setServiceQtyToAdd('1');
+                      }}
+                      className={`flex-1 py-2 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                        itemTypeToAdd === 'service'
+                          ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/20'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                      }`}
                     >
-                      <span>+ إضافة الخدمة إلى جدول الموعد {parseInt(serviceQtyToAdd, 10) > 1 ? `(الكمية: ${serviceQtyToAdd})` : ''}</span>
+                      <span>✂️ إضافة خدمة</span>
                     </button>
-                  </div>
-                ) : (
-                  /* ============ FORM: ADD PRODUCT ============ */
-                  <div className="space-y-2.5 mb-3 bg-amber-50/50 p-3 rounded-2xl border border-amber-200/80">
-                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
-                      {/* Product Autocomplete */}
-                      <div className="relative sm:col-span-6">
-                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                          المنتج (ابحث بالاسم أو الباركود أو السعر) *
-                        </label>
-                        <div className="relative">
-                          <input
-                            type="text"
-                            value={productSearchQuery}
-                            onChange={e => {
-                              setProductSearchQuery(e.target.value);
-                              setIsProductDropdownOpen(true);
-                              const exactMatch = retailProducts.find(p => p.name.toLowerCase() === e.target.value.toLowerCase().trim() || p.barcode === e.target.value.trim());
-                              if (exactMatch) {
-                                setProductToAdd(exactMatch.id);
-                              } else {
-                                setProductToAdd('');
-                              }
-                            }}
-                            onFocus={() => setIsProductDropdownOpen(true)}
-                            placeholder="🔍 اكتب اسم المنتج أو الباركود..."
-                            className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none text-slate-900 shadow-xs"
-                          />
-                          {productSearchQuery && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setProductSearchQuery('');
-                                setProductToAdd('');
-                                setIsProductDropdownOpen(true);
-                              }}
-                              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-md text-xs cursor-pointer"
-                            >
-                              ✕
-                            </button>
-                          )}
-                        </div>
-
-                        {/* Dropdown Menu for Product Autocomplete */}
-                        {isProductDropdownOpen && (
-                          <>
-                            <div 
-                              className="fixed inset-0 z-40" 
-                              onClick={() => setIsProductDropdownOpen(false)}
-                            />
-                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 max-h-48 overflow-y-auto p-1.5 space-y-1 text-right">
-                              {filteredProductsForBooking.length > 0 ? (
-                                filteredProductsForBooking.map(p => {
-                                  const isSelected = productToAdd === p.id;
-                                  return (
-                                    <button
-                                      key={p.id}
-                                      type="button"
-                                      onClick={() => {
-                                        setProductToAdd(p.id);
-                                        setProductSearchQuery(p.name);
-                                        setIsProductDropdownOpen(false);
-                                      }}
-                                      className={`w-full text-right px-3 py-2 rounded-xl text-xs flex items-center justify-between transition-all cursor-pointer ${
-                                        isSelected 
-                                          ? 'bg-amber-100 text-amber-900 font-black border border-amber-300' 
-                                          : 'hover:bg-slate-100 text-slate-800'
-                                      }`}
-                                    >
-                                      <div className="flex flex-col">
-                                        <span className="font-bold flex items-center gap-1.5">
-                                          <ShoppingBag size={12} className="text-amber-600" />
-                                          <span>{p.name}</span>
-                                        </span>
-                                        {p.barcode && (
-                                          <span className="text-[10px] text-slate-400 font-mono">باركود: {p.barcode}</span>
-                                        )}
-                                      </div>
-                                      <div className="flex items-center gap-2">
-                                        <span className="bg-emerald-50 text-emerald-700 font-mono font-black px-2 py-0.5 rounded-lg text-[11px] border border-emerald-200">
-                                          {p.sellPrice} {settings.currency}
-                                        </span>
-                                        {p.stock !== undefined && (
-                                          <span className="bg-slate-100 text-slate-600 text-[10px] px-1.5 py-0.5 rounded-md font-medium">
-                                            المخزون: {p.stock}
-                                          </span>
-                                        )}
-                                      </div>
-                                    </button>
-                                  );
-                                })
-                              ) : (
-                                <div className="p-3 text-center text-xs text-slate-400">
-                                  {retailProducts.length === 0 ? 'لا توجد منتجات متاحة للبيع' : `لا توجد منتجات مطابقة لـ "${productSearchQuery}"`}
-                                </div>
-                              )}
-                            </div>
-                          </>
-                        )}
-                      </div>
-
-                      {/* Employee / Seller Selector */}
-                      <div className="sm:col-span-4">
-                        <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center justify-between">
-                          <span>موظف البيع</span>
-                          <span className="text-[10px] text-slate-400 font-normal">اختياري</span>
-                        </label>
-                        <select
-                          value={techToAdd}
-                          onChange={e => setTechToAdd(e.target.value)}
-                          className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-indigo-600 shadow-xs"
-                        >
-                          <option value="">(غير محدد)</option>
-                          {employees.map(e => (
-                            <option key={e.id} value={e.id}>{e.name} ({e.role})</option>
-                          ))}
-                        </select>
-                      </div>
-
-                      {/* Quantity Input (كتابة مباشرة) */}
-                      <div className="sm:col-span-2">
-                        <label className="block text-[11px] font-bold text-slate-700 mb-1 text-center">
-                          الكمية
-                        </label>
-                        <input
-                          type="number"
-                          min="1"
-                          step="1"
-                          value={serviceQtyToAdd}
-                          onChange={e => setServiceQtyToAdd(e.target.value)}
-                          onBlur={() => {
-                            const parsed = parseInt(serviceQtyToAdd, 10);
-                            if (isNaN(parsed) || parsed < 1) {
-                              setServiceQtyToAdd('1');
-                            }
-                          }}
-                          className="w-full bg-white border border-slate-300 rounded-xl px-2 py-2 text-xs font-black text-center outline-none focus:border-indigo-600 shadow-xs font-mono"
-                          placeholder="1"
-                          title="الكمية المطلوبة (قابلة للكتابة المباشرة)"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Add Product Button */}
                     <button
                       type="button"
-                      onClick={addProductToBooking}
-                      disabled={!productToAdd}
-                      className="w-full bg-amber-600 hover:bg-amber-700 disabled:opacity-40 text-white py-2 rounded-xl text-xs font-black cursor-pointer shadow-sm transition-all flex items-center justify-center gap-1.5"
+                      onClick={() => {
+                        setItemTypeToAdd('product');
+                        setTechToAdd('');
+                        setServiceQtyToAdd('1');
+                      }}
+                      className={`flex-1 py-2 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                        itemTypeToAdd === 'product'
+                          ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/20'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                      }`}
                     >
                       <ShoppingBag size={14} />
-                      <span>+ إضافة المنتج إلى الحجز {parseInt(serviceQtyToAdd, 10) > 1 ? `(الكمية: ${serviceQtyToAdd})` : ''}</span>
+                      <span>🛍️ إضافة منتج</span>
                     </button>
                   </div>
-                )}
-
-                {(() => {
-                  const hasServiceDiscounts = (newBooking.services || []).some(s => Number(s.discountValue || 0) > 0);
-                  const hasTotalDiscount = Number(newBooking.discountValue || 0) > 0;
-
-                  return (
-                    <>
-                      {hasTotalDiscount && (
-                        <div className="bg-amber-50/90 border border-amber-200 rounded-xl p-2 px-3 text-[11px] text-amber-800 flex items-center justify-between">
-                          <div className="flex items-center gap-1.5 font-bold">
-                            <span>⚠️</span>
-                            <span>خصومات بنود الخدمات والمنتجات معطلة لتفعيل الخصم على إجمالي الحجز (لا يجوز الجمع بين خصمين).</span>
+                  
+                  {itemTypeToAdd === 'service' ? (
+                    /* ============ FORM: ADD SERVICE ============ */
+                    <div className="space-y-2.5 bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
+                        
+                        {/* 1. SERVICE SEARCHABLE AUTOCOMPLETE */}
+                        <div className="relative sm:col-span-6">
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                            الخدمة (ابحث بالاسم أو السعر) *
+                          </label>
+                          <div className="relative">
+                            <input
+                              type="text"
+                              value={serviceSearchQuery}
+                              onChange={e => {
+                                setServiceSearchQuery(e.target.value);
+                                setIsServiceDropdownOpen(true);
+                                const exactMatch = services.find(s => s.name.toLowerCase() === e.target.value.toLowerCase().trim());
+                                if (exactMatch) {
+                                  setServiceToAdd(exactMatch.id);
+                                } else {
+                                  setServiceToAdd('');
+                                }
+                              }}
+                              onFocus={() => setIsServiceDropdownOpen(true)}
+                              placeholder="🔍 اكتب اسم الخدمة أو السعر..."
+                              className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none text-slate-900 shadow-xs"
+                            />
+                            {serviceSearchQuery && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setServiceSearchQuery('');
+                                  setServiceToAdd('');
+                                  setIsServiceDropdownOpen(true);
+                                }}
+                                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-md text-xs cursor-pointer"
+                              >
+                                ✕
+                              </button>
+                            )}
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const totals = calculateBookingTotals({ ...newBooking, discountValue: 0 });
-                              setNewBooking({ ...newBooking, discountValue: 0, totalAmount: totals.netTotal });
-                            }}
-                            className="font-bold underline text-amber-900 hover:text-amber-950 cursor-pointer text-[10px] whitespace-nowrap mr-2"
-                          >
-                            مسح خصم الإجمالي
-                          </button>
+
+                          {/* Dropdown Menu for Autocomplete */}
+                          {isServiceDropdownOpen && (
+                            <>
+                              <div 
+                                className="fixed inset-0 z-40" 
+                                onClick={() => setIsServiceDropdownOpen(false)}
+                              />
+                              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 max-h-48 overflow-y-auto p-1.5 space-y-1 text-right">
+                                {filteredServicesForBooking.length > 0 ? (
+                                  filteredServicesForBooking.map(s => {
+                                    const isSelected = serviceToAdd === s.id;
+                                    return (
+                                      <button
+                                        key={s.id}
+                                        type="button"
+                                        onClick={() => {
+                                          setServiceToAdd(s.id);
+                                          setServiceSearchQuery(s.name);
+                                          setIsServiceDropdownOpen(false);
+                                        }}
+                                        className={`w-full text-right px-3 py-2 rounded-xl text-xs flex items-center justify-between transition-all cursor-pointer ${
+                                          isSelected 
+                                            ? 'bg-indigo-50 text-indigo-900 font-black border border-indigo-200' 
+                                            : 'hover:bg-slate-100 text-slate-800'
+                                        }`}
+                                      >
+                                        <div className="flex flex-col">
+                                          <span className="font-bold">{s.name}</span>
+                                          {s.category && (
+                                            <span className="text-[10px] text-slate-400">{s.category}</span>
+                                          )}
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          <span className="bg-emerald-50 text-emerald-700 font-mono font-black px-2 py-0.5 rounded-lg text-[11px] border border-emerald-200">
+                                            {s.price} {settings.currency}
+                                          </span>
+                                          {s.durationMinutes && (
+                                            <span className="bg-slate-100 text-slate-500 text-[10px] px-1.5 py-0.5 rounded-md font-medium">
+                                              {s.durationMinutes} د
+                                            </span>
+                                          )}
+                                        </div>
+                                      </button>
+                                    );
+                                  })
+                                ) : (
+                                  <div className="p-3 text-center text-xs text-slate-400">
+                                    لا توجد خدمات مطابقة لـ "{serviceSearchQuery}"
+                                  </div>
+                                )}
+                              </div>
+                            </>
+                          )}
                         </div>
-                      )}
 
-                      {/* Services & Products List with Discount per line */}
-                      <div className="space-y-2 max-h-48 overflow-y-auto">
-                        {newBooking.services?.map(s => {
-                          const isProduct = s.type === 'product';
-                          const qty = Math.max(1, Number(s.quantity) || 1);
-                          const lineDisc = calculateServiceLineDiscount(s);
-                          const lineFinal = calculateServiceLinePrice(s);
-                          const lineGross = Number(s.price || 0) * qty;
-                          return (
-                            <div key={s.id} className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/80 text-xs space-y-1.5">
-                              <div className="flex justify-between items-start">
-                                <div>
-                                  <div className="font-bold text-slate-900 flex items-center gap-1.5">
-                                    {isProduct ? (
-                                      <span className="text-[10px] bg-amber-100 text-amber-800 font-bold px-1.5 py-0.5 rounded-md flex items-center gap-1">
-                                        <ShoppingBag size={10} />
-                                        <span>منتج</span>
-                                      </span>
-                                    ) : (
-                                      <span className="text-[10px] bg-indigo-50 text-indigo-700 font-bold px-1.5 py-0.5 rounded-md">
-                                        خدمة
-                                      </span>
-                                    )}
-                                    <span>{s.serviceName}</span>
-                                    {qty > 1 && (
-                                      <span className="text-[10px] bg-indigo-100 text-indigo-800 font-bold px-1.5 py-0.2 rounded-md">
-                                        ×{qty}
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div className="text-[10px] text-slate-500">
-                                    {isProduct ? 'البائع:' : 'الفني:'} {s.technicianName}
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  {/* تعديل الكمية مباشرة بالكتابة */}
-                                  <div className="flex items-center gap-1 bg-white px-2 py-0.5 rounded-lg border border-slate-200 shadow-2xs" title="تعديل الكمية مباشرة بالكتابة">
-                                    <span className="text-[10px] text-slate-500 font-bold">الكمية:</span>
-                                    <input
-                                      type="number"
-                                      min="1"
-                                      step="1"
-                                      value={s.quantity ?? 1}
-                                      onChange={e => {
-                                        const parsed = parseInt(e.target.value, 10);
-                                        const qVal = isNaN(parsed) ? 1 : Math.max(1, parsed);
-                                        const updated = (newBooking.services || []).map(sx => sx.id === s.id ? { ...sx, quantity: qVal } : sx);
-                                        const totals = calculateBookingTotals({ ...newBooking, services: updated });
-                                        setNewBooking({ ...newBooking, services: updated, totalAmount: totals.netTotal });
-                                      }}
-                                      className="w-12 border border-slate-200 rounded px-1 text-center font-mono font-bold text-xs outline-none focus:border-indigo-600"
-                                    />
-                                  </div>
-                                  <span className="font-mono font-bold text-slate-700">
-                                    {lineGross.toFixed(2)} {settings.currency}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const updated = newBooking.services?.filter(sx => sx.id !== s.id) || [];
-                                      const totals = calculateBookingTotals({ ...newBooking, services: updated });
-                                      setNewBooking({
-                                        ...newBooking,
-                                        services: updated,
-                                        totalAmount: totals.netTotal
-                                      });
-                                    }}
-                                    className="text-rose-500 hover:text-rose-700 cursor-pointer p-0.5"
-                                    title={isProduct ? "حذف المنتج" : "حذف الخدمة"}
-                                  >
-                                    <X size={14} />
-                                  </button>
-                                </div>
-                              </div>
+                        {/* 2. EMPLOYEE SELECTOR */}
+                        <div className="sm:col-span-4">
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center justify-between">
+                            <span>الموظف المنفذ</span>
+                            <span className="text-[10px] text-slate-400 font-normal">اختياري</span>
+                          </label>
+                          <select
+                            value={techToAdd}
+                            onChange={e => setTechToAdd(e.target.value)}
+                            className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-indigo-600 shadow-xs"
+                          >
+                            <option value="">(غير محدد)</option>
+                            {employees.filter(e => isBarberEmployee(e)).map(e => (
+                              <option key={e.id} value={e.id}>{e.name} ({e.role})</option>
+                            ))}
+                          </select>
+                        </div>
 
-                              {/* خصم سطر الخدمة أو المنتج */}
-                              <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-slate-200/60 bg-white/70 px-2 py-1 rounded-lg">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-[11px] font-bold text-slate-600">خصم السطر:</span>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    step="0.5"
-                                    disabled={hasTotalDiscount}
-                                    value={s.discountValue ?? ''}
-                                    onChange={e => {
-                                      const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
-                                      const updated = (newBooking.services || []).map(sx => sx.id === s.id ? { ...sx, discountValue: val } : sx);
-                                      const totals = calculateBookingTotals({ ...newBooking, services: updated, discountValue: 0 });
-                                      setNewBooking({ ...newBooking, services: updated, discountValue: 0, totalAmount: totals.netTotal });
-                                    }}
-                                    placeholder="0"
-                                    title={hasTotalDiscount ? "معطل: تم تطبيق خصم عام على إجمالي الحجز (لا يجوز الجمع بين خصمين)" : undefined}
-                                    className={`w-14 border rounded px-1.5 py-0.5 text-xs text-center font-mono font-bold outline-none ${
-                                      hasTotalDiscount
-                                        ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
-                                        : 'bg-white border-slate-300 focus:border-indigo-600'
-                                    }`}
-                                  />
-                                  <button
-                                    type="button"
-                                    disabled={hasTotalDiscount}
-                                    onClick={() => {
-                                      const nextType = s.discountType === 'percentage' ? 'fixed' : 'percentage';
-                                      const updated = (newBooking.services || []).map(sx => sx.id === s.id ? { ...sx, discountType: nextType } : sx);
-                                      const totals = calculateBookingTotals({ ...newBooking, services: updated, discountValue: 0 });
-                                      setNewBooking({ ...newBooking, services: updated, discountValue: 0, totalAmount: totals.netTotal });
-                                    }}
-                                    className={`px-1.5 py-0.5 text-[10px] font-bold rounded border ${
-                                      hasTotalDiscount
-                                        ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-60'
-                                        : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700 cursor-pointer'
-                                    }`}
-                                    title={hasTotalDiscount ? "معطل: تم تطبيق خصم عام على إجمالي الحجز" : "تبديل الخصم: نسبة مئوية أو مبلغ ثابت"}
-                                  >
-                                    {s.discountType === 'percentage' ? '%' : settings.currency}
-                                  </button>
-                                </div>
-                                <div className="text-[11px] font-bold text-slate-700">
-                                  الصافي: <span className="font-mono text-emerald-700 font-black">{lineFinal.toFixed(2)} {settings.currency}</span>
-                                  {lineDisc > 0 && (
-                                    <span className="text-[10px] text-rose-500 mr-1 font-mono">(-{lineDisc.toFixed(2)})</span>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                        {(!newBooking.services || newBooking.services.length === 0) && (
-                          <div className="text-center text-xs text-slate-400 py-3 bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
-                            لم يتم إضافة أي خدمات أو منتجات بعد
-                          </div>
-                        )}
+                        {/* 3. QUANTITY INPUT (كتابة مباشرة ورقم افتراضي 1) */}
+                        <div className="sm:col-span-2">
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1 text-center">
+                            الكمية
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={serviceQtyToAdd}
+                            onChange={e => setServiceQtyToAdd(e.target.value)}
+                            onBlur={() => {
+                              const parsed = parseInt(serviceQtyToAdd, 10);
+                              if (isNaN(parsed) || parsed < 1) {
+                                setServiceQtyToAdd('1');
+                              }
+                            }}
+                            className="w-full bg-white border border-slate-300 rounded-xl px-2 py-2 text-xs font-black text-center outline-none focus:border-indigo-600 shadow-xs font-mono"
+                            placeholder="1"
+                            title="الكمية المطلوبة (قابلة للكتابة المباشرة)"
+                          />
+                        </div>
                       </div>
 
-                      {/* خصم إضافي على إجمالي الحجز (نسبة أو مبلغ) */}
-                      {(newBooking.services || []).length > 0 && (
-                        hasServiceDiscounts ? (
-                          <div className="bg-amber-50/80 p-2.5 rounded-xl border border-amber-200 space-y-1.5 text-xs">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <div className="font-bold text-amber-900 flex items-center gap-1.5">
+                      {/* Add Service Button */}
+                      <button
+                        type="button"
+                        onClick={addServiceToBooking}
+                        disabled={!serviceToAdd}
+                        className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white py-2 rounded-xl text-xs font-black cursor-pointer shadow-sm transition-all flex items-center justify-center gap-1.5"
+                      >
+                        <span>+ إضافة الخدمة إلى جدول الموعد {parseInt(serviceQtyToAdd, 10) > 1 ? `(الكمية: ${serviceQtyToAdd})` : ''}</span>
+                      </button>
+                    </div>
+                  ) : (
+                    /* ============ FORM: ADD PRODUCT ============ */
+                    <div className="space-y-2.5 bg-amber-50/50 p-3 rounded-2xl border border-amber-200/80">
+                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
+                        {/* Product Autocomplete */}
+                        <div className="relative sm:col-span-6">
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                            المنتج (ابحث بالاسم أو الباركود أو السعر) *
+                          </label>
+                          <div className="relative">
+                            <input
+                              type="text"
+                              value={productSearchQuery}
+                              onChange={e => {
+                                setProductSearchQuery(e.target.value);
+                                setIsProductDropdownOpen(true);
+                                const exactMatch = retailProducts.find(p => p.name.toLowerCase() === e.target.value.toLowerCase().trim() || p.barcode === e.target.value.trim());
+                                if (exactMatch) {
+                                  setProductToAdd(exactMatch.id);
+                                } else {
+                                  setProductToAdd('');
+                                }
+                              }}
+                              onFocus={() => setIsProductDropdownOpen(true)}
+                              placeholder="🔍 اكتب اسم المنتج أو الباركود..."
+                              className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none text-slate-900 shadow-xs"
+                            />
+                            {productSearchQuery && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setProductSearchQuery('');
+                                  setProductToAdd('');
+                                  setIsProductDropdownOpen(true);
+                                }}
+                                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-md text-xs cursor-pointer"
+                              >
+                                ✕
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Dropdown Menu for Product Autocomplete */}
+                          {isProductDropdownOpen && (
+                            <>
+                              <div 
+                                className="fixed inset-0 z-40" 
+                                onClick={() => setIsProductDropdownOpen(false)}
+                              />
+                              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 max-h-48 overflow-y-auto p-1.5 space-y-1 text-right">
+                                {filteredProductsForBooking.length > 0 ? (
+                                  filteredProductsForBooking.map(p => {
+                                    const isSelected = productToAdd === p.id;
+                                    return (
+                                      <button
+                                        key={p.id}
+                                        type="button"
+                                        onClick={() => {
+                                          setProductToAdd(p.id);
+                                          setProductSearchQuery(p.name);
+                                          setIsProductDropdownOpen(false);
+                                        }}
+                                        className={`w-full text-right px-3 py-2 rounded-xl text-xs flex items-center justify-between transition-all cursor-pointer ${
+                                          isSelected 
+                                            ? 'bg-amber-100 text-amber-900 font-black border border-amber-300' 
+                                            : 'hover:bg-slate-100 text-slate-800'
+                                        }`}
+                                      >
+                                        <div className="flex flex-col">
+                                          <span className="font-bold flex items-center gap-1.5">
+                                            <ShoppingBag size={12} className="text-amber-600" />
+                                            <span>{p.name}</span>
+                                          </span>
+                                          {p.barcode && (
+                                            <span className="text-[10px] text-slate-400 font-mono">باركود: {p.barcode}</span>
+                                          )}
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          <span className="bg-emerald-50 text-emerald-700 font-mono font-black px-2 py-0.5 rounded-lg text-[11px] border border-emerald-200">
+                                            {p.sellPrice} {settings.currency}
+                                          </span>
+                                          {p.stock !== undefined && (
+                                            <span className="bg-slate-100 text-slate-600 text-[10px] px-1.5 py-0.5 rounded-md font-medium">
+                                              المخزون: {p.stock}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </button>
+                                    );
+                                  })
+                                ) : (
+                                  <div className="p-3 text-center text-xs text-slate-400">
+                                    {retailProducts.length === 0 ? 'لا توجد منتجات متاحة للبيع' : `لا توجد منتجات مطابقة لـ "${productSearchQuery}"`}
+                                  </div>
+                                )}
+                              </div>
+                            </>
+                          )}
+                        </div>
+
+                        {/* Employee / Seller Selector */}
+                        <div className="sm:col-span-4">
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center justify-between">
+                            <span>موظف البيع</span>
+                            <span className="text-[10px] text-slate-400 font-normal">اختياري</span>
+                          </label>
+                          <select
+                            value={techToAdd}
+                            onChange={e => setTechToAdd(e.target.value)}
+                            className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-indigo-600 shadow-xs"
+                          >
+                            <option value="">(غير محدد)</option>
+                            {employees.map(e => (
+                              <option key={e.id} value={e.id}>{e.name} ({e.role})</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Quantity Input (كتابة مباشرة) */}
+                        <div className="sm:col-span-2">
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1 text-center">
+                            الكمية
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={serviceQtyToAdd}
+                            onChange={e => setServiceQtyToAdd(e.target.value)}
+                            onBlur={() => {
+                              const parsed = parseInt(serviceQtyToAdd, 10);
+                              if (isNaN(parsed) || parsed < 1) {
+                                setServiceQtyToAdd('1');
+                              }
+                            }}
+                            className="w-full bg-white border border-slate-300 rounded-xl px-2 py-2 text-xs font-black text-center outline-none focus:border-indigo-600 shadow-xs font-mono"
+                            placeholder="1"
+                            title="الكمية المطلوبة (قابلة للكتابة المباشرة)"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Add Product Button */}
+                      <button
+                        type="button"
+                        onClick={addProductToBooking}
+                        disabled={!productToAdd}
+                        className="w-full bg-amber-600 hover:bg-amber-700 disabled:opacity-40 text-white py-2 rounded-xl text-xs font-black cursor-pointer shadow-sm transition-all flex items-center justify-center gap-1.5"
+                      >
+                        <ShoppingBag size={14} />
+                        <span>+ إضافة المنتج إلى الحجز {parseInt(serviceQtyToAdd, 10) > 1 ? `(الكمية: ${serviceQtyToAdd})` : ''}</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {(() => {
+                    const hasServiceDiscounts = (newBooking.services || []).some(s => Number(s.discountValue || 0) > 0);
+                    const hasTotalDiscount = Number(newBooking.discountValue || 0) > 0;
+
+                    return (
+                      <>
+                        {hasTotalDiscount && (
+                          <div className="bg-amber-50/90 border border-amber-200 rounded-xl p-2 px-3 text-[11px] text-amber-800 flex items-center justify-between">
+                            <div className="flex items-center gap-1.5 font-bold">
+                              <span>⚠️</span>
+                              <span>خصومات بنود الخدمات والمنتجات معطلة لتفعيل الخصم على إجمالي الحجز (لا يجوز الجمع بين خصمين).</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const totals = calculateBookingTotals({ ...newBooking, discountValue: 0 });
+                                setNewBooking({ ...newBooking, discountValue: 0, totalAmount: totals.netTotal });
+                              }}
+                              className="font-bold underline text-amber-900 hover:text-amber-950 cursor-pointer text-[10px] whitespace-nowrap mr-2"
+                            >
+                              مسح خصم الإجمالي
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Services & Products List with Discount per line */}
+                        <div className="space-y-2 max-h-64 sm:max-h-72 overflow-y-auto pr-0.5">
+                          {newBooking.services?.map(s => {
+                            const isProduct = s.type === 'product';
+                            const qty = Math.max(1, Number(s.quantity) || 1);
+                            const lineDisc = calculateServiceLineDiscount(s);
+                            const lineFinal = calculateServiceLinePrice(s);
+                            const lineGross = Number(s.price || 0) * qty;
+                            return (
+                              <div key={s.id} className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/80 text-xs space-y-1.5">
+                                <div className="flex flex-wrap justify-between items-start gap-2">
+                                  <div>
+                                    <div className="font-bold text-slate-900 flex flex-wrap items-center gap-1.5">
+                                      {isProduct ? (
+                                        <span className="text-[10px] bg-amber-100 text-amber-800 font-bold px-1.5 py-0.5 rounded-md flex items-center gap-1">
+                                          <ShoppingBag size={10} />
+                                          <span>منتج</span>
+                                        </span>
+                                      ) : (
+                                        <span className="text-[10px] bg-indigo-50 text-indigo-700 font-bold px-1.5 py-0.5 rounded-md">
+                                          خدمة
+                                        </span>
+                                      )}
+                                      <span>{s.serviceName}</span>
+                                      {qty > 1 && (
+                                        <span className="text-[10px] bg-indigo-100 text-indigo-800 font-bold px-1.5 py-0.2 rounded-md">
+                                          ×{qty}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="text-[10px] text-slate-500">
+                                      {isProduct ? 'البائع:' : 'الفني:'} {s.technicianName}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-2 mr-auto">
+                                    {/* تعديل الكمية مباشرة بالكتابة */}
+                                    <div className="flex items-center gap-1 bg-white px-2 py-0.5 rounded-lg border border-slate-200 shadow-2xs" title="تعديل الكمية مباشرة بالكتابة">
+                                      <span className="text-[10px] text-slate-500 font-bold">الكمية:</span>
+                                      <input
+                                        type="number"
+                                        min="1"
+                                        step="1"
+                                        value={s.quantity ?? 1}
+                                        onChange={e => {
+                                          const parsed = parseInt(e.target.value, 10);
+                                          const qVal = isNaN(parsed) ? 1 : Math.max(1, parsed);
+                                          const updated = (newBooking.services || []).map(sx => sx.id === s.id ? { ...sx, quantity: qVal } : sx);
+                                          const totals = calculateBookingTotals({ ...newBooking, services: updated });
+                                          setNewBooking({ ...newBooking, services: updated, totalAmount: totals.netTotal });
+                                        }}
+                                        className="w-12 border border-slate-200 rounded px-1 text-center font-mono font-bold text-xs outline-none focus:border-indigo-600"
+                                      />
+                                    </div>
+                                    <span className="font-mono font-bold text-slate-700">
+                                      {lineGross.toFixed(2)} {settings.currency}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const updated = newBooking.services?.filter(sx => sx.id !== s.id) || [];
+                                        const totals = calculateBookingTotals({ ...newBooking, services: updated });
+                                        setNewBooking({
+                                          ...newBooking,
+                                          services: updated,
+                                          totalAmount: totals.netTotal
+                                        });
+                                      }}
+                                      className="text-rose-500 hover:text-rose-700 cursor-pointer p-0.5"
+                                      title={isProduct ? "حذف المنتج" : "حذف الخدمة"}
+                                    >
+                                      <X size={14} />
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {/* خصم سطر الخدمة أو المنتج */}
+                                <div className="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-slate-200/60 bg-white/70 px-2 py-1 rounded-lg">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[11px] font-bold text-slate-600">خصم السطر:</span>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="0.5"
+                                      disabled={hasTotalDiscount}
+                                      value={s.discountValue ?? ''}
+                                      onChange={e => {
+                                        const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
+                                        const updated = (newBooking.services || []).map(sx => sx.id === s.id ? { ...sx, discountValue: val } : sx);
+                                        const totals = calculateBookingTotals({ ...newBooking, services: updated, discountValue: 0 });
+                                        setNewBooking({ ...newBooking, services: updated, discountValue: 0, totalAmount: totals.netTotal });
+                                      }}
+                                      placeholder="0"
+                                      title={hasTotalDiscount ? "معطل: تم تطبيق خصم عام على إجمالي الحجز (لا يجوز الجمع بين خصمين)" : undefined}
+                                      className={`w-14 border rounded px-1.5 py-0.5 text-xs text-center font-mono font-bold outline-none ${
+                                        hasTotalDiscount
+                                          ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
+                                          : 'bg-white border-slate-300 focus:border-indigo-600'
+                                      }`}
+                                    />
+                                    <button
+                                      type="button"
+                                      disabled={hasTotalDiscount}
+                                      onClick={() => {
+                                        const nextType = s.discountType === 'percentage' ? 'fixed' : 'percentage';
+                                        const updated = (newBooking.services || []).map(sx => sx.id === s.id ? { ...sx, discountType: nextType } : sx);
+                                        const totals = calculateBookingTotals({ ...newBooking, services: updated, discountValue: 0 });
+                                        setNewBooking({ ...newBooking, services: updated, discountValue: 0, totalAmount: totals.netTotal });
+                                      }}
+                                      className={`px-1.5 py-0.5 text-[10px] font-bold rounded border ${
+                                        hasTotalDiscount
+                                          ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-60'
+                                          : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700 cursor-pointer'
+                                      }`}
+                                      title={hasTotalDiscount ? "معطل: تم تطبيق خصم عام على إجمالي الحجز" : "تبديل الخصم: نسبة مئوية أو مبلغ ثابت"}
+                                    >
+                                      {s.discountType === 'percentage' ? '%' : settings.currency}
+                                    </button>
+                                  </div>
+                                  <div className="text-[11px] font-bold text-slate-700">
+                                    الصافي: <span className="font-mono text-emerald-700 font-black">{lineFinal.toFixed(2)} {settings.currency}</span>
+                                    {lineDisc > 0 && (
+                                      <span className="text-[10px] text-rose-500 mr-1 font-mono">(-{lineDisc.toFixed(2)})</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                          {(!newBooking.services || newBooking.services.length === 0) && (
+                            <div className="text-center text-xs text-slate-400 py-4 bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
+                              لم يتم إضافة أي خدمات أو منتجات بعد
+                            </div>
+                          )}
+                        </div>
+
+                        {/* خصم إضافي على إجمالي الحجز (نسبة أو مبلغ) */}
+                        {(newBooking.services || []).length > 0 && (
+                          hasServiceDiscounts ? (
+                            <div className="bg-amber-50/80 p-2.5 rounded-xl border border-amber-200 space-y-1.5 text-xs">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="font-bold text-amber-900 flex items-center gap-1.5">
+                                  <span>🏷️</span>
+                                  <span>خصم إجمالي الحجز (مبلغ أو نسبة):</span>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <input
+                                    type="number"
+                                    disabled={true}
+                                    value=""
+                                    placeholder="معطل"
+                                    className="w-16 bg-slate-100 border border-slate-200 text-slate-400 rounded-lg px-2 py-1 text-xs text-center font-mono font-bold cursor-not-allowed outline-none"
+                                  />
+                                  <span className="px-2 py-1 text-[11px] font-bold rounded-lg bg-slate-100 border border-slate-200 text-slate-400 cursor-not-allowed">
+                                    {newBooking.discountType === 'percentage' ? '%' : settings.currency}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="text-[11px] text-amber-800 flex items-center justify-between pt-1 border-t border-amber-200/60 font-bold">
+                                <span className="flex items-center gap-1">
+                                  <span>⚠️</span>
+                                  <span>لا يمكن تطبيق خصم إجمالي لوجود خصم على مستوى الخدمات أو المنتجات (لا يجوز الجمع بين خصمين).</span>
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const clearedServices = (newBooking.services || []).map(sx => ({ ...sx, discountValue: 0 }));
+                                    const totals = calculateBookingTotals({ ...newBooking, services: clearedServices });
+                                    setNewBooking({ ...newBooking, services: clearedServices, totalAmount: totals.netTotal });
+                                  }}
+                                  className="font-bold underline text-amber-900 hover:text-amber-950 cursor-pointer text-[10px] whitespace-nowrap mr-2"
+                                >
+                                  مسح خصومات البنود
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="bg-indigo-50/50 p-2.5 rounded-xl border border-indigo-100 flex flex-wrap items-center justify-between gap-2 text-xs">
+                              <div className="font-bold text-indigo-950 flex items-center gap-1.5">
                                 <span>🏷️</span>
-                                <span>خصم إجمالي الحجز (مبلغ أو نسبة):</span>
+                                <span>خصم على إجمالي الحجز (مبلغ أو نسبة):</span>
                               </div>
                               <div className="flex items-center gap-1.5">
                                 <input
                                   type="number"
-                                  disabled={true}
-                                  value=""
-                                  placeholder="معطل"
-                                  className="w-16 bg-slate-100 border border-slate-200 text-slate-400 rounded-lg px-2 py-1 text-xs text-center font-mono font-bold cursor-not-allowed outline-none"
+                                  min="0"
+                                  step="0.5"
+                                  value={newBooking.discountValue ?? ''}
+                                  onChange={e => {
+                                    const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
+                                    const clearedServices = (newBooking.services || []).map(sx => ({ ...sx, discountValue: 0 }));
+                                    const totals = calculateBookingTotals({ ...newBooking, services: clearedServices, discountValue: val });
+                                    setNewBooking({ ...newBooking, services: clearedServices, discountValue: val, totalAmount: totals.netTotal });
+                                  }}
+                                  placeholder="0"
+                                  className="w-16 bg-white border border-indigo-200 rounded-lg px-2 py-1 text-xs text-center font-mono font-bold focus:border-indigo-600 outline-none"
                                 />
-                                <span className="px-2 py-1 text-[11px] font-bold rounded-lg bg-slate-100 border border-slate-200 text-slate-400 cursor-not-allowed">
-                                  {newBooking.discountType === 'percentage' ? '%' : settings.currency}
-                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const nextType = newBooking.discountType === 'percentage' ? 'fixed' : 'percentage';
+                                    const totals = calculateBookingTotals({ ...newBooking, discountType: nextType });
+                                    setNewBooking({ ...newBooking, discountType: nextType, totalAmount: totals.netTotal });
+                                  }}
+                                  className="px-2 py-1 text-[11px] font-bold rounded-lg bg-indigo-100 border border-indigo-200 text-indigo-800 hover:bg-indigo-200 cursor-pointer transition-colors"
+                                  title="تبديل نوع الخصم: نسبة مئوية أو مبلغ ثابت"
+                                >
+                                  {newBooking.discountType === 'percentage' ? 'نسبة مئوية (%)' : `مبلغ ثابت (${settings.currency})`}
+                                </button>
                               </div>
                             </div>
-                            <div className="text-[11px] text-amber-800 flex items-center justify-between pt-1 border-t border-amber-200/60 font-bold">
-                              <span className="flex items-center gap-1">
-                                <span>⚠️</span>
-                                <span>لا يمكن تطبيق خصم إجمالي لوجود خصم على مستوى الخدمات أو المنتجات (لا يجوز الجمع بين خصمين).</span>
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const clearedServices = (newBooking.services || []).map(sx => ({ ...sx, discountValue: 0 }));
-                                  const totals = calculateBookingTotals({ ...newBooking, services: clearedServices });
-                                  setNewBooking({ ...newBooking, services: clearedServices, totalAmount: totals.netTotal });
-                                }}
-                                className="font-bold underline text-amber-900 hover:text-amber-950 cursor-pointer text-[10px] whitespace-nowrap mr-2"
-                              >
-                                مسح خصومات البنود
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="bg-indigo-50/50 p-2.5 rounded-xl border border-indigo-100 flex flex-wrap items-center justify-between gap-2 text-xs">
-                            <div className="font-bold text-indigo-950 flex items-center gap-1.5">
-                              <span>🏷️</span>
-                              <span>خصم على إجمالي الحجز (مبلغ أو نسبة):</span>
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                              <input
-                                type="number"
-                                min="0"
-                                step="0.5"
-                                value={newBooking.discountValue ?? ''}
-                                onChange={e => {
-                                  const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
-                                  const clearedServices = (newBooking.services || []).map(sx => ({ ...sx, discountValue: 0 }));
-                                  const totals = calculateBookingTotals({ ...newBooking, services: clearedServices, discountValue: val });
-                                  setNewBooking({ ...newBooking, services: clearedServices, discountValue: val, totalAmount: totals.netTotal });
-                                }}
-                                placeholder="0"
-                                className="w-16 bg-white border border-indigo-200 rounded-lg px-2 py-1 text-xs text-center font-mono font-bold focus:border-indigo-600 outline-none"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const nextType = newBooking.discountType === 'percentage' ? 'fixed' : 'percentage';
-                                  const totals = calculateBookingTotals({ ...newBooking, discountType: nextType });
-                                  setNewBooking({ ...newBooking, discountType: nextType, totalAmount: totals.netTotal });
-                                }}
-                                className="px-2 py-1 text-[11px] font-bold rounded-lg bg-indigo-100 border border-indigo-200 text-indigo-800 hover:bg-indigo-200 cursor-pointer transition-colors"
-                                title="تبديل نوع الخصم: نسبة مئوية أو مبلغ ثابت"
-                              >
-                                {newBooking.discountType === 'percentage' ? 'نسبة مئوية (%)' : `مبلغ ثابت (${settings.currency})`}
-                              </button>
-                            </div>
-                          </div>
-                        )
-                      )}
-                    </>
-                  );
-                })()}
+                          )
+                        )}
+                      </>
+                    );
+                  })()}
+                </div>
 
-                {/* 5. ADVANCE PAYMENTS SECTION (العربون والدفعات المقدمة) */}
-                <div className="bg-emerald-50/50 p-3.5 rounded-2xl border border-emerald-200 space-y-3">
-                  <div className="flex justify-between items-center">
-                    <label className="text-xs font-black text-emerald-950 flex items-center gap-1.5">
-                      <Banknote size={16} className="text-emerald-700" />
-                      <span>العربون والدفعات المقدمة (سداد مسبق)</span>
-                    </label>
-                    <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-md">
-                      اختياري
-                    </span>
-                  </div>
-
-                  {/* Form inputs for new advance */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1">المبلغ المدفوع * 💰</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="1"
-                        value={advAmountInput}
-                        onChange={e => setAdvAmountInput(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                        placeholder="أدخل مبلغ العربون..."
-                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-mono font-bold focus:border-emerald-600 outline-none"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
-                        <CreditCard size={14} className="text-emerald-600" />
-                        <span>طريقة الدفع *</span>
+                {/* LEFT COLUMN (5 of 12 on desktop): Advance Payments & Financial Summary */}
+                <div className="lg:col-span-5 space-y-3">
+                  {/* ADVANCE PAYMENTS SECTION (العربون والدفعات المقدمة) */}
+                  <div className="bg-emerald-50/50 p-3.5 rounded-2xl border border-emerald-200 shadow-xs space-y-3">
+                    <div className="flex justify-between items-center">
+                      <label className="text-xs font-black text-emerald-950 flex items-center gap-1.5">
+                        <Banknote size={16} className="text-emerald-700" />
+                        <span>العربون والدفعات المقدمة (سداد مسبق)</span>
                       </label>
-                      <select
-                        value={advTreasuryInput || availableTreasuries[0]?.id || 'cash'}
-                        onChange={e => setAdvTreasuryInput(e.target.value)}
-                        className="w-full bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs font-bold focus:border-emerald-600 outline-none"
-                      >
-                        {availableTreasuries.map(t => (
-                          <option key={t.id} value={t.id}>{t.name}</option>
+                      <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-md">
+                        اختياري
+                      </span>
+                    </div>
+
+                    {/* Form inputs for new advance */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">المبلغ المدفوع * 💰</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="1"
+                          value={advAmountInput}
+                          onChange={e => setAdvAmountInput(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                          placeholder="أدخل مبلغ العربون..."
+                          className="w-full bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-mono font-bold focus:border-emerald-600 outline-none shadow-xs"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                          <CreditCard size={13} className="text-emerald-600" />
+                          <span>طريقة الدفع *</span>
+                        </label>
+                        <select
+                          value={advTreasuryInput || availableTreasuries[0]?.id || 'cash'}
+                          onChange={e => setAdvTreasuryInput(e.target.value)}
+                          className="w-full bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs font-bold focus:border-emerald-600 outline-none shadow-xs"
+                        >
+                          {availableTreasuries.map(t => (
+                            <option key={t.id} value={t.id}>{t.name}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">تاريخ السداد * 📅</label>
+                        <input
+                          type="date"
+                          value={advDateInput}
+                          onChange={e => setAdvDateInput(e.target.value)}
+                          className="w-full bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-mono font-bold focus:border-emerald-600 outline-none shadow-xs"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">ملاحظات على الدفعة</label>
+                        <input
+                          type="text"
+                          value={advNotesInput}
+                          onChange={e => setAdvNotesInput(e.target.value)}
+                          placeholder="مثلاً: تحويل بنكي..."
+                          className="w-full bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs focus:border-emerald-600 outline-none shadow-xs"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleAddAdvanceInModal}
+                      disabled={!advAmountInput || Number(advAmountInput) <= 0}
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white py-2 rounded-xl text-xs font-black cursor-pointer shadow-xs transition-all flex items-center justify-center gap-1.5"
+                    >
+                      <Plus size={14} />
+                      <span>+ إضافة الدفعة المقدمة إلى الحجز</span>
+                    </button>
+
+                    {/* Advances List */}
+                    {(newBooking.advancePayments || []).length > 0 && (
+                      <div className="space-y-1.5 max-h-40 overflow-y-auto pt-1">
+                        {newBooking.advancePayments?.map(adv => (
+                          <div key={adv.id} className="flex justify-between items-center bg-white p-2 rounded-xl border border-emerald-100 text-xs shadow-2xs">
+                            <div>
+                              <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                                <span className="font-mono text-emerald-700 font-black">{Number(adv.amount || 0).toFixed(2)} {settings.currency}</span>
+                                <span className="text-[10px] bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.2 rounded font-bold flex items-center gap-1">
+                                  <CreditCard size={11} />
+                                  <span>{adv.treasuryName || 'طريقة الدفع'}</span>
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-slate-500 font-mono">
+                                تاريخ: {adv.date} {adv.notes ? `• ${adv.notes}` : ''}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveAdvanceInModal(adv.id)}
+                              className="text-rose-500 hover:text-rose-700 cursor-pointer p-1"
+                              title="حذف هذه الدفعة"
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
                         ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1">تاريخ السداد * 📅</label>
-                      <input
-                        type="date"
-                        value={advDateInput}
-                        onChange={e => setAdvDateInput(e.target.value)}
-                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-mono font-bold focus:border-emerald-600 outline-none"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1">ملاحظات على الدفعة</label>
-                      <input
-                        type="text"
-                        value={advNotesInput}
-                        onChange={e => setAdvNotesInput(e.target.value)}
-                        placeholder="مثلاً: دفعة تحويل بنكي على حساب الراجحي..."
-                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs focus:border-emerald-600 outline-none"
-                      />
-                    </div>
+                      </div>
+                    )}
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={handleAddAdvanceInModal}
-                    disabled={!advAmountInput || Number(advAmountInput) <= 0}
-                    className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white py-1.5 rounded-xl text-xs font-black cursor-pointer shadow-xs transition-all flex items-center justify-center gap-1.5"
-                  >
-                    <Plus size={14} />
-                    <span>+ إضافة الدفعة المقدمة إلى الحجز</span>
-                  </button>
-
-                  {/* Advances List */}
-                  {(newBooking.advancePayments || []).length > 0 && (
-                    <div className="space-y-1.5 max-h-36 overflow-y-auto pt-1">
-                      {newBooking.advancePayments?.map(adv => (
-                        <div key={adv.id} className="flex justify-between items-center bg-white p-2 rounded-xl border border-emerald-100 text-xs shadow-2xs">
-                          <div>
-                            <div className="font-bold text-slate-900 flex items-center gap-1.5">
-                              <span className="font-mono text-emerald-700 font-black">{Number(adv.amount || 0).toFixed(2)} {settings.currency}</span>
-                              <span className="text-[10px] bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.2 rounded font-bold flex items-center gap-1">
-                                <CreditCard size={11} />
-                                <span>{adv.treasuryName || 'طريقة الدفع'}</span>
-                              </span>
-                            </div>
-                            <div className="text-[10px] text-slate-500 font-mono">
-                              تاريخ: {adv.date} {adv.notes ? `• ${adv.notes}` : ''}
-                            </div>
+                  {/* Financial Balance Summary Card */}
+                  {(() => {
+                    const totals = calculateBookingTotals(newBooking);
+                    return (
+                      <div className="bg-slate-50 p-3 sm:p-3.5 rounded-2xl border border-slate-200 text-xs space-y-2">
+                        <h4 className="font-black text-slate-800 flex items-center gap-1.5">
+                          <span>📊</span>
+                          <span>ملخص المبالغ المالية للموعد:</span>
+                        </h4>
+                        <div className="space-y-1.5 text-slate-600 font-medium">
+                          <div className="flex justify-between items-center">
+                            <span>إجمالي البنود:</span>
+                            <span className="font-mono font-bold text-slate-900">{totals.grossServices.toFixed(2)} {settings.currency}</span>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveAdvanceInModal(adv.id)}
-                            className="text-rose-500 hover:text-rose-700 cursor-pointer p-1"
-                            title="حذف هذه الدفعة"
-                          >
-                            <X size={14} />
-                          </button>
+                          {totals.totalDiscounts > 0 && (
+                            <div className="flex justify-between items-center text-rose-600 font-bold">
+                              <span>إجمالي الخصومات:</span>
+                              <span className="font-mono">-{totals.totalDiscounts.toFixed(2)} {settings.currency}</span>
+                            </div>
+                          )}
+                          <div className="flex justify-between items-center pt-1 border-t border-slate-200/80 font-black text-indigo-950">
+                            <span>المبلغ الصافي:</span>
+                            <span className="font-mono text-sm text-indigo-600">{totals.netTotal.toFixed(2)} {settings.currency}</span>
+                          </div>
+                          {totals.advances > 0 && (
+                            <div className="flex justify-between items-center text-emerald-700 font-bold">
+                              <span>العربون المسدد مسبقاً:</span>
+                              <span className="font-mono">-{totals.advances.toFixed(2)} {settings.currency}</span>
+                            </div>
+                          )}
+                          <div className="flex justify-between items-center pt-1 border-t border-slate-200/80 font-black text-slate-900 bg-white p-2 rounded-xl border border-indigo-100">
+                            <span>المتبقي للتحصيل عند الحضور:</span>
+                            <span className="font-mono text-sm text-emerald-600">{totals.remaining.toFixed(2)} {settings.currency}</span>
+                          </div>
                         </div>
-                      ))}
-                    </div>
-                  )}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
 
-            <div className="p-4 border-t border-slate-100 bg-slate-50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+            <div className="p-3 sm:p-4.5 border-t border-slate-100 bg-slate-50/95 flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 shrink-0">
               {(() => {
                 const totals = calculateBookingTotals(newBooking);
                 return (
-                  <div className="space-y-0.5">
-                    <div className="text-xs font-bold text-slate-600 flex flex-wrap items-center gap-2">
+                  <div className="space-y-1">
+                    <div className="text-xs font-bold text-slate-600 flex flex-wrap items-center gap-1.5 sm:gap-2">
                       <span>إجمالي الخدمات: <span className="font-mono text-slate-900 font-bold">{totals.grossServices.toFixed(2)} {settings.currency}</span></span>
                       {totals.totalDiscounts > 0 && (
                         <span className="text-rose-600 font-mono font-bold text-[11px]">
                           (إجمالي الخصم: -{totals.totalDiscounts.toFixed(2)})
                         </span>
                       )}
-                      <span className="text-slate-300">|</span>
+                      <span className="hidden sm:inline text-slate-300">|</span>
                       <span className="text-indigo-900 font-black">
-                        الصافي: <span className="font-mono text-sm">{totals.netTotal.toFixed(2)} {settings.currency}</span>
+                        الصافي: <span className="font-mono text-sm text-indigo-700">{totals.netTotal.toFixed(2)} {settings.currency}</span>
                       </span>
                     </div>
                     {((newBooking.advancePayments || []).length > 0) && (
-                      <div className="text-xs font-bold text-emerald-700 flex items-center gap-2">
+                      <div className="text-xs font-bold text-emerald-700 flex flex-wrap items-center gap-1.5 sm:gap-2">
                         <span>العربون: -{totals.advances.toFixed(2)} {settings.currency}</span>
-                        <span className="text-slate-400">|</span>
+                        <span className="hidden sm:inline text-slate-300">|</span>
                         <span className="text-indigo-700 font-black">
-                          المتبقي: {totals.remaining.toFixed(2)} {settings.currency}
+                          المتبقي للدفع: {totals.remaining.toFixed(2)} {settings.currency}
                         </span>
                       </div>
                     )}
@@ -3298,7 +3357,7 @@ export function BookingsScreen({
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="flex-1 sm:flex-initial px-4 py-2 text-xs font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-100 rounded-xl cursor-pointer"
+                  className="flex-1 sm:flex-initial px-4 py-2 text-xs font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-100 rounded-xl cursor-pointer transition-colors"
                 >
                   إلغاء
                 </button>
@@ -3314,7 +3373,7 @@ export function BookingsScreen({
                 <button
                   type="button"
                   onClick={saveBooking}
-                  className="flex-1 sm:flex-initial px-5 py-2 text-xs font-black text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-sm cursor-pointer"
+                  className="flex-1 sm:flex-initial px-5 py-2 text-xs font-black text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-sm cursor-pointer transition-all active:scale-98"
                 >
                   حفظ وتأكيد الحجز
                 </button>
