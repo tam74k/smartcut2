@@ -172,10 +172,25 @@ export function QueueCallingScreen({
     let advancePayments: any[] | undefined = undefined;
 
     // إذا كانت التذكرة مقترنة بحجز مسبق، نجلب خدمات الحجز والعربون إن وجد
+    let bookingDiscount: { type: 'percentage' | 'fixed'; value: number } = { type: 'fixed', value: 0 };
     if (ticket.bookingId) {
       const b = bookings.find(item => item.id === ticket.bookingId);
       if (b) {
-        if (b.advancePayment && b.advancePayment > 0) {
+        const rawAdv = b.advancePayments || (b as any).advance_payments;
+        let safeAdvances: AdvancePayment[] = [];
+        if (Array.isArray(rawAdv)) {
+          safeAdvances = rawAdv;
+        } else if (typeof rawAdv === 'string') {
+          try {
+            const parsed = JSON.parse(rawAdv);
+            if (Array.isArray(parsed)) safeAdvances = parsed;
+          } catch {}
+        }
+
+        if (safeAdvances.length > 0) {
+          advancePayments = safeAdvances;
+          advanceDeduction = safeAdvances.reduce((sum, a) => sum + (Number(a.amount) || 0), 0);
+        } else if (b.advancePayment && b.advancePayment > 0) {
           advanceDeduction = b.advancePayment;
           advancePayments = [{
             id: 'ADV-' + b.id,
@@ -183,6 +198,30 @@ export function QueueCallingScreen({
             date: b.date,
             treasuryId: 'cash'
           }];
+        }
+
+        // احتساب الخصم المنقول من الحجز (إجمالي أو مجموع خصومات الخدمات - عدم الجمع بين خصمين)
+        const hasBookingGeneralDiscount = Number(b.discountValue || 0) > 0;
+        const totalServiceDiscounts = (b.services || []).reduce((sum: number, s: any) => {
+          const base = Number(s.price || 0);
+          const val = Number(s.discountValue || 0);
+          if (val <= 0) return sum;
+          const lineDisc = s.discountType === 'percentage'
+            ? (base * Math.min(100, val)) / 100
+            : Math.min(base, val);
+          return sum + lineDisc;
+        }, 0);
+
+        if (hasBookingGeneralDiscount) {
+          bookingDiscount = {
+            type: b.discountType || 'fixed',
+            value: Number(b.discountValue)
+          };
+        } else if (totalServiceDiscounts > 0) {
+          bookingDiscount = {
+            type: 'fixed',
+            value: Number(totalServiceDiscounts.toFixed(2))
+          };
         }
 
         if (Array.isArray(b.services) && b.services.length > 0) {
@@ -219,7 +258,7 @@ export function QueueCallingScreen({
       client: clientObj,
       clientSearch: `${clientObj.name} - ${clientObj.phone}`,
       cart: cartItems,
-      discount: { type: 'percentage', value: 0 },
+      discount: bookingDiscount,
       advanceDeduction,
       advancePayments,
       bookingId: ticket.bookingId,

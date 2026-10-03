@@ -69,18 +69,19 @@ export function calculateBookingTotals(b: Partial<Booking>) {
   const lineDiscounts = services.reduce((sum, s) => sum + calculateServiceLineDiscount(s), 0);
   const subtotalAfterLines = Math.max(0, grossServices - lineDiscounts);
 
+  // قاعدة عدم الجمع بين خصمين: إذا وُجدت خصومات على بنود الخدمات، لا يُطبّق خصم الإجمالي
   let generalDiscount = 0;
   const genVal = Number(b.discountValue || 0);
-  if (genVal > 0) {
+  if (lineDiscounts === 0 && genVal > 0) {
     if (b.discountType === 'percentage') {
-      generalDiscount = (subtotalAfterLines * Math.min(100, Math.max(0, genVal))) / 100;
+      generalDiscount = (grossServices * Math.min(100, Math.max(0, genVal))) / 100;
     } else {
-      generalDiscount = Math.min(subtotalAfterLines, Math.max(0, genVal));
+      generalDiscount = Math.min(grossServices, Math.max(0, genVal));
     }
   }
 
-  const totalDiscounts = lineDiscounts + generalDiscount;
-  const netTotal = Math.max(0, subtotalAfterLines - generalDiscount);
+  const totalDiscounts = lineDiscounts > 0 ? lineDiscounts : generalDiscount;
+  const netTotal = Math.max(0, grossServices - totalDiscounts);
   const advances = (b.advancePayments || []).reduce((sum, a) => sum + Number(a.amount || 0), 0);
   const remaining = Math.max(0, netTotal - advances);
 
@@ -675,7 +676,7 @@ export function BookingsScreen({
     }
 
     if (!newBooking.clientName || !newBooking.phone || !newBooking.date || !newBooking.time) {
-      alert('يرجى ملء جميع الحقول الإلزامية: رقم الجوال، اسم العميل، التاريخ، والوقت');
+      alert('يرجى ملء جميع الحقول الإلزامية: رقم الموبايل، اسم العميل، التاريخ، والوقت');
       return;
     }
 
@@ -687,7 +688,24 @@ export function BookingsScreen({
     const queueNumber = editingBooking?.queueNumber 
       || await QueueService.getNextBookingQueueNumberAsync(settings.salonId, bBranchId, effectiveBookingDate);
 
-    const totals = calculateBookingTotals(newBooking);
+    const hasServiceDiscounts = (newBooking.services || []).some(s => Number(s.discountValue || 0) > 0);
+    const hasTotalDiscount = Number(newBooking.discountValue || 0) > 0;
+
+    const finalServices = (newBooking.services || []).map(s => ({
+      ...s,
+      discountType: s.discountType || 'fixed',
+      discountValue: hasTotalDiscount ? 0 : Number(s.discountValue || 0)
+    }));
+    const finalDiscountValue = hasServiceDiscounts ? 0 : Number(newBooking.discountValue || 0);
+    const finalDiscountType = newBooking.discountType || 'fixed';
+
+    const totals = calculateBookingTotals({
+      ...newBooking,
+      services: finalServices,
+      discountValue: finalDiscountValue,
+      discountType: finalDiscountType
+    });
+
     const booking: Booking = {
       id: editingBooking ? editingBooking.id : 'B-' + Math.random().toString(36).substr(2, 9).toUpperCase(),
       clientName: newBooking.clientName!,
@@ -696,11 +714,11 @@ export function BookingsScreen({
       time: newBooking.time!,
       status: newBooking.status || 'confirmed',
       location: newBooking.location?.trim() || undefined,
-      services: newBooking.services || [],
+      services: finalServices,
       advancePayments: newBooking.advancePayments || [],
       totalAmount: totals.netTotal,
-      discountType: newBooking.discountType || 'fixed',
-      discountValue: Number(newBooking.discountValue || 0),
+      discountType: finalDiscountType,
+      discountValue: finalDiscountValue,
       branchId: bBranchId,
       queueNumber,
       createdAt: editingBooking?.createdAt || (editingBooking as any)?.created_at || (newBooking.createdAt as string) || new Date().toISOString()
@@ -1330,7 +1348,7 @@ export function BookingsScreen({
                 type="text"
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                placeholder="بحث باسم العميل أو الجوال أو الخدمة..."
+                placeholder="بحث باسم العميل أو الموبايل أو الخدمة..."
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-9 pl-3 py-1.5 text-xs font-bold focus:border-indigo-600 outline-none"
               />
             </div>
@@ -1344,7 +1362,7 @@ export function BookingsScreen({
                   <tr>
                     <th className="p-3.5 text-center">رقم الدور</th>
                     <th className="p-3.5">العميل</th>
-                    <th className="p-3.5">الجوال</th>
+                    <th className="p-3.5">الموبايل</th>
                     <th className="p-3.5">الخدمات المحجوزة</th>
                     <th className="p-3.5">الموظف / الفني</th>
                     <th className="p-3.5">تاريخ ووقت الموعد</th>
@@ -1403,6 +1421,14 @@ export function BookingsScreen({
                           </td>
                           <td className="p-3.5 text-center font-mono font-black text-slate-900">
                             <div>{b.totalAmount} {settings.currency}</div>
+                            {(() => {
+                              const totals = calculateBookingTotals(b);
+                              return totals.totalDiscounts > 0 ? (
+                                <div className="text-[10px] text-rose-500 font-bold">
+                                  خصم: -{totals.totalDiscounts.toFixed(2)}
+                                </div>
+                              ) : null;
+                            })()}
                             {getBookingTotalAdvances(b) > 0 && (
                               <div className="mt-1 inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-md text-[10px] font-bold">
                                 <span>عربون: {getBookingTotalAdvances(b)}</span>
@@ -1599,7 +1625,7 @@ export function BookingsScreen({
                 type="text"
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                placeholder="بحث باسم العميل أو الجوال أو الخدمة..."
+                placeholder="بحث باسم العميل أو الموبايل أو الخدمة..."
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-9 pl-3 py-1.5 text-xs font-bold focus:border-indigo-600 outline-none"
               />
             </div>
@@ -2236,7 +2262,7 @@ export function BookingsScreen({
                 {/* 1. FIRST FIELD: Phone Number with Instant Lookup */}
                 <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-2">
                   <label className="block text-xs font-bold text-slate-800">
-                    رقم الجوال (اسم المستخدم والبحث الفوري) * 📱
+                    رقم الموبايل (اسم المستخدم والبحث الفوري) * 📱
                   </label>
                   <div className="relative">
                     <input
@@ -2244,7 +2270,7 @@ export function BookingsScreen({
                       value={newBooking.phone || ''}
                       onChange={e => handlePhoneChange(e.target.value)}
                       className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm font-mono font-bold focus:border-indigo-600 outline-none text-slate-900 shadow-xs"
-                      placeholder="أدخل رقم الجوال مثلاً: 05XXXXXXXX"
+                      placeholder="أدخل رقم الموبايل مثلاً: 05XXXXXXXX"
                       required
                       dir="ltr"
                       autoFocus
@@ -2499,123 +2525,204 @@ export function BookingsScreen({
                   </button>
                 </div>
 
-                {/* Services List with Discount per line */}
-                <div className="space-y-2 max-h-48 overflow-y-auto">
-                  {newBooking.services?.map(s => {
-                    const lineDisc = calculateServiceLineDiscount(s);
-                    const lineFinal = calculateServiceLinePrice(s);
-                    return (
-                      <div key={s.id} className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/80 text-xs space-y-1.5">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <div className="font-bold text-slate-900">{s.serviceName}</div>
-                            <div className="text-[10px] text-slate-500">الفني: {s.technicianName}</div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono font-bold text-slate-700">{s.price} {settings.currency}</span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const updated = newBooking.services?.filter(sx => sx.id !== s.id) || [];
-                                const totals = calculateBookingTotals({ ...newBooking, services: updated });
-                                setNewBooking({
-                                  ...newBooking,
-                                  services: updated,
-                                  totalAmount: totals.netTotal
-                                });
-                              }}
-                              className="text-rose-500 hover:text-rose-700 cursor-pointer p-0.5"
-                              title="حذف الخدمة"
-                            >
-                              <X size={14} />
-                            </button>
-                          </div>
-                        </div>
+                {(() => {
+                  const hasServiceDiscounts = (newBooking.services || []).some(s => Number(s.discountValue || 0) > 0);
+                  const hasTotalDiscount = Number(newBooking.discountValue || 0) > 0;
 
-                        {/* خصم سطر الخدمة */}
-                        <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-slate-200/60 bg-white/70 px-2 py-1 rounded-lg">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[11px] font-bold text-slate-600">خصم السطر:</span>
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.5"
-                              value={s.discountValue ?? ''}
-                              onChange={e => {
-                                const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
-                                const updated = (newBooking.services || []).map(sx => sx.id === s.id ? { ...sx, discountValue: val } : sx);
-                                const totals = calculateBookingTotals({ ...newBooking, services: updated });
-                                setNewBooking({ ...newBooking, services: updated, totalAmount: totals.netTotal });
-                              }}
-                              placeholder="0"
-                              className="w-14 bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs text-center font-mono font-bold outline-none focus:border-indigo-600"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const nextType = s.discountType === 'percentage' ? 'fixed' : 'percentage';
-                                const updated = (newBooking.services || []).map(sx => sx.id === s.id ? { ...sx, discountType: nextType } : sx);
-                                const totals = calculateBookingTotals({ ...newBooking, services: updated });
-                                setNewBooking({ ...newBooking, services: updated, totalAmount: totals.netTotal });
-                              }}
-                              className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 cursor-pointer"
-                              title="تبديل الخصم: نسبة مئوية أو مبلغ ثابت"
-                            >
-                              {s.discountType === 'percentage' ? '%' : settings.currency}
-                            </button>
+                  return (
+                    <>
+                      {hasTotalDiscount && (
+                        <div className="bg-amber-50/90 border border-amber-200 rounded-xl p-2 px-3 text-[11px] text-amber-800 flex items-center justify-between">
+                          <div className="flex items-center gap-1.5 font-bold">
+                            <span>⚠️</span>
+                            <span>خصومات بنود الخدمات معطلة لتفعيل الخصم على إجمالي الحجز (لا يجوز الجمع بين خصمين).</span>
                           </div>
-                          <div className="text-[11px] font-bold text-slate-700">
-                            الصافي: <span className="font-mono text-emerald-700 font-black">{lineFinal.toFixed(2)} {settings.currency}</span>
-                            {lineDisc > 0 && (
-                              <span className="text-[10px] text-rose-500 mr-1 font-mono">(-{lineDisc.toFixed(2)})</span>
-                            )}
-                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const totals = calculateBookingTotals({ ...newBooking, discountValue: 0 });
+                              setNewBooking({ ...newBooking, discountValue: 0, totalAmount: totals.netTotal });
+                            }}
+                            className="font-bold underline text-amber-900 hover:text-amber-950 cursor-pointer text-[10px] whitespace-nowrap mr-2"
+                          >
+                            مسح خصم الإجمالي
+                          </button>
                         </div>
+                      )}
+
+                      {/* Services List with Discount per line */}
+                      <div className="space-y-2 max-h-48 overflow-y-auto">
+                        {newBooking.services?.map(s => {
+                          const lineDisc = calculateServiceLineDiscount(s);
+                          const lineFinal = calculateServiceLinePrice(s);
+                          return (
+                            <div key={s.id} className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/80 text-xs space-y-1.5">
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <div className="font-bold text-slate-900">{s.serviceName}</div>
+                                  <div className="text-[10px] text-slate-500">الفني: {s.technicianName}</div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-mono font-bold text-slate-700">{s.price} {settings.currency}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const updated = newBooking.services?.filter(sx => sx.id !== s.id) || [];
+                                      const totals = calculateBookingTotals({ ...newBooking, services: updated });
+                                      setNewBooking({
+                                        ...newBooking,
+                                        services: updated,
+                                        totalAmount: totals.netTotal
+                                      });
+                                    }}
+                                    className="text-rose-500 hover:text-rose-700 cursor-pointer p-0.5"
+                                    title="حذف الخدمة"
+                                  >
+                                    <X size={14} />
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* خصم سطر الخدمة */}
+                              <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-slate-200/60 bg-white/70 px-2 py-1 rounded-lg">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[11px] font-bold text-slate-600">خصم السطر:</span>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.5"
+                                    disabled={hasTotalDiscount}
+                                    value={s.discountValue ?? ''}
+                                    onChange={e => {
+                                      const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
+                                      const updated = (newBooking.services || []).map(sx => sx.id === s.id ? { ...sx, discountValue: val } : sx);
+                                      const totals = calculateBookingTotals({ ...newBooking, services: updated, discountValue: 0 });
+                                      setNewBooking({ ...newBooking, services: updated, discountValue: 0, totalAmount: totals.netTotal });
+                                    }}
+                                    placeholder="0"
+                                    title={hasTotalDiscount ? "معطل: تم تطبيق خصم عام على إجمالي الحجز (لا يجوز الجمع بين خصمين)" : undefined}
+                                    className={`w-14 border rounded px-1.5 py-0.5 text-xs text-center font-mono font-bold outline-none ${
+                                      hasTotalDiscount
+                                        ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
+                                        : 'bg-white border-slate-300 focus:border-indigo-600'
+                                    }`}
+                                  />
+                                  <button
+                                    type="button"
+                                    disabled={hasTotalDiscount}
+                                    onClick={() => {
+                                      const nextType = s.discountType === 'percentage' ? 'fixed' : 'percentage';
+                                      const updated = (newBooking.services || []).map(sx => sx.id === s.id ? { ...sx, discountType: nextType } : sx);
+                                      const totals = calculateBookingTotals({ ...newBooking, services: updated, discountValue: 0 });
+                                      setNewBooking({ ...newBooking, services: updated, discountValue: 0, totalAmount: totals.netTotal });
+                                    }}
+                                    className={`px-1.5 py-0.5 text-[10px] font-bold rounded border ${
+                                      hasTotalDiscount
+                                        ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-60'
+                                        : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700 cursor-pointer'
+                                    }`}
+                                    title={hasTotalDiscount ? "معطل: تم تطبيق خصم عام على إجمالي الحجز" : "تبديل الخصم: نسبة مئوية أو مبلغ ثابت"}
+                                  >
+                                    {s.discountType === 'percentage' ? '%' : settings.currency}
+                                  </button>
+                                </div>
+                                <div className="text-[11px] font-bold text-slate-700">
+                                  الصافي: <span className="font-mono text-emerald-700 font-black">{lineFinal.toFixed(2)} {settings.currency}</span>
+                                  {lineDisc > 0 && (
+                                    <span className="text-[10px] text-rose-500 mr-1 font-mono">(-{lineDisc.toFixed(2)})</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {(!newBooking.services || newBooking.services.length === 0) && (
+                          <div className="text-center text-xs text-slate-400 py-3 bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
+                            لم يتم إضافة أي خدمات بعد
+                          </div>
+                        )}
                       </div>
-                    );
-                  })}
-                  {(!newBooking.services || newBooking.services.length === 0) && (
-                    <div className="text-center text-xs text-slate-400 py-3 bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
-                      لم يتم إضافة أي خدمات بعد
-                    </div>
-                  )}
-                </div>
 
-                {/* خصم إضافي على إجمالي الحجز (نسبة أو مبلغ) */}
-                {(newBooking.services || []).length > 0 && (
-                  <div className="bg-indigo-50/50 p-2.5 rounded-xl border border-indigo-100 flex flex-wrap items-center justify-between gap-2 text-xs">
-                    <div className="font-bold text-indigo-950 flex items-center gap-1.5">
-                      <span>🏷️</span>
-                      <span>خصم إضافي على إجمالي الحجز:</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.5"
-                        value={newBooking.discountValue ?? ''}
-                        onChange={e => {
-                          const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
-                          const totals = calculateBookingTotals({ ...newBooking, discountValue: val });
-                          setNewBooking({ ...newBooking, discountValue: val, totalAmount: totals.netTotal });
-                        }}
-                        placeholder="0"
-                        className="w-16 bg-white border border-indigo-200 rounded-lg px-2 py-1 text-xs text-center font-mono font-bold focus:border-indigo-600 outline-none"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const nextType = newBooking.discountType === 'percentage' ? 'fixed' : 'percentage';
-                          const totals = calculateBookingTotals({ ...newBooking, discountType: nextType });
-                          setNewBooking({ ...newBooking, discountType: nextType, totalAmount: totals.netTotal });
-                        }}
-                        className="px-2 py-1 text-[11px] font-bold rounded-lg bg-indigo-100 border border-indigo-200 text-indigo-800 hover:bg-indigo-200 cursor-pointer transition-colors"
-                      >
-                        {newBooking.discountType === 'percentage' ? 'نسبة مئوية (%)' : `مبلغ ثابت (${settings.currency})`}
-                      </button>
-                    </div>
-                  </div>
-                )}
+                      {/* خصم إضافي على إجمالي الحجز (نسبة أو مبلغ) */}
+                      {(newBooking.services || []).length > 0 && (
+                        hasServiceDiscounts ? (
+                          <div className="bg-amber-50/80 p-2.5 rounded-xl border border-amber-200 space-y-1.5 text-xs">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="font-bold text-amber-900 flex items-center gap-1.5">
+                                <span>🏷️</span>
+                                <span>خصم إجمالي الحجز (مبلغ أو نسبة):</span>
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  type="number"
+                                  disabled={true}
+                                  value=""
+                                  placeholder="معطل"
+                                  className="w-16 bg-slate-100 border border-slate-200 text-slate-400 rounded-lg px-2 py-1 text-xs text-center font-mono font-bold cursor-not-allowed outline-none"
+                                />
+                                <span className="px-2 py-1 text-[11px] font-bold rounded-lg bg-slate-100 border border-slate-200 text-slate-400 cursor-not-allowed">
+                                  {newBooking.discountType === 'percentage' ? '%' : settings.currency}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="text-[11px] text-amber-800 flex items-center justify-between pt-1 border-t border-amber-200/60 font-bold">
+                              <span className="flex items-center gap-1">
+                                <span>⚠️</span>
+                                <span>لا يمكن تطبيق خصم إجمالي لوجود خصم على مستوى الخدمات (لا يجوز الجمع بين خصمين).</span>
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const clearedServices = (newBooking.services || []).map(sx => ({ ...sx, discountValue: 0 }));
+                                  const totals = calculateBookingTotals({ ...newBooking, services: clearedServices });
+                                  setNewBooking({ ...newBooking, services: clearedServices, totalAmount: totals.netTotal });
+                                }}
+                                className="font-bold underline text-amber-900 hover:text-amber-950 cursor-pointer text-[10px] whitespace-nowrap mr-2"
+                              >
+                                مسح خصومات الخدمات
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="bg-indigo-50/50 p-2.5 rounded-xl border border-indigo-100 flex flex-wrap items-center justify-between gap-2 text-xs">
+                            <div className="font-bold text-indigo-950 flex items-center gap-1.5">
+                              <span>🏷️</span>
+                              <span>خصم على إجمالي الحجز (مبلغ أو نسبة):</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.5"
+                                value={newBooking.discountValue ?? ''}
+                                onChange={e => {
+                                  const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
+                                  const clearedServices = (newBooking.services || []).map(sx => ({ ...sx, discountValue: 0 }));
+                                  const totals = calculateBookingTotals({ ...newBooking, services: clearedServices, discountValue: val });
+                                  setNewBooking({ ...newBooking, services: clearedServices, discountValue: val, totalAmount: totals.netTotal });
+                                }}
+                                placeholder="0"
+                                className="w-16 bg-white border border-indigo-200 rounded-lg px-2 py-1 text-xs text-center font-mono font-bold focus:border-indigo-600 outline-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const nextType = newBooking.discountType === 'percentage' ? 'fixed' : 'percentage';
+                                  const totals = calculateBookingTotals({ ...newBooking, discountType: nextType });
+                                  setNewBooking({ ...newBooking, discountType: nextType, totalAmount: totals.netTotal });
+                                }}
+                                className="px-2 py-1 text-[11px] font-bold rounded-lg bg-indigo-100 border border-indigo-200 text-indigo-800 hover:bg-indigo-200 cursor-pointer transition-colors"
+                                title="تبديل نوع الخصم: نسبة مئوية أو مبلغ ثابت"
+                              >
+                                {newBooking.discountType === 'percentage' ? 'نسبة مئوية (%)' : `مبلغ ثابت (${settings.currency})`}
+                              </button>
+                            </div>
+                          </div>
+                        )
+                      )}
+                    </>
+                  );
+                })()}
 
                 {/* 5. ADVANCE PAYMENTS SECTION (العربون والدفعات المقدمة) */}
                 <div className="bg-emerald-50/50 p-3.5 rounded-2xl border border-emerald-200 space-y-3">

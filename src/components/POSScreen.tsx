@@ -1121,6 +1121,19 @@ export function POSScreen({
       setSelectedClient(client || null);
       setClientSearch(initialBooking.clientName);
       
+      // حساب مجموع خصومات بنود الخدمات إن وجدت
+      const totalServiceDiscounts = (initialBooking.services || []).reduce((sum, s) => {
+        const base = Number(s.price || 0);
+        const val = Number(s.discountValue || 0);
+        if (val <= 0) return sum;
+        const lineDisc = s.discountType === 'percentage'
+          ? (base * Math.min(100, val)) / 100
+          : Math.min(base, val);
+        return sum + lineDisc;
+      }, 0);
+
+      const hasBookingGeneralDiscount = Number(initialBooking.discountValue || 0) > 0;
+
       const cartItems: CartItem[] = initialBooking.services?.map(s => {
         // Try to find the actual service item from mock if possible, otherwise construct a mock one
         const foundItem = items.find(i => i.id === s.serviceId);
@@ -1140,34 +1153,36 @@ export function POSScreen({
           isActive: true,
           type: 'service'
         };
-        
-        const lineDiscount = s.discountType === 'percentage' 
-          ? (safePrice * Math.min(100, Math.max(0, Number(s.discountValue) || 0))) / 100 
-          : Math.min(safePrice, Math.max(0, Number(s.discountValue) || 0));
-        const effectivePrice = Math.max(0, safePrice - lineDiscount);
-        
+
         return {
           cartId: Math.random().toString(36).substring(2, 9),
           item: {
             ...serviceItem,
-            price: effectivePrice,
-            displayPrice: effectivePrice
+            price: safePrice,
+            displayPrice: safePrice
           },
           quantity: 1,
           employeeId: s.technicianId && s.technicianId !== 'any' ? s.technicianId : '',
           type: 'service',
-          price: effectivePrice
+          price: safePrice
         };
       }) || [];
       
       setCart(cartItems);
 
-      // تطبيق الخصم الإضافي العام للحجز إن وجد
-      if (initialBooking.discountValue && Number(initialBooking.discountValue) > 0) {
+      // تطبيق الخصم ليظهر في الفاتورة (خصم إجمالي الحجز أو مجموع خصومات الخدمات - عدم الجمع بين خصمين)
+      if (hasBookingGeneralDiscount) {
         setDiscount({
           type: initialBooking.discountType || 'fixed',
           value: Number(initialBooking.discountValue)
         });
+      } else if (totalServiceDiscounts > 0) {
+        setDiscount({
+          type: 'fixed',
+          value: Number(totalServiceDiscounts.toFixed(2))
+        });
+      } else {
+        setDiscount({ type: 'fixed', value: 0 });
       }
       
       let safeAdvances: AdvancePayment[] = [];
