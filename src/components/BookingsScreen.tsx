@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { 
   Booking, AppSettings, ServiceItem, Employee, Client, Branch, 
   AppUser, BlockedDateEntry, BlockedHourEntry, StaffUnavailabilityEntry,
-  AdvancePayment, Transaction
+  AdvancePayment, Transaction, Product
 } from '../types';
 import { 
   Calendar as CalendarIcon, Plus, Printer, Edit2, X, ShoppingCart, 
@@ -11,7 +11,7 @@ import {
   List, Grid3X3, Eye, CalendarDays, ArrowRight, Sliders, 
   CalendarOff, ShieldAlert, Trash2, Lock, ShieldCheck, Check,
   DollarSign, Wallet, CreditCard, Banknote, XCircle, FileSpreadsheet,
-  MapPin
+  MapPin, ShoppingBag, Package
 } from 'lucide-react';
 import { 
   isDateBlocked, isHourBlocked, isStaffAvailableOnDate, 
@@ -47,7 +47,8 @@ export function formatTo12Hour(timeStr?: string): string {
 
 // Calculate discount amount for a single service line
 export function calculateServiceLineDiscount(s: any): number {
-  const base = Number(s.price || 0);
+  const qty = Math.max(1, Number(s.quantity) || 1);
+  const base = Number(s.price || 0) * qty;
   const val = Number(s.discountValue || 0);
   if (val <= 0) return 0;
   if (s.discountType === 'percentage') {
@@ -58,14 +59,18 @@ export function calculateServiceLineDiscount(s: any): number {
 
 // Calculate final price for a service line after its discount
 export function calculateServiceLinePrice(s: any): number {
-  const base = Number(s.price || 0);
+  const qty = Math.max(1, Number(s.quantity) || 1);
+  const base = Number(s.price || 0) * qty;
   return Math.max(0, base - calculateServiceLineDiscount(s));
 }
 
 // Calculate comprehensive booking financial totals including item discounts and general discount
 export function calculateBookingTotals(b: Partial<Booking>) {
   const services = b.services || [];
-  const grossServices = services.reduce((sum, s) => sum + Number(s.price || 0), 0);
+  const grossServices = services.reduce((sum, s) => {
+    const qty = Math.max(1, Number(s.quantity) || 1);
+    return sum + (Number(s.price || 0) * qty);
+  }, 0);
   const lineDiscounts = services.reduce((sum, s) => sum + calculateServiceLineDiscount(s), 0);
   const subtotalAfterLines = Math.max(0, grossServices - lineDiscounts);
 
@@ -121,6 +126,7 @@ export function BookingsScreen({
   setBookings, 
   onToPOS, 
   services, 
+  products = [],
   employees,
   clients = [],
   setClients,
@@ -137,6 +143,7 @@ export function BookingsScreen({
   setBookings: (b: Booking[]) => void, 
   onToPOS: (b: Booking) => void, 
   services: ServiceItem[], 
+  products?: Product[],
   employees: Employee[],
   clients?: Client[],
   setClients?: (c: Client[]) => void,
@@ -246,9 +253,14 @@ export function BookingsScreen({
     discountValue: 0
   });
 
+  const [itemTypeToAdd, setItemTypeToAdd] = useState<'service' | 'product'>('service');
   const [serviceToAdd, setServiceToAdd] = useState('');
   const [techToAdd, setTechToAdd] = useState('');
   const [serviceSearchQuery, setServiceSearchQuery] = useState('');
+  const [productToAdd, setProductToAdd] = useState('');
+  const [productSearchQuery, setProductSearchQuery] = useState('');
+  const [isProductDropdownOpen, setIsProductDropdownOpen] = useState(false);
+  const [serviceQtyToAdd, setServiceQtyToAdd] = useState<string>('1');
   const [isServiceDropdownOpen, setIsServiceDropdownOpen] = useState(false);
 
   // Advance Payments State for Add/Edit Modal
@@ -295,6 +307,21 @@ export function BookingsScreen({
       s.price.toString().includes(q)
     );
   }, [services, serviceSearchQuery]);
+
+  // Filtered retail products for autocomplete search
+  const retailProducts = useMemo(() => {
+    return (products || []).filter(p => !p.productType || p.productType === 'retail');
+  }, [products]);
+
+  const filteredProductsForBooking = useMemo(() => {
+    if (!productSearchQuery.trim()) return retailProducts;
+    const q = productSearchQuery.toLowerCase().trim();
+    return retailProducts.filter(p => 
+      p.name.toLowerCase().includes(q) || 
+      (p.barcode && p.barcode.toLowerCase().includes(q)) ||
+      p.sellPrice.toString().includes(q)
+    );
+  }, [retailProducts, productSearchQuery]);
 
   // Helper date functions
   const formatDateToYMD = (d: Date) => d.toISOString().split('T')[0];
@@ -507,9 +534,14 @@ export function BookingsScreen({
     }
     const openShiftDate = (shiftData && shiftData.isOpen && shiftData.date) ? shiftData.date : dateStr;
     setEditingBooking(null);
+    setItemTypeToAdd('service');
     setServiceSearchQuery('');
     setServiceToAdd('');
+    setProductToAdd('');
+    setProductSearchQuery('');
     setIsServiceDropdownOpen(false);
+    setIsProductDropdownOpen(false);
+    setServiceQtyToAdd('1');
     setNewBooking({
       clientName: '',
       phone: '',
@@ -538,6 +570,8 @@ export function BookingsScreen({
     const srv = services.find(s => s.id === serviceToAdd);
     if (!srv) return;
     const emp = employees.find(e => e.id === techToAdd);
+    const parsedQty = parseInt(serviceQtyToAdd, 10);
+    const qty = (!isNaN(parsedQty) && parsedQty > 0) ? parsedQty : 1;
     const bs: BookingService = {
       id: Math.random().toString(36).substr(2, 9),
       serviceId: srv.id,
@@ -545,6 +579,8 @@ export function BookingsScreen({
       technicianId: emp ? emp.id : '',
       technicianName: emp ? emp.name : 'غير محدد',
       price: srv.price,
+      quantity: qty,
+      type: 'service',
       discountType: 'fixed',
       discountValue: 0
     };
@@ -558,7 +594,42 @@ export function BookingsScreen({
     setServiceToAdd('');
     setServiceSearchQuery('');
     setTechToAdd('');
+    setServiceQtyToAdd('1');
     setIsServiceDropdownOpen(false);
+  };
+
+  // Add Product to Booking Form
+  const addProductToBooking = () => {
+    const prd = retailProducts.find(p => p.id === productToAdd);
+    if (!prd) return;
+    const emp = employees.find(e => e.id === techToAdd);
+    const parsedQty = parseInt(serviceQtyToAdd, 10);
+    const qty = (!isNaN(parsedQty) && parsedQty > 0) ? parsedQty : 1;
+    const bs: BookingService = {
+      id: Math.random().toString(36).substr(2, 9),
+      serviceId: prd.id,
+      productId: prd.id,
+      serviceName: prd.name,
+      technicianId: emp ? emp.id : '',
+      technicianName: emp ? emp.name : 'غير محدد',
+      price: prd.sellPrice,
+      quantity: qty,
+      type: 'product',
+      discountType: 'fixed',
+      discountValue: 0
+    };
+    const updatedServices = [...(newBooking.services || []), bs];
+    const totals = calculateBookingTotals({ ...newBooking, services: updatedServices });
+    setNewBooking({
+      ...newBooking,
+      services: updatedServices,
+      totalAmount: totals.netTotal
+    });
+    setProductToAdd('');
+    setProductSearchQuery('');
+    setTechToAdd('');
+    setServiceQtyToAdd('1');
+    setIsProductDropdownOpen(false);
   };
 
   // Helper to add advance payment inside Add/Edit modal
@@ -694,6 +765,7 @@ export function BookingsScreen({
 
     const finalServices = (newBooking.services || []).map(s => ({
       ...s,
+      quantity: Math.max(1, Number(s.quantity) || 1),
       discountType: s.discountType || 'fixed',
       discountValue: hasTotalDiscount ? 0 : Number(s.discountValue || 0)
     }));
@@ -801,6 +873,14 @@ export function BookingsScreen({
     setEditingBooking(null);
     setSelectedBookingDetails(null);
     setMatchingClientInfo(null);
+    setItemTypeToAdd('service');
+    setServiceToAdd('');
+    setServiceSearchQuery('');
+    setProductToAdd('');
+    setProductSearchQuery('');
+    setIsServiceDropdownOpen(false);
+    setIsProductDropdownOpen(false);
+    setServiceQtyToAdd('1');
 
     // عند تعديل الحجز أو حفظه لأول مرة تظهر مباشرة شاشة الإيصال لطباعته
     setTimeout(() => {
@@ -810,6 +890,15 @@ export function BookingsScreen({
 
   const handleEdit = (b: Booking) => {
     setEditingBooking(b);
+    setItemTypeToAdd('service');
+    setServiceToAdd('');
+    setServiceSearchQuery('');
+    setProductToAdd('');
+    setProductSearchQuery('');
+    setIsServiceDropdownOpen(false);
+    setIsProductDropdownOpen(false);
+    setTechToAdd('');
+    setServiceQtyToAdd('1');
     setNewBooking({ 
       ...b, 
       createdAt: b.createdAt || (b as any).created_at,
@@ -943,18 +1032,25 @@ export function BookingsScreen({
       <table style="width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 14px; text-align: right; color: #000;">
         <thead>
           <tr style="border-bottom: 2px solid #000;">
-            <th style="padding: 8px 0; color: #000;">الخدمة</th>
+            <th style="padding: 8px 0; color: #000;">البند (خدمة / منتج)</th>
             <th style="padding: 8px 0; text-align: left; color: #000;">السعر</th>
           </tr>
         </thead>
         <tbody>
           ${booking.services.map(s => {
+            const isProd = s.type === 'product';
+            const qty = Math.max(1, Number(s.quantity) || 1);
             const lineDisc = calculateServiceLineDiscount(s);
             const lineFinal = calculateServiceLinePrice(s);
+            const lineGross = Number(s.price || 0) * qty;
             return `
               <tr style="border-bottom: 1px dotted #ccc;">
                 <td style="padding: 8px 0;">
-                  <div style="font-weight: bold; color: #000;">${escapeHtml(s.serviceName)}</div>
+                  <div style="font-weight: bold; color: #000;">
+                    ${isProd ? '<span style="display: inline-block; background: #fef3c7; color: #92400e; border: 1px solid #fde68a; border-radius: 4px; padding: 0 4px; font-size: 10px; margin-left: 4px;">منتج</span>' : ''}
+                    ${escapeHtml(s.serviceName)}
+                    ${qty > 1 ? `<span style="display: inline-block; background: #f1f5f9; color: #000; border: 1px solid #cbd5e1; border-radius: 4px; padding: 0 4px; font-size: 11px; margin-right: 4px;">الكمية: ${qty}</span>` : ''}
+                  </div>
                   ${lineDisc > 0 ? `
                     <div style="font-size: 11px; color: #dc2626; font-weight: bold;">
                       خصم: -${lineDisc.toFixed(2)} ${s.discountType === 'percentage' ? '(' + (s.discountValue || 0) + '%)' : escapeHtml(settings.currency)}
@@ -963,8 +1059,10 @@ export function BookingsScreen({
                 </td>
                 <td style="padding: 8px 0; text-align: left; vertical-align: top;">
                   <div style="font-weight: 900; font-family: monospace; color: #000;">${lineFinal.toFixed(2)} ${escapeHtml(settings.currency)}</div>
-                  ${lineDisc > 0 ? `
-                    <div style="font-size: 11px; color: #888; text-decoration: line-through; font-family: monospace;">${Number(s.price || 0).toFixed(2)}</div>
+                  ${(lineDisc > 0 || qty > 1) ? `
+                    <div style="font-size: 11px; color: #888; font-family: monospace;">
+                      ${qty > 1 ? `${Number(s.price || 0).toFixed(2)} × ${qty} = ${lineGross.toFixed(2)}` : (lineDisc > 0 ? Number(s.price || 0).toFixed(2) : '')}
+                    </div>
                   ` : ''}
                 </td>
               </tr>
@@ -976,14 +1074,14 @@ export function BookingsScreen({
       <div style="margin-bottom: 18px; font-size: 14px; color: #000;">
         ${totals.totalDiscounts > 0 ? `
           <div style="display: flex; justify-content: space-between; font-weight: bold; padding-bottom: 4px; margin-bottom: 4px; color: #444;">
-            <span>إجمالي الخدمات (قبل الخصم):</span>
+            <span>إجمالي البنود (قبل الخصم):</span>
             <span style="font-family: monospace;">${totals.grossServices.toFixed(2)} ${escapeHtml(settings.currency)}</span>
           </div>
         ` : ''}
 
         ${totals.lineDiscounts > 0 ? `
           <div style="display: flex; justify-content: space-between; color: #dc2626; font-weight: bold; padding-bottom: 4px; margin-bottom: 4px;">
-            <span>خصومات بنود الخدمات:</span>
+            <span>خصومات البنود:</span>
             <span style="font-family: monospace;">-${totals.lineDiscounts.toFixed(2)} ${escapeHtml(settings.currency)}</span>
           </div>
         ` : ''}
@@ -1059,6 +1157,7 @@ export function BookingsScreen({
 
     const finalServices = (newBooking.services || []).map(s => ({
       ...s,
+      quantity: Math.max(1, Number(s.quantity) || 1),
       discountType: s.discountType || 'fixed',
       discountValue: hasTotalDiscount ? 0 : Number(s.discountValue || 0)
     }));
@@ -1199,6 +1298,13 @@ export function BookingsScreen({
               }
               const openShiftDate = (shiftData && shiftData.isOpen && shiftData.date) ? shiftData.date : formatDateToYMD(currentDate);
               setEditingBooking(null);
+              setItemTypeToAdd('service');
+              setServiceToAdd('');
+              setServiceSearchQuery('');
+              setProductToAdd('');
+              setProductSearchQuery('');
+              setIsServiceDropdownOpen(false);
+              setIsProductDropdownOpen(false);
               setNewBooking({
                 clientName: '',
                 phone: '',
@@ -1211,6 +1317,7 @@ export function BookingsScreen({
                 totalAmount: 0
               });
               setTechToAdd('');
+              setServiceQtyToAdd('1');
               setAdvTreasuryInput(availableTreasuries[0]?.id || 'cash');
               setAdvDateInput(openShiftDate);
               setShowAddModal(true);
@@ -1466,7 +1573,7 @@ export function BookingsScreen({
                           </td>
                           <td className="p-3.5 font-mono text-slate-600">{b.phone}</td>
                           <td className="p-3.5 font-bold text-slate-700">
-                            {b.services?.length > 0 ? b.services.map(s => s.serviceName).join(' + ') : '-'}
+                            {b.services?.length > 0 ? b.services.map(s => (s.quantity && s.quantity > 1) ? `${s.serviceName} (×${s.quantity})` : s.serviceName).join(' + ') : '-'}
                           </td>
                           <td className="p-3.5 text-slate-600">
                             {b.services?.map(s => s.technicianName).join(', ') || '-'}
@@ -1999,18 +2106,32 @@ export function BookingsScreen({
               </div>
             </div>
 
-            {/* Services List */}
+            {/* Services & Products List */}
             <div>
-              <h4 className="text-xs font-black text-slate-800 mb-2">الخدمات والموظفون:</h4>
+              <h4 className="text-xs font-black text-slate-800 mb-2">الخدمات والمنتجات المحجوزة:</h4>
               <div className="space-y-1.5 max-h-40 overflow-y-auto">
                 {selectedBookingDetails.services?.map(s => {
+                  const isProd = s.type === 'product';
+                  const qty = Math.max(1, Number(s.quantity) || 1);
                   const lineDisc = calculateServiceLineDiscount(s);
                   const lineFinal = calculateServiceLinePrice(s);
                   return (
                     <div key={s.id} className="p-2.5 bg-slate-50 rounded-xl border border-slate-100 flex justify-between items-center text-xs">
                       <div>
-                        <div className="font-bold text-slate-900">{s.serviceName}</div>
-                        <div className="text-[10px] text-slate-500">الفني: {s.technicianName}</div>
+                        <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                          {isProd && (
+                            <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.2 rounded font-bold">
+                              🛍️ منتج
+                            </span>
+                          )}
+                          <span>{s.serviceName}</span>
+                          {qty > 1 && (
+                            <span className="text-[10px] bg-slate-200 text-slate-800 px-1.5 py-0.2 rounded font-mono font-bold">
+                              ×{qty}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-slate-500">{isProd ? 'البائع:' : 'الفني:'} {s.technicianName}</div>
                         {lineDisc > 0 && (
                           <div className="text-[10px] text-rose-600 font-bold">
                             خصم: -{lineDisc.toFixed(2)} {s.discountType === 'percentage' ? '(' + (s.discountValue || 0) + '%)' : settings.currency}
@@ -2019,8 +2140,10 @@ export function BookingsScreen({
                       </div>
                       <div className="text-left font-mono font-black text-slate-800">
                         <div>{lineFinal.toFixed(2)} {settings.currency}</div>
-                        {lineDisc > 0 && (
-                          <div className="text-[10px] text-slate-400 line-through">{Number(s.price || 0).toFixed(2)}</div>
+                        {(lineDisc > 0 || qty > 1) && (
+                          <div className="text-[10px] text-slate-400">
+                            {qty > 1 ? `${Number(s.price || 0).toFixed(2)} × ${qty}` : Number(s.price || 0).toFixed(2)}
+                          </div>
                         )}
                       </div>
                     </div>
@@ -2094,13 +2217,13 @@ export function BookingsScreen({
                 <div className="pt-2 border-t border-slate-100 space-y-1.5 font-bold text-xs">
                   {totals.totalDiscounts > 0 && (
                     <div className="flex justify-between items-center text-slate-500">
-                      <span>إجمالي الخدمات (قبل الخصم):</span>
+                      <span>إجمالي البنود (قبل الخصم):</span>
                       <span className="font-mono">{totals.grossServices.toFixed(2)} {settings.currency}</span>
                     </div>
                   )}
                   {totals.lineDiscounts > 0 && (
                     <div className="flex justify-between items-center text-rose-600">
-                      <span>خصومات بنود الخدمات:</span>
+                      <span>خصومات البنود:</span>
                       <span className="font-mono">-{totals.lineDiscounts.toFixed(2)} {settings.currency}</span>
                     </div>
                   )}
@@ -2446,139 +2569,352 @@ export function BookingsScreen({
                 </div>
               </div>
 
-              {/* Add Services Sub-Section with Searchable Autocomplete */}
+              {/* Add Services & Products Sub-Section with Searchable Autocomplete */}
               <div className="border-t border-slate-100 pt-4 mt-2">
                 <h3 className="text-xs font-black text-slate-800 mb-2.5 flex items-center justify-between">
-                  <span>إضافة الخدمات والموظفين للحجز:</span>
+                  <span>إضافة الخدمات والمنتجات للحجز:</span>
                   <span className="text-[10px] text-slate-400 font-normal">بحث ذكي وإكمال تلقائي 🔍</span>
                 </h3>
+
+                {/* Switcher: إضافة خدمة / إضافة منتج */}
+                <div className="flex items-center gap-2 mb-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setItemTypeToAdd('service');
+                      setTechToAdd('');
+                      setServiceQtyToAdd('1');
+                    }}
+                    className={`flex-1 py-2 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                      itemTypeToAdd === 'service'
+                        ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/20'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                    }`}
+                  >
+                    <span>✂️ إضافة خدمة</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setItemTypeToAdd('product');
+                      setTechToAdd('');
+                      setServiceQtyToAdd('1');
+                    }}
+                    className={`flex-1 py-2 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                      itemTypeToAdd === 'product'
+                        ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/20'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                    }`}
+                  >
+                    <ShoppingBag size={14} />
+                    <span>🛍️ إضافة منتج</span>
+                  </button>
+                </div>
                 
-                <div className="space-y-2.5 mb-3 bg-slate-50 p-3 rounded-2xl border border-slate-200">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    
-                    {/* 1. SERVICE SEARCHABLE AUTOCOMPLETE */}
-                    <div className="relative">
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                        الخدمة (ابحث بالاسم أو السعر) *
-                      </label>
-                      <div className="relative">
-                        <input
-                          type="text"
-                          value={serviceSearchQuery}
-                          onChange={e => {
-                            setServiceSearchQuery(e.target.value);
-                            setIsServiceDropdownOpen(true);
-                            // If typed text doesn't match selected, clear serviceToAdd
-                            const exactMatch = services.find(s => s.name.toLowerCase() === e.target.value.toLowerCase().trim());
-                            if (exactMatch) {
-                              setServiceToAdd(exactMatch.id);
-                            } else {
-                              setServiceToAdd('');
-                            }
-                          }}
-                          onFocus={() => setIsServiceDropdownOpen(true)}
-                          placeholder="🔍 اكتب اسم الخدمة أو السعر..."
-                          className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none text-slate-900 shadow-xs"
-                        />
-                        {serviceSearchQuery && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setServiceSearchQuery('');
-                              setServiceToAdd('');
+                {itemTypeToAdd === 'service' ? (
+                  /* ============ FORM: ADD SERVICE ============ */
+                  <div className="space-y-2.5 mb-3 bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
+                      
+                      {/* 1. SERVICE SEARCHABLE AUTOCOMPLETE */}
+                      <div className="relative sm:col-span-6">
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                          الخدمة (ابحث بالاسم أو السعر) *
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={serviceSearchQuery}
+                            onChange={e => {
+                              setServiceSearchQuery(e.target.value);
                               setIsServiceDropdownOpen(true);
+                              const exactMatch = services.find(s => s.name.toLowerCase() === e.target.value.toLowerCase().trim());
+                              if (exactMatch) {
+                                setServiceToAdd(exactMatch.id);
+                              } else {
+                                setServiceToAdd('');
+                              }
                             }}
-                            className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-md text-xs cursor-pointer"
-                          >
-                            ✕
-                          </button>
+                            onFocus={() => setIsServiceDropdownOpen(true)}
+                            placeholder="🔍 اكتب اسم الخدمة أو السعر..."
+                            className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none text-slate-900 shadow-xs"
+                          />
+                          {serviceSearchQuery && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setServiceSearchQuery('');
+                                setServiceToAdd('');
+                                setIsServiceDropdownOpen(true);
+                              }}
+                              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-md text-xs cursor-pointer"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Dropdown Menu for Autocomplete */}
+                        {isServiceDropdownOpen && (
+                          <>
+                            <div 
+                              className="fixed inset-0 z-40" 
+                              onClick={() => setIsServiceDropdownOpen(false)}
+                            />
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 max-h-48 overflow-y-auto p-1.5 space-y-1 text-right">
+                              {filteredServicesForBooking.length > 0 ? (
+                                filteredServicesForBooking.map(s => {
+                                  const isSelected = serviceToAdd === s.id;
+                                  return (
+                                    <button
+                                      key={s.id}
+                                      type="button"
+                                      onClick={() => {
+                                        setServiceToAdd(s.id);
+                                        setServiceSearchQuery(s.name);
+                                        setIsServiceDropdownOpen(false);
+                                      }}
+                                      className={`w-full text-right px-3 py-2 rounded-xl text-xs flex items-center justify-between transition-all cursor-pointer ${
+                                        isSelected 
+                                          ? 'bg-indigo-50 text-indigo-900 font-black border border-indigo-200' 
+                                          : 'hover:bg-slate-100 text-slate-800'
+                                      }`}
+                                    >
+                                      <div className="flex flex-col">
+                                        <span className="font-bold">{s.name}</span>
+                                        {s.category && (
+                                          <span className="text-[10px] text-slate-400">{s.category}</span>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <span className="bg-emerald-50 text-emerald-700 font-mono font-black px-2 py-0.5 rounded-lg text-[11px] border border-emerald-200">
+                                          {s.price} {settings.currency}
+                                        </span>
+                                        {s.durationMinutes && (
+                                          <span className="bg-slate-100 text-slate-500 text-[10px] px-1.5 py-0.5 rounded-md font-medium">
+                                            {s.durationMinutes} د
+                                          </span>
+                                        )}
+                                      </div>
+                                    </button>
+                                  );
+                                })
+                              ) : (
+                                <div className="p-3 text-center text-xs text-slate-400">
+                                  لا توجد خدمات مطابقة لـ "{serviceSearchQuery}"
+                                </div>
+                              )}
+                            </div>
+                          </>
                         )}
                       </div>
 
-                      {/* Dropdown Menu for Autocomplete */}
-                      {isServiceDropdownOpen && (
-                        <>
-                          <div 
-                            className="fixed inset-0 z-40" 
-                            onClick={() => setIsServiceDropdownOpen(false)}
-                          />
-                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 max-h-48 overflow-y-auto p-1.5 space-y-1 text-right">
-                            {filteredServicesForBooking.length > 0 ? (
-                              filteredServicesForBooking.map(s => {
-                                const isSelected = serviceToAdd === s.id;
-                                return (
-                                  <button
-                                    key={s.id}
-                                    type="button"
-                                    onClick={() => {
-                                      setServiceToAdd(s.id);
-                                      setServiceSearchQuery(s.name);
-                                      setIsServiceDropdownOpen(false);
-                                    }}
-                                    className={`w-full text-right px-3 py-2 rounded-xl text-xs flex items-center justify-between transition-all cursor-pointer ${
-                                      isSelected 
-                                        ? 'bg-indigo-50 text-indigo-900 font-black border border-indigo-200' 
-                                        : 'hover:bg-slate-100 text-slate-800'
-                                    }`}
-                                  >
-                                    <div className="flex flex-col">
-                                      <span className="font-bold">{s.name}</span>
-                                      {s.category && (
-                                        <span className="text-[10px] text-slate-400">{s.category}</span>
-                                      )}
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                      <span className="bg-emerald-50 text-emerald-700 font-mono font-black px-2 py-0.5 rounded-lg text-[11px] border border-emerald-200">
-                                        {s.price} {settings.currency}
-                                      </span>
-                                      {s.durationMinutes && (
-                                        <span className="bg-slate-100 text-slate-500 text-[10px] px-1.5 py-0.5 rounded-md font-medium">
-                                          {s.durationMinutes} د
-                                        </span>
-                                      )}
-                                    </div>
-                                  </button>
-                                );
-                              })
-                            ) : (
-                              <div className="p-3 text-center text-xs text-slate-400">
-                                لا توجد خدمات مطابقة لـ "{serviceSearchQuery}"
-                              </div>
-                            )}
-                          </div>
-                        </>
-                      )}
+                      {/* 2. EMPLOYEE SELECTOR */}
+                      <div className="sm:col-span-4">
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center justify-between">
+                          <span>الموظف المنفذ</span>
+                          <span className="text-[10px] text-slate-400 font-normal">اختياري</span>
+                        </label>
+                        <select
+                          value={techToAdd}
+                          onChange={e => setTechToAdd(e.target.value)}
+                          className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-indigo-600 shadow-xs"
+                        >
+                          <option value="">(غير محدد)</option>
+                          {employees.filter(e => isBarberEmployee(e)).map(e => (
+                            <option key={e.id} value={e.id}>{e.name} ({e.role})</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* 3. QUANTITY INPUT (كتابة مباشرة ورقم افتراضي 1) */}
+                      <div className="sm:col-span-2">
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1 text-center">
+                          الكمية
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={serviceQtyToAdd}
+                          onChange={e => setServiceQtyToAdd(e.target.value)}
+                          onBlur={() => {
+                            const parsed = parseInt(serviceQtyToAdd, 10);
+                            if (isNaN(parsed) || parsed < 1) {
+                              setServiceQtyToAdd('1');
+                            }
+                          }}
+                          className="w-full bg-white border border-slate-300 rounded-xl px-2 py-2 text-xs font-black text-center outline-none focus:border-indigo-600 shadow-xs font-mono"
+                          placeholder="1"
+                          title="الكمية المطلوبة (قابلة للكتابة المباشرة)"
+                        />
+                      </div>
                     </div>
 
-                    {/* 2. EMPLOYEE SELECTOR */}
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center justify-between">
-                        <span>الموظف المنفذ</span>
-                        <span className="text-[10px] text-slate-400 font-normal">اختياري</span>
-                      </label>
-                      <select
-                        value={techToAdd}
-                        onChange={e => setTechToAdd(e.target.value)}
-                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-indigo-600 shadow-xs"
-                      >
-                        <option value="">(غير محدد)</option>
-                        {employees.filter(e => isBarberEmployee(e)).map(e => (
-                          <option key={e.id} value={e.id}>{e.name} ({e.role})</option>
-                        ))}
-                      </select>
-                    </div>
+                    {/* Add Service Button */}
+                    <button
+                      type="button"
+                      onClick={addServiceToBooking}
+                      disabled={!serviceToAdd}
+                      className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white py-2 rounded-xl text-xs font-black cursor-pointer shadow-sm transition-all flex items-center justify-center gap-1.5"
+                    >
+                      <span>+ إضافة الخدمة إلى جدول الموعد {parseInt(serviceQtyToAdd, 10) > 1 ? `(الكمية: ${serviceQtyToAdd})` : ''}</span>
+                    </button>
                   </div>
+                ) : (
+                  /* ============ FORM: ADD PRODUCT ============ */
+                  <div className="space-y-2.5 mb-3 bg-amber-50/50 p-3 rounded-2xl border border-amber-200/80">
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
+                      {/* Product Autocomplete */}
+                      <div className="relative sm:col-span-6">
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                          المنتج (ابحث بالاسم أو الباركود أو السعر) *
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={productSearchQuery}
+                            onChange={e => {
+                              setProductSearchQuery(e.target.value);
+                              setIsProductDropdownOpen(true);
+                              const exactMatch = retailProducts.find(p => p.name.toLowerCase() === e.target.value.toLowerCase().trim() || p.barcode === e.target.value.trim());
+                              if (exactMatch) {
+                                setProductToAdd(exactMatch.id);
+                              } else {
+                                setProductToAdd('');
+                              }
+                            }}
+                            onFocus={() => setIsProductDropdownOpen(true)}
+                            placeholder="🔍 اكتب اسم المنتج أو الباركود..."
+                            className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none text-slate-900 shadow-xs"
+                          />
+                          {productSearchQuery && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setProductSearchQuery('');
+                                setProductToAdd('');
+                                setIsProductDropdownOpen(true);
+                              }}
+                              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-md text-xs cursor-pointer"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
 
-                  {/* Add Button */}
-                  <button
-                    type="button"
-                    onClick={addServiceToBooking}
-                    disabled={!serviceToAdd}
-                    className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white py-2 rounded-xl text-xs font-black cursor-pointer shadow-sm transition-all flex items-center justify-center gap-1.5"
-                  >
-                    <span>+ إضافة الخدمة إلى جدول الموعد</span>
-                  </button>
-                </div>
+                        {/* Dropdown Menu for Product Autocomplete */}
+                        {isProductDropdownOpen && (
+                          <>
+                            <div 
+                              className="fixed inset-0 z-40" 
+                              onClick={() => setIsProductDropdownOpen(false)}
+                            />
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 max-h-48 overflow-y-auto p-1.5 space-y-1 text-right">
+                              {filteredProductsForBooking.length > 0 ? (
+                                filteredProductsForBooking.map(p => {
+                                  const isSelected = productToAdd === p.id;
+                                  return (
+                                    <button
+                                      key={p.id}
+                                      type="button"
+                                      onClick={() => {
+                                        setProductToAdd(p.id);
+                                        setProductSearchQuery(p.name);
+                                        setIsProductDropdownOpen(false);
+                                      }}
+                                      className={`w-full text-right px-3 py-2 rounded-xl text-xs flex items-center justify-between transition-all cursor-pointer ${
+                                        isSelected 
+                                          ? 'bg-amber-100 text-amber-900 font-black border border-amber-300' 
+                                          : 'hover:bg-slate-100 text-slate-800'
+                                      }`}
+                                    >
+                                      <div className="flex flex-col">
+                                        <span className="font-bold flex items-center gap-1.5">
+                                          <ShoppingBag size={12} className="text-amber-600" />
+                                          <span>{p.name}</span>
+                                        </span>
+                                        {p.barcode && (
+                                          <span className="text-[10px] text-slate-400 font-mono">باركود: {p.barcode}</span>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <span className="bg-emerald-50 text-emerald-700 font-mono font-black px-2 py-0.5 rounded-lg text-[11px] border border-emerald-200">
+                                          {p.sellPrice} {settings.currency}
+                                        </span>
+                                        {p.stock !== undefined && (
+                                          <span className="bg-slate-100 text-slate-600 text-[10px] px-1.5 py-0.5 rounded-md font-medium">
+                                            المخزون: {p.stock}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </button>
+                                  );
+                                })
+                              ) : (
+                                <div className="p-3 text-center text-xs text-slate-400">
+                                  {retailProducts.length === 0 ? 'لا توجد منتجات متاحة للبيع' : `لا توجد منتجات مطابقة لـ "${productSearchQuery}"`}
+                                </div>
+                              )}
+                            </div>
+                          </>
+                        )}
+                      </div>
+
+                      {/* Employee / Seller Selector */}
+                      <div className="sm:col-span-4">
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center justify-between">
+                          <span>موظف البيع</span>
+                          <span className="text-[10px] text-slate-400 font-normal">اختياري</span>
+                        </label>
+                        <select
+                          value={techToAdd}
+                          onChange={e => setTechToAdd(e.target.value)}
+                          className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-indigo-600 shadow-xs"
+                        >
+                          <option value="">(غير محدد)</option>
+                          {employees.map(e => (
+                            <option key={e.id} value={e.id}>{e.name} ({e.role})</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Quantity Input (كتابة مباشرة) */}
+                      <div className="sm:col-span-2">
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1 text-center">
+                          الكمية
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={serviceQtyToAdd}
+                          onChange={e => setServiceQtyToAdd(e.target.value)}
+                          onBlur={() => {
+                            const parsed = parseInt(serviceQtyToAdd, 10);
+                            if (isNaN(parsed) || parsed < 1) {
+                              setServiceQtyToAdd('1');
+                            }
+                          }}
+                          className="w-full bg-white border border-slate-300 rounded-xl px-2 py-2 text-xs font-black text-center outline-none focus:border-indigo-600 shadow-xs font-mono"
+                          placeholder="1"
+                          title="الكمية المطلوبة (قابلة للكتابة المباشرة)"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Add Product Button */}
+                    <button
+                      type="button"
+                      onClick={addProductToBooking}
+                      disabled={!productToAdd}
+                      className="w-full bg-amber-600 hover:bg-amber-700 disabled:opacity-40 text-white py-2 rounded-xl text-xs font-black cursor-pointer shadow-sm transition-all flex items-center justify-center gap-1.5"
+                    >
+                      <ShoppingBag size={14} />
+                      <span>+ إضافة المنتج إلى الحجز {parseInt(serviceQtyToAdd, 10) > 1 ? `(الكمية: ${serviceQtyToAdd})` : ''}</span>
+                    </button>
+                  </div>
+                )}
 
                 {(() => {
                   const hasServiceDiscounts = (newBooking.services || []).some(s => Number(s.discountValue || 0) > 0);
@@ -2590,7 +2926,7 @@ export function BookingsScreen({
                         <div className="bg-amber-50/90 border border-amber-200 rounded-xl p-2 px-3 text-[11px] text-amber-800 flex items-center justify-between">
                           <div className="flex items-center gap-1.5 font-bold">
                             <span>⚠️</span>
-                            <span>خصومات بنود الخدمات معطلة لتفعيل الخصم على إجمالي الحجز (لا يجوز الجمع بين خصمين).</span>
+                            <span>خصومات بنود الخدمات والمنتجات معطلة لتفعيل الخصم على إجمالي الحجز (لا يجوز الجمع بين خصمين).</span>
                           </div>
                           <button
                             type="button"
@@ -2605,20 +2941,62 @@ export function BookingsScreen({
                         </div>
                       )}
 
-                      {/* Services List with Discount per line */}
+                      {/* Services & Products List with Discount per line */}
                       <div className="space-y-2 max-h-48 overflow-y-auto">
                         {newBooking.services?.map(s => {
+                          const isProduct = s.type === 'product';
+                          const qty = Math.max(1, Number(s.quantity) || 1);
                           const lineDisc = calculateServiceLineDiscount(s);
                           const lineFinal = calculateServiceLinePrice(s);
+                          const lineGross = Number(s.price || 0) * qty;
                           return (
                             <div key={s.id} className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/80 text-xs space-y-1.5">
                               <div className="flex justify-between items-start">
                                 <div>
-                                  <div className="font-bold text-slate-900">{s.serviceName}</div>
-                                  <div className="text-[10px] text-slate-500">الفني: {s.technicianName}</div>
+                                  <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                                    {isProduct ? (
+                                      <span className="text-[10px] bg-amber-100 text-amber-800 font-bold px-1.5 py-0.5 rounded-md flex items-center gap-1">
+                                        <ShoppingBag size={10} />
+                                        <span>منتج</span>
+                                      </span>
+                                    ) : (
+                                      <span className="text-[10px] bg-indigo-50 text-indigo-700 font-bold px-1.5 py-0.5 rounded-md">
+                                        خدمة
+                                      </span>
+                                    )}
+                                    <span>{s.serviceName}</span>
+                                    {qty > 1 && (
+                                      <span className="text-[10px] bg-indigo-100 text-indigo-800 font-bold px-1.5 py-0.2 rounded-md">
+                                        ×{qty}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="text-[10px] text-slate-500">
+                                    {isProduct ? 'البائع:' : 'الفني:'} {s.technicianName}
+                                  </div>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                  <span className="font-mono font-bold text-slate-700">{s.price} {settings.currency}</span>
+                                  {/* تعديل الكمية مباشرة بالكتابة */}
+                                  <div className="flex items-center gap-1 bg-white px-2 py-0.5 rounded-lg border border-slate-200 shadow-2xs" title="تعديل الكمية مباشرة بالكتابة">
+                                    <span className="text-[10px] text-slate-500 font-bold">الكمية:</span>
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      step="1"
+                                      value={s.quantity ?? 1}
+                                      onChange={e => {
+                                        const parsed = parseInt(e.target.value, 10);
+                                        const qVal = isNaN(parsed) ? 1 : Math.max(1, parsed);
+                                        const updated = (newBooking.services || []).map(sx => sx.id === s.id ? { ...sx, quantity: qVal } : sx);
+                                        const totals = calculateBookingTotals({ ...newBooking, services: updated });
+                                        setNewBooking({ ...newBooking, services: updated, totalAmount: totals.netTotal });
+                                      }}
+                                      className="w-12 border border-slate-200 rounded px-1 text-center font-mono font-bold text-xs outline-none focus:border-indigo-600"
+                                    />
+                                  </div>
+                                  <span className="font-mono font-bold text-slate-700">
+                                    {lineGross.toFixed(2)} {settings.currency}
+                                  </span>
                                   <button
                                     type="button"
                                     onClick={() => {
@@ -2631,14 +3009,14 @@ export function BookingsScreen({
                                       });
                                     }}
                                     className="text-rose-500 hover:text-rose-700 cursor-pointer p-0.5"
-                                    title="حذف الخدمة"
+                                    title={isProduct ? "حذف المنتج" : "حذف الخدمة"}
                                   >
                                     <X size={14} />
                                   </button>
                                 </div>
                               </div>
 
-                              {/* خصم سطر الخدمة */}
+                              {/* خصم سطر الخدمة أو المنتج */}
                               <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-slate-200/60 bg-white/70 px-2 py-1 rounded-lg">
                                 <div className="flex items-center gap-1.5">
                                   <span className="text-[11px] font-bold text-slate-600">خصم السطر:</span>
@@ -2693,7 +3071,7 @@ export function BookingsScreen({
                         })}
                         {(!newBooking.services || newBooking.services.length === 0) && (
                           <div className="text-center text-xs text-slate-400 py-3 bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
-                            لم يتم إضافة أي خدمات بعد
+                            لم يتم إضافة أي خدمات أو منتجات بعد
                           </div>
                         )}
                       </div>
@@ -2723,7 +3101,7 @@ export function BookingsScreen({
                             <div className="text-[11px] text-amber-800 flex items-center justify-between pt-1 border-t border-amber-200/60 font-bold">
                               <span className="flex items-center gap-1">
                                 <span>⚠️</span>
-                                <span>لا يمكن تطبيق خصم إجمالي لوجود خصم على مستوى الخدمات (لا يجوز الجمع بين خصمين).</span>
+                                <span>لا يمكن تطبيق خصم إجمالي لوجود خصم على مستوى الخدمات أو المنتجات (لا يجوز الجمع بين خصمين).</span>
                               </span>
                               <button
                                 type="button"
@@ -2734,7 +3112,7 @@ export function BookingsScreen({
                                 }}
                                 className="font-bold underline text-amber-900 hover:text-amber-950 cursor-pointer text-[10px] whitespace-nowrap mr-2"
                               >
-                                مسح خصومات الخدمات
+                                مسح خصومات البنود
                               </button>
                             </div>
                           </div>
@@ -3650,20 +4028,34 @@ export function BookingsScreen({
                     </div>
                   </div>
 
-                  {/* Services Table */}
+                  {/* Services & Products Table */}
                   <div className="space-y-1">
                     <div className="font-bold text-xs border-b border-black pb-1 flex justify-between">
-                      <span>الخدمة</span>
+                      <span>البند (خدمة / منتج)</span>
                       <span>السعر</span>
                     </div>
                     <div className="divide-y divide-dotted divide-slate-200">
                       {previewBooking.services?.map(s => {
+                        const isProd = s.type === 'product';
+                        const qty = Math.max(1, Number(s.quantity) || 1);
                         const lineDisc = calculateServiceLineDiscount(s);
                         const lineFinal = calculateServiceLinePrice(s);
                         return (
                           <div key={s.id} className="py-1.5 flex justify-between items-start">
                             <div>
-                              <div className="font-bold text-black">{s.serviceName}</div>
+                              <div className="font-bold text-black flex items-center gap-1.5">
+                                {isProd && (
+                                  <span className="text-[10px] bg-amber-100 text-amber-900 px-1.5 py-0.2 rounded border border-amber-300 font-bold">
+                                    منتج
+                                  </span>
+                                )}
+                                <span>{s.serviceName}</span>
+                                {qty > 1 && (
+                                  <span className="text-[10px] bg-slate-100 text-slate-800 px-1.5 py-0.2 rounded border border-slate-300 font-bold">
+                                    ×{qty}
+                                  </span>
+                                )}
+                              </div>
                               {lineDisc > 0 && (
                                 <div className="text-[10px] text-rose-600 font-bold">
                                   خصم: -{lineDisc.toFixed(2)} {s.discountType === 'percentage' ? `(${s.discountValue}%)` : settings.currency}
@@ -3672,9 +4064,9 @@ export function BookingsScreen({
                             </div>
                             <div className="text-left font-mono font-bold">
                               <div>{lineFinal.toFixed(2)} {settings.currency}</div>
-                              {lineDisc > 0 && (
-                                <div className="text-[10px] text-slate-400 line-through">
-                                  {Number(s.price || 0).toFixed(2)}
+                              {(lineDisc > 0 || qty > 1) && (
+                                <div className="text-[10px] text-slate-400">
+                                  {qty > 1 ? `${Number(s.price || 0).toFixed(2)} × ${qty}` : Number(s.price || 0).toFixed(2)}
                                 </div>
                               )}
                             </div>
@@ -3688,13 +4080,13 @@ export function BookingsScreen({
                   <div className="border-t border-dashed border-black pt-2 space-y-1 text-xs">
                     {totals.totalDiscounts > 0 && (
                       <div className="flex justify-between text-slate-600 font-bold">
-                        <span>إجمالي الخدمات (قبل الخصم):</span>
+                        <span>إجمالي البنود (قبل الخصم):</span>
                         <span className="font-mono">{totals.grossServices.toFixed(2)} {settings.currency}</span>
                       </div>
                     )}
                     {totals.lineDiscounts > 0 && (
                       <div className="flex justify-between text-rose-600 font-bold">
-                        <span>خصومات بنود الخدمات:</span>
+                        <span>خصومات البنود:</span>
                         <span className="font-mono">-{totals.lineDiscounts.toFixed(2)} {settings.currency}</span>
                       </div>
                     )}

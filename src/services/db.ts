@@ -2165,6 +2165,95 @@ export const DB = {
     } catch (e) { console.error('DB.deleteInvoice exception:', e); return false; }
   },
 
+  // ---- مرتجعات المبيعات (Sales Returns) ----
+  async fetchSalesReturns(salonId?: string) {
+    try {
+      const fromDb = await DB.fetchAll<any>('sales_returns', undefined, salonId);
+      if (fromDb && Array.isArray(fromDb) && fromDb.length > 0) {
+        return fromDb.map(toCamel);
+      }
+    } catch (e) {}
+    try {
+      const local = localStorage.getItem('smartcut_sales_returns');
+      return local ? JSON.parse(local) : [];
+    } catch { return []; }
+  },
+
+  async saveSalesReturn(ret: any, salonId?: string) {
+    const client = sb();
+    const validSalonId = toSalonUUID(salonId || ret.salonId || getSalonId());
+    const validBranchId = toBranchUUID(ret.branchId);
+
+    // Always update localStorage
+    try {
+      const localRaw = localStorage.getItem('smartcut_sales_returns');
+      const list = localRaw ? JSON.parse(localRaw) : [];
+      const idx = list.findIndex((r: any) => r.id === ret.id);
+      if (idx >= 0) list[idx] = ret;
+      else list.unshift(ret);
+      localStorage.setItem('smartcut_sales_returns', JSON.stringify(list));
+    } catch (e) {}
+
+    if (!client || !ret) return ret;
+    try {
+      const snap: any = {
+        id: ret.id,
+        salon_id: validSalonId,
+        branch_id: validBranchId,
+        branch_code: ret.branchCode || null,
+        original_invoice_id: ret.originalInvoiceId,
+        original_invoice_date: ret.originalInvoiceDate || null,
+        date: ret.date || new Date().toISOString(),
+        client_id: ret.clientId || null,
+        client_name: ret.clientName,
+        client_phone: ret.clientPhone || '',
+        items: ret.items || [],
+        subtotal_refund: ret.subtotalRefund ?? ret.totalRefund ?? 0,
+        tax_refund: ret.taxRefund ?? 0,
+        total_refund: ret.totalRefund ?? 0,
+        refund_method: ret.refundMethod || 'cash',
+        treasury_id: ret.treasuryId || 'cash',
+        treasury_name: ret.treasuryName || null,
+        payment_splits: ret.paymentSplits || [],
+        reason: ret.reason || '',
+        return_type: ret.returnType || 'full',
+        created_by: ret.createdBy || null,
+        created_by_name: ret.createdByName || null,
+        notes: ret.notes || null,
+        status: ret.status || 'completed',
+        restock_products: ret.restockProducts !== false,
+        reverse_commissions: ret.reverseCommissions !== false
+      };
+      const { error } = await client.from('sales_returns').upsert(snap, { onConflict: 'id' });
+      if (error) {
+        console.warn('DB.saveSalesReturn Supabase note:', error.message);
+      }
+      return ret;
+    } catch (e) {
+      console.warn('DB.saveSalesReturn exception:', e);
+      return ret;
+    }
+  },
+
+  async deleteSalesReturn(returnId: string) {
+    try {
+      const localRaw = localStorage.getItem('smartcut_sales_returns');
+      if (localRaw) {
+        const list = JSON.parse(localRaw);
+        localStorage.setItem('smartcut_sales_returns', JSON.stringify(list.filter((r: any) => r.id !== returnId)));
+      }
+    } catch (e) {}
+
+    const client = sb();
+    if (!client) return true;
+    try {
+      await client.from('sales_returns').delete().eq('id', returnId);
+      return true;
+    } catch (e) {
+      return true;
+    }
+  },
+
   // ---- حذف معاملة مالية من قاعدة البيانات ----
   async deleteTransaction(transactionId: string) {
     const client = sb();

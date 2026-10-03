@@ -32,6 +32,7 @@ export const SCREEN_CATALOG: ScreenMeta[] = [
   { id: 'queue_calling', name: '📢 شاشة المتابعة والمناداة (طابور الانتظار)', category: 'المبيعات', description: 'متابعة العملاء الحاضرين، تسكينهم مع الموظفين، والمناداة عليهم بالدور' },
   { id: 'bookings', name: 'الحجوزات والمواعيد', category: 'المبيعات', description: 'جدولة مواعيد العملاء مع الفنيين ومتابعة حالة الحجز' },
   { id: 'invoices', name: 'سجل الفواتير والمبيعات', category: 'المبيعات', description: 'استعراض فواتير المبيعات، إعادة الطباعة، وتتبع تفاصيل الدفع' },
+  { id: 'sales_returns', name: '🔄 مرتجع المبيعات وإشعارات الدائن', category: 'المبيعات', description: 'استعراض فواتير المرتجع، إنشاء مرتجع كلي أو جزئي، واسترجاع المبالغ والمخزون' },
   { id: 'services', name: 'الخدمات والتصنيفات', category: 'الكتالوج والخدمات', description: 'إضافة وتعديل الخدمات والأسعار ومدد التنفيذ والتصنيفات' },
   
   // Warehouse & Inventory Hub
@@ -138,7 +139,7 @@ export const DEFAULT_ROLE_PRESETS: Record<UserRole, { screens: string[]; actions
     actions: ['*']
   },
   supervisor: {
-    screens: ['dashboard', 'pos', 'queue_calling', 'bookings', 'invoices', 'services', 'warehouse', 'clients', 'employees', 'treasury', 'expenses', 'reports'],
+    screens: ['dashboard', 'pos', 'queue_calling', 'bookings', 'invoices', 'sales_returns', 'services', 'warehouse', 'clients', 'employees', 'treasury', 'expenses', 'reports'],
     actions: ['pos_discount', 'pos_void', 'pos_reprint', 'sales_return', 'manage_invoices_delete', 'manage_queue', 'manage_shifts', 'edit_shift_cash', 'treasury_deposit', 'treasury_withdraw', 'treasury_transfer', 'treasury_view_balance', 'manage_expenses', 'manage_products', 'manage_inventory', 'manage_employees', 'manage_salaries', 'manage_hr', 'manage_clients', 'manage_booking_settings', 'manage_bookings_delete', 'view_reports', 'export_excel']
   },
   warehouse_manager: {
@@ -146,15 +147,15 @@ export const DEFAULT_ROLE_PRESETS: Record<UserRole, { screens: string[]; actions
     actions: ['manage_products', 'import_products_excel', 'manage_suppliers', 'manage_purchases', 'manage_inventory', 'export_excel']
   },
   cashier: {
-    screens: ['pos', 'queue_calling', 'bookings', 'invoices', 'clients', 'expenses', 'treasury'],
-    actions: ['pos_discount', 'pos_reprint', 'manage_queue', 'manage_shifts', 'treasury_deposit', 'manage_expenses']
+    screens: ['pos', 'queue_calling', 'bookings', 'invoices', 'sales_returns', 'clients', 'expenses', 'treasury'],
+    actions: ['pos_discount', 'pos_reprint', 'sales_return', 'manage_queue', 'manage_shifts', 'treasury_deposit', 'manage_expenses']
   },
   receptionist: {
     screens: ['queue_calling', 'bookings', 'clients', 'services', 'complaints'],
     actions: ['pos_reprint', 'manage_queue', 'manage_clients']
   },
   accountant: {
-    screens: ['dashboard', 'invoices', 'warehouse', 'treasury', 'expenses', 'reports'],
+    screens: ['dashboard', 'invoices', 'sales_returns', 'warehouse', 'treasury', 'expenses', 'reports'],
     actions: ['pos_reprint', 'sales_return', 'treasury_deposit', 'treasury_withdraw', 'treasury_transfer', 'treasury_view_balance', 'manage_expenses', 'manage_suppliers', 'manage_purchases', 'manage_inventory', 'manage_salaries', 'view_reports', 'export_excel']
   },
   barber: {

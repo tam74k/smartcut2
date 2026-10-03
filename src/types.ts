@@ -605,8 +605,11 @@ export interface BookingService {
   technicianId: string; 
   technicianName: string; 
   price: number; 
+  quantity?: number;
   discountType?: 'percentage' | 'fixed';
   discountValue?: number;
+  type?: 'service' | 'product';
+  productId?: string;
 }
 
 export interface AdvancePayment { 
@@ -902,6 +905,58 @@ export interface Invoice {
   remedyReason?: string;
   relatedComplaintId?: string;
   originalInvoiceId?: string;
+  // Sales Returns Tracking
+  returnedAmount?: number;
+  returnIds?: string[];
+}
+
+// ============================================================
+// 🔄 0. نظام مرتجعات المبيعات (Sales Returns Management)
+// ============================================================
+export interface SalesReturnItem {
+  id: string;
+  originalItemId?: string;
+  itemId?: string; // product or service id
+  type: 'service' | 'product';
+  name: string;
+  price: number; // unit effective paid price
+  originalQuantity: number;
+  returnQuantity: number;
+  totalRefund: number;
+  technicianId?: string;
+  technicianName?: string;
+  referralEmployeeId?: string;
+  referralEmployeeName?: string;
+  reason?: string;
+}
+
+export interface SalesReturn {
+  id: string; // e.g. RET-1001 or RET-202610-001
+  salonId?: string;
+  branchId?: string;
+  branchCode?: string;
+  originalInvoiceId: string;
+  originalInvoiceDate?: string;
+  date: string; // ISO string
+  clientId?: string;
+  clientName: string;
+  clientPhone?: string;
+  items: SalesReturnItem[];
+  subtotalRefund: number;
+  taxRefund?: number;
+  totalRefund: number;
+  refundMethod: string; // treasuryId or 'cash'
+  treasuryId: string;
+  treasuryName?: string;
+  paymentSplits?: { amount: number; treasuryId: string }[];
+  reason: string;
+  returnType: 'full' | 'partial';
+  createdBy?: string;
+  createdByName?: string;
+  notes?: string;
+  status: 'completed' | 'cancelled';
+  restockProducts?: boolean;
+  reverseCommissions?: boolean;
 }
 
 // ============================================================

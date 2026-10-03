@@ -9,7 +9,7 @@ import {
   Calendar, Wallet, Receipt, Banknote, FileText,
   UsersRound, List, Menu, X, Printer, Package, Truck, 
   ShoppingCart, ClipboardList, Shield, User as UserIcon, Sparkles, BarChart3, Boxes, Bot,
-  AlertCircle, Smartphone, ShieldAlert, Tag, HeartHandshake, Briefcase, Fingerprint, Radio
+  AlertCircle, Smartphone, ShieldAlert, Tag, HeartHandshake, Briefcase, Fingerprint, Radio, RotateCcw
 } from 'lucide-react';
 import { POSScreen } from './components/POSScreen';
 import { SettingsScreen } from './components/SettingsScreen';
@@ -19,6 +19,7 @@ import { DashboardScreen } from './components/DashboardScreen';
 import { OwnerExecutivePortal } from './components/OwnerExecutivePortal';
 import { BookingsScreen } from './components/BookingsScreen';
 import { InvoicesScreen } from './components/InvoicesScreen';
+import { SalesReturnsScreen } from './components/SalesReturnsScreen';
 import { ClientsScreen } from './components/ClientsScreen';
 import { ComplaintsScreen } from './components/ComplaintsScreen';
 import { TreasuryScreen } from './components/TreasuryScreen';
@@ -58,7 +59,7 @@ import { hasEmployeeFixedCommission } from './utils/commissionHelper';
 import { 
   AppSettings, Transaction, Booking, Invoice, ServiceItem, Category, Employee, Product, AppUser, 
   SaaSSubscription, Branch, Partner, PartnerTransaction, PromoCode, PromoCodeUsage, TipRecord, 
-  EmployeeCustody, FingerprintLog, WorkShift, Client, HeldInvoice 
+  EmployeeCustody, FingerprintLog, WorkShift, Client, HeldInvoice, SalesReturn 
 } from './types';
 
 
@@ -370,6 +371,12 @@ export default function App() {
   const [tips, setTips] = useState<TipRecord[]>([]);
   const [custodies, setCustodies] = useState<EmployeeCustody[]>([]);
   const [fingerprintLogs, setFingerprintLogs] = useState<FingerprintLog[]>([]);
+  const [salesReturns, setSalesReturns] = useState<SalesReturn[]>(() => {
+    try {
+      const saved = localStorage.getItem('smartcut_sales_returns');
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
 
   // Refs to prevent duplicate initialization and redundant fetches
   const hasInitializedRef = useRef<boolean>(false);
@@ -429,6 +436,7 @@ export default function App() {
     if (data.tips) setTips(data.tips);
     if (data.custodies) setCustodies(data.custodies);
     if (data.fingerprintLogs) setFingerprintLogs(data.fingerprintLogs);
+    if (data.salesReturns && Array.isArray(data.salesReturns)) setSalesReturns(data.salesReturns);
     if (data.settings) {
       setSettings(prev => ({
         ...prev,
@@ -621,6 +629,12 @@ export default function App() {
             }
           }).catch(() => {});
 
+          DB.fetchSalesReturns(sId).then(dbReturns => {
+            if (dbReturns && dbReturns.length > 0) {
+              setSalesReturns(dbReturns);
+            }
+          }).catch(() => {});
+
           if (user?.role === 'owner') {
             loadedSectionsRef.current.add('owner_portal');
             DB.loadSectionData('owner_portal', sId).then(data => {
@@ -682,7 +696,8 @@ export default function App() {
           polledCategories,
           polledPurchases,
           polledSupplierPayments,
-          polledSuppliers
+          polledSuppliers,
+          polledSalesReturns
         ] = await Promise.all([
           bId ? DB.getActiveWorkShift(sId, bId) : null,
           DB.fetchAll<any>('invoices', undefined, sId),
@@ -694,7 +709,8 @@ export default function App() {
           DB.fetchCategories(sId),
           DB.fetchPurchaseInvoices(sId),
           DB.fetchSupplierPayments(sId),
-          DB.fetchSuppliers(sId)
+          DB.fetchSuppliers(sId),
+          DB.fetchSalesReturns(sId)
         ]);
 
         if (!isSubscribed) return;
@@ -818,6 +834,11 @@ export default function App() {
             discountType: b.discountType || b.discount_type || 'fixed',
             discountValue: Number(b.discountValue ?? b.discount_value ?? 0)
           })));
+        }
+
+        // Sync Sales Returns
+        if (polledSalesReturns && Array.isArray(polledSalesReturns)) {
+          setSalesReturns(polledSalesReturns);
         }
       } catch (err) {
         console.warn('[Smart Polling] Background poll error:', err);
@@ -1089,6 +1110,10 @@ export default function App() {
     return itemMovements.filter(im => !(im as any).salonId || !currentSalonId || (im as any).salonId === currentSalonId);
   }, [itemMovements, currentSalonId]);
 
+  const salonSalesReturns = useMemo(() => {
+    return salesReturns.filter(r => !r.salonId || !currentSalonId || r.salonId === currentSalonId);
+  }, [salesReturns, currentSalonId]);
+
   // Backward compatible alias
   const branchCategories = salonCategories;
   const branchServices = salonServices;
@@ -1103,6 +1128,7 @@ export default function App() {
   const branchSupplierPayments = salonSupplierPayments;
   const branchInventoryCounts = salonInventoryCounts;
   const branchItemMovements = salonItemMovements;
+  const branchSalesReturns = salonSalesReturns;
 
   // ============================================================
   // Subscription & Read-Only Protection Rules
@@ -1450,6 +1476,22 @@ export default function App() {
       const next = typeof updater === 'function' ? updater(prev) : updater;
       next.forEach((fl: any) => DB.saveFingerprintLog(fl));
       return next;
+    });
+  };
+
+  const handleSetSalesReturns = (updater: SalesReturn[] | ((prev: SalesReturn[]) => SalesReturn[])) => {
+    if (checkReadOnlyAndWarn()) return;
+    setSalesReturns(prev => {
+      const currentSalonReturns = prev.filter(r => !r.salonId || r.salonId === currentSalonId);
+      const next = typeof updater === 'function' ? updater(currentSalonReturns) : updater;
+      const tagged = next.map(r => ({ ...r, salonId: r.salonId || currentSalonId, branchId: r.branchId || activeBranchId }));
+      const other = prev.filter(r => r.salonId && r.salonId !== currentSalonId);
+      const res = [...other, ...tagged];
+      try {
+        localStorage.setItem('smartcut_sales_returns', JSON.stringify(res));
+      } catch (e) {}
+      tagged.forEach(r => DB.saveSalesReturn(r, currentSalonId));
+      return res;
     });
   };
 
@@ -1870,6 +1912,178 @@ export default function App() {
     setActiveBookingForPOS(null);
   };
 
+  const handleProcessSalesReturn = (salesReturn: SalesReturn) => {
+    if (checkReadOnlyAndWarn()) return;
+    const activeBranch = branches.find(b => b.id === activeBranchId) || branches[0];
+    const returnWithSalon: SalesReturn = {
+      ...salesReturn,
+      salonId: settings.salonId,
+      branchId: salesReturn.branchId || activeBranchId,
+      branchCode: salesReturn.branchCode || activeBranch?.code
+    };
+
+    // 1. تحديث حالة المرتجعات والتخزين المحلي وقاعدة البيانات
+    setSalesReturns(prev => {
+      const updated = [returnWithSalon, ...prev.filter(r => r.id !== returnWithSalon.id)];
+      try {
+        localStorage.setItem('smartcut_sales_returns', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+    DB.saveSalesReturn(returnWithSalon, settings.salonId);
+
+    // 2. قيد حركة الخزينة (سند صرف استرجاع نقدي)
+    if (returnWithSalon.totalRefund > 0) {
+      const refundTrx: Transaction = {
+        id: 'TRX-RET-' + Math.random().toString(36).substr(2, 9),
+        salonId: settings.salonId,
+        date: returnWithSalon.date,
+        type: 'out',
+        amount: Number(returnWithSalon.totalRefund),
+        category: 'مرتجع مبيعات',
+        description: `مرتجع مبيعات - إشعار دائن ${returnWithSalon.id} للفاتورة ${returnWithSalon.originalInvoiceId}${returnWithSalon.clientName ? ` (${returnWithSalon.clientName})` : ''}`,
+        treasury: returnWithSalon.treasuryId || returnWithSalon.refundMethod || 'cash',
+        branchId: activeBranchId,
+        branchCode: activeBranch?.code,
+        createdBy: currentUser?.name || 'الكاشير',
+        userId: currentUser?.id,
+        userName: currentUser?.name || 'الكاشير',
+        shiftDate: shiftData.date
+      };
+      setTransactions(prev => [...prev, refundTrx]);
+      DB.saveTransactions([refundTrx], settings.salonId).catch(err => console.error('DB.saveTransactions error:', err));
+    }
+
+    // 3. إعادة المنتجات للمخزون وتسجيل حركة وارد مخزني
+    if (returnWithSalon.restockProducts !== false) {
+      const returnedProducts = returnWithSalon.items.filter(item => item.type === 'product');
+      if (returnedProducts.length > 0) {
+        setProducts(prev => {
+          const updatedProds = prev.map(prod => {
+            const retItem = returnedProducts.find(ri => ri.itemId === prod.id);
+            if (retItem) {
+              const updated = {
+                ...prod,
+                currentStock: (Number(prod.currentStock) || 0) + Number(retItem.returnQuantity)
+              };
+              DB.saveProduct(updated);
+              return updated;
+            }
+            return prod;
+          });
+          return updatedProds;
+        });
+
+        const newMovements = returnedProducts.map(retItem => ({
+          id: 'MOV-' + Math.random().toString(36).substr(2, 9),
+          salonId: settings.salonId,
+          productId: retItem.itemId,
+          productName: retItem.name,
+          type: 'sale_return',
+          quantity: Number(retItem.returnQuantity),
+          previousStock: 0,
+          newStock: 0,
+          date: returnWithSalon.date,
+          referenceId: returnWithSalon.id,
+          notes: `مرتجع مبيعات - إشعار دائن ${returnWithSalon.id} للفاتورة ${returnWithSalon.originalInvoiceId}`,
+          branchId: activeBranchId
+        }));
+        setItemMovements(prev => [...prev, ...newMovements]);
+        newMovements.forEach(m => DB.saveItemMovement(m));
+      }
+    }
+
+    // 4. استرجاع وعكس عمولات الموظفين إن طُلب ذلك
+    if (returnWithSalon.reverseCommissions !== false) {
+      const commDeductions: { employeeId: string; record: any }[] = [];
+      returnWithSalon.items.forEach(item => {
+        if (item.technicianId) {
+          let commAmount = 0;
+          if (item.type === 'service') {
+            const srv = services.find(s => s.id === item.itemId);
+            const emp = employees.find(e => e.id === item.technicianId);
+            const isFixed = hasEmployeeFixedCommission(emp);
+            if (!isFixed && srv && srv.commissionAmount) {
+              if (srv.commissionType === 'fixed') {
+                commAmount = srv.commissionAmount;
+              } else {
+                commAmount = (srv.commissionAmount / 100) * item.price;
+              }
+            } else if (emp && emp.commissionPercentage) {
+              commAmount = (emp.commissionPercentage / 100) * item.price;
+            }
+          } else if (item.type === 'product') {
+            const prod = products.find(p => p.id === item.itemId);
+            if (prod && prod.commission) {
+              commAmount = (prod.commission / 100) * item.price;
+            }
+          }
+          if (commAmount > 0) {
+            commDeductions.push({
+              employeeId: item.technicianId,
+              record: {
+                id: 'FIN-REV-' + Math.random().toString(36).substr(2, 9),
+                date: returnWithSalon.date,
+                type: 'deduction',
+                amount: commAmount * (item.returnQuantity || 1),
+                note: `خصم عمولة بسبب مرتجع مبيعات: ${item.name} (فاتورة ${returnWithSalon.originalInvoiceId})`
+              }
+            });
+          }
+        }
+      });
+
+      if (commDeductions.length > 0) {
+        setEmployees(prev => {
+          return prev.map(emp => {
+            const myRecords = commDeductions.filter(r => r.employeeId === emp.id).map(r => r.record);
+            if (myRecords.length > 0) {
+              const updatedEmp = {
+                ...emp,
+                financialRecords: [...(emp.financialRecords || []), ...myRecords]
+              };
+              DB.saveEmployee(updatedEmp);
+              return updatedEmp;
+            }
+            return emp;
+          });
+        });
+      }
+    }
+
+    // 5. تحديث حالة الفاتورة الأصلية والمبلغ المرتجع
+    setInvoices(prev => {
+      const updated = prev.map(inv => {
+        if (inv.id === returnWithSalon.originalInvoiceId) {
+          const currentReturned = (Number(inv.returnedAmount) || 0) + Number(returnWithSalon.totalRefund);
+          const isFullyRefunded = currentReturned >= (Number(inv.total) - 0.01);
+          const updatedInv: Invoice = {
+            ...inv,
+            returnedAmount: currentReturned,
+            returnIds: [...(inv.returnIds || []), returnWithSalon.id],
+            status: isFullyRefunded ? 'refunded' : inv.status
+          };
+          DB.saveInvoice(updatedInv, settings.salonId);
+          return updatedInv;
+        }
+        return inv;
+      });
+      return updated;
+    });
+  };
+
+  const handleDeleteSalesReturn = (returnId: string) => {
+    if (checkReadOnlyAndWarn()) return;
+    setSalesReturns(prev => {
+      const updated = prev.filter(r => r.id !== returnId);
+      try {
+        localStorage.setItem('smartcut_sales_returns', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+    DB.deleteSalesReturn(returnId);
+  };
+
 
   const renderScreen = () => {
     switch (activeTab) {
@@ -1894,6 +2108,8 @@ export default function App() {
           setEmployees={handleSetEmployees} 
           products={branchProducts}
           invoices={branchInvoices}
+          salesReturns={branchSalesReturns}
+          onProcessSalesReturn={handleProcessSalesReturn}
           isSubscriptionBlocked={isSubscriptionBlocked}
           promoCodes={promoCodes}
           setPromoCodes={handleSetPromoCodes}
@@ -2079,6 +2295,7 @@ export default function App() {
           setBookings={handleSetBookings} 
           onToPOS={(booking) => { setActiveBookingForPOS(booking); setActiveTab('pos'); }} 
           services={branchServices} 
+          products={branchProducts}
           employees={branchEmployees}
           clients={salonClients}
           setClients={handleSetClients}
@@ -2105,6 +2322,26 @@ export default function App() {
           products={branchProducts}
           setProducts={handleSetProducts}
           setItemMovements={handleSetItemMovements}
+          employees={branchEmployees}
+          services={branchServices}
+          salesReturns={branchSalesReturns}
+          onProcessSalesReturn={handleProcessSalesReturn}
+          onNavigateToReturns={() => setActiveTab('sales_returns')}
+        />
+      );
+
+      case 'sales_returns': return (
+        <SalesReturnsScreen 
+          settings={settings}
+          salesReturns={branchSalesReturns}
+          setSalesReturns={handleSetSalesReturns}
+          invoices={branchInvoices}
+          onProcessSalesReturn={handleProcessSalesReturn}
+          onDeleteSalesReturn={handleDeleteSalesReturn}
+          activeBranchId={activeBranchId}
+          branches={branches}
+          currentUser={currentUser}
+          products={branchProducts}
           employees={branchEmployees}
           services={branchServices}
         />
@@ -2214,6 +2451,7 @@ export default function App() {
           setEmployees={handleSetEmployees}
           setTransactions={handleSetTransactions}
           bookings={branchBookings}
+          salesReturns={branchSalesReturns}
         />
 
       );
@@ -2318,6 +2556,7 @@ export default function App() {
     { id: 'bookings', icon: Calendar, label: 'الحجوزات' },
     { id: 'pos', icon: Scissors, label: 'نقطة البيع (POS)' },
     { id: 'invoices', icon: Receipt, label: 'الفواتير' },
+    { id: 'sales_returns', icon: RotateCcw, label: 'مرتجع المبيعات' },
     { id: 'promo_codes', icon: Tag, label: 'البرومو كود والكوبونات' },
     { id: 'services', icon: List, label: 'الخدمات والتصنيفات' },
     { id: 'warehouse', icon: Boxes, label: 'المخزن والمستودع' },

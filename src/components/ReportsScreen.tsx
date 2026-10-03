@@ -1,12 +1,13 @@
 import { useState, useMemo, useEffect } from 'react';
-import { AppSettings, Transaction, Invoice, Branch, TipRecord, AppUser, Booking } from '../types';
-import { Calendar, FileBarChart, Download, TrendingUp, TrendingDown, DollarSign, Printer, CheckCircle2, Clock, Wallet, Coins, ShoppingCart, Truck, Edit2, Trash2, RefreshCw, AlertTriangle, User, X, Check, Save, MapPin } from 'lucide-react';
+import { AppSettings, Transaction, Invoice, Branch, TipRecord, AppUser, Booking, SalesReturn } from '../types';
+import { Calendar, FileBarChart, Download, TrendingUp, TrendingDown, DollarSign, Printer, CheckCircle2, Clock, Wallet, Coins, ShoppingCart, Truck, Edit2, Trash2, RefreshCw, AlertTriangle, User, X, Check, Save, MapPin, RotateCcw, Package, Scissors } from 'lucide-react';
 import { ClosingReportReceipt } from './ClosingReportReceipt';
 import { ServicesReportReceipt } from './ServicesReportReceipt';
 import { EmployeesReportReceipt } from './EmployeesReportReceipt';
 import { ExpensesReportReceipt } from './ExpensesReportReceipt';
 import { IncomeReportReceipt } from './IncomeReportReceipt';
 import { CustodyReportReceipt } from './CustodyReportReceipt';
+import { ThermalSalesReturnReceipt } from './ThermalSalesReturnReceipt';
 import { exportToExcel } from '../utils/exportExcel';
 import { handlePrintReceipt } from '../utils/print';
 import { calculateEmployeeCommission, calculateEmployeeTotalCommission } from '../utils/commissionHelper';
@@ -31,7 +32,8 @@ export function ReportsScreen({
   currentUser,
   setEmployees,
   setTransactions,
-  bookings = []
+  bookings = [],
+  salesReturns = []
 }: { 
   settings: AppSettings, 
   transactions: Transaction[], 
@@ -50,7 +52,8 @@ export function ReportsScreen({
   currentUser?: AppUser | null,
   setEmployees?: (employees: any[]) => void,
   setTransactions?: (transactions: any[]) => void,
-  bookings?: Booking[]
+  bookings?: Booking[],
+  salesReturns?: SalesReturn[]
 }) {
 
   const date = new Date();
@@ -69,6 +72,9 @@ export function ReportsScreen({
   const [selectedAdvanceEmpId, setSelectedAdvanceEmpId] = useState<string>('all');
   const [unpaidBookingsFilter, setUnpaidBookingsFilter] = useState<'all' | 'unpaid_only' | 'paid_only'>('all');
   const [unpaidBookingsSearch, setUnpaidBookingsSearch] = useState('');
+  const [returnsFilterType, setReturnsFilterType] = useState<'all' | 'products' | 'services'>('all');
+  const [returnsTreasuryFilter, setReturnsTreasuryFilter] = useState<string>('all');
+  const [returnsSearch, setReturnsSearch] = useState<string>('');
 
   const [localFingerprintLogs, setLocalFingerprintLogs] = useState<any[]>(fingerprintLogs || []);
   const [isRefreshingLogs, setIsRefreshingLogs] = useState<boolean>(false);
@@ -142,6 +148,10 @@ export function ReportsScreen({
   const branchTips = useMemo(() => {
     return (tips || []).filter(t => matchesActiveBranch(t.branchId));
   }, [tips, activeBranchId, isMainBranch]);
+
+  const branchSalesReturns = useMemo(() => {
+    return (salesReturns || []).filter(r => matchesActiveBranch(r.branchId));
+  }, [salesReturns, activeBranchId, isMainBranch]);
 
   const getTreasuryLabel = (tId?: string, paymentMethod?: string) => {
     if (tId) {
@@ -306,14 +316,22 @@ export function ReportsScreen({
       });
     }
 
+    // 5.b Sales Returns (مرتجعات المبيعات)
+    const periodSalesReturns = branchSalesReturns.filter(r => {
+      const d = (r.date || '').split('T')[0];
+      return d >= activeFrom && d <= activeTo && r.status !== 'cancelled';
+    });
+    const totalSalesReturns = periodSalesReturns.reduce((sum, r) => sum + (Number(r.totalRefund) || 0), 0);
+
     // 6. Net Profit Calculation:
-    // صافي الربح = إجمالي الدخل - المصروفات - الرواتب - السلف - المسدد في المشتريات - دفعات الموردين - العمولات
-    const totalDeductions = totalExpenses + totalSalaries + totalAdvances + totalPurchasesAndSuppliers + totalCommissions;
+    // صافي الربح = إجمالي الدخل - المرتجعات - المصروفات - الرواتب - السلف - المسدد في المشتريات - دفعات الموردين - العمولات
+    const totalDeductions = totalSalesReturns + totalExpenses + totalSalaries + totalAdvances + totalPurchasesAndSuppliers + totalCommissions;
     const netProfit = grossIncome - totalDeductions;
     const profitMargin = grossIncome > 0 ? (netProfit / grossIncome) * 100 : 0;
 
     const breakdownList = [
       { id: 'income', label: 'إجمالي الدخل المحصل من الفواتير', amount: grossIncome, type: 'plus', percent: 100, note: `${periodInvoices.length} فاتورة مسددة` },
+      ...(totalSalesReturns > 0 ? [{ id: 'sales_returns', label: 'مرتجعات المبيعات والبنود المستردة (-)', amount: totalSalesReturns, type: 'minus', percent: grossIncome > 0 ? (totalSalesReturns / grossIncome) * 100 : 0, note: `${periodSalesReturns.length} سند مرتجع مبيعات مسجل` }] : []),
       { id: 'expenses', label: 'جميع المصروفات التشغيلية والنثرية', amount: totalExpenses, type: 'minus', percent: grossIncome > 0 ? (totalExpenses / grossIncome) * 100 : 0, note: 'مصروفات الإيجار والفواتير والنثريات' },
       { id: 'salaries', label: 'الرواتب الأساسية ومسيرات الصرف', amount: totalSalaries, type: 'minus', percent: grossIncome > 0 ? (totalSalaries / grossIncome) * 100 : 0, note: 'مسيرات الرواتب المنصرفة للكادر' },
       { id: 'advances', label: 'سلف الموظفين المصروفة', amount: totalAdvances, type: 'minus', percent: grossIncome > 0 ? (totalAdvances / grossIncome) * 100 : 0, note: 'السلف الممنوحة خلال هذه الفترة' },
@@ -325,6 +343,8 @@ export function ReportsScreen({
 
     return {
       grossIncome,
+      totalSalesReturns,
+      periodSalesReturns,
       totalExpenses,
       totalSalaries,
       totalAdvances,
@@ -1181,6 +1201,40 @@ export function ReportsScreen({
         ''
       ]);
       exportToExcel(filename, 'المبالغ المتبقية في الحجوزات', headers, rows);
+    } else if (activeReportType === 'sales_returns') {
+      const headers = ['رقم سند المرتجع', 'رقم الفاتورة الأصلية', 'التاريخ والوقت', 'اسم العميل', 'رقم الهاتف', 'نوع المرتجع', 'الأصناف المستردة', 'الخزينة المنصرف منها', 'المبلغ المسترد', 'سبب الإرجاع', 'المسؤول'];
+      const filtered = branchSalesReturns.filter(r => {
+        const d = (r.date || '').split('T')[0];
+        return d >= activeFrom && d <= activeTo && r.status !== 'cancelled';
+      });
+      const rows = filtered.map(r => [
+        r.id,
+        r.originalInvoiceId,
+        new Date(r.date).toLocaleString('ar-SA'),
+        r.clientName || 'عميل نقدي',
+        r.clientPhone || '-',
+        r.returnType === 'full' ? 'مرتجع كلي' : 'مرتجع جزئي',
+        r.items.map(it => `${it.name} (${it.returnQuantity}×)`).join(' ، '),
+        r.treasuryName || r.treasuryId,
+        r.totalRefund.toFixed(2),
+        r.reason || '-',
+        r.createdByName || '-'
+      ]);
+      const totalRefundSum = filtered.reduce((s, r) => s + r.totalRefund, 0);
+      rows.push([
+        'المجموع الإجمالي',
+        `عدد السندات: ${filtered.length}`,
+        '',
+        `من ${activeFrom} إلى ${activeTo}`,
+        '',
+        '',
+        '',
+        '',
+        totalRefundSum.toFixed(2),
+        '',
+        ''
+      ]);
+      exportToExcel(filename, 'تقرير مرتجعات المبيعات', headers, rows);
     } else {
       const headers = ['البيان', 'القيمة'];
       const rows = [
@@ -1229,6 +1283,7 @@ export function ReportsScreen({
             <label className="block text-xs font-bold text-slate-500 mb-1">نوع التقرير</label>
             <select value={reportType} onChange={(e) => setReportType(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary font-semibold text-slate-700 bg-white">
               <option value="net_profit">💎 تقرير الأرباح الصافية (معادلة صافي الربح وقائمة الدخل)</option>
+              <option value="sales_returns">🔄 تقرير مرتجعات المبيعات والبنود المستردة</option>
               <option value="unpaid_bookings">📅 تقرير المبالغ المتبقية والغير مسددة في الحجوزات</option>
               <option value="income">تقرير الدخل التفصيلي</option>
               <option value="closing">تقرير إغلاق اليوم</option>
@@ -1367,6 +1422,47 @@ export function ReportsScreen({
                 onChange={(e) => setUnpaidBookingsSearch(e.target.value)}
                 placeholder="🔍 بحث بالعميل أو الجوال أو رقم الحجز..."
                 className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-primary"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Sub-filters for Sales Returns Report */}
+        {reportType === 'sales_returns' && (
+          <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-3 gap-4 animate-in fade-in">
+            <div>
+              <label className="block text-xs font-bold text-slate-600 mb-1">تصنيف البنود المستردة:</label>
+              <select
+                value={returnsFilterType}
+                onChange={(e) => setReturnsFilterType(e.target.value as any)}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary text-xs font-semibold text-slate-700 bg-white"
+              >
+                <option value="all">جميع الأصناف (خدمات ومنتجات)</option>
+                <option value="products">منتجات ومبيعات مستودع فقط</option>
+                <option value="services">خدمات صالون فقط</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-600 mb-1">الخزينة المنصرف منها:</label>
+              <select
+                value={returnsTreasuryFilter}
+                onChange={(e) => setReturnsTreasuryFilter(e.target.value)}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary text-xs font-semibold text-slate-700 bg-white"
+              >
+                <option value="all">جميع الخزائن</option>
+                {settings.treasuries.map(t => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-600 mb-1">بحث في المرتجعات:</label>
+              <input
+                type="text"
+                placeholder="رقم السند، الفاتورة، العميل، الهاتف، السبب..."
+                value={returnsSearch}
+                onChange={(e) => setReturnsSearch(e.target.value)}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary text-xs"
               />
             </div>
           </div>
@@ -3943,6 +4039,259 @@ function ReportTable({
                   </td>
                   <td className="py-3.5 px-3 text-center text-[11px] text-slate-500 font-bold">
                     {data.unpaidBookingsCount} متبقي | {data.fullyPaidBookingsCount} مسدد
+                  </td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      </div>
+    );
+  }
+
+  if (reportType === 'sales_returns') {
+    const dateLabel = start.toISOString().split('T')[0] === end.toISOString().split('T')[0] 
+      ? start.toISOString().split('T')[0] 
+      : `${start.toISOString().split('T')[0]} - ${end.toISOString().split('T')[0]}`;
+
+    // Filter returns
+    const periodReturns = branchSalesReturns.filter(ret => {
+      const d = (ret.date || '').split('T')[0];
+      if (d < activeFrom || d > activeTo) return false;
+      if (ret.status === 'cancelled') return false;
+
+      if (returnsTreasuryFilter !== 'all' && ret.treasuryId !== returnsTreasuryFilter) return false;
+
+      if (returnsFilterType === 'products') {
+        const hasProd = (ret.items || []).some(it => it.type === 'product');
+        if (!hasProd) return false;
+      } else if (returnsFilterType === 'services') {
+        const hasSrv = (ret.items || []).some(it => it.type !== 'product');
+        if (!hasSrv) return false;
+      }
+
+      if (returnsSearch.trim()) {
+        const q = returnsSearch.toLowerCase().trim();
+        const idMatch = (ret.id || '').toLowerCase().includes(q);
+        const invMatch = (ret.originalInvoiceId || '').toLowerCase().includes(q);
+        const nameMatch = (ret.clientName || '').toLowerCase().includes(q);
+        const phoneMatch = (ret.clientPhone || '').includes(q);
+        const reasonMatch = (ret.reason || '').toLowerCase().includes(q);
+        return idMatch || invMatch || nameMatch || phoneMatch || reasonMatch;
+      }
+
+      return true;
+    }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    // Compute period invoices & gross sales for comparison
+    const periodInvoices = branchInvoices.filter(inv => {
+      const d = (inv.date || '').split('T')[0];
+      return d >= activeFrom && d <= activeTo && inv.status !== 'cancelled';
+    });
+    const grossSalesAmount = periodInvoices.reduce((sum, inv) => sum + (Number(inv.total) || 0), 0);
+
+    const totalRefundsAmount = periodReturns.reduce((sum, ret) => sum + (Number(ret.totalRefund) || 0), 0);
+    const netSales = Math.max(0, grossSalesAmount - totalRefundsAmount);
+    const returnRate = grossSalesAmount > 0 ? (totalRefundsAmount / grossSalesAmount) * 100 : 0;
+
+    let productItemsCount = 0;
+    let serviceItemsCount = 0;
+    let productRefundsAmount = 0;
+    let serviceRefundsAmount = 0;
+
+    periodReturns.forEach(ret => {
+      (ret.items || []).forEach(it => {
+        if (it.type === 'product') {
+          productItemsCount += (it.returnQuantity || 1);
+          productRefundsAmount += (it.totalRefund || (it.price * it.returnQuantity) || 0);
+        } else {
+          serviceItemsCount += (it.returnQuantity || 1);
+          serviceRefundsAmount += (it.totalRefund || (it.price * it.returnQuantity) || 0);
+        }
+      });
+    });
+
+    return (
+      <div id="report-receipt-container" className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden p-6 animate-in fade-in" dir="rtl">
+        
+        {/* Top Header */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 pb-4 border-b border-slate-200">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xl font-black text-slate-800">🔄 تقرير مرتجعات المبيعات والبنود المستردة</span>
+              <span className="bg-rose-50 text-rose-700 font-bold text-xs px-2.5 py-1 rounded-lg border border-rose-200">
+                {periodReturns.length} سند مرتجع
+              </span>
+            </div>
+            <p className="text-slate-400 text-xs mt-1">
+              الفترة الزمنية: <span className="font-mono font-bold text-slate-700">{dateLabel}</span> • {settings.salonName}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => handlePrintReceipt('report-receipt-container', true, 'a4')}
+              className="bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer shadow-sm print:hidden"
+            >
+              <Printer size={15} />
+              <span>طباعة التقرير (A4)</span>
+            </button>
+          </div>
+        </div>
+
+        {/* KPI Summary Cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+          <div className="bg-rose-50/80 p-3.5 rounded-2xl border border-rose-200">
+            <span className="text-[11px] font-bold text-rose-700 block">إجمالي المسترد</span>
+            <div className="text-lg font-black text-rose-800 font-mono mt-0.5">
+              {totalRefundsAmount.toFixed(2)} <span className="text-[10px] font-normal">{settings.currency}</span>
+            </div>
+            <span className="text-[10px] text-rose-600 block mt-1">{periodReturns.length} عملية استرجاع</span>
+          </div>
+
+          <div className="bg-emerald-50/80 p-3.5 rounded-2xl border border-emerald-200">
+            <span className="text-[11px] font-bold text-emerald-700 block">صافي المبيعات</span>
+            <div className="text-lg font-black text-emerald-800 font-mono mt-0.5">
+              {netSales.toFixed(2)} <span className="text-[10px] font-normal">{settings.currency}</span>
+            </div>
+            <span className="text-[10px] text-emerald-600 block mt-1">بعد خصم المرتجعات</span>
+          </div>
+
+          <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+            <span className="text-[11px] font-bold text-slate-600 block">إجمالي المبيعات (قبل الخصم)</span>
+            <div className="text-lg font-black text-slate-800 font-mono mt-0.5">
+              {grossSalesAmount.toFixed(2)} <span className="text-[10px] font-normal">{settings.currency}</span>
+            </div>
+            <span className="text-[10px] text-slate-500 block mt-1">{periodInvoices.length} فاتورة</span>
+          </div>
+
+          <div className="bg-amber-50/80 p-3.5 rounded-2xl border border-amber-200">
+            <span className="text-[11px] font-bold text-amber-800 block">نسبة المرتجعات %</span>
+            <div className="text-lg font-black text-amber-900 font-mono mt-0.5">
+              {returnRate.toFixed(1)}%
+            </div>
+            <span className="text-[10px] text-amber-700 block mt-1">من إجمالي المبيعات</span>
+          </div>
+
+          <div className="bg-blue-50/80 p-3.5 rounded-2xl border border-blue-200">
+            <span className="text-[11px] font-bold text-blue-700 block">مرتجع المنتجات</span>
+            <div className="text-lg font-black text-blue-900 font-mono mt-0.5">
+              {productRefundsAmount.toFixed(2)} <span className="text-[10px] font-normal">{settings.currency}</span>
+            </div>
+            <span className="text-[10px] text-blue-600 block mt-1">{productItemsCount} قطعة للمستودع</span>
+          </div>
+
+          <div className="bg-purple-50/80 p-3.5 rounded-2xl border border-purple-200">
+            <span className="text-[11px] font-bold text-purple-700 block">مرتجع الخدمات</span>
+            <div className="text-lg font-black text-purple-900 font-mono mt-0.5">
+              {serviceRefundsAmount.toFixed(2)} <span className="text-[10px] font-normal">{settings.currency}</span>
+            </div>
+            <span className="text-[10px] text-purple-600 block mt-1">{serviceItemsCount} خدمة معدلة</span>
+          </div>
+        </div>
+
+        {/* Detailed Table */}
+        <div className="overflow-x-auto border border-slate-200 rounded-2xl">
+          <table className="w-full text-right text-xs">
+            <thead className="bg-slate-900 text-white font-bold text-[11px]">
+              <tr>
+                <th className="py-3 px-3 text-center">#</th>
+                <th className="py-3 px-3">رقم السند</th>
+                <th className="py-3 px-3">الفاتورة الأصلية</th>
+                <th className="py-3 px-3">التاريخ والوقت</th>
+                <th className="py-3 px-3">العميل</th>
+                <th className="py-3 px-3">الأصناف المرجعة</th>
+                <th className="py-3 px-3 text-center">النوع</th>
+                <th className="py-3 px-3">الخزينة المنصرف منها</th>
+                <th className="py-3 px-3 text-center">المبلغ المسترد</th>
+                <th className="py-3 px-3">سبب المرتجع</th>
+                <th className="py-3 px-3 text-center print:hidden">طباعة</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 font-medium">
+              {periodReturns.map((ret, idx) => (
+                <tr key={ret.id} className="hover:bg-slate-50 transition-colors">
+                  <td className="py-3 px-3 text-center font-mono text-slate-400">{idx + 1}</td>
+                  <td className="py-3 px-3 font-mono font-bold text-rose-700">{ret.id}</td>
+                  <td className="py-3 px-3 font-mono font-bold text-slate-700">#{ret.originalInvoiceId}</td>
+                  <td className="py-3 px-3 text-slate-600">{new Date(ret.date).toLocaleString('ar-SA')}</td>
+                  <td className="py-3 px-3">
+                    <div className="font-bold text-slate-800">{ret.clientName || 'عميل نقدي'}</div>
+                    {ret.clientPhone && <div className="text-[10px] font-mono text-slate-400">{ret.clientPhone}</div>}
+                  </td>
+                  <td className="py-3 px-3 max-w-xs">
+                    <div className="flex flex-col gap-1">
+                      {ret.items.map((it, iIdx) => (
+                        <div key={iIdx} className="text-[11px] text-slate-700 flex items-center gap-1">
+                          <span className="font-bold text-slate-900">{it.name}</span>
+                          <span className="font-mono text-rose-600 font-bold">({it.returnQuantity}×)</span>
+                          <span className={`text-[9px] px-1 rounded ${it.type === 'product' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'}`}>
+                            {it.type === 'product' ? 'منتج' : 'خدمة'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="py-3 px-3 text-center">
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                      ret.returnType === 'full' ? 'bg-rose-100 text-rose-800 border border-rose-200' : 'bg-amber-100 text-amber-800 border border-amber-200'
+                    }`}>
+                      {ret.returnType === 'full' ? 'كلي' : 'جزئي'}
+                    </span>
+                  </td>
+                  <td className="py-3 px-3 text-slate-700 font-bold">
+                    {ret.treasuryName || ret.treasuryId}
+                  </td>
+                  <td className="py-3 px-3 text-center font-mono font-black text-rose-600 text-sm">
+                    {Number(ret.totalRefund).toFixed(2)} {settings.currency}
+                  </td>
+                  <td className="py-3 px-3 text-slate-600 text-[11px] max-w-xs truncate" title={ret.reason + (ret.notes ? ` - ${ret.notes}` : '')}>
+                    {ret.reason}
+                  </td>
+                  <td className="py-3 px-3 text-center print:hidden">
+                    <button
+                      onClick={() => {
+                        const printContent = document.getElementById(`thermal-sales-return-report-${ret.id}`)?.outerHTML;
+                        if (printContent) {
+                          const w = window.open('', '', 'width=800,height=600');
+                          if (w) {
+                            w.document.write('<html><head><title>طباعة سند المرتجع</title><link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet"><style>body{margin:0;display:flex;justify-content:center;background:#fff;direction:rtl;font-family:"Cairo",sans-serif;}</style></head><body>' + printContent + '</body></html>');
+                            w.setTimeout(() => { w.focus(); w.print(); w.close(); }, 500);
+                          }
+                        }
+                      }}
+                      className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 inline-flex items-center justify-center transition-colors cursor-pointer"
+                      title="طباعة إيصال المرتجع"
+                    >
+                      <Printer size={13} />
+                    </button>
+                    <div className="hidden">
+                      <ThermalSalesReturnReceipt salesReturn={ret} settings={settings} id={`thermal-sales-return-report-${ret.id}`} />
+                    </div>
+                  </td>
+                </tr>
+              ))}
+
+              {periodReturns.length === 0 && (
+                <tr>
+                  <td colSpan={11} className="py-12 text-center text-slate-400 font-bold">
+                    لا توجد عمليات مرتجع مبيعات مسجلة خلال هذه الفترة الزمنية
+                  </td>
+                </tr>
+              )}
+            </tbody>
+
+            {periodReturns.length > 0 && (
+              <tfoot className="bg-slate-100 font-black text-slate-900 border-t-2 border-slate-300 text-xs">
+                <tr>
+                  <td colSpan={8} className="py-3.5 px-3 text-center font-black text-sm text-slate-800">
+                    إجمالي المبالغ المستردة للفترة ({periodReturns.length} سند مرتجع)
+                  </td>
+                  <td className="py-3.5 px-3 font-mono text-center font-black text-base text-rose-700">
+                    {totalRefundsAmount.toFixed(2)} {settings.currency}
+                  </td>
+                  <td colSpan={2} className="py-3.5 px-3 text-[11px] text-slate-500 font-bold">
+                    صافي المبيعات المحققة: {netSales.toFixed(2)} {settings.currency}
                   </td>
                 </tr>
               </tfoot>

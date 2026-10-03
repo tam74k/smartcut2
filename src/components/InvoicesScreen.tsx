@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { AppSettings, Invoice, Transaction, Client, Branch, Product, Employee, ServiceItem } from '../types';
+import { AppSettings, Invoice, Transaction, Client, Branch, Product, Employee, ServiceItem, SalesReturn } from '../types';
 import { 
   Search, Filter, Printer, XCircle, Edit, CheckCircle, ChevronDown, 
   ChevronUp, Image as ImageIcon, Wrench, Eye, X, Trash2, RotateCcw,
@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { DB } from '../services/db';
 import { InvoicesImportModal } from './InvoicesImportModal';
+import { SalesReturnModal } from './SalesReturnModal';
 
 export const getEffectiveInvoiceTotal = (inv: Invoice | any): number => {
   if (!inv) return 0;
@@ -39,6 +40,9 @@ export function InvoicesScreen({
   setItemMovements,
   employees = [],
   services = [],
+  salesReturns = [],
+  onProcessSalesReturn,
+  onNavigateToReturns,
 }: { 
   settings: AppSettings;
   invoices: Invoice[];
@@ -55,13 +59,17 @@ export function InvoicesScreen({
   setItemMovements?: (m: any[] | ((prev: any[]) => any[])) => void;
   employees?: Employee[];
   services?: ServiceItem[];
+  salesReturns?: SalesReturn[];
+  onProcessSalesReturn?: (ret: SalesReturn) => void;
+  onNavigateToReturns?: () => void;
 }) {
   const [showImportModal, setShowImportModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [branchFilter, setBranchFilter] = useState<string>('all');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'cancelled' | 'unpaid'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'cancelled' | 'unpaid' | 'refunded' | 'partial_refund'>('all');
+  const [returnTargetInvoice, setReturnTargetInvoice] = useState<Invoice | null>(null);
   const [paymentFilter, setPaymentFilter] = useState<string>('all');
   const [showFilters, setShowFilters] = useState(false);
   const [showPhotoPreview, setShowPhotoPreview] = useState<{ before?: string; after?: string; title: string } | null>(null);
@@ -326,7 +334,14 @@ export function InvoicesScreen({
       if (dateTo && invDateStr > dateTo) return false;
       
       // Status filter
-      if (statusFilter !== 'all' && inv.status !== statusFilter) return false;
+      if (statusFilter === 'refunded') {
+        if (inv.status !== 'refunded') return false;
+      } else if (statusFilter === 'partial_refund') {
+        const hasPartial = salesReturns.some(r => r.originalInvoiceId === inv.id && r.status !== 'cancelled') && inv.status !== 'refunded';
+        if (!hasPartial) return false;
+      } else if (statusFilter !== 'all' && inv.status !== statusFilter) {
+        return false;
+      }
       
       // Payment filter
       if (paymentFilter !== 'all') {
@@ -343,7 +358,7 @@ export function InvoicesScreen({
       
       return true;
     }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [invoices, dateFrom, dateTo, statusFilter, paymentFilter, searchQuery, activeBranchId, isMainBranch, branchFilter]);
+  }, [invoices, dateFrom, dateTo, statusFilter, paymentFilter, searchQuery, activeBranchId, isMainBranch, branchFilter, salesReturns]);
 
   return (
     <div className="p-8 w-full h-full flex flex-col bg-slate-50">
@@ -370,6 +385,17 @@ export function InvoicesScreen({
             <Filter size={16} /> تصفية
             {showFilters ? <ChevronUp size={16}/> : <ChevronDown size={16}/>}
           </button>
+
+          {onNavigateToReturns && (
+            <button
+              onClick={onNavigateToReturns}
+              className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-xs transition-all cursor-pointer active:scale-95"
+              title="الانتقال إلى سجل وإدارة مرتجعات المبيعات"
+            >
+              <RotateCcw size={16} />
+              <span>سجل المرتجعات ({salesReturns.length})</span>
+            </button>
+          )}
 
           <button 
             onClick={() => setShowImportModal(true)}
@@ -409,9 +435,11 @@ export function InvoicesScreen({
           </div>
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">حالة الفاتورة</label>
-            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)} className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary">
+            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)} className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary font-bold">
               <option value="all">الكل</option>
               <option value="completed">مكتملة ومسددة</option>
+              <option value="partial_refund">مرتجع جزئي</option>
+              <option value="refunded">مرتجع كلي</option>
               <option value="unpaid">غير مسددة</option>
               <option value="cancelled">ملغاة</option>
             </select>
@@ -489,13 +517,38 @@ export function InvoicesScreen({
                     {inv.isRemedyInvoice && <div className="text-[10px] text-purple-700 font-bold">(0.00 إصلاح)</div>}
                   </td>
                   <td className="px-6 py-4 text-center">
-                    <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                      inv.status === 'completed' ? 'bg-emerald-50 text-emerald-600' : 
-                      inv.status === 'unpaid' ? 'bg-amber-50 text-amber-600' :
-                      'bg-red-50 text-red-500'
-                    }`}>
-                      {inv.status === 'completed' ? 'مسددة' : inv.status === 'unpaid' ? 'غير مسددة' : 'ملغاة'}
-                    </span>
+                    {(() => {
+                      const invReturns = salesReturns.filter(r => r.originalInvoiceId === inv.id && r.status !== 'cancelled');
+                      const totalReturned = invReturns.reduce((sum, r) => sum + (Number(r.totalRefund) || 0), 0);
+                      const isPartial = invReturns.length > 0 && inv.status !== 'refunded' && inv.status !== 'cancelled';
+
+                      if (inv.status === 'refunded') {
+                        return (
+                          <span className="px-3 py-1 rounded-full text-xs font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                            مرتجع كلي
+                          </span>
+                        );
+                      }
+                      if (isPartial) {
+                        return (
+                          <div className="flex flex-col items-center gap-0.5">
+                            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                              مرتجع جزئي
+                            </span>
+                            <span className="text-[10px] text-rose-600 font-mono font-bold">
+                              (-{totalReturned.toFixed(2)})
+                            </span>
+                          </div>
+                        );
+                      }
+                      if (inv.status === 'completed') {
+                        return <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-600">مسددة</span>;
+                      }
+                      if (inv.status === 'unpaid') {
+                        return <span className="px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-600">غير مسددة</span>;
+                      }
+                      return <span className="px-3 py-1 rounded-full text-xs font-bold bg-red-50 text-red-500">ملغاة</span>;
+                    })()}
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center justify-center gap-1.5">
@@ -511,6 +564,17 @@ export function InvoicesScreen({
                           title="عرض صور قبل وبعد"
                         >
                           <ImageIcon size={16} />
+                        </button>
+                      )}
+
+                      {/* زر إنشاء مرتجع مبيعات للفاتورة */}
+                      {(inv.status === 'completed' || (salesReturns.some(r => r.originalInvoiceId === inv.id && r.status !== 'cancelled') && inv.status !== 'refunded')) && (
+                        <button 
+                          onClick={() => setReturnTargetInvoice(inv)} 
+                          className="w-8 h-8 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 flex items-center justify-center transition-colors cursor-pointer" 
+                          title="إنشاء مرتجع مبيعات / إشعار دائن لهذه الفاتورة"
+                        >
+                          <RotateCcw size={15} />
                         </button>
                       )}
 
@@ -944,6 +1008,27 @@ export function InvoicesScreen({
               setClients([...clients, ...newClients]);
             }
           }}
+        />
+      )}
+
+      {returnTargetInvoice && (
+        <SalesReturnModal
+          isOpen={Boolean(returnTargetInvoice)}
+          onClose={() => setReturnTargetInvoice(null)}
+          initialInvoice={returnTargetInvoice}
+          onConfirm={(ret) => {
+            if (onProcessSalesReturn) {
+              onProcessSalesReturn(ret);
+            }
+            setReturnTargetInvoice(null);
+          }}
+          settings={settings}
+          invoices={invoices}
+          salesReturns={salesReturns}
+          currentUser={currentUser}
+          products={products}
+          employees={employees}
+          services={services}
         />
       )}
 

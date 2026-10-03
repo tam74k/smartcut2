@@ -3,11 +3,11 @@ import {
   Search, Plus, Minus, Trash2, User, CreditCard, Banknote, Scissors, 
   Tag, X, Package, Clock, UserCog, Calendar, CheckCircle2, Image as ImageIcon,
   Wrench, ShieldAlert, Camera, Crown, Sparkles, PauseCircle, PlayCircle,
-  FilePlus2, Layers, Zap, AlertCircle, DollarSign, Coffee, Sliders, Save, AlertTriangle
+  FilePlus2, Layers, Zap, AlertCircle, DollarSign, Coffee, Sliders, Save, AlertTriangle, RotateCcw
 } from 'lucide-react';
 import { 
   AppSettings, CartItem, ServiceItem, Booking, Invoice, Client, Category, Employee,
-  getClientTier, calculateClientTotalSpend, ClientTierConfig, HeldInvoice, PromoCode, PromoCodeUsage, TipRecord, AdvancePayment, ClientPreferences 
+  getClientTier, calculateClientTotalSpend, ClientTierConfig, HeldInvoice, PromoCode, PromoCodeUsage, TipRecord, AdvancePayment, ClientPreferences, SalesReturn 
 } from '../types';
 import { processImageFile, MAX_IMAGE_SIZE_KB, compressClientBeforeAfterPhoto } from '../utils/imageUpload';
 import { ComplaintsService } from '../services/complaintsService';
@@ -16,6 +16,7 @@ import { EtaEgyptService } from '../services/etaEgyptService';
 import { DB } from '../services/db';
 import { SupabaseService } from '../services/supabase';
 import { isBarberEmployee, isReferralEligibleEmployee } from '../utils/employeeHelper';
+import { SalesReturnModal } from './SalesReturnModal';
 
 export const getCartItemPrice = (c: CartItem | any): number => {
   if (!c) return 0;
@@ -74,7 +75,9 @@ export function POSScreen({
   tips = [],
   setTips,
   currentUser,
-  activeBranchId
+  activeBranchId,
+  salesReturns = [],
+  onProcessSalesReturn
 }: { 
   settings: AppSettings, 
   activeBranchId?: string,
@@ -99,8 +102,11 @@ export function POSScreen({
   setPromoCodeUsages?: (updater: PromoCodeUsage[] | ((prev: PromoCodeUsage[]) => PromoCodeUsage[])) => void,
   tips?: TipRecord[],
   setTips?: (updater: TipRecord[] | ((prev: TipRecord[]) => TipRecord[])) => void,
-  currentUser?: any
+  currentUser?: any,
+  salesReturns?: SalesReturn[],
+  onProcessSalesReturn?: (ret: SalesReturn) => void
 }) {
+  const [showSalesReturnModal, setShowSalesReturnModal] = useState(false);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -690,6 +696,14 @@ export function POSScreen({
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [completedInvoice, setCompletedInvoice] = useState<Invoice | null>(null);
 
+  const hasAnyLineDiscount = useMemo(() => {
+    return cart.some(c => Number(c.item?.discountValue || 0) > 0 || Number(c.item?.lineDiscount || 0) > 0);
+  }, [cart]);
+
+  const hasGeneralDiscount = useMemo(() => {
+    return Number(discount.value || 0) > 0;
+  }, [discount.value]);
+
   const subtotal = cart.reduce((sum, c) => sum + (getCartItemPrice(c) * (c.quantity || 1)), 0);
 
   // حساب خصم البرومو كود تلقائياً بناءً على إجمالي السلة
@@ -705,9 +719,9 @@ export function POSScreen({
     }
   }
 
-  // عند استخدام البرومو كود أو في فاتورة الإصلاح، لا يسمح بعمل خصم يدوي (0)
+  // عند استخدام البرومو كود أو وجود خصم على البنود أو في فاتورة الإصلاح، لا يطبق خصم شامل يدوي
   const rawManualDiscount = discount.type === 'percentage' ? subtotal * ((Number(discount.value) || 0) / 100) : (Number(discount.value) || 0);
-  const manualDiscountAmount = (isRemedyInvoice || appliedPromo) ? 0 : rawManualDiscount;
+  const manualDiscountAmount = (isRemedyInvoice || appliedPromo || hasAnyLineDiscount) ? 0 : rawManualDiscount;
   const discountAmount = isRemedyInvoice ? subtotal : (appliedPromo ? promoDiscountAmount : manualDiscountAmount);
   const totalInclusive = Math.max(0, subtotal - discountAmount);
   const baseTotal = settings.vatEnabled ? totalInclusive / (1 + settings.vatRate / 100) : totalInclusive;
@@ -1133,7 +1147,8 @@ export function POSScreen({
       
       // حساب مجموع خصومات بنود الخدمات إن وجدت
       const totalServiceDiscounts = (initialBooking.services || []).reduce((sum, s) => {
-        const base = Number(s.price || 0);
+        const sQty = Math.max(1, Number(s.quantity) || 1);
+        const base = Number(s.price || 0) * sQty;
         const val = Number(s.discountValue || 0);
         if (val <= 0) return sum;
         const lineDisc = s.discountType === 'percentage'
@@ -1145,26 +1160,33 @@ export function POSScreen({
       const hasBookingGeneralDiscount = Number(initialBooking.discountValue || 0) > 0;
 
       const cartItems: CartItem[] = (initialBooking.services || []).map(s => {
-        // Try to find the actual service item from mock if possible, otherwise construct a mock one
-        const foundItem = items.find(i => i.id === s.serviceId);
-        const parsedPrice = Number(s.price) || (foundItem ? Number(foundItem.price) : 0);
-        const safePrice = isNaN(parsedPrice) ? 0 : parsedPrice;
+        const isProductLine = s.type === 'product' || (!items.some(i => i.id === (s.serviceId || s.productId)) && products.some(p => p.id === (s.serviceId || s.productId)));
+        const foundProduct = isProductLine ? products.find(p => p.id === (s.productId || s.serviceId) || p.name === s.serviceName) : undefined;
+        const foundService = !isProductLine ? items.find(i => i.id === s.serviceId || i.name === s.serviceName) : undefined;
+
+        const baseRawPrice = isProductLine 
+          ? (Number(s.price) || (foundProduct ? Number(foundProduct.sellPrice) : 0))
+          : (Number(s.price) || (foundService ? Number(foundService.price) : 0));
+        const safePrice = isNaN(baseRawPrice) ? 0 : baseRawPrice;
+        const sQty = Math.max(1, Number(s.quantity) || 1);
         
-        // حساب خصم سطر الخدمة المحدد
+        // حساب خصم سطر الخدمة أو المنتج المحدد
         const sVal = Number(s.discountValue || 0);
         let lineDiscount = 0;
         if (sVal > 0) {
           lineDiscount = s.discountType === 'percentage'
             ? (safePrice * Math.min(100, Math.max(0, sVal))) / 100
-            : Math.min(safePrice, Math.max(0, sVal));
+            : Math.min(safePrice, Math.max(0, sVal) / sQty);
         }
 
-        // إذا كان هناك خصم على الخدمات، يطبق الخصم على السطر مباشرة
+        // إذا كان هناك خصم على البنود، يطبق الخصم على السطر مباشرة
         const effectivePrice = totalServiceDiscounts > 0 ? Math.max(0, safePrice - lineDiscount) : safePrice;
 
-        const serviceItem: any = foundItem ? {
-          ...foundItem,
-          name: s.serviceName || foundItem.name,
+        const cartItemData: any = isProductLine ? {
+          ...(foundProduct || {}),
+          id: foundProduct?.id || s.productId || s.serviceId,
+          name: s.serviceName || foundProduct?.name || 'منتج',
+          sellPrice: effectivePrice,
           price: effectivePrice,
           displayPrice: effectivePrice,
           originalPrice: safePrice,
@@ -1172,7 +1194,21 @@ export function POSScreen({
           lineDiscount: lineDiscount > 0 ? lineDiscount : undefined,
           discountType: s.discountType || 'fixed',
           discountValue: sVal,
-          hasDiscount: lineDiscount > 0
+          hasDiscount: lineDiscount > 0,
+          _isProduct: true,
+          type: 'product'
+        } : (foundService ? {
+          ...foundService,
+          name: s.serviceName || foundService.name,
+          price: effectivePrice,
+          displayPrice: effectivePrice,
+          originalPrice: safePrice,
+          discountPrice: lineDiscount > 0 ? effectivePrice : undefined,
+          lineDiscount: lineDiscount > 0 ? lineDiscount : undefined,
+          discountType: s.discountType || 'fixed',
+          discountValue: sVal,
+          hasDiscount: lineDiscount > 0,
+          type: 'service'
         } : {
           id: s.serviceId,
           name: s.serviceName,
@@ -1187,14 +1223,14 @@ export function POSScreen({
           categoryId: 'services',
           isActive: true,
           type: 'service'
-        };
+        });
 
         return {
           cartId: Math.random().toString(36).substring(2, 9),
-          item: serviceItem,
-          quantity: 1,
+          item: cartItemData,
+          quantity: sQty,
           employeeId: s.technicianId && s.technicianId !== 'any' ? s.technicianId : '',
-          type: 'service',
+          type: isProductLine ? 'product' : 'service',
           price: effectivePrice
         };
       });
@@ -1426,9 +1462,18 @@ export function POSScreen({
       return;
     }
     const finalPrice = item.displayPrice !== undefined ? item.displayPrice : (item.price ?? item.sellPrice ?? 0);
+    const origPrice = item.originalPrice !== undefined ? item.originalPrice : finalPrice;
     const newItem: CartItem = {
       cartId: Math.random().toString(36).substring(2, 9),
-      item: { ...item, displayPrice: finalPrice },
+      item: { 
+        ...item, 
+        originalPrice: origPrice,
+        displayPrice: finalPrice,
+        lineDiscount: 0,
+        discountValue: 0,
+        discountType: 'fixed',
+        hasDiscount: false
+      },
       quantity: 1,
       price: finalPrice,
       employeeId: '',
@@ -1438,14 +1483,114 @@ export function POSScreen({
     setCart([...cart, newItem]);
   };
 
-
   const updateQuantity = (cartId: string, delta: number) => {
     setCart(cart.map(c => {
       if (c.cartId === cartId) {
         const newQ = Math.max(1, c.quantity + delta);
-        return { ...c, quantity: newQ };
+        const rawOrig = c.item?.originalPrice ?? c.item?.sellPrice ?? c.item?.price ?? c.price ?? 0;
+        const origPrice = Number(rawOrig) || 0;
+        const type = c.item?.discountType || 'fixed';
+        const val = Number(c.item?.discountValue || 0);
+        let unitDiscount = 0;
+        if (val > 0 && origPrice > 0) {
+          if (type === 'percentage') {
+            unitDiscount = (origPrice * Math.min(100, val)) / 100;
+          } else {
+            unitDiscount = Math.min(origPrice, val / newQ);
+          }
+        }
+        const effectivePrice = Math.max(0, origPrice - unitDiscount);
+        return { 
+          ...c, 
+          quantity: newQ,
+          price: effectivePrice,
+          item: {
+            ...c.item,
+            originalPrice: origPrice,
+            price: effectivePrice,
+            displayPrice: effectivePrice,
+            lineDiscount: unitDiscount,
+            discountValue: val,
+            discountType: type,
+            hasDiscount: val > 0
+          }
+        };
       }
       return c;
+    }));
+  };
+
+  const setItemQuantity = (cartId: string, qty: number) => {
+    const newQ = isNaN(qty) || qty < 1 ? 1 : Math.floor(qty);
+    setCart(cart.map(c => {
+      if (c.cartId === cartId) {
+        const rawOrig = c.item?.originalPrice ?? c.item?.sellPrice ?? c.item?.price ?? c.price ?? 0;
+        const origPrice = Number(rawOrig) || 0;
+        const type = c.item?.discountType || 'fixed';
+        const val = Number(c.item?.discountValue || 0);
+        let unitDiscount = 0;
+        if (val > 0 && origPrice > 0) {
+          if (type === 'percentage') {
+            unitDiscount = (origPrice * Math.min(100, val)) / 100;
+          } else {
+            unitDiscount = Math.min(origPrice, val / newQ);
+          }
+        }
+        const effectivePrice = Math.max(0, origPrice - unitDiscount);
+        return { 
+          ...c, 
+          quantity: newQ,
+          price: effectivePrice,
+          item: {
+            ...c.item,
+            originalPrice: origPrice,
+            price: effectivePrice,
+            displayPrice: effectivePrice,
+            lineDiscount: unitDiscount,
+            discountValue: val,
+            discountType: type,
+            hasDiscount: val > 0
+          }
+        };
+      }
+      return c;
+    }));
+  };
+
+  const updateCartItemDiscount = (cartId: string, discountVal: number, discountType?: 'fixed' | 'percentage') => {
+    setCart(cart.map(c => {
+      if (c.cartId !== cartId) return c;
+      const rawOrig = c.item?.originalPrice ?? c.item?.sellPrice ?? c.item?.price ?? c.price ?? 0;
+      const origPrice = Number(rawOrig) || 0;
+      const type = discountType || c.item?.discountType || 'fixed';
+      const val = Math.max(0, Number(discountVal) || 0);
+      const qty = Math.max(1, Number(c.quantity) || 1);
+
+      let unitDiscount = 0;
+      if (val > 0 && origPrice > 0) {
+        if (type === 'percentage') {
+          unitDiscount = (origPrice * Math.min(100, val)) / 100;
+        } else {
+          unitDiscount = Math.min(origPrice, val / qty);
+        }
+      }
+
+      const effectivePrice = Math.max(0, origPrice - unitDiscount);
+
+      return {
+        ...c,
+        price: effectivePrice,
+        item: {
+          ...c.item,
+          originalPrice: origPrice,
+          price: effectivePrice,
+          displayPrice: effectivePrice,
+          lineDiscount: unitDiscount,
+          discountValue: val,
+          discountType: type,
+          hasDiscount: val > 0
+        }
+      };
     }));
   };
 
@@ -1620,6 +1765,15 @@ export function POSScreen({
             >
               <PauseCircle size={15} />
               <span>تعليق</span>
+            </button>
+
+            <button
+              onClick={() => setShowSalesReturnModal(true)}
+              className="bg-rose-900/80 hover:bg-rose-800 text-rose-200 border border-rose-700/60 px-2.5 py-1.5 rounded-xl text-xs font-black flex items-center gap-1 transition-all active:scale-95 cursor-pointer"
+              title="استرجاع فاتورة سابقة أو عمل مرتجع مبيعات"
+            >
+              <RotateCcw size={14} />
+              <span>مرتجع</span>
             </button>
           </div>
 
@@ -1981,14 +2135,64 @@ export function POSScreen({
 
                     <div className="flex items-center gap-2">
                       <div className="flex items-center bg-slate-100 border border-slate-200 rounded-lg p-0.5">
-                        <button onClick={() => updateQuantity(c.cartId, 1)} className="p-1 text-slate-700 hover:text-primary transition-colors"><Plus size={12} /></button>
-                        <span className="text-xs font-black w-5 text-center font-mono">{c.quantity}</span>
-                        <button onClick={() => updateQuantity(c.cartId, -1)} className="p-1 text-slate-700 hover:text-red-500 transition-colors"><Minus size={12} /></button>
+                        <button type="button" onClick={() => updateQuantity(c.cartId, 1)} className="p-1 text-slate-700 hover:text-primary transition-colors cursor-pointer" title="زيادة الكمية"><Plus size={12} /></button>
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={c.quantity}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            setItemQuantity(c.cartId, isNaN(val) ? 1 : val);
+                          }}
+                          className="w-12 text-center text-xs font-black font-mono bg-white border border-slate-200 rounded px-1 py-0.5 outline-none focus:border-primary focus:ring-1 focus:ring-indigo-200"
+                          title="الكمية (يمكن كتابة الرقم مباشرة كـ 100 أو غيره)"
+                        />
+                        <button type="button" onClick={() => updateQuantity(c.cartId, -1)} className="p-1 text-slate-700 hover:text-red-500 transition-colors cursor-pointer" title="إنقاص الكمية"><Minus size={12} /></button>
                       </div>
-                      <button onClick={() => removeFromCart(c.cartId)} className="text-slate-400 hover:text-red-500 p-1 transition-colors">
+                      <button type="button" onClick={() => removeFromCart(c.cartId)} className="text-slate-400 hover:text-red-500 p-1 transition-colors cursor-pointer" title="حذف من السلة">
                         <Trash2 size={14} />
                       </button>
                     </div>
+                  </div>
+
+                  {/* خصم سطر الخدمة / المنتج */}
+                  <div className="flex items-center justify-between gap-1.5 pt-1.5 border-t border-slate-100">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-bold text-slate-500 whitespace-nowrap">
+                        {c.type === 'product' ? 'خصم المنتج:' : 'خصم الخدمة:'}
+                      </span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.5"
+                        disabled={hasGeneralDiscount}
+                        value={c.item?.discountValue !== undefined && c.item?.discountValue !== 0 ? c.item.discountValue : ''}
+                        onChange={(e) => {
+                          const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
+                          updateCartItemDiscount(c.cartId, val);
+                        }}
+                        placeholder="0"
+                        className="w-14 bg-white border border-slate-200 rounded px-1.5 py-0.5 text-center text-xs font-mono font-bold outline-none focus:border-primary disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
+                      />
+                      <button
+                        type="button"
+                        disabled={hasGeneralDiscount}
+                        onClick={() => {
+                          const nextType = c.item?.discountType === 'percentage' ? 'fixed' : 'percentage';
+                          updateCartItemDiscount(c.cartId, c.item?.discountValue || 0, nextType);
+                        }}
+                        className="px-1.5 py-0.5 text-[10px] font-bold rounded border bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                        title="تبديل الخصم: نسبة مئوية أو مبلغ ثابت"
+                      >
+                        {c.item?.discountType === 'percentage' ? '%' : settings.currency}
+                      </button>
+                    </div>
+                    {Boolean(c.item?.hasDiscount || (c.item?.lineDiscount && c.item.lineDiscount > 0)) && (
+                      <div className="text-[10px] font-bold text-rose-600 font-mono">
+                        صافي الوحدة: {getCartItemPrice(c).toFixed(2)} {settings.currency}
+                      </div>
+                    )}
                   </div>
                   
                   {/* Performer & Referral (فتح شغل) Controls Row */}
@@ -2106,24 +2310,23 @@ export function POSScreen({
               <div className="flex items-center gap-1">
                 <input 
                   type="number" 
-                  disabled={isRemedyInvoice || Boolean(appliedPromo)}
-                  value={isRemedyInvoice ? subtotal : (appliedPromo ? 0 : (discount.value || ''))}
+                  disabled={isRemedyInvoice || Boolean(appliedPromo) || hasAnyLineDiscount}
+                  value={isRemedyInvoice ? subtotal : (appliedPromo ? 0 : (hasAnyLineDiscount ? '' : (discount.value || '')))}
                   onChange={(e) => {
-                    if (appliedPromo) return;
+                    if (appliedPromo || hasAnyLineDiscount) return;
                     setDiscount({...discount, value: Number(e.target.value)});
                   }}
-                  className="w-12 border border-slate-200 rounded px-1 py-0.5 text-center text-xs outline-none focus:border-primary disabled:bg-slate-100 disabled:text-slate-400 font-mono font-bold"
+                  className="w-12 border border-slate-200 rounded px-1 py-0.5 text-center text-xs outline-none focus:border-primary disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed font-mono font-bold"
                   placeholder="0"
-                  title={appliedPromo ? "لا يسمح بعمل خصم يدوي عند استخدام برومو كود" : undefined}
                 />
                 <select 
-                  disabled={isRemedyInvoice || Boolean(appliedPromo)}
+                  disabled={isRemedyInvoice || Boolean(appliedPromo) || hasAnyLineDiscount}
                   value={discount.type}
                   onChange={(e) => {
-                    if (appliedPromo) return;
+                    if (appliedPromo || hasAnyLineDiscount) return;
                     setDiscount({...discount, type: e.target.value as 'percentage'|'fixed'});
                   }}
-                  className="border border-slate-200 rounded px-0.5 text-[10px] outline-none cursor-pointer disabled:bg-slate-100 disabled:text-slate-400"
+                  className="border border-slate-200 rounded px-0.5 text-[10px] outline-none cursor-pointer disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
                 >
                   <option value="fixed">{settings.currency}</option>
                   <option value="percentage">%</option>
@@ -3230,6 +3433,26 @@ export function POSScreen({
             </div>
           </div>
         </div>
+      )}
+
+      {showSalesReturnModal && (
+        <SalesReturnModal
+          isOpen={showSalesReturnModal}
+          onClose={() => setShowSalesReturnModal(false)}
+          onConfirm={(ret) => {
+            if (onProcessSalesReturn) {
+              onProcessSalesReturn(ret);
+            }
+            setShowSalesReturnModal(false);
+          }}
+          settings={settings}
+          invoices={invoices}
+          salesReturns={salesReturns}
+          currentUser={currentUser}
+          products={products}
+          employees={employees}
+          services={items}
+        />
       )}
     </div>
   );
