@@ -40,7 +40,12 @@ export const normalizeCartItem = (c: any): CartItem => {
       name: rawItem?.name || c?.name || c?.serviceName || 'خدمة',
       price,
       displayPrice: price,
-      type: rawItem?.type || c?.type || 'service'
+      type: rawItem?.type || c?.type || 'service',
+      originalPrice: rawItem?.originalPrice ?? c?.originalPrice,
+      lineDiscount: rawItem?.lineDiscount ?? c?.lineDiscount,
+      discountType: rawItem?.discountType ?? c?.discountType,
+      discountValue: rawItem?.discountValue ?? c?.discountValue,
+      hasDiscount: rawItem?.hasDiscount ?? c?.hasDiscount
     }
   };
 };
@@ -835,6 +840,9 @@ export function POSScreen({
           }
         }
 
+        const origPrice = c.item?.originalPrice ?? itemPrice;
+        const lineDisc = c.item?.lineDiscount ?? (origPrice > itemPrice ? origPrice - itemPrice : 0);
+
         return {
           id: c.cartId,
           itemId: c.item?.id || c.cartId,
@@ -846,6 +854,8 @@ export function POSScreen({
           referralEmployeeName: referrer?.name || undefined,
           referralCommissionAmount: refCommAmt > 0 ? refCommAmt : undefined,
           price: isRemedyInvoice ? 0 : itemPrice,
+          originalPrice: origPrice !== itemPrice ? origPrice : undefined,
+          discountAmount: lineDisc > 0 ? lineDisc : undefined,
           quantity: c.quantity || 1
         };
       }),
@@ -1127,28 +1137,53 @@ export function POSScreen({
         const val = Number(s.discountValue || 0);
         if (val <= 0) return sum;
         const lineDisc = s.discountType === 'percentage'
-          ? (base * Math.min(100, val)) / 100
-          : Math.min(base, val);
+          ? (base * Math.min(100, Math.max(0, val))) / 100
+          : Math.min(base, Math.max(0, val));
         return sum + lineDisc;
       }, 0);
 
       const hasBookingGeneralDiscount = Number(initialBooking.discountValue || 0) > 0;
 
-      const cartItems: CartItem[] = initialBooking.services?.map(s => {
+      const cartItems: CartItem[] = (initialBooking.services || []).map(s => {
         // Try to find the actual service item from mock if possible, otherwise construct a mock one
         const foundItem = items.find(i => i.id === s.serviceId);
         const parsedPrice = Number(s.price) || (foundItem ? Number(foundItem.price) : 0);
         const safePrice = isNaN(parsedPrice) ? 0 : parsedPrice;
+        
+        // حساب خصم سطر الخدمة المحدد
+        const sVal = Number(s.discountValue || 0);
+        let lineDiscount = 0;
+        if (sVal > 0) {
+          lineDiscount = s.discountType === 'percentage'
+            ? (safePrice * Math.min(100, Math.max(0, sVal))) / 100
+            : Math.min(safePrice, Math.max(0, sVal));
+        }
+
+        // إذا كان هناك خصم على الخدمات، يطبق الخصم على السطر مباشرة
+        const effectivePrice = totalServiceDiscounts > 0 ? Math.max(0, safePrice - lineDiscount) : safePrice;
+
         const serviceItem: any = foundItem ? {
           ...foundItem,
           name: s.serviceName || foundItem.name,
-          price: safePrice,
-          displayPrice: safePrice
+          price: effectivePrice,
+          displayPrice: effectivePrice,
+          originalPrice: safePrice,
+          discountPrice: lineDiscount > 0 ? effectivePrice : undefined,
+          lineDiscount: lineDiscount > 0 ? lineDiscount : undefined,
+          discountType: s.discountType || 'fixed',
+          discountValue: sVal,
+          hasDiscount: lineDiscount > 0
         } : {
           id: s.serviceId,
           name: s.serviceName,
-          price: safePrice,
-          displayPrice: safePrice,
+          price: effectivePrice,
+          displayPrice: effectivePrice,
+          originalPrice: safePrice,
+          discountPrice: lineDiscount > 0 ? effectivePrice : undefined,
+          lineDiscount: lineDiscount > 0 ? lineDiscount : undefined,
+          discountType: s.discountType || 'fixed',
+          discountValue: sVal,
+          hasDiscount: lineDiscount > 0,
           categoryId: 'services',
           isActive: true,
           type: 'service'
@@ -1156,34 +1191,31 @@ export function POSScreen({
 
         return {
           cartId: Math.random().toString(36).substring(2, 9),
-          item: {
-            ...serviceItem,
-            price: safePrice,
-            displayPrice: safePrice
-          },
+          item: serviceItem,
           quantity: 1,
           employeeId: s.technicianId && s.technicianId !== 'any' ? s.technicianId : '',
           type: 'service',
-          price: safePrice
+          price: effectivePrice
         };
-      }) || [];
+      });
       
       setCart(cartItems);
 
-      // تطبيق الخصم ليظهر في الفاتورة (خصم إجمالي الحجز أو مجموع خصومات الخدمات - عدم الجمع بين خصمين)
-      if (hasBookingGeneralDiscount) {
+      // تطبيق الخصم:
+      // 1. في حالة وجود خصم عام على إجمالي الحجز (وليس على الخدمات): يضاف في خانة الخصم أسفل الفاتورة في نقطة البيع
+      // 2. في حالة خصم على الخدمات: تم تطبيقه بالفعل على أسطر الخدمات في السلة أعلاه، ويكون خصم الفاتورة بالأسفل 0
+      if (totalServiceDiscounts === 0 && hasBookingGeneralDiscount) {
         setDiscount({
           type: initialBooking.discountType || 'fixed',
           value: Number(initialBooking.discountValue)
         });
-      } else if (totalServiceDiscounts > 0) {
-        setDiscount({
-          type: 'fixed',
-          value: Number(totalServiceDiscounts.toFixed(2))
-        });
       } else {
         setDiscount({ type: 'fixed', value: 0 });
       }
+      
+      try {
+        localStorage.removeItem('smartcut_pos_active_draft');
+      } catch {}
       
       let safeAdvances: AdvancePayment[] = [];
       const rawAdv = initialBooking.advancePayments || (initialBooking as any).advance_payments;
@@ -1910,7 +1942,7 @@ export function POSScreen({
                             </button>
                           </div>
                         ) : (
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             <p 
                               className={`text-primary font-black text-xs ${canEditItemPrice ? 'cursor-pointer hover:underline' : ''}`}
                               onClick={() => {
@@ -1924,6 +1956,17 @@ export function POSScreen({
                               {getCartItemPrice(c)} {settings.currency}
                               {canEditItemPrice && <span className="text-[9px] text-slate-400 mr-1">✏️</span>}
                             </p>
+                            {/* خصم سطر الخدمة إن وجد */}
+                            {Boolean((c.item?.hasDiscount || c.item?.lineDiscount > 0) && c.item?.originalPrice && c.item.originalPrice > getCartItemPrice(c)) && (
+                              <div className="flex items-center gap-1">
+                                <span className="line-through text-slate-400 text-[10px] font-bold">
+                                  {Number(c.item.originalPrice).toFixed(2)}
+                                </span>
+                                <span className="bg-rose-50 text-rose-600 border border-rose-200 text-[9px] font-extrabold px-1.5 py-0.5 rounded">
+                                  خصم: -{(Number(c.item.originalPrice) - getCartItemPrice(c)).toFixed(2)} {c.item?.discountType === 'percentage' && c.item?.discountValue ? `(${c.item.discountValue}%)` : settings.currency}
+                                </span>
+                              </div>
+                            )}
                             {c.quantity > 1 && (
                               <span className="text-[10px] text-slate-400 font-bold">
                                 (الإجمالي: {(getCartItemPrice(c) * (c.quantity || 1)).toFixed(2)} {settings.currency})
@@ -2432,9 +2475,21 @@ export function POSScreen({
                         <td style={{ padding: '8px 0' }}>
                           <div style={{ fontWeight: 'bold' }}>{item.serviceName}</div>
                           <div style={{ fontSize: '11px', color: '#555' }}>بواسطة: {item.technicianName || '-'}</div>
+                          {Boolean(item.discountAmount && item.discountAmount > 0) && (
+                            <div style={{ fontSize: '10px', color: '#e11d48', fontWeight: 'bold' }}>
+                              خصم: -{item.discountAmount?.toFixed(2)} (الأصلي: {item.originalPrice?.toFixed(2)})
+                            </div>
+                          )}
                         </td>
                         <td style={{ padding: '8px 0', textAlign: 'center' }}>{item.quantity || 1}</td>
-                        <td style={{ padding: '8px 0', textAlign: 'left' }}>{item.price.toFixed(2)}</td>
+                        <td style={{ padding: '8px 0', textAlign: 'left' }}>
+                          <div>{item.price.toFixed(2)}</div>
+                          {Boolean(item.originalPrice && item.originalPrice > item.price) && (
+                            <div style={{ fontSize: '10px', color: '#999', textDecoration: 'line-through' }}>
+                              {item.originalPrice?.toFixed(2)}
+                            </div>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

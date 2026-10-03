@@ -227,6 +227,7 @@ export function BookingsScreen({
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
   const [selectedBookingDetails, setSelectedBookingDetails] = useState<Booking | null>(null);
+  const [previewBooking, setPreviewBooking] = useState<Booking | null>(null);
 
   const defaultBookingDate = (shiftData && shiftData.isOpen && shiftData.date) ? shiftData.date : new Date().toISOString().split('T')[0];
 
@@ -857,16 +858,10 @@ export function BookingsScreen({
     }
   };
 
-  // Print Booking Receipt
-  const printBooking = (booking: Booking) => {
-    const totals = calculateBookingTotals(booking);
-    const totalAdv = totals.advances;
-    const remainingAmt = totals.remaining;
-
-    // Format creation date & time (تاريخ ووقت إنشاء الحجز) - 12-hour format
+  // Helper to format booking creation date & time (تاريخ ووقت إنشاء الحجز) - 12-hour format
+  const formatBookingCreatedAt = (booking: Booking): string => {
     const createdRaw = booking.createdAt || (booking as any).created_at;
     const pad = (n: number) => n.toString().padStart(2, '0');
-    let createdDateTimeStr = '';
     if (createdRaw) {
       const d = new Date(createdRaw);
       if (!isNaN(d.getTime())) {
@@ -875,32 +870,37 @@ export function BookingsScreen({
         const minutes = pad(d.getMinutes());
         const ampm = hours >= 12 ? 'م' : 'ص';
         const formattedHours = pad(hours % 12 || 12);
-        createdDateTimeStr = `${datePart} - ${formattedHours}:${minutes} ${ampm}`;
+        return `${datePart} - ${formattedHours}:${minutes} ${ampm}`;
       }
     }
-    if (!createdDateTimeStr) {
-      const d = new Date();
-      const datePart = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-      const hours = d.getHours();
-      const minutes = pad(d.getMinutes());
-      const ampm = hours >= 12 ? 'م' : 'ص';
-      const formattedHours = pad(hours % 12 || 12);
-      createdDateTimeStr = `${datePart} - ${formattedHours}:${minutes} ${ampm}`;
-    }
+    const d = new Date();
+    const datePart = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    const hours = d.getHours();
+    const minutes = pad(d.getMinutes());
+    const ampm = hours >= 12 ? 'م' : 'ص';
+    const formattedHours = pad(hours % 12 || 12);
+    return `${datePart} - ${formattedHours}:${minutes} ${ampm}`;
+  };
 
-    // Clean address to ensure "جمهورية مصر العربية" is completely removed
+  // Helper to get clean salon/branch address without "جمهورية مصر العربية"
+  const getBookingCleanAddress = (booking: Booking): string => {
     const branchObj = branches?.find(b => b.id === (booking.branchId || activeBranchId));
     const rawAddress = branchObj?.address || settings.address || '';
-    const cleanAddress = rawAddress
+    return rawAddress
       .replace(/جمهورية مصر العربية/gi, '')
       .replace(/^[\s,-]+|[\s,-]+$/g, '')
       .trim();
+  };
+
+  // Execute Physical Print of Booking Receipt to thermal printer
+  const executePrintBookingReceipt = (booking: Booking) => {
+    const totals = calculateBookingTotals(booking);
+    const totalAdv = totals.advances;
+    const remainingAmt = totals.remaining;
+    const createdDateTimeStr = formatBookingCreatedAt(booking);
+    const cleanAddress = getBookingCleanAddress(booking);
     const contactPhone = settings.phone || '';
-
-    // Salon title from database
     const salonTitle = settings.salonName || 'صالون سمارت كت';
-
-    // Barcode for booking ID
     const barcodeCode = booking.id || 'B000000';
     const barcodeSvg = generateCode39Svg(barcodeCode, 34);
 
@@ -1040,6 +1040,61 @@ export function BookingsScreen({
     setTimeout(() => {
       document.body.removeChild(printWindow);
     }, 100);
+  };
+
+  // Open Booking Receipt Print Preview (تظهر معاينة المطبوع أولاً في كل أزرار الطباعة)
+  const printBooking = (booking: Booking) => {
+    setPreviewBooking(booking);
+  };
+
+  // Open Preview directly from Add/Edit Modal
+  const handlePreviewFromAddEditModal = () => {
+    if (!newBooking.clientName?.trim() || !newBooking.phone?.trim()) {
+      alert('يرجى إدخال اسم العميل ورقم الموبايل أولاً لمعاينة الإيصال');
+      return;
+    }
+
+    const hasServiceDiscounts = (newBooking.services || []).some(s => Number(s.discountValue || 0) > 0);
+    const hasTotalDiscount = Number(newBooking.discountValue || 0) > 0;
+
+    const finalServices = (newBooking.services || []).map(s => ({
+      ...s,
+      discountType: s.discountType || 'fixed',
+      discountValue: hasTotalDiscount ? 0 : Number(s.discountValue || 0)
+    }));
+    const finalDiscountValue = hasServiceDiscounts ? 0 : Number(newBooking.discountValue || 0);
+    const finalDiscountType = newBooking.discountType || 'fixed';
+
+    const totals = calculateBookingTotals({
+      ...newBooking,
+      services: finalServices,
+      discountValue: finalDiscountValue,
+      discountType: finalDiscountType
+    });
+
+    const draftBooking: Booking = {
+      id: editingBooking ? editingBooking.id : ('B-PREVIEW-' + Math.random().toString(36).substr(2, 5).toUpperCase()),
+      bookingCode: editingBooking?.bookingCode || 'SC-PREVIEW',
+      salonId: settings.salonId,
+      clientName: newBooking.clientName.trim(),
+      phone: newBooking.phone.trim(),
+      customerEmail: newBooking.customerEmail?.trim() || undefined,
+      notes: newBooking.notes?.trim() || undefined,
+      date: effectiveBookingDate,
+      time: newBooking.time || '10:00',
+      status: newBooking.status || 'confirmed',
+      location: newBooking.location?.trim() || undefined,
+      services: finalServices,
+      advancePayments: newBooking.advancePayments || [],
+      totalAmount: totals.netTotal,
+      discountType: finalDiscountType,
+      discountValue: finalDiscountValue,
+      branchId: bBranchId,
+      queueNumber: editingBooking?.queueNumber || 1,
+      createdAt: editingBooking?.createdAt || (newBooking.createdAt as string) || new Date().toISOString()
+    };
+
+    setPreviewBooking(draftBooking);
   };
 
   // Status Styling Helper
@@ -2861,13 +2916,22 @@ export function BookingsScreen({
                   </div>
                 );
               })()}
-              <div className="flex gap-2 w-full sm:w-auto">
+              <div className="flex flex-wrap gap-2 w-full sm:w-auto">
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
                   className="flex-1 sm:flex-initial px-4 py-2 text-xs font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-100 rounded-xl cursor-pointer"
                 >
                   إلغاء
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePreviewFromAddEditModal}
+                  className="flex-1 sm:flex-initial px-3.5 py-2 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-xl cursor-pointer flex items-center justify-center gap-1.5 transition-colors"
+                  title="معاينة إيصال الحجز قبل الحفظ"
+                >
+                  <Printer size={14} />
+                  <span>معاينة الإيصال</span>
                 </button>
                 <button
                   type="button"
@@ -3489,6 +3553,227 @@ export function BookingsScreen({
           }
         }}
       />
+
+      {/* ========================================================================= */}
+      {/* BOOKING RECEIPT PRINT PREVIEW MODAL (معاينة إيصال الحجز) */}
+      {/* ========================================================================= */}
+      {previewBooking && (() => {
+        const totals = calculateBookingTotals(previewBooking);
+        const totalAdv = totals.advances;
+        const remainingAmt = totals.remaining;
+        const createdDateTimeStr = formatBookingCreatedAt(previewBooking);
+        const cleanAddress = getBookingCleanAddress(previewBooking);
+        const salonTitle = settings.salonName || 'صالون سمارت كت';
+        const barcodeCode = previewBooking.id || 'B000000';
+        const barcodeSvg = generateCode39Svg(barcodeCode, 34);
+
+        return (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-[60] p-4 animate-in fade-in duration-150">
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[92vh]" dir="rtl">
+              {/* Header */}
+              <div className="flex justify-between items-center p-4 px-5 border-b border-slate-100 bg-slate-50/70">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                    <Printer size={18} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900">معاينة إيصال الحجز</h3>
+                    <p className="text-[11px] text-slate-500 font-mono">
+                      {previewBooking.id} • {previewBooking.clientName}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPreviewBooking(null)}
+                  className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 cursor-pointer transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Body: Thermal Paper Style */}
+              <div className="p-4 sm:p-6 bg-slate-100/90 overflow-y-auto flex justify-center">
+                <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80 w-full max-w-[340px] text-black font-sans space-y-3 text-xs select-text">
+                  {/* Salon Header */}
+                  <div className="text-center space-y-1">
+                    {settings.logoUrl && (
+                      <img src={settings.logoUrl} alt="Logo" className="max-h-16 mx-auto mb-1.5" />
+                    )}
+                    <h2 className="text-lg font-black text-black">{salonTitle}</h2>
+                    <div className="inline-block border-1.5 border-black px-3 py-1 font-bold text-xs mt-1">
+                      إيصال حجز موعد مؤكد
+                    </div>
+                  </div>
+
+                  {/* Barcode section */}
+                  <div className="text-center py-1 bg-white">
+                    <div className="max-w-[220px] mx-auto" dangerouslySetInnerHTML={{ __html: barcodeSvg }} />
+                    <div className="font-mono text-xs font-black tracking-widest text-black mt-0.5">
+                      {barcodeCode}
+                    </div>
+                  </div>
+
+                  {/* Queue number if exists */}
+                  {previewBooking.queueNumber && (
+                    <div className="bg-indigo-50 border-2 border-indigo-600 rounded-xl p-2 text-center">
+                      <span className="text-[10px] text-indigo-700 font-bold block">رقم دور الحجز المسبق</span>
+                      <strong className="text-2xl text-indigo-900 font-black font-mono">B-{previewBooking.queueNumber}</strong>
+                    </div>
+                  )}
+
+                  {/* Info list */}
+                  <div className="space-y-1 text-xs border-y border-dashed border-slate-300 py-2">
+                    <div className="flex justify-between">
+                      <span className="text-slate-600 font-bold">رقم الحجز:</span>
+                      <span className="font-mono font-bold text-black">{previewBooking.id}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-600 font-bold">تاريخ الموعد:</span>
+                      <span className="font-bold text-black">{previewBooking.date}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-600 font-bold">الوقت:</span>
+                      <span className="font-bold text-black">{formatTo12Hour(previewBooking.time)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-600 font-bold">العميل:</span>
+                      <span className="font-bold text-black">{previewBooking.clientName}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-600 font-bold">مكان الحجز:</span>
+                      <span className="font-bold text-black">{previewBooking.location || 'داخل الصالون'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-600 font-bold">الهاتف:</span>
+                      <span className="font-bold text-black font-mono">{previewBooking.phone}</span>
+                    </div>
+                  </div>
+
+                  {/* Services Table */}
+                  <div className="space-y-1">
+                    <div className="font-bold text-xs border-b border-black pb-1 flex justify-between">
+                      <span>الخدمة</span>
+                      <span>السعر</span>
+                    </div>
+                    <div className="divide-y divide-dotted divide-slate-200">
+                      {previewBooking.services?.map(s => {
+                        const lineDisc = calculateServiceLineDiscount(s);
+                        const lineFinal = calculateServiceLinePrice(s);
+                        return (
+                          <div key={s.id} className="py-1.5 flex justify-between items-start">
+                            <div>
+                              <div className="font-bold text-black">{s.serviceName}</div>
+                              {lineDisc > 0 && (
+                                <div className="text-[10px] text-rose-600 font-bold">
+                                  خصم: -{lineDisc.toFixed(2)} {s.discountType === 'percentage' ? `(${s.discountValue}%)` : settings.currency}
+                                </div>
+                              )}
+                            </div>
+                            <div className="text-left font-mono font-bold">
+                              <div>{lineFinal.toFixed(2)} {settings.currency}</div>
+                              {lineDisc > 0 && (
+                                <div className="text-[10px] text-slate-400 line-through">
+                                  {Number(s.price || 0).toFixed(2)}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Totals Section */}
+                  <div className="border-t border-dashed border-black pt-2 space-y-1 text-xs">
+                    {totals.totalDiscounts > 0 && (
+                      <div className="flex justify-between text-slate-600 font-bold">
+                        <span>إجمالي الخدمات (قبل الخصم):</span>
+                        <span className="font-mono">{totals.grossServices.toFixed(2)} {settings.currency}</span>
+                      </div>
+                    )}
+                    {totals.lineDiscounts > 0 && (
+                      <div className="flex justify-between text-rose-600 font-bold">
+                        <span>خصومات بنود الخدمات:</span>
+                        <span className="font-mono">-{totals.lineDiscounts.toFixed(2)} {settings.currency}</span>
+                      </div>
+                    )}
+                    {totals.generalDiscount > 0 && (
+                      <div className="flex justify-between text-rose-600 font-bold">
+                        <span>خصم إجمالي الحجز ({previewBooking.discountType === 'percentage' ? (previewBooking.discountValue || 0) + '%' : 'مبلغ ثابت'}):</span>
+                        <span className="font-mono">-{totals.generalDiscount.toFixed(2)} {settings.currency}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between font-black text-black border-y border-dashed border-black py-1">
+                      <span>إجمالي الحجز الصافي:</span>
+                      <span className="font-mono text-sm font-black">{totals.netTotal.toFixed(2)} {settings.currency}</span>
+                    </div>
+
+                    {totalAdv > 0 && (
+                      <div className="space-y-1 pt-1">
+                        <div className="flex justify-between text-emerald-700 font-bold">
+                          <span>المسدد مقدماً (عربون):</span>
+                          <span className="font-mono">-{totalAdv.toFixed(2)} {settings.currency}</span>
+                        </div>
+                        <div className="flex justify-between font-black text-black text-sm border-t-2 border-black pt-1">
+                          <span>المتبقي للتحصيل عند الزيارة:</span>
+                          <span className="font-mono">{remainingAmt.toFixed(2)} {settings.currency}</span>
+                        </div>
+                        <div className="bg-slate-50 p-2 rounded-lg text-[10px] space-y-0.5 mt-1 border border-slate-200">
+                          <strong className="block text-slate-700 mb-0.5">تفاصيل الدفعات المقدمة:</strong>
+                          {(previewBooking.advancePayments || []).map((adv, i) => (
+                            <div key={adv.id || i} className="text-slate-600 font-mono">
+                              • دفعة {i + 1}: {Number(adv.amount || 0).toFixed(2)} {settings.currency} ({adv.treasuryName || 'نقداً'}) - تاريخ: {adv.date}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Creation date & time above notes */}
+                  <div className="mt-3 p-2 bg-slate-50 border-1.5 border-black rounded-lg text-center">
+                    <span className="text-xs font-bold text-black">تاريخ ووقت إنشاء الحجز: </span>
+                    <span className="font-mono text-xs font-black text-black">{createdDateTimeStr}</span>
+                  </div>
+
+                  {/* Salon Notes */}
+                  {settings.bookingNotes && (
+                    <div className="p-2 border border-dashed border-black rounded-lg text-center text-xs font-bold whitespace-pre-wrap bg-slate-50/50">
+                      {settings.bookingNotes}
+                    </div>
+                  )}
+
+                  {/* Footer (address & phones) */}
+                  <div className="pt-2 border-t border-dashed border-black text-center text-[10px] text-slate-600 space-y-0.5">
+                    {cleanAddress && <p><strong>العنوان:</strong> {cleanAddress}</p>}
+                    {settings.phone && <p><strong>أرقام التواصل:</strong> {settings.phone}</p>}
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Footer Buttons */}
+              <div className="p-4 bg-white border-t border-slate-100 flex gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setPreviewBooking(null)}
+                  className="flex-1 py-2.5 px-4 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 cursor-pointer transition-colors"
+                >
+                  إغلاق
+                </button>
+                <button
+                  type="button"
+                  onClick={() => executePrintBookingReceipt(previewBooking)}
+                  className="flex-1 py-2.5 px-4 rounded-xl text-xs font-black text-white bg-indigo-600 hover:bg-indigo-700 shadow-md cursor-pointer flex items-center justify-center gap-2 transition-all"
+                >
+                  <Printer size={15} />
+                  <span>طباعة الإيصال الآن</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
     </div>
   );

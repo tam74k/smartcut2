@@ -403,7 +403,9 @@ export default function App() {
       setBookings(data.bookings.map((b: any) => ({
         ...b, phone: b.clientPhone || b.phone || '',
         queueNumber: b.queueNumber || b.queue_number || undefined,
-        customerEmail: b.customerEmail || '', advancePayments: b.advancePayments || []
+        customerEmail: b.customerEmail || '', advancePayments: b.advancePayments || b.advance_payments || [],
+        discountType: b.discountType || b.discount_type || 'fixed',
+        discountValue: Number(b.discountValue ?? b.discount_value ?? 0)
       })));
     }
     if (data.clients) {
@@ -812,7 +814,9 @@ export default function App() {
             ...b,
             phone: b.clientPhone || b.phone || '',
             customerEmail: b.customerEmail || '',
-            advancePayments: b.advancePayments || []
+            advancePayments: b.advancePayments || b.advance_payments || [],
+            discountType: b.discountType || b.discount_type || 'fixed',
+            discountValue: Number(b.discountValue ?? b.discount_value ?? 0)
           })));
         }
       } catch (err) {
@@ -2441,7 +2445,9 @@ export default function App() {
               setBookings(bList.map((b: any) => ({
                 ...b, phone: b.clientPhone || b.phone || '',
                 queueNumber: b.queueNumber || b.queue_number || undefined,
-                customerEmail: b.customerEmail || '', advancePayments: b.advancePayments || []
+                customerEmail: b.customerEmail || '', advancePayments: b.advancePayments || b.advance_payments || [],
+                discountType: b.discountType || b.discount_type || 'fixed',
+                discountValue: Number(b.discountValue ?? b.discount_value ?? 0)
               })));
             }
           }).catch(() => {});

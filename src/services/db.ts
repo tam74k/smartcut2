@@ -1487,13 +1487,23 @@ export const DB = {
         created_at: b.createdAt || b.created_at || appointmentDateTime,
         queue_number: b.queueNumber || null,
         advance_payments: cleanAdvances, notes: b.notes || null,
-        location: b.location || null
+        location: b.location || null,
+        discount_type: b.discountType || 'fixed',
+        discount_value: Number(b.discountValue || 0)
       };
       let { error } = await client.from('bookings').upsert(snap, { onConflict: 'id' });
-      if (error && error.message && error.message.includes('location')) {
-        console.warn('DB.saveBooking: location column missing in Supabase, retrying without location and creating column...');
-        ensureColumn('bookings', 'location', 'TEXT').catch(() => {});
-        delete snap.location;
+      if (error && error.message && (error.message.includes('location') || error.message.includes('discount_'))) {
+        console.warn('DB.saveBooking: optional column missing in Supabase, retrying without missing columns...');
+        if (error.message.includes('location')) {
+          ensureColumn('bookings', 'location', 'TEXT').catch(() => {});
+          delete snap.location;
+        }
+        if (error.message.includes('discount_type') || error.message.includes('discount_value')) {
+          ensureColumn('bookings', 'discount_type', 'TEXT').catch(() => {});
+          ensureColumn('bookings', 'discount_value', 'NUMERIC').catch(() => {});
+          delete snap.discount_type;
+          delete snap.discount_value;
+        }
         const retry = await client.from('bookings').upsert(snap, { onConflict: 'id' });
         error = retry.error;
       }

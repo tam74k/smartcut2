@@ -853,6 +853,8 @@ export interface InvoiceItem {
   serviceName: string; 
   technicianName: string; 
   price: number; 
+  originalPrice?: number;
+  discountAmount?: number;
   quantity?: number; 
   employeeId?: string; 
   referralEmployeeId?: string; // موظف الإحالة / فتح الشغل
