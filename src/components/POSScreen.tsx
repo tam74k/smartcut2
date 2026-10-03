@@ -1362,7 +1362,9 @@ export function POSScreen({
   };
 
   const filteredItems = useMemo(() => {
-    let source = itemTypeFilter === 'service' ? items.filter(i => i.isActive !== false) : products;
+    let source = itemTypeFilter === 'service' 
+      ? items.filter(i => i.isActive !== false) 
+      : products.filter(p => !p.productType || p.productType === 'retail');
     let filtered = source;
     if (selectedCategory !== 'all') {
       const selectedCat = categories.find(c => c.id === selectedCategory);

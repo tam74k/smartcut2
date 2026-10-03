@@ -1156,6 +1156,7 @@ export interface Product {
   barcode?: string;
   supplierId?: string;
   supplierName?: string;
+  productType?: 'retail' | 'raw_material'; // 'retail' (للبيع) | 'raw_material' (مادة خام)
 }
 
 export interface Supplier {

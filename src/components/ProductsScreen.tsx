@@ -46,6 +46,7 @@ export function ProductsScreen({
     name: '',
     categoryId: categories[0]?.id || '',
     supplierId: '',
+    productType: 'retail' as 'retail' | 'raw_material',
     sellPrice: '',
     costPrice: '',
     reorderLimit: '',
@@ -58,6 +59,8 @@ export function ProductsScreen({
     dispenserName: 'مدير النظام',
     items: [{ productId: '', quantity: 1, employeeId: employees[0]?.id || '' }]
   });
+
+  const [productTypeFilter, setProductTypeFilter] = useState<'all' | 'retail' | 'raw_material'>('all');
 
   const normalizeText = (text: string) => {
     return (text || '')
@@ -74,20 +77,24 @@ export function ProductsScreen({
       normalizeText(p.name).includes(q) || 
       (p.barcode && p.barcode.toLowerCase().includes(searchQuery.toLowerCase().trim()));
     const matchesCat = categoryFilter === 'all' || p.categoryId === categoryFilter;
-    return matchesSearch && matchesCat;
+    const itemType = p.productType || 'retail';
+    const matchesType = productTypeFilter === 'all' || itemType === productTypeFilter;
+    return matchesSearch && matchesCat && matchesType;
   });
 
   const handleEdit = (p: Product) => {
     setEditingProductId(p.id);
+    const pType = p.productType || 'retail';
     setFormData({
       name: p.name,
       categoryId: p.categoryId,
       supplierId: p.supplierId || '',
-      sellPrice: p.sellPrice.toString(),
+      productType: pType,
+      sellPrice: (pType === 'raw_material' && !p.sellPrice) ? '0' : p.sellPrice.toString(),
       costPrice: p.costPrice.toString(),
       reorderLimit: p.reorderLimit.toString(),
       openingStock: p.openingStock.toString(),
-      commission: p.commission.toString()
+      commission: (pType === 'raw_material' && !p.commission) ? '0' : p.commission.toString()
     });
     setErrorMsg('');
     setShowAddModal(true);
@@ -97,13 +104,14 @@ export function ProductsScreen({
     if (!formData.name.trim()) return setErrorMsg('الرجاء إدخال اسم المنتج');
     if (!formData.categoryId) return setErrorMsg('الرجاء اختيار التصنيف');
     
-    const sPrice = Number(formData.sellPrice);
+    const isRaw = formData.productType === 'raw_material';
+    const sPrice = isRaw ? (Number(formData.sellPrice) || 0) : Number(formData.sellPrice);
     const cPrice = Number(formData.costPrice);
     const rLimit = Number(formData.reorderLimit);
     const oStock = Number(formData.openingStock);
-    const comm = Number(formData.commission);
+    const comm = isRaw ? 0 : Number(formData.commission);
 
-    if (isNaN(sPrice) || sPrice < 0) return setErrorMsg('الرجاء إدخال سعر بيع صحيح');
+    if (!isRaw && (isNaN(sPrice) || sPrice < 0)) return setErrorMsg('الرجاء إدخال سعر بيع صحيح للمنتج المعروض للبيع');
     if (isNaN(cPrice) || cPrice < 0) return setErrorMsg('الرجاء إدخال سعر تكلفة صحيح');
 
     const matchedSup = suppliers.find(s => s.id === formData.supplierId);
@@ -119,7 +127,8 @@ export function ProductsScreen({
             categoryId: formData.categoryId,
             supplierId: formData.supplierId || undefined,
             supplierName: matchedSup?.name || undefined,
-            sellPrice: sPrice,
+            productType: formData.productType,
+            sellPrice: isRaw ? 0 : sPrice,
             costPrice: cPrice,
             reorderLimit: rLimit,
             openingStock: oStock,
@@ -136,12 +145,15 @@ export function ProductsScreen({
         categoryId: formData.categoryId,
         supplierId: formData.supplierId || undefined,
         supplierName: matchedSup?.name || undefined,
-        sellPrice: sPrice,
+        productType: formData.productType,
+        sellPrice: isRaw ? 0 : sPrice,
         costPrice: cPrice,
         reorderLimit: rLimit,
         openingStock: oStock,
         currentStock: oStock,
-        commission: comm
+        commission: comm,
+        ...(settings.salonId ? { salonId: settings.salonId } : {}),
+        ...(settings.branchId ? { branchId: settings.branchId } : {})
       };
       setProducts([...products, newProduct]);
     }
@@ -248,16 +260,21 @@ export function ProductsScreen({
           }
         }
 
-        const sellPrice = Number(row['سعر البيع (ر.س)'] || row['سعر البيع'] || row['Sell Price'] || row['sellPrice'] || 0);
+        const rawType = String(row['نوع المنتج (للبيع / مادة خام)'] || row['نوع المنتج'] || row['النوع'] || row['Product Type'] || row['type'] || '').trim().toLowerCase();
+        const pType: 'retail' | 'raw_material' = (rawType.includes('خام') || rawType.includes('raw')) ? 'raw_material' : 'retail';
+        const isRaw = pType === 'raw_material';
+
+        const sellPrice = isRaw ? 0 : Number(row['سعر البيع (ر.س)'] || row['سعر البيع'] || row['Sell Price'] || row['sellPrice'] || 0);
         const costPrice = Number(row['سعر التكلفة (ر.س)'] || row['سعر التكلفة'] || row['Cost Price'] || row['costPrice'] || 0);
         const openingStock = Number(row['المخزون الافتتاحي'] || row['المخزون'] || row['Opening Stock'] || 0);
         const reorderLimit = Number(row['حد إعادة الطلب'] || row['حد الطلب'] || row['Reorder Limit'] || 5);
-        const commission = Number(row['نسبة عمولة البيع (%)'] || row['العمولة'] || row['Commission'] || 0);
+        const commission = isRaw ? 0 : Number(row['نسبة عمولة البيع (%)'] || row['العمولة'] || row['Commission'] || 0);
         const barcode = String(row['الباركود'] || row['Barcode'] || '').trim();
 
         const prodItem: Product = {
           id: 'PRD-' + Math.random().toString(36).substr(2, 9) + '-' + Date.now() + '-' + idx,
           name,
+          productType: pType,
           categoryId: matchedCategory?.id || '',
           supplierId: matchedSupplier?.id,
           supplierName: matchedSupplier?.name || (supplierRawName || undefined),
@@ -348,6 +365,7 @@ export function ProductsScreen({
               name: '', 
               categoryId: categories.find(c => c.id !== 'all' && c.type === 'product')?.id || categories[0]?.id || '', 
               supplierId: '',
+              productType: 'retail',
               sellPrice: '', 
               costPrice: '', 
               reorderLimit: '5', 
@@ -361,17 +379,26 @@ export function ProductsScreen({
         </div>
       </div>
 
-      <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex gap-4 mb-6">
-        <div className="flex-1 relative">
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-wrap gap-4 mb-6">
+        <div className="flex-1 min-w-[220px] relative">
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
           <input 
             type="text" 
-            placeholder="البحث عن منتج..." 
+            placeholder="البحث عن منتج بالاسم أو الباركود..." 
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-10 pl-4 py-2.5 outline-none focus:border-primary focus:bg-white transition-colors"
           />
         </div>
+        <select 
+          value={productTypeFilter}
+          onChange={(e) => setProductTypeFilter(e.target.value as any)}
+          className="w-48 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 outline-none focus:border-primary focus:bg-white font-bold text-slate-700"
+        >
+          <option value="all">جميع الأنواع</option>
+          <option value="retail">🛍️ للبيع (POS)</option>
+          <option value="raw_material">🧪 مادة خام (استهلاك)</option>
+        </select>
         <select 
           value={categoryFilter}
           onChange={(e) => setCategoryFilter(e.target.value)}
@@ -389,6 +416,7 @@ export function ProductsScreen({
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 text-slate-500">
               <th className="p-4 font-bold">اسم المنتج</th>
+              <th className="p-4 font-bold">النوع</th>
               <th className="p-4 font-bold">التصنيف</th>
               <th className="p-4 font-bold">المورد</th>
               <th className="p-4 font-bold">سعر البيع</th>
@@ -404,17 +432,36 @@ export function ProductsScreen({
           <tbody>
             {filteredProducts.length === 0 ? (
               <tr>
-                <td colSpan={11} className="p-8 text-center text-slate-400">لا توجد منتجات مسجلة</td>
+                <td colSpan={12} className="p-8 text-center text-slate-400">لا توجد منتجات مسجلة</td>
               </tr>
             ) : (
               filteredProducts.map(p => (
                 <tr key={p.id} className="border-b border-slate-100 hover:bg-slate-50">
                   <td className="p-4 font-bold text-slate-800">{p.name}</td>
+                  <td className="p-4 whitespace-nowrap">
+                    {p.productType === 'raw_material' ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-extrabold bg-amber-50 text-amber-700 border border-amber-200 shadow-xs">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                        مادة خام
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-xs">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                        للبيع
+                      </span>
+                    )}
+                  </td>
                   <td className="p-4 text-slate-600">{categories.find(c => c.id === p.categoryId)?.name}</td>
                   <td className="p-4 text-slate-600 font-medium">
                     {suppliers.find(s => s.id === p.supplierId)?.name || p.supplierName || '—'}
                   </td>
-                  <td className="p-4 font-bold text-emerald-600">{p.sellPrice.toFixed(2)}</td>
+                  <td className="p-4 font-bold">
+                    {p.productType === 'raw_material' ? (
+                      <span className="text-slate-400 font-normal text-xs bg-slate-100 px-2 py-0.5 rounded">غير متاح للبيع</span>
+                    ) : (
+                      <span className="text-emerald-600">{p.sellPrice.toFixed(2)}</span>
+                    )}
+                  </td>
                   <td className="p-4 font-bold text-rose-600">{p.costPrice.toFixed(2)}</td>
                   <td className="p-4 text-slate-600">{p.openingStock}</td>
                   <td className="p-4 font-bold">
@@ -424,7 +471,13 @@ export function ProductsScreen({
                   </td>
                   <td className="p-4 text-slate-600 font-bold">{(p.currentStock * p.costPrice).toFixed(2)}</td>
                   <td className="p-4 text-slate-500">{p.reorderLimit}</td>
-                  <td className="p-4 text-blue-600">{p.commission.toFixed(2)}</td>
+                  <td className="p-4 text-blue-600">
+                    {p.productType === 'raw_material' ? (
+                      <span className="text-slate-400 font-normal text-xs">—</span>
+                    ) : (
+                      p.commission.toFixed(2)
+                    )}
+                  </td>
                   <td className="p-4">
                     <div className="flex items-center gap-1.5">
                       <button 
@@ -463,6 +516,48 @@ export function ProductsScreen({
                 </div>
               )}
               <div className="grid grid-cols-2 gap-4">
+                {/* اختيار نوع المنتج: للبيع أو مادة خام */}
+                <div className="col-span-2">
+                  <label className="block text-sm font-bold text-slate-700 mb-2">نوع المنتج والهدف منه</label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, productType: 'retail' })}
+                      className={`p-3 rounded-xl border-2 flex items-center gap-3 transition-all cursor-pointer text-right ${
+                        formData.productType !== 'raw_material'
+                          ? 'border-emerald-600 bg-emerald-50/50 text-emerald-900 shadow-sm font-bold ring-2 ring-emerald-500/20'
+                          : 'border-slate-200 hover:border-slate-300 text-slate-600 bg-white'
+                      }`}
+                    >
+                      <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-lg shrink-0 ${formData.productType !== 'raw_material' ? 'bg-emerald-600 text-white' : 'bg-slate-100'}`}>
+                        🛍️
+                      </div>
+                      <div>
+                        <div className="font-bold text-sm">منتج للبيع (Retail)</div>
+                        <div className="text-xs text-slate-500 font-normal mt-0.5">يظهر في شاشة الكاشير (POS) ويباع للعملاء</div>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, productType: 'raw_material', sellPrice: '0', commission: '0' })}
+                      className={`p-3 rounded-xl border-2 flex items-center gap-3 transition-all cursor-pointer text-right ${
+                        formData.productType === 'raw_material'
+                          ? 'border-amber-500 bg-amber-50/60 text-amber-900 shadow-sm font-bold ring-2 ring-amber-500/20'
+                          : 'border-slate-200 hover:border-slate-300 text-slate-600 bg-white'
+                      }`}
+                    >
+                      <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-lg shrink-0 ${formData.productType === 'raw_material' ? 'bg-amber-500 text-white' : 'bg-slate-100'}`}>
+                        🧪
+                      </div>
+                      <div>
+                        <div className="font-bold text-sm">مادة خام (استهلاك داخلي)</div>
+                        <div className="text-xs text-slate-500 font-normal mt-0.5">لا يظهر في الكاشير، مخصص للاستهلاك والصرف</div>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+
                 <div className="col-span-2">
                   <label className="block text-sm font-bold text-slate-700 mb-1">اسم المنتج</label>
                   <input type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary" />
@@ -485,8 +580,21 @@ export function ProductsScreen({
                   <input type="number" value={formData.openingStock} onChange={e => setFormData({...formData, openingStock: e.target.value})} className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary" />
                 </div>
                 <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">سعر البيع ({settings.currency})</label>
-                  <input type="number" value={formData.sellPrice} onChange={e => setFormData({...formData, sellPrice: e.target.value})} className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary" />
+                  <label className="block text-sm font-bold text-slate-700 mb-1">
+                    سعر البيع ({settings.currency})
+                    {formData.productType === 'raw_material' && (
+                      <span className="text-amber-600 text-xs font-normal mr-1.5">(غير متاح للبيع)</span>
+                    )}
+                  </label>
+                  <input 
+                    type="number" 
+                    value={formData.productType === 'raw_material' ? '0' : formData.sellPrice} 
+                    disabled={formData.productType === 'raw_material'}
+                    onChange={e => setFormData({...formData, sellPrice: e.target.value})} 
+                    className={`w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary ${
+                      formData.productType === 'raw_material' ? 'bg-slate-100 text-slate-400 cursor-not-allowed select-none' : ''
+                    }`} 
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-bold text-slate-700 mb-1">سعر التكلفة ({settings.currency})</label>
@@ -497,8 +605,21 @@ export function ProductsScreen({
                   <input type="number" value={formData.reorderLimit} onChange={e => setFormData({...formData, reorderLimit: e.target.value})} className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary" />
                 </div>
                 <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">عمولة البيع</label>
-                  <input type="number" value={formData.commission} onChange={e => setFormData({...formData, commission: e.target.value})} className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary" />
+                  <label className="block text-sm font-bold text-slate-700 mb-1">
+                    عمولة البيع
+                    {formData.productType === 'raw_material' && (
+                      <span className="text-slate-400 text-xs font-normal mr-1.5">(لا تنطبق للمواد الخام)</span>
+                    )}
+                  </label>
+                  <input 
+                    type="number" 
+                    value={formData.productType === 'raw_material' ? '0' : formData.commission} 
+                    disabled={formData.productType === 'raw_material'}
+                    onChange={e => setFormData({...formData, commission: e.target.value})} 
+                    className={`w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary ${
+                      formData.productType === 'raw_material' ? 'bg-slate-100 text-slate-400 cursor-not-allowed select-none' : ''
+                    }`} 
+                  />
                 </div>
               </div>
               <div className="mt-6 pt-4 border-t border-slate-100 flex justify-end gap-3">
@@ -723,6 +844,7 @@ export function ProductsScreen({
                     <thead className="bg-slate-100 text-slate-600 font-bold sticky top-0">
                       <tr>
                         <th className="p-2">المنتج</th>
+                        <th className="p-2">النوع</th>
                         <th className="p-2">التصنيف</th>
                         <th className="p-2">المورد</th>
                         <th className="p-2">سعر البيع</th>
@@ -731,16 +853,27 @@ export function ProductsScreen({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {importedRows.slice(0, 10).map((r, i) => (
-                        <tr key={i}>
-                          <td className="p-2 font-bold text-slate-800">{r['اسم المنتج'] || r['المنتج'] || r['name']}</td>
-                          <td className="p-2 text-slate-600">{r['اسم التصنيف'] || r['التصنيف'] || r['category'] || '-'}</td>
-                          <td className="p-2 text-indigo-600 font-medium">{r['اسم المورد'] || r['المورد'] || r['Supplier'] || '-'}</td>
-                          <td className="p-2 font-mono text-emerald-600 font-bold">{r['سعر البيع (ر.س)'] || r['سعر البيع'] || r['sellPrice']}</td>
-                          <td className="p-2 font-mono text-slate-500 font-bold">{r['سعر التكلفة (ر.س)'] || r['سعر التكلفة'] || r['costPrice']}</td>
-                          <td className="p-2 font-bold text-slate-700">{r['المخزون الافتتاحي'] || r['المخزون'] || 0}</td>
-                        </tr>
-                      ))}
+                      {importedRows.slice(0, 10).map((r, i) => {
+                        const rawType = String(r['نوع المنتج (للبيع / مادة خام)'] || r['نوع المنتج'] || r['النوع'] || r['Product Type'] || r['type'] || '').trim().toLowerCase();
+                        const isRaw = rawType.includes('خام') || rawType.includes('raw');
+                        return (
+                          <tr key={i}>
+                            <td className="p-2 font-bold text-slate-800">{r['اسم المنتج'] || r['المنتج'] || r['name']}</td>
+                            <td className="p-2">
+                              {isRaw ? (
+                                <span className="text-[10px] bg-amber-100 text-amber-800 font-bold px-1.5 py-0.5 rounded">مادة خام</span>
+                              ) : (
+                                <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded">للبيع</span>
+                              )}
+                            </td>
+                            <td className="p-2 text-slate-600">{r['اسم التصنيف'] || r['التصنيف'] || r['category'] || '-'}</td>
+                            <td className="p-2 text-indigo-600 font-medium">{r['اسم المورد'] || r['المورد'] || r['Supplier'] || '-'}</td>
+                            <td className="p-2 font-mono text-emerald-600 font-bold">{isRaw ? '—' : (r['سعر البيع (ر.س)'] || r['سعر البيع'] || r['sellPrice'] || 0)}</td>
+                            <td className="p-2 font-mono text-slate-500 font-bold">{r['سعر التكلفة (ر.س)'] || r['سعر التكلفة'] || r['costPrice']}</td>
+                            <td className="p-2 font-bold text-slate-700">{r['المخزون الافتتاحي'] || r['المخزون'] || 0}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

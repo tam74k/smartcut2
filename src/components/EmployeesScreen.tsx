@@ -10,7 +10,7 @@ import {
   Gift, DollarSign, XCircle, CheckCircle, Clock, ShieldAlert, TrendingUp, 
   BarChart3, Settings, ShieldCheck, History, Award, Calendar, FileText, 
   AlertTriangle, Check, X, Printer, UserX, UserCheck, Sparkles, Sliders, Layers,
-  Camera, Image as ImageIcon, HeartHandshake, Fingerprint, Package, CheckCircle2
+  Camera, Image as ImageIcon, HeartHandshake, Fingerprint, Package, CheckCircle2, Coins
 } from 'lucide-react';
 import { processImageFile, MAX_IMAGE_SIZE_KB, compressEmployeeAvatar } from '../utils/imageUpload';
 import { HRScreen } from './HRScreen';
@@ -22,6 +22,7 @@ import { printThermalFinancialVoucher, FinancialVoucherData } from './ThermalFin
 import { getCommissionModelLabel, calculateEmployeeCommission } from '../utils/commissionHelper';
 import { DB } from '../services/db';
 import { AuthService } from '../services/auth';
+import { EmployeeCommissionsDetailedSection } from './EmployeeCommissionsDetailedSection';
 
 export function EmployeesScreen({ 
   settings, 
@@ -40,7 +41,9 @@ export function EmployeesScreen({
   setFingerprintLogs,
   custodies = [],
   setCustodies,
-  activeBranchId
+  activeBranchId,
+  services = [],
+  products = []
 }: { 
   settings: AppSettings;
   setSettings?: (s: AppSettings) => void;
@@ -59,10 +62,12 @@ export function EmployeesScreen({
   setFingerprintLogs?: (updater: FingerprintLog[] | ((prev: FingerprintLog[]) => FingerprintLog[])) => void;
   custodies?: EmployeeCustody[];
   setCustodies?: (updater: EmployeeCustody[] | ((prev: EmployeeCustody[]) => EmployeeCustody[])) => void;
+  services?: ServiceItem[];
+  products?: any[];
 }) {
   // Main Active Sub-Tab
   const [activeSubTab, setActiveSubTab] = useState<
-    'list' | 'timesheet' | 'tips' | 'fingerprint_logs' | 'salary_history' | 'shift_schedule_history' | 'end_of_service' | 'permissions' | 'hr_settings' | 'analytics'
+    'list' | 'timesheet' | 'commissions_summary' | 'tips' | 'fingerprint_logs' | 'salary_history' | 'shift_schedule_history' | 'end_of_service' | 'permissions' | 'hr_settings' | 'analytics'
   >('list');
 
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -952,6 +957,16 @@ export function EmployeesScreen({
           </button>
 
           <button
+            onClick={() => setActiveSubTab('commissions_summary')}
+            className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
+              activeSubTab === 'commissions_summary' ? 'bg-white text-amber-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Coins size={15} className="text-amber-600" />
+            <span>ملخص العمولات التفصيلي</span>
+          </button>
+
+          <button
             onClick={() => setActiveSubTab('salary_history')}
             className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
               activeSubTab === 'salary_history' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
@@ -1641,6 +1656,18 @@ export function EmployeesScreen({
           currentUser={currentUser}
           fingerprintLogs={fingerprintLogs}
           setFingerprintLogs={setFingerprintLogs}
+        />
+      )}
+
+      {/* SUB-TAB: COMMISSIONS DETAILED SUMMARY (ملخص العمولات التفصيلي) */}
+      {activeSubTab === 'commissions_summary' && (
+        <EmployeeCommissionsDetailedSection
+          settings={settings}
+          employees={employees}
+          invoices={invoices}
+          services={services}
+          products={products}
+          currentUser={currentUser}
         />
       )}
 

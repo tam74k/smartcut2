@@ -1973,7 +1973,8 @@ export const DB = {
       current_stock: Number(p.currentStock ?? 0),
       commission: Number(p.commission ?? 0),
       barcode: p.barcode || null,
-      is_active: p.isActive !== false
+      is_active: p.isActive !== false,
+      product_type: p.productType || 'retail'
     };
 
     if (p.supplierId) {
@@ -1981,6 +1982,15 @@ export const DB = {
     }
 
     let { error } = await client.from('products').upsert(payload, { onConflict: 'id' });
+
+    // 0. معالجة غياب عمود product_type إن لم يكن مضافاً بعد
+    if (error && (error.message.includes('product_type') || (error as any).code === '42703')) {
+      console.warn('DB.saveProduct: product_type column missing in Supabase, retrying without product_type...');
+      ensureColumn('products', 'product_type', 'VARCHAR(50)').catch(() => {});
+      delete payload.product_type;
+      const retry = await client.from('products').upsert(payload, { onConflict: 'id' });
+      error = retry.error;
+    }
 
     // 1. معالجة غياب عمود supplier_id إن لم يكن مضافاً بعد في قاعدة بيانات العميل
     if (error && (error.message.includes('supplier_id') || error.message.includes('PGRST204') || (error as any).code === '42703')) {
@@ -3499,7 +3509,8 @@ export function dbProductToApp(row: any): any {
     supplierName: c.supplierName || row.supplier_name || undefined,
     salonId: c.salonId || row.salon_id || undefined,
     branchId: c.branchId || row.branch_id || undefined,
-    isActive: c.isActive !== false && row.is_active !== false
+    isActive: c.isActive !== false && row.is_active !== false,
+    productType: (c.productType || row.product_type || 'retail') as 'retail' | 'raw_material'
   };
 }
 

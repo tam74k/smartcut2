@@ -1969,6 +1969,8 @@ export default function App() {
           setFingerprintLogs={setFingerprintLogs}
           custodies={custodies}
           setCustodies={setCustodies}
+          services={branchServices}
+          products={branchProducts}
         />
       );
 

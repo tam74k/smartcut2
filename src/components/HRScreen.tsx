@@ -19,6 +19,7 @@ import { calculateEmployeeCommission, getCommissionModelLabel, calculateEmployee
 import { DB } from '../services/db';
 import { getActiveShiftDate, getEffectiveDateTime, getEffectiveDateOnly } from '../utils/shiftDate';
 import { FingerprintImportModal } from './FingerprintImportModal';
+import { EmployeeCommissionsDetailedSection } from './EmployeeCommissionsDetailedSection';
 
 // Helper to reliably match date strings (YYYY-MM-DD) across ISO strings, space-delimited timestamps, and local timezone
 const isSameDay = (ts?: string, targetDateStr?: string): boolean => {
@@ -242,6 +243,7 @@ export function HRScreen({
   // Print Modal State
   const [showSlipModal, setShowSlipModal] = useState(false);
   const [activeSlipSummary, setActiveSlipSummary] = useState<SalarySlipSummary | null>(null);
+  const [showCommissionsSummaryModal, setShowCommissionsSummaryModal] = useState(false);
 
   // Manual Attendance Modal
   const [showAttendanceModal, setShowAttendanceModal] = useState(false);
@@ -2093,6 +2095,16 @@ export function HRScreen({
           >
             <ShieldCheck size={15} />
             <span>تدقيق الاستقطاعات والمسير 📑</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowCommissionsSummaryModal(true)}
+            className="bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+            title="عرض ملخص تفصيلي لعمولات الموظف والفواتير المستحقة عنها"
+          >
+            <Coins size={15} className="text-amber-600" />
+            <span>ملخص العمولات التفصيلي</span>
           </button>
 
           <button
@@ -4540,6 +4552,23 @@ export function HRScreen({
           }
         }}
       />
+
+      {/* COMMISSIONS DETAILED SUMMARY MODAL */}
+      {showCommissionsSummaryModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-5">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-6xl w-full max-h-[92vh] overflow-y-auto p-4 sm:p-6 space-y-4 animate-in fade-in zoom-in duration-150">
+            <EmployeeCommissionsDetailedSection
+              settings={settings}
+              employees={employees}
+              invoices={invoices}
+              currentUser={currentUser}
+              initialEmployeeId={selectedEmpId}
+              isModal
+              onCloseModal={() => setShowCommissionsSummaryModal(false)}
+            />
+          </div>
+        </div>
+      )}
 
     </div>
   );
