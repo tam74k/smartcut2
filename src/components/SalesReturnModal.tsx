@@ -387,9 +387,29 @@ export const SalesReturnModal: React.FC<SalesReturnModalProps> = ({
                     <Search className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                     <input
                       type="text"
-                      placeholder="اكتب رقم الفاتورة، أو اسم العميل، أو رقم الهاتف..."
+                      placeholder="امسح باركود الفاتورة، أو اكتب رقم الفاتورة أو اسم العميل..."
                       value={invoiceSearchQuery}
-                      onChange={(e) => setInvoiceSearchQuery(e.target.value)}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setInvoiceSearchQuery(val);
+                        const cleanVal = val.trim().toLowerCase();
+                        if (cleanVal) {
+                          const exact = matchingInvoices.find(inv => (inv.id || '').toLowerCase() === cleanVal);
+                          if (exact) {
+                            setSelectedInvoice(exact);
+                          }
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          const cleanVal = invoiceSearchQuery.trim().toLowerCase();
+                          const exact = matchingInvoices.find(inv => (inv.id || '').toLowerCase() === cleanVal) || (matchingInvoices.length === 1 ? matchingInvoices[0] : null);
+                          if (exact) {
+                            setSelectedInvoice(exact);
+                          }
+                        }
+                      }}
                       className="w-full bg-white border border-slate-300 rounded-xl pr-10 pl-4 py-2.5 text-sm font-medium focus:outline-none focus:border-rose-500 shadow-xs"
                       autoFocus
                     />

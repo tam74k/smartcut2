@@ -17,6 +17,7 @@ import { DB } from '../services/db';
 import { SupabaseService } from '../services/supabase';
 import { isBarberEmployee, isReferralEligibleEmployee } from '../utils/employeeHelper';
 import { SalesReturnModal } from './SalesReturnModal';
+import { generateCode39Svg } from '../utils/printQueueSlip';
 
 export const getCartItemPrice = (c: CartItem | any): number => {
   if (!c) return 0;
@@ -1673,6 +1674,15 @@ export function POSScreen({
       return true;
     }
 
+    // 3. Search invoices (by Invoice ID, e.g., scanning invoice barcode)
+    const matchedInvoice = (invoices || []).find(inv => (inv.id || '').toLowerCase() === code);
+    if (matchedInvoice) {
+      setCompletedInvoice(matchedInvoice);
+      setShowReceiptModal(true);
+      playBarcodeBeep();
+      return true;
+    }
+
     return false;
   };
 
@@ -1716,7 +1726,7 @@ export function POSScreen({
 
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [products, items, cart, isSubscriptionBlocked]);
+  }, [products, items, cart, invoices, isSubscriptionBlocked]);
 
   if (!isShiftOpen) {
     return (
@@ -2800,9 +2810,22 @@ export function POSScreen({
                   {settings.logoUrl && (
                     <img src={settings.logoUrl} alt="Logo" style={{ maxWidth: '80px', maxHeight: '80px', margin: '0 auto 10px auto', display: 'block' }} />
                   )}
-                  <h2 style={{ fontSize: '20px', fontWeight: 'bold', margin: '0 0 5px 0' }}>{settings.salonName || 'صالون العناية'}</h2>
+                  <h2 style={{ fontSize: '18px', fontWeight: 'bold', margin: '0 0 5px 0' }}>{settings.salonName || 'صالون العناية'}</h2>
                   
-                  <div style={{ borderBottom: '1px dashed #000', margin: '15px 0' }}></div>
+                  {/* باركود رقم الفاتورة أسفل اسم الصالون لسهولة البحث بالمسح الضوئي */}
+                  {completedInvoice?.id && (
+                    <div style={{ margin: '6px auto 4px auto', maxWidth: '210px', textAlign: 'center' }}>
+                      <div 
+                        dangerouslySetInnerHTML={{ __html: generateCode39Svg(completedInvoice.id, 28) }} 
+                        style={{ display: 'flex', justifyContent: 'center' }}
+                      />
+                      <div style={{ fontFamily: 'monospace', fontSize: '11px', fontWeight: 'bold', letterSpacing: '1px', marginTop: '2px', color: '#000' }}>
+                        {completedInvoice.id}
+                      </div>
+                    </div>
+                  )}
+
+                  <div style={{ borderBottom: '1px dashed #000', margin: '12px 0' }}></div>
                   
                   <p style={{ fontSize: '13px', margin: '0' }}>رقم الفاتورة: {completedInvoice.id}</p>
                   <p style={{ fontSize: '13px', margin: '0' }}>التاريخ: {new Date(completedInvoice.date).toLocaleString('ar-SA')}</p>

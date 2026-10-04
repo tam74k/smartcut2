@@ -8,6 +8,7 @@ import {
 import { DB } from '../services/db';
 import { InvoicesImportModal } from './InvoicesImportModal';
 import { SalesReturnModal } from './SalesReturnModal';
+import { generateCode39Svg } from '../utils/printQueueSlip';
 
 export const getEffectiveInvoiceTotal = (inv: Invoice | any): number => {
   if (!inv) return 0;
@@ -632,9 +633,22 @@ export function InvoicesScreen({
                           {settings.logoUrl && (
                             <img src={settings.logoUrl} alt="Logo" style={{ maxWidth: '80px', maxHeight: '80px', margin: '0 auto 10px auto', display: 'block' }} />
                           )}
-                          <h2 style={{ fontSize: '20px', fontWeight: 'bold', margin: '0 0 5px 0' }}>{settings.salonName || 'صالون العناية'}</h2>
+                          <h2 style={{ fontSize: '18px', fontWeight: 'bold', margin: '0 0 5px 0' }}>{settings.salonName || 'صالون العناية'}</h2>
                           
-                          <div style={{ borderBottom: '1px dashed #000', margin: '15px 0' }}></div>
+                          {/* باركود رقم الفاتورة أسفل اسم الصالون لسهولة البحث بالمسح الضوئي */}
+                          {inv?.id && (
+                            <div style={{ margin: '6px auto 4px auto', maxWidth: '210px', textAlign: 'center' }}>
+                              <div 
+                                dangerouslySetInnerHTML={{ __html: generateCode39Svg(inv.id, 28) }} 
+                                style={{ display: 'flex', justifyContent: 'center' }}
+                              />
+                              <div style={{ fontFamily: 'monospace', fontSize: '11px', fontWeight: 'bold', letterSpacing: '1px', marginTop: '2px', color: '#000' }}>
+                                {inv.id}
+                              </div>
+                            </div>
+                          )}
+
+                          <div style={{ borderBottom: '1px dashed #000', margin: '12px 0' }}></div>
                           
                           <p style={{ fontSize: '13px', margin: '0' }}>رقم الفاتورة: {inv.id}</p>
                           <p style={{ fontSize: '13px', margin: '0' }}>التاريخ: {new Date(inv.date).toLocaleString('ar-SA')}</p>
