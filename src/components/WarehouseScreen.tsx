@@ -102,10 +102,10 @@ export function WarehouseScreen({
   }, [stats.lowStockItems, shortageSearch]);
 
   return (
-    <div className="p-6 max-w-7xl mx-auto w-full h-full overflow-y-auto bg-slate-50 font-sans" dir="rtl">
+    <div className="p-3 sm:p-6 max-w-7xl mx-auto w-full h-full overflow-y-auto bg-slate-50 font-sans" dir="rtl">
       
       {/* Main Warehouse Hub Header */}
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6 bg-white p-4 sm:p-6 rounded-3xl border border-slate-200 shadow-sm">
         <div>
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-2xl bg-amber-600 text-white flex items-center justify-center font-black shadow-md shadow-amber-600/20">
@@ -357,18 +357,18 @@ export function WarehouseScreen({
               <p className="text-xs text-slate-500 mt-1">لا توجد أي أصناف وصلت لحد إعادة الطلب حالياً</p>
             </div>
           ) : (
-            <div className="overflow-x-auto border border-slate-100 rounded-2xl">
-              <table className="w-full text-right text-xs">
+            <div className="overflow-x-auto border border-slate-100 rounded-2xl w-full">
+              <table className="w-full text-right text-xs min-w-[850px]">
                 <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
                   <tr>
-                    <th className="p-3">المنتج / الصنف</th>
-                    <th className="p-3">الباركود</th>
-                    <th className="p-3">الكمية المتوفرة حالياً</th>
-                    <th className="p-3">حد إعادة الطلب</th>
-                    <th className="p-3">العجز المطلوب توفيره</th>
-                    <th className="p-3">سعر التكلفة التقديري</th>
-                    <th className="p-3">الحالة</th>
-                    <th className="p-3 text-center">إجراء سريع</th>
+                    <th className="p-3 whitespace-nowrap">المنتج / الصنف</th>
+                    <th className="p-3 whitespace-nowrap">الباركود</th>
+                    <th className="p-3 whitespace-nowrap">الكمية المتوفرة حالياً</th>
+                    <th className="p-3 whitespace-nowrap">حد إعادة الطلب</th>
+                    <th className="p-3 whitespace-nowrap">العجز المطلوب توفيره</th>
+                    <th className="p-3 whitespace-nowrap">سعر التكلفة التقديري</th>
+                    <th className="p-3 whitespace-nowrap">الحالة</th>
+                    <th className="p-3 text-center whitespace-nowrap">إجراء سريع</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -378,19 +378,19 @@ export function WarehouseScreen({
 
                     return (
                       <tr key={p.id} className="hover:bg-rose-50/40 transition-colors">
-                        <td className="p-3 font-bold text-slate-900">{p.name}</td>
-                        <td className="p-3 font-mono text-slate-500">#{p.barcode || '-'}</td>
-                        <td className="p-3 font-mono font-black text-rose-700 text-sm">
+                        <td className="p-3 font-bold text-slate-900 whitespace-nowrap">{p.name}</td>
+                        <td className="p-3 font-mono text-slate-500 whitespace-nowrap">#{p.barcode || '-'}</td>
+                        <td className="p-3 font-mono font-black text-rose-700 text-sm whitespace-nowrap">
                           {p.currentStock || 0}
                         </td>
-                        <td className="p-3 font-mono text-slate-600">{p.reorderLimit || 5}</td>
-                        <td className="p-3 font-mono font-bold text-amber-700">
+                        <td className="p-3 font-mono text-slate-600 whitespace-nowrap">{p.reorderLimit || 5}</td>
+                        <td className="p-3 font-mono font-bold text-amber-700 whitespace-nowrap">
                           {shortageUnits > 0 ? `+${shortageUnits} حبة` : 'مكتمل'}
                         </td>
-                        <td className="p-3 font-mono font-bold text-slate-700">
+                        <td className="p-3 font-mono font-bold text-slate-700 whitespace-nowrap">
                           {p.costPrice?.toFixed(2)} {settings.currency}
                         </td>
-                        <td className="p-3">
+                        <td className="p-3 whitespace-nowrap">
                           {isZero ? (
                             <span className="bg-rose-100 text-rose-900 px-2 py-0.5 rounded text-[10px] font-black border border-rose-200">
                               نفد من المخزن ⛔
@@ -401,7 +401,7 @@ export function WarehouseScreen({
                             </span>
                           )}
                         </td>
-                        <td className="p-3 text-center">
+                        <td className="p-3 text-center whitespace-nowrap">
                           <button
                             onClick={() => setActiveSubTab('purchases')}
                             className="bg-slate-900 hover:bg-slate-800 text-white px-2.5 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1 mx-auto cursor-pointer"

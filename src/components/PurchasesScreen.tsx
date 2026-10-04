@@ -210,7 +210,7 @@ export function PurchasesScreen({
   }, [products, productSearch]);
 
   return (
-    <div className="p-6">
+    <div className="p-3 sm:p-6">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-slate-800">المشتريات</h1>
         <button onClick={() => setShowAddModal(true)} className="bg-primary text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2">
@@ -224,39 +224,41 @@ export function PurchasesScreen({
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <table className="w-full text-right">
-          <thead className="bg-slate-50 border-b border-slate-200">
-            <tr>
-              <th className="p-4 font-bold text-slate-700">رقم الفاتورة</th>
-              <th className="p-4 font-bold text-slate-700">التاريخ</th>
-              <th className="p-4 font-bold text-slate-700">المورد</th>
-              <th className="p-4 font-bold text-slate-700 text-center">الإجمالي</th>
-              <th className="p-4 font-bold text-slate-700 text-center">المدفوع</th>
-              <th className="p-4 font-bold text-slate-700 text-center">المتبقي</th>
-              <th className="p-4 font-bold text-slate-700 text-center">إجراءات</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredInvoices.map(inv => (
-              <tr key={inv.id} className="border-b border-slate-100 hover:bg-slate-50">
-                <td className="p-4 text-slate-600">{inv.id}</td>
-                <td className="p-4 text-slate-600">{inv.date}</td>
-                <td className="p-4 font-bold text-slate-800">{suppliers.find(s => s.id === inv.supplierId)?.name}</td>
-                <td className="p-4 text-center font-bold text-slate-800">{inv.total.toFixed(2)}</td>
-                <td className="p-4 text-center font-bold text-emerald-600">{inv.paid.toFixed(2)}</td>
-                <td className="p-4 text-center font-bold text-red-600">{inv.remaining.toFixed(2)}</td>
-                <td className="p-4">
-                  <div className="flex justify-center">
-                    <button onClick={() => handleDeleteInvoice(inv)} className="text-red-500 hover:bg-red-50 p-1.5 rounded"><Trash2 size={16} /></button>
-                  </div>
-                </td>
+        <div className="overflow-x-auto w-full">
+          <table className="w-full text-right min-w-[750px]">
+            <thead className="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th className="p-4 font-bold text-slate-700 whitespace-nowrap">رقم الفاتورة</th>
+                <th className="p-4 font-bold text-slate-700 whitespace-nowrap">التاريخ</th>
+                <th className="p-4 font-bold text-slate-700 whitespace-nowrap">المورد</th>
+                <th className="p-4 font-bold text-slate-700 text-center whitespace-nowrap">الإجمالي</th>
+                <th className="p-4 font-bold text-slate-700 text-center whitespace-nowrap">المدفوع</th>
+                <th className="p-4 font-bold text-slate-700 text-center whitespace-nowrap">المتبقي</th>
+                <th className="p-4 font-bold text-slate-700 text-center whitespace-nowrap">إجراءات</th>
               </tr>
-            ))}
-            {filteredInvoices.length === 0 && (
+            </thead>
+            <tbody>
+              {filteredInvoices.map(inv => (
+                <tr key={inv.id} className="border-b border-slate-100 hover:bg-slate-50">
+                  <td className="p-4 text-slate-600 whitespace-nowrap">{inv.id}</td>
+                  <td className="p-4 text-slate-600 whitespace-nowrap">{inv.date}</td>
+                  <td className="p-4 font-bold text-slate-800 whitespace-nowrap">{suppliers.find(s => s.id === inv.supplierId)?.name}</td>
+                  <td className="p-4 text-center font-bold text-slate-800 whitespace-nowrap">{inv.total.toFixed(2)}</td>
+                  <td className="p-4 text-center font-bold text-emerald-600 whitespace-nowrap">{inv.paid.toFixed(2)}</td>
+                  <td className="p-4 text-center font-bold text-red-600 whitespace-nowrap">{inv.remaining.toFixed(2)}</td>
+                  <td className="p-4 whitespace-nowrap">
+                    <div className="flex justify-center">
+                      <button onClick={() => handleDeleteInvoice(inv)} className="text-red-500 hover:bg-red-50 p-1.5 rounded"><Trash2 size={16} /></button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {filteredInvoices.length === 0 && (
               <tr><td colSpan={7} className="p-4 text-center text-slate-500">لا توجد فواتير مشتريات</td></tr>
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {showAddModal && (

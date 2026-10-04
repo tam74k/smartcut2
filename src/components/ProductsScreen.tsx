@@ -346,13 +346,13 @@ export function ProductsScreen({
   };
 
   return (
-    <div className="p-8 w-full h-full overflow-y-auto bg-slate-50">
-      <div className="flex justify-between items-center mb-8">
+    <div className="p-3 sm:p-6 lg:p-8 w-full h-full overflow-y-auto bg-slate-50">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 sm:mb-8">
         <div>
           <h2 className="text-2xl font-bold text-slate-800">إدارة المنتجات</h2>
           <p className="text-slate-500 text-sm mt-1">إضافة الأصناف، جرد المخزون، وصرف المنتجات</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-2 sm:gap-3">
           <button 
             onClick={() => {
               setImportError('');
@@ -360,7 +360,7 @@ export function ProductsScreen({
               setImportFileName('');
               setShowImportModal(true);
             }} 
-            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-lg font-bold flex items-center gap-2 shadow-sm transition-colors cursor-pointer"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-lg font-bold flex items-center gap-2 shadow-sm transition-colors cursor-pointer text-sm"
             title="سحب واستيراد منتجات من ملف إكسل .xlsx"
           >
             <FileSpreadsheet size={18} /> سحب من Excel
@@ -373,7 +373,7 @@ export function ProductsScreen({
               items: [{ productId: '', quantity: 1, employeeId: employees[0]?.id || '' }]
             });
             setShowDispenseModal(true);
-          }} className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 px-4 py-2.5 rounded-lg font-bold flex items-center gap-2 shadow-sm transition-colors cursor-pointer">
+          }} className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 px-4 py-2.5 rounded-lg font-bold flex items-center gap-2 shadow-sm transition-colors cursor-pointer text-sm">
             <TrendingDown size={18} /> صرف منتجات للعاملين
           </button>
           <button onClick={() => {
@@ -392,7 +392,7 @@ export function ProductsScreen({
               barcode: ''
             });
             setShowAddModal(true);
-          }} className="bg-primary hover:bg-primary-dark text-white px-5 py-2.5 rounded-lg font-bold flex items-center gap-2 shadow-sm transition-colors cursor-pointer">
+          }} className="bg-primary hover:bg-primary-dark text-white px-5 py-2.5 rounded-lg font-bold flex items-center gap-2 shadow-sm transition-colors cursor-pointer text-sm">
             <Plus size={18} /> إضافة منتج جديد
           </button>
         </div>
@@ -431,100 +431,102 @@ export function ProductsScreen({
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-        <table className="w-full text-right">
-          <thead>
-            <tr className="bg-slate-50 border-b border-slate-200 text-slate-500">
-              <th className="p-4 font-bold">اسم المنتج</th>
-              <th className="p-4 font-bold">النوع</th>
-              <th className="p-4 font-bold">التصنيف</th>
-              <th className="p-4 font-bold">المورد</th>
-              <th className="p-4 font-bold">سعر البيع</th>
-              <th className="p-4 font-bold">سعر التكلفة</th>
-              <th className="p-4 font-bold">أول المدة</th>
-              <th className="p-4 font-bold">الرصيد الحالي</th>
-              <th className="p-4 font-bold">تكلفة الرصيد</th>
-              <th className="p-4 font-bold">حد الطلب</th>
-              <th className="p-4 font-bold">العمولة</th>
-              <th className="p-4 font-bold">إجراءات</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredProducts.length === 0 ? (
-              <tr>
-                <td colSpan={12} className="p-8 text-center text-slate-400">لا توجد منتجات مسجلة</td>
+        <div className="overflow-x-auto w-full">
+          <table className="w-full text-right min-w-[1100px]">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200 text-slate-500">
+                <th className="p-4 font-bold whitespace-nowrap">اسم المنتج</th>
+                <th className="p-4 font-bold whitespace-nowrap">النوع</th>
+                <th className="p-4 font-bold whitespace-nowrap">التصنيف</th>
+                <th className="p-4 font-bold whitespace-nowrap">المورد</th>
+                <th className="p-4 font-bold whitespace-nowrap">سعر البيع</th>
+                <th className="p-4 font-bold whitespace-nowrap">سعر التكلفة</th>
+                <th className="p-4 font-bold whitespace-nowrap">أول المدة</th>
+                <th className="p-4 font-bold whitespace-nowrap">الرصيد الحالي</th>
+                <th className="p-4 font-bold whitespace-nowrap">تكلفة الرصيد</th>
+                <th className="p-4 font-bold whitespace-nowrap">حد الطلب</th>
+                <th className="p-4 font-bold whitespace-nowrap">العمولة</th>
+                <th className="p-4 font-bold whitespace-nowrap text-center">إجراءات</th>
               </tr>
-            ) : (
-              filteredProducts.map(p => (
-                <tr key={p.id} className="border-b border-slate-100 hover:bg-slate-50">
-                  <td className="p-4">
-                    <div className="font-bold text-slate-800">{p.name}</div>
-                    {p.barcode ? (
-                      <div className="inline-flex items-center gap-1 font-mono text-[11px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200 mt-1" title="باركود المنتج">
-                        <QrCode size={11} className="text-slate-400 shrink-0" />
-                        <span>{p.barcode}</span>
-                      </div>
-                    ) : (
-                      <div className="text-[10px] text-slate-400 mt-0.5">بدون باركود</div>
-                    )}
-                  </td>
-                  <td className="p-4 whitespace-nowrap">
-                    {p.productType === 'raw_material' ? (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-extrabold bg-amber-50 text-amber-700 border border-amber-200 shadow-xs">
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                        مادة خام
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-xs">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                        للبيع
-                      </span>
-                    )}
-                  </td>
-                  <td className="p-4 text-slate-600">{categories.find(c => c.id === p.categoryId)?.name}</td>
-                  <td className="p-4 text-slate-600 font-medium">
-                    {suppliers.find(s => s.id === p.supplierId)?.name || p.supplierName || '—'}
-                  </td>
-                  <td className="p-4 font-bold">
-                    {p.productType === 'raw_material' ? (
-                      <span className="text-slate-400 font-normal text-xs bg-slate-100 px-2 py-0.5 rounded">غير متاح للبيع</span>
-                    ) : (
-                      <span className="text-emerald-600">{p.sellPrice.toFixed(2)}</span>
-                    )}
-                  </td>
-                  <td className="p-4 font-bold text-rose-600">{p.costPrice.toFixed(2)}</td>
-                  <td className="p-4 text-slate-600">{p.openingStock}</td>
-                  <td className="p-4 font-bold">
-                    <span className={`px-2 py-1 rounded-md ${p.currentStock <= p.reorderLimit ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-700'}`}>
-                      {p.currentStock}
-                    </span>
-                  </td>
-                  <td className="p-4 text-slate-600 font-bold">{(p.currentStock * p.costPrice).toFixed(2)}</td>
-                  <td className="p-4 text-slate-500">{p.reorderLimit}</td>
-                  <td className="p-4 text-blue-600">
-                    {p.productType === 'raw_material' ? (
-                      <span className="text-slate-400 font-normal text-xs">—</span>
-                    ) : (
-                      p.commission.toFixed(2)
-                    )}
-                  </td>
-                  <td className="p-4">
-                    <div className="flex items-center gap-1.5">
-                      <button 
-                        onClick={() => setBarcodeProduct(p)} 
-                        className="text-indigo-600 bg-indigo-50 hover:bg-indigo-100 p-1.5 rounded-lg transition-colors cursor-pointer" 
-                        title="طباعة باركود المنتج"
-                      >
-                        <Printer size={15} />
-                      </button>
-                      <button onClick={() => handleEdit(p)} className="text-blue-500 hover:bg-blue-50 p-1.5 rounded-lg transition-colors" title="تعديل"><Edit2 size={15} /></button>
-                      <button onClick={() => setProductToDelete(p.id)} className="text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-colors" title="حذف"><Trash2 size={15} /></button>
-                    </div>
-                  </td>
+            </thead>
+            <tbody>
+              {filteredProducts.length === 0 ? (
+                <tr>
+                  <td colSpan={12} className="p-8 text-center text-slate-400">لا توجد منتجات مسجلة</td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : (
+                filteredProducts.map(p => (
+                  <tr key={p.id} className="border-b border-slate-100 hover:bg-slate-50">
+                    <td className="p-4 whitespace-nowrap">
+                      <div className="font-bold text-slate-800">{p.name}</div>
+                      {p.barcode ? (
+                        <div className="inline-flex items-center gap-1 font-mono text-[11px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200 mt-1" title="باركود المنتج">
+                          <QrCode size={11} className="text-slate-400 shrink-0" />
+                          <span>{p.barcode}</span>
+                        </div>
+                      ) : (
+                        <div className="text-[10px] text-slate-400 mt-0.5">بدون باركود</div>
+                      )}
+                    </td>
+                    <td className="p-4 whitespace-nowrap">
+                      {p.productType === 'raw_material' ? (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-extrabold bg-amber-50 text-amber-700 border border-amber-200 shadow-xs">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                          مادة خام
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-xs">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                          للبيع
+                        </span>
+                      )}
+                    </td>
+                    <td className="p-4 text-slate-600 whitespace-nowrap">{categories.find(c => c.id === p.categoryId)?.name}</td>
+                    <td className="p-4 text-slate-600 font-medium whitespace-nowrap">
+                      {suppliers.find(s => s.id === p.supplierId)?.name || p.supplierName || '—'}
+                    </td>
+                    <td className="p-4 font-bold whitespace-nowrap">
+                      {p.productType === 'raw_material' ? (
+                        <span className="text-slate-400 font-normal text-xs bg-slate-100 px-2 py-0.5 rounded">غير متاح للبيع</span>
+                      ) : (
+                        <span className="text-emerald-600">{p.sellPrice.toFixed(2)}</span>
+                      )}
+                    </td>
+                    <td className="p-4 font-bold text-rose-600 whitespace-nowrap">{p.costPrice.toFixed(2)}</td>
+                    <td className="p-4 text-slate-600 whitespace-nowrap">{p.openingStock}</td>
+                    <td className="p-4 font-bold whitespace-nowrap">
+                      <span className={`px-2 py-1 rounded-md ${p.currentStock <= p.reorderLimit ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-700'}`}>
+                        {p.currentStock}
+                      </span>
+                    </td>
+                    <td className="p-4 text-slate-600 font-bold whitespace-nowrap">{(p.currentStock * p.costPrice).toFixed(2)}</td>
+                    <td className="p-4 text-slate-500 whitespace-nowrap">{p.reorderLimit}</td>
+                    <td className="p-4 text-blue-600 whitespace-nowrap">
+                      {p.productType === 'raw_material' ? (
+                        <span className="text-slate-400 font-normal text-xs">—</span>
+                      ) : (
+                        p.commission.toFixed(2)
+                      )}
+                    </td>
+                    <td className="p-4 whitespace-nowrap">
+                      <div className="flex items-center gap-1.5">
+                        <button 
+                          onClick={() => setBarcodeProduct(p)} 
+                          className="text-indigo-600 bg-indigo-50 hover:bg-indigo-100 p-1.5 rounded-lg transition-colors cursor-pointer" 
+                          title="طباعة باركود المنتج"
+                        >
+                          <Printer size={15} />
+                        </button>
+                        <button onClick={() => handleEdit(p)} className="text-blue-500 hover:bg-blue-50 p-1.5 rounded-lg transition-colors" title="تعديل"><Edit2 size={15} /></button>
+                        <button onClick={() => setProductToDelete(p.id)} className="text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-colors" title="حذف"><Trash2 size={15} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Add/Edit Product Modal */}

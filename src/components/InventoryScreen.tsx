@@ -116,7 +116,7 @@ export function InventoryScreen({
   filteredMovements.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   return (
-    <div className="p-6">
+    <div className="p-3 sm:p-6">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-slate-800">إدارة المخزون</h1>
         {activeTab === 'counts' && (
@@ -137,86 +137,90 @@ export function InventoryScreen({
 
       {activeTab === 'counts' && (
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-          <table className="w-full text-right">
-            <thead className="bg-slate-50 border-b border-slate-200">
-              <tr>
-                <th className="p-4 font-bold text-slate-700">التاريخ</th>
-                <th className="p-4 font-bold text-slate-700">رقم الجرد</th>
-                <th className="p-4 font-bold text-slate-700">ملاحظات</th>
-                <th className="p-4 font-bold text-slate-700 text-center">عدد الأصناف</th>
-              </tr>
-            </thead>
-            <tbody>
-              {inventoryCounts.map(cnt => (
-                <tr key={cnt.id} className="border-b border-slate-100 hover:bg-slate-50">
-                  <td className="p-4 text-slate-600">{new Date(cnt.date).toLocaleString('ar-EG')}</td>
-                  <td className="p-4 font-bold text-slate-800">{cnt.id}</td>
-                  <td className="p-4 text-slate-600">{cnt.notes || '-'}</td>
-                  <td className="p-4 text-center font-bold text-slate-800">{cnt.items.length}</td>
+          <div className="overflow-x-auto w-full">
+            <table className="w-full text-right min-w-[700px]">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  <th className="p-4 font-bold text-slate-700 whitespace-nowrap">التاريخ</th>
+                  <th className="p-4 font-bold text-slate-700 whitespace-nowrap">رقم الجرد</th>
+                  <th className="p-4 font-bold text-slate-700 whitespace-nowrap">ملاحظات</th>
+                  <th className="p-4 font-bold text-slate-700 text-center whitespace-nowrap">عدد الأصناف</th>
                 </tr>
-              ))}
-              {inventoryCounts.length === 0 && (
-                <tr><td colSpan={4} className="p-4 text-center text-slate-500">لا يوجد سجلات جرد</td></tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {inventoryCounts.map(cnt => (
+                  <tr key={cnt.id} className="border-b border-slate-100 hover:bg-slate-50">
+                    <td className="p-4 text-slate-600 whitespace-nowrap">{new Date(cnt.date).toLocaleString('ar-EG')}</td>
+                    <td className="p-4 font-bold text-slate-800 whitespace-nowrap">{cnt.id}</td>
+                    <td className="p-4 text-slate-600 whitespace-nowrap">{cnt.notes || '-'}</td>
+                    <td className="p-4 text-center font-bold text-slate-800 whitespace-nowrap">{cnt.items.length}</td>
+                  </tr>
+                ))}
+                {inventoryCounts.length === 0 && (
+                  <tr><td colSpan={4} className="p-4 text-center text-slate-500">لا يوجد سجلات جرد</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
       {activeTab === 'movements' && (
         <div className="space-y-4">
-          <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex gap-4">
-            <div className="flex-1">
+          <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-wrap gap-4">
+            <div className="flex-1 min-w-[200px]">
               <label className="block text-sm font-bold text-slate-700 mb-1">المنتج</label>
               <select value={selectedProductId} onChange={e => setSelectedProductId(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary">
                 <option value="">جميع المنتجات</option>
                 {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </div>
-            <div className="w-1/4">
+            <div className="w-full sm:w-1/4 min-w-[140px]">
               <label className="block text-sm font-bold text-slate-700 mb-1">من تاريخ</label>
               <input type="date" value={movementFrom} onChange={e => setMovementFrom(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary" />
             </div>
-            <div className="w-1/4">
+            <div className="w-full sm:w-1/4 min-w-[140px]">
               <label className="block text-sm font-bold text-slate-700 mb-1">إلى تاريخ</label>
               <input type="date" value={movementTo} onChange={e => setMovementTo(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary" />
             </div>
           </div>
           
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-            <table className="w-full text-right text-sm">
-              <thead className="bg-slate-50 border-b border-slate-200">
-                <tr>
-                  <th className="p-4 font-bold text-slate-700">التاريخ</th>
-                  <th className="p-4 font-bold text-slate-700">المنتج</th>
-                  <th className="p-4 font-bold text-slate-700">نوع الحركة</th>
-                  <th className="p-4 font-bold text-emerald-600 text-center">وارد</th>
-                  <th className="p-4 font-bold text-red-600 text-center">منصرف</th>
-                  <th className="p-4 font-bold text-blue-600 text-center">الرصيد بعد</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredMovements.map(m => (
-                  <tr key={m.id} className="border-b border-slate-100 hover:bg-slate-50">
-                    <td className="p-4 text-slate-600">{new Date(m.date).toLocaleString('ar-EG')}</td>
-                    <td className="p-4 font-bold text-slate-800">{products.find(p => p.id === m.productId)?.name}</td>
-                    <td className="p-4 text-slate-600">
-                      {m.type === 'purchase' ? 'مشتريات' :
-                       m.type === 'sale' ? 'مبيعات' :
-                       m.type === 'inventory_count' ? 'تسوية جرد' :
-                       m.type === 'manual_adjustment' ? 'تعديل يدوي' :
-                       m.type === 'internal_use' ? 'صرف داخلي' : m.type}
-                    </td>
-                    <td className="p-4 text-center font-bold text-emerald-600">{m.quantityIn > 0 ? m.quantityIn : ''}</td>
-                    <td className="p-4 text-center font-bold text-red-600">{m.quantityOut > 0 ? m.quantityOut : ''}</td>
-                    <td className="p-4 text-center font-bold text-blue-600">{m.balanceAfter}</td>
+            <div className="overflow-x-auto w-full">
+              <table className="w-full text-right text-sm min-w-[750px]">
+                <thead className="bg-slate-50 border-b border-slate-200">
+                  <tr>
+                    <th className="p-4 font-bold text-slate-700 whitespace-nowrap">التاريخ</th>
+                    <th className="p-4 font-bold text-slate-700 whitespace-nowrap">المنتج</th>
+                    <th className="p-4 font-bold text-slate-700 whitespace-nowrap">نوع الحركة</th>
+                    <th className="p-4 font-bold text-emerald-600 text-center whitespace-nowrap">وارد</th>
+                    <th className="p-4 font-bold text-red-600 text-center whitespace-nowrap">منصرف</th>
+                    <th className="p-4 font-bold text-blue-600 text-center whitespace-nowrap">الرصيد بعد</th>
                   </tr>
-                ))}
-                {filteredMovements.length === 0 && (
-                  <tr><td colSpan={6} className="p-4 text-center text-slate-500">لا يوجد حركات</td></tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {filteredMovements.map(m => (
+                    <tr key={m.id} className="border-b border-slate-100 hover:bg-slate-50">
+                      <td className="p-4 text-slate-600 whitespace-nowrap">{new Date(m.date).toLocaleString('ar-EG')}</td>
+                      <td className="p-4 font-bold text-slate-800 whitespace-nowrap">{products.find(p => p.id === m.productId)?.name}</td>
+                      <td className="p-4 text-slate-600 whitespace-nowrap">
+                        {m.type === 'purchase' ? 'مشتريات' :
+                         m.type === 'sale' ? 'مبيعات' :
+                         m.type === 'inventory_count' ? 'تسوية جرد' :
+                         m.type === 'manual_adjustment' ? 'تعديل يدوي' :
+                         m.type === 'internal_use' ? 'صرف داخلي' : m.type}
+                      </td>
+                      <td className="p-4 text-center font-bold text-emerald-600 whitespace-nowrap">{m.quantityIn > 0 ? m.quantityIn : ''}</td>
+                      <td className="p-4 text-center font-bold text-red-600 whitespace-nowrap">{m.quantityOut > 0 ? m.quantityOut : ''}</td>
+                      <td className="p-4 text-center font-bold text-blue-600 whitespace-nowrap">{m.balanceAfter}</td>
+                    </tr>
+                  ))}
+                  {filteredMovements.length === 0 && (
+                    <tr><td colSpan={6} className="p-4 text-center text-slate-500">لا يوجد حركات</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
@@ -236,30 +240,32 @@ export function InventoryScreen({
                 <input type="text" value={countNotes} onChange={e => setCountNotes(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary" />
               </div>
               
-              <table className="w-full text-right text-sm">
-                <thead className="bg-slate-50 border-b border-slate-200">
-                  <tr>
-                    <th className="p-2">المنتج</th>
-                    <th className="p-2 text-center">الرصيد الدفتري</th>
-                    <th className="p-2 text-center">الرصيد الفعلي</th>
-                    <th className="p-2 text-center">العجز / الزيادة</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {countItems.map((item, idx) => (
-                    <tr key={item.productId} className="border-b border-slate-100">
-                      <td className="p-2">{products.find(p => p.id === item.productId)?.name}</td>
-                      <td className="p-2 text-center text-slate-600 font-bold">{item.expectedQuantity}</td>
-                      <td className="p-2">
-                        <input type="number" min="0" value={item.actualQuantity} onChange={e => handleActualQtyChange(idx, e.target.value)} className="w-24 mx-auto border border-slate-200 rounded p-1 text-center font-bold text-primary outline-none focus:border-primary" />
-                      </td>
-                      <td className={`p-2 text-center font-bold ${item.difference > 0 ? 'text-emerald-600' : item.difference < 0 ? 'text-red-600' : 'text-slate-400'}`}>
-                        {item.difference > 0 ? '+' : ''}{item.difference}
-                      </td>
+              <div className="overflow-x-auto w-full">
+                <table className="w-full text-right text-sm min-w-[500px]">
+                  <thead className="bg-slate-50 border-b border-slate-200">
+                    <tr>
+                      <th className="p-2 whitespace-nowrap">المنتج</th>
+                      <th className="p-2 text-center whitespace-nowrap">الرصيد الدفتري</th>
+                      <th className="p-2 text-center whitespace-nowrap">الرصيد الفعلي</th>
+                      <th className="p-2 text-center whitespace-nowrap">العجز / الزيادة</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {countItems.map((item, idx) => (
+                      <tr key={item.productId} className="border-b border-slate-100">
+                        <td className="p-2 whitespace-nowrap">{products.find(p => p.id === item.productId)?.name}</td>
+                        <td className="p-2 text-center text-slate-600 font-bold whitespace-nowrap">{item.expectedQuantity}</td>
+                        <td className="p-2 whitespace-nowrap">
+                          <input type="number" min="0" value={item.actualQuantity} onChange={e => handleActualQtyChange(idx, e.target.value)} className="w-24 mx-auto border border-slate-200 rounded p-1 text-center font-bold text-primary outline-none focus:border-primary" />
+                        </td>
+                        <td className={`p-2 text-center font-bold whitespace-nowrap ${item.difference > 0 ? 'text-emerald-600' : item.difference < 0 ? 'text-red-600' : 'text-slate-400'}`}>
+                          {item.difference > 0 ? '+' : ''}{item.difference}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
             <div className="p-4 border-t border-slate-100 bg-slate-50">
               <button onClick={handleSaveCount} className="w-full bg-primary text-white font-bold py-3 rounded-lg hover:bg-primary-dark transition-colors flex justify-center items-center gap-2">

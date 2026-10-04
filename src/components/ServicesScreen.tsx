@@ -387,8 +387,8 @@ export function ServicesScreen({
   };
 
   return (
-    <div className="p-8 w-full h-full flex flex-col bg-slate-50">
-      <div className="flex justify-between items-center mb-6">
+    <div className="p-3 sm:p-6 lg:p-8 w-full h-full flex flex-col bg-slate-50 overflow-y-auto">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
           <h2 className="text-2xl font-bold text-slate-800">إدارة الخدمات</h2>
           <p className="text-slate-500 text-sm mt-1">الخدمات، المنتجات، والتصنيفات ونسبة الكاش باك</p>
@@ -412,16 +412,16 @@ export function ServicesScreen({
       <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
         {activeTab === 'services' && (
           <>
-            <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+            <div className="p-4 border-b border-slate-100 flex flex-wrap justify-between items-center gap-3 bg-slate-50/50">
               <h3 className="font-bold text-slate-700">قائمة الخدمات</h3>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                 <div className="relative">
                   <input
                     type="text"
                     placeholder="بحث عن خدمة..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-64 pr-10 pl-4 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-primary"
+                    className="w-48 sm:w-64 pr-10 pl-4 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-primary"
                   />
                   <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                 </div>
@@ -479,20 +479,20 @@ export function ServicesScreen({
             </div>
 
             <div className="overflow-x-auto flex-1 p-4">
-              <table className="w-full text-right text-sm">
+              <table className="w-full text-right text-sm min-w-[1100px]">
                 <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
                   <tr>
-                    <th className="px-4 py-3">الاسم</th>
-                    <th className="px-4 py-3">التصنيف</th>
-                    <th className="px-4 py-3">السعر الشامل</th>
-                    {settings.vatEnabled && <th className="px-4 py-3 text-slate-500">بدون ضريبة</th>}
-                    {settings.vatEnabled && <th className="px-4 py-3 text-slate-500">قيمة الضريبة</th>}
-                    <th className="px-4 py-3">سعر الخصم</th>
-                    <th className="px-4 py-3 text-center">كاش باك الخدمة</th>
-                    <th className="px-4 py-3 text-center">إحالة العميل (كاش باك)</th>
-                    <th className="px-4 py-3 text-center">عمولات الموظف</th>
-                    <th className="px-4 py-3 text-center">الحالة</th>
-                    <th className="px-4 py-3 text-center">إجراءات</th>
+                    <th className="px-4 py-3 whitespace-nowrap">الاسم</th>
+                    <th className="px-4 py-3 whitespace-nowrap">التصنيف</th>
+                    <th className="px-4 py-3 whitespace-nowrap">السعر الشامل</th>
+                    {settings.vatEnabled && <th className="px-4 py-3 text-slate-500 whitespace-nowrap">بدون ضريبة</th>}
+                    {settings.vatEnabled && <th className="px-4 py-3 text-slate-500 whitespace-nowrap">قيمة الضريبة</th>}
+                    <th className="px-4 py-3 whitespace-nowrap">سعر الخصم</th>
+                    <th className="px-4 py-3 text-center whitespace-nowrap">كاش باك الخدمة</th>
+                    <th className="px-4 py-3 text-center whitespace-nowrap">إحالة العميل (كاش باك)</th>
+                    <th className="px-4 py-3 text-center whitespace-nowrap">عمولات الموظف</th>
+                    <th className="px-4 py-3 text-center whitespace-nowrap">الحالة</th>
+                    <th className="px-4 py-3 text-center whitespace-nowrap">إجراءات</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -506,7 +506,7 @@ export function ServicesScreen({
                     })
                     .map(service => (
                     <tr key={service.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-4 py-3 font-bold text-slate-800">
+                      <td className="px-4 py-3 font-bold text-slate-800 whitespace-nowrap">
                         <div className="flex items-center gap-3">
                           {service.imageUrl ? (
                             <img 
@@ -541,25 +541,25 @@ export function ServicesScreen({
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-4">
+                      <td className="px-4 py-4 whitespace-nowrap">
                         <span className="bg-indigo-50 text-indigo-700 font-bold px-2.5 py-1 rounded-lg text-xs border border-indigo-100 inline-block">
                           {categories.find(c => c.id === service.categoryId || c.name === service.categoryId)?.name || service.categoryId || 'خدمات عامة'}
                         </span>
                       </td>
-                      <td className="px-4 py-4 font-bold">{service.price}</td>
+                      <td className="px-4 py-4 font-bold whitespace-nowrap">{service.price}</td>
                       {settings.vatEnabled && (
                         <>
-                          <td className="px-4 py-4 text-slate-500">{calculateVatDetails(service.price).base.toFixed(2)}</td>
-                          <td className="px-4 py-4 text-slate-500">{calculateVatDetails(service.price).tax.toFixed(2)}</td>
+                          <td className="px-4 py-4 text-slate-500 whitespace-nowrap">{calculateVatDetails(service.price).base.toFixed(2)}</td>
+                          <td className="px-4 py-4 text-slate-500 whitespace-nowrap">{calculateVatDetails(service.price).tax.toFixed(2)}</td>
                         </>
                       )}
-                      <td className="px-4 py-4 font-bold text-emerald-600">
+                      <td className="px-4 py-4 font-bold text-emerald-600 whitespace-nowrap">
                         {service.discountPrice ? service.discountPrice : '-'}
                       </td>
-                      <td className="px-4 py-4 text-center font-bold text-blue-600">
+                      <td className="px-4 py-4 text-center font-bold text-blue-600 whitespace-nowrap">
                         {service.cashbackPercentage ? `${service.cashbackPercentage}%` : '-'}
                       </td>
-                      <td className="px-4 py-4 text-center text-xs">
+                      <td className="px-4 py-4 text-center text-xs whitespace-nowrap">
                         {service.clientReferralCashbackAmount ? (
                           <span className="font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-200">
                             {service.clientReferralCashbackType === 'fixed' ? `${service.clientReferralCashbackAmount} ${settings.currency}` : `${service.clientReferralCashbackAmount}%`}
@@ -568,7 +568,7 @@ export function ServicesScreen({
                           <span className="text-slate-400">-</span>
                         )}
                       </td>
-                      <td className="px-4 py-4 text-center text-xs text-slate-700">
+                      <td className="px-4 py-4 text-center text-xs text-slate-700 whitespace-nowrap">
                         <div>
                           <span className="font-semibold">تنفيذ: </span>
                           {service.employeeCommissionPercentage ? `${service.employeeCommissionPercentage}%` : service.employeeCommissionAmount ? `${service.employeeCommissionAmount} ${settings.currency}` : '-'}
@@ -579,7 +579,7 @@ export function ServicesScreen({
                           </div>
                         ) : null}
                       </td>
-                      <td className="px-4 py-4 text-center">
+                      <td className="px-4 py-4 text-center whitespace-nowrap">
                         <button
                           onClick={() => {
                             setServices(services.map(s => s.id === service.id ? { ...s, isActive: !s.isActive } : s));
@@ -589,7 +589,7 @@ export function ServicesScreen({
                           {service.isActive ? 'مفعل' : 'معطل'}
                         </button>
                       </td>
-                      <td className="px-4 py-4">
+                      <td className="px-4 py-4 whitespace-nowrap">
                         <div className="flex items-center justify-center gap-2">
                           <button 
                             onClick={() => handleOpenEditService(service)}
@@ -629,25 +629,21 @@ export function ServicesScreen({
               </button>
             </div>
             <div className="overflow-x-auto flex-1 p-4">
-              <table className="w-full text-right text-sm">
+              <table className="w-full text-right text-sm min-w-[500px]">
                 <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
                   <tr>
-                    <th className="px-4 py-3">اسم التصنيف</th>
-                    <th className="px-4 py-3 text-center">إجراءات</th>
+                    <th className="px-4 py-3 whitespace-nowrap">اسم التصنيف</th>
+                    <th className="px-4 py-3 text-center whitespace-nowrap">إجراءات</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {categories.filter(c => c.id !== 'all' && (!c.type || c.type === 'service')).map(category => (
                     <tr key={category.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-4 py-4 font-bold text-slate-800">{category.name}</td>
-                      <td className="px-4 py-4">
+                      <td className="px-4 py-4 font-bold text-slate-800 whitespace-nowrap">{category.name}</td>
+                      <td className="px-4 py-4 whitespace-nowrap">
                         <div className="flex items-center justify-center gap-2">
                           <button 
-                            onClick={() => {
-                              setEditingCategory(category);
-                              setCategoryFormData(category);
-                              setShowCategoryModal(true);
-                            }}
+                            onClick={() => handleOpenEditCategory(category)}
                             className="w-8 h-8 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 flex items-center justify-center transition-colors"
                           >
                             <Edit size={16} />

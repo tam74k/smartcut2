@@ -138,7 +138,7 @@ export function SuppliersScreen({
   const filteredSuppliers = suppliers.filter(s => s.name.includes(searchQuery) || s.phone.includes(searchQuery));
 
   return (
-    <div className="p-6">
+    <div className="p-3 sm:p-6">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-slate-800">إدارة الموردين</h1>
         <div className="flex gap-2">
@@ -163,78 +163,82 @@ export function SuppliersScreen({
             <Search className="absolute left-3 top-3 text-slate-400" size={20} />
           </div>
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-            <table className="w-full text-right">
-              <thead className="bg-slate-50 border-b border-slate-200">
-                <tr>
-                  <th className="p-4 font-bold text-slate-700">الاسم</th>
-                  <th className="p-4 font-bold text-slate-700">الجوال</th>
-                  <th className="p-4 font-bold text-slate-700 text-center">الرصيد (المديونية)</th>
-                  <th className="p-4 font-bold text-slate-700 text-center">إجراءات</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredSuppliers.map(s => (
-                  <tr key={s.id} className="border-b border-slate-100 hover:bg-slate-50">
-                    <td className="p-4 font-bold text-slate-800">{s.name}</td>
-                    <td className="p-4 text-slate-600">{s.phone}</td>
-                    <td className="p-4 text-center font-bold text-red-600">{s.currentBalance.toFixed(2)}</td>
-                    <td className="p-4">
-                      <div className="flex justify-center gap-2">
-                        <button onClick={() => { setStatementSupplier(s); setStatementFrom(''); setStatementTo(''); }} className="bg-blue-100 text-blue-600 px-3 py-1 rounded-md text-sm font-bold flex items-center gap-1">
-                          <FileText size={14} /> كشف حساب
-                        </button>
-                        <button 
-                          onClick={() => { 
-                            setSupplierForm({ 
-                              name: s.name, 
-                              phone: s.phone, 
-                              email: s.email || '', 
-                              address: s.address || '', 
-                              initialBalance: s.currentBalance !== undefined && s.currentBalance !== null ? s.currentBalance.toString() : '0' 
-                            }); 
-                            setEditingSupplierId(s.id); 
-                            setShowAddSupplierModal(true); 
-                          }} 
-                          className="text-blue-500 hover:bg-blue-50 p-1.5 rounded transition-colors"
-                          title="تعديل بيانات المورد"
-                        >
-                          <Edit2 size={16} />
-                        </button>
-                        <button onClick={() => setSupplierToDelete(s)} className="text-red-500 hover:bg-red-50 p-1.5 rounded transition-colors" title="حذف المورد"><Trash2 size={16} /></button>
-                      </div>
-                    </td>
+            <div className="overflow-x-auto w-full">
+              <table className="w-full text-right min-w-[650px]">
+                <thead className="bg-slate-50 border-b border-slate-200">
+                  <tr>
+                    <th className="p-4 font-bold text-slate-700 whitespace-nowrap">الاسم</th>
+                    <th className="p-4 font-bold text-slate-700 whitespace-nowrap">الجوال</th>
+                    <th className="p-4 font-bold text-slate-700 text-center whitespace-nowrap">الرصيد (المديونية)</th>
+                    <th className="p-4 font-bold text-slate-700 text-center whitespace-nowrap">إجراءات</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {filteredSuppliers.map(s => (
+                    <tr key={s.id} className="border-b border-slate-100 hover:bg-slate-50">
+                      <td className="p-4 font-bold text-slate-800 whitespace-nowrap">{s.name}</td>
+                      <td className="p-4 text-slate-600 whitespace-nowrap">{s.phone}</td>
+                      <td className="p-4 text-center font-bold text-red-600 whitespace-nowrap">{s.currentBalance.toFixed(2)}</td>
+                      <td className="p-4 whitespace-nowrap">
+                        <div className="flex justify-center gap-2">
+                          <button onClick={() => { setStatementSupplier(s); setStatementFrom(''); setStatementTo(''); }} className="bg-blue-100 text-blue-600 px-3 py-1 rounded-md text-sm font-bold flex items-center gap-1">
+                            <FileText size={14} /> كشف حساب
+                          </button>
+                          <button 
+                            onClick={() => { 
+                              setSupplierForm({ 
+                                name: s.name, 
+                                phone: s.phone, 
+                                email: s.email || '', 
+                                address: s.address || '', 
+                                initialBalance: s.currentBalance !== undefined && s.currentBalance !== null ? s.currentBalance.toString() : '0' 
+                              }); 
+                              setEditingSupplierId(s.id); 
+                              setShowAddSupplierModal(true); 
+                            }} 
+                            className="text-blue-500 hover:bg-blue-50 p-1.5 rounded transition-colors"
+                            title="تعديل بيانات المورد"
+                          >
+                            <Edit2 size={16} />
+                          </button>
+                          <button onClick={() => setSupplierToDelete(s)} className="text-red-500 hover:bg-red-50 p-1.5 rounded transition-colors" title="حذف المورد"><Trash2 size={16} /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </>
       )}
 
       {activeTab === 'payments' && (
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-          <table className="w-full text-right">
-            <thead className="bg-slate-50 border-b border-slate-200">
-              <tr>
-                <th className="p-4 font-bold text-slate-700">التاريخ</th>
-                <th className="p-4 font-bold text-slate-700">المورد</th>
-                <th className="p-4 font-bold text-slate-700">المبلغ</th>
-                <th className="p-4 font-bold text-slate-700">الخزينة</th>
-                <th className="p-4 font-bold text-slate-700">ملاحظات</th>
-              </tr>
-            </thead>
-            <tbody>
-              {supplierPayments.map(p => (
-                <tr key={p.id} className="border-b border-slate-100 hover:bg-slate-50">
-                  <td className="p-4 text-slate-600">{p.date}</td>
-                  <td className="p-4 font-bold text-slate-800">{suppliers.find(s => s.id === p.supplierId)?.name}</td>
-                  <td className="p-4 font-bold text-emerald-600">{p.amount.toFixed(2)}</td>
-                  <td className="p-4 text-slate-600">{settings.treasuries.find(t => t.id === p.treasuryId)?.name}</td>
-                  <td className="p-4 text-slate-500">{p.notes}</td>
+          <div className="overflow-x-auto w-full">
+            <table className="w-full text-right min-w-[650px]">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  <th className="p-4 font-bold text-slate-700 whitespace-nowrap">التاريخ</th>
+                  <th className="p-4 font-bold text-slate-700 whitespace-nowrap">المورد</th>
+                  <th className="p-4 font-bold text-slate-700 whitespace-nowrap">المبلغ</th>
+                  <th className="p-4 font-bold text-slate-700 whitespace-nowrap">الخزينة</th>
+                  <th className="p-4 font-bold text-slate-700 whitespace-nowrap">ملاحظات</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {supplierPayments.map(p => (
+                  <tr key={p.id} className="border-b border-slate-100 hover:bg-slate-50">
+                    <td className="p-4 text-slate-600 whitespace-nowrap">{p.date}</td>
+                    <td className="p-4 font-bold text-slate-800 whitespace-nowrap">{suppliers.find(s => s.id === p.supplierId)?.name}</td>
+                    <td className="p-4 font-bold text-emerald-600 whitespace-nowrap">{p.amount.toFixed(2)}</td>
+                    <td className="p-4 text-slate-600 whitespace-nowrap">{settings.treasuries.find(t => t.id === p.treasuryId)?.name}</td>
+                    <td className="p-4 text-slate-500 whitespace-nowrap">{p.notes}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
