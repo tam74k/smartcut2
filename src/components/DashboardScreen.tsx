@@ -122,6 +122,48 @@ export function DashboardScreen({
     }
   };
 
+  // دمج كافة الحركات المسجلة مع الفواتير المكتملة لاحتساب الأرصدة التاريخية التراكمية للخزائن بدقة
+  const unifiedTransactions = useMemo(() => {
+    const txList = transactions || [];
+    const invList = invoices || [];
+    const knownInvoiceIds = new Set(
+      txList
+        .filter(t => (t as any).invoiceId || (t as any).invoice_id)
+        .map(t => (t as any).invoiceId || (t as any).invoice_id)
+    );
+
+    const syntheticTrxs: Transaction[] = [];
+    invList.forEach(inv => {
+      if (inv.status === 'cancelled' || (inv as any).is_cancelled || (inv as any).isCancelled) return;
+      if (knownInvoiceIds.has(inv.id)) return;
+
+      const methods = (inv.paymentMethods && inv.paymentMethods.length > 0)
+        ? inv.paymentMethods
+        : [{ amount: Number(inv.total) || 0, treasuryId: inv.treasuryId || inv.paymentMethod || 'cash' }];
+
+      methods.forEach((split: any, idx: number) => {
+        if (split.treasuryId === 'cashback' || split.treasuryId === 'remedy_free') return;
+        const amt = Number(split.amount) || 0;
+        if (amt <= 0) return;
+
+        syntheticTrxs.push({
+          id: `TRX-INV-${inv.id}${methods.length > 1 ? `-${idx + 1}` : ''}`,
+          salonId: (inv as any).salonId || (inv as any).salon_id || settings.salonId,
+          date: inv.date,
+          type: 'in',
+          amount: amt,
+          category: 'sales',
+          description: `فاتورة #${inv.invoiceNumber || inv.id.slice(-6)}`,
+          treasury: split.treasuryId,
+          branchId: (inv as any).branchId || (inv as any).branch_id || activeBranchId,
+          invoiceId: inv.id,
+        } as any);
+      });
+    });
+
+    return [...txList, ...syntheticTrxs];
+  }, [transactions, invoices, settings.salonId, activeBranchId]);
+
   // Compute stats for today based on transactions & invoices (صفر تلقائياً عند إغلاق الوردية)
   const todayTrx = useMemo(() => {
     if (!isShiftOpen) return [];
@@ -134,13 +176,55 @@ export function DashboardScreen({
     return branchInvoices.filter(inv => matchesCurrentShift(inv.date, (inv as any).createdAt || (inv as any).created_at, (inv as any).shiftId) && inv.status !== 'cancelled');
   }, [branchInvoices, isShiftOpen, shiftDate, shiftData]);
 
-  // مقدمات الحجز المحصلة في الوردية الحالية (تُحتسب ضمن مبيعات اليوم لأنها فلوس دخلت فعلياً للمحل)
-  const todayBookingAdvances = useMemo(() => {
+  // مقدمات الحجز المحصلة في تاريخ اليوم/الوردية حسب الخزينة (من المعاملات ومن جدول الحجوزات)
+  const getBookingAdvancesForTreasury = (matcher: (treasuryId?: string) => boolean) => {
     if (!isShiftOpen) return 0;
-    return todayTrx
-      .filter(t => t.type === 'in' && (t.category === 'مقدم حجز' || t.category === 'booking_advance'))
-      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
-  }, [todayTrx, isShiftOpen]);
+    const targetDate = (isShiftOpen && shiftDate) ? shiftDate : localToday;
+
+    // 1. من جدول المعاملات المالية المباشرة لليوم
+    const fromTrx = todayTrx.filter(t => 
+      t.type === 'in' && 
+      (t.category === 'مقدم حجز' || t.category === 'booking_advance' || t.category === 'advance' || (t.description && t.description.includes('مقدم حجز'))) &&
+      matcher(t.treasury || (t as any).treasuryId)
+    );
+    const sumTrx = fromTrx.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+
+    // 2. من جدول الحجوزات (لأي حجز مسجل به دفعات مقدمة بتاريخ اليوم ولم تسجل في transactions)
+    let fromBookingsOnly = 0;
+    (branchBookings || []).forEach(b => {
+      if (b.status === 'cancelled') return;
+      const advances = (b.advancePayments && Array.isArray(b.advancePayments))
+        ? b.advancePayments
+        : (typeof (b as any).advance_payments === 'string'
+          ? (() => { try { return JSON.parse((b as any).advance_payments); } catch { return []; } })()
+          : []);
+
+      advances.forEach((adv: any) => {
+        const advDate = (adv.date || b.date || (b as any).createdAt || '').split('T')[0].trim();
+        if (advDate !== targetDate) return;
+        const advTreasuryId = adv.treasuryId || adv.paymentMethod || 'cash';
+        if (!matcher(advTreasuryId)) return;
+        const amt = Number(adv.amount) || 0;
+        if (amt <= 0) return;
+
+        const alreadyInTrx = fromTrx.some(t => 
+          Math.abs((Number(t.amount) || 0) - amt) < 0.01 &&
+          (t.description?.includes(b.id) || t.description?.includes(b.clientName) || (t as any).bookingId === b.id)
+        );
+
+        if (!alreadyInTrx) {
+          fromBookingsOnly += amt;
+        }
+      });
+    });
+
+    return sumTrx + fromBookingsOnly;
+  };
+
+  // مقدمات الحجز المحصلة في الوردية الحالية إجمالياً (تُحتسب ضمن مبيعات اليوم لأنها فلوس دخلت فعلياً للمحل)
+  const todayBookingAdvances = useMemo(() => {
+    return getBookingAdvancesForTreasury(() => true);
+  }, [todayTrx, branchBookings, isShiftOpen, shiftDate, localToday]);
 
   const todaySalesRevenue = useMemo(() => {
     if (!isShiftOpen) return 0;
@@ -309,6 +393,12 @@ export function DashboardScreen({
           <div>
             <p className="text-slate-500 text-[12px] font-bold mb-1">مبيعات اليوم (اضغط للتفاصيل)</p>
             <h3 className="text-lg font-extrabold text-emerald-600 font-mono">{todaySalesRevenue.toFixed(2)} <span className="text-sm font-normal text-slate-500">{settings.currency}</span></h3>
+            {todayBookingAdvances > 0 && (
+              <p className="text-[11px] font-bold text-teal-600 flex items-center gap-1 mt-1">
+                <span>📅 منها مقدمات حجز:</span>
+                <span className="font-mono">+{todayBookingAdvances.toFixed(2)} {settings.currency}</span>
+              </p>
+            )}
           </div>
           <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center">
             <TrendingUp size={20} />
@@ -348,9 +438,9 @@ export function DashboardScreen({
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4 border-b border-slate-700/80 pb-3">
             <div>
               <h3 className="font-black text-base flex items-center gap-2 text-white">
-                <span>تفاصيل الخزائن والإيرادات ({isShiftOpen && shiftDate ? `وردية: ${shiftDate}` : 'الوردية مغلقة - رصيد الخزائن مصفر'})</span>
+                <span>تفاصيل الخزائن والإيرادات ({isShiftOpen && shiftDate ? `وردية: ${shiftDate}` : 'الوردية مغلقة - تصفير أدراج الوردية'})</span>
               </h3>
-              <p className="text-xs text-slate-400 mt-0.5">تفصيل دقيق يوضح العهدة الافتتاحية، المبيعات النقدية والشبكة، والمصروفات</p>
+              <p className="text-xs text-slate-400 mt-0.5">تفصيل دقيق يوضح عهدة ومبيعات الوردية، مع إظهار الرصيد الفعلي المتراكم للخزينة الرئيسية بشكل مستمر</p>
             </div>
             <button 
               onClick={() => setShowRevenueDetails(false)} 
@@ -362,7 +452,25 @@ export function DashboardScreen({
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {settings.treasuries.map(t => {
-              const tTrx = todayTrx.filter(trx => trx.treasury === t.id);
+              const isCash = t.id === 'cash' || t.name.includes('كاش') || t.name.includes('الدرج');
+              const isMain = Boolean(t.isMain || t.id === 'main' || t.name.includes('الرئيسية'));
+
+              // مطابقة الحركات مع الخزينة الحالية
+              const matchesTreasury = (itemTId?: string) => {
+                if (!itemTId) return false;
+                if (itemTId === t.id) return true;
+                if (isMain && (itemTId === 'main' || itemTId === 'treasury-main' || itemTId === 'primary')) return true;
+                return false;
+              };
+
+              // 1. حساب الرصيد التراكمي الشامل (لجميع الفترات والتاريخ بالكامل)
+              const tAllTrx = unifiedTransactions.filter(trx => matchesTreasury(trx.treasury || (trx as any).treasuryId));
+              const cumulativeIn = tAllTrx.filter(trx => trx.type === 'in').reduce((sum, trx) => sum + (Number(trx.amount) || 0), 0);
+              const cumulativeOut = tAllTrx.filter(trx => trx.type === 'out').reduce((sum, trx) => sum + (Number(trx.amount) || 0), 0);
+              const cumulativeBalance = cumulativeIn - cumulativeOut;
+
+              // 2. حركات اليوم / الوردية الحالية
+              const tTrx = todayTrx.filter(trx => matchesTreasury(trx.treasury || (trx as any).treasuryId));
               const invoiceIdsInTrx = new Set(
                 tTrx.filter(trx => trx.type === 'in' && ((trx as any).invoiceId || (trx as any).invoice_id))
                   .map(trx => (trx as any).invoiceId || (trx as any).invoice_id)
@@ -372,18 +480,101 @@ export function DashboardScreen({
                 const methods = inv.paymentMethods && inv.paymentMethods.length > 0
                   ? inv.paymentMethods
                   : [{ amount: Number(inv.total) || 0, treasuryId: inv.paymentMethod || 'cash' }];
-                const matched = methods.filter((m: any) => m.treasuryId === t.id);
+                const matched = methods.filter((m: any) => matchesTreasury(m.treasuryId));
                 return sum + matched.reduce((s: number, m: any) => s + (Number(m.amount) || 0), 0);
               }, 0);
 
               const custody = tTrx.filter(trx => trx.type === 'in' && (trx.category === 'عهدة افتتاحية' || trx.category === 'initial_cash')).reduce((sum, trx) => sum + trx.amount, 0);
-              const bookingAdvancesAmt = tTrx.filter(trx => trx.type === 'in' && (trx.category === 'مقدم حجز' || trx.category === 'booking_advance')).reduce((sum, trx) => sum + trx.amount, 0);
+              const bookingAdvancesAmt = getBookingAdvancesForTreasury(matchesTreasury);
               const sales = tTrx.filter(trx => trx.type === 'in' && (trx.category === 'sales' || trx.category === 'مبيعات')).reduce((sum, trx) => sum + trx.amount, 0) + unrecordedSales;
-              const otherIn = tTrx.filter(trx => trx.type === 'in' && trx.category !== 'عهدة افتتاحية' && trx.category !== 'initial_cash' && trx.category !== 'sales' && trx.category !== 'مبيعات' && trx.category !== 'مقدم حجز' && trx.category !== 'booking_advance').reduce((sum, trx) => sum + trx.amount, 0);
-              const income = tTrx.filter(trx => trx.type === 'in').reduce((sum, trx) => sum + trx.amount, 0) + unrecordedSales;
+              const otherIn = tTrx.filter(trx => trx.type === 'in' && trx.category !== 'عهدة افتتاحية' && trx.category !== 'initial_cash' && trx.category !== 'sales' && trx.category !== 'مبيعات' && trx.category !== 'مقدم حجز' && trx.category !== 'booking_advance' && trx.category !== 'advance' && !(trx.description && trx.description.includes('مقدم حجز'))).reduce((sum, trx) => sum + trx.amount, 0);
+              const income = custody + sales + bookingAdvancesAmt + otherIn;
               const outcome = tTrx.filter(trx => trx.type === 'out').reduce((sum, trx) => sum + trx.amount, 0);
               const net = income - outcome;
-              const isCash = t.id === 'cash' || t.name.includes('كاش') || t.name.includes('الدرج');
+
+              if (isMain) {
+                return (
+                  <div 
+                    key={t.id} 
+                    className="p-4 rounded-2xl border transition-all bg-gradient-to-b from-emerald-950/80 via-slate-900 to-slate-800/90 border-emerald-500/50 shadow-inner"
+                  >
+                    <div className="flex justify-between items-center mb-3">
+                      <span className="font-extrabold text-sm text-white flex items-center gap-1.5">
+                        <span>🏛️</span>
+                        {t.name}
+                      </span>
+                      <span className="bg-emerald-400/20 text-emerald-300 text-[10px] font-black px-2 py-0.5 rounded-full border border-emerald-300/30">
+                        الخزينة الرئيسية (رصيد متراكم)
+                      </span>
+                    </div>
+
+                    <div className="space-y-2 text-xs">
+                      {/* مبيعات اليوم الموجهة لها */}
+                      <div className="flex justify-between items-center text-slate-300">
+                        <span className="flex items-center gap-1">
+                          <span>🛍️</span>
+                          <span>مبيعات اليوم الموجهة لها:</span>
+                        </span>
+                        <span className="text-emerald-400 font-bold font-mono">+{sales.toFixed(2)} {settings.currency}</span>
+                      </div>
+
+                      {/* مقدم حجز */}
+                      <div className={`flex justify-between items-center ${bookingAdvancesAmt > 0 ? 'bg-teal-500/15 border border-teal-400/30 px-2 py-1 rounded-lg text-teal-200 font-extrabold' : 'text-slate-300'}`}>
+                        <span className="flex items-center gap-1">
+                          <span>📅</span>
+                          <span>مقدم حجز:</span>
+                        </span>
+                        <span className={`font-mono ${bookingAdvancesAmt > 0 ? 'text-teal-300 font-black' : 'text-slate-300 font-bold'}`}>
+                          +{bookingAdvancesAmt.toFixed(2)} {settings.currency}
+                        </span>
+                      </div>
+
+                      {/* إيداعات وتحويلات اليوم */}
+                      {otherIn > 0 && (
+                        <div className="flex justify-between items-center text-slate-300">
+                          <span className="flex items-center gap-1">
+                            <span>📥</span>
+                            <span>إيداعات وتحويلات اليوم:</span>
+                          </span>
+                          <span className="text-teal-400 font-bold font-mono">+{otherIn.toFixed(2)} {settings.currency}</span>
+                        </div>
+                      )}
+
+                      {/* مسحوبات ومصروفات اليوم */}
+                      <div className="flex justify-between items-center text-slate-300 border-b border-slate-700/80 pb-2">
+                        <span className="flex items-center gap-1">
+                          <span>💸</span>
+                          <span>مسحوبات ومصروفات اليوم:</span>
+                        </span>
+                        <span className="text-rose-400 font-bold font-mono">-{outcome.toFixed(2)} {settings.currency}</span>
+                      </div>
+
+                      {/* إجمالي الحركات المتراكمة الشاملة */}
+                      <div className="bg-slate-950/60 border border-emerald-500/20 rounded-xl p-2.5 my-1 space-y-1">
+                        <div className="flex justify-between items-center text-[11px] text-slate-400">
+                          <span>إجمالي المقبوضات التراكمية:</span>
+                          <span className="font-mono text-emerald-400 font-bold">+{cumulativeIn.toFixed(2)} {settings.currency}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-[11px] text-slate-400">
+                          <span>إجمالي المدفوعات التراكمية:</span>
+                          <span className="font-mono text-rose-400 font-bold">-{cumulativeOut.toFixed(2)} {settings.currency}</span>
+                        </div>
+                      </div>
+
+                      {/* الرصيد الفعلي المتراكم للخزينة الرئيسية */}
+                      <div className="flex justify-between items-center pt-1 font-black text-sm text-white">
+                        <span className="flex items-center gap-1 text-emerald-200">
+                          <span>🏛️</span>
+                          <span>الرصيد الفعلي المتراكم:</span>
+                        </span>
+                        <span className={`font-mono text-base font-black ${cumulativeBalance >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                          {cumulativeBalance.toFixed(2)} {settings.currency}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
 
               return (
                 <div 
@@ -397,6 +588,7 @@ export function DashboardScreen({
                   <div className="flex justify-between items-center mb-3">
                     <span className="font-extrabold text-sm text-white flex items-center gap-1.5">
                       {isCash && <span>💵</span>}
+                      {!isCash && <span>💳</span>}
                       {t.name}
                     </span>
                     {isCash && (
@@ -427,21 +619,24 @@ export function DashboardScreen({
                       <span className="text-emerald-400 font-bold font-mono">+{sales.toFixed(2)} {settings.currency}</span>
                     </div>
 
-                    {/* Booking Advances Row - مقدمات حجز (بند مستقل وواضح) */}
-                    {bookingAdvancesAmt > 0 && (
-                      <div className="flex justify-between items-center bg-teal-500/15 border border-teal-400/30 px-2.5 py-1.5 rounded-xl text-teal-200 font-extrabold">
-                        <span className="flex items-center gap-1">
-                          <span>📅</span>
-                          <span>مقدمات حجز:</span>
-                        </span>
-                        <span className="font-mono text-teal-100 font-black">+{bookingAdvancesAmt.toFixed(2)} {settings.currency}</span>
-                      </div>
-                    )}
+                    {/* Booking Advances Row - مقدم حجز (يظهر دائماً في جميع الخزائن) */}
+                    <div className={`flex justify-between items-center ${bookingAdvancesAmt > 0 ? 'bg-teal-500/15 border border-teal-400/30 px-2 py-1 rounded-lg text-teal-200 font-extrabold' : 'text-slate-300'}`}>
+                      <span className="flex items-center gap-1">
+                        <span>📅</span>
+                        <span>مقدم حجز:</span>
+                      </span>
+                      <span className={`font-mono ${bookingAdvancesAmt > 0 ? 'text-teal-300 font-black' : 'text-slate-300 font-bold'}`}>
+                        +{bookingAdvancesAmt.toFixed(2)} {settings.currency}
+                      </span>
+                    </div>
 
                     {/* Other Inflows */}
                     {otherIn > 0 && (
                       <div className="flex justify-between items-center text-slate-300">
-                        <span>إيداعات أخرى:</span>
+                        <span className="flex items-center gap-1">
+                          <span>📥</span>
+                          <span>إيداعات أخرى:</span>
+                        </span>
                         <span className="text-teal-400 font-bold font-mono">+{otherIn.toFixed(2)} {settings.currency}</span>
                       </div>
                     )}
@@ -457,7 +652,7 @@ export function DashboardScreen({
 
                     {/* Total Net Balance in Drawer */}
                     <div className="flex justify-between items-center pt-1 font-black text-sm text-white">
-                      <span>الرصيد الفعلي بالخزينة:</span>
+                      <span>{isCash ? 'الرصيد الفعلي بالدرج:' : 'الرصيد الفعلي بالخزينة:'}</span>
                       <span className={`font-mono ${net >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
                         {net.toFixed(2)} {settings.currency}
                       </span>
@@ -465,7 +660,6 @@ export function DashboardScreen({
                   </div>
                 </div>
               );
-
             })}
           </div>
         </div>
