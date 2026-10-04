@@ -11,7 +11,7 @@ import {
   List, Grid3X3, Eye, CalendarDays, ArrowRight, Sliders, 
   CalendarOff, ShieldAlert, Trash2, Lock, ShieldCheck, Check,
   DollarSign, Wallet, CreditCard, Banknote, XCircle, FileSpreadsheet,
-  MapPin, ShoppingBag, Package
+  MapPin, ShoppingBag, Package, Pencil
 } from 'lucide-react';
 import { 
   isDateBlocked, isHourBlocked, isStaffAvailableOnDate, 
@@ -262,6 +262,10 @@ export function BookingsScreen({
   const [isProductDropdownOpen, setIsProductDropdownOpen] = useState(false);
   const [serviceQtyToAdd, setServiceQtyToAdd] = useState<string>('1');
   const [isServiceDropdownOpen, setIsServiceDropdownOpen] = useState(false);
+
+  // حالة تعديل سعر الخدمة أو المنتج داخل الحجز فقط (بالقلم)
+  const [editingPriceServiceId, setEditingPriceServiceId] = useState<string | null>(null);
+  const [editingPriceValue, setEditingPriceValue] = useState<string>('');
 
   // Advance Payments State for Add/Edit Modal
   const [advAmountInput, setAdvAmountInput] = useState<number | ''>('');
@@ -542,6 +546,8 @@ export function BookingsScreen({
     setIsServiceDropdownOpen(false);
     setIsProductDropdownOpen(false);
     setServiceQtyToAdd('1');
+    setEditingPriceServiceId(null);
+    setEditingPriceValue('');
     setNewBooking({
       clientName: '',
       phone: '',
@@ -630,6 +636,42 @@ export function BookingsScreen({
     setTechToAdd('');
     setServiceQtyToAdd('1');
     setIsProductDropdownOpen(false);
+  };
+
+  // بدء تعديل سعر الخدمة أو المنتج بالقلم داخل الحجز فقط
+  const handleStartEditPrice = (s: BookingService) => {
+    setEditingPriceServiceId(s.id);
+    setEditingPriceValue(String(s.price ?? 0));
+  };
+
+  // حفظ السعر المخصص داخل الحجز فقط دون تعديل السعر الأساسي للخدمة
+  const handleSaveCustomServicePrice = (serviceLineId: string) => {
+    const parsed = parseFloat(editingPriceValue);
+    const newPrice = isNaN(parsed) ? 0 : Math.max(0, parsed);
+    const updated = (newBooking.services || []).map(sx => {
+      if (sx.id === serviceLineId) {
+        return {
+          ...sx,
+          price: newPrice,
+          isCustomPrice: true
+        };
+      }
+      return sx;
+    });
+    const totals = calculateBookingTotals({ ...newBooking, services: updated });
+    setNewBooking({
+      ...newBooking,
+      services: updated,
+      totalAmount: totals.netTotal
+    });
+    setEditingPriceServiceId(null);
+    setEditingPriceValue('');
+  };
+
+  // إلغاء تعديل السعر
+  const handleCancelEditPrice = () => {
+    setEditingPriceServiceId(null);
+    setEditingPriceValue('');
   };
 
   // Helper to add advance payment inside Add/Edit modal
@@ -881,6 +923,8 @@ export function BookingsScreen({
     setIsServiceDropdownOpen(false);
     setIsProductDropdownOpen(false);
     setServiceQtyToAdd('1');
+    setEditingPriceServiceId(null);
+    setEditingPriceValue('');
 
     // عند تعديل الحجز أو حفظه لأول مرة تظهر مباشرة شاشة الإيصال لطباعته
     setTimeout(() => {
@@ -899,6 +943,8 @@ export function BookingsScreen({
     setIsProductDropdownOpen(false);
     setTechToAdd('');
     setServiceQtyToAdd('1');
+    setEditingPriceServiceId(null);
+    setEditingPriceValue('');
     setNewBooking({ 
       ...b, 
       createdAt: b.createdAt || (b as any).created_at,
@@ -991,146 +1037,148 @@ export function BookingsScreen({
     const contactPhone = settings.phone || '';
     const salonTitle = settings.salonName || 'صالون سمارت كت';
     const barcodeCode = booking.id || 'B000000';
-    const barcodeSvg = generateCode39Svg(barcodeCode, 34);
+    const barcodeSvg = generateCode39Svg(barcodeCode, 20);
 
     const printWindow = document.createElement('div');
     printWindow.id = 'print-booking-receipt';
-    printWindow.className = 'hidden print:block fixed inset-0 bg-white z-[9999] p-8 text-black';
+    printWindow.className = 'hidden print:block fixed inset-0 bg-white z-[9999] p-2 text-black';
     printWindow.dir = 'rtl';
     printWindow.innerHTML = `
-      <div style="text-align: center; margin-bottom: 12px;">
-        ${settings.logoUrl ? '<img src="' + sanitizeUrl(settings.logoUrl) + '" style="max-height: 80px; margin: 0 auto 10px;" />' : ''}
-        <h2 style="font-size: 20px; font-weight: bold; margin: 0; color: #000;">${escapeHtml(salonTitle)}</h2>
-        <h3 style="font-size: 17px; font-weight: bold; border: 1.5px solid #000; display: inline-block; padding: 5px 15px; margin-top: 10px; color: #000;">إيصال حجز موعد مؤكد</h3>
-      </div>
-
-      <!-- Barcode section (باركود لسهولة البحث والتنفيذ) -->
-      <div style="text-align: center; margin: 10px 0 15px; padding: 4px; background: #fff;">
-        <div style="max-width: 250px; margin: 0 auto;">
-          ${barcodeSvg}
+      <div style="max-width: 280px; margin: 0 auto; font-family: system-ui, -apple-system, sans-serif; font-size: 11px; font-weight: normal; line-height: 1.35; color: #000; text-align: right; direction: rtl;">
+        <div style="text-align: center; margin-bottom: 4px;">
+          ${settings.logoUrl ? '<img src="' + sanitizeUrl(settings.logoUrl) + '" style="max-height: 40px; margin: 0 auto 3px; display: block;" />' : ''}
+          <div style="font-size: 15px; font-weight: bold; margin: 0; color: #000;">${escapeHtml(salonTitle)}</div>
+          <div style="display: inline-block; border: 1px solid #000; padding: 1px 8px; font-size: 11px; font-weight: normal; margin-top: 3px; color: #000;">إيصال حجز مؤكد</div>
         </div>
-        <div style="font-family: monospace; font-size: 13px; font-weight: 900; letter-spacing: 2px; color: #000; margin-top: 2px;">
-          ${escapeHtml(barcodeCode)}
-        </div>
-      </div>
 
-      <div style="margin-bottom: 18px; font-size: 14px; color: #000; line-height: 1.6;">
+        <!-- Barcode section -->
+        <div style="text-align: center; margin: 2px 0 4px; padding: 2px 0;">
+          <div style="max-width: 170px; margin: 0 auto;">
+            ${barcodeSvg}
+          </div>
+          <div style="font-family: monospace; font-size: 10px; font-weight: normal; letter-spacing: 1px; color: #000; margin-top: 1px;">
+            ${escapeHtml(barcodeCode)}
+          </div>
+        </div>
+
         ${booking.queueNumber ? `
-          <div style="background: #eef2ff; border: 2px solid #6366f1; border-radius: 8px; padding: 8px; text-align: center; margin-bottom: 12px;">
-            <span style="font-size: 12px; color: #3730a3; font-weight: bold; display: block;">رقم دور الحجز المسبق</span>
-            <strong style="font-size: 28px; color: #4338ca; font-weight: 900; font-family: monospace;">B-${escapeHtml(booking.queueNumber)}</strong>
+          <div style="border: 1px solid #000; padding: 2px 6px; text-align: center; margin-bottom: 4px; font-size: 11px; font-weight: normal; color: #000; display: flex; justify-content: space-between; align-items: center; white-space: nowrap;">
+            <span>رقم دور الحجز المسبق:</span>
+            <span style="font-family: monospace; font-size: 13px; font-weight: normal; color: #000;">B-${escapeHtml(booking.queueNumber)}</span>
           </div>
         ` : ''}
-        <p style="margin: 3px 0;"><strong>رقم الحجز:</strong> <span style="color: #000; font-weight: bold; font-family: monospace;">${escapeHtml(booking.id)}</span></p>
-        <p style="margin: 3px 0;"><strong>تاريخ الموعد:</strong> <span style="color: #000; font-weight: 900;">${escapeHtml(booking.date)}</span></p>
-        <p style="margin: 3px 0;"><strong>الوقت:</strong> <span style="color: #000; font-weight: 900;">${escapeHtml(formatTo12Hour(booking.time))}</span></p>
-        <p style="margin: 3px 0;"><strong>العميل:</strong> <span style="color: #000; font-weight: bold;">${escapeHtml(booking.clientName)}</span></p>
-        <p style="margin: 3px 0;"><strong>مكان الحجز:</strong> <span style="color: #000; font-weight: bold;">${escapeHtml(booking.location || 'داخل الصالون')}</span></p>
-        <p style="margin: 3px 0;"><strong>الهاتف:</strong> <span style="color: #000; font-weight: bold;">${escapeHtml(booking.phone)}</span></p>
-      </div>
 
-      <table style="width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 14px; text-align: right; color: #000;">
-        <thead>
-          <tr style="border-bottom: 2px solid #000;">
-            <th style="padding: 8px 0; color: #000;">البند (خدمة / منتج)</th>
-            <th style="padding: 8px 0; text-align: left; color: #000;">السعر</th>
-          </tr>
-        </thead>
-        <tbody>
+        <!-- Info List on single lines -->
+        <div style="border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 3px 0; margin-bottom: 4px; font-size: 11px; font-weight: normal; color: #000; line-height: 1.4;">
+          <div style="display: flex; justify-content: space-between; gap: 8px; white-space: nowrap;">
+            <span>رقم الحجز: <span style="font-family: monospace;">${escapeHtml(booking.id)}</span></span>
+            <span>التاريخ: ${escapeHtml(booking.date)}</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; gap: 8px; white-space: nowrap;">
+            <span style="overflow: hidden; text-overflow: ellipsis;">العميل: ${escapeHtml(booking.clientName)}</span>
+            <span>الوقت: ${escapeHtml(formatTo12Hour(booking.time))}</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; gap: 8px; white-space: nowrap;">
+            <span>الهاتف: <span style="font-family: monospace;">${escapeHtml(booking.phone)}</span></span>
+            <span>المكان: ${escapeHtml(booking.location || 'داخل الصالون')}</span>
+          </div>
+        </div>
+
+        <!-- Services & Products on single lines -->
+        <div style="margin-bottom: 4px; font-size: 11px; font-weight: normal; color: #000;">
+          <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #000; padding-bottom: 2px; margin-bottom: 2px; font-weight: normal; color: #000;">
+            <span>البند (خدمة / منتج)</span>
+            <span>السعر</span>
+          </div>
           ${booking.services.map(s => {
             const isProd = s.type === 'product';
             const qty = Math.max(1, Number(s.quantity) || 1);
             const lineDisc = calculateServiceLineDiscount(s);
             const lineFinal = calculateServiceLinePrice(s);
-            const lineGross = Number(s.price || 0) * qty;
             return `
-              <tr style="border-bottom: 1px dotted #ccc;">
-                <td style="padding: 8px 0;">
-                  <div style="font-weight: bold; color: #000;">
-                    ${isProd ? '<span style="display: inline-block; background: #fef3c7; color: #92400e; border: 1px solid #fde68a; border-radius: 4px; padding: 0 4px; font-size: 10px; margin-left: 4px;">منتج</span>' : ''}
-                    ${escapeHtml(s.serviceName)}
-                    ${qty > 1 ? `<span style="display: inline-block; background: #f1f5f9; color: #000; border: 1px solid #cbd5e1; border-radius: 4px; padding: 0 4px; font-size: 11px; margin-right: 4px;">الكمية: ${qty}</span>` : ''}
-                  </div>
-                  ${lineDisc > 0 ? `
-                    <div style="font-size: 11px; color: #dc2626; font-weight: bold;">
-                      خصم: -${lineDisc.toFixed(2)} ${s.discountType === 'percentage' ? '(' + (s.discountValue || 0) + '%)' : escapeHtml(settings.currency)}
-                    </div>
-                  ` : ''}
-                </td>
-                <td style="padding: 8px 0; text-align: left; vertical-align: top;">
-                  <div style="font-weight: 900; font-family: monospace; color: #000;">${lineFinal.toFixed(2)} ${escapeHtml(settings.currency)}</div>
-                  ${(lineDisc > 0 || qty > 1) ? `
-                    <div style="font-size: 11px; color: #888; font-family: monospace;">
-                      ${qty > 1 ? `${Number(s.price || 0).toFixed(2)} × ${qty} = ${lineGross.toFixed(2)}` : (lineDisc > 0 ? Number(s.price || 0).toFixed(2) : '')}
-                    </div>
-                  ` : ''}
-                </td>
-              </tr>
+              <div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 0; border-bottom: 1px dotted #000; font-weight: normal; color: #000; white-space: nowrap; gap: 6px;">
+                <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                  <span>${escapeHtml(s.serviceName)}</span>
+                  ${qty > 1 ? `<span> (×${qty})</span>` : ''}
+                  ${isProd ? '<span style="font-size: 9px; border: 1px solid #000; padding: 0 2px; margin-right: 2px;">منتج</span>' : ''}
+                  ${lineDisc > 0 ? `<span style="font-size: 9px; margin-right: 2px;">[خصم: -${lineDisc.toFixed(2)}]</span>` : ''}
+                </div>
+                <div style="font-family: monospace; text-align: left; flex-shrink: 0; color: #000;">
+                  ${lineFinal.toFixed(2)} ${escapeHtml(settings.currency)}
+                </div>
+              </div>
             `;
           }).join('')}
-        </tbody>
-      </table>
-
-      <div style="margin-bottom: 18px; font-size: 14px; color: #000;">
-        ${totals.totalDiscounts > 0 ? `
-          <div style="display: flex; justify-content: space-between; font-weight: bold; padding-bottom: 4px; margin-bottom: 4px; color: #444;">
-            <span>إجمالي البنود (قبل الخصم):</span>
-            <span style="font-family: monospace;">${totals.grossServices.toFixed(2)} ${escapeHtml(settings.currency)}</span>
-          </div>
-        ` : ''}
-
-        ${totals.lineDiscounts > 0 ? `
-          <div style="display: flex; justify-content: space-between; color: #dc2626; font-weight: bold; padding-bottom: 4px; margin-bottom: 4px;">
-            <span>خصومات البنود:</span>
-            <span style="font-family: monospace;">-${totals.lineDiscounts.toFixed(2)} ${escapeHtml(settings.currency)}</span>
-          </div>
-        ` : ''}
-
-        ${totals.generalDiscount > 0 ? `
-          <div style="display: flex; justify-content: space-between; color: #dc2626; font-weight: bold; padding-bottom: 4px; margin-bottom: 4px;">
-            <span>خصم إضافي على الحجز (${booking.discountType === 'percentage' ? (booking.discountValue || 0) + '%' : 'مبلغ ثابت'}):</span>
-            <span style="font-family: monospace;">-${totals.generalDiscount.toFixed(2)} ${escapeHtml(settings.currency)}</span>
-          </div>
-        ` : ''}
-
-        <div style="display: flex; justify-content: space-between; font-weight: bold; border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 6px 0; margin-bottom: 6px;">
-          <span>إجمالي الحجز الصافي:</span>
-          <span style="font-family: monospace; font-size: 15px; font-weight: 900;">${totals.netTotal.toFixed(2)} ${escapeHtml(settings.currency)}</span>
         </div>
 
-        ${totalAdv > 0 ? `
-          <div style="display: flex; justify-content: space-between; color: #059669; font-weight: bold; padding-bottom: 4px; margin-bottom: 4px;">
-            <span>المسدد مقدماً (عربون):</span>
-            <span style="font-family: monospace;">-${totalAdv.toFixed(2)} ${escapeHtml(settings.currency)}</span>
+        <!-- Totals on single lines -->
+        <div style="border-top: 1px dashed #000; padding-top: 3px; margin-bottom: 4px; font-size: 11px; font-weight: normal; color: #000; line-height: 1.4;">
+          ${totals.totalDiscounts > 0 ? `
+            <div style="display: flex; justify-content: space-between; white-space: nowrap; margin-bottom: 1px;">
+              <span>إجمالي البنود:</span>
+              <span style="font-family: monospace;">${totals.grossServices.toFixed(2)} ${escapeHtml(settings.currency)}</span>
+            </div>
+          ` : ''}
+
+          ${totals.lineDiscounts > 0 ? `
+            <div style="display: flex; justify-content: space-between; white-space: nowrap; margin-bottom: 1px;">
+              <span>خصم البنود:</span>
+              <span style="font-family: monospace;">-${totals.lineDiscounts.toFixed(2)} ${escapeHtml(settings.currency)}</span>
+            </div>
+          ` : ''}
+
+          ${totals.generalDiscount > 0 ? `
+            <div style="display: flex; justify-content: space-between; white-space: nowrap; margin-bottom: 1px;">
+              <span>خصم الحجز (${booking.discountType === 'percentage' ? (booking.discountValue || 0) + '%' : 'مبلغ'}):</span>
+              <span style="font-family: monospace;">-${totals.generalDiscount.toFixed(2)} ${escapeHtml(settings.currency)}</span>
+            </div>
+          ` : ''}
+
+          <div style="display: flex; justify-content: space-between; border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 2px 0; margin: 2px 0; white-space: nowrap; font-size: 11px; font-weight: normal; color: #000;">
+            <span>الصافي الإجمالي:</span>
+            <span style="font-family: monospace;">${totals.netTotal.toFixed(2)} ${escapeHtml(settings.currency)}</span>
           </div>
-          <div style="display: flex; justify-content: space-between; font-size: 16px; font-weight: 900; border-top: 2px solid #000; padding-top: 6px; color: #000;">
-            <span>المتبقي للتحصيل عند الزيارة:</span>
-            <span style="font-family: monospace;">${remainingAmt.toFixed(2)} ${escapeHtml(settings.currency)}</span>
-          </div>
-          <div style="margin-top: 10px; font-size: 12px; background: #f3f4f6; padding: 6px; border-radius: 6px;">
-            <strong style="display: block; margin-bottom: 4px; color: #000;">تفاصيل الدفعات المقدمة:</strong>
-            ${(booking.advancePayments || []).map((adv, i) => `
-              <div>• دفعة ${i+1}: ${Number(adv.amount || 0).toFixed(2)} ${escapeHtml(settings.currency)} (${escapeHtml(adv.treasuryName || 'نقداً')}) - تاريخ: ${escapeHtml(adv.date)}</div>
-            `).join('')}
+
+          ${totalAdv > 0 ? `
+            <div style="display: flex; justify-content: space-between; white-space: nowrap; margin-bottom: 1px;">
+              <span>المدفوع مقدماً:</span>
+              <span style="font-family: monospace;">-${totalAdv.toFixed(2)} ${escapeHtml(settings.currency)}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; border-top: 1px solid #000; padding-top: 2px; margin-top: 2px; white-space: nowrap; font-size: 11px; font-weight: normal; color: #000;">
+              <span>المتبقي للتحصيل:</span>
+              <span style="font-family: monospace;">${remainingAmt.toFixed(2)} ${escapeHtml(settings.currency)}</span>
+            </div>
+            <div style="margin-top: 3px; font-size: 10px; border: 1px solid #000; padding: 2px 4px; color: #000;">
+              <span style="display: block; margin-bottom: 1px;">تفاصيل الدفعات المقدمة:</span>
+              ${(booking.advancePayments || []).map((adv, i) => `
+                <div style="display: flex; justify-content: space-between; white-space: nowrap; font-family: monospace;">
+                  <span>• دفعة ${i+1} (${escapeHtml(adv.treasuryName || 'نقداً')}):</span>
+                  <span>${Number(adv.amount || 0).toFixed(2)} ${escapeHtml(settings.currency)}</span>
+                </div>
+              `).join('')}
+            </div>
+          ` : ''}
+        </div>
+
+        <!-- Creation date & time on single line -->
+        <div style="display: flex; justify-content: space-between; border-top: 1px dashed #000; padding-top: 2px; margin-top: 3px; font-size: 10px; font-weight: normal; color: #000; white-space: nowrap;">
+          <span>تاريخ ووقت إنشاء الحجز:</span>
+          <span style="font-family: monospace;">${createdDateTimeStr}</span>
+        </div>
+
+        ${settings.bookingNotes ? `
+          <div style="margin-top: 3px; padding: 3px 5px; border: 1px dashed #000; text-align: center; font-size: 10px; font-weight: normal; white-space: pre-wrap; color: #000;">
+            ${escapeHtml(settings.bookingNotes)}
           </div>
         ` : ''}
-      </div>
 
-      <!-- تاريخ ووقت إنشاء الحجز أعلى الملاحظات بخط واضح بلون أسود -->
-      <div style="margin-top: 16px; margin-bottom: 12px; padding: 8px 12px; background: #fff; border: 1.5px solid #000; border-radius: 6px; text-align: center;">
-        <span style="font-size: 13px; font-weight: bold; color: #000;">تاريخ ووقت إنشاء الحجز: </span>
-        <span style="font-family: monospace; font-size: 14px; font-weight: 900; color: #000;">${createdDateTimeStr}</span>
-      </div>
-
-      ${settings.bookingNotes ? `
-        <div style="margin-top: 10px; padding: 10px; border: 1px dashed #000; border-radius: 6px; text-align: center; font-size: 13px; font-weight: bold; white-space: pre-wrap; background: #fafafa; color: #000;">
-          ${escapeHtml(settings.bookingNotes)}
-        </div>
-      ` : ''}
-
-      <div style="margin-top: 20px; padding-top: 10px; border-top: 1px dashed #000; text-align: center; font-size: 12px; line-height: 1.6; color: #000;">
-        ${cleanAddress ? `<p style="margin: 3px 0;"><strong>العنوان:</strong> ${escapeHtml(cleanAddress)}</p>` : ''}
-        ${contactPhone ? `<p style="margin: 3px 0;"><strong>أرقام التواصل:</strong> ${escapeHtml(contactPhone)}</p>` : ''}
+        ${(cleanAddress || contactPhone) ? `
+          <div style="margin-top: 4px; padding-top: 3px; border-top: 1px dashed #000; text-align: center; font-size: 10px; font-weight: normal; line-height: 1.3; color: #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+            ${cleanAddress ? `<span>العنوان: ${escapeHtml(cleanAddress)}</span>` : ''}
+            ${(cleanAddress && contactPhone) ? ' | ' : ''}
+            ${contactPhone ? `<span>هاتف: ${escapeHtml(contactPhone)}</span>` : ''}
+          </div>
+        ` : ''}
       </div>
     `;
     document.body.appendChild(printWindow);
@@ -1318,6 +1366,8 @@ export function BookingsScreen({
               });
               setTechToAdd('');
               setServiceQtyToAdd('1');
+              setEditingPriceServiceId(null);
+              setEditingPriceValue('');
               setAdvTreasuryInput(availableTreasuries[0]?.id || 'cash');
               setAdvDateInput(openShiftDate);
               setShowAddModal(true);
@@ -3010,9 +3060,72 @@ export function BookingsScreen({
                                         className="w-12 border border-slate-200 rounded px-1 text-center font-mono font-bold text-xs outline-none focus:border-indigo-600"
                                       />
                                     </div>
-                                    <span className="font-mono font-bold text-slate-700">
-                                      {lineGross.toFixed(2)} {settings.currency}
-                                    </span>
+                                    {/* تعديل سعر الخدمة داخل الحجز فقط بالقلم */}
+                                    {editingPriceServiceId === s.id ? (
+                                      <div className="flex items-center gap-1 bg-white px-2 py-0.5 rounded-lg border border-indigo-400 shadow-2xs">
+                                        <span className="text-[10px] text-indigo-700 font-bold">السعر:</span>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          step="any"
+                                          autoFocus
+                                          value={editingPriceValue}
+                                          onChange={e => setEditingPriceValue(e.target.value)}
+                                          onKeyDown={e => {
+                                            if (e.key === 'Enter') {
+                                              e.preventDefault();
+                                              handleSaveCustomServicePrice(s.id);
+                                            } else if (e.key === 'Escape') {
+                                              e.preventDefault();
+                                              handleCancelEditPrice();
+                                            }
+                                          }}
+                                          className="w-16 border border-indigo-200 rounded px-1 text-center font-mono font-bold text-xs outline-none focus:border-indigo-600"
+                                          placeholder="0"
+                                          title="تعديل سعر الوحدة لهذا الحجز فقط"
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={() => handleSaveCustomServicePrice(s.id)}
+                                          className="text-emerald-600 hover:text-emerald-700 p-0.5 rounded hover:bg-emerald-50 cursor-pointer"
+                                          title="حفظ السعر الجديد لهذا الحجز"
+                                        >
+                                          <Check size={14} className="stroke-[2.5]" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={handleCancelEditPrice}
+                                          className="text-slate-400 hover:text-slate-600 p-0.5 rounded hover:bg-slate-100 cursor-pointer"
+                                          title="إلغاء التعديل"
+                                        >
+                                          <X size={13} />
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-center gap-1">
+                                        <div className="flex items-center gap-1 font-mono font-bold text-slate-700">
+                                          <span>{lineGross.toFixed(2)} {settings.currency}</span>
+                                          {qty > 1 && (
+                                            <span className="text-[10px] text-slate-400 font-normal">
+                                              ({Number(s.price || 0).toFixed(2)}/وحدة)
+                                            </span>
+                                          )}
+                                        </div>
+                                        {s.isCustomPrice && (
+                                          <span className="text-[9px] bg-amber-100 text-amber-800 font-bold px-1.5 py-0.2 rounded-md border border-amber-200" title="سعر مخصص لهذا الحجز مع بقاء السعر الأساسي للخدمة دون تغيير">
+                                            معدل
+                                          </span>
+                                        )}
+                                        <button
+                                          type="button"
+                                          onClick={() => handleStartEditPrice(s)}
+                                          className="text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 p-1 rounded-md transition-colors cursor-pointer"
+                                          title="تعديل سعر الخدمة في هذا الحجز فقط (قلم التعديل)"
+                                        >
+                                          <Pencil size={13} />
+                                        </button>
+                                      </div>
+                                    )}
                                     <button
                                       type="button"
                                       onClick={() => {
@@ -4002,7 +4115,7 @@ export function BookingsScreen({
         const cleanAddress = getBookingCleanAddress(previewBooking);
         const salonTitle = settings.salonName || 'صالون سمارت كت';
         const barcodeCode = previewBooking.id || 'B000000';
-        const barcodeSvg = generateCode39Svg(barcodeCode, 34);
+        const barcodeSvg = generateCode39Svg(barcodeCode, 20);
 
         return (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-[60] p-4 animate-in fade-in duration-150">
@@ -4030,104 +4143,81 @@ export function BookingsScreen({
               </div>
 
               {/* Body: Thermal Paper Style */}
-              <div className="p-4 sm:p-6 bg-slate-100/90 overflow-y-auto flex justify-center">
-                <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80 w-full max-w-[340px] text-black font-sans space-y-3 text-xs select-text">
+              <div className="p-3 sm:p-5 bg-slate-100/90 overflow-y-auto flex justify-center">
+                <div className="bg-white p-3.5 rounded-xl shadow-xs border border-black w-full max-w-[300px] text-black font-sans space-y-1 text-[11px] font-normal select-text">
                   {/* Salon Header */}
-                  <div className="text-center space-y-1">
+                  <div className="text-center space-y-0.5">
                     {settings.logoUrl && (
-                      <img src={settings.logoUrl} alt="Logo" className="max-h-16 mx-auto mb-1.5" />
+                      <img src={settings.logoUrl} alt="Logo" className="max-h-10 mx-auto mb-1" />
                     )}
-                    <h2 className="text-lg font-black text-black">{salonTitle}</h2>
-                    <div className="inline-block border-1.5 border-black px-3 py-1 font-bold text-xs mt-1">
-                      إيصال حجز موعد مؤكد
+                    <h2 className="text-base font-bold text-black">{salonTitle}</h2>
+                    <div className="inline-block border border-black px-2 py-0.5 font-normal text-[11px] text-black mt-0.5">
+                      إيصال حجز مؤكد
                     </div>
                   </div>
 
                   {/* Barcode section */}
-                  <div className="text-center py-1 bg-white">
-                    <div className="max-w-[220px] mx-auto" dangerouslySetInnerHTML={{ __html: barcodeSvg }} />
-                    <div className="font-mono text-xs font-black tracking-widest text-black mt-0.5">
+                  <div className="text-center py-0.5 bg-white">
+                    <div className="max-w-[170px] mx-auto" dangerouslySetInnerHTML={{ __html: barcodeSvg }} />
+                    <div className="font-mono text-[10px] font-normal tracking-wider text-black mt-0.5">
                       {barcodeCode}
                     </div>
                   </div>
 
                   {/* Queue number if exists */}
                   {previewBooking.queueNumber && (
-                    <div className="bg-indigo-50 border-2 border-indigo-600 rounded-xl p-2 text-center">
-                      <span className="text-[10px] text-indigo-700 font-bold block">رقم دور الحجز المسبق</span>
-                      <strong className="text-2xl text-indigo-900 font-black font-mono">B-{previewBooking.queueNumber}</strong>
+                    <div className="border border-black p-1 text-center flex justify-between items-center text-[11px] font-normal text-black whitespace-nowrap">
+                      <span>رقم دور الحجز المسبق:</span>
+                      <span className="text-sm font-mono font-normal text-black">B-{previewBooking.queueNumber}</span>
                     </div>
                   )}
 
-                  {/* Info list */}
-                  <div className="space-y-1 text-xs border-y border-dashed border-slate-300 py-2">
-                    <div className="flex justify-between">
-                      <span className="text-slate-600 font-bold">رقم الحجز:</span>
-                      <span className="font-mono font-bold text-black">{previewBooking.id}</span>
+                  {/* Info list on single lines */}
+                  <div className="space-y-0.5 text-[11px] font-normal text-black border-y border-dashed border-black py-1 leading-tight">
+                    <div className="flex justify-between gap-2 whitespace-nowrap">
+                      <span>رقم الحجز: <span className="font-mono">{previewBooking.id}</span></span>
+                      <span>التاريخ: {previewBooking.date}</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-600 font-bold">تاريخ الموعد:</span>
-                      <span className="font-bold text-black">{previewBooking.date}</span>
+                    <div className="flex justify-between gap-2 whitespace-nowrap">
+                      <span className="truncate">العميل: {previewBooking.clientName}</span>
+                      <span>الوقت: {formatTo12Hour(previewBooking.time)}</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-600 font-bold">الوقت:</span>
-                      <span className="font-bold text-black">{formatTo12Hour(previewBooking.time)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-600 font-bold">العميل:</span>
-                      <span className="font-bold text-black">{previewBooking.clientName}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-600 font-bold">مكان الحجز:</span>
-                      <span className="font-bold text-black">{previewBooking.location || 'داخل الصالون'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-600 font-bold">الهاتف:</span>
-                      <span className="font-bold text-black font-mono">{previewBooking.phone}</span>
+                    <div className="flex justify-between gap-2 whitespace-nowrap">
+                      <span>الهاتف: <span className="font-mono">{previewBooking.phone}</span></span>
+                      <span>المكان: {previewBooking.location || 'داخل الصالون'}</span>
                     </div>
                   </div>
 
                   {/* Services & Products Table */}
-                  <div className="space-y-1">
-                    <div className="font-bold text-xs border-b border-black pb-1 flex justify-between">
+                  <div className="space-y-0.5 text-[11px] font-normal text-black">
+                    <div className="border-b border-black pb-0.5 flex justify-between font-normal text-black">
                       <span>البند (خدمة / منتج)</span>
                       <span>السعر</span>
                     </div>
-                    <div className="divide-y divide-dotted divide-slate-200">
+                    <div className="divide-y divide-dotted divide-black">
                       {previewBooking.services?.map(s => {
                         const isProd = s.type === 'product';
                         const qty = Math.max(1, Number(s.quantity) || 1);
                         const lineDisc = calculateServiceLineDiscount(s);
                         const lineFinal = calculateServiceLinePrice(s);
                         return (
-                          <div key={s.id} className="py-1.5 flex justify-between items-start">
-                            <div>
-                              <div className="font-bold text-black flex items-center gap-1.5">
-                                {isProd && (
-                                  <span className="text-[10px] bg-amber-100 text-amber-900 px-1.5 py-0.2 rounded border border-amber-300 font-bold">
-                                    منتج
-                                  </span>
-                                )}
-                                <span>{s.serviceName}</span>
-                                {qty > 1 && (
-                                  <span className="text-[10px] bg-slate-100 text-slate-800 px-1.5 py-0.2 rounded border border-slate-300 font-bold">
-                                    ×{qty}
-                                  </span>
-                                )}
-                              </div>
+                          <div key={s.id} className="py-0.5 flex justify-between items-center whitespace-nowrap gap-1.5 font-normal text-black">
+                            <div className="truncate">
+                              <span>{s.serviceName}</span>
+                              {qty > 1 && <span> (×{qty})</span>}
+                              {isProd && (
+                                <span className="text-[9px] border border-black px-1 py-0 mr-1">
+                                  منتج
+                                </span>
+                              )}
                               {lineDisc > 0 && (
-                                <div className="text-[10px] text-rose-600 font-bold">
-                                  خصم: -{lineDisc.toFixed(2)} {s.discountType === 'percentage' ? `(${s.discountValue}%)` : settings.currency}
-                                </div>
+                                <span className="text-[9px] mr-1">
+                                  [خصم: -${lineDisc.toFixed(2)}]
+                                </span>
                               )}
                             </div>
-                            <div className="text-left font-mono font-bold">
-                              <div>{lineFinal.toFixed(2)} {settings.currency}</div>
-                              {(lineDisc > 0 || qty > 1) && (
-                                <div className="text-[10px] text-slate-400">
-                                  {qty > 1 ? `${Number(s.price || 0).toFixed(2)} × ${qty}` : Number(s.price || 0).toFixed(2)}
-                                </div>
-                              )}
+                            <div className="text-left font-mono flex-shrink-0 text-black">
+                              {lineFinal.toFixed(2)} {settings.currency}
                             </div>
                           </div>
                         );
@@ -4136,45 +4226,46 @@ export function BookingsScreen({
                   </div>
 
                   {/* Totals Section */}
-                  <div className="border-t border-dashed border-black pt-2 space-y-1 text-xs">
+                  <div className="border-t border-dashed border-black pt-1 space-y-0.5 text-[11px] font-normal text-black leading-tight">
                     {totals.totalDiscounts > 0 && (
-                      <div className="flex justify-between text-slate-600 font-bold">
-                        <span>إجمالي البنود (قبل الخصم):</span>
+                      <div className="flex justify-between whitespace-nowrap">
+                        <span>إجمالي البنود:</span>
                         <span className="font-mono">{totals.grossServices.toFixed(2)} {settings.currency}</span>
                       </div>
                     )}
                     {totals.lineDiscounts > 0 && (
-                      <div className="flex justify-between text-rose-600 font-bold">
-                        <span>خصومات البنود:</span>
+                      <div className="flex justify-between whitespace-nowrap">
+                        <span>خصم البنود:</span>
                         <span className="font-mono">-{totals.lineDiscounts.toFixed(2)} {settings.currency}</span>
                       </div>
                     )}
                     {totals.generalDiscount > 0 && (
-                      <div className="flex justify-between text-rose-600 font-bold">
-                        <span>خصم إجمالي الحجز ({previewBooking.discountType === 'percentage' ? (previewBooking.discountValue || 0) + '%' : 'مبلغ ثابت'}):</span>
+                      <div className="flex justify-between whitespace-nowrap">
+                        <span>خصم الحجز ({previewBooking.discountType === 'percentage' ? (previewBooking.discountValue || 0) + '%' : 'مبلغ'}):</span>
                         <span className="font-mono">-{totals.generalDiscount.toFixed(2)} {settings.currency}</span>
                       </div>
                     )}
-                    <div className="flex justify-between font-black text-black border-y border-dashed border-black py-1">
-                      <span>إجمالي الحجز الصافي:</span>
-                      <span className="font-mono text-sm font-black">{totals.netTotal.toFixed(2)} {settings.currency}</span>
+                    <div className="flex justify-between font-normal text-black border-y border-dashed border-black py-0.5 whitespace-nowrap">
+                      <span>الصافي الإجمالي:</span>
+                      <span className="font-mono">{totals.netTotal.toFixed(2)} {settings.currency}</span>
                     </div>
 
                     {totalAdv > 0 && (
-                      <div className="space-y-1 pt-1">
-                        <div className="flex justify-between text-emerald-700 font-bold">
-                          <span>المسدد مقدماً (عربون):</span>
+                      <div className="space-y-0.5 pt-0.5">
+                        <div className="flex justify-between whitespace-nowrap">
+                          <span>المدفوع مقدماً:</span>
                           <span className="font-mono">-{totalAdv.toFixed(2)} {settings.currency}</span>
                         </div>
-                        <div className="flex justify-between font-black text-black text-sm border-t-2 border-black pt-1">
-                          <span>المتبقي للتحصيل عند الزيارة:</span>
+                        <div className="flex justify-between font-normal text-black border-t border-black pt-0.5 whitespace-nowrap">
+                          <span>المتبقي للتحصيل:</span>
                           <span className="font-mono">{remainingAmt.toFixed(2)} {settings.currency}</span>
                         </div>
-                        <div className="bg-slate-50 p-2 rounded-lg text-[10px] space-y-0.5 mt-1 border border-slate-200">
-                          <strong className="block text-slate-700 mb-0.5">تفاصيل الدفعات المقدمة:</strong>
+                        <div className="p-1 rounded-sm text-[10px] space-y-0.5 mt-0.5 border border-black text-black">
+                          <span className="block mb-0.5">تفاصيل الدفعات المقدمة:</span>
                           {(previewBooking.advancePayments || []).map((adv, i) => (
-                            <div key={adv.id || i} className="text-slate-600 font-mono">
-                              • دفعة {i + 1}: {Number(adv.amount || 0).toFixed(2)} {settings.currency} ({adv.treasuryName || 'نقداً'}) - تاريخ: {adv.date}
+                            <div key={adv.id || i} className="flex justify-between whitespace-nowrap font-mono text-black">
+                              <span>• دفعة {i + 1} ({adv.treasuryName || 'نقداً'}):</span>
+                              <span>{Number(adv.amount || 0).toFixed(2)} {settings.currency}</span>
                             </div>
                           ))}
                         </div>
@@ -4182,24 +4273,27 @@ export function BookingsScreen({
                     )}
                   </div>
 
-                  {/* Creation date & time above notes */}
-                  <div className="mt-3 p-2 bg-slate-50 border-1.5 border-black rounded-lg text-center">
-                    <span className="text-xs font-bold text-black">تاريخ ووقت إنشاء الحجز: </span>
-                    <span className="font-mono text-xs font-black text-black">{createdDateTimeStr}</span>
+                  {/* Creation date & time on single line */}
+                  <div className="flex justify-between border-t border-dashed border-black pt-1 mt-1 text-[10px] font-normal text-black whitespace-nowrap">
+                    <span>تاريخ ووقت إنشاء الحجز:</span>
+                    <span className="font-mono">{createdDateTimeStr}</span>
                   </div>
 
                   {/* Salon Notes */}
                   {settings.bookingNotes && (
-                    <div className="p-2 border border-dashed border-black rounded-lg text-center text-xs font-bold whitespace-pre-wrap bg-slate-50/50">
+                    <div className="p-1 border border-dashed border-black text-center text-[10px] font-normal whitespace-pre-wrap text-black">
                       {settings.bookingNotes}
                     </div>
                   )}
 
-                  {/* Footer (address & phones) */}
-                  <div className="pt-2 border-t border-dashed border-black text-center text-[10px] text-slate-600 space-y-0.5">
-                    {cleanAddress && <p><strong>العنوان:</strong> {cleanAddress}</p>}
-                    {settings.phone && <p><strong>أرقام التواصل:</strong> {settings.phone}</p>}
-                  </div>
+                  {/* Footer (address & phones on single line) */}
+                  {(cleanAddress || settings.phone) && (
+                    <div className="pt-1 border-t border-dashed border-black text-center text-[10px] font-normal text-black whitespace-nowrap truncate">
+                      {cleanAddress && <span>العنوان: {cleanAddress}</span>}
+                      {cleanAddress && settings.phone && <span> | </span>}
+                      {settings.phone && <span>هاتف: {settings.phone}</span>}
+                    </div>
+                  )}
                 </div>
               </div>
 

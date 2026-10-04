@@ -1165,9 +1165,13 @@ export function POSScreen({
         const foundProduct = isProductLine ? products.find(p => p.id === (s.productId || s.serviceId) || p.name === s.serviceName) : undefined;
         const foundService = !isProductLine ? items.find(i => i.id === s.serviceId || i.name === s.serviceName) : undefined;
 
-        const baseRawPrice = isProductLine 
-          ? (Number(s.price) || (foundProduct ? Number(foundProduct.sellPrice) : 0))
-          : (Number(s.price) || (foundService ? Number(foundService.price) : 0));
+        // احترام السعر المسجل في الحجز بدقة (سواء كان مخصصاً أو افتراضياً) وعدم العودة لسعر الخدمة الأساسي
+        const hasBookingPrice = s.price !== undefined && s.price !== null && !isNaN(Number(s.price));
+        const baseRawPrice = hasBookingPrice
+          ? Number(s.price)
+          : (isProductLine 
+              ? (foundProduct ? Number(foundProduct.sellPrice) : 0)
+              : (foundService ? Number(foundService.price) : 0));
         const safePrice = isNaN(baseRawPrice) ? 0 : baseRawPrice;
         const sQty = Math.max(1, Number(s.quantity) || 1);
         

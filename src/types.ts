@@ -610,6 +610,7 @@ export interface BookingService {
   discountValue?: number;
   type?: 'service' | 'product';
   productId?: string;
+  isCustomPrice?: boolean;
 }
 
 export interface AdvancePayment { 
