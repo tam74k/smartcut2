@@ -342,7 +342,11 @@ export const DB = {
 
       const { data, error } = await q;
       if (error) {
-        console.error(`DB.fetchAll[${table}]:`, error.message);
+        if (error.code === 'PGRST205' || error.message?.includes('schema cache')) {
+          console.warn(`[Supabase Schema] الجدول '${table}' غير موجود بعد في قاعدة البيانات السحابية Supabase (ينبغي تشغيل استعلام الإنشاء SQL). الاعتماد مؤقتاً على التخزين المحلي.`);
+        } else {
+          console.error(`DB.fetchAll[${table}]:`, error.message);
+        }
         return [];
       }
       if (!Array.isArray(data)) return [];
@@ -2236,7 +2240,8 @@ export const DB = {
         notes: ret.notes || null,
         status: ret.status || 'completed',
         restock_products: ret.restockProducts !== false,
-        reverse_commissions: ret.reverseCommissions !== false
+        reverse_commissions: ret.reverseCommissions !== false,
+        is_without_invoice: ret.isWithoutInvoice === true
       };
       const { error } = await client.from('sales_returns').upsert(snap, { onConflict: 'id' });
       if (error) {
@@ -2309,16 +2314,21 @@ export const DB = {
     const client = sb();
     if (!client) return [];
     try {
-      let q = client.from('work_shifts').select('*');
       const sId = salonId || getSalonId();
-      if (sId) q = q.eq('salon_id', toSalonUUID(sId));
-      if (branchId && branchId !== 'all') {
-        const bId = toBranchUUID(branchId) || branchId;
-        q = q.eq('branch_id', bId);
-      }
+      if (!sId) return [];
+      const validSalonId = toSalonUUID(sId);
+      if (!validSalonId) return [];
+
+      let q = client.from('work_shifts').select('*').eq('salon_id', validSalonId);
       const { data, error } = await q.order('opened_at', { ascending: false });
       if (error) { console.error('DB.fetchWorkShifts:', error.message); return []; }
-      return (data || []).map(toCamel);
+      const list = (data || []).map(toCamel);
+      if (branchId && branchId !== 'all') {
+        const bId = toBranchUUID(branchId) || branchId;
+        const filtered = list.filter((s: any) => s.branchId === bId || !s.branchId || s.branchId === 'b-main');
+        return filtered.length > 0 ? filtered : list;
+      }
+      return list;
     } catch (e) { return []; }
   },
 
@@ -2326,17 +2336,55 @@ export const DB = {
     const client = sb();
     if (!client) return null;
     try {
-      let q = client.from('work_shifts').select('*').eq('status', 'open');
       const sId = salonId || getSalonId();
-      if (sId) q = q.eq('salon_id', toSalonUUID(sId));
-      if (branchId && branchId !== 'all') {
-        const bId = toBranchUUID(branchId) || branchId;
-        q = q.eq('branch_id', bId);
+      if (!sId) return null;
+      const validSalonId = toSalonUUID(sId);
+      if (!validSalonId) return null;
+
+      // Query any open or unclosed shift for this salon
+      let q = client
+        .from('work_shifts')
+        .select('*')
+        .eq('salon_id', validSalonId)
+        .or('status.eq.open,closed_at.is.null')
+        .order('opened_at', { ascending: false });
+
+      const { data, error } = await q;
+      if (error) {
+        console.error('DB.getActiveWorkShift:', error.message);
+        return null;
       }
-      const { data, error } = await q.order('opened_at', { ascending: false }).limit(1).maybeSingle();
-      if (error) return null;
-      return data ? toCamel(data) : null;
-    } catch (e) { return null; }
+      if (!data || data.length === 0) return null;
+
+      // Filter out any explicitly closed shifts
+      const openShifts = data.filter((s: any) => s.status !== 'closed' && !s.closed_at);
+      if (openShifts.length === 0) return null;
+
+      const targetBranchId = branchId && branchId !== 'all' ? (toBranchUUID(branchId) || branchId) : null;
+
+      // 1. Direct match on branch_id
+      if (targetBranchId) {
+        const exactMatch = openShifts.find((s: any) => s.branch_id === targetBranchId);
+        if (exactMatch) return toCamel(exactMatch);
+      }
+
+      // 2. Generic or default branch match
+      const genericMatch = openShifts.find((s: any) => !s.branch_id || s.branch_id === 'b-main' || s.branch_id === 'all');
+      if (genericMatch) return toCamel(genericMatch);
+
+      // 3. Fallback: Return the latest open shift for the salon (guarantees cross-device sync)
+      const latestOpenShift = openShifts[0];
+
+      // Auto-heal branch_id in database if target branch is known and different
+      if (targetBranchId && latestOpenShift.branch_id !== targetBranchId) {
+        client.from('work_shifts').update({ branch_id: targetBranchId }).eq('id', latestOpenShift.id).then(() => {}).catch(() => {});
+      }
+
+      return toCamel(latestOpenShift);
+    } catch (e) {
+      console.error('DB.getActiveWorkShift exception:', e);
+      return null;
+    }
   },
 
   async saveWorkShift(ws: any): Promise<boolean> {
@@ -2350,7 +2398,7 @@ export const DB = {
         salon_id: validSalonId,
         branch_id: validBranchId,
         shift_date: ws.shiftDate,
-        opened_at: ws.openedAt || new Date().toISOString(),
+        ...(ws.openedAt ? { opened_at: ws.openedAt } : (ws.status === 'open' ? { opened_at: new Date().toISOString() } : {})),
         closed_at: ws.closedAt || null,
         opened_by_user_id: ws.openedByUserId || null,
         opened_by_user_name: ws.openedByUserName || null,
@@ -2365,7 +2413,7 @@ export const DB = {
         total_cash_sales: ws.totalCashSales !== undefined ? Number(ws.totalCashSales) : null,
         total_card_sales: ws.totalCardSales !== undefined ? Number(ws.totalCardSales) : null,
         total_expenses: ws.totalExpenses !== undefined ? Number(ws.totalExpenses) : null,
-        status: ws.status || 'open',
+        status: ws.status || (ws.closedAt ? 'closed' : 'open'),
         notes: ws.notes || null,
         created_at: ws.createdAt || new Date().toISOString()
       };

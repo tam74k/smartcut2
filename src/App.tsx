@@ -324,16 +324,95 @@ export default function App() {
     } catch (e) {}
     return {};
   });
-  const shiftData = branchShifts[activeBranchId] || { isOpen: false, date: '', initialCash: 0 };
+  // Dynamic shiftData: checks active branch, then falls back to any active open shift in branchShifts (for cross-device robustness)
+  const shiftData = useMemo(() => {
+    const direct = branchShifts[activeBranchId];
+    if (direct && direct.isOpen) return direct;
+    const anyOpen = Object.values(branchShifts).find((s: any) => s && s.isOpen && s.date);
+    if (anyOpen) return anyOpen;
+    return direct || { isOpen: false, date: '', initialCash: 0 };
+  }, [branchShifts, activeBranchId]);
+
   const setShiftData = (updater: any) => {
     setBranchShifts(prev => {
-      const current = prev[activeBranchId] || { isOpen: false, date: '', initialCash: 0 };
+      const current = prev[activeBranchId] || Object.values(prev).find((s: any) => s?.isOpen) || { isOpen: false, date: '', initialCash: 0 };
       const next = typeof updater === 'function' ? updater(current) : updater;
-      const updated = { ...prev, [activeBranchId]: next };
+      let updated = { ...prev, [activeBranchId]: next, ['b-main']: next };
+      if (next.shiftId) {
+        Object.keys(prev).forEach(bKey => {
+          if (prev[bKey]?.shiftId === next.shiftId) {
+            updated[bKey] = next;
+          }
+        });
+      }
+      if (!next.isOpen) {
+        Object.keys(updated).forEach(bKey => {
+          if (updated[bKey]?.isOpen) {
+            updated[bKey] = {
+              ...updated[bKey],
+              isOpen: false,
+              date: '',
+              initialCash: 0,
+              lastClosedAt: next.lastClosedAt || new Date().toISOString()
+            };
+          }
+        });
+      }
       try { localStorage.setItem('smartcut_work_shifts_state', JSON.stringify(updated)); } catch (e) {}
       return updated;
     });
   };
+
+  const applyActiveWorkShift = useCallback((activeShift: any, branchId: string) => {
+    if (activeShift && (activeShift.status === 'open' || !activeShift.closedAt)) {
+      setBranchShifts(prev => {
+        const current = prev[branchId] || prev['b-main'];
+        if (
+          current?.isOpen === true &&
+          current?.date === activeShift.shiftDate &&
+          current?.initialCash === (Number(activeShift.initialCash) || 0) &&
+          current?.shiftId === activeShift.id
+        ) {
+          return prev;
+        }
+        const shiftObj = {
+          isOpen: true,
+          date: activeShift.shiftDate,
+          initialCash: Number(activeShift.initialCash) || 0,
+          shiftId: activeShift.id,
+          openedAt: activeShift.openedAt || (activeShift as any).opened_at || activeShift.createdAt || (activeShift as any).created_at
+        };
+        const updated = {
+          ...prev,
+          [branchId]: shiftObj,
+          ['b-main']: shiftObj
+        };
+        if (activeShift.branchId) {
+          updated[activeShift.branchId] = shiftObj;
+        }
+        try { localStorage.setItem('smartcut_work_shifts_state', JSON.stringify(updated)); } catch (e) {}
+        return updated;
+      });
+    } else {
+      setBranchShifts(prev => {
+        const hasOpen = Object.values(prev).some((s: any) => s?.isOpen);
+        if (!hasOpen) return prev;
+        const updated = { ...prev };
+        Object.keys(updated).forEach(k => {
+          if (updated[k]?.isOpen) {
+            updated[k] = {
+              isOpen: false,
+              date: '',
+              initialCash: 0,
+              lastClosedAt: new Date().toISOString()
+            };
+          }
+        });
+        try { localStorage.setItem('smartcut_work_shifts_state', JSON.stringify(updated)); } catch (e) {}
+        return updated;
+      });
+    }
+  }, []);
 
   const [showOpenModal, setShowOpenModal] = useState(false);
   const [showCloseModal, setShowCloseModal] = useState(false);
@@ -648,17 +727,7 @@ export default function App() {
 
           // Check active shift
           DB.getActiveWorkShift(sId, branchIdToUse).then(activeShift => {
-            if (activeShift && activeShift.status === 'open') {
-              setBranchShifts(prev => ({
-                ...prev,
-                [branchIdToUse]: {
-                  isOpen: true,
-                  date: activeShift.shiftDate,
-                  initialCash: Number(activeShift.initialCash) || 0,
-                  shiftId: activeShift.id
-                }
-              }));
-            }
+            applyActiveWorkShift(activeShift, branchIdToUse);
           }).catch(() => {});
         }
 
@@ -755,48 +824,8 @@ export default function App() {
         }
 
         // Sync Shift State
-        if (bId) {
-          if (activeShift && activeShift.status === 'open') {
-            setBranchShifts(prev => {
-              const current = prev[bId];
-              if (
-                current?.isOpen === true &&
-                current?.date === activeShift.shiftDate &&
-                current?.initialCash === (Number(activeShift.initialCash) || 0) &&
-                current?.shiftId === activeShift.id
-              ) {
-                return prev;
-              }
-              const updated = {
-                ...prev,
-                [bId]: {
-                  isOpen: true,
-                  date: activeShift.shiftDate,
-                  initialCash: Number(activeShift.initialCash) || 0,
-                  shiftId: activeShift.id,
-                  openedAt: activeShift.openedAt || (activeShift as any).opened_at || activeShift.createdAt || (activeShift as any).created_at
-                }
-              };
-              try { localStorage.setItem('smartcut_work_shifts_state', JSON.stringify(updated)); } catch (e) {}
-              return updated;
-            });
-          } else {
-            setBranchShifts(prev => {
-              const current = prev[bId];
-              if (!current?.isOpen) return prev;
-              const updated = {
-                ...prev,
-                [bId]: {
-                  isOpen: false,
-                  date: '',
-                  initialCash: 0,
-                  lastClosedAt: new Date().toISOString()
-                }
-              };
-              try { localStorage.setItem('smartcut_work_shifts_state', JSON.stringify(updated)); } catch (e) {}
-              return updated;
-            });
-          }
+        if (sId) {
+          applyActiveWorkShift(activeShift, bId);
         }
 
         // Sync Invoices
@@ -1023,6 +1052,11 @@ export default function App() {
       loadedSectionsRef.current.add('pos');
       loadedSectionsRef.current.add('services');
       loadedSectionsRef.current.add('products');
+
+      // Sync active work shift for switched salon
+      DB.getActiveWorkShift(s.id, finalBranches[0].id).then(activeShift => {
+        applyActiveWorkShift(activeShift, finalBranches[0].id);
+      }).catch(() => {});
 
       setIsCloudConnected(true);
     } catch (err) {
@@ -1543,6 +1577,10 @@ export default function App() {
 
   const handleOpenShift = () => {
     if (checkReadOnlyAndWarn()) return;
+    if (shiftData.isOpen) {
+      alert('⚠️ هناك وردية مفتوحة بالفعل لهذا الصالون!');
+      return;
+    }
     const activeBranch = branches.find(b => b.id === activeBranchId) || branches[0];
     const shiftId = 'SHIFT-' + Math.random().toString(36).substr(2, 9).toUpperCase();
     const nowIso = new Date().toISOString();
@@ -2620,15 +2658,27 @@ export default function App() {
       setBranches(salonBranches.length > 0 ? salonBranches : [
         { id: 'b-main', salonId: salon.id, name: `الفرع الرئيسي (${salon.name})`, code: 'B01', isMain: true, phone: salon.phone, address: salon.country, isActive: true, status: 'active' }
       ]);
+      let branchIdToUse = 'b-main';
       if (u.branchId) {
+        branchIdToUse = u.branchId;
         setActiveBranchId(u.branchId);
       } else if (selectedBranch) {
+        branchIdToUse = selectedBranch.id;
         setActiveBranchId(selectedBranch.id);
       } else if (salonBranches.length > 0) {
+        branchIdToUse = salonBranches[0].id;
         setActiveBranchId(salonBranches[0].id);
       }
+      DB.getActiveWorkShift(salon.id, branchIdToUse).then(activeShift => {
+        applyActiveWorkShift(activeShift, branchIdToUse);
+      }).catch(() => {});
     } else if (u.branchId) {
       setActiveBranchId(u.branchId);
+      if (salon?.id) {
+        DB.getActiveWorkShift(salon.id, u.branchId).then(activeShift => {
+          applyActiveWorkShift(activeShift, u.branchId);
+        }).catch(() => {});
+      }
     }
     // تنظيف أي بيانات مؤقتة أو أكواد كيوسك لصالونات أخرى من التخزين المحلي
     try {
