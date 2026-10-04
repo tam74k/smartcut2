@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Package, Search, Plus, Edit2, Trash2, X, AlertTriangle, TrendingDown, FileSpreadsheet, Download, Upload, Check, Sparkles, AlertCircle, Printer, QrCode } from 'lucide-react';
+import { useState, useMemo, useEffect } from 'react';
+import { Package, Search, Plus, Edit2, Trash2, X, AlertTriangle, TrendingDown, FileSpreadsheet, Download, Upload, Check, Sparkles, AlertCircle, Printer, QrCode, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { AppSettings, Product, Category, Employee, Supplier } from '../types';
 import { downloadProductsTemplate, readExcelFile } from '../utils/excelHelper';
 import { BarcodePrintModal } from './BarcodePrintModal';
@@ -95,6 +95,144 @@ export function ProductsScreen({
     const matchesType = productTypeFilter === 'all' || itemType === productTypeFilter;
     return matchesSearch && matchesCat && matchesType;
   });
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(20);
+
+  // Reset to page 1 on filter or search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, categoryFilter, productTypeFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / itemsPerPage));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedProducts = useMemo(() => {
+    const start = (safePage - 1) * itemsPerPage;
+    return filteredProducts.slice(start, start + itemsPerPage);
+  }, [filteredProducts, safePage, itemsPerPage]);
+
+  const renderPagination = (position: 'top' | 'bottom') => {
+    if (filteredProducts.length === 0) return null;
+
+    const startItem = (safePage - 1) * itemsPerPage + 1;
+    const endItem = Math.min(safePage * itemsPerPage, filteredProducts.length);
+
+    const getPageNumbers = () => {
+      if (totalPages <= 7) {
+        return Array.from({ length: totalPages }, (_, i) => i + 1);
+      }
+      const pages: (number | string)[] = [];
+      if (safePage <= 4) {
+        pages.push(1, 2, 3, 4, 5, '...', totalPages);
+      } else if (safePage >= totalPages - 3) {
+        pages.push(1, '...', totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages);
+      } else {
+        pages.push(1, '...', safePage - 1, safePage, safePage + 1, '...', totalPages);
+      }
+      return pages;
+    };
+
+    return (
+      <div className={`p-3 bg-slate-50/80 flex flex-wrap items-center justify-between gap-3 text-xs font-bold text-slate-600 ${
+        position === 'top' ? 'border-b border-slate-200' : 'border-t border-slate-200'
+      }`}>
+        {/* Info & Items per page */}
+        <div className="flex flex-wrap items-center gap-2">
+          <span>عرض</span>
+          <span className="text-slate-900 font-black">{startItem} - {endItem}</span>
+          <span>من إجمالي</span>
+          <span className="px-2 py-0.5 bg-primary/10 text-primary font-black rounded-lg">
+            {filteredProducts.length}
+          </span>
+          <span>منتج</span>
+
+          <span className="text-slate-300 mx-1 hidden sm:inline">|</span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-slate-500">لكل صفحة:</span>
+            <select
+              value={itemsPerPage}
+              onChange={(e) => {
+                setItemsPerPage(Number(e.target.value));
+                setCurrentPage(1);
+              }}
+              className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-black text-slate-700 outline-none focus:border-primary cursor-pointer shadow-2xs"
+            >
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Navigation Buttons */}
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setCurrentPage(1)}
+            disabled={safePage <= 1}
+            className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
+            title="الصفحة الأولى"
+          >
+            <ChevronsRight size={14} />
+          </button>
+          <button
+            onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+            disabled={safePage <= 1}
+            className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors flex items-center gap-1 cursor-pointer"
+            title="الصفحة السابقة"
+          >
+            <ChevronRight size={14} />
+            <span className="hidden sm:inline">السابق</span>
+          </button>
+
+          {/* Page numbers */}
+          <div className="flex items-center gap-1 mx-1">
+            {getPageNumbers().map((p, idx) => {
+              if (p === '...') {
+                return (
+                  <span key={`ellipsis-${idx}`} className="px-1 text-slate-400 font-bold">
+                    ...
+                  </span>
+                );
+              }
+              const isCurrent = p === safePage;
+              return (
+                <button
+                  key={`page-${p}`}
+                  onClick={() => setCurrentPage(Number(p))}
+                  className={`min-w-[28px] h-7 px-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                    isCurrent
+                      ? 'bg-primary text-white shadow-xs'
+                      : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                  }`}
+                >
+                  {p}
+                </button>
+              );
+            })}
+          </div>
+
+          <button
+            onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+            disabled={safePage >= totalPages}
+            className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors flex items-center gap-1 cursor-pointer"
+            title="الصفحة التالية"
+          >
+            <span className="hidden sm:inline">التالي</span>
+            <ChevronLeft size={14} />
+          </button>
+          <button
+            onClick={() => setCurrentPage(totalPages)}
+            disabled={safePage >= totalPages}
+            className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
+            title="الصفحة الأخيرة"
+          >
+            <ChevronsLeft size={14} />
+          </button>
+        </div>
+      </div>
+    );
+  };
 
   const handleEdit = (p: Product) => {
     setEditingProductId(p.id);
@@ -431,6 +569,9 @@ export function ProductsScreen({
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+        {/* Top Pagination Bar */}
+        {renderPagination('top')}
+
         <div className="overflow-x-auto w-full">
           <table className="w-full text-right min-w-[1100px]">
             <thead>
@@ -455,7 +596,7 @@ export function ProductsScreen({
                   <td colSpan={12} className="p-8 text-center text-slate-400">لا توجد منتجات مسجلة</td>
                 </tr>
               ) : (
-                filteredProducts.map(p => (
+                paginatedProducts.map(p => (
                   <tr key={p.id} className="border-b border-slate-100 hover:bg-slate-50">
                     <td className="p-4 whitespace-nowrap">
                       <div className="font-bold text-slate-800">{p.name}</div>
@@ -527,6 +668,9 @@ export function ProductsScreen({
             </tbody>
           </table>
         </div>
+
+        {/* Bottom Pagination Bar */}
+        {renderPagination('bottom')}
       </div>
 
       {/* Add/Edit Product Modal */}
