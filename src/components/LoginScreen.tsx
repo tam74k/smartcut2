@@ -34,7 +34,6 @@ interface LoginScreenProps {
 
 export function LoginScreen({ onLoginSuccess, settings, onOpenSaaSAdmin }: LoginScreenProps) {
   const [activeTab, setActiveTab] = useState<'login' | 'register' | 'programmer'>('login');
-  const [imgError, setImgError] = useState(false);
 
   // Platform Branding & Developer Support Info from Database
   const [platformData, setPlatformData] = useState<{
@@ -50,10 +49,6 @@ export function LoginScreen({ onLoginSuccess, settings, onOpenSaaSAdmin }: Login
   });
 
   useEffect(() => {
-    setImgError(false);
-  }, [settings?.logoUrl]);
-
-  useEffect(() => {
     let isMounted = true;
     const loadPlatformBranding = async () => {
       try {
@@ -63,7 +58,7 @@ export function LoginScreen({ onLoginSuccess, settings, onOpenSaaSAdmin }: Login
             platformName: pSettings.platformName || 'منظومة Smart Cut Pro السحابية',
             platformPhone: pSettings.platformPhone || '0500000000',
             platformEmail: pSettings.platformEmail || 'admin@smartcut.app',
-            logoUrl: pSettings.platformLogoUrl || ''
+            logoUrl: pSettings.platformLogoUrl || settings?.logoUrl || ''
           });
         }
       } catch (err) {
@@ -72,14 +67,7 @@ export function LoginScreen({ onLoginSuccess, settings, onOpenSaaSAdmin }: Login
     };
     loadPlatformBranding();
     return () => { isMounted = false; };
-  }, []);
-
-  // Compute effective logo and salon name (Priority: Settings > LocalStorage > PlatformData)
-  const localSavedLogo = typeof window !== 'undefined' ? (localStorage.getItem('smartcut_salon_logo_url') || '') : '';
-  const localSavedName = typeof window !== 'undefined' ? (localStorage.getItem('smartcut_salon_name') || '') : '';
-  
-  const displayLogo = (!imgError && (settings?.logoUrl || localSavedLogo || platformData.logoUrl)) || '';
-  const displaySalonName = settings?.salonName || localSavedName || platformData.platformName || 'SMART CUT PRO';
+  }, [settings?.logoUrl]);
 
   // Login Form States
   const [username, setUsername] = useState('');
@@ -320,24 +308,16 @@ export function LoginScreen({ onLoginSuccess, settings, onOpenSaaSAdmin }: Login
         
         {/* Brand Header */}
         <div className="text-center mb-6">
-          {displayLogo ? (
-            <div className="inline-flex items-center justify-center p-2.5 rounded-2xl bg-white shadow-xl shadow-emerald-500/15 border border-slate-100 mb-3 transform hover:scale-105 transition-all duration-300">
-              <img 
-                src={displayLogo} 
-                alt={displaySalonName} 
-                className="w-16 h-16 object-contain rounded-xl"
-                onError={() => setImgError(true)}
-              />
+          {platformData.logoUrl ? (
+            <div className="inline-flex items-center justify-center p-2 rounded-2xl bg-white shadow-xl shadow-emerald-500/20 border border-slate-100 mb-3 transform hover:scale-110 hover:rotate-3 transition-all duration-300">
+              <img src={platformData.logoUrl} alt="Platform Logo" className="w-14 h-14 object-contain rounded-xl" />
             </div>
           ) : (
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-slate-900 via-emerald-950 to-slate-900 border border-emerald-500/30 text-emerald-400 shadow-xl shadow-emerald-500/20 mb-3 transform hover:scale-105 hover:rotate-3 transition-all duration-300">
-              <div className="relative">
-                <Scissors size={32} className="text-emerald-400 drop-shadow-sm" />
-                <Sparkles size={14} className="text-amber-300 absolute -top-1.5 -right-2 animate-pulse" />
-              </div>
+            <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-400 text-white shadow-lg shadow-emerald-500/30 mb-3 transform hover:scale-110 hover:rotate-6 transition-all duration-300">
+              <Scissors size={28} />
             </div>
           )}
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight">{displaySalonName}</h1>
+          <h1 className="text-2xl font-black text-slate-900 tracking-tight">{platformData.platformName || 'SMART CUT PRO'}</h1>
           <p className="text-xs font-semibold text-slate-500 mt-1">المنظومة السحابية الموحدة لإدارة الصالونات ومراكز التجميل</p>
         </div>
 

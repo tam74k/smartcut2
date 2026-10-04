@@ -476,16 +476,6 @@ export function SettingsScreen({
       const updated = { ...prev, ...updates };
       try {
         localStorage.setItem('smartcut_app_settings', JSON.stringify(updated));
-        if (updated.logoUrl !== undefined) {
-          if (updated.logoUrl) {
-            localStorage.setItem('smartcut_salon_logo_url', updated.logoUrl);
-          } else {
-            localStorage.removeItem('smartcut_salon_logo_url');
-          }
-        }
-        if (updated.salonName) {
-          localStorage.setItem('smartcut_salon_name', updated.salonName);
-        }
         if (updated.salonId) {
           const instName = updated.evolutionInstanceName || updated.waInstantName;
           const apiKeyVal = updated.evolutionApiKey || updated.waApiKey;
@@ -495,7 +485,6 @@ export function SettingsScreen({
             phone: updated.phone,
             country: updated.country,
             currency: updated.currency,
-            logoUrl: updated.logoUrl,
             evolutionInstanceName: instName,
             evolutionApiKey: apiKeyVal
           });
@@ -745,15 +734,7 @@ export function SettingsScreen({
     if (file) {
       const reader = new FileReader();
       reader.onload = (event) => {
-        const result = event.target?.result as string;
-        handleChange('logoUrl', result);
-        try {
-          localStorage.setItem('smartcut_salon_logo_url', result);
-          let link: HTMLLinkElement | null = document.querySelector("link[rel*='icon']");
-          if (link) link.href = result;
-          let appleLink: HTMLLinkElement | null = document.querySelector("link[rel='apple-touch-icon']");
-          if (appleLink) appleLink.href = result;
-        } catch (err) {}
+        handleChange('logoUrl', event.target?.result as string);
       };
       reader.readAsDataURL(file);
     }
@@ -956,48 +937,17 @@ export function SettingsScreen({
               />
             </div>
             <div>
-              <label className="block text-[12px] font-bold text-slate-700 mb-1">
-                شعار الصالون (يظهر في أيقونة الموقع، شاشة تسجيل الدخول، والفواتير)
-              </label>
-              <div className="flex items-center gap-2">
-                <input 
-                  type="file"
-                  accept="image/*"
-                  onChange={handleLogoUpload}
-                  className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-[12px] focus:border-primary outline-none transition-colors"
-                />
-                {settings.logoUrl && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleChange('logoUrl', '');
-                      try {
-                        localStorage.removeItem('smartcut_salon_logo_url');
-                        let link: HTMLLinkElement | null = document.querySelector("link[rel*='icon']");
-                        if (link) link.href = '/favicon.svg';
-                        let appleLink: HTMLLinkElement | null = document.querySelector("link[rel='apple-touch-icon']");
-                        if (appleLink) appleLink.href = '/favicon.svg';
-                      } catch (err) {}
-                    }}
-                    className="text-xs px-3 py-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg font-bold border border-red-200 transition-colors whitespace-nowrap cursor-pointer"
-                    title="حذف الشعار والعودة للأيقونة الافتراضية"
-                  >
-                    حذف الشعار
-                  </button>
-                )}
-              </div>
-              {settings.logoUrl ? (
-                <div className="mt-2.5 flex items-center gap-3">
-                  <div className="w-14 h-14 rounded-2xl bg-white border border-slate-200 p-1 flex items-center justify-center shadow-xs">
-                    <img src={settings.logoUrl} alt="Preview" className="w-full h-full object-contain rounded-xl" />
-                  </div>
-                  <div>
-                    <span className="text-xs text-emerald-600 font-bold block">✓ تم تعيين الشعار بنجاح</span>
-                    <span className="text-[11px] text-slate-400">مُفعّل الآن كأيقونة للموقع وشاشة تسجيل الدخول</span>
-                  </div>
+              <label className="block text-[12px] font-bold text-slate-700 mb-1">شعار الصالون</label>
+              <input 
+                type="file"
+                accept="image/*"
+                onChange={handleLogoUpload}
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-[12px] focus:border-primary outline-none transition-colors"
+              />
+              {settings.logoUrl && (
+                <div className="mt-2">
+                  <img src={settings.logoUrl} alt="Preview" className="h-12 object-contain rounded bg-slate-100 border p-1" />
                 </div>
-              ) : (
-                <p className="text-[11px] text-slate-400 mt-1">يتم استخدام الأيقونة الافتراضية للمنظومة عند عدم رفع شعار خاص</p>
               )}
             </div>
             <div>

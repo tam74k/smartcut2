@@ -62,33 +62,6 @@ import {
   EmployeeCustody, FingerprintLog, WorkShift, Client, HeldInvoice, SalesReturn 
 } from './types';
 
-export function updateFavicon(iconUrl?: string, salonName?: string) {
-  if (typeof window === 'undefined') return;
-  try {
-    const url = iconUrl && iconUrl.trim() !== '' ? iconUrl : '/favicon.svg';
-    let link: HTMLLinkElement | null = document.querySelector("link[rel*='icon']");
-    if (!link) {
-      link = document.createElement('link');
-      link.rel = 'icon';
-      document.head.appendChild(link);
-    }
-    link.href = url;
-
-    let appleLink: HTMLLinkElement | null = document.querySelector("link[rel='apple-touch-icon']");
-    if (!appleLink) {
-      appleLink = document.createElement('link');
-      appleLink.rel = 'apple-touch-icon';
-      document.head.appendChild(appleLink);
-    }
-    appleLink.href = url;
-
-    if (salonName && salonName.trim() !== '') {
-      document.title = `${salonName} - نظام إدارة الصالونات السحابي`;
-    }
-  } catch (err) {
-    console.warn('Error updating favicon:', err);
-  }
-}
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
@@ -259,11 +232,6 @@ export default function App() {
       ]
     };
   });
-
-  // Dynamic Favicon and Title Tracker
-  useEffect(() => {
-    updateFavicon(settings?.logoUrl, settings?.salonName);
-  }, [settings?.logoUrl, settings?.salonName]);
 
   // SaaS Subscription & Branches State
   const [subscription, setSubscription] = useState<SaaSSubscription>(() => {
@@ -1560,28 +1528,15 @@ export default function App() {
     if (checkReadOnlyAndWarn()) return;
     setSettings(prev => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
-      try {
-        localStorage.setItem('smartcut_app_settings', JSON.stringify(next));
-        if (next.logoUrl) {
-          localStorage.setItem('smartcut_salon_logo_url', next.logoUrl);
-        } else {
-          localStorage.removeItem('smartcut_salon_logo_url');
-        }
-        if (next.salonName) {
-          localStorage.setItem('smartcut_salon_name', next.salonName);
-        }
-      } catch (e) {
-        console.warn('Failed to save settings to localStorage:', e);
-      }
-
       if (activeBranchId) {
         SubscriptionService.saveBranchSettings(activeBranchId, next);
+      } else {
+        localStorage.setItem('smartcut_app_settings', JSON.stringify(next));
       }
       const salonId = next.salonId || settings.salonId || (SubscriptionService.getSalons()[0]?.id || '');
       if (salonId) {
         DB.saveSettings(salonId, next);
       }
-      updateFavicon(next.logoUrl, next.salonName);
       return next;
     });
   };
@@ -2689,15 +2644,6 @@ export default function App() {
       setSettings(customSettings);
       try {
         localStorage.setItem('smartcut_app_settings', JSON.stringify(customSettings));
-        if (customSettings.logoUrl) {
-          localStorage.setItem('smartcut_salon_logo_url', customSettings.logoUrl);
-        } else {
-          localStorage.removeItem('smartcut_salon_logo_url');
-        }
-        if (customSettings.salonName) {
-          localStorage.setItem('smartcut_salon_name', customSettings.salonName);
-        }
-        updateFavicon(customSettings.logoUrl, customSettings.salonName);
       } catch (e) {}
     } else if (salon) {
       const dbSettings = await DB.fetchSettings(salon.id);
@@ -2719,15 +2665,6 @@ export default function App() {
         };
         try {
           localStorage.setItem('smartcut_app_settings', JSON.stringify(updated));
-          if (updated.logoUrl) {
-            localStorage.setItem('smartcut_salon_logo_url', updated.logoUrl);
-          } else {
-            localStorage.removeItem('smartcut_salon_logo_url');
-          }
-          if (updated.salonName) {
-            localStorage.setItem('smartcut_salon_name', updated.salonName);
-          }
-          updateFavicon(updated.logoUrl, updated.salonName);
         } catch (e) {}
         return updated;
       });
@@ -2815,7 +2752,6 @@ export default function App() {
         <BarberLoginScreen
           onLoginSuccess={handleApplyLoginSuccess}
           salonName={settings.salonName}
-          logoUrl={settings.logoUrl}
           onSwitchToMainApp={() => {
             window.location.href = '/';
           }}
@@ -2985,15 +2921,9 @@ export default function App() {
         {/* 2. DESKTOP SIDEBAR */}
         <aside className="hidden lg:flex w-64 bg-white border-l border-slate-200 shadow-sm flex-col z-20">
           <div className="p-4 flex items-center gap-3 border-b border-slate-100">
-            {settings.logoUrl ? (
-              <div className="w-10 h-10 rounded-2xl bg-white border border-slate-200/80 p-1 flex items-center justify-center shadow-xs">
-                <img src={settings.logoUrl} alt="Logo" className="w-full h-full object-contain rounded-xl" />
-              </div>
-            ) : (
-              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-md shadow-emerald-500/20">
-                <Scissors size={20} />
-              </div>
-            )}
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-md shadow-emerald-500/20">
+              <Scissors size={20} />
+            </div>
             <div className="flex-1 min-w-0">
               <h1 className="font-extrabold text-sm tracking-tight text-slate-900 leading-none truncate">
                 {settings.salonName || 'SMART CUT'}
@@ -3061,17 +2991,11 @@ export default function App() {
             <div className="relative w-72 max-w-[80vw] bg-white h-full shadow-2xl flex flex-col z-10 animate-in slide-in-from-right duration-300">
               <div className="p-4 flex items-center justify-between border-b border-slate-100">
                 <div className="flex items-center gap-2.5">
-                  {settings.logoUrl ? (
-                    <div className="w-8 h-8 rounded-xl bg-white border border-slate-200/80 p-0.5 flex items-center justify-center shadow-xs">
-                      <img src={settings.logoUrl} alt="Logo" className="w-full h-full object-contain rounded-lg" />
-                    </div>
-                  ) : (
-                    <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center">
-                      <Scissors size={18} />
-                    </div>
-                  )}
+                  <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center">
+                    <Scissors size={18} />
+                  </div>
                   <div>
-                    <h2 className="font-extrabold text-xs text-slate-900">{settings.salonName || 'SMART CUT'}</h2>
+                    <h2 className="font-extrabold text-xs text-slate-900">{settings.salonName}</h2>
                     <p className="text-[10px] text-emerald-600 font-bold">SMART CUT PRO</p>
                   </div>
                 </div>
