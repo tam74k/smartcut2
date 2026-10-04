@@ -2296,6 +2296,12 @@ export function ReportsScreen({
             getSupplierName={getSupplierName}
             unpaidBookingsReportData={unpaidBookingsReportData}
             inactiveClientsReportData={inactiveClientsReportData}
+            bookings={bookings}
+            branchSalesReturns={branchSalesReturns}
+            returnsFilterType={returnsFilterType}
+            returnsTreasuryFilter={returnsTreasuryFilter}
+            returnsSearch={returnsSearch}
+            branchInvoices={branchInvoices}
           />
         </div>
       )}
@@ -2338,7 +2344,13 @@ function ReportTable({
   getTreasuryLabel: customGetTreasuryLabel,
   getSupplierName: customGetSupplierName,
   unpaidBookingsReportData,
-  inactiveClientsReportData
+  inactiveClientsReportData,
+  bookings = [],
+  branchSalesReturns = [],
+  returnsFilterType = 'all',
+  returnsTreasuryFilter = 'all',
+  returnsSearch = '',
+  branchInvoices = []
 }: any) {
   const start = new Date(activeFrom);
   const end = new Date(activeTo);

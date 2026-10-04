@@ -8,6 +8,7 @@ import { DB } from '../services/db';
 interface BarberLoginScreenProps {
   onLoginSuccess: (user: AppUser, customSettings?: AppSettings, selectedBranch?: Branch) => void;
   salonName?: string;
+  logoUrl?: string;
   onSwitchToMainApp?: () => void;
   onSwitchToOwnerPortal?: () => void;
 }
@@ -15,6 +16,7 @@ interface BarberLoginScreenProps {
 export function BarberLoginScreen({
   onLoginSuccess,
   salonName = 'SMART CUT',
+  logoUrl,
   onSwitchToMainApp,
   onSwitchToOwnerPortal
 }: BarberLoginScreenProps) {
@@ -23,6 +25,11 @@ export function BarberLoginScreen({
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [dbLogoUrl, setDbLogoUrl] = useState<string>('');
+  const [imgError, setImgError] = useState(false);
+
+  useEffect(() => {
+    setImgError(false);
+  }, [logoUrl]);
 
   useEffect(() => {
     let isMounted = true;
@@ -39,6 +46,11 @@ export function BarberLoginScreen({
     loadLogo();
     return () => { isMounted = false; };
   }, []);
+
+  const localSavedLogo = typeof window !== 'undefined' ? (localStorage.getItem('smartcut_salon_logo_url') || '') : '';
+  const localSavedName = typeof window !== 'undefined' ? (localStorage.getItem('smartcut_salon_name') || '') : '';
+  const effectiveLogo = (!imgError && (logoUrl || localSavedLogo || dbLogoUrl)) || '';
+  const effectiveSalonName = salonName || localSavedName || 'SMART CUT';
 
   // Available Branches
   const branches = SubscriptionService.getBranches();
@@ -83,9 +95,14 @@ export function BarberLoginScreen({
       {/* Top Header */}
       <header className="w-full max-w-md flex items-center justify-between py-4 z-10">
         <div className="flex items-center gap-2">
-          {dbLogoUrl ? (
-            <div className="w-10 h-10 rounded-2xl bg-slate-900/90 border border-indigo-500/40 p-1 flex items-center justify-center shadow-lg shadow-indigo-500/20">
-              <img src={dbLogoUrl} alt="Logo" className="w-full h-full object-contain rounded-xl" />
+          {effectiveLogo ? (
+            <div className="w-10 h-10 rounded-2xl bg-white border border-indigo-500/30 p-1 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+              <img 
+                src={effectiveLogo} 
+                alt="Logo" 
+                className="w-full h-full object-contain rounded-xl"
+                onError={() => setImgError(true)}
+              />
             </div>
           ) : (
             <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-indigo-600 to-emerald-500 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20">
@@ -93,7 +110,7 @@ export function BarberLoginScreen({
             </div>
           )}
           <div>
-            <h1 className="text-sm font-black tracking-tight text-white">{salonName}</h1>
+            <h1 className="text-sm font-black tracking-tight text-white">{effectiveSalonName}</h1>
             <p className="text-[10px] text-indigo-400 font-bold uppercase tracking-wider">بوابة الفني والكوافير المستقلة</p>
           </div>
         </div>
@@ -117,9 +134,14 @@ export function BarberLoginScreen({
         <div className="bg-slate-900/90 backdrop-blur-xl border border-slate-800/90 rounded-3xl p-6 sm:p-8 shadow-2xl shadow-black/50 relative">
           {/* Logo / Badge */}
           <div className="text-center mb-5">
-            {dbLogoUrl ? (
-              <div className="inline-flex items-center justify-center p-2 rounded-2xl bg-white shadow-xl shadow-indigo-500/20 border border-indigo-500/30 mb-2 transform hover:scale-110 hover:rotate-3 transition-all duration-300">
-                <img src={dbLogoUrl} alt="Platform Logo" className="w-14 h-14 object-contain rounded-xl" />
+            {effectiveLogo ? (
+              <div className="inline-flex items-center justify-center p-2 rounded-2xl bg-white shadow-xl shadow-indigo-500/20 border border-indigo-500/30 mb-2 transform hover:scale-105 transition-all duration-300">
+                <img 
+                  src={effectiveLogo} 
+                  alt="Salon Logo" 
+                  className="w-14 h-14 object-contain rounded-xl"
+                  onError={() => setImgError(true)}
+                />
               </div>
             ) : (
               <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-600 to-emerald-500 text-white shadow-lg shadow-indigo-500/20 mb-2 transform hover:scale-110 hover:rotate-6 transition-all duration-300">

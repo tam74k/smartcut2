@@ -46,7 +46,9 @@ export const ThermalSalesReturnReceipt: React.FC<ThermalSalesReturnReceiptProps>
             </span>
             <p className="text-xs font-mono font-bold text-slate-600">رقم السند: {salesReturn.id}</p>
             <p className="text-xs font-mono text-slate-500">التاريخ: {new Date(salesReturn.date).toLocaleString('ar-SA')}</p>
-            <p className="text-xs font-mono text-slate-500">الفاتورة الأصلية: #{salesReturn.originalInvoiceId}</p>
+            <p className="text-xs font-mono text-slate-500">
+              الفاتورة الأصلية: {salesReturn.isWithoutInvoice || salesReturn.originalInvoiceId === 'بدون فاتورة' ? 'بدون فاتورة (مرتجع عام)' : `#${salesReturn.originalInvoiceId}`}
+            </p>
           </div>
         </div>
 
@@ -206,7 +208,9 @@ export const ThermalSalesReturnReceipt: React.FC<ThermalSalesReturnReceiptProps>
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
           <span>الفاتورة الأصلية:</span>
-          <strong style={{ fontFamily: 'monospace' }}>#{salesReturn.originalInvoiceId}</strong>
+          <strong style={{ fontFamily: 'monospace' }}>
+            {salesReturn.isWithoutInvoice || salesReturn.originalInvoiceId === 'بدون فاتورة' ? 'بدون فاتورة' : `#${salesReturn.originalInvoiceId}`}
+          </strong>
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
           <span>التاريخ والوقت:</span>

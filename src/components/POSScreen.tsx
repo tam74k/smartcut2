@@ -3622,6 +3622,7 @@ export function POSScreen({
           products={products}
           employees={employees}
           services={items}
+          clients={clients}
         />
       )}
     </div>

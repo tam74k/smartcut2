@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { AppSettings, Invoice, SalesReturn, Branch, Product, Employee, ServiceItem } from '../types';
+import { AppSettings, Invoice, SalesReturn, Branch, Product, Employee, ServiceItem, Client } from '../types';
 import { 
   RotateCcw, Search, Filter, Printer, Download, Eye, Plus, Calendar, 
   Trash2, X, FileSpreadsheet, ChevronDown, ChevronUp, Package, Scissors, 
@@ -22,6 +22,7 @@ interface SalesReturnsScreenProps {
   products?: Product[];
   employees?: Employee[];
   services?: ServiceItem[];
+  clients?: Client[];
 }
 
 export const SalesReturnsScreen: React.FC<SalesReturnsScreenProps> = ({
@@ -36,7 +37,8 @@ export const SalesReturnsScreen: React.FC<SalesReturnsScreenProps> = ({
   currentUser,
   products = [],
   employees = [],
-  services = []
+  services = [],
+  clients = []
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [dateFrom, setDateFrom] = useState('');
@@ -398,7 +400,13 @@ export const SalesReturnsScreen: React.FC<SalesReturnsScreenProps> = ({
                       {ret.id}
                     </td>
                     <td className="py-3.5 px-4 font-mono font-bold text-slate-700">
-                      #{ret.originalInvoiceId}
+                      {ret.isWithoutInvoice || ret.originalInvoiceId === 'بدون فاتورة' ? (
+                        <span className="bg-amber-100 text-amber-800 text-[11px] px-2 py-0.5 rounded-full font-bold">
+                          بدون فاتورة
+                        </span>
+                      ) : (
+                        `#${ret.originalInvoiceId}`
+                      )}
                     </td>
                     <td className="py-3.5 px-4 text-slate-600">
                       {new Date(ret.date).toLocaleString('ar-SA')}
@@ -499,6 +507,7 @@ export const SalesReturnsScreen: React.FC<SalesReturnsScreenProps> = ({
           products={products}
           employees={employees}
           services={services}
+          clients={clients}
         />
       )}
 

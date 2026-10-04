@@ -643,8 +643,10 @@ export interface Booking {
   id: string; 
   salonId?: string;
   branchId?: string;
+  clientId?: string;
   clientName: string; 
   phone: string; 
+  clientPhone?: string;
   customerEmail?: string;
   date: string; 
   time: string; 
@@ -959,6 +961,7 @@ export interface SalesReturn {
   status: 'completed' | 'cancelled';
   restockProducts?: boolean;
   reverseCommissions?: boolean;
+  isWithoutInvoice?: boolean;
 }
 
 // ============================================================

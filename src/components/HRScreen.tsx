@@ -8,7 +8,7 @@ import {
   Calendar, Clock, CheckCircle, AlertTriangle, Printer, User, Filter, 
   RotateCcw, Sparkles, Plus, CheckSquare, Square, FileText, Ban, ShieldAlert,
   ChevronLeft, ChevronRight, Download, DollarSign, Award, ArrowUpRight, Check, X, Wallet,
-  Edit, Trash2, TrendingUp, History, Percent, Coins, Palmtree, RefreshCw, DoorOpen, Timer,
+  Edit, Trash2, TrendingUp, TrendingDown, History, Percent, Coins, Palmtree, RefreshCw, DoorOpen, Timer,
   ShieldCheck, Briefcase, FileSpreadsheet
 } from 'lucide-react';
 
@@ -1138,6 +1138,38 @@ export function HRScreen({
     });
   }, [timesheetRows]);
 
+  // Overall Timesheet Statistics for Top Stat Cards
+  const timesheetSummaryStats = useMemo(() => {
+    let workDaysCount = 0;
+    let attendanceCount = 0;
+    let absenceCount = 0;
+
+    timesheetRows.forEach(row => {
+      // Days scheduled as working (non weekly off, non terminated)
+      if (row.status !== 'weekly_off' && row.status !== 'terminated') {
+        workDaysCount++;
+      }
+      // Actual presence (regular, official mission, or recorded check-in)
+      if (row.status === 'regular' || row.status === 'mission' || row.hasManualOrDeviceLog || (row.checkIn && row.checkIn !== '--:--')) {
+        attendanceCount++;
+      }
+      // Absent days
+      if (row.status === 'absent') {
+        absenceCount++;
+      }
+    });
+
+    // Total other deductions (penalties, absence deduction, advances, permission deductions)
+    const otherDeductions = totals.specialPenaltySum + totals.absenceDeductionSum + totals.advancesSum + totals.permissionDeductionSum;
+
+    return {
+      workDaysCount,
+      attendanceCount,
+      absenceCount,
+      otherDeductions
+    };
+  }, [timesheetRows, totals]);
+
   const toggleDelayForgive = (rowKey: string, currentVal: boolean) => {
     setOverrides(prev => ({
       ...prev,
@@ -2194,6 +2226,207 @@ export function HRScreen({
             </div>
           </>
         )}
+      </div>
+
+      {/* Top Statistical Summary Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-11 gap-2.5 mb-5">
+        {/* 1. أيام العمل */}
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-3 shadow-xs flex flex-col justify-between hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[11px] font-bold text-slate-600">أيام العمل</span>
+            <div className="p-1 rounded-lg bg-slate-100 text-slate-600">
+              <Calendar size={13} />
+            </div>
+          </div>
+          <div>
+            <div className="text-base font-black text-slate-800 font-mono tracking-tight">
+              {timesheetSummaryStats.workDaysCount} <span className="text-[10px] font-bold text-slate-500">يوم</span>
+            </div>
+            <div className="text-[9px] font-semibold text-slate-400 truncate mt-0.5" title="إجمالي أيام العمل المقررة">
+              أيام الدوام المقررة
+            </div>
+          </div>
+        </div>
+
+        {/* 2. حضور */}
+        <div className="bg-emerald-50/40 border border-emerald-200/80 rounded-2xl p-3 shadow-xs flex flex-col justify-between hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[11px] font-bold text-emerald-800">حضور</span>
+            <div className="p-1 rounded-lg bg-emerald-100 text-emerald-700">
+              <CheckCircle size={13} />
+            </div>
+          </div>
+          <div>
+            <div className="text-base font-black text-emerald-700 font-mono tracking-tight">
+              {timesheetSummaryStats.attendanceCount} <span className="text-[10px] font-bold text-emerald-600">يوم</span>
+            </div>
+            <div className="text-[9px] font-semibold text-emerald-600/80 truncate mt-0.5">
+              {timesheetSummaryStats.workDaysCount > 0 ? Math.round((timesheetSummaryStats.attendanceCount / timesheetSummaryStats.workDaysCount) * 100) : 0}% نسبة الحضور
+            </div>
+          </div>
+        </div>
+
+        {/* 3. غياب */}
+        <div className="bg-rose-50/40 border border-rose-200/80 rounded-2xl p-3 shadow-xs flex flex-col justify-between hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[11px] font-bold text-rose-800">غياب</span>
+            <div className="p-1 rounded-lg bg-rose-100 text-rose-700">
+              <AlertTriangle size={13} />
+            </div>
+          </div>
+          <div>
+            <div className="text-base font-black text-rose-700 font-mono tracking-tight">
+              {timesheetSummaryStats.absenceCount} <span className="text-[10px] font-bold text-rose-600">يوم</span>
+            </div>
+            <div className="text-[9px] font-semibold text-rose-500 truncate mt-0.5" title={`خصم غياب: ${totals.absenceDeductionSum.toFixed(2)} ${settings.currency}`}>
+              خصم: {totals.absenceDeductionSum.toFixed(2)} {settings.currency}
+            </div>
+          </div>
+        </div>
+
+        {/* 4. تأخيرات بالدقيقة */}
+        <div className="bg-amber-50/40 border border-amber-200/80 rounded-2xl p-3 shadow-xs flex flex-col justify-between hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[11px] font-bold text-amber-800">تأخيرات بالدقيقة</span>
+            <div className="p-1 rounded-lg bg-amber-100 text-amber-700">
+              <Timer size={13} />
+            </div>
+          </div>
+          <div>
+            <div className="text-base font-black text-amber-700 font-mono tracking-tight">
+              {totals.delayMinutesSum} <span className="text-[10px] font-bold text-amber-600">دقيقة</span>
+            </div>
+            <div className="text-[9px] font-semibold text-amber-600/80 truncate mt-0.5">
+              {totals.delayMinutesSum > 0 ? `${Math.floor(totals.delayMinutesSum / 60)} س ${totals.delayMinutesSum % 60} د` : 'لا يوجد تأخير'}
+            </div>
+          </div>
+        </div>
+
+        {/* 5. خصم تأخير */}
+        <div className="bg-orange-50/40 border border-orange-200/80 rounded-2xl p-3 shadow-xs flex flex-col justify-between hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[11px] font-bold text-orange-800">خصم تأخير</span>
+            <div className="p-1 rounded-lg bg-orange-100 text-orange-700">
+              <TrendingDown size={13} />
+            </div>
+          </div>
+          <div>
+            <div className="text-base font-black text-orange-700 font-mono tracking-tight">
+              {totals.delayDeductionSum.toFixed(2)}
+            </div>
+            <div className="text-[9px] font-semibold text-orange-600/80 truncate mt-0.5">
+              {settings.currency}
+            </div>
+          </div>
+        </div>
+
+        {/* 6. وقت إضافي */}
+        <div className="bg-blue-50/40 border border-blue-200/80 rounded-2xl p-3 shadow-xs flex flex-col justify-between hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[11px] font-bold text-blue-800">وقت إضافي</span>
+            <div className="p-1 rounded-lg bg-blue-100 text-blue-700">
+              <Sparkles size={13} />
+            </div>
+          </div>
+          <div>
+            <div className="text-base font-black text-blue-700 font-mono tracking-tight">
+              {totals.overtimeAmountSum.toFixed(2)}
+            </div>
+            <div className="text-[9px] font-semibold text-blue-600/80 truncate mt-0.5" title={`${totals.overtimeMinutesSum} دقيقة أوفرتايم`}>
+              {totals.overtimeMinutesSum} د ({settings.currency})
+            </div>
+          </div>
+        </div>
+
+        {/* 7. خصومات */}
+        <div className="bg-rose-50/40 border border-rose-200/80 rounded-2xl p-3 shadow-xs flex flex-col justify-between hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[11px] font-bold text-rose-800">خصومات</span>
+            <div className="p-1 rounded-lg bg-rose-100 text-rose-700">
+              <ShieldAlert size={13} />
+            </div>
+          </div>
+          <div>
+            <div className="text-base font-black text-rose-700 font-mono tracking-tight">
+              {timesheetSummaryStats.otherDeductions.toFixed(2)}
+            </div>
+            <div className="text-[9px] font-semibold text-rose-500 truncate mt-0.5" title="سلف + جزاءات + غياب + أذونات">
+              {settings.currency} (سلف/جزاءات)
+            </div>
+          </div>
+        </div>
+
+        {/* 8. مكافآت */}
+        <div className="bg-purple-50/40 border border-purple-200/80 rounded-2xl p-3 shadow-xs flex flex-col justify-between hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[11px] font-bold text-purple-800">مكافآت</span>
+            <div className="p-1 rounded-lg bg-purple-100 text-purple-700">
+              <Award size={13} />
+            </div>
+          </div>
+          <div>
+            <div className="text-base font-black text-purple-700 font-mono tracking-tight">
+              {totals.bonusesSum.toFixed(2)}
+            </div>
+            <div className="text-[9px] font-semibold text-purple-600/80 truncate mt-0.5">
+              {settings.currency} (حوافز)
+            </div>
+          </div>
+        </div>
+
+        {/* 9. شغل الموظف */}
+        <div className="bg-teal-50/40 border border-teal-200/80 rounded-2xl p-3 shadow-xs flex flex-col justify-between hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[11px] font-bold text-teal-800">شغل الموظف</span>
+            <div className="p-1 rounded-lg bg-teal-100 text-teal-700">
+              <Briefcase size={13} />
+            </div>
+          </div>
+          <div>
+            <div className="text-base font-black text-teal-700 font-mono tracking-tight">
+              {totals.workRevenueSum.toFixed(2)}
+            </div>
+            <div className="text-[9px] font-semibold text-teal-600/80 truncate mt-0.5" title="إجمالي مبيعات وخدمات الموظف">
+              {settings.currency} (إنتاجية)
+            </div>
+          </div>
+        </div>
+
+        {/* 10. عمولات */}
+        <div className="bg-emerald-50/40 border border-emerald-200/80 rounded-2xl p-3 shadow-xs flex flex-col justify-between hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[11px] font-bold text-emerald-800">عمولات</span>
+            <div className="p-1 rounded-lg bg-emerald-100 text-emerald-700">
+              <Percent size={13} />
+            </div>
+          </div>
+          <div>
+            <div className="text-base font-black text-emerald-700 font-mono tracking-tight">
+              {totals.commissionSum.toFixed(2)}
+            </div>
+            <div className="text-[9px] font-semibold text-emerald-600/80 truncate mt-0.5" title={totals.commissionPaidSum > 0 ? `صُرف: ${totals.commissionPaidSum.toFixed(2)}` : undefined}>
+              {totals.commissionPaidSum > 0 ? `صُرف: ${totals.commissionPaidSum.toFixed(2)}` : settings.currency}
+            </div>
+          </div>
+        </div>
+
+        {/* 11. صافي الراتب */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3 shadow-md flex flex-col justify-between text-white hover:bg-slate-800 transition-colors">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[11px] font-bold text-slate-300">صافي الراتب</span>
+            <div className="p-1 rounded-lg bg-slate-800 text-emerald-400">
+              <Wallet size={13} />
+            </div>
+          </div>
+          <div>
+            <div className="text-base font-black text-emerald-400 font-mono tracking-tight">
+              {totals.netSum.toFixed(2)}
+            </div>
+            <div className="text-[9px] font-semibold text-slate-400 truncate mt-0.5">
+              {settings.currency} (الصافي)
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Main Timesheet Table (Full Vertical Expansion till End) */}

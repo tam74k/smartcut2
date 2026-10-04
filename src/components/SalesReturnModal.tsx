@@ -1,10 +1,18 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { AppSettings, Invoice, SalesReturn, SalesReturnItem, Product, Employee, ServiceItem } from '../types';
+import { AppSettings, Invoice, SalesReturn, SalesReturnItem, Product, Employee, ServiceItem, Client } from '../types';
 import { 
   X, RotateCcw, AlertTriangle, CheckSquare, Square, Package, Scissors, 
-  Search, Calendar, User, Phone, Wallet, Printer, FileText, CheckCircle2 
+  Search, Calendar, User, Phone, Wallet, Printer, FileText, CheckCircle2,
+  Trash2, Plus, Minus, Tag, Check, Barcode
 } from 'lucide-react';
 import { ThermalSalesReturnReceipt } from './ThermalSalesReturnReceipt';
+
+export interface ManualReturnItem {
+  product: Product;
+  returnQty: number;
+  returnPrice: number;
+  reason?: string;
+}
 
 interface SalesReturnModalProps {
   isOpen: boolean;
@@ -18,6 +26,7 @@ interface SalesReturnModalProps {
   products?: Product[];
   employees?: Employee[];
   services?: ServiceItem[];
+  clients?: Client[];
 }
 
 export const RETURN_REASONS = [
@@ -27,6 +36,7 @@ export const RETURN_REASONS = [
   'رغبة العميل في الإلغاء والاسترجاع',
   'خدمة لم يتم تقديمها للعميل',
   'تغيير المنتج بمنتج آخر',
+  'استرجاع أصناف ومخزون عام بدون فاتورة',
   'أخرى (مذكور في الملاحظات)'
 ];
 
@@ -41,13 +51,23 @@ export const SalesReturnModal: React.FC<SalesReturnModalProps> = ({
   currentUser,
   products = [],
   employees = [],
-  services = []
+  services = [],
+  clients = []
 }) => {
+  const [returnMode, setReturnMode] = useState<'with_invoice' | 'without_invoice'>(initialInvoice ? 'with_invoice' : 'with_invoice');
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(initialInvoice || null);
   const [invoiceSearchQuery, setInvoiceSearchQuery] = useState('');
   
-  // Selected items to return: itemId -> returnQuantity
+  // Selected items to return for invoice mode: itemId -> returnQuantity
   const [itemSelections, setItemSelections] = useState<Record<string, { selected: boolean; returnQty: number; reason?: string }>>({});
+  
+  // Manual return items for without-invoice mode
+  const [manualReturnItems, setManualReturnItems] = useState<ManualReturnItem[]>([]);
+  const [productSearchQuery, setProductSearchQuery] = useState('');
+  const [manualClientName, setManualClientName] = useState('عميل نقدي عام');
+  const [manualClientPhone, setManualClientPhone] = useState('');
+  const [cancelFinancialImpact, setCancelFinancialImpact] = useState<boolean>(true);
+
   const [reason, setReason] = useState<string>(RETURN_REASONS[0]);
   const [notes, setNotes] = useState<string>('');
   const [treasuryId, setTreasuryId] = useState<string>('');
@@ -242,7 +262,138 @@ export const SalesReturnModal: React.FC<SalesReturnModalProps> = ({
     }
   };
 
+  // Matching products for manual without-invoice return
+  const matchingProducts = useMemo(() => {
+    if (!productSearchQuery.trim()) return [];
+    const q = productSearchQuery.toLowerCase().trim();
+    return products.filter(p => {
+      const nameMatch = (p.name || '').toLowerCase().includes(q);
+      const barcodeMatch = (p.barcode || '').toLowerCase().includes(q);
+      const idMatch = (p.id || '').toLowerCase().includes(q);
+      return nameMatch || barcodeMatch || idMatch;
+    }).slice(0, 10);
+  }, [products, productSearchQuery]);
+
+  const handleAddManualProduct = (prod: Product) => {
+    setManualReturnItems(prev => {
+      const existing = prev.find(item => item.product.id === prod.id);
+      if (existing) {
+        return prev.map(item => item.product.id === prod.id ? { ...item, returnQty: item.returnQty + 1 } : item);
+      }
+      return [...prev, {
+        product: prod,
+        returnQty: 1,
+        returnPrice: Number(prod.price) || 0,
+        reason: ''
+      }];
+    });
+    setProductSearchQuery('');
+  };
+
+  const handleBarcodeOrEnterAdd = () => {
+    if (!productSearchQuery.trim()) return;
+    const q = productSearchQuery.trim().toLowerCase();
+    const exact = products.find(p => (p.barcode || '').trim().toLowerCase() === q) ||
+                  products.find(p => (p.name || '').trim().toLowerCase() === q) ||
+                  (matchingProducts.length === 1 ? matchingProducts[0] : null);
+    if (exact) {
+      handleAddManualProduct(exact);
+    }
+  };
+
+  const handleManualQtyChange = (prodId: string, qty: number) => {
+    const validQty = Math.max(1, qty);
+    setManualReturnItems(prev => prev.map(item => item.product.id === prodId ? { ...item, returnQty: validQty } : item));
+  };
+
+  const handleManualPriceChange = (prodId: string, price: number) => {
+    const validPrice = Math.max(0, price);
+    setManualReturnItems(prev => prev.map(item => item.product.id === prodId ? { ...item, returnPrice: validPrice } : item));
+  };
+
+  const handleRemoveManualItem = (prodId: string) => {
+    setManualReturnItems(prev => prev.filter(item => item.product.id !== prodId));
+  };
+
+  const manualSubtotal = useMemo(() => {
+    return manualReturnItems.reduce((acc, it) => acc + (it.returnQty * it.returnPrice), 0);
+  }, [manualReturnItems]);
+
+  const manualTotalRefund = cancelFinancialImpact ? manualSubtotal : 0;
+  const manualTotalUnits = useMemo(() => {
+    return manualReturnItems.reduce((acc, it) => acc + it.returnQty, 0);
+  }, [manualReturnItems]);
+
   const handleSubmitReturn = async () => {
+    // Mode 1: Without Invoice
+    if (returnMode === 'without_invoice') {
+      if (manualReturnItems.length === 0) {
+        alert('يرجى إضافة صنف واحد على الأقل لإتمام المرتجع');
+        return;
+      }
+
+      if (cancelFinancialImpact && !treasuryId) {
+        alert('يرجى اختيار الخزينة لاسترداد المبلغ منها وإلغاء الأثر المالي');
+        return;
+      }
+
+      const treasuryObj = settings.treasuries.find(t => t.id === treasuryId);
+      const now = new Date();
+      const returnNumber = 'RET-' + now.getFullYear() + String(now.getMonth() + 1).padStart(2, '0') + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
+
+      const returnItemsList: SalesReturnItem[] = manualReturnItems.map(it => ({
+        id: 'RETI-' + Math.random().toString(36).substr(2, 9),
+        originalItemId: it.product.id,
+        itemId: it.product.id,
+        type: 'product',
+        name: it.product.name,
+        price: it.returnPrice,
+        originalQuantity: it.returnQty,
+        returnQuantity: it.returnQty,
+        totalRefund: it.returnQty * it.returnPrice,
+        reason: it.reason || reason
+      }));
+
+      const newReturn: SalesReturn = {
+        id: returnNumber,
+        salonId: settings.salonId,
+        branchId: (manualReturnItems[0]?.product as any)?.branchId || undefined,
+        originalInvoiceId: 'بدون فاتورة',
+        date: now.toISOString(),
+        clientName: manualClientName.trim() || 'عميل عام (بدون فاتورة)',
+        clientPhone: manualClientPhone.trim() || undefined,
+        items: returnItemsList,
+        subtotalRefund: manualSubtotal,
+        taxRefund: 0,
+        totalRefund: manualTotalRefund,
+        refundMethod: cancelFinancialImpact ? (treasuryId || 'cash') : 'none',
+        treasuryId: cancelFinancialImpact ? (treasuryId || 'cash') : '',
+        treasuryName: cancelFinancialImpact ? (treasuryObj?.name || 'الخزينة النقدية') : 'بدون أثر مالي (تسوية مخزنية)',
+        reason: reason,
+        returnType: 'partial',
+        createdBy: currentUser?.id,
+        createdByName: currentUser?.name || 'الكاشير',
+        notes: notes ? `مرتجع أصناف عام بدون فاتورة. ${notes}` : 'مرتجع أصناف عام بدون فاتورة',
+        status: 'completed',
+        restockProducts: restockProducts,
+        reverseCommissions: false,
+        isWithoutInvoice: true
+      };
+
+      setIsSubmitting(true);
+      try {
+        await onConfirm(newReturn);
+        setJustCompletedReturn(newReturn);
+      } catch (e) {
+        console.error(e);
+        alert('حدث خطأ أثناء حفظ المرتجع.');
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
+
+    // Mode 2: With Invoice
     if (!selectedInvoice) {
       alert('يرجى اختيار فاتورة صالحة لعمل المرتجع');
       return;
@@ -288,7 +439,8 @@ export const SalesReturnModal: React.FC<SalesReturnModalProps> = ({
       notes: notes,
       status: 'completed',
       restockProducts: restockProducts,
-      reverseCommissions: reverseCommissions
+      reverseCommissions: reverseCommissions,
+      isWithoutInvoice: false
     };
 
     setIsSubmitting(true);
@@ -344,10 +496,19 @@ export const SalesReturnModal: React.FC<SalesReturnModalProps> = ({
               <div>
                 <h4 className="text-xl font-black text-slate-800">تم تسجيل مرتجع المبيعات بنجاح!</h4>
                 <p className="text-slate-500 text-sm mt-1">
-                  رقم سند المرتجع: <span className="font-mono font-bold text-rose-600">{justCompletedReturn.id}</span> للفاتورة رقم <span className="font-mono font-bold text-slate-700">#{justCompletedReturn.originalInvoiceId}</span>
+                  رقم سند المرتجع: <span className="font-mono font-bold text-rose-600">{justCompletedReturn.id}</span>
+                  {justCompletedReturn.isWithoutInvoice || justCompletedReturn.originalInvoiceId === 'بدون فاتورة' ? (
+                    <span className="bg-amber-100 text-amber-800 text-xs px-2.5 py-0.5 rounded-full font-bold mr-2">
+                      مرتجع أصناف عام بدون فاتورة
+                    </span>
+                  ) : (
+                    <> للفاتورة رقم <span className="font-mono font-bold text-slate-700">#{justCompletedReturn.originalInvoiceId}</span></>
+                  )}
                 </p>
                 <div className="mt-3 inline-block bg-rose-50 text-rose-700 px-4 py-1.5 rounded-xl border border-rose-200 text-sm font-bold">
-                  المبلغ المسترد: {Number(justCompletedReturn.totalRefund).toFixed(2)} {settings.currency} من {justCompletedReturn.treasuryName}
+                  {justCompletedReturn.totalRefund > 0 
+                    ? `المبلغ المسترد: ${Number(justCompletedReturn.totalRefund).toFixed(2)} ${settings.currency} من ${justCompletedReturn.treasuryName}`
+                    : `تسوية مخزنية فقط (بدون أثر مالي / 0.00 ${settings.currency})`}
                 </div>
               </div>
 
@@ -377,7 +538,44 @@ export const SalesReturnModal: React.FC<SalesReturnModalProps> = ({
             </div>
           ) : (
             <>
-              {/* 1. Invoice Selection / Info Header */}
+              {/* Return Mode Tabs */}
+              <div className="flex bg-slate-100 p-1.5 rounded-2xl gap-1.5 border border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setReturnMode('with_invoice')}
+                  className={`flex-1 py-2.5 px-3 rounded-xl font-black text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                    returnMode === 'with_invoice'
+                      ? 'bg-white text-rose-700 shadow-sm border border-slate-200/80'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <FileText size={15} />
+                  <span>مرتجع بموجب فاتورة مبيعات</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReturnMode('without_invoice');
+                    if (!treasuryId) {
+                      const defT = settings.treasuries.find(t => !t.isMain)?.id || settings.treasuries[0]?.id || 'cash';
+                      setTreasuryId(defT);
+                    }
+                  }}
+                  className={`flex-1 py-2.5 px-3 rounded-xl font-black text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                    returnMode === 'without_invoice'
+                      ? 'bg-rose-600 text-white shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Package size={15} />
+                  <span>مرتجع أصناف عام (بدون فاتورة)</span>
+                </button>
+              </div>
+
+              {returnMode === 'with_invoice' ? (
+                <>
+                  {/* 1. Invoice Selection / Info Header */}
               {!selectedInvoice ? (
                 <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-3">
                   <label className="block text-xs font-bold text-slate-700">
@@ -726,6 +924,359 @@ export const SalesReturnModal: React.FC<SalesReturnModalProps> = ({
                   </div>
                 </div>
               )}
+              </>
+              ) : (
+                <div className="space-y-5">
+                  {/* 1. Product Search & Barcode Scan Card */}
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
+                    <div className="flex justify-between items-center">
+                      <label className="block text-xs font-bold text-slate-700">
+                        ابحث عن الصنف بالاسم أو امسح الباركود:
+                      </label>
+                      <span className="text-[11px] text-slate-500 font-medium flex items-center gap-1">
+                        <Barcode size={14} className="text-slate-600" />
+                        يدعم قارئ الباركود مباشرة (امسح واضغط Enter)
+                      </span>
+                    </div>
+
+                    <div className="relative">
+                      <Search className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                      <input
+                        type="text"
+                        placeholder="امسح باركود المنتج أو اكتب اسم الصنف أو كوده..."
+                        value={productSearchQuery}
+                        onChange={(e) => setProductSearchQuery(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleBarcodeOrEnterAdd();
+                          }
+                        }}
+                        className="w-full bg-white border border-slate-300 rounded-xl pr-10 pl-4 py-2.5 text-sm font-medium focus:outline-none focus:border-rose-500 shadow-xs"
+                        autoFocus
+                      />
+                    </div>
+
+                    {/* Product Suggestions Dropdown */}
+                    {matchingProducts.length > 0 && (
+                      <div className="bg-white border border-slate-200 rounded-xl divide-y divide-slate-100 shadow-lg max-h-60 overflow-y-auto mt-2">
+                        {matchingProducts.map(prod => (
+                          <div
+                            key={prod.id}
+                            onClick={() => handleAddManualProduct(prod)}
+                            className="p-3 hover:bg-rose-50/70 cursor-pointer flex justify-between items-center transition-colors text-xs"
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center font-bold shrink-0">
+                                <Package size={16} />
+                              </div>
+                              <div>
+                                <div className="font-bold text-slate-900 flex items-center gap-2">
+                                  <span>{prod.name}</span>
+                                  {prod.barcode && (
+                                    <span className="text-[10px] font-mono bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200">
+                                      {prod.barcode}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[11px] text-slate-500 mt-0.5">
+                                  المخزون الحالي: <strong className="font-mono text-slate-800">{prod.currentStock || 0}</strong> قطعة
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="text-left shrink-0">
+                              <span className="font-mono font-bold text-slate-900 text-sm">
+                                {Number(prod.price || 0).toFixed(2)} {settings.currency}
+                              </span>
+                              <span className="block text-[10px] text-rose-600 font-bold mt-0.5">+ إضافة للإرجاع</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {productSearchQuery && matchingProducts.length === 0 && (
+                      <p className="text-xs text-amber-600 font-medium">لم يتم العثور على صنف مطابق لهذا البحث.</p>
+                    )}
+                  </div>
+
+                  {/* 2. Selected Items Table */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <Package size={15} className="text-rose-600" />
+                        <span>الأصناف المحددة للإرجاع للمخزن ({manualReturnItems.length} صنف):</span>
+                      </h4>
+                      {manualReturnItems.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setManualReturnItems([])}
+                          className="text-[11px] text-rose-600 hover:text-rose-800 font-bold transition-colors cursor-pointer"
+                        >
+                          تفريغ الكل
+                        </button>
+                      )}
+                    </div>
+
+                    {manualReturnItems.length === 0 ? (
+                      <div className="border-2 border-dashed border-slate-200 rounded-2xl p-8 text-center bg-slate-50/50">
+                        <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-2">
+                          <Package size={22} />
+                        </div>
+                        <p className="text-xs font-bold text-slate-600">لم يتم اختيار أي أصناف بعد</p>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          ابحث عن المنتج بالاسم أو امسح الباركود لإضافته لقائمة الاسترجاع
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
+                        <table className="w-full text-right text-xs">
+                          <thead className="bg-slate-900 text-white font-bold">
+                            <tr>
+                              <th className="py-2.5 px-3">#</th>
+                              <th className="py-2.5 px-3">اسم الصنف والباركود</th>
+                              <th className="py-2.5 px-3 text-center">المخزون الحالي</th>
+                              <th className="py-2.5 px-3 text-center w-32">كمية الإرجاع</th>
+                              <th className="py-2.5 px-3 text-center w-36">سعر الإرجاع للقطعة</th>
+                              <th className="py-2.5 px-3 text-left">إجمالي المسترد</th>
+                              <th className="py-2.5 px-3 text-center w-12">إجراء</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 bg-white">
+                            {manualReturnItems.map((item, idx) => {
+                              const lineTotal = item.returnQty * item.returnPrice;
+                              return (
+                                <tr key={item.product.id} className="hover:bg-slate-50/80 transition-colors">
+                                  <td className="py-3 px-3 font-mono text-slate-400 text-center">{idx + 1}</td>
+                                  <td className="py-3 px-3">
+                                    <div className="font-bold text-slate-900">{item.product.name}</div>
+                                    {item.product.barcode && (
+                                      <span className="text-[10px] font-mono text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded mt-0.5 inline-block">
+                                        {item.product.barcode}
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="py-3 px-3 text-center">
+                                    <span className="font-mono font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded text-[11px]">
+                                      {item.product.currentStock || 0} قطعة
+                                    </span>
+                                  </td>
+                                  <td className="py-3 px-3">
+                                    <div className="flex items-center justify-center gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleManualQtyChange(item.product.id, Math.max(1, item.returnQty - 1))}
+                                        className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center font-bold cursor-pointer"
+                                      >
+                                        -
+                                      </button>
+                                      <input
+                                        type="number"
+                                        min={1}
+                                        value={item.returnQty}
+                                        onChange={(e) => handleManualQtyChange(item.product.id, parseInt(e.target.value) || 1)}
+                                        className="w-14 text-center font-mono font-black border border-slate-300 rounded-lg py-1 text-xs bg-white focus:outline-none focus:border-rose-500"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => handleManualQtyChange(item.product.id, item.returnQty + 1)}
+                                        className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center font-bold cursor-pointer"
+                                      >
+                                        +
+                                      </button>
+                                    </div>
+                                  </td>
+                                  <td className="py-3 px-3 text-center">
+                                    <div className="flex items-center justify-center gap-1">
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        step="0.01"
+                                        value={item.returnPrice}
+                                        onChange={(e) => handleManualPriceChange(item.product.id, parseFloat(e.target.value) || 0)}
+                                        className="w-20 text-center font-mono font-bold border border-slate-300 rounded-lg py-1 text-xs bg-white focus:outline-none focus:border-rose-500"
+                                      />
+                                      <span className="text-[10px] text-slate-400">{settings.currency}</span>
+                                    </div>
+                                  </td>
+                                  <td className="py-3 px-3 text-left font-mono font-black text-rose-700 text-sm">
+                                    {lineTotal.toFixed(2)} {settings.currency}
+                                  </td>
+                                  <td className="py-3 px-3 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveManualItem(item.product.id)}
+                                      className="w-7 h-7 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors cursor-pointer"
+                                      title="حذف هذا الصنف"
+                                    >
+                                      <Trash2 size={14} />
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 3. Client & Options Card */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-200 text-xs">
+                    {/* Client Details & Reason */}
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1">
+                          اسم العميل (اختياري):
+                        </label>
+                        <input
+                          type="text"
+                          value={manualClientName}
+                          onChange={(e) => setManualClientName(e.target.value)}
+                          placeholder="عميل نقدي عام (بدون فاتورة)..."
+                          className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 outline-none focus:border-rose-500 shadow-xs"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1">
+                          رقم هاتف العميل (اختياري):
+                        </label>
+                        <input
+                          type="text"
+                          value={manualClientPhone}
+                          onChange={(e) => setManualClientPhone(e.target.value)}
+                          placeholder="05xxxxxxxx"
+                          className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono text-slate-800 outline-none focus:border-rose-500 shadow-xs"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1">
+                          سبب الإرجاع: <span className="text-rose-500">*</span>
+                        </label>
+                        <select
+                          value={reason}
+                          onChange={(e) => setReason(e.target.value)}
+                          className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 outline-none focus:border-rose-500 shadow-xs"
+                        >
+                          {RETURN_REASONS.map((r, i) => (
+                            <option key={i} value={r}>{r}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <input
+                          type="text"
+                          placeholder="ملاحظات توضيحية إضافية لسبب المرتجع..."
+                          value={notes}
+                          onChange={(e) => setNotes(e.target.value)}
+                          className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 outline-none focus:border-rose-500 shadow-xs"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Financial & Inventory Controls */}
+                    <div className="space-y-3">
+                      {/* Restock checkbox */}
+                      <div className="p-3 bg-white rounded-xl border border-slate-200">
+                        <label className="flex items-start gap-2.5 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={restockProducts}
+                            onChange={(e) => setRestockProducts(e.target.checked)}
+                            className="w-4 h-4 text-emerald-600 rounded border-slate-300 mt-0.5 focus:ring-emerald-500 cursor-pointer"
+                          />
+                          <div>
+                            <span className="font-bold text-slate-800 block text-xs">
+                              إعادة الأصناف للمخزون (+وارد مرتجع)
+                            </span>
+                            <span className="text-[11px] text-slate-500">
+                              زيادة رصيد المستودع الحالي للأصناف المحددة فور تأكيد المرتجع
+                            </span>
+                          </div>
+                        </label>
+                      </div>
+
+                      {/* Cancel financial impact checkbox */}
+                      <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-2.5">
+                        <label className="flex items-start gap-2.5 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={cancelFinancialImpact}
+                            onChange={(e) => setCancelFinancialImpact(e.target.checked)}
+                            className="w-4 h-4 text-rose-600 rounded border-slate-300 mt-0.5 focus:ring-rose-500 cursor-pointer"
+                          />
+                          <div>
+                            <span className="font-bold text-slate-800 block text-xs">
+                              إلغاء الأثر المالي واسترداد القيمة من الخزينة
+                            </span>
+                            <span className="text-[11px] text-slate-500">
+                              تسجيل سند صرف نقدي لخصم المبلغ من الخزينة وإلغاء إيراد المبيعات
+                            </span>
+                          </div>
+                        </label>
+
+                        {cancelFinancialImpact ? (
+                          <div className="pt-2 border-t border-slate-100">
+                            <label className="block font-bold text-slate-700 mb-1">
+                              الخزينة المنصرف منها المبلغ: <span className="text-rose-500">*</span>
+                            </label>
+                            <select
+                              value={treasuryId}
+                              onChange={(e) => setTreasuryId(e.target.value)}
+                              className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 outline-none focus:border-rose-500 shadow-xs"
+                            >
+                              {settings.treasuries.filter(t => !t.isMain).map(t => (
+                                <option key={t.id} value={t.id}>{t.name}</option>
+                              ))}
+                              {settings.treasuries.filter(t => t.isMain).map(t => (
+                                <option key={t.id} value={t.id}>{t.name} (رئيسية)</option>
+                              ))}
+                            </select>
+                          </div>
+                        ) : (
+                          <div className="p-2 bg-emerald-50 text-emerald-800 rounded-lg text-[11px] font-medium border border-emerald-200">
+                            ✓ تسوية مخزنية فقط: لن يتم صرف أي مبالغ نقدية من الخزينة (المبلغ المسترد = 0.00).
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 4. Summary Bar */}
+                  <div className="bg-rose-50 border-2 border-rose-200 p-4 rounded-2xl flex flex-wrap justify-between items-center gap-4">
+                    <div className="space-y-1">
+                      <div className="text-xs text-rose-800 font-bold flex items-center gap-2">
+                        <span>نوع المعاملة:</span>
+                        <span className="bg-rose-600 text-white px-2.5 py-0.5 rounded-full text-[10px] font-black">
+                          مرتجع أصناف عام بدون فاتورة
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-600 flex items-center gap-3">
+                        <span>إجمالي الأصناف: <strong className="font-mono text-slate-900">{manualReturnItems.length}</strong> صنف (<strong className="font-mono text-slate-900">{manualTotalUnits}</strong> قطعة)</span>
+                        <span>•</span>
+                        <span>
+                          الأثر المخزني: <strong className={restockProducts ? 'text-emerald-700' : 'text-slate-500'}>
+                            {restockProducts ? `+${manualTotalUnits} قطعة للمخزون` : 'بدون تعديل مخزني'}
+                          </strong>
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="text-left font-mono">
+                      <span className="text-xs text-rose-700 font-bold block">
+                        {cancelFinancialImpact ? 'المبلغ المسترد من الخزينة:' : 'المبلغ المسترد (تسوية مخزنية):'}
+                      </span>
+                      <span className="text-2xl font-black text-rose-700">
+                        {manualTotalRefund.toFixed(2)} {settings.currency}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>
@@ -741,15 +1292,33 @@ export const SalesReturnModal: React.FC<SalesReturnModalProps> = ({
               إلغاء وتراجع
             </button>
 
-            {selectedInvoice && (
+            {returnMode === 'with_invoice' ? (
+              selectedInvoice && (
+                <button
+                  type="button"
+                  disabled={isSubmitting || returnItemsList.length === 0 || totalRefund <= 0}
+                  onClick={handleSubmitReturn}
+                  className="bg-rose-600 hover:bg-rose-700 disabled:opacity-40 disabled:hover:bg-rose-600 text-white px-6 py-2.5 rounded-xl font-black text-sm flex items-center gap-2 shadow-lg active:scale-95 transition-all cursor-pointer"
+                >
+                  <RotateCcw size={16} />
+                  <span>{isSubmitting ? 'جاري التنفيذ...' : `تأكيد المرتجع (${totalRefund.toFixed(2)} ${settings.currency})`}</span>
+                </button>
+              )
+            ) : (
               <button
                 type="button"
-                disabled={isSubmitting || returnItemsList.length === 0 || totalRefund <= 0}
+                disabled={isSubmitting || manualReturnItems.length === 0}
                 onClick={handleSubmitReturn}
                 className="bg-rose-600 hover:bg-rose-700 disabled:opacity-40 disabled:hover:bg-rose-600 text-white px-6 py-2.5 rounded-xl font-black text-sm flex items-center gap-2 shadow-lg active:scale-95 transition-all cursor-pointer"
               >
-                <RotateCcw size={16} />
-                <span>{isSubmitting ? 'جاري التنفيذ...' : `تأكيد المرتجع (${totalRefund.toFixed(2)} ${settings.currency})`}</span>
+                <Package size={16} />
+                <span>
+                  {isSubmitting
+                    ? 'جاري التنفيذ...'
+                    : cancelFinancialImpact
+                      ? `تأكيد استرجاع الأصناف للمخزون وصرف (${manualTotalRefund.toFixed(2)} ${settings.currency})`
+                      : `تأكيد استرجاع الأصناف للمخزون (تسوية مخزنية)`}
+                </span>
               </button>
             )}
           </div>
