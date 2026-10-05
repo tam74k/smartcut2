@@ -85,12 +85,20 @@ export function ProductsScreen({
       .replace(/ى/g, 'ي');
   };
 
+  const productCategories = useMemo(() => {
+    const pCats = categories.filter(c => c.id !== 'all' && c.type === 'product');
+    return pCats.length > 0 ? pCats : categories.filter(c => c.id !== 'all');
+  }, [categories]);
+
   const filteredProducts = products.filter(p => {
     const q = normalizeText(searchQuery);
     const matchesSearch = !q || 
       normalizeText(p.name).includes(q) || 
       (p.barcode && p.barcode.toLowerCase().includes(searchQuery.toLowerCase().trim()));
-    const matchesCat = categoryFilter === 'all' || p.categoryId === categoryFilter;
+    const catObj = categories.find(c => c.id === categoryFilter);
+    const matchesCat = categoryFilter === 'all' || 
+      p.categoryId === categoryFilter || 
+      (catObj && (p.categoryId === catObj.name || (p as any).category === catObj.name || normalizeText(p.categoryId || '') === normalizeText(catObj.name)));
     const itemType = p.productType || 'retail';
     const matchesType = productTypeFilter === 'all' || itemType === productTypeFilter;
     return matchesSearch && matchesCat && matchesType;
@@ -562,7 +570,7 @@ export function ProductsScreen({
           className="w-48 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 outline-none focus:border-primary focus:bg-white font-bold text-slate-700"
         >
           <option value="all">جميع التصنيفات</option>
-          {categories.filter(c => c.id !== 'all' && c.type === 'product').map(c => (
+          {productCategories.map(c => (
             <option key={c.id} value={c.id}>{c.name}</option>
           ))}
         </select>
@@ -777,7 +785,7 @@ export function ProductsScreen({
                 <div>
                   <label className="block text-sm font-bold text-slate-700 mb-1">التصنيف</label>
                   <select value={formData.categoryId} onChange={e => setFormData({...formData, categoryId: e.target.value})} className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary">
-                    {categories.filter(c => c.id !== 'all' && c.type === 'product').map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    {productCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
                 </div>
                 <div>

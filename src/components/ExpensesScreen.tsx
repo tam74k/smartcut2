@@ -75,7 +75,10 @@ export function ExpensesScreen({
     const effectiveDay = (shiftData && shiftData.isOpen && shiftData.date) 
       ? shiftData.date 
       : (transactionDate || new Date().toISOString().split('T')[0]);
-    const tDate = effectiveDay + 'T' + new Date().toTimeString().split(' ')[0];
+    const nowIso = new Date().toISOString();
+    const tTime = nowIso.split('T')[1] || '12:00:00.000Z';
+    const tDate = effectiveDay + 'T' + tTime;
+    const currentShiftId = (shiftData && shiftData.isOpen) ? ((shiftData as any).shiftId || (shiftData as any).id) : undefined;
 
     if (editingExpenseId) {
       setTransactions(transactions.map(t => {
@@ -84,10 +87,14 @@ export function ExpensesScreen({
             ...t,
             date: tDate,
             amount: Number(amount),
+            type: 'out',
+            category: 'expense',
             expenseCategory: expenseCategory,
             description: description,
             treasury: treasuryId,
-            shiftDate: shiftData.isOpen ? shiftData.date : (t as any).shiftDate
+            shiftDate: shiftData.isOpen ? shiftData.date : (t as any).shiftDate,
+            shiftId: shiftData.isOpen ? (currentShiftId || (t as any).shiftId) : (t as any).shiftId,
+            updatedAt: nowIso
           };
           DB.saveTransaction(updated, settings.salonId);
           return updated;
@@ -98,6 +105,7 @@ export function ExpensesScreen({
       const newTrx: Transaction = {
         id: 'EXP-' + Math.random().toString(36).substr(2, 9),
         date: tDate,
+        createdAt: nowIso,
         type: 'out',
         amount: Number(amount),
         category: 'expense',
@@ -106,7 +114,8 @@ export function ExpensesScreen({
         treasury: treasuryId,
         salonId: settings.salonId,
         branchId: activeBranchId,
-        shiftDate: shiftData.isOpen ? shiftData.date : undefined
+        shiftDate: shiftData.isOpen ? shiftData.date : undefined,
+        shiftId: currentShiftId
       } as any;
       setTransactions([newTrx, ...transactions]);
       DB.saveTransaction(newTrx, settings.salonId);

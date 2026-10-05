@@ -251,6 +251,7 @@ export interface WorkShift {
   totalCashSales?: number;
   totalCardSales?: number;
   totalExpenses?: number;
+  totalAdvances?: number;
   status: 'open' | 'closed';
   notes?: string;
   createdAt?: string;
@@ -662,6 +663,16 @@ export interface Booking {
   queueNumber?: number;
   createdAt?: string;
   created_at?: string;
+  createdBy?: string;
+  created_by?: string;
+  createdByName?: string;
+  created_by_name?: string;
+  updatedAt?: string;
+  updated_at?: string;
+  updatedBy?: string;
+  updated_by?: string;
+  updatedByName?: string;
+  updated_by_name?: string;
   discountType?: 'percentage' | 'fixed';
   discountValue?: number;
 }

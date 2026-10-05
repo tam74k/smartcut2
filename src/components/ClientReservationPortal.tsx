@@ -734,7 +734,10 @@ export function ClientReservationPortal({
       notes: bookingNotes,
       source: 'online',
       bookingCode,
-      queueNumber
+      queueNumber,
+      createdAt: new Date().toISOString(),
+      createdBy: currentClient.id || 'online_portal',
+      createdByName: `${currentClient.name} (أونلاين)`
     };
 
     // Auto-sync client to Central Salon Clients database if not exists

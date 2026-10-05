@@ -45,6 +45,32 @@ export function formatTo12Hour(timeStr?: string): string {
   return clean;
 }
 
+// Format date and time string into readable 12-hour format: YYYY-MM-DD hh:mm ص/م
+export function formatDateTime(dtStr?: string): string {
+  if (!dtStr) return '-';
+  try {
+    const clean = String(dtStr).trim();
+    if (!clean) return '-';
+    // If it's only YYYY-MM-DD without time
+    if (clean.length === 10 && clean.split('-').length === 3 && !clean.includes('T') && !clean.includes(' ')) {
+      return clean;
+    }
+    const d = new Date(clean);
+    if (isNaN(d.getTime())) return clean;
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    let hours = d.getHours();
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    const ampm = hours >= 12 ? 'م' : 'ص';
+    const h12 = hours % 12 || 12;
+    const h12Str = String(h12).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd} ${h12Str}:${minutes} ${ampm}`;
+  } catch {
+    return dtStr;
+  }
+}
+
 // Calculate discount amount for a single service line
 export function calculateServiceLineDiscount(s: any): number {
   const qty = Math.max(1, Number(s.quantity) || 1);
@@ -742,9 +768,19 @@ export function BookingsScreen({
       notes: quickAdvNotes.trim() || undefined
     };
 
+    const nowIso = new Date().toISOString();
+    const currentUserName = currentUser?.name || (currentUser as any)?.username || 'الكاشير';
+    const currentUserId = currentUser?.id;
+
     const updatedBooking: Booking = {
       ...selectedBookingDetails,
-      advancePayments: [...(selectedBookingDetails.advancePayments || []), newAdv]
+      advancePayments: [...(selectedBookingDetails.advancePayments || []), newAdv],
+      updatedAt: nowIso,
+      updated_at: nowIso,
+      updatedBy: currentUserId,
+      updated_by: currentUserId,
+      updatedByName: currentUserName,
+      updated_by_name: currentUserName
     };
 
     // Update in bookings state & DB
@@ -821,6 +857,28 @@ export function BookingsScreen({
       discountType: finalDiscountType
     });
 
+    const currentUserName = currentUser?.name || (currentUser as any)?.username || 'الكاشير';
+    const currentUserId = currentUser?.id;
+    const nowIso = new Date().toISOString();
+
+    const isEditing = Boolean(editingBooking);
+
+    // تاريخ ووقت الإنشاء محمي تماماً ولا يتغير مع أي تعديلات تتم لاحقاً على الحجز
+    const bookingCreatedAt = isEditing 
+      ? (editingBooking?.createdAt || (editingBooking as any)?.created_at || (newBooking.createdAt as string) || nowIso)
+      : nowIso;
+    const bookingCreatedBy = isEditing
+      ? (editingBooking?.createdBy || (editingBooking as any)?.created_by || newBooking.createdBy)
+      : currentUserId;
+    const bookingCreatedByName = isEditing
+      ? (editingBooking?.createdByName || (editingBooking as any)?.created_by_name || editingBooking?.createdBy || newBooking.createdByName || currentUserName)
+      : currentUserName;
+
+    // تاريخ ووقت واسم المستخدم الذي قام بالتعديل
+    const bookingUpdatedAt = isEditing ? nowIso : (editingBooking?.updatedAt || (editingBooking as any)?.updated_at || undefined);
+    const bookingUpdatedBy = isEditing ? currentUserId : undefined;
+    const bookingUpdatedByName = isEditing ? currentUserName : undefined;
+
     const booking: Booking = {
       id: editingBooking ? editingBooking.id : 'B-' + Math.random().toString(36).substr(2, 9).toUpperCase(),
       clientName: newBooking.clientName!,
@@ -836,7 +894,18 @@ export function BookingsScreen({
       discountValue: finalDiscountValue,
       branchId: bBranchId,
       queueNumber,
-      createdAt: editingBooking?.createdAt || (editingBooking as any)?.created_at || (newBooking.createdAt as string) || new Date().toISOString()
+      createdAt: bookingCreatedAt,
+      created_at: bookingCreatedAt,
+      createdBy: bookingCreatedBy,
+      created_by: bookingCreatedBy,
+      createdByName: bookingCreatedByName,
+      created_by_name: bookingCreatedByName,
+      updatedAt: bookingUpdatedAt,
+      updated_at: bookingUpdatedAt,
+      updatedBy: bookingUpdatedBy,
+      updated_by: bookingUpdatedBy,
+      updatedByName: bookingUpdatedByName,
+      updated_by_name: bookingUpdatedByName
     };
 
     // Calculate newly added advance payments to generate financial transactions
@@ -848,6 +917,7 @@ export function BookingsScreen({
     } else {
       setBookings([booking, ...bookings]);
     }
+    await DB.saveBooking(booking);
 
     // Auto generate financial transactions for brand new advance payments on their payment date
     if (brandNewAdvances.length > 0) {
@@ -948,6 +1018,11 @@ export function BookingsScreen({
     setNewBooking({ 
       ...b, 
       createdAt: b.createdAt || (b as any).created_at,
+      createdBy: b.createdBy || (b as any).created_by,
+      createdByName: b.createdByName || (b as any).created_by_name || b.createdBy,
+      updatedAt: b.updatedAt || (b as any).updated_at,
+      updatedBy: b.updatedBy || (b as any).updated_by,
+      updatedByName: b.updatedByName || (b as any).updated_by_name || b.updatedBy,
       location: b.location || '', 
       advancePayments: b.advancePayments || [],
       discountType: b.discountType || 'fixed',
@@ -960,10 +1035,37 @@ export function BookingsScreen({
   const cancelBooking = async (id: string) => {
     if (window.confirm('هل أنت متأكد من إلغاء هذا الحجز؟')) {
       try {
-        await DB.patch('bookings', id, { status: 'cancelled' });
-        setBookings(bookings.map(b => b.id === id ? { ...b, status: 'cancelled' } : b));
+        const nowIso = new Date().toISOString();
+        const currentUserName = currentUser?.name || (currentUser as any)?.username || 'المستخدم';
+        const currentUserId = currentUser?.id;
+        const patchData = {
+          status: 'cancelled',
+          updated_at: nowIso,
+          updated_by: currentUserId || null,
+          updated_by_name: currentUserName
+        };
+        await DB.patch('bookings', id, patchData);
+        setBookings(bookings.map(b => b.id === id ? { 
+          ...b, 
+          status: 'cancelled',
+          updatedAt: nowIso,
+          updated_at: nowIso,
+          updatedBy: currentUserId,
+          updated_by: currentUserId,
+          updatedByName: currentUserName,
+          updated_by_name: currentUserName
+        } : b));
         if (selectedBookingDetails?.id === id) {
-          setSelectedBookingDetails(prev => prev ? { ...prev, status: 'cancelled' } : null);
+          setSelectedBookingDetails(prev => prev ? { 
+            ...prev, 
+            status: 'cancelled',
+            updatedAt: nowIso,
+            updated_at: nowIso,
+            updatedBy: currentUserId,
+            updated_by: currentUserId,
+            updatedByName: currentUserName,
+            updated_by_name: currentUserName
+          } : null);
         }
         QueueService.updateTicket('QT-B-' + id, { status: 'cancelled' });
       } catch (err) {
@@ -1034,7 +1136,10 @@ export function BookingsScreen({
     const remainingAmt = totals.remaining;
     const createdDateTimeStr = formatBookingCreatedAt(booking);
     const cleanAddress = getBookingCleanAddress(booking);
-    const contactPhone = settings.phone || '';
+    const branchObj = branches?.find(b => b.id === (booking.branchId || activeBranchId));
+    const phoneList = [branchObj?.phone, settings.phone].filter(Boolean) as string[];
+    const uniquePhones = Array.from(new Set(phoneList.map(p => p.trim()))).join(' - ');
+    const contactPhones = uniquePhones || settings.phone || '';
     const salonTitle = settings.salonName || 'صالون سمارت كت';
     const barcodeCode = booking.id || 'B000000';
     const barcodeSvg = generateCode39Svg(barcodeCode, 20);
@@ -1044,11 +1149,11 @@ export function BookingsScreen({
     printWindow.className = 'hidden print:block fixed inset-0 bg-white z-[9999] p-2 text-black';
     printWindow.dir = 'rtl';
     printWindow.innerHTML = `
-      <div style="max-width: 280px; margin: 0 auto; font-family: system-ui, -apple-system, sans-serif; font-size: 11px; font-weight: normal; line-height: 1.35; color: #000; text-align: right; direction: rtl;">
+      <div style="max-width: 280px; margin: 0 auto; font-family: system-ui, -apple-system, sans-serif; font-size: 11px; font-weight: bold; line-height: 1.35; color: #000; text-align: right; direction: rtl;">
         <div style="text-align: center; margin-bottom: 4px;">
           ${settings.logoUrl ? '<img src="' + sanitizeUrl(settings.logoUrl) + '" style="max-height: 40px; margin: 0 auto 3px; display: block;" />' : ''}
           <div style="font-size: 15px; font-weight: bold; margin: 0; color: #000;">${escapeHtml(salonTitle)}</div>
-          <div style="display: inline-block; border: 1px solid #000; padding: 1px 8px; font-size: 11px; font-weight: normal; margin-top: 3px; color: #000;">إيصال حجز مؤكد</div>
+          <div style="display: inline-block; border: 1.5px solid #000; padding: 1px 8px; font-size: 11px; font-weight: bold; margin-top: 3px; color: #000;">إيصال حجز مؤكد</div>
         </div>
 
         <!-- Barcode section -->
@@ -1056,37 +1161,31 @@ export function BookingsScreen({
           <div style="max-width: 170px; margin: 0 auto;">
             ${barcodeSvg}
           </div>
-          <div style="font-family: monospace; font-size: 10px; font-weight: normal; letter-spacing: 1px; color: #000; margin-top: 1px;">
+          <div style="font-family: monospace; font-size: 11px; font-weight: bold; letter-spacing: 1px; color: #000; margin-top: 2px;">
             ${escapeHtml(barcodeCode)}
           </div>
         </div>
 
-        ${booking.queueNumber ? `
-          <div style="border: 1px solid #000; padding: 2px 6px; text-align: center; margin-bottom: 4px; font-size: 11px; font-weight: normal; color: #000; display: flex; justify-content: space-between; align-items: center; white-space: nowrap;">
-            <span>رقم دور الحجز المسبق:</span>
-            <span style="font-family: monospace; font-size: 13px; font-weight: normal; color: #000;">B-${escapeHtml(booking.queueNumber)}</span>
-          </div>
-        ` : ''}
-
-        <!-- Info List on single lines -->
-        <div style="border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 3px 0; margin-bottom: 4px; font-size: 11px; font-weight: normal; color: #000; line-height: 1.4;">
+        <!-- Info List on single lines without booking number -->
+        <div style="border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 3px 0; margin-bottom: 4px; font-size: 11px; font-weight: bold; color: #000; line-height: 1.4;">
           <div style="display: flex; justify-content: space-between; gap: 8px; white-space: nowrap;">
-            <span>رقم الحجز: <span style="font-family: monospace;">${escapeHtml(booking.id)}</span></span>
-            <span>التاريخ: ${escapeHtml(booking.date)}</span>
+            <span>التاريخ: <span style="font-weight: bold;">${escapeHtml(booking.date)}</span></span>
+            <span>الوقت: <span style="font-weight: bold;">${escapeHtml(formatTo12Hour(booking.time))}</span></span>
           </div>
           <div style="display: flex; justify-content: space-between; gap: 8px; white-space: nowrap;">
-            <span style="overflow: hidden; text-overflow: ellipsis;">العميل: ${escapeHtml(booking.clientName)}</span>
-            <span>الوقت: ${escapeHtml(formatTo12Hour(booking.time))}</span>
+            <span style="overflow: hidden; text-overflow: ellipsis;">العميل: <span style="font-weight: bold;">${escapeHtml(booking.clientName)}</span></span>
+            <span>المكان: <span style="font-weight: bold;">${escapeHtml(booking.location || 'داخل الصالون')}</span></span>
           </div>
+          ${booking.phone ? `
           <div style="display: flex; justify-content: space-between; gap: 8px; white-space: nowrap;">
-            <span>الهاتف: <span style="font-family: monospace;">${escapeHtml(booking.phone)}</span></span>
-            <span>المكان: ${escapeHtml(booking.location || 'داخل الصالون')}</span>
+            <span>الهاتف: <span style="font-family: monospace; font-weight: bold;">${escapeHtml(booking.phone)}</span></span>
           </div>
+          ` : ''}
         </div>
 
         <!-- Services & Products on single lines -->
-        <div style="margin-bottom: 4px; font-size: 11px; font-weight: normal; color: #000;">
-          <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #000; padding-bottom: 2px; margin-bottom: 2px; font-weight: normal; color: #000;">
+        <div style="margin-bottom: 4px; font-size: 11px; font-weight: bold; color: #000;">
+          <div style="display: flex; justify-content: space-between; border-bottom: 1.5px solid #000; padding-bottom: 2px; margin-bottom: 2px; font-weight: bold; color: #000;">
             <span>البند (خدمة / منتج)</span>
             <span>السعر</span>
           </div>
@@ -1096,14 +1195,14 @@ export function BookingsScreen({
             const lineDisc = calculateServiceLineDiscount(s);
             const lineFinal = calculateServiceLinePrice(s);
             return `
-              <div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 0; border-bottom: 1px dotted #000; font-weight: normal; color: #000; white-space: nowrap; gap: 6px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 0; border-bottom: 1px dotted #000; font-weight: bold; color: #000; white-space: nowrap; gap: 6px;">
                 <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                  <span>${escapeHtml(s.serviceName)}</span>
-                  ${qty > 1 ? `<span> (×${qty})</span>` : ''}
-                  ${isProd ? '<span style="font-size: 9px; border: 1px solid #000; padding: 0 2px; margin-right: 2px;">منتج</span>' : ''}
-                  ${lineDisc > 0 ? `<span style="font-size: 9px; margin-right: 2px;">[خصم: -${lineDisc.toFixed(2)}]</span>` : ''}
+                  <span style="font-weight: bold;">${escapeHtml(s.serviceName)}</span>
+                  ${qty > 1 ? `<span style="font-weight: bold;"> (×${qty})</span>` : ''}
+                  ${isProd ? '<span style="font-size: 9px; font-weight: bold; border: 1px solid #000; padding: 0 2px; margin-right: 2px;">منتج</span>' : ''}
+                  ${lineDisc > 0 ? `<span style="font-size: 9px; font-weight: bold; margin-right: 2px;">[خصم: -${lineDisc.toFixed(2)}]</span>` : ''}
                 </div>
-                <div style="font-family: monospace; text-align: left; flex-shrink: 0; color: #000;">
+                <div style="font-family: monospace; font-weight: bold; text-align: left; flex-shrink: 0; color: #000;">
                   ${lineFinal.toFixed(2)} ${escapeHtml(settings.currency)}
                 </div>
               </div>
@@ -1112,46 +1211,46 @@ export function BookingsScreen({
         </div>
 
         <!-- Totals on single lines -->
-        <div style="border-top: 1px dashed #000; padding-top: 3px; margin-bottom: 4px; font-size: 11px; font-weight: normal; color: #000; line-height: 1.4;">
+        <div style="border-top: 1px dashed #000; padding-top: 3px; margin-bottom: 4px; font-size: 11px; font-weight: bold; color: #000; line-height: 1.4;">
           ${totals.totalDiscounts > 0 ? `
-            <div style="display: flex; justify-content: space-between; white-space: nowrap; margin-bottom: 1px;">
+            <div style="display: flex; justify-content: space-between; white-space: nowrap; margin-bottom: 1px; font-weight: bold; color: #000;">
               <span>إجمالي البنود:</span>
-              <span style="font-family: monospace;">${totals.grossServices.toFixed(2)} ${escapeHtml(settings.currency)}</span>
+              <span style="font-family: monospace; font-weight: bold;">${totals.grossServices.toFixed(2)} ${escapeHtml(settings.currency)}</span>
             </div>
           ` : ''}
 
           ${totals.lineDiscounts > 0 ? `
-            <div style="display: flex; justify-content: space-between; white-space: nowrap; margin-bottom: 1px;">
+            <div style="display: flex; justify-content: space-between; white-space: nowrap; margin-bottom: 1px; font-weight: bold; color: #000;">
               <span>خصم البنود:</span>
-              <span style="font-family: monospace;">-${totals.lineDiscounts.toFixed(2)} ${escapeHtml(settings.currency)}</span>
+              <span style="font-family: monospace; font-weight: bold;">-${totals.lineDiscounts.toFixed(2)} ${escapeHtml(settings.currency)}</span>
             </div>
           ` : ''}
 
           ${totals.generalDiscount > 0 ? `
-            <div style="display: flex; justify-content: space-between; white-space: nowrap; margin-bottom: 1px;">
+            <div style="display: flex; justify-content: space-between; white-space: nowrap; margin-bottom: 1px; font-weight: bold; color: #000;">
               <span>خصم الحجز (${booking.discountType === 'percentage' ? (booking.discountValue || 0) + '%' : 'مبلغ'}):</span>
-              <span style="font-family: monospace;">-${totals.generalDiscount.toFixed(2)} ${escapeHtml(settings.currency)}</span>
+              <span style="font-family: monospace; font-weight: bold;">-${totals.generalDiscount.toFixed(2)} ${escapeHtml(settings.currency)}</span>
             </div>
           ` : ''}
 
-          <div style="display: flex; justify-content: space-between; border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 2px 0; margin: 2px 0; white-space: nowrap; font-size: 11px; font-weight: normal; color: #000;">
+          <div style="display: flex; justify-content: space-between; border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 2px 0; margin: 2px 0; white-space: nowrap; font-size: 11px; font-weight: bold; color: #000;">
             <span>الصافي الإجمالي:</span>
-            <span style="font-family: monospace;">${totals.netTotal.toFixed(2)} ${escapeHtml(settings.currency)}</span>
+            <span style="font-family: monospace; font-weight: bold;">${totals.netTotal.toFixed(2)} ${escapeHtml(settings.currency)}</span>
           </div>
 
           ${totalAdv > 0 ? `
-            <div style="display: flex; justify-content: space-between; white-space: nowrap; margin-bottom: 1px;">
+            <div style="display: flex; justify-content: space-between; white-space: nowrap; margin-bottom: 1px; font-weight: bold; color: #000;">
               <span>المدفوع مقدماً:</span>
-              <span style="font-family: monospace;">-${totalAdv.toFixed(2)} ${escapeHtml(settings.currency)}</span>
+              <span style="font-family: monospace; font-weight: bold;">-${totalAdv.toFixed(2)} ${escapeHtml(settings.currency)}</span>
             </div>
-            <div style="display: flex; justify-content: space-between; border-top: 1px solid #000; padding-top: 2px; margin-top: 2px; white-space: nowrap; font-size: 11px; font-weight: normal; color: #000;">
+            <div style="display: flex; justify-content: space-between; border-top: 1.5px solid #000; padding-top: 2px; margin-top: 2px; white-space: nowrap; font-size: 11px; font-weight: bold; color: #000;">
               <span>المتبقي للتحصيل:</span>
-              <span style="font-family: monospace;">${remainingAmt.toFixed(2)} ${escapeHtml(settings.currency)}</span>
+              <span style="font-family: monospace; font-weight: bold;">${remainingAmt.toFixed(2)} ${escapeHtml(settings.currency)}</span>
             </div>
-            <div style="margin-top: 3px; font-size: 10px; border: 1px solid #000; padding: 2px 4px; color: #000;">
-              <span style="display: block; margin-bottom: 1px;">تفاصيل الدفعات المقدمة:</span>
+            <div style="margin-top: 3px; font-size: 10px; font-weight: bold; border: 1px solid #000; padding: 2px 4px; color: #000;">
+              <span style="display: block; margin-bottom: 1px; font-weight: bold;">تفاصيل الدفعات المقدمة:</span>
               ${(booking.advancePayments || []).map((adv, i) => `
-                <div style="display: flex; justify-content: space-between; white-space: nowrap; font-family: monospace;">
+                <div style="display: flex; justify-content: space-between; white-space: nowrap; font-family: monospace; font-weight: bold; color: #000;">
                   <span>• دفعة ${i+1} (${escapeHtml(adv.treasuryName || 'نقداً')}):</span>
                   <span>${Number(adv.amount || 0).toFixed(2)} ${escapeHtml(settings.currency)}</span>
                 </div>
@@ -1161,22 +1260,30 @@ export function BookingsScreen({
         </div>
 
         <!-- Creation date & time on single line -->
-        <div style="display: flex; justify-content: space-between; border-top: 1px dashed #000; padding-top: 2px; margin-top: 3px; font-size: 10px; font-weight: normal; color: #000; white-space: nowrap;">
+        <div style="display: flex; justify-content: space-between; border-top: 1px dashed #000; padding-top: 2px; margin-top: 3px; font-size: 10px; font-weight: bold; color: #000; white-space: nowrap;">
           <span>تاريخ ووقت إنشاء الحجز:</span>
-          <span style="font-family: monospace;">${createdDateTimeStr}</span>
+          <span style="font-family: monospace; font-weight: bold;">${createdDateTimeStr}</span>
         </div>
 
         ${settings.bookingNotes ? `
-          <div style="margin-top: 3px; padding: 3px 5px; border: 1px dashed #000; text-align: center; font-size: 10px; font-weight: normal; white-space: pre-wrap; color: #000;">
+          <div style="margin-top: 3px; padding: 3px 5px; border: 1px dashed #000; text-align: center; font-size: 10px; font-weight: bold; white-space: pre-wrap; color: #000;">
             ${escapeHtml(settings.bookingNotes)}
           </div>
         ` : ''}
 
-        ${(cleanAddress || contactPhone) ? `
-          <div style="margin-top: 4px; padding-top: 3px; border-top: 1px dashed #000; text-align: center; font-size: 10px; font-weight: normal; line-height: 1.3; color: #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-            ${cleanAddress ? `<span>العنوان: ${escapeHtml(cleanAddress)}</span>` : ''}
-            ${(cleanAddress && contactPhone) ? ' | ' : ''}
-            ${contactPhone ? `<span>هاتف: ${escapeHtml(contactPhone)}</span>` : ''}
+        ${(cleanAddress || contactPhones) ? `
+          <div style="margin-top: 4px; padding-top: 3px; border-top: 1px dashed #000; text-align: center; font-size: 10px; font-weight: bold; line-height: 1.35; color: #000;">
+            ${cleanAddress ? `
+              <div style="white-space: normal; word-break: break-word; font-weight: bold; color: #000; margin-bottom: 2px;">
+                العنوان: ${escapeHtml(cleanAddress)}
+              </div>
+            ` : ''}
+            ${contactPhones ? `
+              <div style="white-space: normal; word-break: break-word; font-weight: bold; color: #000;">
+                <span>أرقام الاتصال: </span>
+                <span style="font-family: monospace; font-weight: bold;">${escapeHtml(contactPhones)}</span>
+              </div>
+            ` : ''}
           </div>
         ` : ''}
       </div>
@@ -1578,6 +1685,7 @@ export function BookingsScreen({
                     <th className="p-3.5">الخدمات المحجوزة</th>
                     <th className="p-3.5">الموظف / الفني</th>
                     <th className="p-3.5">تاريخ ووقت الموعد</th>
+                    <th className="p-3.5">سجل الإنشاء والتعديل</th>
                     <th className="p-3.5 text-center">الإجمالي</th>
                     <th className="p-3.5 text-center">الحالة</th>
                     <th className="p-3.5 text-center">إجراءات</th>
@@ -1586,7 +1694,7 @@ export function BookingsScreen({
                 <tbody className="divide-y divide-slate-100">
                   {tableFilteredBookings.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="p-12 text-center text-slate-400 font-bold">
+                      <td colSpan={10} className="p-12 text-center text-slate-400 font-bold">
                         لا توجد أي حجوزات تطابق البحث في هذه الفترة
                       </td>
                     </tr>
@@ -1630,6 +1738,30 @@ export function BookingsScreen({
                           </td>
                           <td className="p-3.5 font-mono text-slate-800 font-bold" dir="ltr">
                             {b.time} • {b.date?.split('T')[0] || b.date}
+                          </td>
+                          <td className="p-3.5 text-[11px] space-y-1">
+                            <div>
+                              <div className="flex items-center gap-1 text-slate-700">
+                                <span className="text-[9px] font-black text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded">أنشأه</span>
+                                <span className="font-bold text-slate-900">{b.createdByName || (b as any).created_by_name || b.createdBy || 'غير محدد'}</span>
+                              </div>
+                              <div className="text-[10px] text-slate-500 font-mono mt-0.5" dir="ltr">
+                                {formatDateTime(b.createdAt || (b as any).created_at)}
+                              </div>
+                            </div>
+                            {(b.updatedByName || (b as any).updated_by_name || b.updatedAt || (b as any).updated_at) && (
+                              <div className="pt-1 border-t border-slate-100">
+                                <div className="flex items-center gap-1 text-slate-600">
+                                  <span className="text-[9px] font-black text-indigo-800 bg-indigo-50 border border-indigo-200 px-1.5 py-0.2 rounded">عدّله</span>
+                                  <span className="font-bold text-slate-800">{b.updatedByName || (b as any).updated_by_name || 'مستخدم'}</span>
+                                </div>
+                                {(b.updatedAt || (b as any).updated_at) && (
+                                  <div className="text-[9px] text-slate-400 font-mono mt-0.5" dir="ltr">
+                                    {formatDateTime(b.updatedAt || (b as any).updated_at)}
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </td>
                           <td className="p-3.5 text-center font-mono font-black text-slate-900">
                             <div>{b.totalAmount} {settings.currency}</div>
@@ -2156,6 +2288,53 @@ export function BookingsScreen({
               </div>
             </div>
 
+            {/* Audit / Tracking Info: Created by, created at, updated by, updated at */}
+            <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 space-y-2 text-xs">
+              <div className="flex items-center justify-between text-slate-600">
+                <div className="flex items-center gap-1.5 font-bold">
+                  <Sparkles size={14} className="text-emerald-600" />
+                  <span>تاريخ ووقت الإنشاء:</span>
+                </div>
+                <div className="font-mono text-slate-800 font-bold" dir="ltr">
+                  {formatDateTime(selectedBookingDetails.createdAt || (selectedBookingDetails as any).created_at)}
+                </div>
+              </div>
+              <div className="flex items-center justify-between text-slate-600">
+                <div className="flex items-center gap-1.5 font-bold">
+                  <User size={14} className="text-emerald-600" />
+                  <span>المستخدم المنشئ:</span>
+                </div>
+                <span className="font-black text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg text-[11px]">
+                  {selectedBookingDetails.createdByName || (selectedBookingDetails as any).created_by_name || selectedBookingDetails.createdBy || 'غير محدد'}
+                </span>
+              </div>
+
+              {(selectedBookingDetails.updatedAt || (selectedBookingDetails as any).updated_at || selectedBookingDetails.updatedByName || (selectedBookingDetails as any).updated_by_name) && (
+                <div className="pt-2 border-t border-slate-200/70 space-y-1.5">
+                  <div className="flex items-center justify-between text-slate-600">
+                    <div className="flex items-center gap-1.5 font-bold">
+                      <Clock size={14} className="text-indigo-600" />
+                      <span>تاريخ ووقت آخر تعديل:</span>
+                    </div>
+                    <div className="font-mono text-slate-800 font-bold" dir="ltr">
+                      {formatDateTime(selectedBookingDetails.updatedAt || (selectedBookingDetails as any).updated_at)}
+                    </div>
+                  </div>
+                  {(selectedBookingDetails.updatedByName || (selectedBookingDetails as any).updated_by_name) && (
+                    <div className="flex items-center justify-between text-slate-600">
+                      <div className="flex items-center gap-1.5 font-bold">
+                        <Edit2 size={13} className="text-indigo-600" />
+                        <span>المستخدم المعدّل:</span>
+                      </div>
+                      <span className="font-black text-indigo-800 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-lg text-[11px]">
+                        {selectedBookingDetails.updatedByName || (selectedBookingDetails as any).updated_by_name}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             {/* Services & Products List */}
             <div>
               <h4 className="text-xs font-black text-slate-800 mb-2">الخدمات والمنتجات المحجوزة:</h4>
@@ -2491,6 +2670,36 @@ export function BookingsScreen({
             </div>
 
             <div className="p-3 sm:p-5 md:p-6 overflow-y-auto space-y-4">
+              {/* Audit Banner in Edit Mode */}
+              {editingBooking && (
+                <div className="bg-indigo-50/70 border border-indigo-200/80 rounded-2xl p-3 text-xs flex flex-wrap items-center justify-between gap-2.5">
+                  <div className="flex items-center gap-2 text-slate-700 flex-wrap">
+                    <span className="font-bold text-slate-600">تاريخ ووقت الإنشاء:</span>
+                    <span className="font-mono font-bold text-slate-900 bg-white border border-indigo-100 px-2 py-0.5 rounded-lg" dir="ltr">
+                      {formatDateTime(editingBooking.createdAt || (editingBooking as any).created_at)}
+                    </span>
+                    <span className="text-slate-400">•</span>
+                    <span className="font-bold text-slate-600">المستخدم المنشئ:</span>
+                    <span className="font-black text-indigo-900 bg-indigo-100/70 border border-indigo-200 px-2 py-0.5 rounded-lg">
+                      {editingBooking.createdByName || (editingBooking as any).created_by_name || editingBooking.createdBy || 'غير محدد'}
+                    </span>
+                  </div>
+                  {(editingBooking.updatedByName || (editingBooking as any).updated_by_name) && (
+                    <div className="flex items-center gap-1.5 text-slate-600 text-[11px]">
+                      <span className="font-bold">آخر تعديل:</span>
+                      <span className="font-black text-slate-800">
+                        {editingBooking.updatedByName || (editingBooking as any).updated_by_name}
+                      </span>
+                      {(editingBooking.updatedAt || (editingBooking as any).updated_at) && (
+                        <span className="font-mono text-slate-500" dir="ltr">
+                          ({formatDateTime(editingBooking.updatedAt || (editingBooking as any).updated_at)})
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* 1. TOP CARD: CLIENT & SCHEDULE INFORMATION */}
               <div className="bg-slate-50/80 p-3 sm:p-4 rounded-2xl border border-slate-200/80 space-y-3">
                 {/* Row 1: Phone & Client Name */}
@@ -4113,6 +4322,10 @@ export function BookingsScreen({
         const remainingAmt = totals.remaining;
         const createdDateTimeStr = formatBookingCreatedAt(previewBooking);
         const cleanAddress = getBookingCleanAddress(previewBooking);
+        const branchObj = branches?.find(b => b.id === (previewBooking.branchId || activeBranchId));
+        const phoneList = [branchObj?.phone, settings.phone].filter(Boolean) as string[];
+        const uniquePhones = Array.from(new Set(phoneList.map(p => p.trim()))).join(' - ');
+        const contactPhones = uniquePhones || settings.phone || '';
         const salonTitle = settings.salonName || 'صالون سمارت كت';
         const barcodeCode = previewBooking.id || 'B000000';
         const barcodeSvg = generateCode39Svg(barcodeCode, 20);
@@ -4144,14 +4357,14 @@ export function BookingsScreen({
 
               {/* Body: Thermal Paper Style */}
               <div className="p-3 sm:p-5 bg-slate-100/90 overflow-y-auto flex justify-center">
-                <div className="bg-white p-3.5 rounded-xl shadow-xs border border-black w-full max-w-[300px] text-black font-sans space-y-1 text-[11px] font-normal select-text">
+                <div className="bg-white p-3.5 rounded-xl shadow-xs border border-black w-full max-w-[300px] text-black font-sans space-y-1 text-[11px] font-bold select-text">
                   {/* Salon Header */}
                   <div className="text-center space-y-0.5">
                     {settings.logoUrl && (
                       <img src={settings.logoUrl} alt="Logo" className="max-h-10 mx-auto mb-1" />
                     )}
                     <h2 className="text-base font-bold text-black">{salonTitle}</h2>
-                    <div className="inline-block border border-black px-2 py-0.5 font-normal text-[11px] text-black mt-0.5">
+                    <div className="inline-block border border-black px-2 py-0.5 font-bold text-[11px] text-black mt-0.5">
                       إيصال حجز مؤكد
                     </div>
                   </div>
@@ -4159,38 +4372,31 @@ export function BookingsScreen({
                   {/* Barcode section */}
                   <div className="text-center py-0.5 bg-white">
                     <div className="max-w-[170px] mx-auto" dangerouslySetInnerHTML={{ __html: barcodeSvg }} />
-                    <div className="font-mono text-[10px] font-normal tracking-wider text-black mt-0.5">
+                    <div className="font-mono text-xs font-bold tracking-wider text-black mt-0.5">
                       {barcodeCode}
                     </div>
                   </div>
 
-                  {/* Queue number if exists */}
-                  {previewBooking.queueNumber && (
-                    <div className="border border-black p-1 text-center flex justify-between items-center text-[11px] font-normal text-black whitespace-nowrap">
-                      <span>رقم دور الحجز المسبق:</span>
-                      <span className="text-sm font-mono font-normal text-black">B-{previewBooking.queueNumber}</span>
-                    </div>
-                  )}
-
-                  {/* Info list on single lines */}
-                  <div className="space-y-0.5 text-[11px] font-normal text-black border-y border-dashed border-black py-1 leading-tight">
+                  {/* Info list on single lines without booking number */}
+                  <div className="space-y-0.5 text-[11px] font-bold text-black border-y border-dashed border-black py-1 leading-tight">
                     <div className="flex justify-between gap-2 whitespace-nowrap">
-                      <span>رقم الحجز: <span className="font-mono">{previewBooking.id}</span></span>
                       <span>التاريخ: {previewBooking.date}</span>
-                    </div>
-                    <div className="flex justify-between gap-2 whitespace-nowrap">
-                      <span className="truncate">العميل: {previewBooking.clientName}</span>
                       <span>الوقت: {formatTo12Hour(previewBooking.time)}</span>
                     </div>
                     <div className="flex justify-between gap-2 whitespace-nowrap">
-                      <span>الهاتف: <span className="font-mono">{previewBooking.phone}</span></span>
+                      <span className="truncate">العميل: {previewBooking.clientName}</span>
                       <span>المكان: {previewBooking.location || 'داخل الصالون'}</span>
                     </div>
+                    {previewBooking.phone && (
+                      <div className="flex justify-between gap-2 whitespace-nowrap">
+                        <span>الهاتف: <span className="font-mono font-bold">{previewBooking.phone}</span></span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Services & Products Table */}
-                  <div className="space-y-0.5 text-[11px] font-normal text-black">
-                    <div className="border-b border-black pb-0.5 flex justify-between font-normal text-black">
+                  <div className="space-y-0.5 text-[11px] font-bold text-black">
+                    <div className="border-b border-black pb-0.5 flex justify-between font-bold text-black">
                       <span>البند (خدمة / منتج)</span>
                       <span>السعر</span>
                     </div>
@@ -4201,22 +4407,22 @@ export function BookingsScreen({
                         const lineDisc = calculateServiceLineDiscount(s);
                         const lineFinal = calculateServiceLinePrice(s);
                         return (
-                          <div key={s.id} className="py-0.5 flex justify-between items-center whitespace-nowrap gap-1.5 font-normal text-black">
+                          <div key={s.id} className="py-0.5 flex justify-between items-center whitespace-nowrap gap-1.5 font-bold text-black">
                             <div className="truncate">
                               <span>{s.serviceName}</span>
                               {qty > 1 && <span> (×{qty})</span>}
                               {isProd && (
-                                <span className="text-[9px] border border-black px-1 py-0 mr-1">
+                                <span className="text-[9px] border border-black px-1 py-0 mr-1 font-bold">
                                   منتج
                                 </span>
                               )}
                               {lineDisc > 0 && (
-                                <span className="text-[9px] mr-1">
+                                <span className="text-[9px] mr-1 font-bold">
                                   [خصم: -${lineDisc.toFixed(2)}]
                                 </span>
                               )}
                             </div>
-                            <div className="text-left font-mono flex-shrink-0 text-black">
+                            <div className="text-left font-mono flex-shrink-0 text-black font-bold">
                               {lineFinal.toFixed(2)} {settings.currency}
                             </div>
                           </div>
@@ -4226,44 +4432,44 @@ export function BookingsScreen({
                   </div>
 
                   {/* Totals Section */}
-                  <div className="border-t border-dashed border-black pt-1 space-y-0.5 text-[11px] font-normal text-black leading-tight">
+                  <div className="border-t border-dashed border-black pt-1 space-y-0.5 text-[11px] font-bold text-black leading-tight">
                     {totals.totalDiscounts > 0 && (
                       <div className="flex justify-between whitespace-nowrap">
                         <span>إجمالي البنود:</span>
-                        <span className="font-mono">{totals.grossServices.toFixed(2)} {settings.currency}</span>
+                        <span className="font-mono font-bold">{totals.grossServices.toFixed(2)} {settings.currency}</span>
                       </div>
                     )}
                     {totals.lineDiscounts > 0 && (
                       <div className="flex justify-between whitespace-nowrap">
                         <span>خصم البنود:</span>
-                        <span className="font-mono">-{totals.lineDiscounts.toFixed(2)} {settings.currency}</span>
+                        <span className="font-mono font-bold">-{totals.lineDiscounts.toFixed(2)} {settings.currency}</span>
                       </div>
                     )}
                     {totals.generalDiscount > 0 && (
                       <div className="flex justify-between whitespace-nowrap">
                         <span>خصم الحجز ({previewBooking.discountType === 'percentage' ? (previewBooking.discountValue || 0) + '%' : 'مبلغ'}):</span>
-                        <span className="font-mono">-{totals.generalDiscount.toFixed(2)} {settings.currency}</span>
+                        <span className="font-mono font-bold">-{totals.generalDiscount.toFixed(2)} {settings.currency}</span>
                       </div>
                     )}
-                    <div className="flex justify-between font-normal text-black border-y border-dashed border-black py-0.5 whitespace-nowrap">
+                    <div className="flex justify-between font-bold text-black border-y border-dashed border-black py-0.5 whitespace-nowrap">
                       <span>الصافي الإجمالي:</span>
-                      <span className="font-mono">{totals.netTotal.toFixed(2)} {settings.currency}</span>
+                      <span className="font-mono font-bold">{totals.netTotal.toFixed(2)} {settings.currency}</span>
                     </div>
 
                     {totalAdv > 0 && (
                       <div className="space-y-0.5 pt-0.5">
                         <div className="flex justify-between whitespace-nowrap">
                           <span>المدفوع مقدماً:</span>
-                          <span className="font-mono">-{totalAdv.toFixed(2)} {settings.currency}</span>
+                          <span className="font-mono font-bold">-{totalAdv.toFixed(2)} {settings.currency}</span>
                         </div>
-                        <div className="flex justify-between font-normal text-black border-t border-black pt-0.5 whitespace-nowrap">
+                        <div className="flex justify-between font-bold text-black border-t border-black pt-0.5 whitespace-nowrap">
                           <span>المتبقي للتحصيل:</span>
-                          <span className="font-mono">{remainingAmt.toFixed(2)} {settings.currency}</span>
+                          <span className="font-mono font-bold">{remainingAmt.toFixed(2)} {settings.currency}</span>
                         </div>
-                        <div className="p-1 rounded-sm text-[10px] space-y-0.5 mt-0.5 border border-black text-black">
+                        <div className="p-1 rounded-sm text-[10px] space-y-0.5 mt-0.5 border border-black text-black font-bold">
                           <span className="block mb-0.5">تفاصيل الدفعات المقدمة:</span>
                           {(previewBooking.advancePayments || []).map((adv, i) => (
-                            <div key={adv.id || i} className="flex justify-between whitespace-nowrap font-mono text-black">
+                            <div key={adv.id || i} className="flex justify-between whitespace-nowrap font-mono text-black font-bold">
                               <span>• دفعة {i + 1} ({adv.treasuryName || 'نقداً'}):</span>
                               <span>{Number(adv.amount || 0).toFixed(2)} {settings.currency}</span>
                             </div>
@@ -4274,24 +4480,32 @@ export function BookingsScreen({
                   </div>
 
                   {/* Creation date & time on single line */}
-                  <div className="flex justify-between border-t border-dashed border-black pt-1 mt-1 text-[10px] font-normal text-black whitespace-nowrap">
+                  <div className="flex justify-between border-t border-dashed border-black pt-1 mt-1 text-[10px] font-bold text-black whitespace-nowrap">
                     <span>تاريخ ووقت إنشاء الحجز:</span>
-                    <span className="font-mono">{createdDateTimeStr}</span>
+                    <span className="font-mono font-bold">{createdDateTimeStr}</span>
                   </div>
 
                   {/* Salon Notes */}
                   {settings.bookingNotes && (
-                    <div className="p-1 border border-dashed border-black text-center text-[10px] font-normal whitespace-pre-wrap text-black">
+                    <div className="p-1 border border-dashed border-black text-center text-[10px] font-bold whitespace-pre-wrap text-black">
                       {settings.bookingNotes}
                     </div>
                   )}
 
-                  {/* Footer (address & phones on single line) */}
-                  {(cleanAddress || settings.phone) && (
-                    <div className="pt-1 border-t border-dashed border-black text-center text-[10px] font-normal text-black whitespace-nowrap truncate">
-                      {cleanAddress && <span>العنوان: {cleanAddress}</span>}
-                      {cleanAddress && settings.phone && <span> | </span>}
-                      {settings.phone && <span>هاتف: {settings.phone}</span>}
+                  {/* Footer (address on multiple lines & phone numbers below it) */}
+                  {(cleanAddress || contactPhones) && (
+                    <div className="pt-1.5 border-t border-dashed border-black text-center text-[10px] font-bold text-black space-y-0.5">
+                      {cleanAddress && (
+                        <div className="leading-tight break-words whitespace-normal font-bold text-black">
+                          العنوان: {cleanAddress}
+                        </div>
+                      )}
+                      {contactPhones && (
+                        <div className="leading-tight font-bold text-black">
+                          <span>أرقام الاتصال: </span>
+                          <span className="font-mono font-bold">{contactPhones}</span>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

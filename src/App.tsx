@@ -495,7 +495,13 @@ export default function App() {
         queueNumber: b.queueNumber || b.queue_number || undefined,
         customerEmail: b.customerEmail || '', advancePayments: b.advancePayments || b.advance_payments || [],
         discountType: b.discountType || b.discount_type || 'fixed',
-        discountValue: Number(b.discountValue ?? b.discount_value ?? 0)
+        discountValue: Number(b.discountValue ?? b.discount_value ?? 0),
+        createdAt: b.createdAt || b.created_at || undefined,
+        createdBy: b.createdBy || b.created_by || undefined,
+        createdByName: b.createdByName || b.created_by_name || b.createdBy || undefined,
+        updatedAt: b.updatedAt || b.updated_at || undefined,
+        updatedBy: b.updatedBy || b.updated_by || undefined,
+        updatedByName: b.updatedByName || b.updated_by_name || b.updatedBy || undefined
       })));
     }
     if (data.clients) {
@@ -865,7 +871,13 @@ export default function App() {
             customerEmail: b.customerEmail || '',
             advancePayments: b.advancePayments || b.advance_payments || [],
             discountType: b.discountType || b.discount_type || 'fixed',
-            discountValue: Number(b.discountValue ?? b.discount_value ?? 0)
+            discountValue: Number(b.discountValue ?? b.discount_value ?? 0),
+            createdAt: b.createdAt || b.created_at || undefined,
+            createdBy: b.createdBy || b.created_by || undefined,
+            createdByName: b.createdByName || b.created_by_name || b.createdBy || undefined,
+            updatedAt: b.updatedAt || b.updated_at || undefined,
+            updatedBy: b.updatedBy || b.updated_by || undefined,
+            updatedByName: b.updatedByName || b.updated_by_name || b.updatedBy || undefined
           })));
         }
 
@@ -1725,16 +1737,58 @@ export default function App() {
     }, 0);
     const totalCardSales = Math.max(0, totalSales - totalCashSales);
 
-    // Operational shift expenses (exclude internal transfers and zeroing)
+    const isStaffAdvance = (t: any) => {
+      const isOut = t.type === 'out' || (t.type as string) === 'expense';
+      if (!isOut) return false;
+      const cat = (t.category || '').toLowerCase();
+      const expCat = ((t as any).expenseCategory || '').toLowerCase();
+      const desc = (t.description || '').toLowerCase();
+      return (
+        cat === 'staff_advance' ||
+        cat === 'hr_advance' ||
+        cat === 'advance' ||
+        cat.includes('سلف') ||
+        expCat.includes('سلف') ||
+        desc.includes('سلفة') ||
+        desc.includes('سلف')
+      );
+    };
+
+    const isCashTreasury = (tId?: string) => !tId || tId === 'cash' || tId === 'main';
+
+    // Operational shift expenses (exclude advances, internal transfers and zeroing)
     const shiftExpenses = branchTransactions.filter(t => 
-      t.date.startsWith(shiftData.date) && 
-      (t.type === 'out' || t.category === 'expense') &&
+      ((t.shiftDate && t.shiftDate === shiftData.date) || ((t as any).shift_date && (t as any).shift_date === shiftData.date) || t.date.startsWith(shiftData.date)) && 
+      (t.type === 'out' || (t.type as string) === 'expense' || t.category === 'expense' || t.category === 'مصروفات' || t.category?.includes('مصروف')) &&
+      !isStaffAdvance(t) &&
       t.category !== 'transfer' &&
       !t.description?.includes('تصفير') &&
       !t.description?.includes('تحويل')
     ).reduce((s, t) => s + (Number(t.amount) || 0), 0);
 
-    const expectedCash = (Number(shiftData.initialCash) || 0) + totalCashSales - shiftExpenses;
+    // Staff advances disbursed during this shift
+    const shiftAdvances = branchTransactions.filter(t => 
+      ((t.shiftDate && t.shiftDate === shiftData.date) || ((t as any).shift_date && (t as any).shift_date === shiftData.date) || t.date.startsWith(shiftData.date)) && 
+      isStaffAdvance(t)
+    ).reduce((s, t) => s + (Number(t.amount) || 0), 0);
+
+    const cashExpenses = branchTransactions.filter(t => 
+      ((t.shiftDate && t.shiftDate === shiftData.date) || ((t as any).shift_date && (t as any).shift_date === shiftData.date) || t.date.startsWith(shiftData.date)) && 
+      (t.type === 'out' || (t.type as string) === 'expense' || t.category === 'expense' || t.category === 'مصروفات' || t.category?.includes('مصروف')) &&
+      !isStaffAdvance(t) &&
+      t.category !== 'transfer' &&
+      !t.description?.includes('تصفير') &&
+      !t.description?.includes('تحويل') &&
+      isCashTreasury(t.treasury || (t as any).treasuryId)
+    ).reduce((s, t) => s + (Number(t.amount) || 0), 0);
+
+    const cashAdvances = branchTransactions.filter(t => 
+      ((t.shiftDate && t.shiftDate === shiftData.date) || ((t as any).shift_date && (t as any).shift_date === shiftData.date) || t.date.startsWith(shiftData.date)) && 
+      isStaffAdvance(t) &&
+      isCashTreasury(t.treasury || (t as any).treasuryId)
+    ).reduce((s, t) => s + (Number(t.amount) || 0), 0);
+
+    const expectedCash = (Number(shiftData.initialCash) || 0) + totalCashSales - (cashExpenses + cashAdvances);
 
     const closedShift: Partial<WorkShift> = {
       id: (shiftData as any).shiftId || ('SHIFT-' + Math.random().toString(36).substr(2, 9).toUpperCase()),
@@ -1750,6 +1804,7 @@ export default function App() {
       totalCashSales,
       totalCardSales,
       totalExpenses: shiftExpenses,
+      totalAdvances: shiftAdvances,
       status: 'closed'
     };
     DB.saveWorkShift(closedShift);

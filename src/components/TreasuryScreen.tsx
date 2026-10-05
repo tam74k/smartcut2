@@ -71,8 +71,11 @@ export function TreasuryScreen({
     const effectiveDay = (shiftData && shiftData.isOpen && shiftData.date) 
       ? shiftData.date 
       : (transactionDate || new Date().toISOString().split('T')[0]);
-    const date = effectiveDay + 'T' + new Date().toTimeString().split(' ')[0];
+    const nowIso = new Date().toISOString();
+    const tTime = nowIso.split('T')[1] || '12:00:00.000Z';
+    const date = effectiveDay + 'T' + tTime;
     const sDate = (shiftData && shiftData.isOpen) ? shiftData.date : undefined;
+    const sId = (shiftData && shiftData.isOpen) ? ((shiftData as any).shiftId || (shiftData as any).id) : undefined;
     
     if (modalType === 'transfer') {
       if (treasuryId === toTreasuryId) {
@@ -83,6 +86,7 @@ export function TreasuryScreen({
       const trxOut: Transaction = {
         id: 'TRX-TRF-OUT-' + Math.random().toString(36).substring(2,9),
         date,
+        createdAt: nowIso,
         type: 'out',
         amount,
         category: 'transfer',
@@ -93,11 +97,13 @@ export function TreasuryScreen({
         createdBy: currentUser?.name || 'الكاشير',
         userId: currentUser?.id,
         userName: currentUser?.name || 'الكاشير',
-        shiftDate: sDate
+        shiftDate: sDate,
+        shiftId: sId
       } as any;
       const trxIn: Transaction = {
         id: 'TRX-TRF-IN-' + Math.random().toString(36).substring(2,9),
         date,
+        createdAt: nowIso,
         type: 'in',
         amount,
         category: 'transfer',
@@ -108,7 +114,8 @@ export function TreasuryScreen({
         createdBy: currentUser?.name || 'الكاشير',
         userId: currentUser?.id,
         userName: currentUser?.name || 'الكاشير',
-        shiftDate: sDate
+        shiftDate: sDate,
+        shiftId: sId
       } as any;
       
       setTransactions([...transactions, trxOut, trxIn]);
@@ -116,6 +123,7 @@ export function TreasuryScreen({
       const trx: Transaction = {
         id: `TRX-${modalType.toUpperCase()}-` + Math.random().toString(36).substring(2,9),
         date,
+        createdAt: nowIso,
         type: modalType === 'deposit' ? 'in' : 'out',
         amount,
         category,
@@ -126,7 +134,8 @@ export function TreasuryScreen({
         createdBy: currentUser?.name || 'الكاشير',
         userId: currentUser?.id,
         userName: currentUser?.name || 'الكاشير',
-        shiftDate: sDate
+        shiftDate: sDate,
+        shiftId: sId
       } as any;
       setTransactions([...transactions, trx]);
     }
@@ -334,9 +343,26 @@ export function TreasuryScreen({
       .filter(t => t.type === 'in' && t.category === 'transfer')
       .reduce((sum, t) => sum + t.amount, 0);
 
+    const isStaffAdvance = (t: Transaction) => {
+      const isOut = t.type === 'out' || (t.type as string) === 'expense';
+      if (!isOut) return false;
+      const cat = (t.category || '').toLowerCase();
+      const desc = (t.description || '').toLowerCase();
+      const expCat = ((t as any).expenseCategory || '').toLowerCase();
+      return (
+        cat === 'hr_advance' ||
+        cat === 'staff_advance' ||
+        cat === 'advance' ||
+        cat.includes('سلف') ||
+        expCat.includes('سلف') ||
+        desc.includes('سلفة') ||
+        desc.includes('سلف')
+      );
+    };
+
     // Outflows (المدفوعات والمصروفات)
     const totalExpenses = trxs
-      .filter(t => t.type === 'out' && (t.category === 'expense' || t.category === 'مصروفات'))
+      .filter(t => (t.type === 'out' || (t.type as string) === 'expense') && !isStaffAdvance(t) && (t.category === 'expense' || t.category === 'مصروفات' || t.category?.includes('مصروف') || (t as any).expenseCategory))
       .reduce((sum, t) => sum + t.amount, 0);
 
     const totalPurchases = trxs
@@ -352,7 +378,7 @@ export function TreasuryScreen({
       .reduce((sum, t) => sum + t.amount, 0);
 
     const totalAdvances = trxs
-      .filter(t => t.type === 'out' && (t.category === 'hr_advance' || t.category === 'staff_advance' || t.category === 'advance' || t.category === 'سلف'))
+      .filter(isStaffAdvance)
       .reduce((sum, t) => sum + t.amount, 0);
 
     const totalCommissions = trxs
@@ -368,7 +394,7 @@ export function TreasuryScreen({
       .reduce((sum, t) => sum + t.amount, 0);
 
     const totalIn = trxs.filter(t => t.type === 'in').reduce((sum, t) => sum + t.amount, 0);
-    const totalOut = trxs.filter(t => t.type === 'out').reduce((sum, t) => sum + t.amount, 0);
+    const totalOut = trxs.filter(t => t.type === 'out' || (t.type as string) === 'expense').reduce((sum, t) => sum + t.amount, 0);
 
     return { 
       totalIn, 
@@ -397,10 +423,13 @@ export function TreasuryScreen({
       'عهدة افتتاحية': 'عهدة افتتاحية',
       initial_cash: 'عهدة افتتاحية',
       advance: 'سلفة موظف',
-      booking_advance: 'مقدمات حجز',
-      'مقدم حجز': 'مقدمات حجز',
       hr_advance: 'سلفة موظف',
       staff_advance: 'سلفة موظف',
+      سلف: 'سلفة موظف',
+      سلفة: 'سلفة موظف',
+      'سلفة موظف': 'سلفة موظف',
+      booking_advance: 'مقدمات حجز',
+      'مقدم حجز': 'مقدمات حجز',
       expense: 'مصروفات',
       مصروفات: 'مصروفات',
       purchase: 'مشتريات',
@@ -422,6 +451,23 @@ export function TreasuryScreen({
   };
 
   const filteredTransactions = useMemo(() => {
+    const isStaffAdvance = (t: Transaction) => {
+      const isOut = t.type === 'out' || (t.type as string) === 'expense';
+      if (!isOut) return false;
+      const cat = (t.category || '').toLowerCase();
+      const desc = (t.description || '').toLowerCase();
+      const expCat = ((t as any).expenseCategory || '').toLowerCase();
+      return (
+        cat === 'hr_advance' ||
+        cat === 'staff_advance' ||
+        cat === 'advance' ||
+        cat.includes('سلف') ||
+        expCat.includes('سلف') ||
+        desc.includes('سلفة') ||
+        desc.includes('سلف')
+      );
+    };
+
     let filtered = [...unifiedTransactions];
     if (fromDate) {
       filtered = filtered.filter(t => new Date(t.date) >= new Date(fromDate));
@@ -436,11 +482,11 @@ export function TreasuryScreen({
     } else if (categoryFilter === 'sales') {
       filtered = filtered.filter(t => t.category === 'sales' || t.category === 'مبيعات' || t.category === 'booking_advance' || t.category === 'مقدم حجز');
     } else if (categoryFilter === 'expense') {
-      filtered = filtered.filter(t => t.category === 'expense' || t.category === 'مصروفات');
+      filtered = filtered.filter(t => !isStaffAdvance(t) && ((t.type as string) === 'expense' || t.category === 'expense' || t.category === 'مصروفات' || t.category?.includes('مصروف') || Boolean((t as any).expenseCategory)));
     } else if (categoryFilter === 'purchases') {
       filtered = filtered.filter(t => t.category === 'purchase' || t.category === 'مشتريات' || t.category === 'supplier_payment' || t.category === 'supplier');
     } else if (categoryFilter === 'payroll') {
-      filtered = filtered.filter(t => t.category === 'salary' || t.category === 'رواتب' || t.category === 'hr_advance' || t.category === 'staff_advance' || t.category === 'advance' || t.category === 'commission_payout');
+      filtered = filtered.filter(t => t.category === 'salary' || t.category === 'رواتب' || isStaffAdvance(t) || t.category === 'commission_payout' || t.category === 'commission');
     } else if (categoryFilter === 'transfer') {
       filtered = filtered.filter(t => t.category === 'transfer' || t.id.includes('TRF'));
     } else if (categoryFilter === 'deposit_withdraw') {
@@ -994,6 +1040,8 @@ export function TreasuryScreen({
                     ) : (
                       <>
                         <option value="expense">مصروفات</option>
+                        <option value="hr_advance">سلفة موظف</option>
+                        <option value="salary">صرف راتب</option>
                         <option value="withdrawal">سحب عام</option>
                       </>
                     )}

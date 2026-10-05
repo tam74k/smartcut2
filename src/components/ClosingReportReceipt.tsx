@@ -185,7 +185,21 @@ export function ClosingReportReceipt({
 
     const expenses = tTrx.filter(t => t.type === 'out' && (t.category === 'expense' || t.category === 'مصروفات')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
     const salaries = tTrx.filter(t => t.type === 'out' && (t.category === 'salary' || t.category === 'رواتب')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    const advances = tTrx.filter(t => t.type === 'out' && (t.category === 'hr_advance' || t.category === 'staff_advance' || t.category === 'advance' || t.category === 'سلف')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    const advances = tTrx.filter(t => {
+      if (t.type !== 'out' && (t.type as string) !== 'expense') return false;
+      const cat = (t.category || '').toLowerCase();
+      const desc = (t.description || '').toLowerCase();
+      const expCat = ((t as any).expenseCategory || '').toLowerCase();
+      return (
+        cat === 'hr_advance' ||
+        cat === 'staff_advance' ||
+        cat === 'advance' ||
+        cat.includes('سلف') ||
+        expCat.includes('سلف') ||
+        desc.includes('سلفة') ||
+        desc.includes('سلف')
+      );
+    }).reduce((s, x) => s + (Number(x.amount) || 0), 0);
     const purchases = tTrx.filter(t => t.type === 'out' && (t.category === 'purchase' || t.category === 'مشتريات')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
     const supplierPayments = tTrx.filter(t => t.type === 'out' && (t.category === 'supplier_payment' || t.category === 'supplier' || t.category === 'سداد مورد')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
     const commissions = tTrx.filter(t => t.type === 'out' && (t.category === 'commission' || t.category === 'عمولة')).reduce((s, x) => s + (Number(x.amount) || 0), 0);

@@ -72,7 +72,7 @@ export function DashboardChartsSection({
 
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
-      const d = t.date.split('T')[0];
+      const d = (t.shiftDate || (t as any).shift_date || t.date || '').split('T')[0];
       return d >= startDate && d <= endDate;
     });
   }, [transactions, startDate, endDate]);
@@ -140,9 +140,10 @@ export function DashboardChartsSection({
   const expensesTimelineData = useMemo(() => {
     const map = new Map<string, number>();
     filteredTransactions
-      .filter(t => t.type === 'out')
+      .filter(t => (t.type === 'out' || (t.type as string) === 'expense' || t.category === 'expense' || t.category === 'مصروفات' || t.category?.includes('مصروف')) && t.category !== 'transfer')
       .forEach(t => {
-        const key = salesInterval === 'day' ? t.date.split('T')[0] : t.date.substring(0, 7);
+        const dStr = (t.shiftDate || (t as any).shift_date || t.date || '').split('T')[0];
+        const key = salesInterval === 'day' ? dStr : dStr.substring(0, 7);
         map.set(key, (map.get(key) || 0) + t.amount);
       });
 
@@ -179,7 +180,7 @@ export function DashboardChartsSection({
   const top10Expenses = useMemo(() => {
     const map = new Map<string, number>();
     filteredTransactions
-      .filter(t => t.type === 'out')
+      .filter(t => (t.type === 'out' || (t.type as string) === 'expense' || t.category === 'expense' || t.category === 'مصروفات' || t.category?.includes('مصروف')) && t.category !== 'transfer')
       .forEach(t => {
         const cat = t.expenseCategory || t.category || 'مصروف عام';
         map.set(cat, (map.get(cat) || 0) + t.amount);

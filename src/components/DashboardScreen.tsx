@@ -55,18 +55,26 @@ export function DashboardScreen({
   const mainBranchId = mainBranch.id;
   const isMainBranch = !activeBranchId || activeBranchId === mainBranchId || activeBranchId === 'b-main';
 
-  const matchesActiveBranch = (itemBranchId?: string) => {
-    if (!itemBranchId) return true; // Items without explicit branchId are visible
+  const matchesActiveBranch = (itemBranchId?: string, itemBranchCode?: string) => {
+    if (!itemBranchId && !itemBranchCode) return true; // Items without explicit branchId are visible
     if (branches.length <= 1) return true; // Single-branch salon
     if (itemBranchId === activeBranchId) return true;
-    if (isMainBranch && (itemBranchId === mainBranchId || itemBranchId === 'b-main')) return true;
+    const currentBranch = branches.find(b => b.id === activeBranchId);
+    if (currentBranch) {
+      if (itemBranchId === currentBranch.code || itemBranchId === currentBranch.id) return true;
+      if (itemBranchCode && (itemBranchCode === currentBranch.code || itemBranchCode === currentBranch.id)) return true;
+    }
+    if (isMainBranch && (
+      itemBranchId === mainBranchId || itemBranchId === 'b-main' || itemBranchId === 'BR-01' || itemBranchId === 'BR-MAIN' ||
+      itemBranchCode === 'BR-01' || itemBranchCode === 'b-main'
+    )) return true;
     return false;
   };
 
   // Branch-specific filtering
-  const branchInvoices = invoices.filter(inv => matchesActiveBranch(inv.branchId));
-  const branchTransactions = transactions.filter(t => matchesActiveBranch((t as any).branchId));
-  const branchBookings = bookings.filter(b => matchesActiveBranch((b as any).branchId));
+  const branchInvoices = invoices.filter(inv => matchesActiveBranch(inv.branchId, (inv as any).branchCode));
+  const branchTransactions = transactions.filter(t => matchesActiveBranch((t as any).branchId, (t as any).branchCode));
+  const branchBookings = bookings.filter(b => matchesActiveBranch((b as any).branchId, (b as any).branchCode));
 
   // Determine Today's date accurately (Local and UTC)
   const now = new Date();
@@ -74,7 +82,7 @@ export function DashboardScreen({
   const utcToday = now.toISOString().split('T')[0];
 
   // دالة فحص العمليات التابعة للوردية الحالية المفتوحة حصراً
-  const matchesCurrentShift = (dateStr?: string, createdAtStr?: string, itemShiftId?: string) => {
+  const matchesCurrentShift = (dateStr?: string, createdAtStr?: string, itemShiftId?: string, itemShiftDate?: string) => {
     // 1. إذا كانت الوردية مغلقة، يجب تصفير كافة المؤشرات للبدء بنظافة كاملة (0)
     if (!isShiftOpen || !shiftDate) return false;
 
@@ -83,23 +91,32 @@ export function DashboardScreen({
       return true;
     }
 
+    // 3. إذا كان العنصر يحمل تاريخ وردية مطابق لتاريخ الوردية الحالية المفتوحة
+    if (itemShiftDate && itemShiftDate.split('T')[0].trim() === shiftDate) {
+      return true;
+    }
+
     if (!dateStr && !createdAtStr) return false;
     const cleanDate = (dateStr || '').trim();
     const cleanCreated = (createdAtStr || '').trim();
 
-    // 3. يجب أن يتطابق التاريخ مع تاريخ الوردية المفتوحة
-    const dateMatches = cleanDate.startsWith(shiftDate) || cleanCreated.startsWith(shiftDate);
+    // 4. فحص تطابق التاريخ مع تاريخ الوردية المفتوحة
+    const dateOnly = cleanDate.split('T')[0].trim();
+    const createdDateOnly = cleanCreated.split('T')[0].trim();
+    const dateMatches = dateOnly === shiftDate || createdDateOnly === shiftDate ||
+      cleanDate.startsWith(shiftDate) || cleanCreated.startsWith(shiftDate);
     if (!dateMatches) return false;
 
-    // 4. استبعاد أي فواتير أو حركات سابقة تمت قبل توقيت فتح هذه الوردية
-    const openTime = shiftData?.openedAt ? new Date(shiftData.openedAt).getTime() : 0;
-    if (openTime > 0) {
-      const itemTime = new Date(cleanDate || cleanCreated).getTime();
-      if (itemTime < openTime - 5000) return false;
-    } else if (shiftData?.lastClosedAt) {
-      const lastClosedTime = new Date(shiftData.lastClosedAt).getTime();
-      const itemTime = new Date(cleanDate || cleanCreated).getTime();
-      if (itemTime <= lastClosedTime) return false;
+    // 5. في حال وجود إغلاق وردية سابقة في نفس اليوم، استبعاد العمليات التي تمت قبل وقت الإغلاق السابق فقط
+    // ملاحظة حاسمة: إذا كان السجل يحمل تاريخ اليوم فقط بدون وقت، نعتبره تابعاً للوردية الحالية ولا نستبعده
+    if (shiftData?.lastClosedAt) {
+      const hasTime = cleanCreated.includes('T') || cleanDate.includes('T') || cleanDate.includes(' ');
+      if (hasTime) {
+        const timeToCompare = cleanCreated.includes('T') ? cleanCreated : cleanDate;
+        const lastClosedTime = new Date(shiftData.lastClosedAt).getTime();
+        const itemTime = new Date(timeToCompare).getTime();
+        if (itemTime > 0 && itemTime <= lastClosedTime) return false;
+      }
     }
 
     return true;
@@ -167,13 +184,27 @@ export function DashboardScreen({
   // Compute stats for today based on transactions & invoices (صفر تلقائياً عند إغلاق الوردية)
   const todayTrx = useMemo(() => {
     if (!isShiftOpen) return [];
-    return branchTransactions.filter(t => matchesCurrentShift(t.date, (t as any).createdAt || (t as any).created_at, (t as any).shiftId));
+    return branchTransactions.filter(t => 
+      matchesCurrentShift(
+        t.date, 
+        (t as any).createdAt || (t as any).created_at, 
+        (t as any).shiftId,
+        t.shiftDate || (t as any).shift_date
+      )
+    );
   }, [branchTransactions, isShiftOpen, shiftDate, shiftData]);
   
   // Pure Today's Sales Revenue (تصفير كامل عند إغلاق الوردية)
   const todayInvoices = useMemo(() => {
     if (!isShiftOpen) return [];
-    return branchInvoices.filter(inv => matchesCurrentShift(inv.date, (inv as any).createdAt || (inv as any).created_at, (inv as any).shiftId) && inv.status !== 'cancelled');
+    return branchInvoices.filter(inv => 
+      matchesCurrentShift(
+        inv.date, 
+        (inv as any).createdAt || (inv as any).created_at, 
+        (inv as any).shiftId,
+        (inv as any).shiftDate || (inv as any).shift_date
+      ) && inv.status !== 'cancelled'
+    );
   }, [branchInvoices, isShiftOpen, shiftDate, shiftData]);
 
   // مقدمات الحجز المحصلة في تاريخ اليوم/الوردية حسب الخزينة (من المعاملات ومن جدول الحجوزات)
@@ -252,65 +283,71 @@ export function DashboardScreen({
       .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
   }, [todayTrx, isShiftOpen]);
   
+  // دالة فحص ما إذا كانت المعاملة تمثل سلفة موظف
+  const isStaffAdvanceTrx = (t: any) => {
+    const isOut = t.type === 'out' || (t.type as string) === 'expense' || (t.category && t.category.includes('سلف'));
+    if (!isOut) return false;
+    const cat = (t.category || '').toLowerCase();
+    const expCat = ((t as any).expenseCategory || '').toLowerCase();
+    const desc = (t.description || '').toLowerCase();
+    return (
+      cat === 'staff_advance' ||
+      cat === 'hr_advance' ||
+      cat === 'advance' ||
+      cat.includes('سلف') ||
+      expCat.includes('سلف') ||
+      desc.includes('سلفة') ||
+      desc.includes('سلف')
+    );
+  };
+
   // Total Expenses (purchases, expenses, bills, operational payouts — excluding staff advances and drawer transfers)
   const totalExpense = useMemo(() => {
     if (!isShiftOpen) return 0;
     return todayTrx
       .filter(t => {
-        if (t.type !== 'out') return false;
+        const isOut = t.type === 'out' || (t.type as string) === 'expense' || t.category === 'expense' || t.category === 'مصروفات' || (t.category && t.category.includes('مصروف'));
+        if (!isOut) return false;
+        if (isStaffAdvanceTrx(t)) return false;
         const cat = (t.category || '').toLowerCase();
-        const expCat = ((t as any).expenseCategory || '').toLowerCase();
         const desc = (t.description || '').toLowerCase();
-        if (
-          cat === 'staff_advance' ||
-          cat === 'hr_advance' ||
-          cat === 'advance' ||
-          cat.includes('سلف') ||
-          expCat.includes('سلف') ||
-          desc.includes('سلفة') ||
-          desc.includes('سلف')
-        ) {
-          return false;
-        }
         if (cat === 'transfer' || desc.includes('تحويل') || desc.includes('تصفير')) return false;
         return true;
       })
       .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
   }, [todayTrx, isShiftOpen]);
   
-  // Total Advances (سلف الموظفين المصروفة اليوم)
+  // Total Advances (سلف الموظفين المصروفة خلال الوردية الحالية)
   const totalAdvancesGiven = useMemo(() => {
     if (!isShiftOpen) return 0;
     const fromTrx = todayTrx
-      .filter(t => {
-        if (t.type !== 'out') return false;
-        const cat = (t.category || '').toLowerCase();
-        const expCat = ((t as any).expenseCategory || '').toLowerCase();
-        const desc = (t.description || '').toLowerCase();
-        return (
-          cat === 'staff_advance' ||
-          cat === 'hr_advance' ||
-          cat === 'advance' ||
-          cat.includes('سلف') ||
-          expCat.includes('سلف') ||
-          desc.includes('سلفة') ||
-          desc.includes('سلف')
-        );
-      })
+      .filter(isStaffAdvanceTrx)
       .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
 
     let fromEmpRecords = 0;
     if (employees && Array.isArray(employees)) {
       employees.forEach(emp => {
+        if (emp.branchId && !matchesActiveBranch(emp.branchId, (emp as any).branchCode)) return;
+
         (emp.financialRecords || []).forEach((r: any) => {
-          if (r.type === 'advance' && (r.date || (r as any).createdAt) && matchesCurrentShift(r.date, (r as any).createdAt || (r as any).created_at)) {
-            const alreadyInTrx = todayTrx.some(t => 
-              t.type === 'out' && 
-              Math.abs((Number(t.amount) || 0) - (Number(r.amount) || 0)) < 0.01 &&
-              (t.category === 'staff_advance' || t.category === 'hr_advance' || t.category === 'advance' || (t.description && t.description.includes('سلفة')))
+          const isSalaryRecord = r.type === 'salary' || (r.type === 'advance' && (r.id?.startsWith('FIN-SAL-') || r.note?.includes('مسير رواتب') || r.note?.includes('تم استلام صافي الراتب')));
+          if (r.type === 'advance' && !isSalaryRecord) {
+            const matchesShift = matchesCurrentShift(
+              r.date, 
+              (r as any).createdAt || (r as any).created_at, 
+              (r as any).shiftId, 
+              (r as any).shiftDate
             );
-            if (!alreadyInTrx) {
-              fromEmpRecords += (Number(r.amount) || 0);
+            if (matchesShift) {
+              const rAmt = Number(r.amount) || 0;
+              const alreadyInTrx = todayTrx.some(t => 
+                isStaffAdvanceTrx(t) &&
+                Math.abs((Number(t.amount) || 0) - rAmt) < 0.01 &&
+                (t.id === r.id || t.id?.includes(r.id) || (t.description && (t.description.includes(emp.name) || t.description.includes('سلف'))))
+              );
+              if (!alreadyInTrx) {
+                fromEmpRecords += rAmt;
+              }
             }
           }
         });
@@ -424,7 +461,7 @@ export function DashboardScreen({
         </div>
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
           <div>
-            <p className="text-slate-500 text-[12px] font-bold mb-1">سلف اليوم</p>
+            <p className="text-slate-500 text-[12px] font-bold mb-1">{isShiftOpen ? 'سلف الوردية الحالية' : 'سلف اليوم'}</p>
             <h3 className="text-lg font-extrabold text-slate-800 font-mono">{totalAdvancesGiven.toFixed(2)} <span className="text-sm font-normal text-slate-500">{settings.currency}</span></h3>
           </div>
           <div className="w-10 h-10 rounded-full bg-amber-50 text-amber-500 flex items-center justify-center">
@@ -466,7 +503,13 @@ export function DashboardScreen({
               // 1. حساب الرصيد التراكمي الشامل (لجميع الفترات والتاريخ بالكامل)
               const tAllTrx = unifiedTransactions.filter(trx => matchesTreasury(trx.treasury || (trx as any).treasuryId));
               const cumulativeIn = tAllTrx.filter(trx => trx.type === 'in').reduce((sum, trx) => sum + (Number(trx.amount) || 0), 0);
-              const cumulativeOut = tAllTrx.filter(trx => trx.type === 'out').reduce((sum, trx) => sum + (Number(trx.amount) || 0), 0);
+              const cumulativeOut = tAllTrx.filter(trx => 
+                trx.type === 'out' || 
+                (trx.type as string) === 'expense' || 
+                trx.category === 'expense' || 
+                trx.category === 'مصروفات' || 
+                trx.category?.includes('مصروف')
+              ).reduce((sum, trx) => sum + (Number(trx.amount) || 0), 0);
               const cumulativeBalance = cumulativeIn - cumulativeOut;
 
               // 2. حركات اليوم / الوردية الحالية
@@ -489,7 +532,45 @@ export function DashboardScreen({
               const sales = tTrx.filter(trx => trx.type === 'in' && (trx.category === 'sales' || trx.category === 'مبيعات')).reduce((sum, trx) => sum + trx.amount, 0) + unrecordedSales;
               const otherIn = tTrx.filter(trx => trx.type === 'in' && trx.category !== 'عهدة افتتاحية' && trx.category !== 'initial_cash' && trx.category !== 'sales' && trx.category !== 'مبيعات' && trx.category !== 'مقدم حجز' && trx.category !== 'booking_advance' && trx.category !== 'advance' && !(trx.description && trx.description.includes('مقدم حجز'))).reduce((sum, trx) => sum + trx.amount, 0);
               const income = custody + sales + bookingAdvancesAmt + otherIn;
-              const outcome = tTrx.filter(trx => trx.type === 'out').reduce((sum, trx) => sum + trx.amount, 0);
+              // حساب سلف الموظفين الخاصة بهذه الخزينة
+              const trxAdvancesForTreasury = tTrx.filter(isStaffAdvanceTrx).reduce((sum, trx) => sum + (Number(trx.amount) || 0), 0);
+              let empRecAdvancesForTreasury = 0;
+              if (employees && Array.isArray(employees)) {
+                employees.forEach(emp => {
+                  if (emp.branchId && !matchesActiveBranch(emp.branchId, (emp as any).branchCode)) return;
+                  (emp.financialRecords || []).forEach((r: any) => {
+                    const isSalary = r.type === 'salary' || (r.type === 'advance' && (r.id?.startsWith('FIN-SAL-') || r.note?.includes('مسير رواتب') || r.note?.includes('تم استلام صافي الراتب')));
+                    if (r.type === 'advance' && !isSalary) {
+                      const rTreasury = r.treasuryId || (isCash ? 'cash' : '');
+                      if (matchesTreasury(rTreasury)) {
+                        const matchesShift = matchesCurrentShift(r.date, (r as any).createdAt || (r as any).created_at, (r as any).shiftId, (r as any).shiftDate);
+                        if (matchesShift) {
+                          const rAmt = Number(r.amount) || 0;
+                          const alreadyInTrx = tTrx.some(trx => 
+                            isStaffAdvanceTrx(trx) &&
+                            Math.abs((Number(trx.amount) || 0) - rAmt) < 0.01 &&
+                            (trx.id === r.id || (trx.description && trx.description.includes(emp.name)))
+                          );
+                          if (!alreadyInTrx) {
+                            empRecAdvancesForTreasury += rAmt;
+                          }
+                        }
+                      }
+                    }
+                  });
+                });
+              }
+              const totalAdvancesForTreasury = trxAdvancesForTreasury + empRecAdvancesForTreasury;
+
+              const regularExpenses = tTrx.filter(trx => {
+                if (isStaffAdvanceTrx(trx)) return false;
+                const isOut = trx.type === 'out' || (trx.type as string) === 'expense' || trx.category === 'expense' || trx.category === 'مصروفات' || trx.category?.includes('مصروف');
+                if (!isOut) return false;
+                if (trx.category === 'transfer' || trx.description?.includes('تحويل')) return false;
+                return true;
+              }).reduce((sum, trx) => sum + (Number(trx.amount) || 0), 0);
+
+              const outcome = regularExpenses + totalAdvancesForTreasury;
               const net = income - outcome;
 
               if (isMain) {
@@ -540,13 +621,24 @@ export function DashboardScreen({
                         </div>
                       )}
 
+                      {/* سلف موظفين المنصرفة من هذه الخزينة */}
+                      {totalAdvancesForTreasury > 0 && (
+                        <div className="flex justify-between items-center bg-amber-500/15 border border-amber-400/30 px-2 py-1 rounded-lg text-amber-200 font-extrabold">
+                          <span className="flex items-center gap-1">
+                            <span>🤝</span>
+                            <span>سلف موظفين:</span>
+                          </span>
+                          <span className="text-amber-300 font-bold font-mono">-{totalAdvancesForTreasury.toFixed(2)} {settings.currency}</span>
+                        </div>
+                      )}
+
                       {/* مسحوبات ومصروفات اليوم */}
                       <div className="flex justify-between items-center text-slate-300 border-b border-slate-700/80 pb-2">
                         <span className="flex items-center gap-1">
                           <span>💸</span>
                           <span>مسحوبات ومصروفات اليوم:</span>
                         </span>
-                        <span className="text-rose-400 font-bold font-mono">-{outcome.toFixed(2)} {settings.currency}</span>
+                        <span className="text-rose-400 font-bold font-mono">-{regularExpenses.toFixed(2)} {settings.currency}</span>
                       </div>
 
                       {/* إجمالي الحركات المتراكمة الشاملة */}
@@ -641,13 +733,24 @@ export function DashboardScreen({
                       </div>
                     )}
 
+                    {/* سلف موظفين المنصرفة من هذه الخزينة */}
+                    {totalAdvancesForTreasury > 0 && (
+                      <div className="flex justify-between items-center bg-amber-500/15 border border-amber-400/30 px-2 py-1 rounded-lg text-amber-200 font-extrabold">
+                        <span className="flex items-center gap-1">
+                          <span>🤝</span>
+                          <span>سلف موظفين:</span>
+                        </span>
+                        <span className="text-amber-300 font-bold font-mono">-{totalAdvancesForTreasury.toFixed(2)} {settings.currency}</span>
+                      </div>
+                    )}
+
                     {/* Outflows */}
                     <div className="flex justify-between items-center text-slate-300 border-b border-slate-700/80 pb-2">
                       <span className="flex items-center gap-1">
                         <span>💸</span>
                         <span>مسحوبات ومصروفات:</span>
                       </span>
-                      <span className="text-rose-400 font-bold font-mono">-{outcome.toFixed(2)} {settings.currency}</span>
+                      <span className="text-rose-400 font-bold font-mono">-{regularExpenses.toFixed(2)} {settings.currency}</span>
                     </div>
 
                     {/* Total Net Balance in Drawer */}

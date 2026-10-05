@@ -247,6 +247,11 @@ export async function ensureCoreSchema(): Promise<void> {
       ensureColumn('invoices', 'booking_id', 'VARCHAR(100)'),
       ensureColumn('bookings', 'advance_payments', 'JSONB'),
       ensureColumn('bookings', 'location', 'TEXT'),
+      ensureColumn('bookings', 'created_by', 'TEXT'),
+      ensureColumn('bookings', 'created_by_name', 'VARCHAR(255)'),
+      ensureColumn('bookings', 'updated_at', 'TIMESTAMPTZ'),
+      ensureColumn('bookings', 'updated_by', 'TEXT'),
+      ensureColumn('bookings', 'updated_by_name', 'VARCHAR(255)'),
       ensureColumn('client_portal_accounts', 'username', 'VARCHAR(100)'),
       ensureColumn('client_portal_accounts', 'salon_code', 'VARCHAR(50)'),
       ensureColumn('client_portal_accounts', 'linked_salon_codes', 'JSONB'),
@@ -389,6 +394,12 @@ export const DB = {
             try { camel.services = JSON.parse(camel.services); } catch { camel.services = []; }
           }
           if (!Array.isArray(camel.services)) camel.services = [];
+          camel.createdAt = camel.createdAt || camel.created_at;
+          camel.createdBy = camel.createdBy || camel.created_by;
+          camel.createdByName = camel.createdByName || camel.created_by_name || camel.createdBy;
+          camel.updatedAt = camel.updatedAt || camel.updated_at;
+          camel.updatedBy = camel.updatedBy || camel.updated_by;
+          camel.updatedByName = camel.updatedByName || camel.updated_by_name || camel.updatedBy;
         }
         return camel;
       }) as T[];
@@ -1494,6 +1505,11 @@ export const DB = {
         total_amount: b.totalAmount ?? 0,
         date: safeDate, time: rawTime.length >= 5 ? rawTime.substring(0, 5) : rawTime, status: b.status || 'confirmed',
         created_at: b.createdAt || b.created_at || appointmentDateTime,
+        created_by: b.createdBy || b.created_by || null,
+        created_by_name: b.createdByName || b.created_by_name || null,
+        updated_at: b.updatedAt || b.updated_at || null,
+        updated_by: b.updatedBy || b.updated_by || null,
+        updated_by_name: b.updatedByName || b.updated_by_name || null,
         queue_number: b.queueNumber || null,
         advance_payments: cleanAdvances, notes: b.notes || null,
         location: b.location || null,
@@ -1501,20 +1517,37 @@ export const DB = {
         discount_value: Number(b.discountValue || 0)
       };
       let { error } = await client.from('bookings').upsert(snap, { onConflict: 'id' });
-      if (error && error.message && (error.message.includes('location') || error.message.includes('discount_'))) {
-        console.warn('DB.saveBooking: optional column missing in Supabase, retrying without missing columns...');
+      if (error && error.message) {
+        let retried = false;
         if (error.message.includes('location')) {
           ensureColumn('bookings', 'location', 'TEXT').catch(() => {});
           delete snap.location;
+          retried = true;
         }
         if (error.message.includes('discount_type') || error.message.includes('discount_value')) {
           ensureColumn('bookings', 'discount_type', 'TEXT').catch(() => {});
           ensureColumn('bookings', 'discount_value', 'NUMERIC').catch(() => {});
           delete snap.discount_type;
           delete snap.discount_value;
+          retried = true;
         }
-        const retry = await client.from('bookings').upsert(snap, { onConflict: 'id' });
-        error = retry.error;
+        if (error.message.includes('created_by') || error.message.includes('created_by_name') || error.message.includes('updated_at') || error.message.includes('updated_by') || error.message.includes('updated_by_name')) {
+          ensureColumn('bookings', 'created_by', 'TEXT').catch(() => {});
+          ensureColumn('bookings', 'created_by_name', 'VARCHAR(255)').catch(() => {});
+          ensureColumn('bookings', 'updated_at', 'TIMESTAMPTZ').catch(() => {});
+          ensureColumn('bookings', 'updated_by', 'TEXT').catch(() => {});
+          ensureColumn('bookings', 'updated_by_name', 'VARCHAR(255)').catch(() => {});
+          delete snap.created_by;
+          delete snap.created_by_name;
+          delete snap.updated_at;
+          delete snap.updated_by;
+          delete snap.updated_by_name;
+          retried = true;
+        }
+        if (retried) {
+          const retry = await client.from('bookings').upsert(snap, { onConflict: 'id' });
+          error = retry.error;
+        }
       }
       if (error) { console.error('DB.saveBooking error:', error.message); return null; }
       return b;
@@ -3593,7 +3626,7 @@ export function dbServiceToApp(row: any) {
     id: row.id, 
     salonId: row.salonId, 
     branchId: row.branchId,
-    categoryId: row.categoryId || '',
+    categoryId: row.categoryId || row.category_id || row.category || '',
     name: row.name, 
     price: price, 
     discountPrice: validDiscount,
@@ -3648,7 +3681,7 @@ export function dbProductToApp(row: any): any {
   return {
     id: c.id || row.id || '',
     name: c.name || row.name || '',
-    categoryId: c.categoryId || row.category_id || '',
+    categoryId: c.categoryId || row.category_id || row.category || '',
     sellPrice: Number(c.sellPrice ?? row.sell_price ?? 0),
     costPrice: Number(c.costPrice ?? row.cost_price ?? 0),
     reorderLimit: Number(c.reorderLimit ?? row.reorder_limit ?? 5),

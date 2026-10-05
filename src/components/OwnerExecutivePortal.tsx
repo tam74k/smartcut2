@@ -646,10 +646,10 @@ export function OwnerExecutivePortal({
 
   const matchesActiveBranch = (itemBranchId?: string) => {
     if (isAllBranches || branches.length <= 1 || !activeBranchId || activeBranchId === 'all') return true;
-    if (itemBranchId) {
-      return itemBranchId === activeBranchId;
-    }
-    return isMainBranch;
+    if (!itemBranchId) return true;
+    if (itemBranchId === activeBranchId) return true;
+    if (isMainBranch && (itemBranchId === mainBranchId || itemBranchId === 'b-main')) return true;
+    return false;
   };
 
   const isDateInSelectedPeriod = (dateStr?: string) => {
@@ -659,8 +659,9 @@ export function OwnerExecutivePortal({
     const d = cleanDate.match(/^\d{4}-\d{2}-\d{2}/)?.[0] || cleanDate;
 
     if (period === 'today') {
-      const localToday = new Date().toLocaleDateString('en-CA');
-      const utcToday = new Date().toISOString().split('T')[0];
+      const now = new Date();
+      const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      const utcToday = now.toISOString().split('T')[0];
       const shiftDate = (shiftData?.isOpen && shiftData?.date) ? shiftData.date : null;
       return d === localToday || d === utcToday || (shiftDate !== null && d === shiftDate);
     }
@@ -681,7 +682,9 @@ export function OwnerExecutivePortal({
 
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
-      const inPeriod = isDateInSelectedPeriod(t.date);
+      const inPeriod = isDateInSelectedPeriod(t.date) || 
+        (t.shiftDate && isDateInSelectedPeriod(t.shiftDate)) || 
+        ((t as any).shift_date && isDateInSelectedPeriod((t as any).shift_date));
       const isBranchMatch = matchesActiveBranch((t as any).branchId);
       return inPeriod && isBranchMatch;
     });
@@ -754,7 +757,13 @@ export function OwnerExecutivePortal({
     });
 
     const totalExpenses = filteredTransactions
-      .filter(t => t.type === 'out' || (t.type as string) === 'expense' || t.category?.includes('مصروف'))
+      .filter(t => 
+        t.type === 'out' || 
+        (t.type as string) === 'expense' || 
+        t.category === 'expense' || 
+        t.category === 'مصروفات' || 
+        t.category?.includes('مصروف')
+      )
       .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
 
     const netProfit = totalRevenue - totalExpenses;
@@ -907,27 +916,55 @@ export function OwnerExecutivePortal({
     }, 0);
 
     // 2. All Expenses
-    const directExpenseTx = filteredTransactions.filter(t => t.type === 'out' || (t.type as string) === 'expense' || t.category?.includes('مصروف'));
+    const directExpenseTx = filteredTransactions.filter(t => 
+      t.type === 'out' || 
+      (t.type as string) === 'expense' || 
+      t.category === 'expense' || 
+      t.category === 'مصروفات' || 
+      t.category?.includes('مصروف')
+    );
     const customExpenses = (expenses || []).filter(e => {
-      const inPeriod = isDateInSelectedPeriod(e.date);
+      const inPeriod = isDateInSelectedPeriod(e.date) || 
+        (e.shiftDate && isDateInSelectedPeriod(e.shiftDate)) || 
+        ((e as any).shift_date && isDateInSelectedPeriod((e as any).shift_date));
       const isBranchMatch = matchesActiveBranch(e.branchId);
       return inPeriod && isBranchMatch;
     });
 
-    const totalExpenses = customExpenses.length > 0
-      ? customExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0)
-      : directExpenseTx.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+    const sumCustom = customExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    const sumDirect = directExpenseTx.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+    const totalExpenses = Math.max(sumCustom, sumDirect);
 
     // 3. Salaries Disbursed & Advances
     let totalSalaries = 0;
     let totalAdvances = 0;
+
+    const isStaffAdvance = (t: any) => {
+      const isOut = t.type === 'out' || (t.type as string) === 'expense';
+      if (!isOut) return false;
+      const cat = (t.category || '').toLowerCase();
+      const expCat = ((t as any).expenseCategory || '').toLowerCase();
+      const desc = (t.description || '').toLowerCase();
+      return (
+        cat === 'staff_advance' ||
+        cat === 'hr_advance' ||
+        cat === 'advance' ||
+        cat.includes('سلف') ||
+        expCat.includes('سلف') ||
+        desc.includes('سلفة') ||
+        desc.includes('سلف')
+      );
+    };
 
     const activeStaff = employees.filter(e => matchesActiveBranch((e as any).branchId));
     activeStaff.forEach(emp => {
       (emp.financialRecords || []).forEach((rec: any) => {
         if (isDateInSelectedPeriod(rec.date)) {
           if (rec.type === 'salary') totalSalaries += Number(rec.amount) || 0;
-          if (rec.type === 'advance') totalAdvances += Number(rec.amount) || 0;
+          if (rec.type === 'advance') {
+            const isSal = rec.id?.startsWith('FIN-SAL-') || rec.note?.includes('مسير رواتب') || rec.note?.includes('تم استلام صافي الراتب');
+            if (!isSal) totalAdvances += Number(rec.amount) || 0;
+          }
         }
       });
     });
@@ -937,10 +974,24 @@ export function OwnerExecutivePortal({
         .filter(t => t.category?.includes('راتب') || t.category?.includes('رواتب') || t.description?.includes('راتب'))
         .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
     }
+
+    const trxAdvances = filteredTransactions.filter(isStaffAdvance);
     if (totalAdvances === 0) {
-      totalAdvances = filteredTransactions
-        .filter(t => t.category?.includes('سلفة') || t.category?.includes('سلف') || t.description?.includes('سلفة'))
-        .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+      totalAdvances = trxAdvances.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+    } else {
+      trxAdvances.forEach(t => {
+        const amt = Number(t.amount) || 0;
+        const alreadyCounted = activeStaff.some(emp => 
+          (emp.financialRecords || []).some((rec: any) => 
+            rec.type === 'advance' && 
+            Math.abs((Number(rec.amount) || 0) - amt) < 0.01 &&
+            isDateInSelectedPeriod(rec.date)
+          )
+        );
+        if (!alreadyCounted) {
+          totalAdvances += amt;
+        }
+      });
     }
 
     // 4. Purchases Paid + Supplier Payments
@@ -1026,8 +1077,13 @@ export function OwnerExecutivePortal({
         return s + paid;
       }, 0);
 
-      const brExp = (expenses || []).filter(e => isBrMatch(e.branchId) && isDateInSelectedPeriod(e.date)).reduce((s, e) => s + (Number(e.amount) || 0), 0)
-        + transactions.filter(t => isBrMatch((t as any).branchId) && (t.type === 'out' || (t.type as string) === 'expense' || t.category?.includes('مصروف')) && isDateInSelectedPeriod(t.date)).reduce((s, t) => s + (Number(t.amount) || 0), 0);
+      const brExp = transactions
+        .filter(t => 
+          isBrMatch((t as any).branchId) && 
+          (t.type === 'out' || (t.type as string) === 'expense' || t.category === 'expense' || t.category === 'مصروفات' || t.category?.includes('مصروف')) && 
+          (isDateInSelectedPeriod(t.date) || (t.shiftDate && isDateInSelectedPeriod(t.shiftDate)) || ((t as any).shift_date && isDateInSelectedPeriod((t as any).shift_date)))
+        )
+        .reduce((s, t) => s + (Number(t.amount) || 0), 0);
 
       const brStaff = employees.filter(e => isBrMatch((e as any).branchId));
       let brSalaries = 0;
@@ -1038,11 +1094,35 @@ export function OwnerExecutivePortal({
         (emp.financialRecords || []).forEach((rec: any) => {
           if (isDateInSelectedPeriod(rec.date)) {
             if (rec.type === 'salary') brSalaries += Number(rec.amount) || 0;
-            if (rec.type === 'advance') brAdvances += Number(rec.amount) || 0;
+            if (rec.type === 'advance') {
+              const isSal = rec.id?.startsWith('FIN-SAL-') || rec.note?.includes('مسير رواتب') || rec.note?.includes('تم استلام صافي الراتب');
+              if (!isSal) brAdvances += Number(rec.amount) || 0;
+            }
             if (rec.type === 'commission' || rec.type === 'service_commission') brCommissions += Number(rec.amount) || 0;
           }
         });
       });
+
+      const brAdvTrx = (transactions || []).filter(t => 
+        isBrMatch(t.branchId) && 
+        isStaffAdvance(t) && 
+        (isDateInSelectedPeriod(t.date) || (t.shiftDate && isDateInSelectedPeriod(t.shiftDate)))
+      );
+      if (brAdvances === 0) {
+        brAdvances = brAdvTrx.reduce((s, t) => s + (Number(t.amount) || 0), 0);
+      } else {
+        brAdvTrx.forEach(t => {
+          const amt = Number(t.amount) || 0;
+          const already = brStaff.some(emp => 
+            (emp.financialRecords || []).some((rec: any) => 
+              rec.type === 'advance' && 
+              Math.abs((Number(rec.amount) || 0) - amt) < 0.01 && 
+              isDateInSelectedPeriod(rec.date)
+            )
+          );
+          if (!already) brAdvances += amt;
+        });
+      }
 
       if (brCommissions === 0) {
         brInvoices.forEach(inv => {

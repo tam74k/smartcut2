@@ -1402,23 +1402,137 @@ export function POSScreen({
     if(onClearInitial) onClearInitial();
   };
 
+  const normalizeText = (text: string) => {
+    return (text || '')
+      .toLowerCase()
+      .trim()
+      .replace(/[أإآ]/g, 'ا')
+      .replace(/ة/g, 'ه')
+      .replace(/ى/g, 'ي')
+      .replace(/\s+/g, ' ');
+  };
+
+  // التصنيفات المتاحة للعرض للخدمات أو المنتجات في شاشة نقطة البيع
+  const availableCategories = useMemo(() => {
+    const isService = itemTypeFilter === 'service';
+    const activeList = isService 
+      ? (items || []).filter(i => i.isActive !== false) 
+      : (products || []).filter(p => (!p.productType || p.productType === 'retail') && p.isActive !== false);
+
+    const result: { id: string; name: string }[] = [];
+    const seenKeys = new Set<string>();
+
+    // 1. فحص قائمة التصنيفات المسجلة بالنظام (categories)
+    (categories || []).forEach(cat => {
+      if (!cat || !cat.name || cat.id === 'all') return;
+      const catNorm = normalizeText(cat.name);
+
+      let isRelevant = false;
+      if (isService) {
+        if (cat.type === 'service') {
+          isRelevant = true;
+        } else if (!cat.type) {
+          const usedByService = activeList.some((s: any) => 
+            s.categoryId === cat.id || 
+            normalizeText(s.categoryId || '') === catNorm ||
+            normalizeText(s.category || '') === catNorm
+          );
+          const usedByProduct = (products || []).some((p: any) => 
+            p.categoryId === cat.id || 
+            normalizeText(p.categoryId || '') === catNorm ||
+            normalizeText(p.category || '') === catNorm ||
+            normalizeText(p.category_id || '') === catNorm
+          );
+          isRelevant = usedByService || !usedByProduct;
+        }
+      } else {
+        // المنتجات
+        if (cat.type === 'product') {
+          isRelevant = true;
+        } else {
+          // فحص هل المنتجات الحالية تستخدم هذا التصنيف
+          const usedByProduct = activeList.some((p: any) => 
+            p.categoryId === cat.id || 
+            (p as any).category_id === cat.id ||
+            normalizeText(p.categoryId || '') === catNorm ||
+            normalizeText(p.category || '') === catNorm
+          );
+          if (usedByProduct) {
+            isRelevant = true;
+          }
+        }
+      }
+
+      if (isRelevant && !seenKeys.has(catNorm)) {
+        seenKeys.add(catNorm);
+        seenKeys.add(cat.id);
+        result.push({ id: cat.id, name: cat.name.trim() });
+      }
+    });
+
+    // 2. اكتشاف أي تصنيفات أخرى مسجلة على الأصناف (الخدمات أو المنتجات) لضمان ظهور زر لكل تصنيف فعلي
+    activeList.forEach((it: any) => {
+      const rawCat = (it.categoryId || it.category_id || it.category || '').toString().trim();
+      if (!rawCat || rawCat === 'all') return;
+      const rawNorm = normalizeText(rawCat);
+
+      if (!seenKeys.has(rawNorm) && !seenKeys.has(rawCat)) {
+        const matchedKnown = categories.find(c => c.id === rawCat || normalizeText(c.name) === rawNorm);
+        const displayName = matchedKnown ? matchedKnown.name : rawCat;
+        const displayNorm = normalizeText(displayName);
+
+        if (!seenKeys.has(displayNorm)) {
+          seenKeys.add(displayNorm);
+          seenKeys.add(rawCat);
+          result.push({ id: matchedKnown ? matchedKnown.id : rawCat, name: displayName });
+        }
+      }
+    });
+
+    return result;
+  }, [categories, items, products, itemTypeFilter]);
+
   const filteredItems = useMemo(() => {
     let source = itemTypeFilter === 'service' 
       ? items.filter(i => i.isActive !== false) 
       : products.filter(p => !p.productType || p.productType === 'retail');
     let filtered = source;
-    if (selectedCategory !== 'all') {
-      const selectedCat = categories.find(c => c.id === selectedCategory);
-      filtered = filtered.filter(i => {
-        if (i.categoryId === selectedCategory) return true;
-        if (selectedCat && (i.categoryId === selectedCat.name || (i as any).category === selectedCat.name || (i as any).category === selectedCat.id)) return true;
+
+    if (selectedCategory && selectedCategory !== 'all') {
+      const selectedCat = categories.find(c => c.id === selectedCategory || normalizeText(c.name) === normalizeText(selectedCategory));
+      const targetId = selectedCategory;
+      const targetName = selectedCat ? selectedCat.name : selectedCategory;
+      const targetNorm = normalizeText(targetName);
+      const targetIdNorm = normalizeText(targetId);
+
+      filtered = filtered.filter((i: any) => {
+        const itemCatId = (i.categoryId || i.category_id || '').toString().trim();
+        const itemCatName = (i.category || '').toString().trim();
+
+        // 1. مطابقة مباشرة بالمعرف
+        if (itemCatId && (itemCatId === targetId || (selectedCat && itemCatId === selectedCat.id))) return true;
+
+        // 2. مطابقة بالاسم
+        if (itemCatName && (itemCatName === targetName || (selectedCat && itemCatName === selectedCat.name))) return true;
+        if (itemCatId && (itemCatId === targetName || (selectedCat && itemCatId === selectedCat.name))) return true;
+
+        // 3. مطابقة مرنة مع معالجة الحروف والهمزات والمسافات (normalizeText)
+        if (itemCatId && (normalizeText(itemCatId) === targetNorm || normalizeText(itemCatId) === targetIdNorm)) return true;
+        if (itemCatName && (normalizeText(itemCatName) === targetNorm || normalizeText(itemCatName) === targetIdNorm)) return true;
+
+        // 4. مطابقة إذا كان itemCatId معرفاً يشير لتصنيف في جدول categories يطابق الهدف
+        if (itemCatId) {
+          const catObj = categories.find(c => c.id === itemCatId);
+          if (catObj && (catObj.id === targetId || normalizeText(catObj.name) === targetNorm)) return true;
+        }
+
         return false;
       });
     }
     if (searchQuery) {
-      const q = searchQuery.trim().toLowerCase();
+      const q = normalizeText(searchQuery);
       filtered = filtered.filter(i => 
-        i.name.toLowerCase().includes(q) || (i.barcode && i.barcode.toLowerCase().includes(q))
+        normalizeText(i.name).includes(q) || (i.barcode && i.barcode.toLowerCase().includes(searchQuery.trim().toLowerCase()))
       );
     }
 
@@ -1823,19 +1937,36 @@ export function POSScreen({
 
         {/* Categories */}
         <div className="flex items-center gap-2 overflow-x-auto pb-2 lg:pb-4 no-scrollbar">
-          {categories.filter(c => c.id === 'all' || !c.type || c.type === itemTypeFilter).map(cat => (
-            <button
-              key={cat.id}
-              onClick={() => setSelectedCategory(cat.id)}
-              className={`whitespace-nowrap px-6 py-2.5 rounded-full font-bold text-sm transition-all shadow-sm border ${
-                selectedCategory === cat.id 
-                  ? 'bg-primary border-primary text-white shadow-primary/20' 
-                  : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              {cat.name}
-            </button>
-          ))}
+          {/* زر الكل - متاح دائماً للخدمات والمنتجات */}
+          <button
+            onClick={() => setSelectedCategory('all')}
+            className={`whitespace-nowrap px-6 py-2.5 rounded-full font-bold text-sm transition-all shadow-sm border ${
+              selectedCategory === 'all'
+                ? 'bg-primary border-primary text-white shadow-primary/20'
+                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            الكل
+          </button>
+
+          {availableCategories.map(cat => {
+            const isSelected = selectedCategory === cat.id || 
+              (selectedCategory !== 'all' && normalizeText(selectedCategory) === normalizeText(cat.name));
+
+            return (
+              <button
+                key={cat.id}
+                onClick={() => setSelectedCategory(cat.id)}
+                className={`whitespace-nowrap px-6 py-2.5 rounded-full font-bold text-sm transition-all shadow-sm border ${
+                  isSelected 
+                    ? 'bg-primary border-primary text-white shadow-primary/20' 
+                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                {cat.name}
+              </button>
+            );
+          })}
         </div>
 
         {/* Items Grid */}

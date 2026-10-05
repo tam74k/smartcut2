@@ -233,11 +233,15 @@ export function ReportsScreen({
 
     // 2. All Expenses (جميع المصروفات)
     const periodTransactions = branchTransactions.filter(t => {
-      const d = (t.date || '').split('T')[0];
+      const d = (t.shiftDate || (t as any).shift_date || t.date || '').split('T')[0];
       return d >= activeFrom && d <= activeTo;
     });
 
-    const directExpenseTx = periodTransactions.filter(t => t.type === 'expense');
+    const directExpenseTx = periodTransactions.filter(t => 
+      (t.type === 'out' || (t.type as string) === 'expense') && 
+      (t.category === 'expense' || t.category === 'مصروفات' || t.category?.includes('مصروف') || Boolean((t as any).expenseCategory)) &&
+      t.category !== 'transfer'
+    );
     const customExpenses = (expenses || []).filter(e => {
       const d = (e.date || '').split('T')[0];
       const isBranchMatch = matchesActiveBranch(e.branchId);
@@ -252,6 +256,23 @@ export function ReportsScreen({
     let totalSalaries = 0;
     let totalAdvances = 0;
 
+    const isAdvTrx = (t: any) => {
+      const isOut = t.type === 'out' || (t.type as string) === 'expense';
+      if (!isOut) return false;
+      const cat = (t.category || '').toLowerCase();
+      const expCat = ((t as any).expenseCategory || '').toLowerCase();
+      const desc = (t.description || '').toLowerCase();
+      return (
+        cat === 'staff_advance' ||
+        cat === 'hr_advance' ||
+        cat === 'advance' ||
+        cat.includes('سلف') ||
+        expCat.includes('سلف') ||
+        desc.includes('سلفة') ||
+        desc.includes('سلف')
+      );
+    };
+
     branchEmployees.forEach(emp => {
       (emp.financialRecords || []).forEach((rec: any) => {
         const d = (rec.date || '').split('T')[0];
@@ -259,7 +280,8 @@ export function ReportsScreen({
           if (rec.type === 'salary') {
             totalSalaries += Number(rec.amount) || 0;
           } else if (rec.type === 'advance') {
-            totalAdvances += Number(rec.amount) || 0;
+            const isSal = rec.id?.startsWith('FIN-SAL-') || rec.note?.includes('مسير رواتب') || rec.note?.includes('تم استلام صافي الراتب');
+            if (!isSal) totalAdvances += Number(rec.amount) || 0;
           }
         }
       });
@@ -270,10 +292,22 @@ export function ReportsScreen({
         .filter(t => t.category?.includes('راتب') || t.category?.includes('رواتب') || t.description?.includes('راتب'))
         .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
     }
+    const periodAdvTrx = periodTransactions.filter(isAdvTrx);
     if (totalAdvances === 0) {
-      totalAdvances = periodTransactions
-        .filter(t => t.category?.includes('سلفة') || t.category?.includes('سلف') || t.description?.includes('سلفة'))
-        .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+      totalAdvances = periodAdvTrx.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+    } else {
+      periodAdvTrx.forEach(t => {
+        const amt = Number(t.amount) || 0;
+        const already = branchEmployees.some(emp => 
+          (emp.financialRecords || []).some((rec: any) => 
+            rec.type === 'advance' && 
+            Math.abs((Number(rec.amount) || 0) - amt) < 0.01 && 
+            (rec.date || '').split('T')[0] >= activeFrom && 
+            (rec.date || '').split('T')[0] <= activeTo
+          )
+        );
+        if (!already) totalAdvances += amt;
+      });
     }
 
     // 4. Purchases Paid + Supplier Payments (المسدد في فواتير المشتريات + دفعات الموردين)
@@ -569,7 +603,7 @@ export function ReportsScreen({
     end.setHours(23, 59, 59, 999);
 
     const filteredTransactions = branchTransactions.filter(t => {
-      const tDateStr = t.date.split('T')[0];
+      const tDateStr = (t.shiftDate || (t as any).shift_date || t.date || '').split('T')[0];
       return tDateStr >= activeFrom && tDateStr <= activeTo;
     });
 
@@ -578,7 +612,10 @@ export function ReportsScreen({
       .reduce((sum, t) => sum + t.amount, 0);
     
     const expense = filteredTransactions
-      .filter(t => t.type === 'out' && t.category !== 'transfer')
+      .filter(t => 
+        (t.type === 'out' || (t.type as string) === 'expense' || t.category === 'expense' || t.category === 'مصروفات' || t.category?.includes('مصروف')) && 
+        t.category !== 'transfer'
+      )
       .reduce((sum, t) => sum + t.amount, 0);
 
     const custodyTransactions = filteredTransactions.filter(
@@ -1200,8 +1237,9 @@ export function ReportsScreen({
     } else if (activeReportType === 'expenses') {
       const headers = ['رقم السند', 'التاريخ', 'المبلغ', 'التصنيف', 'البيان', 'الخزينة'];
       const filtered = transactions.filter(t => {
-        const d = t.date.split('T')[0];
-        return d >= activeFrom && d <= activeTo && t.type === 'out';
+        const d = (t.shiftDate || (t as any).shift_date || t.date || '').split('T')[0];
+        const isExp = t.type === 'out' || (t.type as string) === 'expense' || t.category === 'expense' || t.category === 'مصروفات' || t.category?.includes('مصروف') || Boolean((t as any).expenseCategory);
+        return d >= activeFrom && d <= activeTo && isExp && t.category !== 'transfer';
       });
       const rows = filtered.map(t => [
         t.id,
@@ -2531,8 +2569,9 @@ function ReportTable({
   
   if (reportType === 'expenses') {
     const filteredTransactions = transactions.filter((t: Transaction) => {
-      const tDateStr = t.date.split('T')[0];
-      return tDateStr >= activeFrom && tDateStr <= activeTo && t.type === 'out' && t.category !== 'transfer';
+      const tDateStr = (t.shiftDate || (t as any).shift_date || t.date || '').split('T')[0];
+      const isExp = t.type === 'out' || (t.type as string) === 'expense' || t.category === 'expense' || t.category === 'مصروفات' || t.category?.includes('مصروف') || Boolean((t as any).expenseCategory);
+      return tDateStr >= activeFrom && tDateStr <= activeTo && isExp && t.category !== 'transfer';
     });
 
     const dateLabel = start.toISOString().split('T')[0] === end.toISOString().split('T')[0] 

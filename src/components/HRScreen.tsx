@@ -678,8 +678,8 @@ export function HRScreen({
         const totalDailyCommission = commResult.totalCommission;
 
         // Determine Status, Attendance, Delays, Overtime
-        let status: DayTimesheetRow['status'] = 'regular';
-        let statusLabel = 'حضور';
+        let status: DayTimesheetRow['status'] = 'absent';
+        let statusLabel = 'غائب';
         let checkIn: string | null = null;
         let checkOut: string | null = null;
         let workedHoursFormatted = '--:--:--';
@@ -1005,13 +1005,14 @@ export function HRScreen({
           } else {
             workedHoursFormatted = '08:00:00';
           }
-        } else if (isTodayOrPast) {
-          status = 'absent';
-          statusLabel = 'غياب بدون إذن';
-          absenceDeduction = dailyRate * absenceMultiplier;
         } else {
-          status = 'regular';
-          statusLabel = 'دوام مجدول';
+          // الافتراضي للحالة في التايم شيت هو "غائب" مع تطبيق خصم الغياب وفق القاعدة المحددة في الإعدادات
+          // لا نستخدم "دوام مجدول" ولا "غياب بدون عذر" طالما لم يتم تسجيل ذلك صراحة في البيانات من قبل المستخدمين
+          status = 'absent';
+          const isExplicitUnexcused = dayLogs.some(l => l.notes?.includes('بدون عذر') || l.notes?.includes('بدون إذن')) ||
+                                     (leave && (leave.note?.includes('بدون عذر') || leave.reason?.includes('بدون عذر')));
+          statusLabel = isExplicitUnexcused ? 'غياب بدون عذر' : 'غائب';
+          absenceDeduction = dailyRate * absenceMultiplier;
         }
 
         // Apply Delay Forgiveness
@@ -1050,7 +1051,7 @@ export function HRScreen({
           // Net must NEVER be positive: it is either 0 (if absence deduction is 1 day),
           // or negative (if absence deduction is >= 2 days, or if advances/penalties exist).
           const baseAbsentNet = dailyRate - absenceDeduction;
-          netDaily = Math.min(0, baseAbsentNet - advances - specialPenalty - commissionPaid);
+          netDaily = Math.min(0, baseAbsentNet) + bonuses + totalDailyCommission - advances - specialPenalty - commissionPaid;
         }
 
         rows.push({
