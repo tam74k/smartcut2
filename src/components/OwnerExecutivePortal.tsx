@@ -756,6 +756,79 @@ export function OwnerExecutivePortal({
       }
     });
 
+    // مقدمات وعربون الحجز المسجلة ضمن الفترة
+    const isBookingAdvanceTrx = (t: any) => {
+      if (t.type !== 'in') return false;
+      const cat = (t.category || '').toLowerCase();
+      const desc = (t.description || '').toLowerCase();
+      if (cat === 'booking_advance' || cat === 'مقدم حجز' || cat === 'عربون حجز' || cat === 'عربون' || cat === 'حجز') return true;
+      if (cat === 'advance' && !desc.includes('سلف')) return true;
+      if (desc.includes('مقدم حجز') || desc.includes('عربون حجز') || desc.includes('عربون')) return true;
+      return false;
+    };
+
+    const periodAdvTrx = filteredTransactions.filter(isBookingAdvanceTrx);
+    periodAdvTrx.forEach(t => {
+      const amt = Number(t.amount) || 0;
+      totalRevenue += amt;
+      const targetId = t.treasury || (t as any).treasuryId || '';
+      const treasuryObj = (settings.treasuries || []).find(tr => tr.id === targetId || tr.name === targetId);
+      const descriptor = `${targetId} ${treasuryObj?.name || ''} ${treasuryObj?.type || ''}`.toLowerCase();
+      if (descriptor.includes('mada') || descriptor.includes('شبكة') || descriptor.includes('مدى') || descriptor.includes('pos') || descriptor.includes('card')) {
+        card += amt;
+      } else if (descriptor.includes('visa') || descriptor.includes('فيزا') || descriptor.includes('credit') || descriptor.includes('ماستر') || descriptor.includes('master')) {
+        credit += amt;
+      } else if (descriptor.includes('bank') || descriptor.includes('تحويل') || descriptor.includes('بنك') || descriptor.includes('transfer')) {
+        bankTransfer += amt;
+      } else {
+        cash += amt;
+      }
+    });
+
+    (bookings || []).forEach(b => {
+      if (b.status === 'cancelled' || !matchesActiveBranch((b as any).branchId)) return;
+      const advances = (b.advancePayments && Array.isArray(b.advancePayments))
+        ? b.advancePayments
+        : (typeof (b as any).advance_payments === 'string'
+          ? (() => { try { return JSON.parse((b as any).advance_payments); } catch { return []; } })()
+          : []);
+
+      if (advances.length === 0 && Number(b.advancePayment || 0) > 0) {
+        advances.push({
+          amount: Number(b.advancePayment),
+          date: b.date || (b as any).createdAt,
+          paymentMethod: (b as any).paymentMethod || 'cash'
+        });
+      }
+
+      advances.forEach((adv: any) => {
+        const advDate = (adv.date || b.date || (b as any).createdAt || '').split('T')[0].trim();
+        if (isDateInSelectedPeriod(advDate)) {
+          const amt = Number(adv.amount) || 0;
+          if (amt <= 0) return;
+          const already = periodAdvTrx.some(t =>
+            Math.abs((Number(t.amount) || 0) - amt) < 0.01 &&
+            (t.description?.includes(b.bookingCode || '') || t.description?.includes(b.id || '') || t.description?.includes(b.clientName || ''))
+          );
+          if (!already) {
+            totalRevenue += amt;
+            const targetId = adv.treasuryId || adv.paymentMethod || 'cash';
+            const treasuryObj = (settings.treasuries || []).find(tr => tr.id === targetId || tr.name === targetId);
+            const descriptor = `${targetId} ${treasuryObj?.name || ''} ${treasuryObj?.type || ''}`.toLowerCase();
+            if (descriptor.includes('mada') || descriptor.includes('شبكة') || descriptor.includes('مدى') || descriptor.includes('pos') || descriptor.includes('card')) {
+              card += amt;
+            } else if (descriptor.includes('visa') || descriptor.includes('فيزا') || descriptor.includes('credit') || descriptor.includes('ماستر') || descriptor.includes('master')) {
+              credit += amt;
+            } else if (descriptor.includes('bank') || descriptor.includes('تحويل') || descriptor.includes('بنك') || descriptor.includes('transfer')) {
+              bankTransfer += amt;
+            } else {
+              cash += amt;
+            }
+          }
+        }
+      });
+    });
+
     const totalExpenses = filteredTransactions
       .filter(t => 
         t.type === 'out' || 
@@ -782,7 +855,7 @@ export function OwnerExecutivePortal({
       invoiceCount: filteredInvoices.length,
       avgTicket
     };
-  }, [filteredInvoices, filteredTransactions, settings.treasuries]);
+  }, [filteredInvoices, filteredTransactions, bookings, settings.treasuries, activeBranchId, isMainBranch, isAllBranches, period, dateRange]);
 
   // ---- حسابات وأرصدة الخزائن المسجلة في النظام (Registered Treasuries Balances & Stats) ----
   const treasuryStats = useMemo(() => {
@@ -851,6 +924,54 @@ export function OwnerExecutivePortal({
         }
       });
 
+      // إضافة مقدمات وعربون الحجز المحصلة في هذه الخزينة
+      const isBookingAdvanceTrx = (trx: any) => {
+        if (trx.type !== 'in') return false;
+        const cat = (trx.category || '').toLowerCase();
+        const desc = (trx.description || '').toLowerCase();
+        if (cat === 'booking_advance' || cat === 'مقدم حجز' || cat === 'عربون حجز' || cat === 'عربون' || cat === 'حجز') return true;
+        if (cat === 'advance' && !desc.includes('سلف')) return true;
+        if (desc.includes('مقدم حجز') || desc.includes('عربون حجز') || desc.includes('عربون')) return true;
+        return false;
+      };
+      const advTrxForT = periodTrxs.filter(trx => isBookingAdvanceTrx(trx));
+      invoicesCollected += advTrxForT.reduce((sum, trx) => sum + (Number(trx.amount) || 0), 0);
+
+      (bookings || []).forEach(b => {
+        if (b.status === 'cancelled' || !matchesActiveBranch((b as any).branchId)) return;
+        const advances = (b.advancePayments && Array.isArray(b.advancePayments))
+          ? b.advancePayments
+          : (typeof (b as any).advance_payments === 'string'
+            ? (() => { try { return JSON.parse((b as any).advance_payments); } catch { return []; } })()
+            : []);
+
+        if (advances.length === 0 && Number(b.advancePayment || 0) > 0) {
+          advances.push({
+            amount: Number(b.advancePayment),
+            date: b.date || (b as any).createdAt,
+            paymentMethod: (b as any).paymentMethod || 'cash'
+          });
+        }
+
+        advances.forEach((adv: any) => {
+          const advDate = (adv.date || b.date || (b as any).createdAt || '').split('T')[0].trim();
+          if (isDateInSelectedPeriod(advDate)) {
+            const amt = Number(adv.amount) || 0;
+            if (amt <= 0) return;
+            const targetId = adv.treasuryId || adv.paymentMethod || 'cash';
+            if (targetId === t.id || targetId === t.name || (!targetId && (t.id === 'cash' || t.name.includes('كاش')))) {
+              const already = advTrxForT.some(trx =>
+                Math.abs((Number(trx.amount) || 0) - amt) < 0.01 &&
+                (trx.description?.includes(b.bookingCode || '') || trx.description?.includes(b.id || '') || trx.description?.includes(b.clientName || ''))
+              );
+              if (!already) {
+                invoicesCollected += amt;
+              }
+            }
+          }
+        });
+      });
+
       const style = palette[idx % palette.length];
 
       return {
@@ -899,13 +1020,13 @@ export function OwnerExecutivePortal({
       totalLifetimeTreasuryBalance,
       totalInvoicesCollected
     };
-  }, [liveTreasuries, settings.treasuries, filteredTransactions, transactions, filteredInvoices]);
+  }, [liveTreasuries, settings.treasuries, filteredTransactions, transactions, filteredInvoices, bookings, activeBranchId, isMainBranch, isAllBranches, period, dateRange]);
 
   // ---- معادلة صافي الربح الدقيقة (Net Profit Equation Analysis) ----
   // صافي الربح = إجمالي الدخل من الفواتير - جميع المصروفات - الرواتب - السلف - (المسدد في المشتريات + دفعات الموردين) - عمولات الموظفين
   const netProfitData = useMemo(() => {
     // 1. Gross Invoiced Income
-    const grossIncome = filteredInvoices.reduce((sum, inv) => {
+    const grossInvoicesIncome = filteredInvoices.reduce((sum, inv) => {
       const rawPaid = ((inv as any).paid !== undefined && (inv as any).paid !== null) ? Number((inv as any).paid) : 0;
       const rawTotal = (inv.total !== undefined && inv.total !== null) ? Number(inv.total) : 0;
       const rawNet = (inv.netAmount !== undefined && inv.netAmount !== null) ? Number(inv.netAmount) : 0;
@@ -914,6 +1035,56 @@ export function OwnerExecutivePortal({
         : (rawPaid > 0 ? rawPaid : (rawTotal > 0 ? rawTotal : rawNet));
       return sum + paid;
     }, 0);
+
+    // 1.b Booking Advances (مقدمات وعربون الحجز المحصلة)
+    const isBookingAdvanceTrx = (t: any) => {
+      if (t.type !== 'in') return false;
+      const cat = (t.category || '').toLowerCase();
+      const desc = (t.description || '').toLowerCase();
+      if (cat === 'booking_advance' || cat === 'مقدم حجز' || cat === 'عربون حجز' || cat === 'عربون' || cat === 'حجز') return true;
+      if (cat === 'advance' && !desc.includes('سلف')) return true;
+      if (desc.includes('مقدم حجز') || desc.includes('عربون حجز') || desc.includes('عربون')) return true;
+      return false;
+    };
+
+    const periodBookingAdvTrx = filteredTransactions.filter(isBookingAdvanceTrx);
+    let totalBookingAdvances = periodBookingAdvTrx.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+    let bookingAdvancesCount = periodBookingAdvTrx.length;
+
+    (bookings || []).forEach(b => {
+      if (b.status === 'cancelled' || !matchesActiveBranch((b as any).branchId)) return;
+      const advances = (b.advancePayments && Array.isArray(b.advancePayments))
+        ? b.advancePayments
+        : (typeof (b as any).advance_payments === 'string'
+          ? (() => { try { return JSON.parse((b as any).advance_payments); } catch { return []; } })()
+          : []);
+
+      if (advances.length === 0 && Number(b.advancePayment || 0) > 0) {
+        advances.push({
+          amount: Number(b.advancePayment),
+          date: b.date || (b as any).createdAt,
+          paymentMethod: (b as any).paymentMethod || 'cash'
+        });
+      }
+
+      advances.forEach((adv: any) => {
+        const advDate = (adv.date || b.date || (b as any).createdAt || '').split('T')[0].trim();
+        if (isDateInSelectedPeriod(advDate)) {
+          const amt = Number(adv.amount) || 0;
+          if (amt <= 0) return;
+          const already = periodBookingAdvTrx.some(t =>
+            Math.abs((Number(t.amount) || 0) - amt) < 0.01 &&
+            (t.description?.includes(b.bookingCode || '') || t.description?.includes(b.id || '') || t.description?.includes(b.clientName || ''))
+          );
+          if (!already) {
+            totalBookingAdvances += amt;
+            bookingAdvancesCount += 1;
+          }
+        }
+      });
+    });
+
+    const grossIncome = grossInvoicesIncome + totalBookingAdvances;
 
     // 2. All Expenses
     const directExpenseTx = filteredTransactions.filter(t => 
@@ -1034,7 +1205,14 @@ export function OwnerExecutivePortal({
     const profitMargin = grossIncome > 0 ? (netProfit / grossIncome) * 100 : 0;
 
     const breakdownList = [
-      { id: 'income', label: 'إجمالي الدخل المحصل من الفواتير', amount: grossIncome, type: 'plus', percent: 100, note: `${filteredInvoices.length} فاتورة مسددة` },
+      { 
+        id: 'income', 
+        label: 'إجمالي الدخل المحصل (فواتير + مقدمات حجز)', 
+        amount: grossIncome, 
+        type: 'plus', 
+        percent: 100, 
+        note: `${filteredInvoices.length} فاتورة مسددة (${grossInvoicesIncome.toFixed(0)} ${currency}) + ${bookingAdvancesCount} مقدم حجز (${totalBookingAdvances.toFixed(0)} ${currency})` 
+      },
       { id: 'expenses', label: 'جميع المصروفات التشغيلية والنثرية', amount: totalExpenses, type: 'minus', percent: grossIncome > 0 ? (totalExpenses / grossIncome) * 100 : 0, note: 'مصروفات الإيجار والفواتير والنثريات' },
       { id: 'salaries', label: 'الرواتب الأساسية ومسيرات الصرف', amount: totalSalaries, type: 'minus', percent: grossIncome > 0 ? (totalSalaries / grossIncome) * 100 : 0, note: 'مسيرات الرواتب المنصرفة' },
       { id: 'advances', label: 'سلف الموظفين المصروفة', amount: totalAdvances, type: 'minus', percent: grossIncome > 0 ? (totalAdvances / grossIncome) * 100 : 0, note: 'السلف الممنوحة خلال الفترة' },
@@ -1046,6 +1224,9 @@ export function OwnerExecutivePortal({
 
     return {
       grossIncome,
+      grossInvoicesIncome,
+      totalBookingAdvances,
+      bookingAdvancesCount,
       totalExpenses,
       totalSalaries,
       totalAdvances,
@@ -1059,7 +1240,7 @@ export function OwnerExecutivePortal({
       invoicesCount: filteredInvoices.length,
       breakdownList
     };
-  }, [filteredInvoices, filteredTransactions, expenses, purchases, supplierPayments, employees, dateRange, matchesActiveBranch]);
+  }, [filteredInvoices, filteredTransactions, bookings, expenses, purchases, supplierPayments, employees, dateRange, matchesActiveBranch, currency]);
 
   // ---- مقارنة أداء ومصروفات وصافي أرباح الفروع (Branch Performance Comparison) ----
   const branchComparisonData = useMemo(() => {
@@ -1067,7 +1248,7 @@ export function OwnerExecutivePortal({
       const isBrMatch = (bId?: string) => bId ? bId === br.id : (br.isMain || br.id === 'b-main');
       
       const brInvoices = invoices.filter(inv => isBrMatch(inv.branchId) && isDateInSelectedPeriod(inv.date) && inv.status !== 'cancelled');
-      const brGross = brInvoices.reduce((s, inv) => {
+      const brInvoicesGross = brInvoices.reduce((s, inv) => {
         const rawPaid = ((inv as any).paid !== undefined && (inv as any).paid !== null) ? Number((inv as any).paid) : 0;
         const rawTotal = (inv.total !== undefined && inv.total !== null) ? Number(inv.total) : 0;
         const rawNet = (inv.netAmount !== undefined && inv.netAmount !== null) ? Number(inv.netAmount) : 0;
@@ -1076,6 +1257,45 @@ export function OwnerExecutivePortal({
           : (rawPaid > 0 ? rawPaid : (rawTotal > 0 ? rawTotal : rawNet));
         return s + paid;
       }, 0);
+
+      // Branch booking advances
+      const brBookingAdvTrx = (transactions || []).filter(t => 
+        isBrMatch((t as any).branchId) && 
+        isBookingAdvanceTrx(t) && 
+        (isDateInSelectedPeriod(t.date) || (t.shiftDate && isDateInSelectedPeriod(t.shiftDate)) || ((t as any).shift_date && isDateInSelectedPeriod((t as any).shift_date)))
+      );
+      let brBookingAdvances = brBookingAdvTrx.reduce((s, t) => s + (Number(t.amount) || 0), 0);
+      (bookings || []).forEach(b => {
+        if (b.status === 'cancelled' || !isBrMatch((b as any).branchId)) return;
+        const advances = (b.advancePayments && Array.isArray(b.advancePayments))
+          ? b.advancePayments
+          : (typeof (b as any).advance_payments === 'string'
+            ? (() => { try { return JSON.parse((b as any).advance_payments); } catch { return []; } })()
+            : []);
+
+        if (advances.length === 0 && Number(b.advancePayment || 0) > 0) {
+          advances.push({
+            amount: Number(b.advancePayment),
+            date: b.date || (b as any).createdAt,
+            paymentMethod: (b as any).paymentMethod || 'cash'
+          });
+        }
+
+        advances.forEach((adv: any) => {
+          const advDate = (adv.date || b.date || (b as any).createdAt || '').split('T')[0].trim();
+          if (isDateInSelectedPeriod(advDate)) {
+            const amt = Number(adv.amount) || 0;
+            if (amt <= 0) return;
+            const already = brBookingAdvTrx.some(t =>
+              Math.abs((Number(t.amount) || 0) - amt) < 0.01 &&
+              (t.description?.includes(b.bookingCode || '') || t.description?.includes(b.id || '') || t.description?.includes(b.clientName || ''))
+            );
+            if (!already) brBookingAdvances += amt;
+          }
+        });
+      });
+
+      const brGross = brInvoicesGross + brBookingAdvances;
 
       const brExp = transactions
         .filter(t => 
@@ -1154,7 +1374,7 @@ export function OwnerExecutivePortal({
         margin: brMargin
       };
     });
-  }, [branches, invoices, transactions, expenses, purchases, supplierPayments, employees, dateRange]);
+  }, [branches, invoices, transactions, bookings, expenses, purchases, supplierPayments, employees, dateRange]);
 
   // ---- حسابات الشركاء وتوزيع الأرباح (Partners & Profit Shares) ----
   const totalCapital = useMemo(() => {

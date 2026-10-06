@@ -167,6 +167,10 @@ export function ReportsScreen({
     return (salesReturns || []).filter(r => matchesActiveBranch(r.branchId));
   }, [salesReturns, activeBranchId, isMainBranch]);
 
+  const branchBookings = useMemo(() => {
+    return (bookings || []).filter(b => matchesActiveBranch((b as any).branchId));
+  }, [bookings, activeBranchId, isMainBranch]);
+
   const getTreasuryLabel = (tId?: string, paymentMethod?: string) => {
     if (tId) {
       const found = settings.treasuries?.find((t: any) => t.id === tId);
@@ -226,10 +230,65 @@ export function ReportsScreen({
       return d >= activeFrom && d <= activeTo && inv.status !== 'cancelled';
     });
 
-    const grossIncome = periodInvoices.reduce((sum, inv) => {
+    const grossInvoicesIncome = periodInvoices.reduce((sum, inv) => {
       const paid = inv.paidAmount !== undefined ? Number(inv.paidAmount) : Number(inv.total) || 0;
       return sum + paid;
     }, 0);
+
+    // 1.b Booking Advances (مقدمات وعربون الحجز المحصلة)
+    const isBookingAdvanceTrx = (t: any) => {
+      if (t.type !== 'in') return false;
+      const cat = (t.category || '').toLowerCase();
+      const desc = (t.description || '').toLowerCase();
+      if (cat === 'booking_advance' || cat === 'مقدم حجز' || cat === 'عربون حجز' || cat === 'عربون' || cat === 'حجز') return true;
+      if (cat === 'advance' && !desc.includes('سلف')) return true;
+      if (desc.includes('مقدم حجز') || desc.includes('عربون حجز') || desc.includes('عربون')) return true;
+      return false;
+    };
+
+    const periodBookingAdvTrx = branchTransactions.filter(t => {
+      const d = (t.shiftDate || (t as any).shift_date || t.date || '').split('T')[0];
+      return d >= activeFrom && d <= activeTo && isBookingAdvanceTrx(t);
+    });
+
+    let totalBookingAdvances = periodBookingAdvTrx.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+    let bookingAdvancesCount = periodBookingAdvTrx.length;
+
+    // فحص مقدمات وعربون الحجز المسجلة في جدول الحجوزات وغير المسجلة كمعاملة
+    branchBookings.forEach(b => {
+      if (b.status === 'cancelled') return;
+      const advances = (b.advancePayments && Array.isArray(b.advancePayments))
+        ? b.advancePayments
+        : (typeof (b as any).advance_payments === 'string'
+          ? (() => { try { return JSON.parse((b as any).advance_payments); } catch { return []; } })()
+          : []);
+
+      if (advances.length === 0 && Number(b.advancePayment || 0) > 0) {
+        advances.push({
+          amount: Number(b.advancePayment),
+          date: b.date || (b as any).createdAt,
+          paymentMethod: (b as any).paymentMethod || 'cash'
+        });
+      }
+
+      advances.forEach((adv: any) => {
+        const advDate = (adv.date || b.date || (b as any).createdAt || '').split('T')[0].trim();
+        if (advDate >= activeFrom && advDate <= activeTo) {
+          const amt = Number(adv.amount) || 0;
+          if (amt <= 0) return;
+          const already = periodBookingAdvTrx.some(t =>
+            Math.abs((Number(t.amount) || 0) - amt) < 0.01 &&
+            (t.description?.includes(b.bookingCode || '') || t.description?.includes(b.id || '') || t.description?.includes(b.clientName || ''))
+          );
+          if (!already) {
+            totalBookingAdvances += amt;
+            bookingAdvancesCount += 1;
+          }
+        }
+      });
+    });
+
+    const grossIncome = grossInvoicesIncome + totalBookingAdvances;
 
     // 2. All Expenses (جميع المصروفات)
     const periodTransactions = branchTransactions.filter(t => {
@@ -378,7 +437,14 @@ export function ReportsScreen({
     const profitMargin = grossIncome > 0 ? (netProfit / grossIncome) * 100 : 0;
 
     const breakdownList = [
-      { id: 'income', label: 'إجمالي الدخل المحصل من الفواتير', amount: grossIncome, type: 'plus', percent: 100, note: `${periodInvoices.length} فاتورة مسددة` },
+      { 
+        id: 'income', 
+        label: 'إجمالي الدخل المحصل (فواتير + مقدمات حجز)', 
+        amount: grossIncome, 
+        type: 'plus', 
+        percent: 100, 
+        note: `${periodInvoices.length} فاتورة مسددة (${grossInvoicesIncome.toFixed(2)} ${settings.currency}) + ${bookingAdvancesCount} مقدم حجز (${totalBookingAdvances.toFixed(2)} ${settings.currency})` 
+      },
       ...(totalSalesReturns > 0 ? [{ id: 'sales_returns', label: 'مرتجعات المبيعات والبنود المستردة (-)', amount: totalSalesReturns, type: 'minus', percent: grossIncome > 0 ? (totalSalesReturns / grossIncome) * 100 : 0, note: `${periodSalesReturns.length} سند مرتجع مبيعات مسجل` }] : []),
       { id: 'expenses', label: 'جميع المصروفات التشغيلية والنثرية', amount: totalExpenses, type: 'minus', percent: grossIncome > 0 ? (totalExpenses / grossIncome) * 100 : 0, note: 'مصروفات الإيجار والفواتير والنثريات' },
       { id: 'salaries', label: 'الرواتب الأساسية ومسيرات الصرف', amount: totalSalaries, type: 'minus', percent: grossIncome > 0 ? (totalSalaries / grossIncome) * 100 : 0, note: 'مسيرات الرواتب المنصرفة للكادر' },
@@ -391,6 +457,9 @@ export function ReportsScreen({
 
     return {
       grossIncome,
+      grossInvoicesIncome,
+      totalBookingAdvances,
+      bookingAdvancesCount,
       totalSalesReturns,
       periodSalesReturns,
       totalExpenses,
@@ -412,7 +481,7 @@ export function ReportsScreen({
       purchasesByMethod,
       breakdownList
     };
-  }, [activeFrom, activeTo, branchInvoices, branchTransactions, expenses, branchEmployees, purchases, supplierPayments, matchesActiveBranch, settings.currency]);
+  }, [activeFrom, activeTo, branchInvoices, branchTransactions, branchBookings, expenses, branchEmployees, purchases, supplierPayments, matchesActiveBranch, settings.currency]);
 
   const overtimeReportData = useMemo(() => {
     if (!activeFrom || !activeTo) return { detailedRows: [], summaryRows: [], totalHours: 0, totalAmount: 0, totalEmployees: 0, otCount: 0 };
@@ -1221,18 +1290,64 @@ export function ReportsScreen({
     const filename = `تقرير_${activeReportType}_${activeFrom}_${activeTo}`;
     if (activeReportType === 'income') {
       const headers = ['رقم الحركة', 'التاريخ', 'النوع', 'المبلغ', 'البيان', 'الخزينة'];
-      const filtered = transactions.filter(t => {
-        const d = t.date.split('T')[0];
+      const isBookingAdv = (t: any) => {
+        const cat = (t.category || '').toLowerCase();
+        const desc = (t.description || '').toLowerCase();
+        return cat === 'booking_advance' || cat === 'مقدم حجز' || cat === 'عربون' || cat === 'عربون حجز' || desc.includes('مقدم حجز') || desc.includes('عربون حجز') || (cat === 'advance' && !desc.includes('سلف'));
+      };
+      const filtered = branchTransactions.filter(t => {
+        const d = (t.shiftDate || (t as any).shift_date || t.date || '').split('T')[0];
         return d >= activeFrom && d <= activeTo;
       });
       const rows = filtered.map(t => [
         t.id,
         t.date,
-        t.type === 'in' ? 'إيراد / قبض' : 'مصروف / صرف',
+        t.type === 'in' ? (isBookingAdv(t) ? 'إيراد / مقدم حجز' : 'إيراد / قبض') : 'مصروف / صرف',
         t.amount,
         t.description,
-        t.treasury
+        getTreasuryLabel(t.treasury || (t as any).treasuryId)
       ]);
+
+      // إضافة مقدمات وعربون الحجز المسجلة في جدول الحجوزات وغير المسجلة كمعاملة منفصلة
+      branchBookings.forEach((b, idx) => {
+        if (b.status === 'cancelled') return;
+        const advances = (b.advancePayments && Array.isArray(b.advancePayments))
+          ? b.advancePayments
+          : (typeof (b as any).advance_payments === 'string'
+            ? (() => { try { return JSON.parse((b as any).advance_payments); } catch { return []; } })()
+            : []);
+
+        if (advances.length === 0 && Number(b.advancePayment || 0) > 0) {
+          advances.push({
+            amount: Number(b.advancePayment),
+            date: b.date || (b as any).createdAt,
+            paymentMethod: (b as any).paymentMethod || 'cash'
+          });
+        }
+
+        advances.forEach((adv: any) => {
+          const advDate = (adv.date || b.date || (b as any).createdAt || '').split('T')[0].trim();
+          if (advDate >= activeFrom && advDate <= activeTo) {
+            const amt = Number(adv.amount) || 0;
+            if (amt <= 0) return;
+            const already = filtered.some(t =>
+              Math.abs((Number(t.amount) || 0) - amt) < 0.01 &&
+              (t.description?.includes(b.bookingCode || '') || t.description?.includes(b.id || '') || t.description?.includes(b.clientName || ''))
+            );
+            if (!already) {
+              rows.push([
+                `ADV-${b.bookingCode || b.id || idx}`,
+                adv.date || b.date || advDate,
+                'إيراد / مقدم حجز',
+                amt,
+                `عربون حجز - العميل: ${b.clientName || 'عميل'} (كود: ${b.bookingCode || b.id})`,
+                getTreasuryLabel(adv.treasuryId || adv.paymentMethod || 'cash')
+              ]);
+            }
+          }
+        });
+      });
+
       exportToExcel(filename, 'تقرير الدخل', headers, rows);
     } else if (activeReportType === 'expenses') {
       const headers = ['رقم السند', 'التاريخ', 'المبلغ', 'التصنيف', 'البيان', 'الخزينة'];
@@ -2335,6 +2450,8 @@ export function ReportsScreen({
             unpaidBookingsReportData={unpaidBookingsReportData}
             inactiveClientsReportData={inactiveClientsReportData}
             bookings={bookings}
+            branchBookings={branchBookings}
+            branchTransactions={branchTransactions}
             branchSalesReturns={branchSalesReturns}
             returnsFilterType={returnsFilterType}
             returnsTreasuryFilter={returnsTreasuryFilter}
@@ -2384,6 +2501,8 @@ function ReportTable({
   unpaidBookingsReportData,
   inactiveClientsReportData,
   bookings = [],
+  branchBookings = [],
+  branchTransactions = [],
   branchSalesReturns = [],
   returnsFilterType = 'all',
   returnsTreasuryFilter = 'all',
@@ -2458,7 +2577,9 @@ function ReportTable({
           <div className="w-max min-w-full mx-auto bg-white shadow-xl rounded-xl p-4 border border-slate-200">
             <IncomeReportReceipt 
               settings={settings}
-              transactions={transactions}
+              transactions={branchTransactions && branchTransactions.length > 0 ? branchTransactions : transactions}
+              bookings={branchBookings && branchBookings.length > 0 ? branchBookings : bookings}
+              invoices={branchInvoices && branchInvoices.length > 0 ? branchInvoices : invoices}
               startDate={activeFrom}
               endDate={activeTo}
               dateLabel={dateLabel}

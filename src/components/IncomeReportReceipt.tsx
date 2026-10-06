@@ -1,9 +1,11 @@
 import React, { useMemo } from 'react';
-import { AppSettings, Transaction } from '../types';
+import { AppSettings, Transaction, Booking, Invoice } from '../types';
 
 export function IncomeReportReceipt({
   settings,
   transactions,
+  bookings = [],
+  invoices = [],
   startDate,
   endDate,
   dateLabel,
@@ -11,6 +13,8 @@ export function IncomeReportReceipt({
 }: {
   settings: AppSettings,
   transactions: Transaction[],
+  bookings?: Booking[],
+  invoices?: Invoice[],
   startDate: string,
   endDate: string,
   dateLabel: string,
@@ -18,6 +22,74 @@ export function IncomeReportReceipt({
 }) {
   const effectiveUserName = userName || settings.ownerName || 'المسؤول';
   const treasuries = settings.treasuries;
+
+  const isMatchingTreasury = (tId: string | undefined, targetId: string) => {
+    if (!tId) return targetId === 'cash' || targetId === 'main';
+    if (tId === targetId) return true;
+    if ((targetId === 'cash' || targetId === 'main') && (tId === 'cash' || tId === 'main')) return true;
+    return false;
+  };
+
+  const isBookingAdvanceTrx = (t: Transaction) => {
+    if (t.type !== 'in') return false;
+    const cat = (t.category || '').toLowerCase();
+    const desc = (t.description || '').toLowerCase();
+    if (cat === 'booking_advance' || cat === 'مقدم حجز' || cat === 'عربون حجز' || cat === 'عربون' || cat === 'مقدم') return true;
+    if (cat === 'advance' && !desc.includes('سلف')) return true;
+    if (desc.includes('عربون') || desc.includes('مقدم حجز') || desc.includes('دفعة مقدمة')) return true;
+    return false;
+  };
+
+  const isSalesTrx = (t: Transaction) => {
+    if (t.type !== 'in') return false;
+    if (isBookingAdvanceTrx(t)) return false;
+    const cat = (t.category || '').toLowerCase();
+    return cat === 'sales' || cat === 'مبيعات' || Boolean((t as any).invoiceId);
+  };
+
+  const isStaffAdvance = (t: Transaction) => {
+    const isOut = t.type === 'out' || (t.type as string) === 'expense';
+    if (!isOut) return false;
+    const cat = (t.category || '').toLowerCase();
+    const expCat = ((t as any).expenseCategory || '').toLowerCase();
+    const desc = (t.description || '').toLowerCase();
+    return (
+      cat === 'staff_advance' ||
+      cat === 'hr_advance' ||
+      cat === 'advance' ||
+      cat.includes('سلف') ||
+      expCat.includes('سلف') ||
+      desc.includes('سلفة') ||
+      desc.includes('سلف')
+    );
+  };
+
+  const isPurchase = (t: Transaction) => {
+    if (t.type !== 'out' && (t.type as string) === 'expense') return false;
+    const cat = (t.category || '').toLowerCase();
+    return cat === 'purchase' || cat === 'مشتريات' || cat === 'supplier_payment' || cat === 'supplier' || cat === 'سداد مورد';
+  };
+
+  const isCommission = (t: Transaction) => {
+    if (t.type !== 'out' && (t.type as string) === 'expense') return false;
+    const cat = (t.category || '').toLowerCase();
+    return cat === 'commission' || cat === 'commission_payout' || cat === 'عمولة';
+  };
+
+  const isSalary = (t: Transaction) => {
+    if (t.type !== 'out' && (t.type as string) === 'expense') return false;
+    const cat = (t.category || '').toLowerCase();
+    const desc = (t.description || '').toLowerCase();
+    return cat === 'salary' || cat === 'رواتب' || cat === 'راتب' || desc.includes('مسير رواتب');
+  };
+
+  const isExpense = (t: Transaction) => {
+    if (t.type !== 'out' && (t.type as string) === 'expense') return false;
+    if (isStaffAdvance(t) || isPurchase(t) || isCommission(t) || isSalary(t)) return false;
+    const cat = (t.category || '').toLowerCase();
+    if (cat === 'transfer' || (t.description && t.description.includes('تحويل'))) return false;
+    return cat === 'expense' || cat === 'مصروفات' || cat.includes('مصروف') || Boolean((t as any).expenseCategory);
+  };
 
   const { rows, totals } = useMemo(() => {
     const dates: string[] = [];
@@ -34,31 +106,114 @@ export function IncomeReportReceipt({
     }
 
     const rowsData = dates.map(dateStr => {
-      const dayTrxs = transactions.filter(t => t.date.startsWith(dateStr));
-      
-      const getSum = (cat: string | string[], tId?: string) => {
-        const cats = Array.isArray(cat) ? cat : [cat];
-        return dayTrxs.filter(t => cats.includes(t.category) && (!tId || t.treasury === tId)).reduce((sum, t) => sum + t.amount, 0);
-      };
+      const dayTrxs = transactions.filter(t => {
+        const d = (t.date || '').split('T')[0];
+        const sDate = (t.shiftDate || (t as any).shift_date || '').split('T')[0];
+        return d === dateStr || sDate === dateStr;
+      });
 
-      const incomeTotal = getSum('sales');
-      const expensesTotal = getSum('expense');
-      const advancesTotal = getSum(['staff_advance', 'hr_advance']);
-      const purchasesTotal = getSum('purchase');
-      const commissionsTotal = getSum('commission');
-      const salariesTotal = getSum('salary');
+      // 1. استخراج مقدمات وعربون الحجز المسجلة في جدول الحجوزات وغير المسجلة كمعاملة
+      const dayUnrecordedAdvances: { amount: number; treasuryId: string }[] = [];
+      if (bookings && Array.isArray(bookings)) {
+        bookings.forEach(b => {
+          if (b.status === 'cancelled') return;
+          const advances = (b.advancePayments && Array.isArray(b.advancePayments))
+            ? b.advancePayments
+            : (typeof (b as any).advance_payments === 'string'
+              ? (() => { try { return JSON.parse((b as any).advance_payments); } catch { return []; } })()
+              : []);
 
-      const incomeSplits = treasuries.map(t => getSum('sales', t.id));
-      const expensesSplits = treasuries.map(t => getSum('expense', t.id));
-      const advancesSplits = treasuries.map(t => getSum(['staff_advance', 'hr_advance'], t.id));
-      const purchasesSplits = treasuries.map(t => getSum('purchase', t.id));
-      const commissionsSplits = treasuries.map(t => getSum('commission', t.id));
-      const salariesSplits = treasuries.map(t => getSum('salary', t.id));
+          advances.forEach((adv: any) => {
+            const advDate = (adv.date || b.date || (b as any).createdAt || '').split('T')[0].trim();
+            if (advDate === dateStr) {
+              const amt = Number(adv.amount) || 0;
+              if (amt <= 0) return;
+              const already = dayTrxs.some(t => 
+                isBookingAdvanceTrx(t) &&
+                Math.abs((Number(t.amount) || 0) - amt) < 0.01 &&
+                (t.description?.includes(b.bookingCode || '') || t.description?.includes(b.id || '') || t.description?.includes(b.clientName || ''))
+              );
+              if (!already) {
+                dayUnrecordedAdvances.push({
+                  amount: amt,
+                  treasuryId: adv.treasuryId || adv.paymentMethod || 'cash'
+                });
+              }
+            }
+          });
+        });
+      }
+
+      // 2. فحص مبيعات الفواتير غير المسجلة كمعاملات منفصلة
+      const dayUnrecordedInvoices: { amount: number; treasuryId: string }[] = [];
+      if (invoices && Array.isArray(invoices)) {
+        const knownInvoiceIds = new Set(
+          dayTrxs.filter(t => (t as any).invoiceId || (t as any).invoice_id).map(t => (t as any).invoiceId || (t as any).invoice_id)
+        );
+        invoices.forEach(inv => {
+          if (inv.status === 'cancelled' || (inv as any).is_cancelled || (inv as any).isCancelled) return;
+          const invDate = (inv.date || (inv as any).createdAt || '').split('T')[0].trim();
+          if (invDate === dateStr && !knownInvoiceIds.has(inv.id)) {
+            const methods = (inv.paymentMethods && inv.paymentMethods.length > 0)
+              ? inv.paymentMethods
+              : [{ amount: Number(inv.total) || 0, treasuryId: inv.treasuryId || inv.paymentMethod || 'cash' }];
+            methods.forEach((m: any) => {
+              if (m.treasuryId === 'cashback' || m.treasuryId === 'remedy_free') return;
+              const amt = Number(m.amount) || 0;
+              if (amt > 0) {
+                dayUnrecordedInvoices.push({ amount: amt, treasuryId: m.treasuryId || 'cash' });
+              }
+            });
+          }
+        });
+      }
+
+      // 3. احتساب الدخل التفصيلي (مبيعات + مقدمات حجز)
+      const daySalesTrx = dayTrxs.filter(isSalesTrx);
+      const dayBookingAdvTrx = dayTrxs.filter(isBookingAdvanceTrx);
+
+      let daySalesTotal = 0;
+      let dayBookingAdvTotal = 0;
+
+      const incomeSplits = treasuries.map(t => {
+        const trxSales = daySalesTrx.filter(x => isMatchingTreasury(x.treasury, t.id)).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+        const unrecSales = dayUnrecordedInvoices.filter(x => isMatchingTreasury(x.treasuryId, t.id)).reduce((s, x) => s + x.amount, 0);
+        const totalSalesInTreasury = trxSales + unrecSales;
+
+        const trxAdv = dayBookingAdvTrx.filter(x => isMatchingTreasury(x.treasury, t.id)).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+        const unrecAdv = dayUnrecordedAdvances.filter(x => isMatchingTreasury(x.treasuryId, t.id)).reduce((s, x) => s + x.amount, 0);
+        const totalAdvInTreasury = trxAdv + unrecAdv;
+
+        daySalesTotal += totalSalesInTreasury;
+        dayBookingAdvTotal += totalAdvInTreasury;
+
+        return totalSalesInTreasury + totalAdvInTreasury;
+      });
+
+      const incomeTotal = daySalesTotal + dayBookingAdvTotal;
+
+      // 4. باقي البنود
+      const expensesSplits = treasuries.map(t => dayTrxs.filter(x => isExpense(x) && isMatchingTreasury(x.treasury, t.id)).reduce((s, x) => s + (Number(x.amount) || 0), 0));
+      const expensesTotal = expensesSplits.reduce((s, a) => s + a, 0);
+
+      const advancesSplits = treasuries.map(t => dayTrxs.filter(x => isStaffAdvance(x) && isMatchingTreasury(x.treasury, t.id)).reduce((s, x) => s + (Number(x.amount) || 0), 0));
+      const advancesTotal = advancesSplits.reduce((s, a) => s + a, 0);
+
+      const purchasesSplits = treasuries.map(t => dayTrxs.filter(x => isPurchase(x) && isMatchingTreasury(x.treasury, t.id)).reduce((s, x) => s + (Number(x.amount) || 0), 0));
+      const purchasesTotal = purchasesSplits.reduce((s, a) => s + a, 0);
+
+      const commissionsSplits = treasuries.map(t => dayTrxs.filter(x => isCommission(x) && isMatchingTreasury(x.treasury, t.id)).reduce((s, x) => s + (Number(x.amount) || 0), 0));
+      const commissionsTotal = commissionsSplits.reduce((s, a) => s + a, 0);
+
+      const salariesSplits = treasuries.map(t => dayTrxs.filter(x => isSalary(x) && isMatchingTreasury(x.treasury, t.id)).reduce((s, x) => s + (Number(x.amount) || 0), 0));
+      const salariesTotal = salariesSplits.reduce((s, a) => s + a, 0);
 
       const net = incomeTotal - (expensesTotal + advancesTotal + purchasesTotal + commissionsTotal + salariesTotal);
 
       return {
         date: dateStr,
+        salesTotal: daySalesTotal,
+        bookingAdvancesTotal: dayBookingAdvTotal,
         incomeTotal,
         incomeSplits,
         expensesTotal,
@@ -75,9 +230,9 @@ export function IncomeReportReceipt({
       };
     });
 
-    // Remove rows where everything is 0? The user said "التاريخ : وهو يبدأ من تاريخ البداية حسب التحديد في الشاشة ويعطي التاريخ التالي حتى الوصول لتاريخ النهاية" - so we keep all rows.
-
     const totalsObj = {
+      totalSales: 0,
+      totalBookingAdvances: 0,
       incomeTotal: 0,
       incomeSplits: new Array(treasuries.length).fill(0),
       expensesTotal: 0,
@@ -94,6 +249,8 @@ export function IncomeReportReceipt({
     };
 
     rowsData.forEach(r => {
+      totalsObj.totalSales += r.salesTotal;
+      totalsObj.totalBookingAdvances += r.bookingAdvancesTotal;
       totalsObj.incomeTotal += r.incomeTotal;
       totalsObj.expensesTotal += r.expensesTotal;
       totalsObj.advancesTotal += r.advancesTotal;
@@ -113,7 +270,7 @@ export function IncomeReportReceipt({
     });
 
     return { rows: rowsData, totals: totalsObj };
-  }, [transactions, startDate, endDate, treasuries]);
+  }, [transactions, bookings, invoices, startDate, endDate, treasuries]);
 
   const tCount = treasuries.length;
 
@@ -129,13 +286,20 @@ export function IncomeReportReceipt({
         <p className="text-[10px]">المستخدم: {effectiveUserName}</p>
       </div>
 
+      {/* ملخص يوضح اشتمال الدخل على المبيعات ومقدمات الحجز */}
+      <div className="flex flex-wrap items-center justify-between gap-3 p-2.5 bg-emerald-50 border border-emerald-300 rounded-lg mb-3 text-[10px] font-bold text-emerald-950">
+        <div>🛍️ مبيعات الفواتير: <span className="font-mono font-black text-emerald-800">{totals.totalSales.toFixed(2)} {settings.currency}</span></div>
+        <div>📅 مقدمات وعربون الحجز: <span className="font-mono font-black text-teal-700">+{totals.totalBookingAdvances.toFixed(2)} {settings.currency}</span></div>
+        <div className="bg-emerald-600 text-white px-2.5 py-1 rounded">💰 إجمالي الدخل المحصل: <span className="font-mono font-black">{totals.incomeTotal.toFixed(2)} {settings.currency}</span></div>
+      </div>
+
       <div className="mb-2 overflow-x-auto">
         <table className="w-full text-center border-collapse border border-black text-[8px] whitespace-nowrap">
           <thead>
             <tr>
               <th className="border border-black p-1" rowSpan={2}>التاريخ</th>
               
-              <th className="border border-black p-1 bg-green-50" colSpan={tCount + 1}>الدخل</th>
+              <th className="border border-black p-1 bg-green-50" colSpan={tCount + 1}>الدخل (مبيعات + مقدمات حجز)</th>
               <th className="border border-black p-1 bg-red-50" colSpan={tCount + 1}>المصروفات</th>
               <th className="border border-black p-1 bg-red-50" colSpan={tCount + 1}>السلف</th>
               <th className="border border-black p-1 bg-red-50" colSpan={tCount + 1}>المشتريات</th>
