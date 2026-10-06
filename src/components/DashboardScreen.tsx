@@ -267,6 +267,82 @@ export function DashboardScreen({
     if (!isShiftOpen) return 0;
     return todayInvoices.length;
   }, [todayInvoices, isShiftOpen]);
+
+  // ── فواتير الوردية الحالية المفتوحة (Current Shift Invoices) ──
+  const currentShiftInvoices = useMemo(() => {
+    if (!isShiftOpen || !shiftDate) return [];
+    return branchInvoices.filter(inv => {
+      if (inv.status === 'cancelled') return false;
+      // 1. فحص تطابق معرف الوردية المفتوحة صراحة
+      if (shiftData?.shiftId && (inv.shiftId === shiftData.shiftId || (inv as any).workShiftId === shiftData.shiftId)) {
+        return true;
+      }
+      // 2. فحص تطابق تاريخ الوردية
+      if (inv.shiftDate && inv.shiftDate.split('T')[0].trim() === shiftDate) {
+        return true;
+      }
+      // 3. فحص وقت الإنشاء بعد فتح الوردية المفتوحة
+      const invDateTime = inv.date || (inv as any).createdAt || (inv as any).created_at;
+      if (shiftData?.openedAt && invDateTime) {
+        const openedTime = new Date(shiftData.openedAt).getTime();
+        const invTime = new Date(invDateTime).getTime();
+        if (openedTime > 0 && invTime >= openedTime) {
+          return true;
+        }
+      }
+      // 4. فحص شرط الوردية العام
+      return matchesCurrentShift(inv.date, (inv as any).createdAt || (inv as any).created_at, inv.shiftId, inv.shiftDate);
+    }).sort((a, b) => {
+      const timeA = new Date(a.date || (a as any).createdAt || 0).getTime();
+      const timeB = new Date(b.date || (b as any).createdAt || 0).getTime();
+      return timeB - timeA;
+    });
+  }, [branchInvoices, isShiftOpen, shiftDate, shiftData]);
+
+  // ── الحجوزات المنشأة خلال الوردية الحالية المفتوحة (Current Shift Reservations) ──
+  const currentShiftReservations = useMemo(() => {
+    if (!isShiftOpen || !shiftDate) return [];
+    return branchBookings.filter(b => {
+      // 1. فحص تطابق معرف الوردية المفتوحة صراحة
+      if (shiftData?.shiftId && ((b as any).shiftId === shiftData.shiftId || (b as any).workShiftId === shiftData.shiftId)) {
+        return true;
+      }
+      // 2. فحص تطابق تاريخ الوردية
+      if ((b as any).shiftDate && (b as any).shiftDate.split('T')[0].trim() === shiftDate) {
+        return true;
+      }
+      // 3. الحجوزات التي تم إنشاؤها بعد فتح الوردية المفتوحة
+      const createdRaw = b.createdAt || (b as any).created_at;
+      if (shiftData?.openedAt && createdRaw) {
+        const openedTime = new Date(shiftData.openedAt).getTime();
+        const createdTime = new Date(createdRaw).getTime();
+        if (openedTime > 0 && createdTime >= openedTime) {
+          return true;
+        }
+      }
+      // 4. فحص شرط الوردية العام لتاريخ الإنشاء
+      return matchesCurrentShift(createdRaw, createdRaw, (b as any).shiftId, (b as any).shiftDate);
+    }).sort((a, b) => {
+      const timeA = new Date(a.createdAt || (a as any).created_at || a.date || 0).getTime();
+      const timeB = new Date(b.createdAt || (b as any).created_at || b.date || 0).getTime();
+      return timeB - timeA;
+    });
+  }, [branchBookings, isShiftOpen, shiftDate, shiftData]);
+
+  const shiftInvoicesTotalAmount = useMemo(() => {
+    return currentShiftInvoices.reduce((sum, inv) => sum + (Number(inv.total) || 0), 0);
+  }, [currentShiftInvoices]);
+
+  const shiftReservationsTotalAmount = useMemo(() => {
+    return currentShiftReservations.reduce((sum, b) => sum + (Number(b.totalAmount) || 0), 0);
+  }, [currentShiftReservations]);
+
+  const shiftReservationsTotalAdvances = useMemo(() => {
+    return currentShiftReservations.reduce((sum, b) => {
+      const advs = b.advancePayments?.reduce((s, p) => s + (Number(p.amount) || 0), 0) || 0;
+      return sum + advs;
+    }, 0);
+  }, [currentShiftReservations]);
   
   // Total Income (excluding opening float and transfers)
   const totalIncome = useMemo(() => {
@@ -1029,7 +1105,281 @@ export function DashboardScreen({
         </div>
       </div>
 
-      {/* Analytics & Charts Section (Positioned Below Stock Shortages & Shift Bookings) */}
+      {/* ============================================================ */}
+      {/* جدولا فواتير وحجوزات الوردية الحالية (جنباً إلى جنب بتنسيق مستجيب) */}
+      {/* ============================================================ */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 mb-6">
+        {/* الجدول الأول: فواتير الوردية الحالية */}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 sm:p-5 flex flex-col">
+          <div className="flex flex-wrap items-center justify-between gap-2.5 mb-3.5 border-b border-slate-100 pb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold shadow-xs">
+                <Receipt size={18} />
+              </div>
+              <div>
+                <h3 className="text-sm sm:text-base font-bold text-slate-800 flex items-center gap-2">
+                  <span>فواتير الوردية الحالية</span>
+                  <span className="text-[11px] font-extrabold bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full font-mono">
+                    {currentShiftInvoices.length}
+                  </span>
+                </h3>
+                <p className="text-[11px] text-slate-500 font-medium">
+                  {isShiftOpen 
+                    ? `الفواتير الصادرة والمكتملة ضمن الوردية المفتوحة (${shiftData?.shiftId ? '#' + shiftData.shiftId.slice(-6).toUpperCase() : shiftDate})`
+                    : 'الوردية مغلقة حالياً'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="bg-emerald-50/80 border border-emerald-200/70 rounded-xl px-3 py-1 text-left">
+                <span className="text-[10px] text-emerald-700 block font-bold">إجمالي فواتير الوردية</span>
+                <span className="text-xs sm:text-sm font-black text-emerald-800 font-mono">
+                  {shiftInvoicesTotalAmount.toFixed(2)} {settings.currency}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-x-auto">
+            {!isShiftOpen ? (
+              <div className="py-12 text-center text-slate-400 flex flex-col items-center justify-center">
+                <AlertTriangle size={36} className="text-amber-400 mb-2 opacity-80" />
+                <p className="text-xs font-bold text-slate-700">الوردية مغلقة حالياً</p>
+                <p className="text-[11px] text-slate-400 mt-1">افتح وردية جديدة من شاشة الورديات لبدء تسجيل ومتابعة الفواتير</p>
+              </div>
+            ) : currentShiftInvoices.length === 0 ? (
+              <div className="py-12 text-center text-slate-400 flex flex-col items-center justify-center">
+                <Receipt size={36} className="text-slate-300 mb-2 opacity-60" />
+                <p className="text-xs font-bold text-slate-700">لا توجد فواتير في الوردية الحالية حتى الآن</p>
+                <p className="text-[11px] text-slate-400 mt-1">ستظهر أي فاتورة يتم إتمامها في نقطة البيع (POS) فوراً هنا</p>
+              </div>
+            ) : (
+              <div className="max-h-[380px] overflow-y-auto">
+                <table className="w-full text-right text-xs">
+                  <thead className="sticky top-0 bg-slate-50/95 backdrop-blur-xs z-10">
+                    <tr className="text-slate-500 font-bold border-b border-slate-100">
+                      <th className="py-2.5 px-3">رقم الفاتورة</th>
+                      <th className="py-2.5 px-3">العميل</th>
+                      <th className="py-2.5 px-3">الوقت</th>
+                      <th className="py-2.5 px-3">طريقة الدفع</th>
+                      <th className="py-2.5 px-3">المبلغ</th>
+                      <th className="py-2.5 px-2 text-center">معاينة</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {currentShiftInvoices.map(inv => {
+                      const timeStr = inv.time || (inv.date?.includes('T') ? inv.date.split('T')[1].substring(0, 5) : '--:--');
+                      const invCode = inv.invoiceNumber || inv.id;
+                      const clientLabel = inv.clientName || 'عميل نقدي';
+                      const paymentMethod = inv.paymentMethod || (inv.paymentMethods?.[0]?.treasuryId) || 'cash';
+                      return (
+                        <tr key={inv.id} className="hover:bg-slate-50/70 transition-colors">
+                          <td className="py-2.5 px-3">
+                            <span className="font-mono font-bold text-slate-800 text-[11px] bg-slate-100 px-2 py-0.5 rounded-md" dir="ltr">
+                              #{invCode}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <span className="font-bold text-slate-800 block truncate max-w-[120px]" title={clientLabel}>
+                              {clientLabel}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <span className="font-mono text-slate-500 text-[11px] flex items-center gap-1" dir="ltr">
+                              <Clock size={11} className="text-slate-400" />
+                              {timeStr}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3">
+                            {paymentMethod === 'cash' ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">نقداً</span>
+                            ) : paymentMethod === 'card' || paymentMethod === 'network' ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">شبكة</span>
+                            ) : paymentMethod === 'transfer' ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200">تحويل</span>
+                            ) : paymentMethod === 'split' || (inv.paymentMethods && inv.paymentMethods.length > 1) ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">مقسم</span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700">{paymentMethod}</span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <span className="font-black text-slate-900 font-mono text-[12px]">
+                              {Number(inv.total || 0).toFixed(2)} {settings.currency}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-2 text-center">
+                            <button
+                              onClick={() => setViewInvoice(inv)}
+                              className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors cursor-pointer"
+                              title="معاينة تفاصيل الفاتورة"
+                            >
+                              <Eye size={13} />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* الجدول الثاني: حجوزات الوردية الحالية المنشأة */}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 sm:p-5 flex flex-col">
+          <div className="flex flex-wrap items-center justify-between gap-2.5 mb-3.5 border-b border-slate-100 pb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold shadow-xs">
+                <CalendarClock size={18} />
+              </div>
+              <div>
+                <h3 className="text-sm sm:text-base font-bold text-slate-800 flex items-center gap-2">
+                  <span>حجوزات الوردية الحالية</span>
+                  <span className="text-[11px] font-extrabold bg-indigo-100 text-indigo-800 px-2.5 py-0.5 rounded-full font-mono">
+                    {currentShiftReservations.length}
+                  </span>
+                </h3>
+                <p className="text-[11px] text-slate-500 font-medium">
+                  {isShiftOpen 
+                    ? `الحجوزات التي تم إنشاؤها وتسجيلها خلال هذه الوردية`
+                    : 'الوردية مغلقة حالياً'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="bg-indigo-50/80 border border-indigo-200/70 rounded-xl px-3 py-1 text-left">
+                <span className="text-[10px] text-indigo-700 block font-bold">إجمالي القيمة</span>
+                <span className="text-xs sm:text-sm font-black text-indigo-800 font-mono">
+                  {shiftReservationsTotalAmount.toFixed(2)} {settings.currency}
+                </span>
+              </div>
+              {shiftReservationsTotalAdvances > 0 && (
+                <div className="bg-teal-50/80 border border-teal-200/70 rounded-xl px-3 py-1 text-left">
+                  <span className="text-[10px] text-teal-700 block font-bold">المقدمات</span>
+                  <span className="text-xs sm:text-sm font-black text-teal-800 font-mono">
+                    {shiftReservationsTotalAdvances.toFixed(2)} {settings.currency}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-x-auto">
+            {!isShiftOpen ? (
+              <div className="py-12 text-center text-slate-400 flex flex-col items-center justify-center">
+                <AlertTriangle size={36} className="text-amber-400 mb-2 opacity-80" />
+                <p className="text-xs font-bold text-slate-700">الوردية مغلقة حالياً</p>
+                <p className="text-[11px] text-slate-400 mt-1">افتح وردية جديدة من شاشة الورديات لبدء تسجيل ومتابعة الحجوزات</p>
+              </div>
+            ) : currentShiftReservations.length === 0 ? (
+              <div className="py-12 text-center text-slate-400 flex flex-col items-center justify-center">
+                <CalendarClock size={36} className="text-slate-300 mb-2 opacity-60" />
+                <p className="text-xs font-bold text-slate-700">لا توجد حجوزات أُنشئت في الوردية الحالية حتى الآن</p>
+                <p className="text-[11px] text-slate-400 mt-1">ستظهر هنا أي حجوزات يتم إنشاؤها وتسجيلها أثناء الوردية الحالية</p>
+              </div>
+            ) : (
+              <div className="max-h-[380px] overflow-y-auto">
+                <table className="w-full text-right text-xs">
+                  <thead className="sticky top-0 bg-slate-50/95 backdrop-blur-xs z-10">
+                    <tr className="text-slate-500 font-bold border-b border-slate-100">
+                      <th className="py-2.5 px-3">العميل / الكود</th>
+                      <th className="py-2.5 px-3">موعد الحجز</th>
+                      <th className="py-2.5 px-3">الخدمات</th>
+                      <th className="py-2.5 px-3">المبلغ والمقدم</th>
+                      <th className="py-2.5 px-3">الحالة</th>
+                      <th className="py-2.5 px-2 text-center">إجراء</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {currentShiftReservations.map(booking => {
+                      const totalAdv = booking.advancePayments?.reduce((sum, p) => sum + (Number(p.amount) || 0), 0) || 0;
+                      const bookingCode = booking.bookingCode || booking.id;
+                      const servicesCount = booking.services?.length || 0;
+                      return (
+                        <tr key={booking.id} className="hover:bg-slate-50/70 transition-colors">
+                          <td className="py-2.5 px-3">
+                            <div>
+                              <span className="font-bold text-slate-900 block truncate max-w-[120px]" title={booking.clientName}>
+                                {booking.clientName}
+                              </span>
+                              <span className="font-mono text-[10px] text-slate-400" dir="ltr">
+                                #{bookingCode}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <div>
+                              <span className="font-bold text-slate-700 text-[11px] block">
+                                {booking.date}
+                              </span>
+                              <span className="font-mono text-slate-500 text-[10px] flex items-center gap-1" dir="ltr">
+                                <Clock size={10} className="text-slate-400" />
+                                {booking.time}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <span className="text-[11px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md">
+                              {servicesCount} {servicesCount === 1 ? 'خدمة' : 'خدمات'}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <div>
+                              <span className="font-black text-slate-900 font-mono text-[12px] block">
+                                {Number(booking.totalAmount || 0).toFixed(2)} {settings.currency}
+                              </span>
+                              {totalAdv > 0 && (
+                                <span className="text-[10px] font-bold text-teal-700 bg-teal-50 px-1.5 py-0.2 rounded font-mono">
+                                  عربون: {totalAdv.toFixed(2)}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-2.5 px-3">
+                            {booking.status === 'confirmed' ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">مؤكد</span>
+                            ) : booking.status === 'pending' ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">معلق</span>
+                            ) : booking.status === 'completed' ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">مكتمل</span>
+                            ) : booking.status === 'cancelled' ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-50 text-red-700 border border-red-200">ملغي</span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700">{booking.status}</span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-2 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                onClick={() => handleEditBooking(booking)}
+                                className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors cursor-pointer"
+                                title="تعديل الحجز"
+                              >
+                                <Edit2 size={12} />
+                              </button>
+                              <button
+                                onClick={() => handleToInvoice(booking)}
+                                className="p-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg transition-colors cursor-pointer"
+                                title="تحويل إلى فاتورة في POS"
+                              >
+                                <Scissors size={12} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
       {settings.showDashboardAnalytics !== false && (
         <DashboardChartsSection
           settings={settings}

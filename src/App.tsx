@@ -866,9 +866,9 @@ export default function App() {
           })));
         }
 
-        // Sync Bookings
+        // Sync Bookings with conflict-safe merge
         if (polledBookings && Array.isArray(polledBookings)) {
-          setBookings(polledBookings.map((b: any) => ({
+          const mappedPolled = polledBookings.map((b: any) => ({
             ...b,
             phone: b.clientPhone || b.phone || '',
             customerEmail: b.customerEmail || '',
@@ -883,7 +883,31 @@ export default function App() {
             updatedAt: b.updatedAt || b.updated_at || undefined,
             updatedBy: b.updatedBy || b.updated_by || undefined,
             updatedByName: b.updatedByName || b.updated_by_name || b.updatedBy || undefined
-          })));
+          }));
+
+          setBookings(prevLocal => {
+            if (!prevLocal || prevLocal.length === 0) return mappedPolled;
+            const polledMap = new Map(mappedPolled.map(b => [b.id, b]));
+            // Merge: preserve local bookings that are newer or not yet synced to Supabase
+            const merged = mappedPolled.map(pb => {
+              const local = prevLocal.find(lb => lb.id === pb.id);
+              if (!local) return pb;
+              const localTime = new Date(local.updatedAt || local.updated_at || local.createdAt || 0).getTime();
+              const polledTime = new Date(pb.updatedAt || pb.updated_at || pb.createdAt || 0).getTime();
+              // If local version has a newer timestamp, do not roll it back!
+              return (localTime > polledTime) ? local : pb;
+            });
+            // Also preserve local bookings that are newly created and not yet in the polled list
+            for (const lb of prevLocal) {
+              if (!polledMap.has(lb.id)) {
+                merged.unshift(lb);
+              }
+            }
+            try {
+              localStorage.setItem('smartcut_bookings', JSON.stringify(merged));
+            } catch (e) {}
+            return merged;
+          });
         }
 
         // Sync Sales Returns
@@ -1344,7 +1368,33 @@ export default function App() {
       const tagged = next.map(b => ({ ...b, salonId: (b as any).salonId || currentSalonId, branchId: (b as any).branchId || activeBranchId }));
       const other = prev.filter(b => (b as any).salonId && (b as any).salonId !== currentSalonId);
       const res = [...other, ...tagged];
-      tagged.forEach(b => DB.saveBooking(b));
+
+      try {
+        localStorage.setItem('smartcut_bookings', JSON.stringify(res));
+      } catch (e) {}
+
+      const prevMap = new Map(prev.map(p => [p.id, p]));
+      const changed = tagged.filter(b => {
+        const old = prevMap.get(b.id);
+        if (!old) return true;
+        return (
+          b.updatedAt !== old.updatedAt ||
+          b.clientName !== old.clientName ||
+          b.phone !== old.phone ||
+          b.date !== old.date ||
+          b.time !== old.time ||
+          b.status !== old.status ||
+          b.totalAmount !== old.totalAmount ||
+          b.notes !== old.notes ||
+          b.internalNotes !== old.internalNotes ||
+          JSON.stringify(b.services) !== JSON.stringify(old.services) ||
+          JSON.stringify(b.advancePayments) !== JSON.stringify(old.advancePayments)
+        );
+      });
+      changed.forEach(b => {
+        DB.saveBooking(b, b.salonId || currentSalonId).catch(err => console.error('DB.saveBooking in handleSetBookings error:', err));
+      });
+
       return res;
     });
   };
@@ -2525,6 +2575,7 @@ export default function App() {
           setTransactions={handleSetTransactions} 
           shiftData={shiftData} 
           activeBranchId={activeBranchId}
+          currentUser={currentUser}
         />
       );
       case 'treasury': return (
@@ -3320,7 +3371,7 @@ export default function App() {
                   bookings={branchBookings}
                   dateLabel={shiftData.date}
                   initialCash={shiftData.initialCash}
-                  userName={currentUser?.name || user?.name || settings.ownerName || 'المسؤول'}
+                  userName={currentUser?.name || settings.ownerName || 'المسؤول'}
                 />
               </div>
             </div>

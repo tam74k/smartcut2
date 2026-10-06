@@ -1,8 +1,19 @@
+import { AuthService } from '../services/auth';
+import * as XLSX from 'xlsx';
+
 /**
- * Universal Excel & CSV Exporter with full Arabic UTF-8 BOM support
+ * Checks whether the current user has permission to export data to Excel
  */
+export function checkCanExportExcel(): boolean {
+  if (!AuthService.canDo('export_excel')) {
+    alert('⛔ عذراً، لا تملك صلاحية تصدير البيانات إلى Excel. يرجى التواصل مع إدارة النظام لمنحك الإذن.');
+    return false;
+  }
+  return true;
+}
 
 export function exportToCSV(filename: string, headers: string[], rows: (string | number)[][]) {
+  if (!checkCanExportExcel()) return;
   try {
     const csvContent = [
       headers.join(','),
@@ -30,14 +41,13 @@ export function exportToCSV(filename: string, headers: string[], rows: (string |
   }
 }
 
-import * as XLSX from 'xlsx';
-
 export function exportToExcel(
   filenameOrData: any, 
   sheetNameOrFilename?: string, 
   headers?: string[], 
   rows?: (string | number)[][]
 ) {
+  if (!checkCanExportExcel()) return;
   try {
     const filename = typeof filenameOrData === 'string' ? filenameOrData : (sheetNameOrFilename || 'تقرير');
     const sheetName = typeof filenameOrData === 'string' ? (sheetNameOrFilename || 'البيانات') : 'البيانات';

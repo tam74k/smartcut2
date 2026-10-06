@@ -9,6 +9,7 @@ import { AuthService, ROLE_LABELS, SCREEN_CATALOG, ACTION_CATALOG, DEFAULT_ROLE_
 import { SubscriptionService } from '../services/subscriptionService';
 import { exportToExcel } from '../utils/exportExcel';
 import { DB } from '../services/db';
+import { ModularPermissionSelector, SYSTEM_MODULES, NEW_PERMISSIONS, SystemModule } from './ModularPermissionSelector';
 
 export function PermissionsScreen({ 
   settings, 
@@ -92,6 +93,8 @@ export function PermissionsScreen({
   }, [activeBranchId, userBranchId, isOwnerOrProgrammer]);
 
   const [searchTerm, setSearchTerm] = useState('');
+  const [matrixModuleFilter, setMatrixModuleFilter] = useState<string>('all');
+  const [matrixSearch, setMatrixSearch] = useState<string>('');
 
   // User Modal State
   const [showUserModal, setShowUserModal] = useState(false);
@@ -412,6 +415,15 @@ export function PermissionsScreen({
         >
           <Layers size={15} />
           <span>الأدوار والصلاحيات المخصصة ({roles.length})</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('matrix')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+            activeTab === 'matrix' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'
+          }`}
+        >
+          <ShieldAlert size={15} />
+          <span>مصفوفة ودليل الصلاحيات (أقسام النظام الـ 6)</span>
         </button>
       </div>
 
@@ -807,12 +819,271 @@ export function PermissionsScreen({
         </div>
       )}
 
+      {/* TAB 3: PERMISSIONS MATRIX & SYSTEM MODULES GUIDE */}
+      {activeTab === 'matrix' && (
+        <div className="space-y-6 mb-12">
+          {/* Top Banner */}
+          <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden">
+            <div className="relative z-10">
+              <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300">
+                    <ShieldAlert size={24} />
+                  </div>
+                  <div>
+                    <h3 className="text-lg sm:text-xl font-black text-white">دليل ومصفوفة الصلاحيات حسب أقسام النظام الـ 6</h3>
+                    <p className="text-xs sm:text-sm text-slate-300 mt-0.5">
+                      هيكلة شاملة لجميع شاشات وعمليات النظام مقسمة جغرافياً ووظيفياً مع توضيح الأدوار القياسية والتراخيص الحساسة
+                    </p>
+                  </div>
+                </div>
+
+                {/* Stat pills */}
+                <div className="flex flex-wrap gap-2 text-xs">
+                  <span className="bg-indigo-500/20 border border-indigo-400/30 px-3 py-1.5 rounded-xl font-bold text-indigo-200">
+                    🏢 6 أقسام نظام
+                  </span>
+                  <span className="bg-blue-500/20 border border-blue-400/30 px-3 py-1.5 rounded-xl font-bold text-blue-200">
+                    🖥️ {SCREEN_CATALOG.length} شاشة تشغيلية
+                  </span>
+                  <span className="bg-emerald-500/20 border border-emerald-400/30 px-3 py-1.5 rounded-xl font-bold text-emerald-200">
+                    ⚡ {ACTION_CATALOG.length} عملية تنفيذية
+                  </span>
+                  <span className="bg-amber-500/20 border border-amber-400/30 px-3 py-1.5 rounded-xl font-bold text-amber-200">
+                    ⭐ 3 صلاحيات جديدة
+                  </span>
+                </div>
+              </div>
+
+              {/* 3 New Permissions Feature Callout Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-4 border-t border-slate-700/60">
+                <div className="bg-white/10 hover:bg-white/15 border border-amber-400/30 rounded-2xl p-3.5 backdrop-blur-sm transition-all">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs font-black text-amber-300">1. تصنيفات وبنود الصرف</span>
+                    <span className="text-[10px] bg-amber-400/20 text-amber-200 px-2 py-0.5 rounded-full font-bold">
+                      manage_expense_categories
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-300 leading-relaxed">
+                    منح أو منع إضافة وتعديل وحذف تصنيفات بنود المصروفات، مع التحقق الصارم في شاشة المصروفات برمجياً.
+                  </p>
+                </div>
+
+                <div className="bg-white/10 hover:bg-white/15 border border-emerald-400/30 rounded-2xl p-3.5 backdrop-blur-sm transition-all">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs font-black text-emerald-300">2. التصدير إلى Excel</span>
+                    <span className="text-[10px] bg-emerald-400/20 text-emerald-200 px-2 py-0.5 rounded-full font-bold">
+                      export_excel
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-300 leading-relaxed">
+                    التحكم في تصدير وتحميل ملفات Excel وCSV في كافة شاشات وتقارير النظام مع حماية الإجراء برمجياً على مستوى المركز المالي.
+                  </p>
+                </div>
+
+                <div className="bg-white/10 hover:bg-white/15 border border-purple-400/30 rounded-2xl p-3.5 backdrop-blur-sm transition-all">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs font-black text-purple-300">3. إجراءات شؤون العاملين (HR)</span>
+                    <span className="text-[10px] bg-purple-400/20 text-purple-200 px-2 py-0.5 rounded-full font-bold">
+                      manage_hr_actions
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-300 leading-relaxed">
+                    التحكم في كافة إجراءات HR: الجزاءات، المكافآت، الخصومات، أذونات الاستئذان، والإجازات مع الفحص البرمجي في واجهة HR.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Filter Bar & Search */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-3">
+            <div className="flex flex-col sm:flex-row justify-between items-center gap-3">
+              <div className="flex items-center gap-1.5 overflow-x-auto w-full pb-1 scrollbar-thin">
+                <button
+                  type="button"
+                  onClick={() => setMatrixModuleFilter('all')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-extrabold whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
+                    matrixModuleFilter === 'all'
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  <Layers size={14} />
+                  <span>كافة الأقسام (6)</span>
+                </button>
+                {SYSTEM_MODULES.map(mod => {
+                  const ModIcon = mod.icon;
+                  return (
+                    <button
+                      key={mod.id}
+                      type="button"
+                      onClick={() => setMatrixModuleFilter(mod.id)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-extrabold whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
+                        matrixModuleFilter === mod.id
+                          ? 'bg-indigo-600 text-white shadow-sm'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      <ModIcon size={14} />
+                      <span>{mod.shortName}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="relative w-full sm:w-72 shrink-0">
+                <input
+                  type="text"
+                  placeholder="بحث في أسماء الصلاحيات أو الشاشات..."
+                  value={matrixSearch}
+                  onChange={e => setMatrixSearch(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-8 pl-3 py-1.5 text-xs font-semibold outline-none focus:border-indigo-500"
+                />
+                <Search size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              </div>
+            </div>
+          </div>
+
+          {/* Module Sections */}
+          <div className="space-y-6">
+            {SYSTEM_MODULES
+              .filter(mod => matrixModuleFilter === 'all' || matrixModuleFilter === mod.id)
+              .map(mod => {
+                const ModIcon = mod.icon;
+                const screens = mod.screenIds
+                  .map(id => SCREEN_CATALOG.find(s => s.id === id))
+                  .filter(Boolean)
+                  .filter(s => !matrixSearch.trim() || s!.name.includes(matrixSearch) || s!.description.includes(matrixSearch));
+
+                const actions = mod.actionIds
+                  .map(id => ACTION_CATALOG.find(a => a.id === id))
+                  .filter(Boolean)
+                  .filter(a => !matrixSearch.trim() || a!.name.includes(matrixSearch) || a!.description.includes(matrixSearch));
+
+                if (matrixSearch.trim() && screens.length === 0 && actions.length === 0) {
+                  return null;
+                }
+
+                return (
+                  <div key={mod.id} className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+                    {/* Header */}
+                    <div className={`p-5 ${mod.headerBgClass} border-b ${mod.borderClass} flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3`}>
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-2xl bg-white shadow-sm flex items-center justify-center text-slate-900">
+                          <ModIcon size={20} />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-black text-base text-slate-900">{mod.name}</h3>
+                            <span className="text-xs bg-white/90 text-slate-700 px-2.5 py-0.5 rounded-lg border border-slate-200/80 font-bold">
+                              {mod.screenIds.length} شاشات • {mod.actionIds.length} عمليات
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-600 mt-0.5">{mod.description}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="p-5 space-y-6">
+                      {/* Screens Grid */}
+                      {screens.length > 0 && (
+                        <div>
+                          <h4 className="font-extrabold text-xs text-slate-800 mb-3 flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
+                            <span>الشاشات المندرجة تحت هذا القسم ({screens.length})</span>
+                          </h4>
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                            {screens.map(screen => screen && (
+                              <div key={screen.id} className="p-3 bg-slate-50 border border-slate-200/80 rounded-2xl">
+                                <div className="flex items-center justify-between mb-1">
+                                  <p className="font-bold text-xs text-slate-900">{screen.name}</p>
+                                  <span className="text-[10px] font-mono text-slate-400">#{screen.id}</span>
+                                </div>
+                                <p className="text-[11px] text-slate-500 leading-tight">{screen.description}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Actions Grid */}
+                      {actions.length > 0 && (
+                        <div>
+                          <h4 className="font-extrabold text-xs text-slate-800 mb-3 flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                            <span>العمليات والأذونات الحساسة المصرح بها ({actions.length})</span>
+                          </h4>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            {actions.map(action => {
+                              if (!action) return null;
+                              const newBadge = NEW_PERMISSIONS[action.id];
+                              
+                              // Determine which default roles have this action
+                              const allowedRoles: string[] = [];
+                              if (DEFAULT_ROLE_PRESETS.supervisor.actions.includes(action.id)) allowedRoles.push('مشرف');
+                              if (DEFAULT_ROLE_PRESETS.accountant.actions.includes(action.id)) allowedRoles.push('محاسب');
+                              if (DEFAULT_ROLE_PRESETS.warehouse_manager.actions.includes(action.id)) allowedRoles.push('مستودع');
+                              if (DEFAULT_ROLE_PRESETS.cashier.actions.includes(action.id)) allowedRoles.push('كاشير');
+                              if (DEFAULT_ROLE_PRESETS.receptionist.actions.includes(action.id)) allowedRoles.push('استقبال');
+
+                              return (
+                                <div 
+                                  key={action.id} 
+                                  className={`p-3.5 rounded-2xl border transition-all ${
+                                    newBadge ? 'bg-amber-50/40 border-amber-300 shadow-2xs' : 'bg-white border-slate-200 hover:border-slate-300'
+                                  }`}
+                                >
+                                  <div className="flex flex-wrap items-center justify-between gap-1.5 mb-1">
+                                    <div className="flex items-center gap-2">
+                                      <p className="font-black text-xs text-slate-900">{action.name}</p>
+                                      {newBadge && (
+                                        <span className={`text-[10px] px-2 py-0.5 rounded-md border ${newBadge.badgeClass}`}>
+                                          {newBadge.label}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <span className="text-[10px] font-mono text-slate-400">#{action.id}</span>
+                                  </div>
+                                  <p className="text-[11px] text-slate-500 leading-tight mb-2.5">{action.description}</p>
+                                  
+                                  {/* Roles matrix tags */}
+                                  <div className="flex flex-wrap items-center gap-1 pt-2 border-t border-slate-100 text-[10px]">
+                                    <span className="text-slate-400 font-bold">ممنوحة افتراضياً لـ:</span>
+                                    <span className="bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.2 rounded font-bold">
+                                      المالك والمدير ⭐
+                                    </span>
+                                    {allowedRoles.map(rName => (
+                                      <span key={rName} className="bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded font-bold">
+                                        {rName}
+                                      </span>
+                                    ))}
+                                    {allowedRoles.length === 0 && (
+                                      <span className="text-rose-500 font-bold bg-rose-50 px-1.5 py-0.2 rounded">
+                                        الإدارة العليا فقط
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+        </div>
+      )}
+
       {/* USER MODAL */}
       {showUserModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
           <form 
             onSubmit={handleSaveUser}
-            className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full p-6 space-y-4 my-8 max-h-[90vh] overflow-y-auto"
+            className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full p-6 space-y-4 my-8 max-h-[90vh] overflow-y-auto"
           >
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">
@@ -960,112 +1231,37 @@ export function PermissionsScreen({
             </div>
 
             {/* Custom permission override if custom selected or non-admin */}
-            {userForm.role !== 'admin' && (
-              <div className="pt-4 border-t border-slate-100 space-y-4">
-                <h4 className="font-extrabold text-sm text-slate-900 flex items-center gap-1.5">
-                  <ShieldAlert size={16} className="text-indigo-600" />
-                  <span>تخصيص الشاشات والعمليات للمستخدم</span>
-                </h4>
-
-                {/* Screens Matrix */}
-                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
-                  <div className="flex justify-between items-center">
-                    <span className="font-bold text-xs text-slate-800">الشاشات المسموح بدخولها ({userForm.screens.length})</span>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setUserForm({ ...userForm, screens: SCREEN_CATALOG.map(s => s.id) })}
-                        className="text-[10px] text-indigo-600 font-bold hover:underline"
-                      >
-                        تحديد الكل
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setUserForm({ ...userForm, screens: [] })}
-                        className="text-[10px] text-rose-500 font-bold hover:underline"
-                      >
-                        إلغاء الكل
-                      </button>
-                    </div>
+            {userForm.role !== 'admin' && userForm.role !== 'owner' && (
+              <div className="pt-4 border-t border-slate-100 space-y-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                    <ShieldAlert size={16} />
                   </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                    {SCREEN_CATALOG.map(screen => (
-                      <label 
-                        key={screen.id}
-                        className={`flex items-start gap-2 p-2 rounded-xl border cursor-pointer transition-all ${
-                          userForm.screens.includes(screen.id)
-                            ? 'bg-indigo-50/70 border-indigo-300 text-indigo-950 font-bold'
-                            : 'bg-white border-slate-200 text-slate-600'
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={userForm.screens.includes(screen.id)}
-                          onChange={() => setUserForm({
-                            ...userForm,
-                            screens: toggleItem(userForm.screens, screen.id)
-                          })}
-                          className="mt-0.5 accent-indigo-600"
-                        />
-                        <div className="flex-1">
-                          <p className="leading-tight">{screen.name}</p>
-                          <p className="text-[10px] text-slate-400 font-normal mt-0.5">{screen.category}</p>
-                        </div>
-                      </label>
-                    ))}
+                  <div>
+                    <h4 className="font-extrabold text-xs sm:text-sm text-slate-900">
+                      تخصيص الشاشات والعمليات المصرح بها حسب أقسام النظام
+                    </h4>
+                    <p className="text-[11px] text-slate-500">
+                      حدد الشاشات والعمليات المسموح بها لهذا المستخدم مقسمة حسب أقسام النظام الـ 6
+                    </p>
                   </div>
                 </div>
 
-                {/* Actions Matrix */}
-                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
-                  <div className="flex justify-between items-center">
-                    <span className="font-bold text-xs text-slate-800">العمليات والخزائن المصرح بها ({userForm.actions.length})</span>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setUserForm({ ...userForm, actions: ACTION_CATALOG.map(a => a.id) })}
-                        className="text-[10px] text-indigo-600 font-bold hover:underline"
-                      >
-                        تحديد الكل
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setUserForm({ ...userForm, actions: [] })}
-                        className="text-[10px] text-rose-500 font-bold hover:underline"
-                      >
-                        إلغاء الكل
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                    {ACTION_CATALOG.map(action => (
-                      <label 
-                        key={action.id}
-                        className={`flex items-start gap-2 p-2 rounded-xl border cursor-pointer transition-all ${
-                          userForm.actions.includes(action.id)
-                            ? 'bg-emerald-50/70 border-emerald-300 text-emerald-950 font-bold'
-                            : 'bg-white border-slate-200 text-slate-600'
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={userForm.actions.includes(action.id)}
-                          onChange={() => setUserForm({
-                            ...userForm,
-                            actions: toggleItem(userForm.actions, action.id)
-                          })}
-                          className="mt-0.5 accent-emerald-600"
-                        />
-                        <div className="flex-1">
-                          <p className="leading-tight">{action.name}</p>
-                          <p className="text-[10px] text-slate-400 font-normal mt-0.5">{action.category}</p>
-                        </div>
-                      </label>
-                    ))}
-                  </div>
-                </div>
+                <ModularPermissionSelector
+                  selectedScreens={userForm.screens}
+                  selectedActions={userForm.actions}
+                  onToggleScreen={sId => setUserForm(prev => ({
+                    ...prev,
+                    screens: toggleItem(prev.screens, sId)
+                  }))}
+                  onToggleAction={aId => setUserForm(prev => ({
+                    ...prev,
+                    actions: toggleItem(prev.actions, aId)
+                  }))}
+                  onSetScreens={screens => setUserForm(prev => ({ ...prev, screens }))}
+                  onSetActions={actions => setUserForm(prev => ({ ...prev, actions }))}
+                  theme="indigo"
+                />
               </div>
             )}
 
@@ -1093,7 +1289,7 @@ export function PermissionsScreen({
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
           <form 
             onSubmit={handleSaveRole}
-            className="bg-white rounded-3xl shadow-2xl max-w-3xl w-full p-6 space-y-4 my-8 max-h-[90vh] overflow-y-auto"
+            className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full p-6 space-y-4 my-8 max-h-[90vh] overflow-y-auto"
           >
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">
@@ -1138,132 +1334,36 @@ export function PermissionsScreen({
               </div>
             </div>
 
-            {/* Screens Selection by Category */}
-            <div className="space-y-3 pt-3 border-t border-slate-100">
-              <div className="flex justify-between items-center">
-                <h4 className="font-black text-sm text-slate-900">
-                  1. الشاشات المسموح بالدخول إليها ({roleForm.screens.length} من {SCREEN_CATALOG.length})
-                </h4>
-                <div className="flex gap-2 text-xs">
-                  <button
-                    type="button"
-                    onClick={() => setRoleForm({ ...roleForm, screens: SCREEN_CATALOG.map(s => s.id) })}
-                    className="text-emerald-600 font-bold hover:underline"
-                  >
-                    تحديد الكل
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setRoleForm({ ...roleForm, screens: [] })}
-                    className="text-rose-500 font-bold hover:underline"
-                  >
-                    إلغاء الكل
-                  </button>
+            <div className="pt-4 border-t border-slate-100 space-y-3">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+                  <KeyRound size={16} />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-xs sm:text-sm text-slate-900">
+                    تحديد الشاشات والعمليات المصرح بها لهذا الدور حسب أقسام النظام
+                  </h4>
+                  <p className="text-[11px] text-slate-500">
+                    اختر الشاشات والعمليات المسموح بها للأعضاء المخصص لهم هذا الدور مقسمة حسب أقسام النظام الـ 6
+                  </p>
                 </div>
               </div>
 
-              <div className="space-y-4">
-                {screenCategories.map(([category, items]) => (
-                  <div key={category} className="bg-slate-50 p-3 rounded-2xl border border-slate-200">
-                    <p className="font-black text-xs text-slate-800 mb-2 border-b border-slate-200 pb-1 flex items-center justify-between">
-                      <span>{category}</span>
-                      <span className="text-[10px] text-slate-500">
-                        {items.filter(i => roleForm.screens.includes(i.id)).length} / {items.length}
-                      </span>
-                    </p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                      {items.map(screen => (
-                        <label
-                          key={screen.id}
-                          className={`flex items-start gap-2 p-2 rounded-xl border cursor-pointer transition-all ${
-                            roleForm.screens.includes(screen.id)
-                              ? 'bg-emerald-50 border-emerald-300 font-bold text-emerald-950 shadow-2xs'
-                              : 'bg-white border-slate-200 text-slate-600'
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={roleForm.screens.includes(screen.id)}
-                            onChange={() => setRoleForm({
-                              ...roleForm,
-                              screens: toggleItem(roleForm.screens, screen.id)
-                            })}
-                            className="mt-0.5 accent-emerald-600"
-                          />
-                          <div>
-                            <p className="leading-tight">{screen.name}</p>
-                            <p className="text-[10px] text-slate-400 font-normal">{screen.description}</p>
-                          </div>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Actions & Operations Selection by Category */}
-            <div className="space-y-3 pt-4 border-t border-slate-100">
-              <div className="flex justify-between items-center">
-                <h4 className="font-black text-sm text-slate-900">
-                  2. صلاحيات العمليات والخزائن ({roleForm.actions.length} من {ACTION_CATALOG.length})
-                </h4>
-                <div className="flex gap-2 text-xs">
-                  <button
-                    type="button"
-                    onClick={() => setRoleForm({ ...roleForm, actions: ACTION_CATALOG.map(a => a.id) })}
-                    className="text-emerald-600 font-bold hover:underline"
-                  >
-                    تحديد الكل
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setRoleForm({ ...roleForm, actions: [] })}
-                    className="text-rose-500 font-bold hover:underline"
-                  >
-                    إلغاء الكل
-                  </button>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                {actionCategories.map(([category, items]) => (
-                  <div key={category} className="bg-slate-50 p-3 rounded-2xl border border-slate-200">
-                    <p className="font-black text-xs text-slate-800 mb-2 border-b border-slate-200 pb-1 flex items-center justify-between">
-                      <span>{category}</span>
-                      <span className="text-[10px] text-slate-500">
-                        {items.filter(i => roleForm.actions.includes(i.id)).length} / {items.length}
-                      </span>
-                    </p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                      {items.map(action => (
-                        <label
-                          key={action.id}
-                          className={`flex items-start gap-2 p-2 rounded-xl border cursor-pointer transition-all ${
-                            roleForm.actions.includes(action.id)
-                              ? 'bg-emerald-50 border-emerald-300 font-bold text-emerald-950 shadow-2xs'
-                              : 'bg-white border-slate-200 text-slate-600'
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={roleForm.actions.includes(action.id)}
-                            onChange={() => setRoleForm({
-                              ...roleForm,
-                              actions: toggleItem(roleForm.actions, action.id)
-                            })}
-                            className="mt-0.5 accent-emerald-600"
-                          />
-                          <div>
-                            <p className="leading-tight">{action.name}</p>
-                            <p className="text-[10px] text-slate-400 font-normal">{action.description}</p>
-                          </div>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <ModularPermissionSelector
+                selectedScreens={roleForm.screens}
+                selectedActions={roleForm.actions}
+                onToggleScreen={sId => setRoleForm(prev => ({
+                  ...prev,
+                  screens: toggleItem(prev.screens, sId)
+                }))}
+                onToggleAction={aId => setRoleForm(prev => ({
+                  ...prev,
+                  actions: toggleItem(prev.actions, aId)
+                }))}
+                onSetScreens={screens => setRoleForm(prev => ({ ...prev, screens }))}
+                onSetActions={actions => setRoleForm(prev => ({ ...prev, actions }))}
+                theme="emerald"
+              />
             </div>
 
             <div className="pt-4 border-t border-slate-100 flex gap-3">

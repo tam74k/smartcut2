@@ -20,6 +20,7 @@ import { DB } from '../services/db';
 import { getActiveShiftDate, getEffectiveDateTime, getEffectiveDateOnly } from '../utils/shiftDate';
 import { FingerprintImportModal } from './FingerprintImportModal';
 import { EmployeeCommissionsDetailedSection } from './EmployeeCommissionsDetailedSection';
+import { AuthService } from '../services/auth';
 
 // Helper to reliably match date strings (YYYY-MM-DD) across ISO strings, space-delimited timestamps, and local timezone
 const isSameDay = (ts?: string, targetDateStr?: string): boolean => {
@@ -689,6 +690,7 @@ export function HRScreen({
         let overtimeAmount = 0;
         let absenceDeduction = 0;
         const dailyRate = isTerminated ? 0 : baseDailyRate;
+        let earnedDaily = dailyRate;
 
         // Check actual fingerprint / attendance logs for this employee on dateStr
         const dayLogs = (effectiveFingerprintLogs || []).filter(l => 
@@ -1028,7 +1030,6 @@ export function HRScreen({
         }
 
         // Net Daily Calculation
-        let earnedDaily = dailyRate;
         if (status === 'unpaid_leave' || status === 'terminated' || (status === 'weekly_off' && !isWeeklyOffPaid)) {
           earnedDaily = 0;
         }
@@ -1252,6 +1253,10 @@ export function HRScreen({
 
   const handleSaveAttendance = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!AuthService.canDo('manage_hr_actions', currentUser)) {
+      alert('⛔ عذراً، لا تملك صلاحية إدارة إجراءات شؤون الموظفين والدوام (HR Actions).');
+      return;
+    }
     if (!attendanceForm.empId || !attendanceForm.date) {
       alert('الرجاء اختيار الموظف والتاريخ المستهدف.');
       return;
@@ -1573,6 +1578,10 @@ export function HRScreen({
 
   const handleSaveLeave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!AuthService.canDo('manage_hr_actions', currentUser)) {
+      alert('⛔ عذراً، لا تملك صلاحية تسجيل أو تعديل الإجازات (HR Actions).');
+      return;
+    }
     if (!leaveEmpId) {
       alert('الرجاء اختيار الموظف');
       return;
@@ -1712,6 +1721,10 @@ export function HRScreen({
 
   const handleSavePermission = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!AuthService.canDo('manage_hr_actions', currentUser)) {
+      alert('⛔ عذراً، لا تملك صلاحية تسجيل أو اعتماد أذونات الاستئذان (HR Actions).');
+      return;
+    }
     if (!permEmpId) {
       alert('الرجاء اختيار الموظف');
       return;
@@ -1768,6 +1781,10 @@ export function HRScreen({
   };
 
   const handleDeletePermission = async (empId: string, permId: string) => {
+    if (!AuthService.canDo('manage_hr_actions', currentUser)) {
+      alert('⛔ عذراً، لا تملك صلاحية حذف أذونات الاستئذان (HR Actions).');
+      return;
+    }
     if (!confirm('هل أنت متأكد من حذف هذا الإذن؟ سيتم إلغاء أثره من التايم شيت فوراً.')) return;
 
     const targetEmp = employees.find(e => e.id === empId);

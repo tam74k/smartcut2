@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { 
   Booking, AppSettings, ServiceItem, Employee, Client, Branch, 
   AppUser, BlockedDateEntry, BlockedHourEntry, StaffUnavailabilityEntry,
-  AdvancePayment, Transaction, Product
+  AdvancePayment, Transaction, Product, BookingService, BookingRulesSettings
 } from '../types';
 import { 
   Calendar as CalendarIcon, Plus, Printer, Edit2, X, ShoppingCart, 
@@ -201,35 +201,6 @@ export function BookingsScreen({
   // Excel Import Modal State
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
-  // Matching Client info during manual booking creation
-  const [matchingClientInfo, setMatchingClientInfo] = useState<Client | null>(null);
-
-  const handlePhoneChange = (phoneVal: string) => {
-    const cleanPhone = phoneVal.trim();
-    const found = clients.find(c => {
-      if (!c.phone) return false;
-      const cClean = c.phone.trim().replace(/\D/g, '');
-      const inputClean = cleanPhone.replace(/\D/g, '');
-      return cClean === inputClean || c.phone === cleanPhone || (inputClean.length >= 7 && (cClean.endsWith(inputClean) || inputClean.endsWith(cClean)));
-    });
-
-    if (found) {
-      setMatchingClientInfo(found);
-      setNewBooking(prev => ({
-        ...prev,
-        phone: phoneVal,
-        clientName: found.name,
-        customerId: found.id
-      }));
-    } else {
-      setMatchingClientInfo(null);
-      setNewBooking(prev => ({
-        ...prev,
-        phone: phoneVal
-      }));
-    }
-  };
-
   // Booking Rules Modal State
   const [showRulesModal, setShowRulesModal] = useState(false);
   const [rulesActiveTab, setRulesActiveTab] = useState<'blocked_dates' | 'blocked_hours' | 'staff_unavail' | 'capacity'>('capacity');
@@ -280,6 +251,105 @@ export function BookingsScreen({
     discountType: 'fixed',
     discountValue: 0
   });
+
+  // Matching Client info & Phone Autocomplete during manual booking creation
+  const [matchingClientInfo, setMatchingClientInfo] = useState<Client | null>(null);
+  const [showPhoneSuggestions, setShowPhoneSuggestions] = useState(false);
+  const [highlightedPhoneIndex, setHighlightedPhoneIndex] = useState(-1);
+
+  // Combined clients pool (from clients prop + unique clients in previous bookings)
+  const allAvailableClients = useMemo(() => {
+    const list: Client[] = [...clients];
+    const seen = new Set(clients.map(c => (c.phone || '').trim().replace(/\D/g, '')));
+    
+    bookings.forEach(b => {
+      if (b.phone && b.clientName) {
+        const cleanP = b.phone.trim().replace(/\D/g, '');
+        if (cleanP && !seen.has(cleanP)) {
+          seen.add(cleanP);
+          list.push({
+            id: b.customerId || `client-hist-${cleanP}`,
+            name: b.clientName,
+            phone: b.phone,
+            loyaltyPoints: 0,
+            cashback: 0
+          });
+        }
+      }
+    });
+    return list;
+  }, [clients, bookings]);
+
+  // Live filtered suggestions based on phone input
+  const phoneSuggestions = useMemo(() => {
+    const input = (newBooking.phone || '').trim();
+    if (!input) return [];
+    const cleanDigits = input.replace(/\D/g, '');
+    const lowerInput = input.toLowerCase();
+
+    return allAvailableClients.filter(c => {
+      const cPhoneClean = (c.phone || '').trim().replace(/\D/g, '');
+      const cNameLower = (c.name || '').toLowerCase();
+
+      // Check digits match
+      if (cleanDigits.length > 0 && cPhoneClean.includes(cleanDigits)) {
+        return true;
+      }
+      // Check name match
+      if (cNameLower.includes(lowerInput)) {
+        return true;
+      }
+      return false;
+    }).slice(0, 8);
+  }, [allAvailableClients, newBooking.phone]);
+
+  const handleSelectClientSuggestion = (client: Client) => {
+    setMatchingClientInfo(client);
+    setNewBooking(prev => ({
+      ...prev,
+      phone: client.phone,
+      clientName: client.name,
+      customerId: client.id,
+      notes: prev.notes || client.notes || ''
+    }));
+    setShowPhoneSuggestions(false);
+    setHighlightedPhoneIndex(-1);
+  };
+
+  const handlePhoneChange = (phoneVal: string) => {
+    const cleanPhone = phoneVal.trim();
+    const cleanDigits = cleanPhone.replace(/\D/g, '');
+    
+    // Check for exact / strong match
+    const exactMatch = allAvailableClients.find(c => {
+      if (!c.phone) return false;
+      const cClean = c.phone.trim().replace(/\D/g, '');
+      return cClean === cleanDigits || c.phone.trim() === cleanPhone || (cleanDigits.length >= 7 && (cClean.endsWith(cleanDigits) || cleanDigits.endsWith(cClean)));
+    });
+
+    if (exactMatch) {
+      setMatchingClientInfo(exactMatch);
+      setNewBooking(prev => ({
+        ...prev,
+        phone: phoneVal,
+        clientName: prev.clientName && prev.clientName !== exactMatch.name && prev.clientName.trim().length > 0 ? prev.clientName : exactMatch.name,
+        customerId: exactMatch.id
+      }));
+    } else {
+      setMatchingClientInfo(null);
+      setNewBooking(prev => ({
+        ...prev,
+        phone: phoneVal
+      }));
+    }
+
+    if (cleanPhone.length > 0) {
+      setShowPhoneSuggestions(true);
+      setHighlightedPhoneIndex(-1);
+    } else {
+      setShowPhoneSuggestions(false);
+    }
+  };
 
   const [itemTypeToAdd, setItemTypeToAdd] = useState<'service' | 'product'>('service');
   const [serviceToAdd, setServiceToAdd] = useState('');
@@ -591,6 +661,9 @@ export function BookingsScreen({
       discountType: 'fixed',
       discountValue: 0
     });
+    setShowPhoneSuggestions(false);
+    setHighlightedPhoneIndex(-1);
+    setMatchingClientInfo(null);
     setAdvTreasuryInput(availableTreasuries[0]?.id || 'cash');
     setAdvDateInput(openShiftDate);
     if (technicianId && technicianId !== 'all') {
@@ -839,8 +912,10 @@ export function BookingsScreen({
       : defaultBookingDate);
 
     const bBranchId = editingBooking?.branchId || activeBranchId || mainBranchId;
-    const queueNumber = editingBooking?.queueNumber 
-      || await QueueService.getNextBookingQueueNumberAsync(settings.salonId, bBranchId, effectiveBookingDate);
+    let queueNumber = editingBooking?.queueNumber;
+    if (!queueNumber) {
+      queueNumber = await QueueService.getNextBookingQueueNumberAsync(settings.salonId, bBranchId, effectiveBookingDate);
+    }
 
     const hasServiceDiscounts = (newBooking.services || []).some(s => Number(s.discountValue || 0) > 0);
     const hasTotalDiscount = Number(newBooking.discountValue || 0) > 0;
@@ -883,13 +958,25 @@ export function BookingsScreen({
     const bookingUpdatedBy = isEditing ? currentUserId : undefined;
     const bookingUpdatedByName = isEditing ? currentUserName : undefined;
 
+    const effectiveClientId = newBooking.customerId || (newBooking as any).clientId || editingBooking?.clientId || (editingBooking as any)?.client_id || undefined;
+    const effectiveCustomerEmail = newBooking.customerEmail || editingBooking?.customerEmail || (editingBooking as any)?.customer_email || undefined;
+    const effectiveBookingCode = editingBooking?.bookingCode || (editingBooking as any)?.booking_code || (newBooking as any)?.bookingCode || undefined;
+    const effectiveSource = editingBooking?.source || (newBooking as any)?.source || 'pos';
+    const effectiveSalonId = settings.salonId || editingBooking?.salonId || (editingBooking as any)?.salon_id || undefined;
+
     const booking: Booking = {
+      ...(editingBooking ? editingBooking : {}),
       id: editingBooking ? editingBooking.id : 'B-' + Math.random().toString(36).substr(2, 9).toUpperCase(),
+      bookingCode: effectiveBookingCode,
+      source: effectiveSource,
+      salonId: effectiveSalonId,
+      clientId: effectiveClientId,
+      customerEmail: effectiveCustomerEmail,
       clientName: newBooking.clientName!,
       phone: newBooking.phone!,
       date: effectiveBookingDate,
       time: newBooking.time!,
-      status: newBooking.status || 'confirmed',
+      status: newBooking.status || editingBooking?.status || 'confirmed',
       location: newBooking.location?.trim() || undefined,
       notes: newBooking.notes?.trim() || undefined,
       internalNotes: newBooking.internalNotes?.trim() || undefined,
@@ -919,11 +1006,21 @@ export function BookingsScreen({
     const brandNewAdvances = (booking.advancePayments || []).filter(a => !prevAdvIds.has(a.id));
 
     if (editingBooking) {
-      setBookings(bookings.map(b => b.id === booking.id ? booking : b));
+      setBookings((prev: Booking[]) => prev.map(b => b.id === booking.id ? { ...b, ...booking } : b));
     } else {
-      setBookings([booking, ...bookings]);
+      setBookings((prev: Booking[]) => [booking, ...prev]);
     }
-    await DB.saveBooking(booking);
+
+    try {
+      const stored = localStorage.getItem('smartcut_bookings');
+      const list = stored ? JSON.parse(stored) : [];
+      const updatedList = editingBooking
+        ? list.map((b: any) => b.id === booking.id ? { ...b, ...booking } : b)
+        : [booking, ...list.filter((b: any) => b.id !== booking.id)];
+      localStorage.setItem('smartcut_bookings', JSON.stringify(updatedList));
+    } catch (e) {}
+
+    await DB.saveBooking(booking, settings.salonId);
 
     // Auto generate financial transactions for brand new advance payments on their payment date
     if (brandNewAdvances.length > 0) {
@@ -991,6 +1088,8 @@ export function BookingsScreen({
     setEditingBooking(null);
     setSelectedBookingDetails(null);
     setMatchingClientInfo(null);
+    setShowPhoneSuggestions(false);
+    setHighlightedPhoneIndex(-1);
     setItemTypeToAdd('service');
     setServiceToAdd('');
     setServiceSearchQuery('');
@@ -1010,6 +1109,10 @@ export function BookingsScreen({
 
   const handleEdit = (b: Booking) => {
     setEditingBooking(b);
+    setShowPhoneSuggestions(false);
+    setHighlightedPhoneIndex(-1);
+    const matched = clients.find(c => c.phone && b.phone && c.phone.trim().replace(/\D/g, '') === b.phone.trim().replace(/\D/g, ''));
+    setMatchingClientInfo(matched || null);
     setItemTypeToAdd('service');
     setServiceToAdd('');
     setServiceSearchQuery('');
@@ -1053,7 +1156,7 @@ export function BookingsScreen({
           updated_by_name: currentUserName
         };
         await DB.patch('bookings', id, patchData);
-        setBookings(bookings.map(b => b.id === id ? { 
+        setBookings((prev: Booking[]) => prev.map(b => b.id === id ? { 
           ...b, 
           status: 'cancelled',
           updatedAt: nowIso,
@@ -1063,6 +1166,14 @@ export function BookingsScreen({
           updatedByName: currentUserName,
           updated_by_name: currentUserName
         } : b));
+        try {
+          const stored = localStorage.getItem('smartcut_bookings');
+          if (stored) {
+            const list = JSON.parse(stored);
+            const updated = list.map((b: any) => b.id === id ? { ...b, ...patchData } : b);
+            localStorage.setItem('smartcut_bookings', JSON.stringify(updated));
+          }
+        } catch (e) {}
         if (selectedBookingDetails?.id === id) {
           setSelectedBookingDetails(prev => prev ? { 
             ...prev, 
@@ -1090,7 +1201,14 @@ export function BookingsScreen({
     if (window.confirm('⚠️ تحذير: هل أنت متأكد من حذف هذا الحجز نهائياً من النظام وقاعدة البيانات؟ لا يمكن التراجع عن هذا الإجراء.')) {
       try {
         await DB.deleteBooking(id);
-        setBookings(bookings.filter(b => b.id !== id));
+        setBookings((prev: Booking[]) => prev.filter(b => b.id !== id));
+        try {
+          const stored = localStorage.getItem('smartcut_bookings');
+          if (stored) {
+            const list = JSON.parse(stored);
+            localStorage.setItem('smartcut_bookings', JSON.stringify(list.filter((b: any) => b.id !== id)));
+          }
+        } catch (e) {}
         if (selectedBookingDetails?.id === id) {
           setSelectedBookingDetails(null);
         }
@@ -1334,6 +1452,10 @@ export function BookingsScreen({
       discountType: finalDiscountType
     });
 
+    const defaultBookingDate = (shiftData && shiftData.isOpen && shiftData.date) ? shiftData.date : new Date().toISOString().split('T')[0];
+    const effectiveBookingDate = newBooking.date || ((!editingBooking && shiftData?.isOpen && shiftData.date) ? shiftData.date : defaultBookingDate);
+    const bBranchId = editingBooking?.branchId || activeBranchId || mainBranchId;
+
     const draftBooking: Booking = {
       id: editingBooking ? editingBooking.id : ('B-PREVIEW-' + Math.random().toString(36).substr(2, 5).toUpperCase()),
       bookingCode: editingBooking?.bookingCode || 'SC-PREVIEW',
@@ -1488,6 +1610,9 @@ export function BookingsScreen({
               setServiceQtyToAdd('1');
               setEditingPriceServiceId(null);
               setEditingPriceValue('');
+              setShowPhoneSuggestions(false);
+              setHighlightedPhoneIndex(-1);
+              setMatchingClientInfo(null);
               setAdvTreasuryInput(availableTreasuries[0]?.id || 'cash');
               setAdvDateInput(openShiftDate);
               setShowAddModal(true);
@@ -2762,23 +2887,141 @@ export function BookingsScreen({
               <div className="bg-slate-50/80 p-3 sm:p-4 rounded-2xl border border-slate-200/80 space-y-3">
                 {/* Row 1: Phone & Client Name */}
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
-                  {/* Phone with Auto Lookup */}
-                  <div className="md:col-span-7 space-y-1.5">
-                    <label className="block text-xs font-bold text-slate-800">
-                      رقم الموبايل (البحث الفوري واسترجاع البيانات) * 📱
-                    </label>
+                  {/* Phone with Auto Lookup & Autocomplete Suggestions */}
+                  <div className="md:col-span-7 space-y-1.5 relative">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <Phone size={13} className="text-indigo-600" />
+                        <span>رقم الموبايل (البحث والإكمال التلقائي) * 📱</span>
+                      </label>
+                      {phoneSuggestions.length > 0 && showPhoneSuggestions && (
+                        <span className="text-[10px] text-indigo-600 bg-indigo-50 border border-indigo-200/80 px-2 py-0.5 rounded-full font-bold">
+                          {phoneSuggestions.length} عميل مطابق
+                        </span>
+                      )}
+                    </div>
+
                     <div className="relative">
                       <input
                         type="tel"
                         value={newBooking.phone || ''}
                         onChange={e => handlePhoneChange(e.target.value)}
-                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 sm:py-2.5 text-xs sm:text-sm font-mono font-bold focus:border-indigo-600 outline-none text-slate-900 shadow-xs"
+                        onFocus={() => {
+                          if ((newBooking.phone || '').trim().length > 0) {
+                            setShowPhoneSuggestions(true);
+                          }
+                        }}
+                        onKeyDown={e => {
+                          if (e.key === 'ArrowDown') {
+                            e.preventDefault();
+                            if (!showPhoneSuggestions) {
+                              setShowPhoneSuggestions(true);
+                            } else if (phoneSuggestions.length > 0) {
+                              setHighlightedPhoneIndex(prev => (prev < phoneSuggestions.length - 1 ? prev + 1 : 0));
+                            }
+                          } else if (e.key === 'ArrowUp') {
+                            e.preventDefault();
+                            if (phoneSuggestions.length > 0) {
+                              setHighlightedPhoneIndex(prev => (prev > 0 ? prev - 1 : phoneSuggestions.length - 1));
+                            }
+                          } else if (e.key === 'Enter') {
+                            if (showPhoneSuggestions && highlightedPhoneIndex >= 0 && phoneSuggestions[highlightedPhoneIndex]) {
+                              e.preventDefault();
+                              handleSelectClientSuggestion(phoneSuggestions[highlightedPhoneIndex]);
+                            }
+                          } else if (e.key === 'Escape') {
+                            setShowPhoneSuggestions(false);
+                          }
+                        }}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 sm:py-2.5 text-xs sm:text-sm font-mono font-bold focus:border-indigo-600 outline-none text-slate-900 shadow-xs pl-8"
                         placeholder="أدخل رقم الموبايل مثلاً: 05XXXXXXXX"
                         required
                         dir="ltr"
                         autoFocus
                       />
+
+                      {/* Clear Input Button */}
+                      {Boolean(newBooking.phone) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewBooking(prev => ({ ...prev, phone: '', clientName: '', customerId: undefined }));
+                            setMatchingClientInfo(null);
+                            setShowPhoneSuggestions(false);
+                            setHighlightedPhoneIndex(-1);
+                          }}
+                          className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-rose-500 p-1 rounded-md text-xs cursor-pointer transition-colors"
+                          title="مسح الرقم"
+                        >
+                          ✕
+                        </button>
+                      )}
                     </div>
+
+                    {/* Dropdown Menu for Phone Autocomplete Suggestions */}
+                    {showPhoneSuggestions && phoneSuggestions.length > 0 && (
+                      <>
+                        <div 
+                          className="fixed inset-0 z-40" 
+                          onClick={() => setShowPhoneSuggestions(false)} 
+                        />
+                        <div className="absolute top-full right-0 left-0 mt-1.5 bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 overflow-hidden max-h-72 flex flex-col animate-in fade-in slide-in-from-top-1 duration-150">
+                          <div className="p-2.5 bg-slate-50 border-b border-slate-100 flex items-center justify-between text-[11px] font-bold text-slate-600">
+                            <span className="flex items-center gap-1.5">
+                              <span>⚡</span>
+                              <span>اختر العميل لملء بياناته تلقائياً:</span>
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-normal">
+                              ↑ ↓ للتنقل • Enter للاختيار
+                            </span>
+                          </div>
+
+                          <div className="overflow-y-auto divide-y divide-slate-100 max-h-60 scrollbar-thin">
+                            {phoneSuggestions.map((client, idx) => {
+                              const isHighlighted = idx === highlightedPhoneIndex;
+                              return (
+                                <button
+                                  key={client.id || `${client.phone}-${idx}`}
+                                  type="button"
+                                  onMouseDown={e => {
+                                    e.preventDefault();
+                                    handleSelectClientSuggestion(client);
+                                  }}
+                                  onMouseEnter={() => setHighlightedPhoneIndex(idx)}
+                                  className={`w-full text-right p-2.5 flex items-center justify-between gap-2.5 transition-colors cursor-pointer ${
+                                    isHighlighted ? 'bg-indigo-50 text-indigo-950 font-bold' : 'hover:bg-slate-50 text-slate-800'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2.5 min-w-0">
+                                    <div className="w-8 h-8 rounded-xl bg-indigo-100/70 text-indigo-700 flex items-center justify-center font-black text-xs shrink-0">
+                                      {client.name ? client.name.charAt(0) : '👤'}
+                                    </div>
+                                    <div className="min-w-0 text-right">
+                                      <p className="font-extrabold text-xs text-slate-900 truncate">{client.name}</p>
+                                      <p className="text-[11px] text-slate-500 font-mono" dir="ltr">
+                                        📱 {client.phone}
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-1.5 shrink-0 text-[10px]">
+                                    {(Number(client.loyaltyPoints) > 0 || Number(client.cashback) > 0) && (
+                                      <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-md font-bold">
+                                        {Number(client.loyaltyPoints) > 0 ? `⭐ ${client.loyaltyPoints} نقطة` : ''}
+                                        {Number(client.cashback) > 0 ? ` • ${client.cashback} ${settings.currency}` : ''}
+                                      </span>
+                                    )}
+                                    <span className="bg-indigo-600 text-white text-[10px] px-2 py-0.5 rounded-lg font-bold">
+                                      اختيار ✓
+                                    </span>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </>
+                    )}
 
                     {/* Matching Client Found Banner */}
                     {matchingClientInfo ? (
@@ -2793,7 +3036,7 @@ export function BookingsScreen({
                           </div>
                         </div>
                         <span className="bg-emerald-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full shrink-0">
-                          تم الاسترجاع ✓
+                          تم ملء البيانات ✓
                         </span>
                       </div>
                     ) : newBooking.phone && newBooking.phone.trim().length >= 8 ? (
@@ -3777,7 +4020,7 @@ export function BookingsScreen({
                   onClick={saveBooking}
                   className="flex-1 sm:flex-initial px-5 py-2 text-xs font-black text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-sm cursor-pointer transition-all active:scale-98"
                 >
-                  حفظ وتأكيد الحجز
+                  {editingBooking ? 'حفظ وتثبيت التعديلات' : 'حفظ وتأكيد الحجز'}
                 </button>
               </div>
             </div>

@@ -334,6 +334,9 @@ export function POSScreen({
   const [isRemedyInvoice, setIsRemedyInvoice] = useState(false);
   const [remedyReason, setRemedyReason] = useState('إصلاح مجاني بناءً على ضمان الصالون');
   
+  // رقم الدور النشط في شاشة الكاشير (عند الفتح التلقائي من شاشة المناداة)
+  const [activeQueueNumber, setActiveQueueNumber] = useState<number | null>(null);
+  
   // Fast Shift Schedule Modal State
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [scheduleEffectiveDate, setScheduleEffectiveDate] = useState(isShiftOpen ? shiftDate : new Date().toISOString().split('T')[0]);
@@ -1137,9 +1140,6 @@ export function POSScreen({
     setShowAddClientModal(false);
     setNewClientForm({ name: '', phone: '', referredByPhone: '', dobDay: '', dobMonth: '' });
   };
-
-  // رقم الدور النشط في شاشة الكاشير (عند الفتح التلقائي من شاشة المناداة)
-  const [activeQueueNumber, setActiveQueueNumber] = useState<number | null>(null);
 
   useEffect(() => {
     if (initialBooking) {

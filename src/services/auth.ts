@@ -82,11 +82,13 @@ export const ACTION_CATALOG: ActionMeta[] = [
 
   // Expenses
   { id: 'manage_expenses', name: 'إضافة وتعديل وحذف سندات المصروفات', category: 'المصروفات والماليات', description: 'تسجيل المصروفات التشغيلية واليومية' },
+  { id: 'manage_expense_categories', name: 'إضافة وتعديل بنود وتصنيفات الصرف', category: 'المصروفات والماليات', description: 'التحكم في دليل وتصنيفات بنود المصروفات وإضافتها وحذفها' },
 
   // HR, Employees & Clients
   { id: 'manage_employees', name: 'إضافة وتعديل بيانات الموظفين والفنيين', category: 'الموظفون والعملاء', description: 'التحكم في سجلات الكادر الفني والإداري' },
   { id: 'manage_salaries', name: 'تعديل الرواتب ونسب العمولات وصرف السلف', category: 'الموظفون والعملاء', description: 'صرف المستحقات المالية وعمولات الخدمات والسلف والخصومات' },
   { id: 'manage_hr', name: 'إدارة سجلات الحضور والانصراف (التايم شيت)', category: 'الموظفون والعملاء', description: 'تسجيل الحضور اليدوي وتعديل سجلات الدوام والأوفرتايم' },
+  { id: 'manage_hr_actions', name: 'إدارة كافة إجراءات شؤون العاملين (HR Actions)', category: 'الموظفون والعملاء', description: 'التحكم في كافة إجراءات HR: الجزاءات، المكافآت، الخصومات، أذونات الاستئذان، والإجازات' },
   { id: 'manage_clients', name: 'إدارة وتعديل وحذف بيانات العملاء', category: 'الموظفون والعملاء', description: 'التحكم في قاعدة بيانات العملاء ونقاط الولاء' },
   { id: 'manage_booking_settings', name: 'ضبط إعدادات الحجوزات وإغلاق الساعات والأيام', category: 'الموظفون والعملاء', description: 'التحكم في إغلاق الأيام والساعات وسعة الحجوزات وإتاحة الفنيين' },
   { id: 'manage_bookings_delete', name: 'حذف الحجوزات والمواعيد نهائياً', category: 'الموظفون والعملاء', description: 'السماح بإظهار واستخدام زر الحذف النهائي للحجز من النظام وقاعدة البيانات' },
@@ -95,7 +97,7 @@ export const ACTION_CATALOG: ActionMeta[] = [
   { id: 'view_reports', name: 'الاطلاع على التقارير المالية والتشغيلية', category: 'التقارير والإدارة', description: 'مشاهدة الأرباح والإيرادات ومبيعات الخدمات وإغلاق اليوم' },
   { id: 'view_system_analytics', name: 'الاطلاع على الرسوم البيانية وإحصائيات النظام', category: 'التقارير والإدارة', description: 'مشاهدة الرسوم البيانية ومقارنات المبيعات والمصروفات والخدمات في لوحة التحكم' },
   { id: 'view_employee_analytics', name: 'الاطلاع على إحصائيات ورسومات الموظفين', category: 'التقارير والإدارة', description: 'مشاهدة الرسوم البيانية لإيرادات وعمولات وغيابات وتأخيرات وسلف الموظفين' },
-  { id: 'export_excel', name: 'تصدير الجداول والتقارير إلى Excel', category: 'التقارير والإدارة', description: 'تحميل ملفات البيانات بصيغة .xlsx المنسقة' },
+  { id: 'export_excel', name: 'تصدير الجداول والتقارير إلى Excel', category: 'التقارير والإدارة', description: 'تحميل وتصدير بيانات الجداول والتقارير إلى ملفات Excel (.xlsx / .csv)' },
   { id: 'manage_settings', name: 'تعديل إعدادات المنشأة والضريبة والطباعة', category: 'التقارير والإدارة', description: 'تغيير اسم الصالون، الرقم الضريبي، والطابعات والنسخ الاحتياطي' },
   { id: 'manage_rbac', name: 'إدارة المستخدمين والصلاحيات والأدوار', category: 'التقارير والإدارة', description: 'إنشاء حسابات مستخدمين جديدة وتحديد أذونات الوصول' }
 ];
@@ -140,7 +142,7 @@ export const DEFAULT_ROLE_PRESETS: Record<UserRole, { screens: string[]; actions
   },
   supervisor: {
     screens: ['dashboard', 'pos', 'queue_calling', 'bookings', 'invoices', 'sales_returns', 'services', 'warehouse', 'clients', 'employees', 'treasury', 'expenses', 'reports'],
-    actions: ['pos_discount', 'pos_void', 'pos_reprint', 'sales_return', 'manage_invoices_delete', 'manage_queue', 'manage_shifts', 'edit_shift_cash', 'treasury_deposit', 'treasury_withdraw', 'treasury_transfer', 'treasury_view_balance', 'manage_expenses', 'manage_products', 'manage_inventory', 'manage_employees', 'manage_salaries', 'manage_hr', 'manage_clients', 'manage_booking_settings', 'manage_bookings_delete', 'view_reports', 'export_excel']
+    actions: ['pos_discount', 'pos_void', 'pos_reprint', 'sales_return', 'manage_invoices_delete', 'manage_queue', 'manage_shifts', 'edit_shift_cash', 'treasury_deposit', 'treasury_withdraw', 'treasury_transfer', 'treasury_view_balance', 'manage_expenses', 'manage_expense_categories', 'manage_products', 'manage_inventory', 'manage_employees', 'manage_salaries', 'manage_hr', 'manage_hr_actions', 'manage_clients', 'manage_booking_settings', 'manage_bookings_delete', 'view_reports', 'export_excel']
   },
   warehouse_manager: {
     screens: ['dashboard', 'warehouse', 'products', 'suppliers', 'purchases', 'inventory'],
@@ -156,7 +158,7 @@ export const DEFAULT_ROLE_PRESETS: Record<UserRole, { screens: string[]; actions
   },
   accountant: {
     screens: ['dashboard', 'invoices', 'sales_returns', 'warehouse', 'treasury', 'expenses', 'reports'],
-    actions: ['pos_reprint', 'sales_return', 'treasury_deposit', 'treasury_withdraw', 'treasury_transfer', 'treasury_view_balance', 'manage_expenses', 'manage_suppliers', 'manage_purchases', 'manage_inventory', 'manage_salaries', 'view_reports', 'export_excel']
+    actions: ['pos_reprint', 'sales_return', 'treasury_deposit', 'treasury_withdraw', 'treasury_transfer', 'treasury_view_balance', 'manage_expenses', 'manage_expense_categories', 'manage_suppliers', 'manage_purchases', 'manage_inventory', 'manage_salaries', 'view_reports', 'export_excel']
   },
   barber: {
     screens: ['barber_portal'],

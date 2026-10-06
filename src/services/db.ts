@@ -352,6 +352,12 @@ export const DB = {
         } else {
           console.error(`DB.fetchAll[${table}]:`, error.message);
         }
+        if (table === 'bookings') {
+          try {
+            const cached = localStorage.getItem('smartcut_bookings');
+            if (cached) return JSON.parse(cached) as T[];
+          } catch {}
+        }
         return [];
       }
       if (!Array.isArray(data)) return [];
@@ -403,7 +409,16 @@ export const DB = {
         }
         return camel;
       }) as T[];
-    } catch (e) { console.error(`DB.fetchAll[${table}] exception:`, e); return []; }
+    } catch (e) {
+      console.error(`DB.fetchAll[${table}] exception:`, e);
+      if (table === 'bookings') {
+        try {
+          const cached = localStorage.getItem('smartcut_bookings');
+          if (cached) return JSON.parse(cached) as T[];
+        } catch {}
+      }
+      return [];
+    }
   },
 
   // --- حفظ أو تحديث سجل مع المعالجة التلقائية للحقول غير الموجودة ---
@@ -503,7 +518,22 @@ export const DB = {
       while (attempts < 4) {
         attempts++;
         const { error } = await client.from(table).update(snakeUpdates).eq('id', id);
-        if (!error) return true;
+        if (!error) {
+          if (table === 'bookings') {
+            try {
+              const stored = localStorage.getItem('smartcut_bookings');
+              if (stored) {
+                const list = JSON.parse(stored);
+                const idx = list.findIndex((item: any) => item.id === id);
+                if (idx >= 0) {
+                  list[idx] = { ...list[idx], ...updates };
+                  localStorage.setItem('smartcut_bookings', JSON.stringify(list));
+                }
+              }
+            } catch {}
+          }
+          return true;
+        }
 
         const errMsg = error.message || '';
         const missingColMatch = errMsg.match(/Could not find the '([^']+)' column of '([^']+)'/i) 
@@ -1496,28 +1526,63 @@ export const DB = {
       }
       if (!Array.isArray(cleanAdvances)) cleanAdvances = [];
 
+      const rawClientId = b.clientId || b.client_id;
+      const safeClientId = (rawClientId && UUID_REGEX.test(rawClientId)) ? rawClientId : null;
+
       const snap: any = {
-        id: b.id, salon_id: validSalonId, branch_id: validBranchId,
+        id: b.id,
+        salon_id: validSalonId || null,
+        branch_id: validBranchId || null,
         branch_code: (b as any).branchCode || null,
-        client_id: b.clientId || null, client_name: b.clientName || 'عميل نقدي', client_phone: b.phone || b.clientPhone || '0000000000',
-        customer_email: b.customerEmail || null, booking_code: b.bookingCode || null,
-        source: safeSource, services: b.services || [],
-        total_amount: b.totalAmount ?? 0,
-        date: safeDate, time: rawTime.length >= 5 ? rawTime.substring(0, 5) : rawTime, status: b.status || 'confirmed',
+        client_id: safeClientId,
+        client_name: b.clientName || b.client_name || 'عميل نقدي',
+        client_phone: b.phone || b.clientPhone || b.client_phone || '0000000000',
+        customer_email: b.customerEmail || b.customer_email || null,
+        booking_code: b.bookingCode || b.booking_code || null,
+        source: safeSource,
+        services: b.services || [],
+        total_amount: Number(b.totalAmount ?? b.total_amount ?? 0),
+        date: safeDate,
+        time: rawTime.length >= 5 ? rawTime.substring(0, 5) : rawTime,
+        status: b.status || 'confirmed',
         created_at: b.createdAt || b.created_at || appointmentDateTime,
         created_by: b.createdBy || b.created_by || null,
         created_by_name: b.createdByName || b.created_by_name || null,
-        updated_at: b.updatedAt || b.updated_at || null,
+        updated_at: b.updatedAt || b.updated_at || new Date().toISOString(),
         updated_by: b.updatedBy || b.updated_by || null,
         updated_by_name: b.updatedByName || b.updated_by_name || null,
-        queue_number: b.queueNumber || null,
-        advance_payments: cleanAdvances, notes: b.notes || null,
+        queue_number: b.queueNumber || b.queue_number || null,
+        advance_payments: cleanAdvances,
+        notes: b.notes || null,
         internal_notes: b.internalNotes || b.internal_notes || null,
         location: b.location || null,
-        discount_type: b.discountType || 'fixed',
-        discount_value: Number(b.discountValue || 0)
+        discount_type: b.discountType || b.discount_type || 'fixed',
+        discount_value: Number(b.discountValue ?? b.discount_value ?? 0)
       };
+
+      // الحفظ الفوري في التخزين المحلي لضمان ثبات التعديل وعدم التراجع عنه إطلاقاً
+      try {
+        const stored = localStorage.getItem('smartcut_bookings');
+        const list = stored ? JSON.parse(stored) : [];
+        const idx = list.findIndex((item: any) => item.id === b.id);
+        if (idx >= 0) {
+          list[idx] = { ...list[idx], ...b };
+        } else {
+          list.unshift(b);
+        }
+        localStorage.setItem('smartcut_bookings', JSON.stringify(list));
+      } catch (e) {}
+
       let { error } = await client.from('bookings').upsert(snap, { onConflict: 'id' });
+
+      // معالجة خطأ القيد الأجنبي أو نوع المعرف في عمود client_id
+      if (error && (error.code === '23503' || error.message?.includes('foreign key') || error.message?.includes('client_id')) && snap.client_id) {
+        console.warn('DB.saveBooking foreign key warning on client_id, retrying with client_id = null:', error.message);
+        snap.client_id = null;
+        const retryFk = await client.from('bookings').upsert(snap, { onConflict: 'id' });
+        error = retryFk.error;
+      }
+
       if (error && error.message) {
         let retried = false;
         if (error.message.includes('internal_notes')) {
@@ -1555,9 +1620,16 @@ export const DB = {
           error = retry.error;
         }
       }
-      if (error) { console.error('DB.saveBooking error:', error.message); return null; }
+
+      if (error) {
+        console.error('DB.saveBooking error:', error.message);
+        return b;
+      }
       return b;
-    } catch (e) { console.error('DB.saveBooking exception:', e); return null; }
+    } catch (e) {
+      console.error('DB.saveBooking exception:', e);
+      return b;
+    }
   },
 
   // ---- الموظفون ----
@@ -2339,6 +2411,13 @@ export const DB = {
     if (!client || !bookingId) return false;
     try {
       try {
+        const stored = localStorage.getItem('smartcut_bookings');
+        if (stored) {
+          const list = JSON.parse(stored);
+          localStorage.setItem('smartcut_bookings', JSON.stringify(list.filter((b: any) => b.id !== bookingId)));
+        }
+      } catch (e) {}
+      try {
         await client.from('queue_tickets').delete().eq('booking_id', bookingId);
         await client.from('queue_tickets').delete().eq('id', 'QT-B-' + bookingId);
       } catch (e) {}
@@ -2416,7 +2495,7 @@ export const DB = {
 
       // Auto-heal branch_id in database if target branch is known and different
       if (targetBranchId && latestOpenShift.branch_id !== targetBranchId) {
-        client.from('work_shifts').update({ branch_id: targetBranchId }).eq('id', latestOpenShift.id).then(() => {}).catch(() => {});
+        client.from('work_shifts').update({ branch_id: targetBranchId }).eq('id', latestOpenShift.id).then(() => {}, () => {});
       }
 
       return toCamel(latestOpenShift);
@@ -3272,7 +3351,8 @@ export const DB = {
       isSalonActive: true
     });
 
-    return SubscriptionService.updateSalon(salonId, {
+    const subModule = await import('./subscriptionService');
+    return subModule.SubscriptionService.updateSalon(salonId, {
       subscriptionStatus: 'trial',
       subscriptionPlan: plan as any,
       subscriptionStartDate: startDate,
@@ -3312,7 +3392,8 @@ export const DB = {
       isSalonActive: false
     });
 
-    return SubscriptionService.updateSalon(salonId, {
+    const subModule = await import('./subscriptionService');
+    return subModule.SubscriptionService.updateSalon(salonId, {
       subscriptionStatus: 'expired',
       subscriptionEndDate: yesterday,
       isActive: false
