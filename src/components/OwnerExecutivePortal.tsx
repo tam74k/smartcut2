@@ -548,6 +548,7 @@ export function OwnerExecutivePortal({
   shiftData,
   fingerprintLogs = []
 }: OwnerExecutivePortalProps) {
+  const currency = settings.currency || 'SAR';
   const [activeSubTab, setActiveSubTab] = useState<'overview' | 'profit_equation' | 'partners' | 'finance' | 'attendance' | 'bookings' | 'users'>('overview');
   const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -1789,8 +1790,6 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
       setUserFormSuccess('');
     }, 1200);
   };
-
-  const currency = settings.currency || 'SAR';
 
   return (
     <div className="w-full h-full min-h-screen bg-slate-950 text-slate-100 font-sans pb-32 select-none overflow-y-auto overflow-x-hidden">
