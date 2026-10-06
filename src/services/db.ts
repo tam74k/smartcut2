@@ -1512,6 +1512,7 @@ export const DB = {
         updated_by_name: b.updatedByName || b.updated_by_name || null,
         queue_number: b.queueNumber || null,
         advance_payments: cleanAdvances, notes: b.notes || null,
+        internal_notes: b.internalNotes || b.internal_notes || null,
         location: b.location || null,
         discount_type: b.discountType || 'fixed',
         discount_value: Number(b.discountValue || 0)
@@ -1519,6 +1520,11 @@ export const DB = {
       let { error } = await client.from('bookings').upsert(snap, { onConflict: 'id' });
       if (error && error.message) {
         let retried = false;
+        if (error.message.includes('internal_notes')) {
+          ensureColumn('bookings', 'internal_notes', 'TEXT').catch(() => {});
+          delete snap.internal_notes;
+          retried = true;
+        }
         if (error.message.includes('location')) {
           ensureColumn('bookings', 'location', 'TEXT').catch(() => {});
           delete snap.location;

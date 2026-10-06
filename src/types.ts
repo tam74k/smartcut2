@@ -657,6 +657,7 @@ export interface Booking {
   services: BookingService[]; 
   totalAmount: number; 
   notes?: string;
+  internalNotes?: string; // ملاحظات داخلية خاصة بالإدارة فقط (لا تظهر نهائياً في الإيصال)
   location?: string;
   source?: 'online' | 'pos' | 'phone';
   bookingCode?: string;

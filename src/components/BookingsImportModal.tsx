@@ -31,6 +31,7 @@ interface ParsedBookingCandidate {
   status: 'confirmed' | 'pending' | 'completed' | 'cancelled';
   location?: string;
   notes: string;
+  internalNotes?: string;
   advanceAmount: number;
   advanceTreasury: string;
   advances: AdvancePayment[];
@@ -506,6 +507,7 @@ export function BookingsImportModal({
           : 'كاش (الدرج)';
 
         const notes = String(row['ملاحظات'] || row['Notes'] || '').trim();
+        const internalNotes = String(row['ملاحظات داخلية'] || row['ملاحظة داخلية'] || row['Internal Notes'] || row['internal_notes'] || '').trim();
 
         // 3. تحليل خدمات الحجز التابعة
         const detailItemsRaw = servicesByBookingId.get(rowIdRaw) || [];
@@ -603,6 +605,7 @@ export function BookingsImportModal({
           status,
           location: locationRaw || undefined,
           notes,
+          internalNotes: internalNotes || undefined,
           advanceAmount: advAmt,
           advanceTreasury: advTreasury,
           advances: rowAdvances,
@@ -740,6 +743,7 @@ export function BookingsImportModal({
         advancePayments: advances,
         totalAmount: candidate.totalAmount,
         notes: candidate.notes,
+        internalNotes: candidate.internalNotes || undefined,
         branchId: effectiveBranchId,
         source: 'pos',
         createdAt: appointmentDateTime

@@ -22,35 +22,119 @@ export function ClosingReportReceipt({
 
   // Construct comprehensive treasuries list ensuring Cash / Main treasury and all utilized treasuries are included
   const allTreasuries: Treasury[] = useMemo(() => {
-    const list = [...(settings.treasuries || [])];
-    const hasMainOrCash = list.some(t => t.id === 'cash' || t.id === 'main' || t.isMain);
-    if (!hasMainOrCash) {
-      list.unshift({ id: 'cash', name: 'الخزنة الرئيسية (نقداً)', isMain: true });
+    let list: Treasury[] = (settings.treasuries && settings.treasuries.length > 0)
+      ? [...settings.treasuries]
+      : [
+          { id: 'main', name: 'الخزنة الرئيسية', isMain: true },
+          { id: 'cash', name: 'كاش (الدرج)', isMain: false },
+          { id: 'card', name: 'شبكة / فيزا', isMain: false }
+        ];
+
+    const hasMain = list.some(t => t.id === 'main' || t.isMain);
+    const hasCash = list.some(t => t.id === 'cash');
+
+    if (!hasMain) {
+      list.unshift({ id: 'main', name: 'الخزنة الرئيسية', isMain: true });
     }
+    if (!hasCash) {
+      list.push({ id: 'cash', name: 'كاش (الدرج)', isMain: false });
+    }
+
     const knownIds = new Set(list.map(t => t.id));
     transactions.forEach(t => {
       const tId = t.treasury || (t as any).treasuryId;
       if (tId && !knownIds.has(tId)) {
         knownIds.add(tId);
-        list.push({ id: tId, name: tId === 'cash' ? 'الخزنة الرئيسية (نقداً)' : `خزينة (${tId})` });
+        list.push({ 
+          id: tId, 
+          name: tId === 'card' ? 'شبكة / مدى' : tId === 'bank_transfer' ? 'تحويل بنكي' : `خزينة (${tId})`,
+          isMain: false
+        });
       }
     });
+
+    invoices.forEach(inv => {
+      const pms = (inv.paymentMethods && inv.paymentMethods.length > 0)
+        ? inv.paymentMethods
+        : [{ treasuryId: inv.treasuryId || inv.paymentMethod }];
+      pms.forEach((pm: any) => {
+        const pmId = pm.treasuryId;
+        if (pmId && pmId !== 'cashback' && pmId !== 'remedy_free' && !knownIds.has(pmId)) {
+          knownIds.add(pmId);
+          list.push({
+            id: pmId,
+            name: pmId === 'card' ? 'شبكة / مدى' : pmId === 'bank_transfer' ? 'تحويل بنكي' : `خزينة (${pmId})`,
+            isMain: false
+          });
+        }
+      });
+    });
+
     return list;
-  }, [settings.treasuries, transactions]);
+  }, [settings.treasuries, transactions, invoices]);
+
+  const hasCashTreasury = useMemo(() => allTreasuries.some(t => t.id === 'cash'), [allTreasuries]);
+  const hasMainTreasury = useMemo(() => allTreasuries.some(t => t.id === 'main' || t.isMain), [allTreasuries]);
 
   const isMatchingTreasury = (tId: string | undefined, targetId: string) => {
-    if (!tId) return targetId === 'cash' || targetId === 'main';
-    if (tId === targetId) return true;
-    if ((targetId === 'cash' || targetId === 'main') && (tId === 'cash' || tId === 'main')) return true;
+    // 1. Direct match
+    if (tId && tId === targetId) return true;
+
+    // 2. Handling undefined / empty treasury ID
+    // In POS operations, untagged / cash invoices or movements belong to cash drawer ('cash')
+    if (!tId) {
+      if (hasCashTreasury) {
+        return targetId === 'cash';
+      }
+      if (hasMainTreasury) {
+        const mainObj = allTreasuries.find(t => t.id === targetId && (t.isMain || t.id === 'main'));
+        return Boolean(mainObj);
+      }
+      return targetId === allTreasuries[0]?.id;
+    }
+
+    // 3. Normalized cash aliases
+    if (tId === 'cash' || tId === 'نقدي' || tId === 'كاش') {
+      if (targetId === 'cash') return true;
+      // Only fallback to main if there is NO cash treasury at all
+      if (!hasCashTreasury && (targetId === 'main' || allTreasuries.find(t => t.id === targetId)?.isMain)) {
+        return true;
+      }
+      return false;
+    }
+
+    // 4. Normalized main treasury aliases
+    if (tId === 'main' || tId === 'الرئيسية' || tId === 'الخزنة الرئيسية') {
+      if (targetId === 'main') return true;
+      const targetObj = allTreasuries.find(t => t.id === targetId);
+      if (targetObj?.isMain && !hasCashTreasury) return true;
+      return Boolean(targetObj?.isMain && targetId !== 'cash');
+    }
+
+    // 5. Normalized card aliases
+    if (targetId === 'card') {
+      return tId === 'card' || tId === 'mada' || tId === 'visa' || tId === 'mastercard' || tId === 'شبكة' || tId === 'شبكة / مدى';
+    }
+
+    // 6. Normalized bank transfer aliases
+    if (targetId === 'bank_transfer' || targetId === 'transfer') {
+      return tId === 'bank_transfer' || tId === 'transfer' || tId === 'bank' || tId === 'تحويل بنكي';
+    }
+
     return false;
   };
 
   const getTreasuryLabel = (tId: string | undefined) => {
-    if (!tId || tId === 'cash' || tId === 'main') return 'الخزنة الرئيسية (نقداً)';
+    if (!tId) {
+      const cashT = allTreasuries.find(t => t.id === 'cash');
+      return cashT ? cashT.name : 'كاش (الدرج)';
+    }
     const found = allTreasuries.find(t => t.id === tId);
     if (found) return found.name;
+    if (tId === 'cash') return 'كاش (الدرج)';
+    if (tId === 'main') return 'الخزنة الرئيسية';
     if (tId === 'card' || tId === 'mada') return 'شبكة / مدى';
-    if (tId === 'bank_transfer') return 'تحويل بنكي';
+    if (tId === 'bank_transfer' || tId === 'transfer') return 'تحويل بنكي';
     return tId;
   };
 
@@ -208,7 +292,9 @@ export function ClosingReportReceipt({
     const transfersOut = tTrx.filter(t => t.type === 'out' && t.category === 'transfer').reduce((s, x) => s + (Number(x.amount) || 0), 0);
     const withdrawals = tTrx.filter(t => t.type === 'out' && (t.category === 'withdrawal' || t.category === 'سحب')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
     const deposits = tTrx.filter(t => t.type === 'in' && (t.category === 'deposit' || t.category === 'إيداع')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    const initialCashSum = tTrx.filter(t => t.type === 'in' && (t.category === 'عهدة افتتاحية' || t.category === 'initial_cash')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    const recordedInitialCash = tTrx.filter(t => t.type === 'in' && (t.category === 'عهدة افتتاحية' || t.category === 'initial_cash')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    const isCashDrawer = treasuryId === 'cash' || (!hasCashTreasury && (treasuryId === 'main' || allTreasuries.find(t => t.id === treasuryId)?.isMain));
+    const initialCashSum = recordedInitialCash > 0 ? recordedInitialCash : (isCashDrawer ? (Number(initialCash) || 0) : 0);
 
     const net = (income + transfersIn + deposits + initialCashSum) - (expenses + salaries + advances + purchases + supplierPayments + commissions + transfersOut + withdrawals);
 
@@ -352,7 +438,7 @@ export function ClosingReportReceipt({
                 <span>الصافي:</span>
                 <span dir="ltr" className="font-mono">{stats.net.toFixed(2)}</span>
               </div>
-              {!treasury.isMain && stats.net > 0 && (
+              {!treasury.isMain && treasury.id !== 'main' && stats.net > 0 && (
                 <div className="text-[10px] text-emerald-800 bg-emerald-50 rounded p-1 mt-1 text-center font-bold">
                   🔄 سيتم تصفير هذا الصافي ونقله تلقائياً إلى الخزينة الرئيسية
                 </div>

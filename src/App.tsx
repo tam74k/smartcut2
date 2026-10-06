@@ -50,6 +50,7 @@ import { SubscriptionPlansModal } from './components/SubscriptionPlansModal';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { SubscriptionBanner } from './components/SubscriptionBanner';
 import { printQueueSlipDirect } from './utils/printQueueSlip';
+import { handlePrintReceipt } from './utils/print';
 import { AuthService, ROLE_LABELS } from './services/auth';
 import { SupabaseService } from './services/supabase';
 import { DB, dbClientToApp, dbEmployeeToApp, dbServiceToApp, dbProductToApp, toCamel } from './services/db';
@@ -494,6 +495,8 @@ export default function App() {
         ...b, phone: b.clientPhone || b.phone || '',
         queueNumber: b.queueNumber || b.queue_number || undefined,
         customerEmail: b.customerEmail || '', advancePayments: b.advancePayments || b.advance_payments || [],
+        notes: b.notes || undefined,
+        internalNotes: b.internalNotes || b.internal_notes || undefined,
         discountType: b.discountType || b.discount_type || 'fixed',
         discountValue: Number(b.discountValue ?? b.discount_value ?? 0),
         createdAt: b.createdAt || b.created_at || undefined,
@@ -870,6 +873,8 @@ export default function App() {
             phone: b.clientPhone || b.phone || '',
             customerEmail: b.customerEmail || '',
             advancePayments: b.advancePayments || b.advance_payments || [],
+            notes: b.notes || undefined,
+            internalNotes: b.internalNotes || b.internal_notes || undefined,
             discountType: b.discountType || b.discount_type || 'fixed',
             discountValue: Number(b.discountValue ?? b.discount_value ?? 0),
             createdAt: b.createdAt || b.created_at || undefined,
@@ -1253,6 +1258,23 @@ export default function App() {
       return res;
     });
   };
+
+  const handleRefreshServices = useCallback(async () => {
+    try {
+      const sId = currentSalonId || settings.salonId;
+      if (!sId) return;
+      const freshServices = await DB.fetchServices(sId);
+      if (Array.isArray(freshServices) && freshServices.length > 0) {
+        setServices(prev => {
+          const freshMapped = freshServices.map(dbServiceToApp);
+          const other = prev.filter(s => s.salonId && s.salonId !== sId);
+          return [...other, ...freshMapped];
+        });
+      }
+    } catch (err) {
+      console.warn('Silent refresh services error:', err);
+    }
+  }, [currentSalonId, settings.salonId]);
 
   const handleSetCategories = (updater: Category[] | ((prev: Category[]) => Category[])) => {
     if (checkReadOnlyAndWarn()) return;
@@ -1816,6 +1838,26 @@ export default function App() {
     setShowCloseModal(false);
   };
 
+  // معالج طباعة تقرير إغلاق الوردية (حراري أو A4)
+  const handlePrintClosingShiftReport = (paper: '80mm' | '58mm' | 'a4' = (settings.paperSize || '80mm')) => {
+    try {
+      const el = document.getElementById('print-receipt') || document.querySelector('[id="print-receipt"]');
+      if (el) {
+        handlePrintReceipt('print-receipt', paper === 'a4', paper);
+      } else {
+        const modalContainer = document.getElementById('shift-closing-report-receipt-container');
+        if (modalContainer) {
+          handlePrintReceipt('shift-closing-report-receipt-container', paper === 'a4', paper);
+        } else {
+          window.print();
+        }
+      }
+    } catch (err) {
+      console.error('Error printing closing shift report:', err);
+      window.print();
+    }
+  };
+
 
   const handleCheckoutComplete = (invoice: Invoice, paymentSplits: { amount: number, treasuryId: string }[], bookingId?: string) => {
     if (isSubscriptionBlocked) {
@@ -2219,6 +2261,7 @@ export default function App() {
           tips={tips}
           setTips={setTips}
           currentUser={currentUser}
+          onRefreshServices={handleRefreshServices}
         />
       );
       case 'services': return (
@@ -2802,6 +2845,8 @@ export default function App() {
                 ...b, phone: b.clientPhone || b.phone || '',
                 queueNumber: b.queueNumber || b.queue_number || undefined,
                 customerEmail: b.customerEmail || '', advancePayments: b.advancePayments || b.advance_payments || [],
+                notes: b.notes || undefined,
+                internalNotes: b.internalNotes || b.internal_notes || undefined,
                 discountType: b.discountType || b.discount_type || 'fixed',
                 discountValue: Number(b.discountValue ?? b.discount_value ?? 0)
               })));
@@ -3267,7 +3312,7 @@ export default function App() {
               <button onClick={() => setShowCloseModal(false)} className="text-slate-400 hover:text-red-500 font-bold">✕</button>
             </div>
             <div className="p-4 overflow-hidden flex justify-center bg-slate-100 max-h-[60vh] overflow-y-auto">
-              <div className="bg-white shadow-sm p-4 w-full rounded-2xl">
+              <div id="shift-closing-report-receipt-container" className="bg-white shadow-sm p-4 w-full rounded-2xl">
                 <ClosingReportReceipt 
                   settings={settings}
                   transactions={transactions.filter(t => (t.shiftDate && shiftData.date && t.shiftDate === shiftData.date) || t.date.startsWith(shiftData.date))}
@@ -3281,16 +3326,27 @@ export default function App() {
             </div>
             
             <div className="p-4 bg-slate-50 border-t border-slate-100 flex flex-col gap-2.5">
-              <button 
-                onClick={() => handlePrintReceipt('print-receipt', false, settings.paperSize || '80mm')}
-                className="w-full bg-slate-900 hover:bg-slate-800 text-white font-extrabold py-3 rounded-xl transition-colors flex items-center justify-center gap-2 text-xs shadow"
-              >
-                <Printer size={16} />
-                <span>طباعة تقرير إغلاق الوردية الحراري</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => handlePrintClosingShiftReport(settings.paperSize || '80mm')}
+                  className="flex-1 bg-slate-900 hover:bg-slate-800 text-white font-extrabold py-3 rounded-xl transition-all flex items-center justify-center gap-2 text-xs shadow active:scale-[0.99] cursor-pointer"
+                  title="طباعة إيصال التقرير لطابعة الإيصالات الحرارية (80mm / 58mm)"
+                >
+                  <Printer size={16} className="text-emerald-400" />
+                  <span>طباعة تقرير الوردية الحراري</span>
+                </button>
+                <button 
+                  onClick={() => handlePrintClosingShiftReport('a4')}
+                  className="bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 font-extrabold py-3 px-3 rounded-xl transition-all flex items-center justify-center gap-1 text-xs shadow-xs active:scale-[0.99] cursor-pointer whitespace-nowrap"
+                  title="طباعة التقرير على ورق A4 عادي"
+                >
+                  <FileText size={15} className="text-slate-500" />
+                  <span>A4</span>
+                </button>
+              </div>
               <button 
                 onClick={handleConfirmCloseShift}
-                className="w-full bg-red-600 hover:bg-red-700 text-white font-extrabold py-3 rounded-xl transition-colors text-xs shadow"
+                className="w-full bg-red-600 hover:bg-red-700 text-white font-extrabold py-3 rounded-xl transition-all text-xs shadow cursor-pointer active:scale-[0.99]"
               >
                 تأكيد إغلاق الوردية وتصفير الخزائن
               </button>

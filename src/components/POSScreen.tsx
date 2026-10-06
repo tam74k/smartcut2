@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { 
   Search, Plus, Minus, Trash2, User, CreditCard, Banknote, Scissors, 
   Tag, X, Package, Clock, UserCog, Calendar, CheckCircle2, Image as ImageIcon,
@@ -78,7 +78,8 @@ export function POSScreen({
   currentUser,
   activeBranchId,
   salesReturns = [],
-  onProcessSalesReturn
+  onProcessSalesReturn,
+  onRefreshServices
 }: { 
   settings: AppSettings, 
   activeBranchId?: string,
@@ -105,7 +106,8 @@ export function POSScreen({
   setTips?: (updater: TipRecord[] | ((prev: TipRecord[]) => TipRecord[])) => void,
   currentUser?: any,
   salesReturns?: SalesReturn[],
-  onProcessSalesReturn?: (ret: SalesReturn) => void
+  onProcessSalesReturn?: (ret: SalesReturn) => void,
+  onRefreshServices?: () => Promise<void>
 }) {
   const [showSalesReturnModal, setShowSalesReturnModal] = useState(false);
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -117,6 +119,7 @@ export function POSScreen({
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const searchContainerRef = useRef<HTMLDivElement>(null);
+  const servicesGridContainerRef = useRef<HTMLDivElement>(null);
   const [showAddClientModal, setShowAddClientModal] = useState(false);
   const [newClientForm, setNewClientForm] = useState({ name: '', phone: '', referredByPhone: '', dobDay: '', dobMonth: '' });
 
@@ -425,27 +428,13 @@ export function POSScreen({
     };
     setHeldInvoices(prev => [newHeld, ...prev]);
     DB.saveHeldInvoice(newHeld).catch(e => console.warn('Failed to save held invoice:', e));
-    // تفريغ الفاتورة النشطة
-    setCart([]);
-    setSelectedClient(null);
-    setClientSearch('');
-    setDiscount({ type: 'fixed', value: 0 });
-    setAdvanceDeduction(0);
-    setActiveAdvancePayments([]);
-    setActiveBookingId(undefined);
-    setActiveQueueNumber(null);
-    setIsRemedyInvoice(false);
-    setBeforePhotoUrl('');
-    setAfterPhotoUrl('');
-    try {
-      localStorage.removeItem('smartcut_pos_active_draft');
-    } catch {}
-    if (onClearInitial) onClearInitial();
+    // تفريغ الفاتورة النشطة والعودة الفورية لعرض جميع الخدمات
+    resetToFreshInvoice(false);
   };
 
-  // ➕ بدء فاتورة جديدة (New Invoice) مع تعليق الفاتورة السابقة إن وجدت
-  const handleNewInvoice = () => {
-    if (cart.length > 0) {
+  // ⚡ إعادة ضبط شاشة نقطة البيع وعرض قائمة الخدمات بالكامل وفوراً وبأعلى سرعة (Instant Zero-Delay Reset)
+  const resetToFreshInvoice = useCallback((shouldHoldCurrentCart = false) => {
+    if (shouldHoldCurrentCart && cart.length > 0) {
       const newHeld: HeldInvoice = {
         id: 'HOLD-' + Math.random().toString(36).substr(2, 6).toUpperCase(),
         salonId: settings.salonId,
@@ -467,6 +456,8 @@ export function POSScreen({
       setHeldInvoices(prev => [newHeld, ...prev]);
       DB.saveHeldInvoice(newHeld).catch(e => console.warn('Failed to save held invoice:', e));
     }
+
+    // 1. تفريغ السلة وبيانات العميل والخصومات
     setCart([]);
     setSelectedClient(null);
     setClientSearch('');
@@ -476,12 +467,51 @@ export function POSScreen({
     setActiveBookingId(undefined);
     setActiveQueueNumber(null);
     setIsRemedyInvoice(false);
+    setRemedyReason('');
     setBeforePhotoUrl('');
     setAfterPhotoUrl('');
+    setAppliedPromo(null);
+    setPromoCodeInput('');
+    setPromoError(null);
+    setSplitAmounts({});
+    setEditingCartId(null);
+    setCustomPriceInput('');
+
+    // 2. ⚡ العرض الفوري الأقصى سرعة لجميع الخدمات: تصفير البحث والتصنيفات وتعيين نوع البند إلى خدمات
+    setItemTypeFilter('service');
+    setSelectedCategory('all');
+    setSearchQuery('');
+    setShowSuggestions(false);
+    setHighlightedIndex(-1);
+
+    // 3. إعادة التمرير لأعلى شبكة الخدمات فوراً
+    if (servicesGridContainerRef.current) {
+      try {
+        servicesGridContainerRef.current.scrollTop = 0;
+      } catch {}
+    }
+
+    // 4. حذف المسودة النشطة
     try {
       localStorage.removeItem('smartcut_pos_active_draft');
     } catch {}
+
     if (onClearInitial) onClearInitial();
+
+    // 5. تحديث خفيف في الخلفية لضمان أحدث البيانات بدون تجميد الواجهة (Non-blocking background refresh)
+    if (onRefreshServices) {
+      onRefreshServices().catch(() => {});
+    }
+  }, [
+    cart, selectedClient, clientSearch, discount, advanceDeduction, 
+    activeAdvancePayments, activeBookingId, isRemedyInvoice, remedyReason, 
+    beforePhotoUrl, afterPhotoUrl, activeQueueNumber, settings.salonId, 
+    onClearInitial, onRefreshServices
+  ]);
+
+  // ➕ بدء فاتورة جديدة (New Invoice) مع تعليق الفاتورة السابقة إن وجدت
+  const handleNewInvoice = () => {
+    resetToFreshInvoice(true);
   };
 
   // ▶ استكمال الفاتورة المعلقة (Resume Held Bill)
@@ -1037,26 +1067,8 @@ export function POSScreen({
     setShowPaymentModal(false);
     setShowReceiptModal(true);
     
-    // reset cart
-    setCart([]);
-    setClientSearch('');
-    setSelectedClient(null);
-    setAdvanceDeduction(0);
-    setActiveAdvancePayments([]);
-    setActiveBookingId(undefined);
-    setActiveQueueNumber(null);
-    setDiscount({ type: 'fixed', value: 0 });
-    setAppliedPromo(null);
-    setPromoCodeInput('');
-    setPromoError(null);
-    setSplitAmounts({});
-    setBeforePhotoUrl('');
-    setAfterPhotoUrl('');
-    setIsRemedyInvoice(false);
-    try {
-      localStorage.removeItem('smartcut_pos_active_draft');
-    } catch {}
-    if(onClearInitial) onClearInitial();
+    // reset cart and instant fresh reload of services
+    resetToFreshInvoice(false);
 
     if (settings.printAutomatically) {
       setTimeout(printReceipt, 500);
@@ -1386,20 +1398,7 @@ export function POSScreen({
   }, []);
 
   const clearBooking = () => {
-    setCart([]);
-    setClientSearch('');
-    setSelectedClient(null);
-    setAdvanceDeduction(0);
-    setActiveAdvancePayments([]);
-    setActiveBookingId(undefined);
-    setActiveQueueNumber(null);
-    setIsRemedyInvoice(false);
-    setBeforePhotoUrl('');
-    setAfterPhotoUrl('');
-    try {
-      localStorage.removeItem('smartcut_pos_active_draft');
-    } catch {}
-    if(onClearInitial) onClearInitial();
+    resetToFreshInvoice(false);
   };
 
   const normalizeText = (text: string) => {
@@ -1492,11 +1491,58 @@ export function POSScreen({
     return result;
   }, [categories, items, products, itemTypeFilter]);
 
+  // ⚡ قائمة الخدمات النشطة المجهزة فوراً بالذاكرة (Instant Zero-Delay Services Cache)
+  const allActiveServices = useMemo(() => {
+    const active = (items || []).filter(i => i.isActive !== false);
+    return active.sort((a: any, b: any) => {
+      const aPri = a.isPriority ? 1 : 0;
+      const bPri = b.isPriority ? 1 : 0;
+      if (aPri !== bPri) return bPri - aPri;
+      const aOrder = a.priorityOrder ?? 0;
+      const bOrder = b.priorityOrder ?? 0;
+      return aOrder - bOrder;
+    }).map(i => {
+      const originalPrice = Number(i.price) || 0;
+      const rawDiscount = Number(i.discountPrice);
+      const hasDiscount = !isNaN(rawDiscount) && rawDiscount > 0 && rawDiscount < originalPrice;
+      const effectivePrice = hasDiscount ? rawDiscount : originalPrice;
+      return {
+        ...i,
+        _isProduct: false,
+        hasDiscount,
+        discountPrice: hasDiscount ? rawDiscount : undefined,
+        originalPrice,
+        displayPrice: effectivePrice
+      };
+    });
+  }, [items]);
+
+  // ⚡ قائمة المنتجات النشطة المجهزة بالذاكرة
+  const allActiveProducts = useMemo(() => {
+    const prods = (products || []).filter(p => (!p.productType || p.productType === 'retail') && p.isActive !== false);
+    return prods.map(p => {
+      const originalPrice = Number(p.sellPrice) || 0;
+      return {
+        ...p,
+        _isProduct: true,
+        hasDiscount: false,
+        discountPrice: undefined,
+        originalPrice,
+        displayPrice: originalPrice
+      };
+    });
+  }, [products]);
+
   const filteredItems = useMemo(() => {
-    let source = itemTypeFilter === 'service' 
-      ? items.filter(i => i.isActive !== false) 
-      : products.filter(p => !p.productType || p.productType === 'retail');
-    let filtered = source;
+    const isService = itemTypeFilter === 'service';
+    const baseList = isService ? allActiveServices : allActiveProducts;
+
+    // ⚡ Fast-Path الفوري: عند بدء فاتورة جديدة أو عرض الكل وبدون بحث، إرجاع القائمة بالكامل في 0ms
+    if ((!selectedCategory || selectedCategory === 'all') && !searchQuery) {
+      return baseList;
+    }
+
+    let filtered = baseList;
 
     if (selectedCategory && selectedCategory !== 'all') {
       const selectedCat = categories.find(c => c.id === selectedCategory || normalizeText(c.name) === normalizeText(selectedCategory));
@@ -1529,42 +1575,67 @@ export function POSScreen({
         return false;
       });
     }
+
     if (searchQuery) {
       const q = normalizeText(searchQuery);
-      filtered = filtered.filter(i => 
-        normalizeText(i.name).includes(q) || (i.barcode && i.barcode.toLowerCase().includes(searchQuery.trim().toLowerCase()))
-      );
-    }
+      const qLower = searchQuery.trim().toLowerCase();
 
-    // ترتيب الخدمات بحيث تكون الخدمات ذات الأولوية (isPriority) في المقدمة دائماً
-    if (itemTypeFilter === 'service') {
-      filtered = [...filtered].sort((a: any, b: any) => {
-        const aPri = a.isPriority ? 1 : 0;
-        const bPri = b.isPriority ? 1 : 0;
-        if (aPri !== bPri) return bPri - aPri;
-        const aOrder = a.priorityOrder ?? 0;
-        const bOrder = b.priorityOrder ?? 0;
-        return aOrder - bOrder;
-      });
-    }
-
-    return filtered.map(i => {
-      const isProduct = itemTypeFilter === 'product';
-      const originalPrice = isProduct ? (Number(i.sellPrice) || 0) : (Number(i.price) || 0);
-      const rawDiscount = Number(i.discountPrice);
-      const hasDiscount = !isProduct && !isNaN(rawDiscount) && rawDiscount > 0 && rawDiscount < originalPrice;
-      const effectivePrice = hasDiscount ? rawDiscount : originalPrice;
-
-      return {
-        ...i,
-        _isProduct: isProduct,
-        hasDiscount,
-        discountPrice: hasDiscount ? rawDiscount : undefined,
-        originalPrice: originalPrice,
-        displayPrice: effectivePrice
+      // تحويل الأرقام المشرقية (٠١٢٣٤٥٦٧٨٩) إلى أرقام غربية
+      const toWesternDigits = (str: string) => {
+        return str.replace(/[٠-٩]/g, d => '0123456789'['٠١٢٣٤٥٦٧٨٩'.indexOf(d)]);
       };
-    });
-  }, [selectedCategory, searchQuery, items, products, itemTypeFilter, categories]);
+
+      // التحقق مما إذا كان المدخل يمثل سعراً (رقم مجرد، أو متبوع/مسبوق بالعملة)
+      const parsePriceQuery = (raw: string, curr?: string): number | null => {
+        if (!raw) return null;
+        let cleaned = raw.trim();
+        if (curr && curr.trim()) {
+          cleaned = cleaned.replace(new RegExp(curr.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), ' ');
+        }
+        cleaned = cleaned.replace(/(ريال|ر\.س|ج\.م|جنيه|درهم|د\.إ|دينار|SAR|EGP|AED|KWD|USD|\$)/gi, ' ');
+        cleaned = cleaned.replace(/,/g, '').trim();
+        const western = toWesternDigits(cleaned);
+        if (/^\d+(\.\d+)?$/.test(western)) {
+          const num = parseFloat(western);
+          return isNaN(num) ? null : num;
+        }
+        return null;
+      };
+
+      const targetPrice = parsePriceQuery(searchQuery, settings?.currency);
+
+      if (targetPrice !== null) {
+        filtered = filtered.filter((i: any) => {
+          const itemDisplayPrice = Number(i.displayPrice !== undefined ? i.displayPrice : (i.price ?? i.sellPrice ?? 0));
+          const itemOrigPrice = Number(i.originalPrice !== undefined ? i.originalPrice : (i.price ?? i.sellPrice ?? 0));
+          const itemBasePrice = Number(i.price ?? 0);
+          const itemDiscountPrice = Number(i.discountPrice ?? 0);
+
+          // 1. مطابقة السعر بدقة (السعر الفعلي أو الأساسي أو التخفيض)
+          const matchesPrice = (
+            Math.abs(itemDisplayPrice - targetPrice) < 0.01 ||
+            Math.abs(itemOrigPrice - targetPrice) < 0.01 ||
+            Math.abs(itemBasePrice - targetPrice) < 0.01 ||
+            (itemDiscountPrice > 0 && Math.abs(itemDiscountPrice - targetPrice) < 0.01)
+          );
+
+          // 2. مطابقة الباركود بدقة (في حال مسح باركود رقمي بواسطة القارئ)
+          const matchesBarcode = !!(i.barcode && i.barcode.trim().toLowerCase() === qLower);
+
+          // 3. مطابقة الاسم المطابق تماماً للرقم
+          const matchesExactName = normalizeText(i.name) === q;
+
+          return matchesPrice || matchesBarcode || matchesExactName;
+        });
+      } else {
+        filtered = filtered.filter(i => 
+          normalizeText(i.name).includes(q) || (i.barcode && i.barcode.toLowerCase().includes(qLower))
+        );
+      }
+    }
+
+    return filtered;
+  }, [itemTypeFilter, allActiveServices, allActiveProducts, selectedCategory, searchQuery, categories, settings?.currency]);
 
   // تصفية الفنيين المنفذين المسموح لهم بتنفيذ الخدمات (حلاق / كوافير فقط)
   const performerEmployees = useMemo(() => {
@@ -1872,7 +1943,7 @@ export function POSScreen({
             <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
             <input 
               type="text"
-              placeholder="ابحث عن خدمة/منتج أو امسح الباركود..."
+              placeholder="ابحث بالاسم، السعر (مثال: 1800)، أو امسح الباركود..."
               className="pos-search-input w-full bg-white border border-slate-200 rounded-xl pr-10 pl-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-sm text-slate-700"
               value={searchQuery}
               onChange={(e) => {
@@ -1970,7 +2041,7 @@ export function POSScreen({
         </div>
 
         {/* Items Grid */}
-        <div className="lg:flex-1 lg:overflow-y-auto pr-2 custom-scrollbar">
+        <div ref={servicesGridContainerRef} className="lg:flex-1 lg:overflow-y-auto pr-2 custom-scrollbar">
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 lg:gap-4 pb-4 lg:pb-0">
             {filteredItems.map(item => {
               const isPriority = !item._isProduct && item.isPriority;
@@ -2002,7 +2073,7 @@ export function POSScreen({
                     style={isPriority ? { backgroundColor: `${customColor}15`, color: customColor } : { backgroundColor: '#f1f5f9', color: '#0f766e' }}
                   >
                     {item.imageUrl ? (
-                      <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover rounded-2xl" />
+                      <img src={item.imageUrl} alt={item.name} loading="lazy" decoding="async" className="w-full h-full object-cover rounded-2xl" />
                     ) : (
                       item._isProduct ? <Package size={22} /> : <Scissors size={22} />
                     )}
@@ -2030,6 +2101,20 @@ export function POSScreen({
                 </button>
               );
             })}
+
+            {filteredItems.length === 0 && (
+              <div className="col-span-full py-16 flex flex-col items-center justify-center text-center text-slate-400">
+                <Search size={40} className="mb-3 text-slate-300 stroke-[1.5]" />
+                <p className="text-base font-bold text-slate-600">لا توجد خدمات أو منتجات مطابقة</p>
+                {searchQuery ? (
+                  <p className="text-xs text-slate-400 mt-1.5">
+                    لم نجد نتائج مطابقة لـ &quot;<span className="font-semibold text-slate-600">{searchQuery}</span>&quot; سواء كاسم، باركود، أو سعر محدد.
+                  </p>
+                ) : (
+                  <p className="text-xs text-slate-400 mt-1">لا توجد عناصر مسجلة في هذا التصنيف حالياً.</p>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -2935,7 +3020,7 @@ export function POSScreen({
           <div className="bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
             <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
               <h3 className="font-bold text-lg text-slate-800">معاينة الفاتورة</h3>
-              <button onClick={() => { setShowReceiptModal(false); setCompletedInvoice(null); }} className="text-slate-400 hover:text-slate-600 transition-colors"><X size={20}/></button>
+              <button onClick={() => { setShowReceiptModal(false); setCompletedInvoice(null); resetToFreshInvoice(false); }} className="text-slate-400 hover:text-slate-600 transition-colors cursor-pointer" title="إغلاق والعودة لنقطة البيع"><X size={20}/></button>
             </div>
             
             {/* Thermal Paper Preview Area */}
@@ -3086,10 +3171,10 @@ export function POSScreen({
 
             <div className="p-4 bg-white border-t border-slate-100 flex gap-3">
               <button 
-                onClick={() => { setShowReceiptModal(false); setCompletedInvoice(null); }}
-                className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors"
+                onClick={() => { setShowReceiptModal(false); setCompletedInvoice(null); resetToFreshInvoice(false); }}
+                className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors cursor-pointer"
               >
-                إغلاق
+                إغلاق وبدء فاتورة جديدة
               </button>
               <button 
                 onClick={printReceipt}

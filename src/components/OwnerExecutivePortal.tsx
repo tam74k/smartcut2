@@ -9,7 +9,8 @@ import {
   XCircle, UserCheck, UserX, Plus, RefreshCw, Send, ChevronDown, ArrowUpRight, 
   TrendingUp, TrendingDown, Wallet, CreditCard, Banknote, Building2, Shield, Eye, Lock,
   Receipt, Sparkles, Check, X, Phone, User, Store, Filter, Award, ChevronRight, ArrowRight,
-  PieChart, BarChart3, Activity, Percent, Crown, Briefcase, FileBarChart, Layers, Edit2, Trash2, ArrowDownRight
+  PieChart, BarChart3, Activity, Percent, Crown, Briefcase, FileBarChart, Layers, Edit2, Trash2, ArrowDownRight,
+  MessageCircle, Search, Scissors, Copy, ChevronUp
 } from 'lucide-react';
 
 interface PaymentSlice {
@@ -521,6 +522,60 @@ const isBookingAdvanceTrx = (t: any) => {
   return false;
 };
 
+// أدوات مساعدة لقراءة تفاصيل الحجوزات ومقدمات الحجز والخدمات بدقة عالية
+const getBookingTotalAdvances = (b: any): number => {
+  const advances = (b.advancePayments && Array.isArray(b.advancePayments))
+    ? b.advancePayments
+    : (typeof b.advance_payments === 'string'
+      ? (() => { try { return JSON.parse(b.advance_payments); } catch { return []; } })()
+      : []);
+  const sum = advances.reduce((s: number, a: any) => s + (Number(a.amount) || 0), 0);
+  if (sum > 0) return sum;
+  return Number(b.advancePayment || 0);
+};
+
+const getBookingAdvancesList = (b: any): any[] => {
+  const advances = (b.advancePayments && Array.isArray(b.advancePayments))
+    ? b.advancePayments
+    : (typeof b.advance_payments === 'string'
+      ? (() => { try { return JSON.parse(b.advance_payments); } catch { return []; } })()
+      : []);
+  if (advances.length > 0) return advances;
+  if (Number(b.advancePayment || 0) > 0) {
+    return [{
+      amount: Number(b.advancePayment),
+      date: b.date || b.createdAt,
+      paymentMethod: b.paymentMethod || 'cash'
+    }];
+  }
+  return [];
+};
+
+const getBookingTotalAmount = (b: any): number => {
+  if (b.totalAmount !== undefined && b.totalAmount !== null && Number(b.totalAmount) > 0) {
+    return Number(b.totalAmount);
+  }
+  if (b.services && Array.isArray(b.services) && b.services.length > 0) {
+    return b.services.reduce((s: number, srv: any) => s + (Number(srv.price) || 0), 0);
+  }
+  return Number(b.price || 0);
+};
+
+const getBookingServicesNames = (b: any): string => {
+  if (b.services && Array.isArray(b.services) && b.services.length > 0) {
+    return b.services.map((s: any) => s.serviceName || s.name).filter(Boolean).join(' + ');
+  }
+  return b.serviceName || 'خدمة صالون';
+};
+
+const getBookingEmployeeNames = (b: any): string => {
+  if (b.services && Array.isArray(b.services) && b.services.length > 0) {
+    const names = Array.from(new Set(b.services.map((s: any) => s.employeeName).filter(Boolean)));
+    if (names.length > 0) return names.join('، ');
+  }
+  return b.employeeName || '-';
+};
+
 export function OwnerExecutivePortal({
   settings,
   invoices,
@@ -558,6 +613,14 @@ export function OwnerExecutivePortal({
   const [period, setPeriod] = useState<OwnerPeriod>('today');
   const [customStartDate, setCustomStartDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
   const [customEndDate, setCustomEndDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+
+  // Bookings Filter & Search State
+  const [bookingStatusFilter, setBookingStatusFilter] = useState<'all' | 'confirmed' | 'pending' | 'completed' | 'cancelled' | 'with_advance'>('all');
+  const [bookingSearchQuery, setBookingSearchQuery] = useState('');
+  const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null);
+
+  // Finance Revenues Tab Filter (الكل، فواتير، مقدمات حجز)
+  const [financeRevenueFilter, setFinanceRevenueFilter] = useState<'all' | 'invoices' | 'advances'>('all');
 
   // Salon Treasuries State (Synchronized with Supabase DB)
   const [liveTreasuries, setLiveTreasuries] = useState<Treasury[]>(() => {
@@ -1188,12 +1251,20 @@ export function OwnerExecutivePortal({
 
     const breakdownList = [
       { 
-        id: 'income', 
-        label: 'إجمالي الدخل المحصل (فواتير + مقدمات حجز)', 
-        amount: grossIncome, 
+        id: 'invoices_income', 
+        label: 'إيرادات فواتير المبيعات المسددة', 
+        amount: grossInvoicesIncome, 
         type: 'plus', 
-        percent: 100, 
-        note: `${filteredInvoices.length} فاتورة مسددة (${grossInvoicesIncome.toFixed(0)} ${currency}) + ${bookingAdvancesCount} مقدم حجز (${totalBookingAdvances.toFixed(0)} ${currency})` 
+        percent: grossIncome > 0 ? (grossInvoicesIncome / grossIncome) * 100 : 100, 
+        note: `${filteredInvoices.length} فاتورة مبيعات مسددة بالكامل (${grossInvoicesIncome.toFixed(0)} ${currency})` 
+      },
+      { 
+        id: 'booking_advances', 
+        label: 'مقدم حجز (مقدمات وعربون الحجوزات المحصلة)', 
+        amount: totalBookingAdvances, 
+        type: 'plus', 
+        percent: grossIncome > 0 ? (totalBookingAdvances / grossIncome) * 100 : 0, 
+        note: `${bookingAdvancesCount} دفعة مقدم حجز محصلة (${totalBookingAdvances.toFixed(0)} ${currency})` 
       },
       { id: 'expenses', label: 'جميع المصروفات التشغيلية والنثرية', amount: totalExpenses, type: 'minus', percent: grossIncome > 0 ? (totalExpenses / grossIncome) * 100 : 0, note: 'مصروفات الإيجار والفواتير والنثريات' },
       { id: 'salaries', label: 'الرواتب الأساسية ومسيرات الصرف', amount: totalSalaries, type: 'minus', percent: grossIncome > 0 ? (totalSalaries / grossIncome) * 100 : 0, note: 'مسيرات الرواتب المنصرفة' },
@@ -1614,6 +1685,19 @@ export function OwnerExecutivePortal({
     const pending = periodList.filter(b => b.status === 'pending').length;
     const cancelled = periodList.filter(b => b.status === 'cancelled').length;
 
+    // حساب القيم المالية للحجوزات ومقدمات الحجز المحصلة
+    let totalValue = 0;
+    let totalAdvances = 0;
+    let bookingsWithAdvanceCount = 0;
+
+    periodList.forEach(b => {
+      const bTotal = getBookingTotalAmount(b);
+      const bAdv = getBookingTotalAdvances(b);
+      totalValue += bTotal;
+      totalAdvances += bAdv;
+      if (bAdv > 0) bookingsWithAdvanceCount += 1;
+    });
+
     // Unique clients served in period
     const clientIds = new Set<string>();
     filteredInvoices.forEach(inv => {
@@ -1629,10 +1713,191 @@ export function OwnerExecutivePortal({
       confirmed,
       pending,
       cancelled,
+      periodList,
       todayList: periodList,
+      totalValue,
+      totalAdvances,
+      remainingBalance: Math.max(0, totalValue - totalAdvances),
+      bookingsWithAdvanceCount,
       totalClientsServed: clientIds.size || filteredInvoices.length
     };
   }, [bookings, dateRange, activeBranchId, filteredInvoices]);
+
+  // قائمة مقدمات الحجز المحصلة خلال الفترة مع كافة بياناتها التفصيلية
+  const bookingAdvancesList = useMemo(() => {
+    const list: Array<{
+      id: string;
+      bookingId: string;
+      bookingCode: string;
+      clientName: string;
+      clientPhone: string;
+      amount: number;
+      date: string;
+      time: string;
+      paymentMethod: string;
+      treasuryName: string;
+      servicesSummary: string;
+      notes?: string;
+    }> = [];
+
+    const periodAdvTrx = filteredTransactions.filter(isBookingAdvanceTrx);
+
+    // 1. من سجل المعاملات المالية المباشرة لمقدمات الحجز
+    periodAdvTrx.forEach(t => {
+      const amt = Number(t.amount) || 0;
+      if (amt <= 0) return;
+      const targetId = t.treasury || (t as any).treasuryId || '';
+      const treasuryObj = (settings.treasuries || []).find(tr => tr.id === targetId || tr.name === targetId);
+      const matchedBooking = (bookings || []).find(b => 
+        (t.description?.includes(b.bookingCode || '') || t.description?.includes(b.id || '') || t.description?.includes(b.clientName || ''))
+      );
+
+      list.push({
+        id: t.id,
+        bookingId: matchedBooking?.id || '',
+        bookingCode: matchedBooking?.bookingCode || t.description?.match(/B-\d+/i)?.[0] || 'حجز',
+        clientName: matchedBooking?.clientName || t.description?.replace(/^(مقدم|عربون)\s*حجز\s*[:-]?\s*/i, '') || 'عميل حجز',
+        clientPhone: matchedBooking?.phone || matchedBooking?.clientPhone || '',
+        amount: amt,
+        date: t.date?.split('T')[0] || '',
+        time: t.date?.split('T')[1]?.substring(0, 5) || matchedBooking?.time || '',
+        paymentMethod: t.paymentMethod || treasuryObj?.name || 'نقدي',
+        treasuryName: treasuryObj?.name || t.treasury || 'الخزنة',
+        servicesSummary: matchedBooking ? getBookingServicesNames(matchedBooking) : (t.description || 'مقدم حجز'),
+        notes: t.notes || matchedBooking?.notes
+      });
+    });
+
+    // 2. من جدول الحجوزات المسجلة
+    (bookings || []).forEach(b => {
+      if (b.status === 'cancelled' || !matchesActiveBranch((b as any).branchId)) return;
+      const advances = getBookingAdvancesList(b);
+
+      advances.forEach((adv: any, idx: number) => {
+        const advDate = (adv.date || b.date || (b as any).createdAt || '').split('T')[0].trim();
+        if (isDateInSelectedPeriod(advDate)) {
+          const amt = Number(adv.amount) || 0;
+          if (amt <= 0) return;
+          const already = periodAdvTrx.some(t =>
+            Math.abs((Number(t.amount) || 0) - amt) < 0.01 &&
+            (t.description?.includes(b.bookingCode || '') || t.description?.includes(b.id || '') || t.description?.includes(b.clientName || ''))
+          );
+          if (!already) {
+            const targetId = adv.treasuryId || adv.paymentMethod || 'cash';
+            const treasuryObj = (settings.treasuries || []).find(tr => tr.id === targetId || tr.name === targetId);
+            list.push({
+              id: adv.id || `${b.id}-adv-${idx}`,
+              bookingId: b.id,
+              bookingCode: b.bookingCode || `#${b.id.substring(0, 6)}`,
+              clientName: b.clientName,
+              clientPhone: b.phone || b.clientPhone || '',
+              amount: amt,
+              date: advDate,
+              time: b.time || '',
+              paymentMethod: adv.paymentMethod || treasuryObj?.name || 'نقدي',
+              treasuryName: treasuryObj?.name || 'الخزنة',
+              servicesSummary: getBookingServicesNames(b),
+              notes: adv.notes || b.notes
+            });
+          }
+        }
+      });
+    });
+
+    return list;
+  }, [filteredTransactions, bookings, settings.treasuries, dateRange, activeBranchId]);
+
+  // قائمة الإيرادات الموحدة (فواتير المبيعات + مقدمات الحجز)
+  const combinedRevenues = useMemo(() => {
+    const items: Array<{
+      id: string;
+      kind: 'invoice' | 'booking_advance';
+      label: string;
+      code: string;
+      clientName: string;
+      clientPhone?: string;
+      amount: number;
+      paymentMethod: string;
+      date: string;
+      time: string;
+      details: string;
+      timestamp: number;
+    }> = [];
+
+    // 1. فواتير المبيعات
+    (filteredInvoices || []).forEach(inv => {
+      const invDate = inv.date?.split('T')[0] || '';
+      const invTime = inv.date?.split('T')[1]?.substring(0, 5) || '';
+      const timeVal = inv.date ? new Date(inv.date).getTime() : 0;
+      items.push({
+        id: inv.id,
+        kind: 'invoice',
+        label: 'فاتورة مبيعات',
+        code: `#${inv.invoiceNumber}`,
+        clientName: inv.clientName || 'عميل نقدي',
+        clientPhone: inv.clientPhone,
+        amount: Number(inv.netAmount || inv.total || 0),
+        paymentMethod: inv.paymentMethod || 'نقدي',
+        date: invDate,
+        time: invTime,
+        details: `${inv.items?.length || 1} عناصر / خدمات`,
+        timestamp: timeVal
+      });
+    });
+
+    // 2. مقدمات الحجز
+    bookingAdvancesList.forEach(adv => {
+      const timeVal = adv.date ? new Date(`${adv.date}T${adv.time || '12:00'}`).getTime() : 0;
+      items.push({
+        id: adv.id,
+        kind: 'booking_advance',
+        label: 'مقدم حجز',
+        code: adv.bookingCode.startsWith('#') ? adv.bookingCode : `#${adv.bookingCode}`,
+        clientName: adv.clientName,
+        clientPhone: adv.clientPhone,
+        amount: adv.amount,
+        paymentMethod: adv.paymentMethod,
+        date: adv.date,
+        time: adv.time,
+        details: `حجز: ${adv.servicesSummary}`,
+        timestamp: timeVal
+      });
+    });
+
+    // ترتيب تنازلي حسب التاريخ والوقت
+    return items.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  }, [filteredInvoices, bookingAdvancesList]);
+
+  // الحجوزات المصفاة في تبويب الحجوزات
+  const filteredBookingsList = useMemo(() => {
+    let list = bookingsStats.periodList;
+
+    if (bookingStatusFilter === 'with_advance') {
+      list = list.filter(b => getBookingTotalAdvances(b) > 0);
+    } else if (bookingStatusFilter !== 'all') {
+      list = list.filter(b => b.status === bookingStatusFilter);
+    }
+
+    if (bookingSearchQuery.trim()) {
+      const q = bookingSearchQuery.trim().toLowerCase();
+      list = list.filter(b => {
+        const name = (b.clientName || '').toLowerCase();
+        const phone = (b.phone || b.clientPhone || '').toLowerCase();
+        const code = (b.bookingCode || b.id || '').toLowerCase();
+        const services = getBookingServicesNames(b).toLowerCase();
+        const barber = getBookingEmployeeNames(b).toLowerCase();
+        const notes = (b.notes || '').toLowerCase();
+        const intNotes = (b.internalNotes || '').toLowerCase();
+        return name.includes(q) || phone.includes(q) || code.includes(q) || services.includes(q) || barber.includes(q) || notes.includes(q) || intNotes.includes(q);
+      });
+    }
+
+    return [...list].sort((a, b) => {
+      const dateA = `${a.date}T${a.time || '00:00'}`;
+      const dateB = `${b.date}T${b.time || '00:00'}`;
+      return dateB.localeCompare(dateA);
+    });
+  }, [bookingsStats.periodList, bookingStatusFilter, bookingSearchQuery]);
 
   // Load Users from Supabase on mount
   useEffect(() => {
@@ -1704,8 +1969,9 @@ export function OwnerExecutivePortal({
 • تحويل بنكي: ${revenueStats.bankTransfer.toLocaleString()} ${currency}
 • تمارا / تابي: ${revenueStats.tabTamara.toLocaleString()} ${currency}
 • المصروفات: ${revenueStats.totalExpenses.toLocaleString()} ${currency}
+• عدد الفواتير: ${revenueStats.invoiceCount} (${netProfitData.grossInvoicesIncome.toLocaleString()} ${currency})
+• مقدم حجز: ${netProfitData.totalBookingAdvances.toLocaleString()} ${currency} (${netProfitData.bookingAdvancesCount} دفعة مقدمة)
 • الصافي: *${revenueStats.netProfit.toLocaleString()} ${currency}*
-• عدد الفواتير: ${revenueStats.invoiceCount}
 
 👥 *العملاء والحجوزات:*
 • إجمالي العملاء: ${bookingsStats.totalClientsServed}
@@ -2090,7 +2356,10 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                   {revenueStats.totalRevenue.toLocaleString()} <span className="text-xs font-normal text-emerald-400">{currency}</span>
                 </div>
                 <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-800 text-[10px] text-slate-400 font-semibold">
-                  <span>{revenueStats.invoiceCount} فاتورة</span>
+                  <span>
+                    {revenueStats.invoiceCount} فاتورة
+                    {netProfitData.bookingAdvancesCount > 0 && ` + ${netProfitData.bookingAdvancesCount} مقدم حجز`}
+                  </span>
                   <span className="text-emerald-400 group-hover:translate-x-[-2px] transition-transform">تفاصيل ‹</span>
                 </div>
               </div>
@@ -2181,12 +2450,12 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
 
             {/* Quick Live Snapshot Sections */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Recent Invoices Quick List */}
+              {/* Recent Revenues & Booking Advances Quick List */}
               <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-md">
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-xs font-black text-white flex items-center gap-1.5">
                     <Receipt size={15} className="text-emerald-400" />
-                    <span>آخر فواتير اليوم النشطة</span>
+                    <span>أحدث الإيرادات ومقدمات الحجز ({dateRange.label})</span>
                   </h3>
                   <button 
                     onClick={() => setActiveSubTab('finance')}
@@ -2197,20 +2466,38 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                 </div>
 
                 <div className="space-y-2 text-xs">
-                  {todayInvoices.slice(0, 4).map(inv => (
-                    <div key={inv.id} className="flex items-center justify-between p-2 rounded-xl bg-slate-800/50 border border-slate-800">
-                      <div>
-                        <p className="font-bold text-white text-xs">{inv.clientName || 'عميل نقدي'}</p>
-                        <p className="text-[10px] text-slate-400 font-mono">#{inv.invoiceNumber} • {inv.date?.split('T')[1]?.substring(0, 5) || ''}</p>
+                  {combinedRevenues.slice(0, 5).map(item => (
+                    <div 
+                      key={item.id} 
+                      className={`flex items-center justify-between p-2 rounded-xl border transition-all ${
+                        item.kind === 'booking_advance'
+                          ? 'bg-purple-950/20 border-purple-500/30'
+                          : 'bg-slate-800/50 border-slate-800'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        {item.kind === 'booking_advance' ? (
+                          <span className="bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[9px] font-black px-1.5 py-0.5 rounded-md">
+                            مقدم حجز
+                          </span>
+                        ) : (
+                          <span className="bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 text-[9px] font-bold px-1.5 py-0.5 rounded-md">
+                            فاتورة
+                          </span>
+                        )}
+                        <div>
+                          <p className="font-bold text-white text-xs">{item.clientName || 'عميل نقدي'}</p>
+                          <p className="text-[10px] text-slate-400 font-mono">{item.code} {item.time ? `• ${item.time}` : ''}</p>
+                        </div>
                       </div>
                       <div className="text-left">
-                        <p className="font-mono font-bold text-emerald-400">{(inv.netAmount || inv.total || 0).toLocaleString()} {currency}</p>
-                        <p className="text-[10px] text-slate-400">{inv.paymentMethod || 'نقدي'}</p>
+                        <p className="font-mono font-black text-emerald-400 text-xs">+{item.amount.toLocaleString()} {currency}</p>
+                        <p className="text-[10px] text-slate-400">{item.paymentMethod || 'نقدي'}</p>
                       </div>
                     </div>
                   ))}
-                  {todayInvoices.length === 0 && (
-                    <p className="text-xs text-slate-500 text-center py-4">لا توجد فواتير مسجلة اليوم حتى الآن</p>
+                  {combinedRevenues.length === 0 && (
+                    <p className="text-xs text-slate-500 text-center py-4">لا توجد إيرادات مسجلة لهذه الفترة حتى الآن</p>
                   )}
                 </div>
               </div>
@@ -2342,7 +2629,7 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                   </div>
                   <h2 className="text-xl sm:text-2xl font-black text-white">قائمة الدخل وصافي الأرباح التشغيلية</h2>
                   <p className="text-xs text-slate-300 mt-1 max-w-xl font-medium leading-relaxed">
-                    صافي الربح = إجمالي الدخل من الفواتير - جميع المصروفات - الرواتب - السلف - (المسدد في المشتريات + دفعات الموردين) - عمولات الموظفين
+                    صافي الربح = إجمالي الدخل المحصل (فواتير + مقدمات حجز) - جميع المصروفات - الرواتب - السلف - (المسدد في المشتريات + دفعات الموردين) - عمولات الموظفين
                   </p>
                 </div>
 
@@ -2362,10 +2649,10 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
             {/* 8 KPI Cards Grid */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               
-              {/* 1. Invoiced Income (+) */}
+              {/* 1. Invoiced & Booking Advances Income (+) */}
               <div className="bg-slate-900 p-4 rounded-2xl border border-emerald-500/30 shadow-md border-r-4 border-r-emerald-500">
                 <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[10px] font-bold text-slate-400">1. الدخل من الفواتير (+)</span>
+                  <span className="text-[10px] font-bold text-slate-400">1. إجمالي الإيرادات المحصلة (+)</span>
                   <div className="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
                     <TrendingUp size={13} />
                   </div>
@@ -2373,7 +2660,10 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                 <div className="text-lg font-black text-emerald-400 font-mono">
                   {netProfitData.grossIncome.toLocaleString()} <span className="text-[10px] text-slate-400 font-normal">{currency}</span>
                 </div>
-                <p className="text-[9px] text-slate-500 font-bold mt-1">{netProfitData.invoicesCount} فاتورة مسددة</p>
+                <div className="text-[9px] text-slate-400 font-bold mt-1 space-y-0.5">
+                  <p>• فواتير: {netProfitData.grossInvoicesIncome.toLocaleString()} {currency} ({netProfitData.invoicesCount})</p>
+                  <p className="text-purple-300 font-extrabold">• مقدم حجز: {netProfitData.totalBookingAdvances.toLocaleString()} {currency} ({netProfitData.bookingAdvancesCount})</p>
+                </div>
               </div>
 
               {/* 2. All Expenses (-) */}
@@ -2867,16 +3157,24 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
             
             {/* Total Balance Card */}
             <div className="bg-gradient-to-r from-emerald-900/80 via-slate-900 to-slate-900 p-5 rounded-2xl border border-emerald-500/30 shadow-xl">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                  <p className="text-xs font-bold text-emerald-400 mb-1">صافي الإيراد الفعلي لليوم</p>
+                  <p className="text-xs font-bold text-emerald-400 mb-1">صافي الإيراد الفعلي ({dateRange.label})</p>
                   <h2 className="text-3xl font-black text-white tracking-tight">
                     {revenueStats.netProfit.toLocaleString()} <span className="text-sm font-normal text-emerald-300">{currency}</span>
                   </h2>
+                  <div className="flex flex-wrap items-center gap-2 mt-2 text-[10px] text-slate-300">
+                    <span className="bg-emerald-500/15 text-emerald-300 border border-emerald-500/25 px-2 py-0.5 rounded-md font-bold">
+                      فواتير: {netProfitData.grossInvoicesIncome.toLocaleString()} {currency} ({netProfitData.invoicesCount})
+                    </span>
+                    <span className="bg-purple-500/20 text-purple-300 border border-purple-500/35 px-2 py-0.5 rounded-md font-bold">
+                      مقدم حجز: {netProfitData.totalBookingAdvances.toLocaleString()} {currency} ({netProfitData.bookingAdvancesCount})
+                    </span>
+                  </div>
                 </div>
-                <div className="text-left text-xs text-slate-300 space-y-1">
-                  <p>الإجمالي: <span className="font-mono font-bold text-white">{revenueStats.totalRevenue.toLocaleString()}</span></p>
-                  <p className="text-rose-400">المصروفات: <span className="font-mono font-bold">-{revenueStats.totalExpenses.toLocaleString()}</span></p>
+                <div className="text-left text-xs text-slate-300 space-y-1 bg-slate-950/40 p-3 rounded-xl border border-slate-800">
+                  <p>إجمالي الإيرادات: <span className="font-mono font-bold text-emerald-400">+{revenueStats.totalRevenue.toLocaleString()} {currency}</span></p>
+                  <p className="text-rose-400">المصروفات: <span className="font-mono font-bold">-{revenueStats.totalExpenses.toLocaleString()} {currency}</span></p>
                 </div>
               </div>
             </div>
@@ -3035,28 +3333,119 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
               </div>
             </div>
 
-            {/* Invoices List Today */}
+            {/* Unified Revenues Journal (Invoices + Booking Advances) */}
             <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-md">
-              <h3 className="text-xs font-black text-white mb-3 flex items-center gap-2">
-                <Receipt size={16} className="text-emerald-400" />
-                <span>فواتير اليوم ({todayInvoices.length})</span>
-              </h3>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3 pb-3 border-b border-slate-800">
+                <div className="flex items-center gap-2">
+                  <Receipt size={16} className="text-emerald-400" />
+                  <h3 className="text-xs font-black text-white">
+                    حركات الإيراد المحصلة ({dateRange.label})
+                  </h3>
+                </div>
 
-              <div className="divide-y divide-slate-800 text-xs max-h-72 overflow-y-auto scrollbar-thin">
-                {todayInvoices.map(inv => (
-                  <div key={inv.id} className="py-2.5 flex items-center justify-between">
-                    <div>
-                      <p className="font-bold text-white">{inv.clientName || 'عميل نقدي'}</p>
-                      <p className="text-[10px] text-slate-400 font-mono">#{inv.invoiceNumber} • {inv.date?.split('T')[1]?.substring(0, 5) || ''}</p>
+                {/* Filter Tabs: الكل | فواتير | مقدمات حجز */}
+                <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
+                  <button
+                    onClick={() => setFinanceRevenueFilter('all')}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                      financeRevenueFilter === 'all'
+                        ? 'bg-emerald-500 text-slate-950 shadow-sm'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    الكل ({combinedRevenues.length})
+                  </button>
+                  <button
+                    onClick={() => setFinanceRevenueFilter('invoices')}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                      financeRevenueFilter === 'invoices'
+                        ? 'bg-emerald-500 text-slate-950 shadow-sm'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    فواتير ({filteredInvoices.length})
+                  </button>
+                  <button
+                    onClick={() => setFinanceRevenueFilter('advances')}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                      financeRevenueFilter === 'advances'
+                        ? 'bg-purple-500 text-white shadow-sm'
+                        : 'text-purple-300/80 hover:text-purple-200'
+                    }`}
+                  >
+                    مقدم حجز ({bookingAdvancesList.length})
+                  </button>
+                </div>
+              </div>
+
+              {/* Subtotal Banner for Filtered View */}
+              <div className="flex items-center justify-between bg-slate-950/60 px-3 py-2 rounded-xl mb-3 border border-slate-800/80 text-[11px]">
+                <span className="text-slate-400">
+                  {financeRevenueFilter === 'all' && 'إجمالي المحصل من الفواتير ومقدمات الحجز:'}
+                  {financeRevenueFilter === 'invoices' && 'إجمالي مبيعات الفواتير المسددة:'}
+                  {financeRevenueFilter === 'advances' && 'إجمالي مقبوضات مقدمات الحجز (مقدم حجز):'}
+                </span>
+                <span className="font-mono font-black text-emerald-400">
+                  {financeRevenueFilter === 'all' && `${revenueStats.totalRevenue.toLocaleString()} ${currency}`}
+                  {financeRevenueFilter === 'invoices' && `${netProfitData.grossInvoicesIncome.toLocaleString()} ${currency}`}
+                  {financeRevenueFilter === 'advances' && `${netProfitData.totalBookingAdvances.toLocaleString()} ${currency}`}
+                </span>
+              </div>
+
+              <div className="divide-y divide-slate-800 text-xs max-h-80 overflow-y-auto scrollbar-thin">
+                {combinedRevenues
+                  .filter(r => {
+                    if (financeRevenueFilter === 'invoices') return r.kind === 'invoice';
+                    if (financeRevenueFilter === 'advances') return r.kind === 'booking_advance';
+                    return true;
+                  })
+                  .map(rev => (
+                    <div 
+                      key={rev.id} 
+                      className={`py-3 flex items-center justify-between px-2.5 rounded-xl transition-colors hover:bg-slate-800/40 ${
+                        rev.kind === 'booking_advance' ? 'bg-purple-950/15 border border-purple-500/20 my-1' : ''
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        {rev.kind === 'booking_advance' ? (
+                          <div className="flex flex-col items-center">
+                            <span className="bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[9px] font-black px-2 py-0.5 rounded-md whitespace-nowrap">
+                              مقدم حجز
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col items-center">
+                            <span className="bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold px-2 py-0.5 rounded-md whitespace-nowrap">
+                              فاتورة
+                            </span>
+                          </div>
+                        )}
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="font-bold text-white text-xs">{rev.clientName || 'عميل نقدي'}</p>
+                            <span className="text-[10px] text-slate-400 font-mono font-semibold">{rev.code}</span>
+                          </div>
+                          <p className="text-[10px] text-slate-400 mt-0.5">
+                            {rev.details} • {rev.date} {rev.time ? `(${rev.time})` : ''}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="text-left shrink-0">
+                        <p className={`font-mono font-black text-sm ${rev.kind === 'booking_advance' ? 'text-purple-300' : 'text-emerald-400'}`}>
+                          +{rev.amount.toLocaleString()} <span className="text-[10px] font-normal">{currency}</span>
+                        </p>
+                        <p className="text-[10px] text-slate-400 font-medium">{rev.paymentMethod || 'نقدي'}</p>
+                      </div>
                     </div>
-                    <div className="text-left">
-                      <p className="font-mono font-bold text-emerald-400">{(inv.netAmount || inv.total || 0).toLocaleString()} {currency}</p>
-                      <p className="text-[10px] text-slate-400">{inv.paymentMethod || 'نقدي'}</p>
-                    </div>
-                  </div>
-                ))}
-                {todayInvoices.length === 0 && (
-                  <p className="text-center py-6 text-slate-500">لا توجد فواتير مسجلة اليوم حتى اللحظة</p>
+                  ))}
+
+                {combinedRevenues.filter(r => {
+                  if (financeRevenueFilter === 'invoices') return r.kind === 'invoice';
+                  if (financeRevenueFilter === 'advances') return r.kind === 'booking_advance';
+                  return true;
+                }).length === 0 && (
+                  <p className="text-center py-8 text-slate-500 text-xs">لا توجد حركات إيراد مسجلة مطابقة للفترة المحددة</p>
                 )}
               </div>
             </div>
@@ -3149,57 +3538,433 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
         {activeSubTab === 'bookings' && (
           <div className="space-y-4 animate-in fade-in">
             
-            {/* Bookings Metrics */}
-            <div className="grid grid-cols-3 gap-3 text-center">
-              <div className="bg-slate-900 p-3.5 rounded-2xl border border-slate-800">
-                <p className="text-2xl font-black text-white">{bookingsStats.totalBookings}</p>
+            {/* 1. Executive Bookings KPI Bar */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5 text-center">
+              <div className="bg-slate-900 p-3 rounded-2xl border border-slate-800">
+                <p className="text-xl font-black text-white">{bookingsStats.totalBookings}</p>
                 <p className="text-[10px] font-bold text-slate-400 mt-0.5">مجموع الحجوزات</p>
               </div>
 
-              <div className="bg-slate-900 p-3.5 rounded-2xl border border-emerald-500/30">
-                <p className="text-2xl font-black text-emerald-400">{bookingsStats.completed}</p>
-                <p className="text-[10px] font-bold text-slate-400 mt-0.5">تمت واكتملت ✓</p>
+              <div className="bg-slate-900 p-3 rounded-2xl border border-emerald-500/30">
+                <p className="text-xl font-black text-emerald-400">{bookingsStats.completed}</p>
+                <p className="text-[10px] font-bold text-slate-400 mt-0.5">مكتملة ✓</p>
               </div>
 
-              <div className="bg-slate-900 p-3.5 rounded-2xl border border-blue-500/30">
-                <p className="text-2xl font-black text-blue-400">{bookingsStats.confirmed + bookingsStats.pending}</p>
-                <p className="text-[10px] font-bold text-slate-400 mt-0.5">قادمة / معلقة ⏳</p>
+              <div className="bg-slate-900 p-3 rounded-2xl border border-blue-500/30">
+                <p className="text-xl font-black text-blue-400">{bookingsStats.confirmed}</p>
+                <p className="text-[10px] font-bold text-slate-400 mt-0.5">مؤكدة 📅</p>
+              </div>
+
+              <div className="bg-slate-900 p-3 rounded-2xl border border-amber-500/30">
+                <p className="text-xl font-black text-amber-400">{bookingsStats.pending}</p>
+                <p className="text-[10px] font-bold text-slate-400 mt-0.5">معلقة ⏳</p>
+              </div>
+
+              <div className="bg-slate-900 p-3 rounded-2xl border border-rose-500/30">
+                <p className="text-xl font-black text-rose-400">{bookingsStats.cancelled}</p>
+                <p className="text-[10px] font-bold text-slate-400 mt-0.5">ملغاة ✕</p>
+              </div>
+
+              <div className="bg-slate-900 p-3 rounded-2xl border border-purple-500/40 bg-purple-950/10">
+                <p className="text-xl font-black text-purple-300 font-mono">
+                  {bookingsStats.totalAdvances.toLocaleString()}
+                  <span className="text-[10px] font-normal text-purple-400 mr-1">{currency}</span>
+                </p>
+                <p className="text-[10px] font-bold text-purple-300 mt-0.5 flex items-center justify-center gap-1">
+                  <span>مقدم حجز محصل 💰</span>
+                </p>
+              </div>
+
+              <div className="bg-slate-900 p-3 rounded-2xl border border-slate-800">
+                <p className="text-xl font-black text-slate-200 font-mono">
+                  {bookingsStats.remainingBalance.toLocaleString()}
+                  <span className="text-[10px] font-normal text-slate-400 mr-1">{currency}</span>
+                </p>
+                <p className="text-[10px] font-bold text-slate-400 mt-0.5">المتبقي للتحصيل</p>
               </div>
             </div>
 
-            {/* Bookings Timeline List */}
-            <div className="bg-slate-900 rounded-2xl border border-slate-800 shadow-md p-4">
-              <h3 className="text-xs font-black text-white mb-3 flex items-center gap-2">
-                <Calendar size={16} className="text-purple-400" />
-                <span>جدول مواعيد وحجوزات اليوم</span>
-              </h3>
+            {/* 2. Search & Filter Bar */}
+            <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-md space-y-3">
+              <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
+                
+                {/* Search Input */}
+                <div className="relative flex-1">
+                  <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                  <input
+                    type="text"
+                    value={bookingSearchQuery}
+                    onChange={(e) => setBookingSearchQuery(e.target.value)}
+                    placeholder="ابحث باسم العميل، الهاتف، كود الحجز (B-xxx)، الخدمة، الحلاق، أو الملاحظات..."
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pr-9 pl-9 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 transition-colors"
+                  />
+                  {bookingSearchQuery && (
+                    <button
+                      onClick={() => setBookingSearchQuery('')}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white cursor-pointer"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
 
-              <div className="space-y-2.5">
-                {bookingsStats.todayList.map(b => (
-                  <div key={b.id} className="p-3 rounded-xl bg-slate-800/60 border border-slate-800 flex items-center justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono font-bold text-xs text-purple-400">{b.time}</span>
-                        <p className="font-bold text-white text-xs">{b.clientName}</p>
+                {/* Counter Badge */}
+                <div className="text-left shrink-0 text-xs text-slate-400">
+                  عرض <strong className="text-white font-mono">{filteredBookingsList.length}</strong> من أصل <strong className="text-white font-mono">{bookingsStats.totalBookings}</strong> حجز
+                </div>
+              </div>
+
+              {/* Status Filter Chips */}
+              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                <button
+                  onClick={() => setBookingStatusFilter('all')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    bookingStatusFilter === 'all'
+                      ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
+                      : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
+                  }`}
+                >
+                  الكل ({bookingsStats.totalBookings})
+                </button>
+
+                <button
+                  onClick={() => setBookingStatusFilter('confirmed')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    bookingStatusFilter === 'confirmed'
+                      ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
+                      : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
+                  }`}
+                >
+                  مؤكدة ({bookingsStats.confirmed})
+                </button>
+
+                <button
+                  onClick={() => setBookingStatusFilter('pending')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    bookingStatusFilter === 'pending'
+                      ? 'bg-amber-600 text-white shadow-md shadow-amber-600/30'
+                      : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
+                  }`}
+                >
+                  معلقة ({bookingsStats.pending})
+                </button>
+
+                <button
+                  onClick={() => setBookingStatusFilter('completed')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    bookingStatusFilter === 'completed'
+                      ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
+                      : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
+                  }`}
+                >
+                  مكتملة ({bookingsStats.completed})
+                </button>
+
+                <button
+                  onClick={() => setBookingStatusFilter('cancelled')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    bookingStatusFilter === 'cancelled'
+                      ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30'
+                      : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
+                  }`}
+                >
+                  ملغاة ({bookingsStats.cancelled})
+                </button>
+
+                <button
+                  onClick={() => setBookingStatusFilter('with_advance')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                    bookingStatusFilter === 'with_advance'
+                      ? 'bg-purple-500 text-slate-950 font-black border-purple-400 shadow-md shadow-purple-500/20'
+                      : 'bg-purple-950/30 text-purple-300 border-purple-500/30 hover:bg-purple-900/40'
+                  }`}
+                >
+                  بها مقدم حجز 💰 ({bookingsStats.bookingsWithAdvanceCount})
+                </button>
+              </div>
+            </div>
+
+            {/* 3. Comprehensive Bookings Cards List */}
+            <div className="space-y-3">
+              {filteredBookingsList.map(b => {
+                const totalAmt = getBookingTotalAmount(b);
+                const advanceAmt = getBookingTotalAdvances(b);
+                const remainingAmt = Math.max(0, totalAmt - advanceAmt);
+                const advancesList = getBookingAdvancesList(b);
+                const isExpanded = expandedBookingId === b.id;
+                const cleanPhone = (b.phone || b.clientPhone || '').replace(/\D/g, '');
+                const branchObj = (branches || []).find(br => br.id === (b as any).branchId);
+                const branchName = branchObj ? branchObj.name : '';
+
+                return (
+                  <div 
+                    key={b.id} 
+                    className="p-4 rounded-2xl bg-slate-900 border border-slate-800 shadow-lg hover:border-slate-700 transition-all space-y-3"
+                  >
+                    {/* Top Row: Code, Badges, Status */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-2.5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {/* Booking Code */}
+                        <span className="font-mono font-black text-xs px-2.5 py-1 rounded-lg bg-slate-950 text-purple-300 border border-purple-500/30">
+                          {b.bookingCode ? (b.bookingCode.startsWith('#') ? b.bookingCode : `#${b.bookingCode}`) : `#${b.id.substring(0, 6)}`}
+                        </span>
+
+                        {/* Branch badge if available */}
+                        {branchName && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 border border-slate-700 flex items-center gap-1">
+                            <Building2 size={11} className="text-amber-400" />
+                            <span>{branchName}</span>
+                          </span>
+                        )}
+
+                        {/* Booking Source badge */}
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-800/80 text-slate-400 border border-slate-700/60">
+                          {b.source === 'online' ? '🌐 أونلاين' : b.source === 'phone' ? '📞 اتصال' : '💻 كاشير'}
+                        </span>
+
+                        {/* Queue number if exists */}
+                        {b.queueNumber && (
+                          <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                            الدور #{b.queueNumber}
+                          </span>
+                        )}
                       </div>
-                      <p className="text-[10px] text-slate-400 mt-0.5">{b.serviceName || 'خدمة صالون'} • الحلاق: {b.employeeName || '-'}</p>
+
+                      <div className="flex items-center gap-2">
+                        {/* Advance Badge */}
+                        {advanceAmt > 0 ? (
+                          <span className="text-[10px] font-black px-2.5 py-1 rounded-lg bg-purple-500/20 text-purple-300 border border-purple-500/40 flex items-center gap-1">
+                            <span>مقدم حجز:</span>
+                            <span className="font-mono text-white">{advanceAmt.toLocaleString()}</span>
+                            <span>{currency}</span>
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-800/60 text-slate-400 border border-slate-800">
+                            بدون مقدم
+                          </span>
+                        )}
+
+                        {/* Status Badge */}
+                        <span className={`text-[11px] font-black px-2.5 py-1 rounded-lg border flex items-center gap-1 ${
+                          b.status === 'completed' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' :
+                          b.status === 'confirmed' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' :
+                          b.status === 'cancelled' ? 'bg-rose-500/20 text-rose-400 border-rose-500/30' :
+                          'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                        }`}>
+                          {b.status === 'completed' && <span>مكتمل ✓</span>}
+                          {b.status === 'confirmed' && <span>مؤكد 📅</span>}
+                          {b.status === 'pending' && <span>معلق ⏳</span>}
+                          {b.status === 'cancelled' && <span>ملغي ✕</span>}
+                        </span>
+                      </div>
                     </div>
 
-                    <span className={`text-[10px] font-bold px-2.5 py-1 rounded-md ${
-                      b.status === 'completed' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
-                      b.status === 'confirmed' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' :
-                      b.status === 'cancelled' ? 'bg-red-500/20 text-red-400 border border-red-500/30' :
-                      'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                    }`}>
-                      {b.status === 'completed' ? 'مكتمل' : b.status === 'confirmed' ? 'مؤكد' : b.status === 'cancelled' ? 'ملغي' : 'معلق'}
-                    </span>
-                  </div>
-                ))}
+                    {/* Middle Section: Client Info + Date/Time */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-950/40 p-3 rounded-xl border border-slate-800/60">
+                      
+                      {/* Client Info */}
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <User size={16} className="text-purple-400 shrink-0" />
+                          <h4 className="text-sm font-black text-white">{b.clientName || 'عميل بدون اسم'}</h4>
+                        </div>
 
-                {bookingsStats.todayList.length === 0 && (
-                  <p className="text-center py-6 text-slate-500 text-xs">لا توجد حجوزات مسجلة لهذا اليوم</p>
-                )}
-              </div>
+                        {/* Phone and Actions */}
+                        {(b.phone || b.clientPhone) && (
+                          <div className="flex items-center gap-3 mt-1.5 text-xs">
+                            <span className="text-slate-400 font-mono text-[11px]">{b.phone || b.clientPhone}</span>
+                            
+                            {/* WhatsApp Button */}
+                            {cleanPhone && (
+                              <a
+                                href={`https://wa.me/${cleanPhone}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/30 border border-emerald-500/30 text-[10px] font-bold transition-all"
+                                title="مراسلة العميل عبر واتساب"
+                              >
+                                <MessageCircle size={12} />
+                                <span>واتساب</span>
+                              </a>
+                            )}
+
+                            {/* Call Button */}
+                            <a
+                              href={`tel:${b.phone || b.clientPhone}`}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-600/20 text-blue-300 hover:bg-blue-600/30 border border-blue-500/30 text-[10px] font-bold transition-all"
+                              title="اتصال هاتفي"
+                            >
+                              <Phone size={12} />
+                              <span>اتصال</span>
+                            </a>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Date & Time Badge */}
+                      <div className="flex items-center gap-3 bg-slate-900 px-3.5 py-2 rounded-xl border border-slate-800 text-xs">
+                        <div className="flex items-center gap-1.5 text-slate-300 font-bold">
+                          <Calendar size={14} className="text-purple-400" />
+                          <span>{b.date}</span>
+                        </div>
+                        <div className="w-px h-4 bg-slate-700"></div>
+                        <div className="flex items-center gap-1.5 text-purple-300 font-mono font-bold">
+                          <Clock size={14} className="text-purple-400" />
+                          <span>{b.time || '--:--'}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Services and Assigned Staff */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between text-[11px] font-bold text-slate-400">
+                        <span className="flex items-center gap-1">
+                          <Scissors size={13} className="text-amber-400" />
+                          <span>الخدمات المحجوزة:</span>
+                        </span>
+                        <span>الحلاق/الموظف: <strong className="text-slate-200">{getBookingEmployeeNames(b)}</strong></span>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {b.services && Array.isArray(b.services) && b.services.length > 0 ? (
+                          b.services.map((srv: any, idx: number) => (
+                            <div 
+                              key={idx} 
+                              className="px-2.5 py-1 rounded-lg bg-slate-800/80 border border-slate-700 text-xs text-slate-200 font-bold flex items-center gap-2"
+                            >
+                              <span>{srv.serviceName || srv.name || 'خدمة'}</span>
+                              <span className="font-mono text-emerald-400 text-[11px]">
+                                {(Number(srv.price) || 0).toLocaleString()} {currency}
+                              </span>
+                              {srv.employeeName && (
+                                <span className="text-[10px] text-slate-400 font-normal">
+                                  ({srv.employeeName})
+                                </span>
+                              )}
+                            </div>
+                          ))
+                        ) : (
+                          <div className="px-2.5 py-1 rounded-lg bg-slate-800/80 border border-slate-700 text-xs text-slate-200 font-bold">
+                            {b.serviceName || 'خدمة صالون'}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Financial Breakdown Box */}
+                    <div className="grid grid-cols-3 gap-2 p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-center text-xs">
+                      <div>
+                        <span className="text-[10px] text-slate-400 font-bold block mb-0.5">إجمالي الحجز</span>
+                        <span className="font-mono font-black text-white text-sm">
+                          {totalAmt.toLocaleString()} <span className="text-[10px] font-normal text-slate-400">{currency}</span>
+                        </span>
+                      </div>
+
+                      <div className="border-r border-l border-slate-800">
+                        <span className="text-[10px] text-purple-300 font-bold block mb-0.5">مقدم حجز محصل</span>
+                        <span className="font-mono font-black text-purple-300 text-sm">
+                          {advanceAmt > 0 ? `+${advanceAmt.toLocaleString()}` : '0'} <span className="text-[10px] font-normal text-purple-400">{currency}</span>
+                        </span>
+                      </div>
+
+                      <div>
+                        <span className="text-[10px] text-amber-300 font-bold block mb-0.5">المتبقي عند الحضور</span>
+                        <span className={`font-mono font-black text-sm ${remainingAmt > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                          {remainingAmt.toLocaleString()} <span className="text-[10px] font-normal text-slate-400">{currency}</span>
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Client Notes & Internal Admin Notes */}
+                    {(b.notes || b.internalNotes) && (
+                      <div className="space-y-1.5 pt-1">
+                        {/* Client Notes */}
+                        {b.notes && (
+                          <div className="text-xs bg-slate-800/50 p-2.5 rounded-xl border border-slate-800 flex items-start gap-2 text-slate-300">
+                            <MessageCircle size={14} className="text-blue-400 mt-0.5 shrink-0" />
+                            <div>
+                              <strong className="text-blue-300 block text-[11px] mb-0.5">ملاحظات العميل:</strong>
+                              <p className="leading-relaxed">{b.notes}</p>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Internal Admin Notes (Private & Confidential) */}
+                        {b.internalNotes && (
+                          <div className="text-xs bg-amber-950/20 p-2.5 rounded-xl border border-amber-500/30 flex items-start gap-2 text-amber-200">
+                            <Lock size={14} className="text-amber-400 mt-0.5 shrink-0" />
+                            <div>
+                              <strong className="text-amber-400 block text-[11px] mb-0.5">ملاحظات الإدارة الداخلية (سرية):</strong>
+                              <p className="leading-relaxed text-amber-100">{b.internalNotes}</p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Expandable Details Button */}
+                    {advancesList.length > 0 && (
+                      <div className="pt-1">
+                        <button
+                          onClick={() => setExpandedBookingId(isExpanded ? null : b.id)}
+                          className="text-[11px] font-bold text-purple-400 hover:text-purple-300 flex items-center gap-1 cursor-pointer"
+                        >
+                          {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                          <span>{isExpanded ? 'إخفاء تفاصيل دفعات مقدم الحجز' : `عرض تفاصيل دفعات مقدم الحجز (${advancesList.length})`}</span>
+                        </button>
+
+                        {isExpanded && (
+                          <div className="mt-2 p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2 animate-in fade-in">
+                            <p className="text-[10px] font-bold text-slate-400 mb-1">دفعات مقدم الحجز المسددة:</p>
+                            <div className="space-y-1.5">
+                              {advancesList.map((adv: any, aIdx: number) => (
+                                <div key={aIdx} className="flex items-center justify-between text-xs p-2 rounded-lg bg-slate-900 border border-slate-800">
+                                  <div className="flex items-center gap-2">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-purple-400"></span>
+                                    <span className="font-bold text-white">دفعة #{aIdx + 1}</span>
+                                    <span className="text-[10px] text-slate-400">({adv.date || b.date})</span>
+                                    {adv.notes && <span className="text-[10px] text-slate-400">- {adv.notes}</span>}
+                                  </div>
+                                  <div className="text-left font-mono font-bold text-purple-300">
+                                    +{(Number(adv.amount) || 0).toLocaleString()} {currency}
+                                    <span className="text-[10px] text-slate-400 font-sans mr-1">({adv.paymentMethod || 'نقدي'})</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Created By Footer */}
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-800/60 text-[10px] text-slate-500">
+                      <span>
+                        سُجل بواسطة: <strong className="text-slate-400">{b.createdByName || b.createdBy || 'النظام'}</strong>
+                      </span>
+                      {b.createdAt && (
+                        <span>بتاريخ: {b.createdAt.split('T')[0]}</span>
+                      )}
+                    </div>
+
+                  </div>
+                );
+              })}
+
+              {filteredBookingsList.length === 0 && (
+                <div className="p-12 text-center bg-slate-900 rounded-2xl border border-slate-800 space-y-2">
+                  <Calendar size={36} className="mx-auto text-slate-600 mb-2" />
+                  <p className="text-sm font-bold text-slate-400">لا توجد حجوزات مطابقة للفترة المحددة أو خيارات التصفية</p>
+                  {(bookingSearchQuery || bookingStatusFilter !== 'all') && (
+                    <button
+                      onClick={() => { setBookingSearchQuery(''); setBookingStatusFilter('all'); }}
+                      className="text-xs text-purple-400 hover:underline font-bold mt-1 cursor-pointer"
+                    >
+                      إعادة ضبط التصفية وعرض الكل
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
           </div>

@@ -19,9 +19,10 @@ function sanitizePrintHtml(html: string): string {
 }
 
 export const handlePrintReceipt = (elementId: string, isLandscape: boolean = false, paperSize: '80mm' | '58mm' | 'a4' = '80mm') => {
-  const printElement = document.getElementById(elementId);
+  const printElement = document.getElementById(elementId) || document.querySelector(`[id="${elementId}"]`);
   if (!printElement) {
-    alert("لا يمكن العثور على التقرير أو الفاتورة للطباعة");
+    console.warn(`Print element not found by ID: ${elementId}, falling back to window.print()`);
+    window.print();
     return;
   }
 
@@ -49,6 +50,15 @@ export const handlePrintReceipt = (elementId: string, isLandscape: boolean = fal
               font-family: 'Cairo', 'Segoe UI', Tahoma, sans-serif !important;
               box-sizing: border-box;
             }
+            .flex { display: flex !important; }
+            .justify-between { justify-content: space-between !important; }
+            .items-center { align-items: center !important; }
+            .text-center { text-align: center !important; }
+            .font-bold { font-weight: bold !important; }
+            .border-b { border-bottom: 1px solid #000 !important; }
+            .border-t { border-top: 1px solid #000 !important; }
+            .border-dashed { border-style: dashed !important; }
+            .font-mono { font-family: monospace, sans-serif !important; }
             @media print {
               @page {
                 ${paperSize === 'a4' 
@@ -67,7 +77,7 @@ export const handlePrintReceipt = (elementId: string, isLandscape: boolean = fal
             }
           </style>
         </head>
-        <body class="bg-white text-black text-xs" onload="setTimeout(() => { window.print(); window.close(); }, 600)">
+        <body class="bg-white text-black text-xs" onload="setTimeout(() => { try { window.focus(); window.print(); window.close(); } catch(e){} }, 500)">
           <div class="${widthClass} mx-auto p-2">
             ${safeContent}
           </div>
@@ -75,6 +85,16 @@ export const handlePrintReceipt = (elementId: string, isLandscape: boolean = fal
       </html>
     `);
     printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => {
+      try {
+        printWindow.focus();
+        printWindow.print();
+        printWindow.close();
+      } catch (err) {
+        console.warn('Popup print trigger:', err);
+      }
+    }, 500);
   } else {
     window.print();
   }
@@ -100,6 +120,15 @@ export const printHtml = (htmlContent: string, title: string = 'طباعة') => 
               font-family: 'Cairo', 'Segoe UI', Tahoma, sans-serif !important;
               box-sizing: border-box;
             }
+            .flex { display: flex !important; }
+            .justify-between { justify-content: space-between !important; }
+            .items-center { align-items: center !important; }
+            .text-center { text-align: center !important; }
+            .font-bold { font-weight: bold !important; }
+            .border-b { border-bottom: 1px solid #000 !important; }
+            .border-t { border-top: 1px solid #000 !important; }
+            .border-dashed { border-style: dashed !important; }
+            .font-mono { font-family: monospace, sans-serif !important; }
             @media print {
               @page {
                 size: 80mm auto;
@@ -116,7 +145,7 @@ export const printHtml = (htmlContent: string, title: string = 'طباعة') => 
             }
           </style>
         </head>
-        <body class="bg-white text-black text-xs" onload="setTimeout(() => { window.print(); window.close(); }, 600)">
+        <body class="bg-white text-black text-xs" onload="setTimeout(() => { try { window.focus(); window.print(); window.close(); } catch(e){} }, 500)">
           <div class="w-[78mm] mx-auto p-1">
             ${safeContent}
           </div>
@@ -124,6 +153,16 @@ export const printHtml = (htmlContent: string, title: string = 'طباعة') => 
       </html>
     `);
     printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => {
+      try {
+        printWindow.focus();
+        printWindow.print();
+        printWindow.close();
+      } catch (err) {
+        console.warn('Popup print trigger:', err);
+      }
+    }, 500);
   } else {
     window.print();
   }

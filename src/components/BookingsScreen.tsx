@@ -272,6 +272,8 @@ export function BookingsScreen({
     time: '10:00',
     status: 'confirmed',
     location: '',
+    notes: '',
+    internalNotes: '',
     services: [],
     advancePayments: [],
     totalAmount: 0,
@@ -581,6 +583,8 @@ export function BookingsScreen({
       time: slotTime,
       status: 'confirmed',
       location: '',
+      notes: '',
+      internalNotes: '',
       services: [],
       advancePayments: [],
       totalAmount: 0,
@@ -887,6 +891,8 @@ export function BookingsScreen({
       time: newBooking.time!,
       status: newBooking.status || 'confirmed',
       location: newBooking.location?.trim() || undefined,
+      notes: newBooking.notes?.trim() || undefined,
+      internalNotes: newBooking.internalNotes?.trim() || undefined,
       services: finalServices,
       advancePayments: newBooking.advancePayments || [],
       totalAmount: totals.netTotal,
@@ -1017,6 +1023,8 @@ export function BookingsScreen({
     setEditingPriceValue('');
     setNewBooking({ 
       ...b, 
+      notes: b.notes || '',
+      internalNotes: b.internalNotes || (b as any).internal_notes || '',
       createdAt: b.createdAt || (b as any).created_at,
       createdBy: b.createdBy || (b as any).created_by,
       createdByName: b.createdByName || (b as any).created_by_name || b.createdBy,
@@ -1334,6 +1342,7 @@ export function BookingsScreen({
       phone: newBooking.phone.trim(),
       customerEmail: newBooking.customerEmail?.trim() || undefined,
       notes: newBooking.notes?.trim() || undefined,
+      internalNotes: newBooking.internalNotes?.trim() || undefined,
       date: effectiveBookingDate,
       time: newBooking.time || '10:00',
       status: newBooking.status || 'confirmed',
@@ -1467,9 +1476,13 @@ export function BookingsScreen({
                 time: '10:00',
                 status: 'confirmed',
                 location: '',
+                notes: '',
+                internalNotes: '',
                 services: [],
                 advancePayments: [],
-                totalAmount: 0
+                totalAmount: 0,
+                discountType: 'fixed',
+                discountValue: 0
               });
               setTechToAdd('');
               setServiceQtyToAdd('1');
@@ -1728,6 +1741,16 @@ export function BookingsScreen({
                               )}
                             </div>
                             <div className="text-[10px] font-mono text-indigo-600">{b.bookingCode || `#${b.id}`}</div>
+                            {b.internalNotes && (
+                              <div 
+                                className="mt-1 text-[10px] text-amber-900 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-lg flex items-center gap-1 max-w-xs truncate cursor-help shadow-2xs" 
+                                title={`ملاحظة داخلية خاصة بالإدارة: ${b.internalNotes}`}
+                              >
+                                <Lock size={10} className="text-amber-700 shrink-0" />
+                                <span className="font-black shrink-0 text-amber-800">ملاحظة داخلية:</span>
+                                <span className="truncate font-medium">{b.internalNotes}</span>
+                              </div>
+                            )}
                           </td>
                           <td className="p-3.5 font-mono text-slate-600">{b.phone}</td>
                           <td className="p-3.5 font-bold text-slate-700">
@@ -2036,7 +2059,12 @@ export function BookingsScreen({
                                   className={`p-2 rounded-xl border text-xs shadow-xs cursor-pointer hover:shadow-md transition-all ${badge.bg}`}
                                 >
                                   <div className="flex justify-between items-start gap-1">
-                                    <span className="font-black text-slate-900 truncate">{b.clientName}</span>
+                                    <div className="flex items-center gap-1 min-w-0">
+                                      <span className="font-black text-slate-900 truncate">{b.clientName}</span>
+                                      {b.internalNotes && (
+                                        <Lock size={10} className="text-amber-700 shrink-0" title={`ملاحظة داخلية: ${b.internalNotes}`} />
+                                      )}
+                                    </div>
                                     <span className={`w-2 h-2 rounded-full mt-1 shrink-0 ${badge.dot}`} />
                                   </div>
                                   <div className="text-[10px] text-slate-600 truncate mt-0.5">
@@ -2125,7 +2153,12 @@ export function BookingsScreen({
                                     className={`p-2.5 rounded-2xl border shadow-xs cursor-pointer hover:shadow-md transition-all ${badge.bg}`}
                                   >
                                     <div className="flex justify-between items-start">
-                                      <h4 className="font-black text-slate-900 text-xs">{b.clientName}</h4>
+                                      <div className="flex items-center gap-1 min-w-0">
+                                        <h4 className="font-black text-slate-900 text-xs truncate">{b.clientName}</h4>
+                                        {b.internalNotes && (
+                                          <Lock size={10} className="text-amber-700 shrink-0" title={`ملاحظة داخلية: ${b.internalNotes}`} />
+                                        )}
+                                      </div>
                                       <span className={`w-2 h-2 rounded-full mt-1 ${badge.dot}`} />
                                     </div>
                                     <div className="text-[11px] text-slate-600 font-mono mt-0.5">{b.phone}</div>
@@ -2334,6 +2367,31 @@ export function BookingsScreen({
                 </div>
               )}
             </div>
+
+            {/* Internal Admin Notes (ملاحظات داخلية خاصة بالإدارة) */}
+            {selectedBookingDetails.internalNotes && (
+              <div className="bg-amber-50/80 border border-amber-200/90 rounded-2xl p-3 space-y-1.5 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-black text-amber-950">
+                    <Lock size={13} className="text-amber-700" />
+                    <span>ملاحظات داخلية (خاصة بالإدارة):</span>
+                  </div>
+                  <span className="text-[9px] font-bold text-amber-800 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <span>🔒 سرية • لا تظهر في الإيصال</span>
+                  </span>
+                </div>
+                <p className="text-xs text-amber-950 font-medium whitespace-pre-wrap leading-relaxed pr-1">
+                  {selectedBookingDetails.internalNotes}
+                </p>
+              </div>
+            )}
+
+            {selectedBookingDetails.notes && (
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 space-y-1 text-xs">
+                <span className="font-bold text-slate-700">ملاحظات عامة:</span>
+                <p className="text-slate-800 whitespace-pre-wrap">{selectedBookingDetails.notes}</p>
+              </div>
+            )}
 
             {/* Services & Products List */}
             <div>
@@ -2834,6 +2892,28 @@ export function BookingsScreen({
                       <option value="فندق / خارجي" />
                       <option value="قاعة مناسبات" />
                     </datalist>
+                  </div>
+                </div>
+
+                {/* Row 3: Internal Notes (ملاحظات داخلية خاصة بالإدارة فقط) */}
+                <div className="pt-2 border-t border-slate-200/60">
+                  <div className="bg-amber-50/70 border border-amber-200/90 rounded-2xl p-2.5 sm:p-3 space-y-1.5 shadow-2xs">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-black text-amber-950 flex items-center gap-1.5">
+                        <Lock size={13} className="text-amber-700" />
+                        <span>ملاحظات داخلية (خاصة بالإدارة):</span>
+                      </label>
+                      <span className="text-[10px] font-black text-amber-800 bg-amber-100/90 border border-amber-200/80 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <span>🔒 سرية • لا تظهر نهائياً في الإيصال المطبوع</span>
+                      </span>
+                    </div>
+                    <textarea
+                      rows={2}
+                      value={newBooking.internalNotes || ''}
+                      onChange={e => setNewBooking({ ...newBooking, internalNotes: e.target.value })}
+                      placeholder="اكتب هنا أي ملاحظات إدارية خاصة بالحجز (مثل: تنبيهات الموظفين، تفضيلات العميل، مستحقات سابقة...) - ملاحظات سرية خاصة بالإدارة فقط ولا تظهر نهائياً في إيصال العميل المطبوع."
+                      className="w-full bg-white border border-amber-200/80 rounded-xl p-2.5 text-xs font-medium focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none text-slate-900 placeholder:text-slate-400 placeholder:font-normal resize-none shadow-2xs"
+                    />
                   </div>
                 </div>
               </div>

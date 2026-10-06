@@ -21,12 +21,54 @@ export function IncomeReportReceipt({
   userName?: string
 }) {
   const effectiveUserName = userName || settings.ownerName || 'المسؤول';
-  const treasuries = settings.treasuries;
+  const treasuries = settings.treasuries || [];
+
+  const hasCashTreasury = useMemo(() => treasuries.some(t => t.id === 'cash'), [treasuries]);
+  const hasMainTreasury = useMemo(() => treasuries.some(t => t.id === 'main' || t.isMain), [treasuries]);
 
   const isMatchingTreasury = (tId: string | undefined, targetId: string) => {
-    if (!tId) return targetId === 'cash' || targetId === 'main';
-    if (tId === targetId) return true;
-    if ((targetId === 'cash' || targetId === 'main') && (tId === 'cash' || tId === 'main')) return true;
+    // 1. Direct match
+    if (tId && tId === targetId) return true;
+
+    // 2. Handling undefined / empty treasury ID
+    if (!tId) {
+      if (hasCashTreasury) {
+        return targetId === 'cash';
+      }
+      if (hasMainTreasury) {
+        const mainObj = treasuries.find(t => t.id === targetId && (t.isMain || t.id === 'main'));
+        return Boolean(mainObj);
+      }
+      return targetId === treasuries[0]?.id;
+    }
+
+    // 3. Normalized cash aliases
+    if (tId === 'cash' || tId === 'نقدي' || tId === 'كاش') {
+      if (targetId === 'cash') return true;
+      if (!hasCashTreasury && (targetId === 'main' || treasuries.find(t => t.id === targetId)?.isMain)) {
+        return true;
+      }
+      return false;
+    }
+
+    // 4. Normalized main treasury aliases
+    if (tId === 'main' || tId === 'الرئيسية' || tId === 'الخزنة الرئيسية') {
+      if (targetId === 'main') return true;
+      const targetObj = treasuries.find(t => t.id === targetId);
+      if (targetObj?.isMain && !hasCashTreasury) return true;
+      return Boolean(targetObj?.isMain && targetId !== 'cash');
+    }
+
+    // 5. Normalized card aliases
+    if (targetId === 'card') {
+      return tId === 'card' || tId === 'mada' || tId === 'visa' || tId === 'mastercard' || tId === 'شبكة' || tId === 'شبكة / مدى';
+    }
+
+    // 6. Normalized bank transfer aliases
+    if (targetId === 'bank_transfer' || targetId === 'transfer') {
+      return tId === 'bank_transfer' || tId === 'transfer' || tId === 'bank' || tId === 'تحويل بنكي';
+    }
+
     return false;
   };
 
