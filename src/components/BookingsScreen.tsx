@@ -849,6 +849,7 @@ export function BookingsScreen({
     const currentUserName = currentUser?.name || (currentUser as any)?.username || 'الكاشير';
     const currentUserId = currentUser?.id;
 
+    const nowEpoch = Date.now();
     const updatedBooking: Booking = {
       ...selectedBookingDetails,
       advancePayments: [...(selectedBookingDetails.advancePayments || []), newAdv],
@@ -857,11 +858,12 @@ export function BookingsScreen({
       updatedBy: currentUserId,
       updated_by: currentUserId,
       updatedByName: currentUserName,
-      updated_by_name: currentUserName
+      updated_by_name: currentUserName,
+      _localEditedAt: nowEpoch
     };
 
     // Update in bookings state & DB
-    setBookings(bookings.map(b => b.id === updatedBooking.id ? updatedBooking : b));
+    setBookings((prev: Booking[]) => prev.map(b => b.id === updatedBooking.id ? { ...b, ...updatedBooking } : b));
     setSelectedBookingDetails(updatedBooking);
     await DB.saveBooking(updatedBooking);
 
@@ -998,7 +1000,8 @@ export function BookingsScreen({
       updatedBy: bookingUpdatedBy,
       updated_by: bookingUpdatedBy,
       updatedByName: bookingUpdatedByName,
-      updated_by_name: bookingUpdatedByName
+      updated_by_name: bookingUpdatedByName,
+      _localEditedAt: Date.now()
     };
 
     // Calculate newly added advance payments to generate financial transactions
@@ -1006,17 +1009,17 @@ export function BookingsScreen({
     const brandNewAdvances = (booking.advancePayments || []).filter(a => !prevAdvIds.has(a.id));
 
     if (editingBooking) {
-      setBookings((prev: Booking[]) => prev.map(b => b.id === booking.id ? { ...b, ...booking } : b));
+      setBookings((prev: Booking[]) => prev.map(b => b.id === booking.id ? { ...b, ...booking, _localEditedAt: Date.now() } : b));
     } else {
-      setBookings((prev: Booking[]) => [booking, ...prev]);
+      setBookings((prev: Booking[]) => [{ ...booking, _localEditedAt: Date.now() }, ...prev]);
     }
 
     try {
       const stored = localStorage.getItem('smartcut_bookings');
       const list = stored ? JSON.parse(stored) : [];
       const updatedList = editingBooking
-        ? list.map((b: any) => b.id === booking.id ? { ...b, ...booking } : b)
-        : [booking, ...list.filter((b: any) => b.id !== booking.id)];
+        ? list.map((b: any) => b.id === booking.id ? { ...b, ...booking, _localEditedAt: Date.now() } : b)
+        : [{ ...booking, _localEditedAt: Date.now() }, ...list.filter((b: any) => b.id !== booking.id)];
       localStorage.setItem('smartcut_bookings', JSON.stringify(updatedList));
     } catch (e) {}
 

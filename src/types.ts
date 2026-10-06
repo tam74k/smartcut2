@@ -678,6 +678,7 @@ export interface Booking {
   updated_by_name?: string;
   discountType?: 'percentage' | 'fixed';
   discountValue?: number;
+  _localEditedAt?: number;
 }
 
 export interface CartItem { 

@@ -1561,69 +1561,102 @@ export const DB = {
       };
 
       // الحفظ الفوري في التخزين المحلي لضمان ثبات التعديل وعدم التراجع عنه إطلاقاً
+      const localItem = { ...b, _localEditedAt: Date.now() };
       try {
         const stored = localStorage.getItem('smartcut_bookings');
         const list = stored ? JSON.parse(stored) : [];
         const idx = list.findIndex((item: any) => item.id === b.id);
         if (idx >= 0) {
-          list[idx] = { ...list[idx], ...b };
+          list[idx] = { ...list[idx], ...localItem };
         } else {
-          list.unshift(b);
+          list.unshift(localItem);
         }
         localStorage.setItem('smartcut_bookings', JSON.stringify(list));
       } catch (e) {}
 
-      let { error } = await client.from('bookings').upsert(snap, { onConflict: 'id' });
+      let attempts = 0;
+      let lastError: any = null;
 
-      // معالجة خطأ القيد الأجنبي أو نوع المعرف في عمود client_id
-      if (error && (error.code === '23503' || error.message?.includes('foreign key') || error.message?.includes('client_id')) && snap.client_id) {
-        console.warn('DB.saveBooking foreign key warning on client_id, retrying with client_id = null:', error.message);
-        snap.client_id = null;
-        const retryFk = await client.from('bookings').upsert(snap, { onConflict: 'id' });
-        error = retryFk.error;
-      }
+      while (attempts < 5) {
+        attempts++;
 
-      if (error && error.message) {
-        let retried = false;
-        if (error.message.includes('internal_notes')) {
-          ensureColumn('bookings', 'internal_notes', 'TEXT').catch(() => {});
+        // محاولة التحديث المباشر للسجل الحالي أولاً لمنع مشاكل القيود على السجلات الموجودة
+        const { data: updateData, error: updateError } = await client
+          .from('bookings')
+          .update(snap)
+          .eq('id', b.id)
+          .select('id');
+
+        if (!updateError && updateData && updateData.length > 0) {
+          return b; // تم تحديث الحجز بنجاح تام
+        }
+
+        // إذا لم يكن الحجز موجوداً مسبقاً في قاعدة البيانات، نقوم بعملية الـ upsert
+        let { error } = updateError ? { error: updateError } : await client.from('bookings').upsert(snap, { onConflict: 'id' });
+        if (!error) {
+          return b;
+        }
+
+        lastError = error;
+
+        // معالجة خطأ القيد الأجنبي (Foreign Key)
+        if (error.code === '23503' || error.message?.includes('foreign key')) {
+          if (snap.client_id && (error.message?.includes('client_id') || error.details?.includes('client_id'))) {
+            console.warn('DB.saveBooking foreign key warning on client_id, retrying with client_id = null');
+            snap.client_id = null;
+            continue;
+          }
+          if (snap.branch_id && (error.message?.includes('branch_id') || error.details?.includes('branch_id'))) {
+            console.warn('DB.saveBooking foreign key warning on branch_id, retrying with branch_id = null');
+            snap.branch_id = null;
+            continue;
+          }
+          if (snap.salon_id && (error.message?.includes('salon_id') || error.details?.includes('salon_id'))) {
+            console.warn('DB.saveBooking foreign key warning on salon_id, retrying with salon_id = null');
+            snap.salon_id = null;
+            continue;
+          }
+        }
+
+        // معالجة خطأ عدم وجود عمود في جدول bookings (PGRST204 أو 42703)
+        const errMsg = error.message || '';
+        const missingColMatch = errMsg.match(/Could not find the '([^']+)' column of '([^']+)'/i) 
+          || errMsg.match(/column "([^"]+)" of relation "([^"]+)" does not exist/i);
+        if (missingColMatch) {
+          const missingCol = missingColMatch[1];
+          delete snap[missingCol];
+          ensureColumn('bookings', missingCol, 'TEXT').catch(() => {});
+          continue;
+        }
+
+        if (errMsg.includes('internal_notes')) {
           delete snap.internal_notes;
-          retried = true;
+          ensureColumn('bookings', 'internal_notes', 'TEXT').catch(() => {});
+          continue;
         }
-        if (error.message.includes('location')) {
-          ensureColumn('bookings', 'location', 'TEXT').catch(() => {});
+        if (errMsg.includes('location')) {
           delete snap.location;
-          retried = true;
+          ensureColumn('bookings', 'location', 'TEXT').catch(() => {});
+          continue;
         }
-        if (error.message.includes('discount_type') || error.message.includes('discount_value')) {
-          ensureColumn('bookings', 'discount_type', 'TEXT').catch(() => {});
-          ensureColumn('bookings', 'discount_value', 'NUMERIC').catch(() => {});
+        if (errMsg.includes('discount_type') || errMsg.includes('discount_value')) {
           delete snap.discount_type;
           delete snap.discount_value;
-          retried = true;
+          continue;
         }
-        if (error.message.includes('created_by') || error.message.includes('created_by_name') || error.message.includes('updated_at') || error.message.includes('updated_by') || error.message.includes('updated_by_name')) {
-          ensureColumn('bookings', 'created_by', 'TEXT').catch(() => {});
-          ensureColumn('bookings', 'created_by_name', 'VARCHAR(255)').catch(() => {});
-          ensureColumn('bookings', 'updated_at', 'TIMESTAMPTZ').catch(() => {});
-          ensureColumn('bookings', 'updated_by', 'TEXT').catch(() => {});
-          ensureColumn('bookings', 'updated_by_name', 'VARCHAR(255)').catch(() => {});
+        if (errMsg.includes('created_by') || errMsg.includes('updated_by')) {
           delete snap.created_by;
           delete snap.created_by_name;
-          delete snap.updated_at;
           delete snap.updated_by;
           delete snap.updated_by_name;
-          retried = true;
+          continue;
         }
-        if (retried) {
-          const retry = await client.from('bookings').upsert(snap, { onConflict: 'id' });
-          error = retry.error;
-        }
+
+        break;
       }
 
-      if (error) {
-        console.error('DB.saveBooking error:', error.message);
-        return b;
+      if (lastError) {
+        console.error('DB.saveBooking error after attempts:', lastError.message);
       }
       return b;
     } catch (e) {

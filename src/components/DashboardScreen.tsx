@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { DashboardChartsSection } from './DashboardChartsSection';
 import { AuthService } from '../services/auth';
+import { DB } from '../services/db';
 
 export function DashboardScreen({ 
   settings, 
@@ -31,7 +32,7 @@ export function DashboardScreen({
   shiftDate: string,
   shiftData?: { isOpen: boolean, date: string, initialCash: number, shiftId?: string, openedAt?: string, lastClosedAt?: string },
   bookings: Booking[],
-  setBookings: (b: Booking[]) => void,
+  setBookings: (b: Booking[] | ((prev: Booking[]) => Booking[])) => void,
   transactions: Transaction[],
   setTransactions: (t: Transaction[]) => void,
   onToPOS: (b: Booking) => void,
@@ -129,13 +130,45 @@ export function DashboardScreen({
   });
   const pendingBookings = branchBookings.filter(b => b.status === 'pending');
 
-  const handleConfirmBooking = (bookingId: string) => {
-    setBookings(bookings.map(b => b.id === bookingId ? { ...b, status: 'confirmed' } : b));
+  const handleConfirmBooking = async (bookingId: string) => {
+    const nowIso = new Date().toISOString();
+    const nowEpoch = Date.now();
+    const target = bookings.find(b => b.id === bookingId);
+    const updated = target ? { ...target, status: 'confirmed' as const, updatedAt: nowIso, updated_at: nowIso, _localEditedAt: nowEpoch } : null;
+
+    setBookings((prev: Booking[]) => prev.map(b => b.id === bookingId ? { ...b, status: 'confirmed', updatedAt: nowIso, updated_at: nowIso, _localEditedAt: nowEpoch } : b));
+
+    if (updated) {
+      try {
+        const stored = localStorage.getItem('smartcut_bookings');
+        if (stored) {
+          const list = JSON.parse(stored);
+          localStorage.setItem('smartcut_bookings', JSON.stringify(list.map((b: any) => b.id === bookingId ? { ...b, ...updated } : b)));
+        }
+      } catch (e) {}
+      await DB.saveBooking(updated, settings.salonId);
+    }
   };
 
-  const handleCancelBooking = (bookingId: string) => {
+  const handleCancelBooking = async (bookingId: string) => {
     if (confirm('هل أنت متأكد من إلغاء هذا الحجز؟')) {
-      setBookings(bookings.map(b => b.id === bookingId ? { ...b, status: 'cancelled' } : b));
+      const nowIso = new Date().toISOString();
+      const nowEpoch = Date.now();
+      const target = bookings.find(b => b.id === bookingId);
+      const updated = target ? { ...target, status: 'cancelled' as const, updatedAt: nowIso, updated_at: nowIso, _localEditedAt: nowEpoch } : null;
+
+      setBookings((prev: Booking[]) => prev.map(b => b.id === bookingId ? { ...b, status: 'cancelled', updatedAt: nowIso, updated_at: nowIso, _localEditedAt: nowEpoch } : b));
+
+      if (updated) {
+        try {
+          const stored = localStorage.getItem('smartcut_bookings');
+          if (stored) {
+            const list = JSON.parse(stored);
+            localStorage.setItem('smartcut_bookings', JSON.stringify(list.map((b: any) => b.id === bookingId ? { ...b, ...updated } : b)));
+          }
+        } catch (e) {}
+        await DB.saveBooking(updated, settings.salonId);
+      }
     }
   };
 
@@ -478,10 +511,36 @@ export function DashboardScreen({
     setEditingBooking({...booking}); // Clone for editing
   };
 
-  const saveEditBooking = () => {
-    if(editingBooking) {
-      setBookings(bookings.map(b => b.id === editingBooking.id ? editingBooking : b));
+  const saveEditBooking = async () => {
+    if (!editingBooking) return;
+    const servicesTotal = (editingBooking.services || []).reduce((sum, s) => sum + (Number(s.price) || 0), 0);
+    const nowIso = new Date().toISOString();
+    const nowEpoch = Date.now();
+    const updatedBooking: Booking = {
+      ...editingBooking,
+      totalAmount: servicesTotal,
+      updatedAt: nowIso,
+      updated_at: nowIso,
+      _localEditedAt: nowEpoch,
+      salonId: editingBooking.salonId || (editingBooking as any).salon_id || settings.salonId,
+      branchId: editingBooking.branchId || (editingBooking as any).branch_id || activeBranchId
+    };
+
+    setBookings((prev: Booking[]) => prev.map(b => b.id === updatedBooking.id ? { ...b, ...updatedBooking } : b));
+
+    try {
+      const stored = localStorage.getItem('smartcut_bookings');
+      const list = stored ? JSON.parse(stored) : [];
+      const updatedList = list.map((b: any) => b.id === updatedBooking.id ? { ...b, ...updatedBooking } : b);
+      localStorage.setItem('smartcut_bookings', JSON.stringify(updatedList));
+    } catch (e) {}
+
+    try {
+      await DB.saveBooking(updatedBooking, settings.salonId);
+    } catch (err) {
+      console.error('Failed to save edited booking to DB from Dashboard:', err);
     }
+
     setEditingBooking(null);
   };
 

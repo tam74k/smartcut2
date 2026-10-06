@@ -492,9 +492,16 @@ export default function App() {
     }
     if (data.bookings) {
       setBookings(data.bookings.map((b: any) => ({
-        ...b, phone: b.clientPhone || b.phone || '',
+        ...b,
+        clientName: b.clientName || b.client_name || 'عميل نقدي',
+        phone: b.phone || b.clientPhone || b.client_phone || '',
+        totalAmount: Number(b.totalAmount ?? b.total_amount ?? 0),
+        salonId: b.salonId || b.salon_id || undefined,
+        branchId: b.branchId || b.branch_id || undefined,
+        bookingCode: b.bookingCode || b.booking_code || undefined,
         queueNumber: b.queueNumber || b.queue_number || undefined,
-        customerEmail: b.customerEmail || '', advancePayments: b.advancePayments || b.advance_payments || [],
+        customerEmail: b.customerEmail || b.customer_email || '',
+        advancePayments: b.advancePayments || b.advance_payments || [],
         notes: b.notes || undefined,
         internalNotes: b.internalNotes || b.internal_notes || undefined,
         discountType: b.discountType || b.discount_type || 'fixed',
@@ -870,8 +877,14 @@ export default function App() {
         if (polledBookings && Array.isArray(polledBookings)) {
           const mappedPolled = polledBookings.map((b: any) => ({
             ...b,
-            phone: b.clientPhone || b.phone || '',
-            customerEmail: b.customerEmail || '',
+            clientName: b.clientName || b.client_name || 'عميل نقدي',
+            phone: b.phone || b.clientPhone || b.client_phone || '',
+            totalAmount: Number(b.totalAmount ?? b.total_amount ?? 0),
+            salonId: b.salonId || b.salon_id || undefined,
+            branchId: b.branchId || b.branch_id || undefined,
+            bookingCode: b.bookingCode || b.booking_code || undefined,
+            queueNumber: b.queueNumber || b.queue_number || undefined,
+            customerEmail: b.customerEmail || b.customer_email || '',
             advancePayments: b.advancePayments || b.advance_payments || [],
             notes: b.notes || undefined,
             internalNotes: b.internalNotes || b.internal_notes || undefined,
@@ -888,21 +901,55 @@ export default function App() {
           setBookings(prevLocal => {
             if (!prevLocal || prevLocal.length === 0) return mappedPolled;
             const polledMap = new Map(mappedPolled.map(b => [b.id, b]));
-            // Merge: preserve local bookings that are newer or not yet synced to Supabase
+            const now = Date.now();
+
+            // Merge: preserve local bookings that are newer or recently edited locally
             const merged = mappedPolled.map(pb => {
               const local = prevLocal.find(lb => lb.id === pb.id);
               if (!local) return pb;
-              const localTime = new Date(local.updatedAt || local.updated_at || local.createdAt || 0).getTime();
-              const polledTime = new Date(pb.updatedAt || pb.updated_at || pb.createdAt || 0).getTime();
-              // If local version has a newer timestamp, do not roll it back!
-              return (localTime > polledTime) ? local : pb;
+
+              // 1. فحص حماية التعديل المحلي الأخير (نافذة أمان 45 ثانية تمنع التراجع التلقائي)
+              const localEditedAt = (local as any)._localEditedAt || 0;
+              const isRecentlyEdited = (now - localEditedAt) < 45000;
+              if (isRecentlyEdited) {
+                return local;
+              }
+
+              // 2. مقارنة الطوابع الزمنية للتحديث
+              const localTime = new Date(local.updatedAt || local.updated_at || local.createdAt || local.created_at || 0).getTime();
+              const polledTime = new Date(pb.updatedAt || pb.updated_at || pb.createdAt || pb.created_at || 0).getTime();
+
+              if (localTime > polledTime) {
+                return local;
+              }
+
+              // 3. التحقق الاحتياطي من التعديلات المعلقة
+              const hasLocalChanges = 
+                local.clientName !== pb.clientName ||
+                local.phone !== pb.phone ||
+                local.date !== pb.date ||
+                local.time !== pb.time ||
+                local.status !== pb.status ||
+                local.totalAmount !== pb.totalAmount ||
+                local.notes !== pb.notes ||
+                local.internalNotes !== pb.internalNotes ||
+                JSON.stringify(local.services || []) !== JSON.stringify(pb.services || []) ||
+                JSON.stringify(local.advancePayments || []) !== JSON.stringify(pb.advancePayments || []);
+
+              if (hasLocalChanges && localTime >= polledTime) {
+                return local;
+              }
+
+              return pb;
             });
-            // Also preserve local bookings that are newly created and not yet in the polled list
+
+            // الحفاظ على الحجوزات المنشأة محلياً ولم تظهر بعد في قائمة السيرفر
             for (const lb of prevLocal) {
               if (!polledMap.has(lb.id)) {
                 merged.unshift(lb);
               }
             }
+
             try {
               localStorage.setItem('smartcut_bookings', JSON.stringify(merged));
             } catch (e) {}
@@ -1365,7 +1412,36 @@ export default function App() {
     setBookings(prev => {
       const currentSalonBookings = prev.filter(b => !(b as any).salonId || (b as any).salonId === currentSalonId);
       const next = typeof updater === 'function' ? updater(currentSalonBookings) : updater;
-      const tagged = next.map(b => ({ ...b, salonId: (b as any).salonId || currentSalonId, branchId: (b as any).branchId || activeBranchId }));
+      const nowIso = new Date().toISOString();
+      const nowEpoch = Date.now();
+      const prevMap = new Map(prev.map(p => [p.id, p]));
+
+      const tagged = next.map(b => {
+        const old = prevMap.get(b.id);
+        const isModified = !old || (
+          b.updatedAt !== old.updatedAt ||
+          b.clientName !== old.clientName ||
+          b.phone !== old.phone ||
+          b.date !== old.date ||
+          b.time !== old.time ||
+          b.status !== old.status ||
+          b.totalAmount !== old.totalAmount ||
+          b.notes !== old.notes ||
+          b.internalNotes !== old.internalNotes ||
+          JSON.stringify(b.services) !== JSON.stringify(old.services) ||
+          JSON.stringify(b.advancePayments) !== JSON.stringify(old.advancePayments)
+        );
+
+        return {
+          ...b,
+          salonId: (b as any).salonId || currentSalonId,
+          branchId: (b as any).branchId || activeBranchId,
+          updatedAt: isModified ? (b.updatedAt || nowIso) : b.updatedAt,
+          updated_at: isModified ? (b.updated_at || nowIso) : b.updated_at,
+          _localEditedAt: isModified ? nowEpoch : b._localEditedAt
+        };
+      });
+
       const other = prev.filter(b => (b as any).salonId && (b as any).salonId !== currentSalonId);
       const res = [...other, ...tagged];
 
@@ -1373,7 +1449,6 @@ export default function App() {
         localStorage.setItem('smartcut_bookings', JSON.stringify(res));
       } catch (e) {}
 
-      const prevMap = new Map(prev.map(p => [p.id, p]));
       const changed = tagged.filter(b => {
         const old = prevMap.get(b.id);
         if (!old) return true;
