@@ -494,6 +494,33 @@ interface OwnerExecutivePortalProps {
   fingerprintLogs?: any[];
 }
 
+const isStaffAdvance = (t: any) => {
+  const isOut = t.type === 'out' || (t.type as string) === 'expense';
+  if (!isOut) return false;
+  const cat = (t.category || '').toLowerCase();
+  const expCat = ((t as any).expenseCategory || '').toLowerCase();
+  const desc = (t.description || '').toLowerCase();
+  return (
+    cat === 'staff_advance' ||
+    cat === 'hr_advance' ||
+    cat === 'advance' ||
+    cat.includes('سلف') ||
+    expCat.includes('سلف') ||
+    desc.includes('سلفة') ||
+    desc.includes('سلف')
+  );
+};
+
+const isBookingAdvanceTrx = (t: any) => {
+  if (t.type !== 'in') return false;
+  const cat = (t.category || '').toLowerCase();
+  const desc = (t.description || '').toLowerCase();
+  if (cat === 'booking_advance' || cat === 'مقدم حجز' || cat === 'عربون حجز' || cat === 'عربون' || cat === 'حجز') return true;
+  if (cat === 'advance' && !desc.includes('سلف')) return true;
+  if (desc.includes('مقدم حجز') || desc.includes('عربون حجز') || desc.includes('عربون')) return true;
+  return false;
+};
+
 export function OwnerExecutivePortal({
   settings,
   invoices,
@@ -757,16 +784,6 @@ export function OwnerExecutivePortal({
     });
 
     // مقدمات وعربون الحجز المسجلة ضمن الفترة
-    const isBookingAdvanceTrx = (t: any) => {
-      if (t.type !== 'in') return false;
-      const cat = (t.category || '').toLowerCase();
-      const desc = (t.description || '').toLowerCase();
-      if (cat === 'booking_advance' || cat === 'مقدم حجز' || cat === 'عربون حجز' || cat === 'عربون' || cat === 'حجز') return true;
-      if (cat === 'advance' && !desc.includes('سلف')) return true;
-      if (desc.includes('مقدم حجز') || desc.includes('عربون حجز') || desc.includes('عربون')) return true;
-      return false;
-    };
-
     const periodAdvTrx = filteredTransactions.filter(isBookingAdvanceTrx);
     periodAdvTrx.forEach(t => {
       const amt = Number(t.amount) || 0;
@@ -925,15 +942,6 @@ export function OwnerExecutivePortal({
       });
 
       // إضافة مقدمات وعربون الحجز المحصلة في هذه الخزينة
-      const isBookingAdvanceTrx = (trx: any) => {
-        if (trx.type !== 'in') return false;
-        const cat = (trx.category || '').toLowerCase();
-        const desc = (trx.description || '').toLowerCase();
-        if (cat === 'booking_advance' || cat === 'مقدم حجز' || cat === 'عربون حجز' || cat === 'عربون' || cat === 'حجز') return true;
-        if (cat === 'advance' && !desc.includes('سلف')) return true;
-        if (desc.includes('مقدم حجز') || desc.includes('عربون حجز') || desc.includes('عربون')) return true;
-        return false;
-      };
       const advTrxForT = periodTrxs.filter(trx => isBookingAdvanceTrx(trx));
       invoicesCollected += advTrxForT.reduce((sum, trx) => sum + (Number(trx.amount) || 0), 0);
 
@@ -1037,16 +1045,6 @@ export function OwnerExecutivePortal({
     }, 0);
 
     // 1.b Booking Advances (مقدمات وعربون الحجز المحصلة)
-    const isBookingAdvanceTrx = (t: any) => {
-      if (t.type !== 'in') return false;
-      const cat = (t.category || '').toLowerCase();
-      const desc = (t.description || '').toLowerCase();
-      if (cat === 'booking_advance' || cat === 'مقدم حجز' || cat === 'عربون حجز' || cat === 'عربون' || cat === 'حجز') return true;
-      if (cat === 'advance' && !desc.includes('سلف')) return true;
-      if (desc.includes('مقدم حجز') || desc.includes('عربون حجز') || desc.includes('عربون')) return true;
-      return false;
-    };
-
     const periodBookingAdvTrx = filteredTransactions.filter(isBookingAdvanceTrx);
     let totalBookingAdvances = periodBookingAdvTrx.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
     let bookingAdvancesCount = periodBookingAdvTrx.length;
@@ -1109,23 +1107,6 @@ export function OwnerExecutivePortal({
     // 3. Salaries Disbursed & Advances
     let totalSalaries = 0;
     let totalAdvances = 0;
-
-    const isStaffAdvance = (t: any) => {
-      const isOut = t.type === 'out' || (t.type as string) === 'expense';
-      if (!isOut) return false;
-      const cat = (t.category || '').toLowerCase();
-      const expCat = ((t as any).expenseCategory || '').toLowerCase();
-      const desc = (t.description || '').toLowerCase();
-      return (
-        cat === 'staff_advance' ||
-        cat === 'hr_advance' ||
-        cat === 'advance' ||
-        cat.includes('سلف') ||
-        expCat.includes('سلف') ||
-        desc.includes('سلفة') ||
-        desc.includes('سلف')
-      );
-    };
 
     const activeStaff = employees.filter(e => matchesActiveBranch((e as any).branchId));
     activeStaff.forEach(emp => {
