@@ -34,9 +34,59 @@ export const NEW_PERMISSIONS: Record<string, { label: string; badgeClass: string
     desc: 'تصدير وتحميل شيتات الإكسل والجداول في جميع الشاشات والتقارير'
   },
   manage_hr_actions: {
-    label: '⭐ جديد: إجراءات شؤون العاملين (HR Actions)',
+    label: '⭐ شامل: كافة إجراءات شؤون العاملين (HR Actions)',
     badgeClass: 'bg-purple-100 text-purple-900 border-purple-300 font-extrabold',
-    desc: 'إدارة الجزاءات، المكافآت، الخصومات، أذونات الاستئذان، والإجازات'
+    desc: 'صلاحية شاملة لكافة إجراءات HR: السلف، الجزاءات، المكافآت، الإجازات، والأذونات'
+  },
+  hr_manage_advances: {
+    label: '💵 صرف وإدارة السلف النقدية',
+    badgeClass: 'bg-amber-100 text-amber-900 border-amber-300 font-extrabold',
+    desc: 'السماح بصرف السلف النقدية السريعة وسندات السلف على حساب الراتب من الخزائن'
+  },
+  hr_manage_penalties: {
+    label: '⚠️ تطبيق الجزاءات والخصومات',
+    badgeClass: 'bg-rose-100 text-rose-900 border-rose-300 font-extrabold',
+    desc: 'السماح بخصم مبالغ نقدية أو خصم أيام جزاءات إدارية من الموظفين'
+  },
+  hr_manage_bonuses: {
+    label: '🎁 تسجيل وصرف المكافآت والحوافز',
+    badgeClass: 'bg-emerald-100 text-emerald-900 border-emerald-300 font-extrabold',
+    desc: 'السماح بصرف مكافآت التميز وحوافز الأداء والتقدير المالي للموظفين'
+  },
+  hr_manage_leaves: {
+    label: '🏖️ إدارة وتسجيل الإجازات',
+    badgeClass: 'bg-sky-100 text-sky-900 border-sky-300 font-extrabold',
+    desc: 'تسجيل واعتماد وحذف إجازات الموظفين (مدفوعة وبدون أجر) في التايم شيت'
+  },
+  hr_manage_permissions: {
+    label: '⏱️ أذونات الاستئذان والمأموريات',
+    badgeClass: 'bg-indigo-100 text-indigo-900 border-indigo-300 font-extrabold',
+    desc: 'تسجيل وإقرار أذونات الخروج المؤقت والمأموريات الرسمية'
+  },
+  hr_manage_attendance: {
+    label: '🕒 تعديل الحضور والدوام اليدوي',
+    badgeClass: 'bg-cyan-100 text-cyan-900 border-cyan-300 font-extrabold',
+    desc: 'تسجيل وتعديل بصمات الحضور والانصراف يدوياً وضبط سجلات الدوام'
+  },
+  hr_approve_delays_overtime: {
+    label: '✨ العفو عن التأخيرات والأوفرتايم',
+    badgeClass: 'bg-fuchsia-100 text-fuchsia-900 border-fuchsia-300 font-extrabold',
+    desc: 'العفو عن دقائق التأخير واعتماد أو رفض ساعات العمل الإضافي (الأوفرتايم)'
+  },
+  hr_manage_salary_increments: {
+    label: '📈 إقرار وتعديل زيادات الرواتب',
+    badgeClass: 'bg-blue-100 text-blue-900 border-blue-300 font-extrabold',
+    desc: 'منح وتطبيق زيادات الرواتب الأساسية وتوثيقها في السجل التاريخي'
+  },
+  hr_disburse_payroll: {
+    label: '💳 صرف مسير الرواتب الشهرية',
+    badgeClass: 'bg-teal-100 text-teal-900 border-teal-300 font-extrabold',
+    desc: 'اعتماد وصرف مسير الرواتب الشهرية وإخراج السيولة النقدية من الخزائن'
+  },
+  hr_manage_commissions: {
+    label: '💎 تصفية وصرف العمولات',
+    badgeClass: 'bg-violet-100 text-violet-900 border-violet-300 font-extrabold',
+    desc: 'اعتماد وتصفية وصرف عمولات الخدمات والمبيعات المستحقة للموظفين'
   }
 };
 
@@ -124,7 +174,17 @@ export const SYSTEM_MODULES: SystemModule[] = [
       'manage_employees',
       'manage_salaries',
       'manage_hr',
-      'manage_hr_actions' // ⭐ جديد: كافة إجراءات شؤون العاملين
+      'manage_hr_actions', // ⭐ شامل: كافة إجراءات شؤون العاملين
+      'hr_manage_advances', // 💵 صرف وإدارة السلف
+      'hr_manage_penalties', // ⚠️ تطبيق الجزاءات والخصومات
+      'hr_manage_bonuses', // 🎁 تسجيل وصرف المكافآت
+      'hr_manage_leaves', // 🏖️ إدارة وتسجيل الإجازات
+      'hr_manage_permissions', // ⏱️ أذونات الاستئذان والمأموريات
+      'hr_manage_attendance', // 🕒 تعديل الحضور والدوام اليدوي
+      'hr_approve_delays_overtime', // ✨ العفو عن التأخيرات والأوفرتايم
+      'hr_manage_salary_increments', // 📈 إقرار وتعديل زيادات الرواتب
+      'hr_disburse_payroll', // 💳 صرف مسير الرواتب الشهرية
+      'hr_manage_commissions' // 💎 تصفية وصرف العمولات
     ]
   },
   {

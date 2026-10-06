@@ -342,6 +342,10 @@ export function HRScreen({
 
   const handleApplySalaryIncrement = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!AuthService.canDo('hr_manage_salary_increments', currentUser)) {
+      alert('⛔ عذراً، لا تملك صلاحية إقرار أو تطبيق زيادات الرواتب (hr_manage_salary_increments).');
+      return;
+    }
     const val = Number(incrementValue);
     if (!val || val <= 0) {
       alert('الرجاء إدخال قيمة زيادة صالحة أكبر من صفر');
@@ -1173,6 +1177,10 @@ export function HRScreen({
   }, [timesheetRows, totals]);
 
   const toggleDelayForgive = (rowKey: string, currentVal: boolean) => {
+    if (!AuthService.canDo('hr_approve_delays_overtime', currentUser)) {
+      alert('⛔ عذراً، لا تملك صلاحية العفو عن التأخيرات أو تعديل ساعات الأوفرتايم (hr_approve_delays_overtime).');
+      return;
+    }
     setOverrides(prev => ({
       ...prev,
       [rowKey]: {
@@ -1236,6 +1244,23 @@ export function HRScreen({
   };
 
   const handlePrintRowVoucher = (row: DayTimesheetRow, type: 'advance' | 'penalty' | 'bonus' | 'commission_payout', amount: number, customNote?: string) => {
+    if (type === 'advance' && !AuthService.canDo('hr_manage_advances', currentUser)) {
+      alert('⛔ عذراً، لا تملك صلاحية صرف أو طباعة سندات السلف (hr_manage_advances).');
+      return;
+    }
+    if (type === 'penalty' && !AuthService.canDo('hr_manage_penalties', currentUser)) {
+      alert('⛔ عذراً، لا تملك صلاحية تطبيق أو طباعة سندات الخصم والجزاءات (hr_manage_penalties).');
+      return;
+    }
+    if (type === 'bonus' && !AuthService.canDo('hr_manage_bonuses', currentUser)) {
+      alert('⛔ عذراً، لا تملك صلاحية صرف أو طباعة سندات المكافآت (hr_manage_bonuses).');
+      return;
+    }
+    if (type === 'commission_payout' && !AuthService.canDo('hr_manage_commissions', currentUser)) {
+      alert('⛔ عذراً، لا تملك صلاحية تصفية أو طباعة سندات العمولات (hr_manage_commissions).');
+      return;
+    }
+
     printThermalFinancialVoucher(settings, {
       voucherType: type,
       voucherNumber: `${type === 'commission_payout' ? 'COMM' : type.toUpperCase()}-${Math.floor(100000 + Math.random() * 900000)}`,
@@ -1253,8 +1278,8 @@ export function HRScreen({
 
   const handleSaveAttendance = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!AuthService.canDo('manage_hr_actions', currentUser)) {
-      alert('⛔ عذراً، لا تملك صلاحية إدارة إجراءات شؤون الموظفين والدوام (HR Actions).');
+    if (!AuthService.canDo('hr_manage_attendance', currentUser)) {
+      alert('⛔ عذراً، لا تملك صلاحية تسجيل أو تعديل الحضور والانصراف والدوام اليدوي (hr_manage_attendance).');
       return;
     }
     if (!attendanceForm.empId || !attendanceForm.date) {
@@ -1420,6 +1445,10 @@ export function HRScreen({
   const [isSavingCommissionPayout, setIsSavingCommissionPayout] = useState(false);
 
   const handleOpenCommissionModal = (targetEmpId?: string) => {
+    if (!AuthService.canDo('hr_manage_commissions', currentUser)) {
+      alert('⛔ عذراً، لا تملك صلاحية تصفية أو صرف عمولات الموظفين (hr_manage_commissions).');
+      return;
+    }
     const defaultEmpId = targetEmpId || (viewMode === 'single_employee' && selectedEmpId) || activeEmployees[0]?.id || '';
     setCommEmpId(defaultEmpId);
     setCommDate(getEffectiveDateOnly(shiftData, activeBranchId || settings.branchId));
@@ -1446,6 +1475,10 @@ export function HRScreen({
 
   const handleDisburseCommission = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!AuthService.canDo('hr_manage_commissions', currentUser)) {
+      alert('⛔ عذراً، لا تملك صلاحية اعتماد وصرف عمولات الموظفين (hr_manage_commissions).');
+      return;
+    }
     if (!commEmpId) {
       alert('الرجاء اختيار الموظف المستحق للعمولة');
       return;
@@ -1554,6 +1587,10 @@ export function HRScreen({
   const [isSavingLeave, setIsSavingLeave] = useState(false);
 
   const handleOpenLeaveModal = (targetEmpId?: string) => {
+    if (!AuthService.canDo('hr_manage_leaves', currentUser)) {
+      alert('⛔ عذراً، لا تملك صلاحية تسجيل أو إدارة إجازات الموظفين (hr_manage_leaves).');
+      return;
+    }
     const defaultEmpId = targetEmpId || (viewMode === 'single_employee' && selectedEmpId) || activeEmployees[0]?.id || '';
     setLeaveEmpId(defaultEmpId);
     setLeaveStartDate(now.toISOString().split('T')[0]);
@@ -1578,8 +1615,8 @@ export function HRScreen({
 
   const handleSaveLeave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!AuthService.canDo('manage_hr_actions', currentUser)) {
-      alert('⛔ عذراً، لا تملك صلاحية تسجيل أو تعديل الإجازات (HR Actions).');
+    if (!AuthService.canDo('hr_manage_leaves', currentUser)) {
+      alert('⛔ عذراً، لا تملك صلاحية تسجيل أو اعتماد الإجازات (hr_manage_leaves).');
       return;
     }
     if (!leaveEmpId) {
@@ -1642,6 +1679,10 @@ export function HRScreen({
   };
 
   const handleDeleteLeave = async (empId: string, leaveId: string) => {
+    if (!AuthService.canDo('hr_manage_leaves', currentUser)) {
+      alert('⛔ عذراً، لا تملك صلاحية حذف أو إلغاء الإجازات (hr_manage_leaves).');
+      return;
+    }
     if (!confirm('هل أنت متأكد من إلغاء وحذف هذه الإجازة؟ سيتم إعادة احتساب أيامها في التايم شيت كأيام عمل/غياب طبيعية.')) return;
 
     const targetEmp = employees.find(e => e.id === empId);
@@ -1679,6 +1720,10 @@ export function HRScreen({
   const [isSavingPermission, setIsSavingPermission] = useState(false);
 
   const handleOpenPermissionModal = (targetEmpId?: string, targetDate?: string) => {
+    if (!AuthService.canDo('hr_manage_permissions', currentUser)) {
+      alert('⛔ عذراً، لا تملك صلاحية تسجيل أو اعتماد أذونات الاستئذان (hr_manage_permissions).');
+      return;
+    }
     const defaultEmpId = targetEmpId || (viewMode === 'single_employee' && selectedEmpId) || activeEmployees[0]?.id || '';
     setPermEmpId(defaultEmpId);
     setPermDate(targetDate || (viewMode === 'single_day' && selectedSingleDay) || getEffectiveDateOnly(shiftData, activeBranchId || settings.branchId));
@@ -1721,8 +1766,8 @@ export function HRScreen({
 
   const handleSavePermission = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!AuthService.canDo('manage_hr_actions', currentUser)) {
-      alert('⛔ عذراً، لا تملك صلاحية تسجيل أو اعتماد أذونات الاستئذان (HR Actions).');
+    if (!AuthService.canDo('hr_manage_permissions', currentUser)) {
+      alert('⛔ عذراً، لا تملك صلاحية تسجيل أو اعتماد أذونات الاستئذان (hr_manage_permissions).');
       return;
     }
     if (!permEmpId) {
@@ -1781,8 +1826,8 @@ export function HRScreen({
   };
 
   const handleDeletePermission = async (empId: string, permId: string) => {
-    if (!AuthService.canDo('manage_hr_actions', currentUser)) {
-      alert('⛔ عذراً، لا تملك صلاحية حذف أذونات الاستئذان (HR Actions).');
+    if (!AuthService.canDo('hr_manage_permissions', currentUser)) {
+      alert('⛔ عذراً، لا تملك صلاحية حذف أذونات الاستئذان (hr_manage_permissions).');
       return;
     }
     if (!confirm('هل أنت متأكد من حذف هذا الإذن؟ سيتم إلغاء أثره من التايم شيت فوراً.')) return;
@@ -1860,6 +1905,10 @@ export function HRScreen({
   }, [activeEmployees, timesheetRows, hrConfig, startDate, endDate, selectedMonth, employees]);
 
   const handleOpenDisbursementModal = () => {
+    if (!AuthService.canDo('hr_disburse_payroll', currentUser)) {
+      alert('⛔ عذراً، لا تملك صلاحية صرف أو اعتماد مسير الرواتب الشهرية (hr_disburse_payroll).');
+      return;
+    }
     // تحديد الموظفين الذين لم يتم صرف رواتبهم بعد لهذا الشهر ولهم مبالغ مستحقة
     const unpaidEmpIds = payrollDisbursementData.filter(d => !d.isAlreadyPaid && d.netPayable > 0).map(d => d.emp.id);
     setSelectedDisbursementEmpIds(unpaidEmpIds);
@@ -1869,6 +1918,10 @@ export function HRScreen({
   };
 
   const handleReprintDisbursementVoucher = (item: (typeof payrollDisbursementData)[0]) => {
+    if (!AuthService.canDo('hr_disburse_payroll', currentUser)) {
+      alert('⛔ عذراً، لا تملك صلاحية إعادة طباعة سندات مسير الرواتب (hr_disburse_payroll).');
+      return;
+    }
     const treasuryName = settings.treasuries.find(t => t.id === item.paidRecord?.treasuryId || t.id === disbursementTreasuryId)?.name || 'الخزنة';
     printThermalFinancialVoucher(settings, {
       voucherType: 'salary',
@@ -1886,6 +1939,10 @@ export function HRScreen({
   };
 
   const handleDisburseSalaries = async (targetEmpIds: string[]) => {
+    if (!AuthService.canDo('hr_disburse_payroll', currentUser)) {
+      alert('⛔ عذراً، لا تملك صلاحية صرف أو اعتماد مسير الرواتب الشهرية (hr_disburse_payroll).');
+      return;
+    }
     if (!targetEmpIds || targetEmpIds.length === 0) {
       alert('الرجاء تحديد موظف واحد على الأقل لصرف راتبه');
       return;
@@ -2064,6 +2121,10 @@ export function HRScreen({
 
           <button
             onClick={() => {
+              if (!AuthService.canDo('hr_manage_attendance', currentUser)) {
+                alert('⛔ عذراً، لا تملك صلاحية تسجيل أو تعديل الحضور والانصراف والدوام اليدوي (hr_manage_attendance).');
+                return;
+              }
               setAttendanceForm({
                 empId: selectedEmpId || activeEmployees[0]?.id || '',
                 date: selectedSingleDay || now.toISOString().split('T')[0],
@@ -2075,7 +2136,13 @@ export function HRScreen({
               });
               setShowAttendanceModal(true);
             }}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+            disabled={!AuthService.canDo('hr_manage_attendance', currentUser)}
+            className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer ${
+              !AuthService.canDo('hr_manage_attendance', currentUser)
+                ? 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-60'
+                : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+            }`}
+            title={!AuthService.canDo('hr_manage_attendance', currentUser) ? 'ليس لديك صلاحية تسجيل أو تعديل الحضور والانصراف' : 'تسجيل أو تعديل حضور يدوي'}
           >
             <Plus size={15} />
             <span>تسجيل / تعديل حضور ⏱️</span>
@@ -2083,6 +2150,10 @@ export function HRScreen({
 
           <button
             onClick={() => {
+              if (!AuthService.canDo('hr_manage_salary_increments', currentUser)) {
+                alert('⛔ عذراً، لا تملك صلاحية إقرار أو تطبيق زيادات الرواتب (hr_manage_salary_increments).');
+                return;
+              }
               setTargetEmpId(selectedEmpId || activeEmployees[0]?.id || '');
               setSelectedEmpIdsForBulk(activeEmployees.map(e => e.id));
               setIncrementValue(10);
@@ -2092,7 +2163,13 @@ export function HRScreen({
               setApprovedBy(currentUser?.name || 'مدير النظام');
               setShowSalaryIncrementModal(true);
             }}
-            className="bg-purple-600 hover:bg-purple-700 text-white px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md shadow-purple-600/20 transition-all cursor-pointer"
+            disabled={!AuthService.canDo('hr_manage_salary_increments', currentUser)}
+            className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md transition-all cursor-pointer ${
+              !AuthService.canDo('hr_manage_salary_increments', currentUser)
+                ? 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-60'
+                : 'bg-purple-600 hover:bg-purple-700 text-white shadow-purple-600/20'
+            }`}
+            title={!AuthService.canDo('hr_manage_salary_increments', currentUser) ? 'ليس لديك صلاحية تسجيل وزيادة الرواتب' : 'تسجيل زيادة راتب'}
           >
             <TrendingUp size={15} />
             <span>تسجيل زيادة راتب 📈</span>
@@ -2108,7 +2185,13 @@ export function HRScreen({
 
           <button
             onClick={() => handleOpenLeaveModal()}
-            className="bg-sky-600 hover:bg-sky-700 text-white px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md shadow-sky-600/20 transition-all cursor-pointer"
+            disabled={!AuthService.canDo('hr_manage_leaves', currentUser)}
+            className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md transition-all cursor-pointer ${
+              !AuthService.canDo('hr_manage_leaves', currentUser)
+                ? 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-60'
+                : 'bg-sky-600 hover:bg-sky-700 text-white shadow-sky-600/20'
+            }`}
+            title={!AuthService.canDo('hr_manage_leaves', currentUser) ? 'ليس لديك صلاحية تسجيل الإجازات' : 'تسجيل إجازة'}
           >
             <Palmtree size={15} />
             <span>تسجيل إجازة 🏖️</span>
@@ -2124,7 +2207,13 @@ export function HRScreen({
 
           <button
             onClick={() => handleOpenPermissionModal()}
-            className="bg-teal-600 hover:bg-teal-700 text-white px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md shadow-teal-600/20 transition-all cursor-pointer"
+            disabled={!AuthService.canDo('hr_manage_permissions', currentUser)}
+            className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md transition-all cursor-pointer ${
+              !AuthService.canDo('hr_manage_permissions', currentUser)
+                ? 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-60'
+                : 'bg-teal-600 hover:bg-teal-700 text-white shadow-teal-600/20'
+            }`}
+            title={!AuthService.canDo('hr_manage_permissions', currentUser) ? 'ليس لديك صلاحية تسجيل الاستئذانات' : 'تسجيل استئذان'}
           >
             <Timer size={15} />
             <span>تسجيل استئذان ⏱️</span>
@@ -2159,7 +2248,13 @@ export function HRScreen({
 
           <button
             onClick={() => handleOpenCommissionModal()}
-            className="bg-amber-600 hover:bg-amber-700 text-white px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md shadow-amber-600/20 transition-all cursor-pointer"
+            disabled={!AuthService.canDo('hr_manage_commissions', currentUser)}
+            className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md transition-all cursor-pointer ${
+              !AuthService.canDo('hr_manage_commissions', currentUser)
+                ? 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-60'
+                : 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-600/20'
+            }`}
+            title={!AuthService.canDo('hr_manage_commissions', currentUser) ? 'ليس لديك صلاحية صرف عمولة' : 'صرف عمولة'}
           >
             <Coins size={15} />
             <span>صرف عمولة 💵</span>
@@ -2167,7 +2262,13 @@ export function HRScreen({
 
           <button
             onClick={handleOpenDisbursementModal}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
+            disabled={!AuthService.canDo('hr_disburse_payroll', currentUser)}
+            className={`px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md transition-all cursor-pointer ${
+              !AuthService.canDo('hr_disburse_payroll', currentUser)
+                ? 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-60'
+                : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20'
+            }`}
+            title={!AuthService.canDo('hr_disburse_payroll', currentUser) ? 'ليس لديك صلاحية صرف مسير الرواتب' : 'صرف مسير الرواتب 💰'}
           >
             <DollarSign size={16} />
             <span>صرف مسير الرواتب 💰</span>

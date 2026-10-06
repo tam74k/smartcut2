@@ -88,7 +88,18 @@ export const ACTION_CATALOG: ActionMeta[] = [
   { id: 'manage_employees', name: 'إضافة وتعديل بيانات الموظفين والفنيين', category: 'الموظفون والعملاء', description: 'التحكم في سجلات الكادر الفني والإداري' },
   { id: 'manage_salaries', name: 'تعديل الرواتب ونسب العمولات وصرف السلف', category: 'الموظفون والعملاء', description: 'صرف المستحقات المالية وعمولات الخدمات والسلف والخصومات' },
   { id: 'manage_hr', name: 'إدارة سجلات الحضور والانصراف (التايم شيت)', category: 'الموظفون والعملاء', description: 'تسجيل الحضور اليدوي وتعديل سجلات الدوام والأوفرتايم' },
-  { id: 'manage_hr_actions', name: 'إدارة كافة إجراءات شؤون العاملين (HR Actions)', category: 'الموظفون والعملاء', description: 'التحكم في كافة إجراءات HR: الجزاءات، المكافآت، الخصومات، أذونات الاستئذان، والإجازات' },
+  { id: 'manage_hr_actions', name: 'إدارة كافة إجراءات شؤون العاملين (شاملة)', category: 'الموظفون والعملاء', description: 'صلاحية شاملة لكافة إجراءات HR: السلف، الجزاءات، المكافآت، الإجازات، والأذونات ومسير الرواتب' },
+  // Granular HR Actions:
+  { id: 'hr_manage_advances', name: 'صرف وإدارة السلف النقدية للموظفين', category: 'الموظفون والعملاء', description: 'السماح بصرف السلف النقدية السريعة وسندات السلف على حساب الراتب من الخزائن' },
+  { id: 'hr_manage_penalties', name: 'تطبيق الجزاءات والخصومات الإدارية', category: 'الموظفون والعملاء', description: 'السماح بخصم مبالغ نقدية أو خصم أيام جزاءات إدارية من الموظفين' },
+  { id: 'hr_manage_bonuses', name: 'تسجيل وصرف المكافآت والحوافز التشجيعية', category: 'الموظفون والعملاء', description: 'السماح بصرف مكافآت التميز وحوافز الأداء والتقدير المالي للموظفين' },
+  { id: 'hr_manage_leaves', name: 'تسجيل واعتماد وحذف إجازات الموظفين', category: 'الموظفون والعملاء', description: 'التحكم في تسجيل الإجازات المدفوعة وغير المدفوعة وإدارتها وتعديلها' },
+  { id: 'hr_manage_permissions', name: 'تسجيل واعتماد أذونات الاستئذان والمأموريات', category: 'الموظفون والعملاء', description: 'تسجيل وإقرار أذونات الخروج المؤقت (أول الدوام، وسط الدوام) والمأموريات الرسمية' },
+  { id: 'hr_manage_attendance', name: 'تسجيل وتعديل الحضور والانصراف والدوام اليدوي', category: 'الموظفون والعملاء', description: 'تسجيل وتعديل بصمات الحضور والانصراف يدوياً وضبط سجلات التايم شيت' },
+  { id: 'hr_approve_delays_overtime', name: 'العفو عن التأخيرات واعتماد ساعات الأوفرتايم', category: 'الموظفون والعملاء', description: 'السماح بالعفو عن دقائق التأخير واستثنائها، واعتماد أو رفض ساعات الأوفرتايم الإضافية' },
+  { id: 'hr_manage_salary_increments', name: 'إقرار وتعديل زيادات وعلاوات الرواتب الأساسية', category: 'الموظفون والعملاء', description: 'منح زيادات الرواتب الأساسية ومتابعة سجل الزيادات وتاريخ العلاوات' },
+  { id: 'hr_disburse_payroll', name: 'اعتماد وصرف مسير الرواتب الشهرية من الخزائن', category: 'الموظفون والعملاء', description: 'إصدار وصرف مسير الرواتب الشهرية المجمعة وإخراج مبالغ الرواتب من الخزينة' },
+  { id: 'hr_manage_commissions', name: 'اعتماد وتصفية وصرف عمولات الخدمات والمبيعات', category: 'الموظفون والعملاء', description: 'تصفية وصرف مستحقات العمولات التراكمية للفنيين والموظفين وإصدار سنداتها' },
   { id: 'manage_clients', name: 'إدارة وتعديل وحذف بيانات العملاء', category: 'الموظفون والعملاء', description: 'التحكم في قاعدة بيانات العملاء ونقاط الولاء' },
   { id: 'manage_booking_settings', name: 'ضبط إعدادات الحجوزات وإغلاق الساعات والأيام', category: 'الموظفون والعملاء', description: 'التحكم في إغلاق الأيام والساعات وسعة الحجوزات وإتاحة الفنيين' },
   { id: 'manage_bookings_delete', name: 'حذف الحجوزات والمواعيد نهائياً', category: 'الموظفون والعملاء', description: 'السماح بإظهار واستخدام زر الحذف النهائي للحجز من النظام وقاعدة البيانات' },
@@ -617,6 +628,13 @@ export class AuthService {
     if (u.role === 'programmer') return true;
     if (u.role === 'admin' || u.role === 'owner') return true;
     if (u.actions?.includes('*')) return true;
+
+    // Granular HR actions hierarchy fallback:
+    // If user has the overarching 'manage_hr_actions', they can perform any specific HR action
+    if (action.startsWith('hr_') && u.actions?.includes('manage_hr_actions')) {
+      return true;
+    }
+
     return u.actions?.includes(action) || false;
   }
 

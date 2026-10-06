@@ -227,6 +227,19 @@ export function EmployeesScreen({
   });
 
   const handleOpenQuickAction = (type: 'advance' | 'bonus' | 'penalty', defaultEmpId?: string) => {
+    if (type === 'advance' && !AuthService.canDo('hr_manage_advances', currentUser)) {
+      alert('⛔ عذراً، لا تملك صلاحية صرف السلف النقدية للموظفين (hr_manage_advances).');
+      return;
+    }
+    if (type === 'bonus' && !AuthService.canDo('hr_manage_bonuses', currentUser)) {
+      alert('⛔ عذراً، لا تملك صلاحية تسجيل أو صرف المكافآت للموظفين (hr_manage_bonuses).');
+      return;
+    }
+    if (type === 'penalty' && !AuthService.canDo('hr_manage_penalties', currentUser)) {
+      alert('⛔ عذراً، لا تملك صلاحية تطبيق الخصومات أو الجزاءات على الموظفين (hr_manage_penalties).');
+      return;
+    }
+
     setQuickActionForm({
       type,
       empId: defaultEmpId || employees[0]?.id || '',
@@ -243,6 +256,19 @@ export function EmployeesScreen({
   const handleExecuteQuickAction = () => {
     if (!quickActionForm.empId) {
       alert('الرجاء اختيار الموظف أولاً');
+      return;
+    }
+
+    if (quickActionForm.type === 'advance' && !AuthService.canDo('hr_manage_advances', currentUser)) {
+      alert('⛔ عذراً، لا تملك صلاحية صرف السلف النقدية للموظفين.');
+      return;
+    }
+    if (quickActionForm.type === 'bonus' && !AuthService.canDo('hr_manage_bonuses', currentUser)) {
+      alert('⛔ عذراً، لا تملك صلاحية تسجيل أو صرف المكافآت للموظفين.');
+      return;
+    }
+    if (quickActionForm.type === 'penalty' && !AuthService.canDo('hr_manage_penalties', currentUser)) {
+      alert('⛔ عذراً، لا تملك صلاحية تطبيق الخصومات أو الجزاءات على الموظفين.');
       return;
     }
 
@@ -930,21 +956,39 @@ export function EmployeesScreen({
           <div className="flex flex-wrap items-center gap-2 mt-3 sm:mt-0">
             <button
               onClick={() => handleOpenQuickAction('advance')}
-              className="bg-amber-500 hover:bg-amber-600 text-white px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+              disabled={!AuthService.canDo('hr_manage_advances', currentUser)}
+              className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-all ${
+                AuthService.canDo('hr_manage_advances', currentUser)
+                  ? 'bg-amber-500 hover:bg-amber-600 text-white cursor-pointer'
+                  : 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-60'
+              }`}
+              title={AuthService.canDo('hr_manage_advances', currentUser) ? 'صرف سلفة سريعة' : '⛔ ليس لديك صلاحية صرف سلف'}
             >
               <Banknote size={15} />
               <span>+ سلفة سريعة</span>
             </button>
             <button
               onClick={() => handleOpenQuickAction('bonus')}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+              disabled={!AuthService.canDo('hr_manage_bonuses', currentUser)}
+              className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-all ${
+                AuthService.canDo('hr_manage_bonuses', currentUser)
+                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer'
+                  : 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-60'
+              }`}
+              title={AuthService.canDo('hr_manage_bonuses', currentUser) ? 'تسجيل مكافأة سريعة' : '⛔ ليس لديك صلاحية تسجيل مكافآت'}
             >
               <Gift size={15} />
               <span>+ مكافأة سريعة</span>
             </button>
             <button
               onClick={() => handleOpenQuickAction('penalty')}
-              className="bg-rose-600 hover:bg-rose-700 text-white px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+              disabled={!AuthService.canDo('hr_manage_penalties', currentUser)}
+              className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-all ${
+                AuthService.canDo('hr_manage_penalties', currentUser)
+                  ? 'bg-rose-600 hover:bg-rose-700 text-white cursor-pointer'
+                  : 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-60'
+              }`}
+              title={AuthService.canDo('hr_manage_penalties', currentUser) ? 'تسجيل خصم أو جزاء' : '⛔ ليس لديك صلاحية تطبيق خصومات'}
             >
               <DollarSign size={15} />
               <span>+ خصم سريع</span>

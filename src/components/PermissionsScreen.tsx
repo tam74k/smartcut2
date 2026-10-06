@@ -883,13 +883,13 @@ export function PermissionsScreen({
 
                 <div className="bg-white/10 hover:bg-white/15 border border-purple-400/30 rounded-2xl p-3.5 backdrop-blur-sm transition-all">
                   <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-xs font-black text-purple-300">3. إجراءات شؤون العاملين (HR)</span>
+                    <span className="text-xs font-black text-purple-300">3. إجراءات HR التفصيلية (10 صلاحيات)</span>
                     <span className="text-[10px] bg-purple-400/20 text-purple-200 px-2 py-0.5 rounded-full font-bold">
-                      manage_hr_actions
+                      hr_manage_*
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-300 leading-relaxed">
-                    التحكم في كافة إجراءات HR: الجزاءات، المكافآت، الخصومات، أذونات الاستئذان، والإجازات مع الفحص البرمجي في واجهة HR.
+                    تقسيم تفصيلي كامل: فصل صرف السلف عن الجزاءات والخصومات والمكافآت والإجازات والأذونات وصرف مسير الرواتب بدقة متناهية.
                   </p>
                 </div>
               </div>
