@@ -18,6 +18,7 @@ export function WarehouseScreen({
   products,
   setProducts,
   categories,
+  setCategories,
   employees,
   suppliers,
   setSuppliers,
@@ -40,6 +41,7 @@ export function WarehouseScreen({
   products: Product[];
   setProducts: (p: Product[]) => void;
   categories: Category[];
+  setCategories?: (c: Category[] | ((prev: Category[]) => Category[])) => void;
   employees: Employee[];
   suppliers: Supplier[];
   setSuppliers: (s: Supplier[]) => void;
@@ -247,6 +249,7 @@ export function WarehouseScreen({
           products={products}
           setProducts={setProducts}
           categories={categories}
+          setCategories={setCategories}
           employees={employees}
           suppliers={suppliers}
           setSuppliers={setSuppliers}

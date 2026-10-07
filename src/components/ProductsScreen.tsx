@@ -10,6 +10,7 @@ export function ProductsScreen({
   products, 
   setProducts, 
   categories, 
+  setCategories,
   employees, 
   suppliers = [],
   setSuppliers,
@@ -19,6 +20,7 @@ export function ProductsScreen({
   products: Product[]; 
   setProducts: (p: Product[] | ((prev: Product[]) => Product[])) => void;
   categories: Category[];
+  setCategories?: (c: Category[] | ((prev: Category[]) => Category[])) => void;
   employees: Employee[];
   suppliers?: Supplier[];
   setSuppliers?: (s: Supplier[]) => void;
@@ -44,7 +46,7 @@ export function ProductsScreen({
 
   const [formData, setFormData] = useState({
     name: '',
-    categoryId: categories[0]?.id || '',
+    categoryId: '',
     supplierId: '',
     productType: 'retail' as 'retail' | 'raw_material',
     sellPrice: '',
@@ -86,9 +88,8 @@ export function ProductsScreen({
   };
 
   const productCategories = useMemo(() => {
-    const pCats = categories.filter(c => c.id !== 'all' && c.type === 'product');
-    return pCats.length > 0 ? pCats : categories.filter(c => c.id !== 'all');
-  }, [categories]);
+    return categories.filter(c => c.id !== 'all' && (c.type === 'product' || products.some(p => p.categoryId === c.id)));
+  }, [categories, products]);
 
   const filteredProducts = products.filter(p => {
     const q = normalizeText(searchQuery);
@@ -386,7 +387,9 @@ export function ProductsScreen({
     try {
       const newProducts: Product[] = [];
       const currentSuppliersList = [...suppliers];
+      const currentCategoriesList = [...categories];
       let addedSuppliersCount = 0;
+      let addedCategoriesCount = 0;
       let successCount = 0;
 
       for (let idx = 0; idx < importedRows.length; idx++) {
@@ -396,12 +399,36 @@ export function ProductsScreen({
         const name = String(row['اسم المنتج'] || row['المنتج'] || row['Product Name'] || row['name'] || '').trim();
         if (!name) continue;
 
+        // قراءة اسم التصنيف بدقة من ملف الإكسل
         const catName = String(row['اسم التصنيف'] || row['التصنيف'] || row['Category'] || row['category'] || '').trim();
-        let matchedCategory = categories.find(c => normalizeText(c.name) === normalizeText(catName));
-        
-        // إذا لم يكن التصنيف موجوداً، ابحث عن أول تصنيف صالح للمنتجات أو اترك الحقل فارغاً
-        if (!matchedCategory && catName) {
-          matchedCategory = categories.find(c => c.id !== 'all' && c.type === 'product') || categories[0];
+        let matchedCategory: Category | undefined;
+
+        if (catName) {
+          // 1. البحث حصراً في تصنيفات المنتجات (type === 'product') لضمان عدم الخلط مع تصنيفات الخدمات
+          matchedCategory = currentCategoriesList.find(c => 
+            c.id !== 'all' && 
+            c.type === 'product' && 
+            normalizeText(c.name) === normalizeText(catName)
+          );
+
+          // 2. إذا لم يكن التصنيف موجوداً ضمن تصنيفات المنتجات، يتم إنشاؤه كتصنيف منتجات جديد فوراً والالتزام باسمه الوارد في الإكسل
+          if (!matchedCategory) {
+            const newCategory: Category = {
+              id: 'CAT-' + Math.random().toString(36).substr(2, 9) + '-' + Date.now() + '-' + (idx + 1),
+              name: catName, // الالتزام باسم التصنيف كما جاء في الإكسل تماماً
+              type: 'product', // تصنيف خاص بالمنتجات حصراً
+              icon: 'Package',
+              salonId: settings.salonId,
+              branchId: settings.branchId
+            };
+
+            currentCategoriesList.push(newCategory);
+            addedCategoriesCount++;
+            matchedCategory = newCategory;
+
+            // حفظ التصنيف في قاعدة بيانات Supabase فوراً
+            await DB.saveCategory(newCategory, settings.salonId);
+          }
         }
 
         // قراءة المورد والربط به
@@ -471,6 +498,15 @@ export function ProductsScreen({
         setSuppliers(currentSuppliersList);
       }
 
+      if (addedCategoriesCount > 0 && setCategories) {
+        setCategories(prev => {
+          const prevList = Array.isArray(prev) ? prev : [];
+          const existingIds = new Set(prevList.map(c => c.id));
+          const uniqueNew = currentCategoriesList.filter(c => !existingIds.has(c.id));
+          return [...prevList, ...uniqueNew];
+        });
+      }
+
       // تحديث الحالة المحلية للمنتجات
       setProducts(prev => {
         const prevList = Array.isArray(prev) ? prev : [];
@@ -482,7 +518,13 @@ export function ProductsScreen({
       setShowImportModal(false);
       setImportedRows([]);
       setImportFileName('');
-      alert(`تم استيراد ورفع ${successCount} منتج بنجاح إلى قاعدة البيانات!${addedSuppliersCount > 0 ? ` (وتم تسجيل ${addedSuppliersCount} مورد جديد تلقائياً)` : ''}`);
+      
+      let alertMsg = `تم استيراد ورفع ${successCount} منتج بنجاح إلى قاعدة البيانات!`;
+      const notes: string[] = [];
+      if (addedCategoriesCount > 0) notes.push(`تمت إضافة ${addedCategoriesCount} تصنيف منتجات جديد تلقائياً`);
+      if (addedSuppliersCount > 0) notes.push(`تم تسجيل ${addedSuppliersCount} مورد جديد تلقائياً`);
+      if (notes.length > 0) alertMsg += ` (${notes.join(' ، ')})`;
+      alert(alertMsg);
     } catch (err: any) {
       console.error('Error during import execution:', err);
       setImportError('حدث خطأ أثناء رفع المنتجات لقاعدة البيانات: ' + (err.message || ''));
@@ -527,7 +569,7 @@ export function ProductsScreen({
             setEditingProductId(null);
             setFormData({
               name: '', 
-              categoryId: categories.find(c => c.id !== 'all' && c.type === 'product')?.id || categories[0]?.id || '', 
+              categoryId: productCategories[0]?.id || '', 
               supplierId: '',
               productType: 'retail',
               sellPrice: '', 
@@ -630,7 +672,7 @@ export function ProductsScreen({
                         </span>
                       )}
                     </td>
-                    <td className="p-4 text-slate-600 whitespace-nowrap">{categories.find(c => c.id === p.categoryId)?.name}</td>
+                    <td className="p-4 text-slate-600 whitespace-nowrap">{categories.find(c => c.id === p.categoryId)?.name || p.categoryId || '—'}</td>
                     <td className="p-4 text-slate-600 font-medium whitespace-nowrap">
                       {suppliers.find(s => s.id === p.supplierId)?.name || p.supplierName || '—'}
                     </td>
@@ -785,6 +827,7 @@ export function ProductsScreen({
                 <div>
                   <label className="block text-sm font-bold text-slate-700 mb-1">التصنيف</label>
                   <select value={formData.categoryId} onChange={e => setFormData({...formData, categoryId: e.target.value})} className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary">
+                    <option value="">-- اختر التصنيف --</option>
                     {productCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
                 </div>

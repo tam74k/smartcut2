@@ -1423,7 +1423,12 @@ export function POSScreen({
     const isService = itemTypeFilter === 'service';
     const activeList = isService 
       ? (items || []).filter(i => i.isActive !== false) 
-      : (products || []).filter(p => (!p.productType || p.productType === 'retail') && p.isActive !== false);
+      : (products || []).filter(p => 
+          (!p.productType || p.productType === 'retail' || (p as any).product_type === 'retail') && 
+          p.productType !== 'raw_material' && 
+          (p as any).product_type !== 'raw_material' && 
+          p.isActive !== false
+        );
 
     const result: { id: string; name: string }[] = [];
     const seenKeys = new Set<string>();
@@ -1452,21 +1457,22 @@ export function POSScreen({
           isRelevant = usedByService || !usedByProduct;
         }
       } else {
-        // المنتجات
-        if (cat.type === 'product') {
-          isRelevant = true;
-        } else {
-          // فحص هل المنتجات الحالية تستخدم هذا التصنيف
-          const usedByProduct = activeList.some((p: any) => 
-            p.categoryId === cat.id || 
-            (p as any).category_id === cat.id ||
-            normalizeText(p.categoryId || '') === catNorm ||
-            normalizeText(p.category || '') === catNorm
-          );
-          if (usedByProduct) {
-            isRelevant = true;
+        // المنتجات: يجب حصراً أن يحتوي التصنيف على منتج واحد على الأقل مصنف كـ "منتج للبيع" (Retail)
+        // التصنيفات التي تحتوي فقط على مواد خام (raw_material) أو تصنيفات المنتجات التي ليس بها سلع للبيع يتم استبعادها تماماً
+        const hasForSaleProduct = activeList.some((p: any) => {
+          const pCatId = (p.categoryId || (p as any).category_id || '').toString().trim();
+          const pCatName = ((p as any).category || '').toString().trim();
+          if (pCatId && pCatId === cat.id) return true;
+          if (pCatName && pCatName === cat.name) return true;
+          if (pCatId && (normalizeText(pCatId) === catNorm || normalizeText(pCatId) === normalizeText(cat.id))) return true;
+          if (pCatName && normalizeText(pCatName) === catNorm) return true;
+          if (pCatId) {
+            const knownCat = categories.find(c => c.id === pCatId);
+            if (knownCat && (knownCat.id === cat.id || normalizeText(knownCat.name) === catNorm)) return true;
           }
-        }
+          return false;
+        });
+        isRelevant = hasForSaleProduct;
       }
 
       if (isRelevant && !seenKeys.has(catNorm)) {
@@ -1526,7 +1532,12 @@ export function POSScreen({
 
   // ⚡ قائمة المنتجات النشطة المجهزة بالذاكرة
   const allActiveProducts = useMemo(() => {
-    const prods = (products || []).filter(p => (!p.productType || p.productType === 'retail') && p.isActive !== false);
+    const prods = (products || []).filter(p => 
+      (!p.productType || p.productType === 'retail' || (p as any).product_type === 'retail') && 
+      p.productType !== 'raw_material' && 
+      (p as any).product_type !== 'raw_material' && 
+      p.isActive !== false
+    );
     return prods.map(p => {
       const originalPrice = Number(p.sellPrice) || 0;
       return {

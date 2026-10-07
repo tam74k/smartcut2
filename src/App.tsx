@@ -2678,6 +2678,7 @@ export default function App() {
             products={branchProducts}
             setProducts={handleSetProducts}
             categories={branchCategories}
+            setCategories={handleSetCategories}
             employees={branchEmployees}
             suppliers={branchSuppliers}
             setSuppliers={handleSetSuppliers}
