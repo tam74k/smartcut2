@@ -564,8 +564,26 @@ const isBookingAdvanceTrx = (t: any) => {
   const desc = (t.description || '').toLowerCase();
   if (cat === 'booking_advance' || cat === 'مقدم حجز' || cat === 'عربون حجز' || cat === 'عربون' || cat === 'حجز') return true;
   if (cat === 'advance' && !desc.includes('سلف')) return true;
-  if (desc.includes('مقدم حجز') || desc.includes('عربون حجز') || desc.includes('عربون')) return true;
+  if (desc.includes('مقدم حجز') || desc.includes('عربون حجز') || desc.includes('عربون') || desc.includes('دفعة مقدمة')) return true;
   return false;
+};
+
+// استخراج التاريخ الفعلي لسداد مقدم الحجز (تاريخ الدفعة أو تاريخ إنشاء الحجز) دون الاعتماد على موعد تنفيذ الحجز
+const getAdvanceEffectiveDate = (adv: any, b: any): string => {
+  const advDate = adv?.date;
+  if (advDate && typeof advDate === 'string' && advDate.trim()) {
+    return advDate.includes('T') ? advDate.split('T')[0].trim() : advDate.split(' ')[0].trim();
+  }
+  const created = (b as any)?.createdAt || (b as any)?.created_at;
+  if (created && typeof created === 'string' && created.trim()) {
+    return created.includes('T') ? created.split('T')[0].trim() : created.split(' ')[0].trim();
+  }
+  // الموعد المجدول كحل أخير فقط إذا لم يتوفر أي تاريخ إنشاء أو سداد
+  const scheduled = b?.date;
+  if (scheduled && typeof scheduled === 'string' && scheduled.trim()) {
+    return scheduled.includes('T') ? scheduled.split('T')[0].trim() : scheduled.split(' ')[0].trim();
+  }
+  return '';
 };
 
 // أدوات مساعدة لقراءة تفاصيل الحجوزات ومقدمات الحجز والخدمات بدقة عالية
@@ -586,15 +604,121 @@ const getBookingAdvancesList = (b: any): any[] => {
     : (typeof b.advance_payments === 'string'
       ? (() => { try { return JSON.parse(b.advance_payments); } catch { return []; } })()
       : []);
-  if (advances.length > 0) return advances;
+  const effectiveCreationDate = (b as any)?.createdAt || (b as any)?.created_at || b?.date || '';
+  if (advances.length > 0) {
+    return advances.map((a: any, idx: number) => ({
+      id: a.id || `${b.id}-adv-${idx}`,
+      amount: Number(a.amount) || 0,
+      treasuryId: a.treasuryId,
+      treasuryName: a.treasuryName,
+      date: a.date ? (a.date.includes('T') ? a.date.split('T')[0].trim() : a.date.split(' ')[0].trim()) : (effectiveCreationDate.includes('T') ? effectiveCreationDate.split('T')[0].trim() : effectiveCreationDate),
+      time: a.time,
+      paymentMethod: a.paymentMethod || a.payment_method || 'cash',
+      notes: a.notes
+    }));
+  }
   if (Number(b.advancePayment || 0) > 0) {
     return [{
+      id: `adv-${b.id || 'legacy'}`,
       amount: Number(b.advancePayment),
-      date: b.date || b.createdAt,
-      paymentMethod: b.paymentMethod || 'cash'
+      date: effectiveCreationDate.includes('T') ? effectiveCreationDate.split('T')[0].trim() : effectiveCreationDate,
+      paymentMethod: b.paymentMethod || 'cash',
+      notes: b.notes
     }];
   }
   return [];
+};
+
+// مطابقة حركة مالية بحجز بطريقة آمنة وصارمة تمنع المطابقة العشوائية
+const findBookingForAdvanceTrx = (t: any, allBookings: any[]): any | null => {
+  if (!allBookings || allBookings.length === 0) return null;
+
+  // 1. مطابقة مباشرة بمعرف الحجز bookingId
+  const tBookingId = (t.bookingId || (t as any).booking_id || '').trim();
+  if (tBookingId) {
+    const byId = allBookings.find(b => b.id === tBookingId || b.bookingCode === tBookingId);
+    if (byId) return byId;
+  }
+
+  const desc = (t.description || '').trim();
+  if (!desc) return null;
+
+  // 2. مطابقة بكود الحجز (يشترط أن يكون الكود حرفين فأكثر)
+  const byCode = allBookings.find(b => {
+    const code = (b.bookingCode || '').trim();
+    return code.length >= 2 && desc.includes(code);
+  });
+  if (byCode) return byCode;
+
+  // 3. مطابقة بمعرف الحجز داخل الوصف (يشترط ألا يقل عن 4 أحرف)
+  const byBookingIdInDesc = allBookings.find(b => {
+    const id = (b.id || '').trim();
+    return id.length >= 4 && desc.includes(id);
+  });
+  if (byBookingIdInDesc) return byBookingIdInDesc;
+
+  // 4. مطابقة برقم هاتف العميل (يشترط ألا يقل عن 7 أرقام)
+  const byPhone = allBookings.find(b => {
+    const phone = (b.phone || b.clientPhone || '').trim();
+    return phone.length >= 7 && desc.includes(phone);
+  });
+  if (byPhone) return byPhone;
+
+  // 5. مطابقة باسم العميل (يشترط ألا يقل الاسم عن 3 أحرف منعاً للمطابقة العشوائية)
+  const byName = allBookings.find(b => {
+    const name = (b.clientName || '').trim();
+    return name.length >= 3 && desc.includes(name);
+  });
+  if (byName) return byName;
+
+  return null;
+};
+
+// استخراج اسم العميل من نص الوصف عند عدم العثور على الحجز المقترن
+const extractClientFromDesc = (desc: string): string => {
+  if (!desc) return 'عميل حجز';
+  const clientMatch = desc.match(/العميل\s*:\s*([^,\n\r\-]+)/);
+  if (clientMatch && clientMatch[1]?.trim()) {
+    return clientMatch[1].trim();
+  }
+  const clean = desc.replace(/^(دفعة\s*مقدمة\s*(\/|\-)?\s*)?(مقدم|عربون)\s*حجز\s*[:-]?\s*/i, '').trim();
+  return clean || 'عميل حجز';
+};
+
+// استخراج كود الحجز من نص الوصف
+const extractBookingCodeFromDesc = (desc: string): string => {
+  if (!desc) return 'حجز';
+  const codeMatch = desc.match(/#(B-[\w-]+|\d+)/i) || desc.match(/\b(B-\d+)\b/i);
+  if (codeMatch && codeMatch[1]) {
+    return codeMatch[1].startsWith('#') ? codeMatch[1] : `#${codeMatch[1]}`;
+  }
+  return 'حجز';
+};
+
+// فحص عدم التكرار بين الدفعة المقدمة وسجلات المعاملات المالية المباشرة
+const isAdvanceAlreadyInTrx = (adv: any, b: any, periodAdvTrx: any[]): boolean => {
+  const advAmt = Number(adv.amount) || 0;
+  if (advAmt <= 0) return false;
+
+  return periodAdvTrx.some(t => {
+    const tAmt = Number(t.amount) || 0;
+    if (Math.abs(tAmt - advAmt) > 0.01) return false;
+
+    // تطابق المعرف المباشر
+    if (adv.id && t.id && (t.id === adv.id || t.id.includes(adv.id))) return true;
+
+    // تطابق معرف الحجز
+    const tBookingId = (t.bookingId || (t as any).booking_id || '').trim();
+    if (tBookingId && (tBookingId === b.id || (b.bookingCode && tBookingId === b.bookingCode))) return true;
+
+    const desc = (t.description || '').trim();
+    if (desc) {
+      if (b.bookingCode && b.bookingCode.trim().length >= 2 && desc.includes(b.bookingCode.trim())) return true;
+      if (b.id && b.id.trim().length >= 4 && desc.includes(b.id.trim())) return true;
+      if (b.clientName && b.clientName.trim().length >= 3 && desc.includes(b.clientName.trim())) return true;
+    }
+    return false;
+  });
 };
 
 const getBookingTotalAmount = (b: any): number => {
@@ -792,10 +916,21 @@ export function OwnerExecutivePortal({
     return false;
   };
 
-  const isDateInSelectedPeriod = (dateStr?: string) => {
-    if (!dateStr) return false;
+  const isDateInSelectedPeriod = (dateVal?: any) => {
+    if (!dateVal) return false;
     if (period === 'all') return true;
-    const cleanDate = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr.split(' ')[0];
+    let cleanDate = '';
+    if (typeof dateVal === 'string') {
+      cleanDate = dateVal.includes('T') ? dateVal.split('T')[0] : dateVal.split(' ')[0];
+    } else if (typeof dateVal === 'number' || dateVal instanceof Date) {
+      try {
+        cleanDate = new Date(dateVal).toLocaleDateString('en-CA');
+      } catch {
+        cleanDate = String(dateVal);
+      }
+    } else {
+      cleanDate = String(dateVal);
+    }
     const d = cleanDate.match(/^\d{4}-\d{2}-\d{2}/)?.[0] || cleanDate;
 
     if (period === 'today') {
@@ -831,6 +966,85 @@ export function OwnerExecutivePortal({
   }, [transactions, dateRange, activeBranchId, isMainBranch, period, shiftData]);
 
   const todayTransactions = filteredTransactions;
+
+  // قائمة مقدمات الحجز المحصلة خلال الفترة مع كافة بياناتها التفصيلية بدقة متناهية
+  const bookingAdvancesList = useMemo(() => {
+    const list: Array<{
+      id: string;
+      bookingId: string;
+      bookingCode: string;
+      clientName: string;
+      clientPhone: string;
+      amount: number;
+      date: string;
+      time: string;
+      paymentMethod: string;
+      treasuryName: string;
+      servicesSummary: string;
+      notes?: string;
+    }> = [];
+
+    const periodAdvTrx = filteredTransactions.filter(isBookingAdvanceTrx);
+
+    // 1. من سجل المعاملات المالية المباشرة لمقدمات الحجز خلال الفترة
+    periodAdvTrx.forEach(t => {
+      const amt = Number(t.amount) || 0;
+      if (amt <= 0) return;
+      const targetId = t.treasury || (t as any).treasuryId || '';
+      const treasuryObj = (settings.treasuries || []).find(tr => tr.id === targetId || tr.name === targetId);
+      const matchedBooking = findBookingForAdvanceTrx(t, bookings || []);
+
+      list.push({
+        id: t.id,
+        bookingId: matchedBooking?.id || (t.bookingId || (t as any).booking_id || ''),
+        bookingCode: matchedBooking?.bookingCode || extractBookingCodeFromDesc(t.description || ''),
+        clientName: matchedBooking?.clientName || extractClientFromDesc(t.description || ''),
+        clientPhone: matchedBooking?.phone || matchedBooking?.clientPhone || '',
+        amount: amt,
+        date: t.date?.split('T')[0] || t.shiftDate || (t as any).shift_date || '',
+        time: t.date?.split('T')[1]?.substring(0, 5) || matchedBooking?.time || '',
+        paymentMethod: t.paymentMethod || treasuryObj?.name || 'نقدي',
+        treasuryName: treasuryObj?.name || t.treasury || 'الخزنة',
+        servicesSummary: matchedBooking ? getBookingServicesNames(matchedBooking) : (t.description || 'مقدم حجز'),
+        notes: t.notes || matchedBooking?.notes
+      });
+    });
+
+    // 2. من سجل الحجوزات المسجلة (فقط الحجوزات التي تم سداد مقدمها أو إنشاؤها خلال الفترة المحددة)
+    (bookings || []).forEach(b => {
+      if (b.status === 'cancelled' || !matchesActiveBranch((b as any).branchId)) return;
+      const advances = getBookingAdvancesList(b);
+
+      advances.forEach((adv: any, idx: number) => {
+        const advDate = getAdvanceEffectiveDate(adv, b);
+        if (isDateInSelectedPeriod(advDate)) {
+          const amt = Number(adv.amount) || 0;
+          if (amt <= 0) return;
+          const already = isAdvanceAlreadyInTrx(adv, b, periodAdvTrx);
+          if (!already) {
+            const targetId = adv.treasuryId || adv.paymentMethod || 'cash';
+            const treasuryObj = (settings.treasuries || []).find(tr => tr.id === targetId || tr.name === targetId);
+            list.push({
+              id: adv.id || `${b.id}-adv-${idx}`,
+              bookingId: b.id,
+              bookingCode: b.bookingCode || `#${b.id.substring(0, 6)}`,
+              clientName: b.clientName || 'عميل حجز',
+              clientPhone: b.phone || b.clientPhone || '',
+              amount: amt,
+              date: advDate,
+              time: adv.time || b.time || '',
+              paymentMethod: adv.paymentMethod || treasuryObj?.name || 'نقدي',
+              treasuryName: treasuryObj?.name || adv.treasuryName || 'الخزنة',
+              servicesSummary: getBookingServicesNames(b),
+              notes: adv.notes || b.notes
+            });
+          }
+        }
+      });
+    });
+
+    return list;
+  }, [filteredTransactions, bookings, settings.treasuries, dateRange, activeBranchId]);
 
   // Revenue Breakdown by payment method
   const revenueStats = useMemo(() => {
@@ -896,14 +1110,12 @@ export function OwnerExecutivePortal({
       }
     });
 
-    // مقدمات وعربون الحجز المسجلة ضمن الفترة
-    const periodAdvTrx = filteredTransactions.filter(isBookingAdvanceTrx);
-    periodAdvTrx.forEach(t => {
-      const amt = Number(t.amount) || 0;
+    // مقدمات وعربون الحجز المحصلة ضمن الفترة من القائمة الموحدة
+    bookingAdvancesList.forEach(adv => {
+      const amt = Number(adv.amount) || 0;
+      if (amt <= 0) return;
       totalRevenue += amt;
-      const targetId = t.treasury || (t as any).treasuryId || '';
-      const treasuryObj = (settings.treasuries || []).find(tr => tr.id === targetId || tr.name === targetId);
-      const descriptor = `${targetId} ${treasuryObj?.name || ''} ${treasuryObj?.type || ''}`.toLowerCase();
+      const descriptor = `${adv.treasuryName || ''} ${adv.paymentMethod || ''}`.toLowerCase();
       if (descriptor.includes('mada') || descriptor.includes('شبكة') || descriptor.includes('مدى') || descriptor.includes('pos') || descriptor.includes('card')) {
         card += amt;
       } else if (descriptor.includes('visa') || descriptor.includes('فيزا') || descriptor.includes('credit') || descriptor.includes('ماستر') || descriptor.includes('master')) {
@@ -913,50 +1125,6 @@ export function OwnerExecutivePortal({
       } else {
         cash += amt;
       }
-    });
-
-    (bookings || []).forEach(b => {
-      if (b.status === 'cancelled' || !matchesActiveBranch((b as any).branchId)) return;
-      const advances = (b.advancePayments && Array.isArray(b.advancePayments))
-        ? b.advancePayments
-        : (typeof (b as any).advance_payments === 'string'
-          ? (() => { try { return JSON.parse((b as any).advance_payments); } catch { return []; } })()
-          : []);
-
-      if (advances.length === 0 && Number(b.advancePayment || 0) > 0) {
-        advances.push({
-          amount: Number(b.advancePayment),
-          date: b.date || (b as any).createdAt,
-          paymentMethod: (b as any).paymentMethod || 'cash'
-        });
-      }
-
-      advances.forEach((adv: any) => {
-        const advDate = (adv.date || b.date || (b as any).createdAt || '').split('T')[0].trim();
-        if (isDateInSelectedPeriod(advDate)) {
-          const amt = Number(adv.amount) || 0;
-          if (amt <= 0) return;
-          const already = periodAdvTrx.some(t =>
-            Math.abs((Number(t.amount) || 0) - amt) < 0.01 &&
-            (t.description?.includes(b.bookingCode || '') || t.description?.includes(b.id || '') || t.description?.includes(b.clientName || ''))
-          );
-          if (!already) {
-            totalRevenue += amt;
-            const targetId = adv.treasuryId || adv.paymentMethod || 'cash';
-            const treasuryObj = (settings.treasuries || []).find(tr => tr.id === targetId || tr.name === targetId);
-            const descriptor = `${targetId} ${treasuryObj?.name || ''} ${treasuryObj?.type || ''}`.toLowerCase();
-            if (descriptor.includes('mada') || descriptor.includes('شبكة') || descriptor.includes('مدى') || descriptor.includes('pos') || descriptor.includes('card')) {
-              card += amt;
-            } else if (descriptor.includes('visa') || descriptor.includes('فيزا') || descriptor.includes('credit') || descriptor.includes('ماستر') || descriptor.includes('master')) {
-              credit += amt;
-            } else if (descriptor.includes('bank') || descriptor.includes('تحويل') || descriptor.includes('بنك') || descriptor.includes('transfer')) {
-              bankTransfer += amt;
-            } else {
-              cash += amt;
-            }
-          }
-        }
-      });
     });
 
     // 1. Operating Expenses (excluding salaries, advances, supplier payments, partner shares)
@@ -1046,7 +1214,7 @@ export function OwnerExecutivePortal({
       invoiceCount: filteredInvoices.length,
       avgTicket
     };
-  }, [filteredInvoices, filteredTransactions, bookings, settings.treasuries, activeBranchId, isMainBranch, isAllBranches, period, dateRange, employees, expenses]);
+  }, [filteredInvoices, filteredTransactions, bookings, settings.treasuries, activeBranchId, isMainBranch, isAllBranches, period, dateRange, employees, expenses, bookingAdvancesList]);
 
   // ---- حسابات وأرصدة الخزائن المسجلة في النظام (Registered Treasuries Balances & Stats) ----
   const treasuryStats = useMemo(() => {
@@ -1115,44 +1283,12 @@ export function OwnerExecutivePortal({
         }
       });
 
-      // إضافة مقدمات وعربون الحجز المحصلة في هذه الخزينة
-      const advTrxForT = periodTrxs.filter(trx => isBookingAdvanceTrx(trx));
-      invoicesCollected += advTrxForT.reduce((sum, trx) => sum + (Number(trx.amount) || 0), 0);
-
-      (bookings || []).forEach(b => {
-        if (b.status === 'cancelled' || !matchesActiveBranch((b as any).branchId)) return;
-        const advances = (b.advancePayments && Array.isArray(b.advancePayments))
-          ? b.advancePayments
-          : (typeof (b as any).advance_payments === 'string'
-            ? (() => { try { return JSON.parse((b as any).advance_payments); } catch { return []; } })()
-            : []);
-
-        if (advances.length === 0 && Number(b.advancePayment || 0) > 0) {
-          advances.push({
-            amount: Number(b.advancePayment),
-            date: b.date || (b as any).createdAt,
-            paymentMethod: (b as any).paymentMethod || 'cash'
-          });
-        }
-
-        advances.forEach((adv: any) => {
-          const advDate = (adv.date || b.date || (b as any).createdAt || '').split('T')[0].trim();
-          if (isDateInSelectedPeriod(advDate)) {
-            const amt = Number(adv.amount) || 0;
-            if (amt <= 0) return;
-            const targetId = adv.treasuryId || adv.paymentMethod || 'cash';
-            if (targetId === t.id || targetId === t.name || (!targetId && (t.id === 'cash' || t.name.includes('كاش')))) {
-              const already = advTrxForT.some(trx =>
-                Math.abs((Number(trx.amount) || 0) - amt) < 0.01 &&
-                (trx.description?.includes(b.bookingCode || '') || trx.description?.includes(b.id || '') || trx.description?.includes(b.clientName || ''))
-              );
-              if (!already) {
-                invoicesCollected += amt;
-              }
-            }
-          }
-        });
+      // إضافة مقدمات وعربون الحجز المحصلة في هذه الخزينة من القائمة الموحدة
+      const advancesForTreasury = bookingAdvancesList.filter(adv => {
+        const target = adv.treasuryName || adv.paymentMethod || '';
+        return target === t.id || target === t.name || (t.id === 'cash' && (target === 'نقدي' || target === 'cash' || target.includes('كاش')));
       });
+      invoicesCollected += advancesForTreasury.reduce((sum, adv) => sum + (Number(adv.amount) || 0), 0);
 
       const style = palette[idx % palette.length];
 
@@ -1218,43 +1354,9 @@ export function OwnerExecutivePortal({
       return sum + paid;
     }, 0);
 
-    // 1.b Booking Advances (مقدمات وعربون الحجز المحصلة)
-    const periodBookingAdvTrx = filteredTransactions.filter(isBookingAdvanceTrx);
-    let totalBookingAdvances = periodBookingAdvTrx.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
-    let bookingAdvancesCount = periodBookingAdvTrx.length;
-
-    (bookings || []).forEach(b => {
-      if (b.status === 'cancelled' || !matchesActiveBranch((b as any).branchId)) return;
-      const advances = (b.advancePayments && Array.isArray(b.advancePayments))
-        ? b.advancePayments
-        : (typeof (b as any).advance_payments === 'string'
-          ? (() => { try { return JSON.parse((b as any).advance_payments); } catch { return []; } })()
-          : []);
-
-      if (advances.length === 0 && Number(b.advancePayment || 0) > 0) {
-        advances.push({
-          amount: Number(b.advancePayment),
-          date: b.date || (b as any).createdAt,
-          paymentMethod: (b as any).paymentMethod || 'cash'
-        });
-      }
-
-      advances.forEach((adv: any) => {
-        const advDate = (adv.date || b.date || (b as any).createdAt || '').split('T')[0].trim();
-        if (isDateInSelectedPeriod(advDate)) {
-          const amt = Number(adv.amount) || 0;
-          if (amt <= 0) return;
-          const already = periodBookingAdvTrx.some(t =>
-            Math.abs((Number(t.amount) || 0) - amt) < 0.01 &&
-            (t.description?.includes(b.bookingCode || '') || t.description?.includes(b.id || '') || t.description?.includes(b.clientName || ''))
-          );
-          if (!already) {
-            totalBookingAdvances += amt;
-            bookingAdvancesCount += 1;
-          }
-        }
-      });
-    });
+    // 1.b Booking Advances (مقدمات وعربون الحجز المحصلة من القائمة الموحدة)
+    const totalBookingAdvances = bookingAdvancesList.reduce((sum, a) => sum + (Number(a.amount) || 0), 0);
+    const bookingAdvancesCount = bookingAdvancesList.length;
 
     const grossIncome = grossInvoicesIncome + totalBookingAdvances;
 
@@ -1410,7 +1512,7 @@ export function OwnerExecutivePortal({
       invoicesCount: filteredInvoices.length,
       breakdownList
     };
-  }, [filteredInvoices, filteredTransactions, bookings, expenses, purchases, supplierPayments, employees, dateRange, matchesActiveBranch, currency]);
+  }, [filteredInvoices, filteredTransactions, bookings, expenses, purchases, supplierPayments, employees, dateRange, matchesActiveBranch, currency, bookingAdvancesList]);
 
   // ---- مقارنة أداء ومصروفات وصافي أرباح الفروع (Branch Performance Comparison) ----
   const branchComparisonData = useMemo(() => {
@@ -1428,42 +1530,15 @@ export function OwnerExecutivePortal({
         return s + paid;
       }, 0);
 
-      // Branch booking advances
-      const brBookingAdvTrx = (transactions || []).filter(t => 
-        isBrMatch((t as any).branchId) && 
-        isBookingAdvanceTrx(t) && 
-        (isDateInSelectedPeriod(t.date) || (t.shiftDate && isDateInSelectedPeriod(t.shiftDate)) || ((t as any).shift_date && isDateInSelectedPeriod((t as any).shift_date)))
-      );
-      let brBookingAdvances = brBookingAdvTrx.reduce((s, t) => s + (Number(t.amount) || 0), 0);
-      (bookings || []).forEach(b => {
-        if (b.status === 'cancelled' || !isBrMatch((b as any).branchId)) return;
-        const advances = (b.advancePayments && Array.isArray(b.advancePayments))
-          ? b.advancePayments
-          : (typeof (b as any).advance_payments === 'string'
-            ? (() => { try { return JSON.parse((b as any).advance_payments); } catch { return []; } })()
-            : []);
-
-        if (advances.length === 0 && Number(b.advancePayment || 0) > 0) {
-          advances.push({
-            amount: Number(b.advancePayment),
-            date: b.date || (b as any).createdAt,
-            paymentMethod: (b as any).paymentMethod || 'cash'
-          });
-        }
-
-        advances.forEach((adv: any) => {
-          const advDate = (adv.date || b.date || (b as any).createdAt || '').split('T')[0].trim();
-          if (isDateInSelectedPeriod(advDate)) {
-            const amt = Number(adv.amount) || 0;
-            if (amt <= 0) return;
-            const already = brBookingAdvTrx.some(t =>
-              Math.abs((Number(t.amount) || 0) - amt) < 0.01 &&
-              (t.description?.includes(b.bookingCode || '') || t.description?.includes(b.id || '') || t.description?.includes(b.clientName || ''))
-            );
-            if (!already) brBookingAdvances += amt;
-          }
-        });
+      // Branch booking advances from unified bookingAdvancesList
+      const brBookingAdvancesList = bookingAdvancesList.filter(adv => {
+        const b = (bookings || []).find(x => x.id === adv.bookingId);
+        if (b) return isBrMatch((b as any).branchId);
+        const t = (transactions || []).find(x => x.id === adv.id);
+        if (t) return isBrMatch((t as any).branchId);
+        return isBrMatch((adv as any).branchId);
       });
+      const brBookingAdvances = brBookingAdvancesList.reduce((s, a) => s + (Number(a.amount) || 0), 0);
 
       const brGross = brInvoicesGross + brBookingAdvances;
 
@@ -1717,7 +1792,14 @@ export function OwnerExecutivePortal({
     const dayNameEn = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][now.getDay()];
 
     const records = activeStaff.map(emp => {
-      const scheduledCheckIn = emp.checkInTime || '09:00';
+      let scheduledCheckIn = emp.checkInTime || '09:00';
+      if (emp.shiftScheduleHistory && emp.shiftScheduleHistory.length > 0) {
+        const sorted = [...emp.shiftScheduleHistory].sort((a, b) => a.date.localeCompare(b.date));
+        const activeSched = sorted.filter(s => s.date <= (dateRange.end || dateRange.start)).pop() || sorted[0];
+        if (activeSched?.checkInTime) {
+          scheduledCheckIn = activeSched.checkInTime;
+        }
+      }
       const scheduledParts = scheduledCheckIn.split(':').map(Number);
       const schedMin = (scheduledParts[0] || 9) * 60 + (scheduledParts[1] || 0);
 
@@ -1752,19 +1834,34 @@ export function OwnerExecutivePortal({
         return matchesEmp && inPeriod;
       });
 
-      // Find earliest check-in log in period
-      const checkInLogs = empLogs.filter(l => (l.type === 'check_in' || l.log_type === 'check_in' || !l.type));
+      // Find earliest check-in log in period (exclude check_out logs)
+      const checkInLogs = empLogs.filter(l => l.type !== 'check_out' && l.log_type !== 'check_out');
       const firstCheckIn = checkInLogs.length > 0
-        ? checkInLogs.sort((a, b) => new Date(a.timestamp || a.created_at).getTime() - new Date(b.timestamp || b.created_at).getTime())[0]
-        : empLogs[0];
+        ? checkInLogs.sort((a, b) => (a.timestamp || a.created_at || '').localeCompare(b.timestamp || b.created_at || ''))[0]
+        : null;
 
       if (firstCheckIn) {
-        const checkInIso = firstCheckIn.timestamp || firstCheckIn.created_at;
-        const checkInDate = new Date(checkInIso);
-        const actualH = checkInDate.getHours();
-        const actualM = checkInDate.getMinutes();
-        const checkInTimeStr = `${String(actualH).padStart(2, '0')}:${String(actualM).padStart(2, '0')}`;
-        const actualMin = actualH * 60 + actualM;
+        const checkInIso = firstCheckIn.timestamp || firstCheckIn.created_at || '';
+
+        // Extract literal wall-clock time string (HH:mm) directly from string.
+        // Never use new Date().getHours() on ISO timestamps with +00:00 / Z,
+        // because it shifts UTC by local timezone (+3h in Egypt/Saudi = 180 min phantom delay)!
+        let checkInTimeStr = '09:00';
+        if (checkInIso.includes('T')) {
+          checkInTimeStr = checkInIso.split('T')[1].substring(0, 5);
+        } else if (checkInIso.includes(' ')) {
+          checkInTimeStr = checkInIso.split(' ')[1].substring(0, 5);
+        } else {
+          try {
+            const d = new Date(checkInIso);
+            if (!isNaN(d.getTime())) {
+              checkInTimeStr = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+            }
+          } catch {}
+        }
+
+        const [actualH, actualM] = checkInTimeStr.split(':').map(Number);
+        const actualMin = (actualH || 0) * 60 + (actualM || 0);
         const delayMin = Math.max(0, actualMin - schedMin);
         const isLate = delayMin > 5; // allow 5 mins grace
 
@@ -1835,10 +1932,18 @@ export function OwnerExecutivePortal({
       return inPeriod && isBranchMatch;
     });
 
-    // 3. Unified unique list of bookings relevant to the period (created in period OR scheduled in period)
+    // 3. Bookings with advance payment collected in the selected period
+    const advancePaidInPeriodList = bookings.filter(b => {
+      if (b.status === 'cancelled' || !matchesActiveBranch((b as any).branchId)) return false;
+      const advances = getBookingAdvancesList(b);
+      return advances.some(a => isDateInSelectedPeriod(getAdvanceEffectiveDate(a, b)));
+    });
+
+    // Unified unique list of bookings relevant to the period (created in period OR scheduled in period OR advance paid in period)
     const periodMap = new Map<string, any>();
     scheduledInPeriodList.forEach(b => periodMap.set(b.id, b));
     createdInPeriodList.forEach(b => periodMap.set(b.id, b));
+    advancePaidInPeriodList.forEach(b => periodMap.set(b.id, b));
     const periodList = Array.from(periodMap.values());
 
     const completed = periodList.filter(b => b.status === 'completed').length;
@@ -1848,16 +1953,17 @@ export function OwnerExecutivePortal({
 
     // حساب القيم المالية للحجوزات ومقدمات الحجز المحصلة
     let totalValue = 0;
-    let totalAdvances = 0;
-    let bookingsWithAdvanceCount = 0;
-
     periodList.forEach(b => {
-      const bTotal = getBookingTotalAmount(b);
-      const bAdv = getBookingTotalAdvances(b);
-      totalValue += bTotal;
-      totalAdvances += bAdv;
-      if (bAdv > 0) bookingsWithAdvanceCount += 1;
+      totalValue += getBookingTotalAmount(b);
     });
+
+    // إجمالي مقدمات الحجز المحصلة فعلياً خلال الفترة
+    const totalAdvances = bookingAdvancesList.reduce((sum, a) => sum + (Number(a.amount) || 0), 0);
+    const bookingsWithAdvanceCount = periodList.filter(b => {
+      const advances = getBookingAdvancesList(b);
+      const hasAdvanceInPeriod = advances.some(a => isDateInSelectedPeriod(getAdvanceEffectiveDate(a, b)));
+      return hasAdvanceInPeriod || getBookingTotalAdvances(b) > 0;
+    }).length;
 
     // Unique clients served in period
     const clientIds = new Set<string>();
@@ -1872,8 +1978,10 @@ export function OwnerExecutivePortal({
       totalBookings: periodList.length,
       createdInPeriodCount: createdInPeriodList.length,
       scheduledInPeriodCount: scheduledInPeriodList.length,
+      advancePaidInPeriodCount: advancePaidInPeriodList.length,
       createdInPeriodList,
       scheduledInPeriodList,
+      advancePaidInPeriodList,
       completed,
       confirmed,
       pending,
@@ -1886,91 +1994,7 @@ export function OwnerExecutivePortal({
       bookingsWithAdvanceCount,
       totalClientsServed: clientIds.size || filteredInvoices.length
     };
-  }, [bookings, dateRange, activeBranchId, filteredInvoices]);
-
-  // قائمة مقدمات الحجز المحصلة خلال الفترة مع كافة بياناتها التفصيلية
-  const bookingAdvancesList = useMemo(() => {
-    const list: Array<{
-      id: string;
-      bookingId: string;
-      bookingCode: string;
-      clientName: string;
-      clientPhone: string;
-      amount: number;
-      date: string;
-      time: string;
-      paymentMethod: string;
-      treasuryName: string;
-      servicesSummary: string;
-      notes?: string;
-    }> = [];
-
-    const periodAdvTrx = filteredTransactions.filter(isBookingAdvanceTrx);
-
-    // 1. من سجل المعاملات المالية المباشرة لمقدمات الحجز
-    periodAdvTrx.forEach(t => {
-      const amt = Number(t.amount) || 0;
-      if (amt <= 0) return;
-      const targetId = t.treasury || (t as any).treasuryId || '';
-      const treasuryObj = (settings.treasuries || []).find(tr => tr.id === targetId || tr.name === targetId);
-      const matchedBooking = (bookings || []).find(b => 
-        (t.description?.includes(b.bookingCode || '') || t.description?.includes(b.id || '') || t.description?.includes(b.clientName || ''))
-      );
-
-      list.push({
-        id: t.id,
-        bookingId: matchedBooking?.id || '',
-        bookingCode: matchedBooking?.bookingCode || t.description?.match(/B-\d+/i)?.[0] || 'حجز',
-        clientName: matchedBooking?.clientName || t.description?.replace(/^(مقدم|عربون)\s*حجز\s*[:-]?\s*/i, '') || 'عميل حجز',
-        clientPhone: matchedBooking?.phone || matchedBooking?.clientPhone || '',
-        amount: amt,
-        date: t.date?.split('T')[0] || '',
-        time: t.date?.split('T')[1]?.substring(0, 5) || matchedBooking?.time || '',
-        paymentMethod: t.paymentMethod || treasuryObj?.name || 'نقدي',
-        treasuryName: treasuryObj?.name || t.treasury || 'الخزنة',
-        servicesSummary: matchedBooking ? getBookingServicesNames(matchedBooking) : (t.description || 'مقدم حجز'),
-        notes: t.notes || matchedBooking?.notes
-      });
-    });
-
-    // 2. من جدول الحجوزات المسجلة
-    (bookings || []).forEach(b => {
-      if (b.status === 'cancelled' || !matchesActiveBranch((b as any).branchId)) return;
-      const advances = getBookingAdvancesList(b);
-
-      advances.forEach((adv: any, idx: number) => {
-        const advDate = (adv.date || b.date || (b as any).createdAt || '').split('T')[0].trim();
-        if (isDateInSelectedPeriod(advDate)) {
-          const amt = Number(adv.amount) || 0;
-          if (amt <= 0) return;
-          const already = periodAdvTrx.some(t =>
-            Math.abs((Number(t.amount) || 0) - amt) < 0.01 &&
-            (t.description?.includes(b.bookingCode || '') || t.description?.includes(b.id || '') || t.description?.includes(b.clientName || ''))
-          );
-          if (!already) {
-            const targetId = adv.treasuryId || adv.paymentMethod || 'cash';
-            const treasuryObj = (settings.treasuries || []).find(tr => tr.id === targetId || tr.name === targetId);
-            list.push({
-              id: adv.id || `${b.id}-adv-${idx}`,
-              bookingId: b.id,
-              bookingCode: b.bookingCode || `#${b.id.substring(0, 6)}`,
-              clientName: b.clientName,
-              clientPhone: b.phone || b.clientPhone || '',
-              amount: amt,
-              date: advDate,
-              time: b.time || '',
-              paymentMethod: adv.paymentMethod || treasuryObj?.name || 'نقدي',
-              treasuryName: treasuryObj?.name || 'الخزنة',
-              servicesSummary: getBookingServicesNames(b),
-              notes: adv.notes || b.notes
-            });
-          }
-        }
-      });
-    });
-
-    return list;
-  }, [filteredTransactions, bookings, settings.treasuries, dateRange, activeBranchId]);
+  }, [bookings, dateRange, activeBranchId, filteredInvoices, bookingAdvancesList]);
 
   // قائمة الإيرادات الموحدة (فواتير المبيعات + مقدمات الحجز)
   const combinedRevenues = useMemo(() => {
@@ -2221,7 +2245,11 @@ export function OwnerExecutivePortal({
     } else if (bookingStatusFilter === 'scheduled_in_period') {
       list = bookingsStats.scheduledInPeriodList;
     } else if (bookingStatusFilter === 'with_advance') {
-      list = list.filter(b => getBookingTotalAdvances(b) > 0);
+      list = list.filter(b => {
+        const advances = getBookingAdvancesList(b);
+        const hasAdvanceInPeriod = advances.some(a => isDateInSelectedPeriod(getAdvanceEffectiveDate(a, b)));
+        return hasAdvanceInPeriod || getBookingTotalAdvances(b) > 0;
+      });
     } else if (bookingStatusFilter !== 'all') {
       list = list.filter(b => b.status === bookingStatusFilter);
     }
@@ -4334,6 +4362,7 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                   }
                 }
                 isScheduledInPeriod = isDateInSelectedPeriod(b.date);
+                const isAdvancePaidInPeriod = advancesList.some((a: any) => isDateInSelectedPeriod(getAdvanceEffectiveDate(a, b)));
 
                 return (
                   <div 
@@ -4359,6 +4388,12 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                           <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-sky-500/20 text-sky-300 border border-sky-400/30 flex items-center gap-1">
                             <span>📅</span>
                             <span>موعد بالفترة</span>
+                          </span>
+                        )}
+                        {isAdvancePaidInPeriod && (
+                          <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-emerald-500/25 text-emerald-200 border border-emerald-400/40 flex items-center gap-1 shadow-sm">
+                            <span>💰</span>
+                            <span>عربون مسدد بالفترة</span>
                           </span>
                         )}
 

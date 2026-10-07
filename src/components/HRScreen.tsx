@@ -22,10 +22,14 @@ import { FingerprintImportModal } from './FingerprintImportModal';
 import { EmployeeCommissionsDetailedSection } from './EmployeeCommissionsDetailedSection';
 import { AuthService } from '../services/auth';
 
-// Helper to reliably match date strings (YYYY-MM-DD) across ISO strings, space-delimited timestamps, and local timezone
+// Helper to reliably match date strings (YYYY-MM-DD)
+// Crucial: A single timestamp must belong to EXACTLY ONE calendar date and NEVER match multiple days
 const isSameDay = (ts?: string, targetDateStr?: string): boolean => {
   if (!ts || !targetDateStr) return false;
-  if (ts.startsWith(targetDateStr)) return true;
+  const rawDate = ts.includes('T') ? ts.split('T')[0] : ts.split(' ')[0];
+  if (rawDate && /^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+    return rawDate === targetDateStr;
+  }
   try {
     const d = new Date(ts);
     if (isNaN(d.getTime())) return false;
@@ -62,6 +66,12 @@ const formatTime12h = (timeStr?: string): string => {
 const getNextDateStr = (dateStr: string): string => {
   const d = new Date(dateStr + 'T12:00:00');
   d.setDate(d.getDate() + 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+const getPrevDateStr = (dateStr: string): string => {
+  const d = new Date(dateStr + 'T12:00:00');
+  d.setDate(d.getDate() - 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
@@ -532,10 +542,10 @@ export function HRScreen({
       return [selectedSingleDay];
     }
     const dates: string[] = [];
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-      dates.push(d.toISOString().split('T')[0]);
+    let cur = startDate;
+    while (cur <= endDate) {
+      dates.push(cur);
+      cur = getNextDateStr(cur);
     }
     return dates;
   }, [viewMode, startDate, endDate, selectedSingleDay]);
@@ -551,6 +561,10 @@ export function HRScreen({
       const isCommissionOnly = emp.salaryType === 'commission_only';
       let accumulatedPermissionMinutes = 0;
       const maxMonthlyPermissionMinutes = (hrConfig.maxMonthlyPermissionHours ?? 2) * 60;
+
+      // Track consumed checkout logs (e.g. overnight checkouts on next-day morning)
+      // so they never bleed into or generate duplicate rows on the following day
+      const consumedLogIds = new Set<string>();
 
       // Sort dates chronologically to ensure accurate monthly permission accumulation
       const sortedDates = [...dateRangeList].sort((a, b) => a.localeCompare(b));
@@ -696,10 +710,36 @@ export function HRScreen({
         const dailyRate = isTerminated ? 0 : baseDailyRate;
         let earnedDaily = dailyRate;
 
+        // Check if an early-morning check_out belongs to previous day's shift
+        const isBelongingToPrevDay = (log: FingerprintLog): boolean => {
+          if (log.type !== 'check_out') return false;
+          if (consumedLogIds.has(log.id)) return true;
+          const time = extractTime(log.timestamp);
+          if (!time) return false;
+          const hour = Number(time.split(':')[0]);
+          if (hour >= 10) return false;
+          if (log.notes?.includes('انصراف بعد منتصف الليل') || log.notes?.includes('+1')) return true;
+          const prevDateStr = getPrevDateStr(dateStr);
+          const prevLogs = (effectiveFingerprintLogs || []).filter(pl => 
+            (pl.employeeId === emp.id || (emp.fingerprintCode && pl.fingerprintCode === emp.fingerprintCode)) &&
+            isSameDay(pl.timestamp, prevDateStr)
+          );
+          const hasPrevCheckIn = prevLogs.some(pl => pl.type === 'check_in');
+          const hasPrevDaytimeCheckOut = prevLogs.some(pl => {
+            if (pl.type !== 'check_out') return false;
+            const t = extractTime(pl.timestamp);
+            return t ? Number(t.split(':')[0]) >= 10 : false;
+          });
+          return hasPrevCheckIn && !hasPrevDaytimeCheckOut;
+        };
+
         // Check actual fingerprint / attendance logs for this employee on dateStr
+        // Exclude logs that belong to previous day or were already consumed by a previous shift
         const dayLogs = (effectiveFingerprintLogs || []).filter(l => 
           (l.employeeId === emp.id || (emp.fingerprintCode && l.fingerprintCode === emp.fingerprintCode)) &&
-          isSameDay(l.timestamp, dateStr)
+          isSameDay(l.timestamp, dateStr) &&
+          !consumedLogIds.has(l.id) &&
+          !isBelongingToPrevDay(l)
         ).sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
 
         // Also check if there is an early-morning check_out on the NEXT day (belonging to overnight shift)
@@ -707,6 +747,7 @@ export function HRScreen({
         const nextDayEarlyCheckOut = (effectiveFingerprintLogs || []).find(l => 
           (l.employeeId === emp.id || (emp.fingerprintCode && l.fingerprintCode === emp.fingerprintCode)) &&
           l.type === 'check_out' &&
+          !consumedLogIds.has(l.id) &&
           isSameDay(l.timestamp, nextDateStr) &&
           (() => {
             const time = extractTime(l.timestamp);
@@ -723,14 +764,15 @@ export function HRScreen({
         const checkInLog = checkInLogs[checkInLogs.length - 1] || (dayLogs.length > 0 && !checkOutLogs.includes(dayLogs[0]) ? dayLogs[0] : null);
         let checkOutLog = checkOutLogs[checkOutLogs.length - 1] || (dayLogs.length > 1 && dayLogs[dayLogs.length - 1] !== checkInLog ? dayLogs[dayLogs.length - 1] : null);
 
-        // If no checkout found on same day, use the next day early checkout if available
+        // If no checkout found on same day, use the next day early checkout if available and there is an actual check-in
         let isNextDayLog = false;
-        if (!checkOutLog && nextDayEarlyCheckOut) {
+        if (!checkOutLog && nextDayEarlyCheckOut && checkInLog) {
           checkOutLog = nextDayEarlyCheckOut;
           isNextDayLog = true;
+          consumedLogIds.add(nextDayEarlyCheckOut.id);
         }
 
-        const hasManualOrDeviceLog = Boolean(checkInLog || checkOutLog);
+        const hasManualOrDeviceLog = Boolean(checkInLog || (checkOutLog && !isBelongingToPrevDay(checkOutLog)));
         const todayIsoStr = new Date().toISOString().split('T')[0];
         const isTodayOrPast = dateStr <= todayIsoStr;
         const hasWork = workRevenue > 0;
@@ -1307,9 +1349,26 @@ export function HRScreen({
       }
 
       // Existing logs for this employee and date
+      // Crucial: do NOT include an early-morning checkout on dateStr that belongs to the previous day's shift
+      const isBelongingToPrevDay = (l: FingerprintLog): boolean => {
+        if (l.type !== 'check_out') return false;
+        const time = extractTime(l.timestamp);
+        if (!time) return false;
+        const hour = Number(time.split(':')[0]);
+        if (hour >= 10) return false;
+        if (l.notes?.includes('انصراف بعد منتصف الليل') || l.notes?.includes('+1')) return true;
+        const prevDateStr = getPrevDateStr(dateStr);
+        const prevLogs = (effectiveFingerprintLogs || []).filter(pl => 
+          (pl.employeeId === targetEmp.id || (targetEmp.fingerprintCode && pl.fingerprintCode === targetEmp.fingerprintCode)) &&
+          isSameDay(pl.timestamp, prevDateStr)
+        );
+        return prevLogs.some(pl => pl.type === 'check_in');
+      };
+
       const sameDayLogs = (effectiveFingerprintLogs || []).filter(l => 
         (l.employeeId === targetEmp.id || (targetEmp.fingerprintCode && l.fingerprintCode === targetEmp.fingerprintCode)) &&
-        isSameDay(l.timestamp, dateStr)
+        isSameDay(l.timestamp, dateStr) &&
+        !isBelongingToPrevDay(l)
       );
 
       // Also find any next-day early checkout log (00:00 - 09:59) for this employee
@@ -1348,6 +1407,8 @@ export function HRScreen({
       const newLogsToSave: FingerprintLog[] = [inLog];
 
       if (outTimestamp) {
+        const outNote = (attendanceForm.notes ? `${attendanceForm.notes} ` : '') + 
+          (attendanceForm.isNextDayCheckout ? `[انصراف بعد منتصف الليل +1] [وردية: ${dateStr}]` : 'تسجيل يدوي / تعديل من TimeSheet');
         const outLog: FingerprintLog = {
           id: checkOutId,
           salonId: targetEmp.salonId || settings.salonId,
@@ -1358,7 +1419,7 @@ export function HRScreen({
           timestamp: outTimestamp,
           type: 'check_out',
           status: 'manual',
-          notes: attendanceForm.notes || (attendanceForm.isNextDayCheckout ? 'انصراف بعد منتصف الليل (+1 يوم)' : 'تسجيل يدوي / تعديل من TimeSheet')
+          notes: outNote
         };
         newLogsToSave.push(outLog);
       }
@@ -1402,9 +1463,25 @@ export function HRScreen({
     if (!targetEmp) return;
 
     const nextDateStr = getNextDateStr(dateStr);
+    const isBelongingToPrevDay = (l: FingerprintLog): boolean => {
+      if (l.type !== 'check_out') return false;
+      const time = extractTime(l.timestamp);
+      if (!time) return false;
+      const hour = Number(time.split(':')[0]);
+      if (hour >= 10) return false;
+      if (l.notes?.includes('انصراف بعد منتصف الليل') || l.notes?.includes('+1')) return true;
+      const prevDateStr = getPrevDateStr(dateStr);
+      const prevLogs = (effectiveFingerprintLogs || []).filter(pl => 
+        (pl.employeeId === targetEmp.id || (targetEmp.fingerprintCode && pl.fingerprintCode === targetEmp.fingerprintCode)) &&
+        isSameDay(pl.timestamp, prevDateStr)
+      );
+      return prevLogs.some(pl => pl.type === 'check_in');
+    };
+
     const sameDayLogs = (effectiveFingerprintLogs || []).filter(l => 
       (l.employeeId === targetEmp.id || (targetEmp.fingerprintCode && l.fingerprintCode === targetEmp.fingerprintCode)) &&
-      isSameDay(l.timestamp, dateStr)
+      isSameDay(l.timestamp, dateStr) &&
+      !isBelongingToPrevDay(l)
     );
     const nextDayEarlyCheckOut = (effectiveFingerprintLogs || []).filter(l => 
       (l.employeeId === targetEmp.id || (targetEmp.fingerprintCode && l.fingerprintCode === targetEmp.fingerprintCode)) &&
@@ -2636,8 +2713,8 @@ export function HRScreen({
                           type="button"
                           onClick={() => {
                             const cleanIn = row.checkIn ? row.checkIn.substring(0, 5) : '09:00';
-                            const cleanOut = row.checkOut ? row.checkOut.replace(' (+1)', '').substring(0, 5) : '18:00';
-                            const isOvernight = Boolean(row.checkOut?.includes('(+1)')) || (Boolean(row.checkOut) && cleanOut <= cleanIn);
+                            const cleanOut = row.checkOut ? row.checkOut.replace(' (+1)', '').substring(0, 5) : '';
+                            const isOvernight = Boolean(row.checkOut?.includes('(+1)')) || (Boolean(cleanIn && cleanOut) && cleanOut <= cleanIn);
                             setAttendanceForm({
                               empId: row.employee.id,
                               date: row.dateStr,
@@ -2677,8 +2754,8 @@ export function HRScreen({
                           type="button"
                           onClick={() => {
                             const cleanIn = row.checkIn ? row.checkIn.substring(0, 5) : '09:00';
-                            const cleanOut = row.checkOut ? row.checkOut.replace(' (+1)', '').substring(0, 5) : '18:00';
-                            const isOvernight = Boolean(row.checkOut?.includes('(+1)')) || (Boolean(row.checkOut) && cleanOut <= cleanIn);
+                            const cleanOut = row.checkOut ? row.checkOut.replace(' (+1)', '').substring(0, 5) : '';
+                            const isOvernight = Boolean(row.checkOut?.includes('(+1)')) || (Boolean(cleanIn && cleanOut) && cleanOut <= cleanIn);
                             setAttendanceForm({
                               empId: row.employee.id,
                               date: row.dateStr,
@@ -3280,8 +3357,12 @@ export function HRScreen({
                       value={attendanceForm.checkIn}
                       onChange={e => {
                         const newIn = e.target.value;
-                        const willBeOvernight = attendanceForm.checkOut && newIn ? attendanceForm.checkOut <= newIn : attendanceForm.isNextDayCheckout;
-                        setAttendanceForm({ ...attendanceForm, checkIn: newIn, isNextDayCheckout: willBeOvernight });
+                        const isOvernight = Boolean(newIn && attendanceForm.checkOut && attendanceForm.checkOut <= newIn);
+                        setAttendanceForm({ 
+                          ...attendanceForm, 
+                          checkIn: newIn, 
+                          isNextDayCheckout: attendanceForm.checkOut ? isOvernight : false 
+                        });
                       }}
                       required
                       className="w-full bg-white border border-indigo-200 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-800 focus:border-indigo-600 outline-none shadow-2xs text-center"
@@ -3310,12 +3391,11 @@ export function HRScreen({
                       value={attendanceForm.checkOut || ''}
                       onChange={e => {
                         const newOut = e.target.value;
-                        // Auto-toggle isNextDayCheckout if checkOut is earlier than or equal to checkIn (e.g. In 13:00, Out 02:00)
-                        const autoOvernight = Boolean(newOut && attendanceForm.checkIn && newOut <= attendanceForm.checkIn);
+                        const isOvernight = Boolean(newOut && attendanceForm.checkIn && newOut <= attendanceForm.checkIn);
                         setAttendanceForm({ 
                           ...attendanceForm, 
-                          checkOut: newOut,
-                          isNextDayCheckout: autoOvernight ? true : attendanceForm.isNextDayCheckout 
+                          checkOut: newOut, 
+                          isNextDayCheckout: newOut ? isOvernight : false 
                         });
                       }}
                       placeholder="--:--"

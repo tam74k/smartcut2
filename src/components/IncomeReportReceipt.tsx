@@ -166,15 +166,24 @@ export function IncomeReportReceipt({
               : []);
 
           advances.forEach((adv: any) => {
-            const advDate = (adv.date || b.date || (b as any).createdAt || '').split('T')[0].trim();
+            const advDate = (adv.date || (b as any).createdAt || (b as any).created_at || b.date || '').split('T')[0].trim();
             if (advDate === dateStr) {
               const amt = Number(adv.amount) || 0;
               if (amt <= 0) return;
-              const already = dayTrxs.some(t => 
-                isBookingAdvanceTrx(t) &&
-                Math.abs((Number(t.amount) || 0) - amt) < 0.01 &&
-                (t.description?.includes(b.bookingCode || '') || t.description?.includes(b.id || '') || t.description?.includes(b.clientName || ''))
-              );
+              const already = dayTrxs.some(t => {
+                if (!isBookingAdvanceTrx(t)) return false;
+                if (Math.abs((Number(t.amount) || 0) - amt) >= 0.01) return false;
+                if (adv.id && t.id && (t.id === adv.id || t.id.includes(adv.id))) return true;
+                const tBookingId = (t.bookingId || (t as any).booking_id || '').trim();
+                if (tBookingId && (tBookingId === b.id || (b.bookingCode && tBookingId === b.bookingCode))) return true;
+                const desc = (t.description || '').trim();
+                if (desc) {
+                  if (b.bookingCode && b.bookingCode.trim().length >= 2 && desc.includes(b.bookingCode.trim())) return true;
+                  if (b.id && b.id.trim().length >= 4 && desc.includes(b.id.trim())) return true;
+                  if (b.clientName && b.clientName.trim().length >= 3 && desc.includes(b.clientName.trim())) return true;
+                }
+                return false;
+              });
               if (!already) {
                 dayUnrecordedAdvances.push({
                   amount: amt,

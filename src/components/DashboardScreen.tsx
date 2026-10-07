@@ -51,6 +51,7 @@ export function DashboardScreen({
   const [showRevenueDetails, setShowRevenueDetails] = useState(false);
   const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
   const [viewInvoice, setViewInvoice] = useState<Invoice | null>(null);
+  const [previewBooking, setPreviewBooking] = useState<Booking | null>(null);
 
   const mainBranch = (branches && branches[0]) || { id: 'b-main', name: 'الفرع الرئيسي' };
   const mainBranchId = mainBranch.id;
@@ -1116,10 +1117,17 @@ export function DashboardScreen({
                           >
                             <Banknote size={14} /> سداد مقدم
                           </button>
-                          <button onClick={() => handleEditBooking(booking)} className="flex-1 md:flex-none flex items-center justify-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-md text-[12px] font-bold transition-colors">
+                          <button 
+                            onClick={() => setPreviewBooking(booking)}
+                            className="flex-1 md:flex-none flex items-center justify-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-md text-[12px] font-bold transition-colors cursor-pointer"
+                            title="معاينة محتويات الحجز"
+                          >
+                            <Eye size={14} /> معاينة
+                          </button>
+                          <button onClick={() => handleEditBooking(booking)} className="flex-1 md:flex-none flex items-center justify-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-md text-[12px] font-bold transition-colors cursor-pointer">
                             <Edit2 size={14} /> تعديل
                           </button>
-                          <button onClick={() => handleToInvoice(booking)} className="flex-1 md:flex-none flex items-center justify-center gap-1.5 bg-primary hover:bg-primary-dark text-white px-3 py-1.5 rounded-md text-[12px] font-bold transition-colors shadow-sm">
+                          <button onClick={() => handleToInvoice(booking)} className="flex-1 md:flex-none flex items-center justify-center gap-1.5 bg-primary hover:bg-primary-dark text-white px-3 py-1.5 rounded-md text-[12px] font-bold transition-colors shadow-sm cursor-pointer">
                             <FileText size={14} /> لفاتورة
                           </button>
                         </div>
@@ -1415,6 +1423,13 @@ export function DashboardScreen({
                           <td className="py-2.5 px-2 text-center">
                             <div className="flex items-center justify-center gap-1">
                               <button
+                                onClick={() => setPreviewBooking(booking)}
+                                className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors cursor-pointer"
+                                title="معاينة محتويات الحجز"
+                              >
+                                <Eye size={12} />
+                              </button>
+                              <button
                                 onClick={() => handleEditBooking(booking)}
                                 className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors cursor-pointer"
                                 title="تعديل الحجز"
@@ -1552,6 +1567,259 @@ export function DashboardScreen({
           </div>
         </div>
       )}
+
+      {/* Booking Details & Contents Preview Modal (معاينة محتويات وتفاصيل الحجز) */}
+      {previewBooking && (() => {
+        const bookingCode = previewBooking.bookingCode || previewBooking.id;
+        const totalAdv = previewBooking.advancePayments?.reduce((sum, p) => sum + (Number(p.amount) || 0), 0) || 0;
+        const totalAmt = Number(previewBooking.totalAmount || 0);
+        const remainingAmt = Math.max(0, totalAmt - totalAdv);
+        const phone = previewBooking.phone || previewBooking.clientPhone || '-';
+        const createdDate = previewBooking.createdAt || (previewBooking as any).created_at;
+        const branchObj = branches?.find(b => b.id === (previewBooking.branchId || activeBranchId));
+
+        return (
+          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-150">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden flex flex-col max-h-[88vh]" dir="rtl">
+              {/* Header */}
+              <div className="p-4 px-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/80">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                    <CalendarClock size={20} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-black text-base text-slate-800">معاينة محتويات الحجز</h3>
+                      <span className="font-mono text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md" dir="ltr">
+                        #{bookingCode}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      معاينة شاملة لبيانات العميل، الخدمات، والمبالغ المسددة
+                    </p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setPreviewBooking(null)} 
+                  className="w-8 h-8 rounded-full bg-slate-200/60 hover:bg-slate-200 text-slate-500 hover:text-slate-700 flex items-center justify-center transition-colors cursor-pointer"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Scrollable Body */}
+              <div className="p-5 space-y-4 overflow-y-auto custom-scrollbar text-right">
+                
+                {/* 1. Client & Booking Header Info Grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 bg-slate-50/70 p-3.5 rounded-xl border border-slate-200/70 text-xs">
+                  <div>
+                    <span className="text-[10px] text-slate-400 font-bold block mb-0.5">اسم العميل</span>
+                    <span className="font-black text-slate-800 text-[13px]">{previewBooking.clientName || 'عميل نقدي'}</span>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] text-slate-400 font-bold block mb-0.5">رقم الجوال</span>
+                    <span className="font-mono font-bold text-slate-700 text-[12px]" dir="ltr">{phone}</span>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] text-slate-400 font-bold block mb-0.5">حالة الحجز</span>
+                    {previewBooking.status === 'confirmed' ? (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">مؤكد ✓</span>
+                    ) : previewBooking.status === 'pending' ? (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">معلق ⏳</span>
+                    ) : previewBooking.status === 'completed' ? (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">مكتمل 🎯</span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">ملغي ✕</span>
+                    )}
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] text-slate-400 font-bold block mb-0.5">موعد الحجز المجدول</span>
+                    <span className="font-bold text-slate-800">{previewBooking.date} ({previewBooking.time})</span>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] text-slate-400 font-bold block mb-0.5">تاريخ ووقت الإنشاء</span>
+                    <span className="font-mono text-slate-600 text-[11px]">
+                      {createdDate ? new Date(createdDate).toLocaleString('ar-EG', { dateStyle: 'short', timeStyle: 'short' }) : '-'}
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] text-slate-400 font-bold block mb-0.5">الفرع / الموقع</span>
+                    <span className="font-bold text-slate-700 text-[11px] truncate">
+                      {branchObj?.name || previewBooking.location || 'الفرع الرئيسي'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 2. Services & Items Table */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-bold text-xs text-slate-800 flex items-center gap-1.5">
+                      <Scissors size={14} className="text-primary" />
+                      <span>الخدمات والبنود المحجوزة ({previewBooking.services?.length || 0})</span>
+                    </span>
+                    <span className="text-[11px] font-mono text-slate-500 font-bold">
+                      إجمالي الخدمات: {totalAmt.toFixed(2)} {settings.currency}
+                    </span>
+                  </div>
+
+                  <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs">
+                    <table className="w-full text-right text-xs">
+                      <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold">
+                        <tr>
+                          <th className="p-2.5">الخدمة / البند</th>
+                          <th className="p-2.5">الفني / المنفذ</th>
+                          <th className="p-2.5 text-center">الكمية</th>
+                          <th className="p-2.5 text-left">السعر</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-slate-700">
+                        {previewBooking.services && previewBooking.services.length > 0 ? (
+                          previewBooking.services.map((srv, idx) => {
+                            const qty = Math.max(1, Number(srv.quantity) || 1);
+                            const price = Number(srv.price) || 0;
+                            return (
+                              <tr key={srv.id || idx} className="hover:bg-slate-50/60">
+                                <td className="p-2.5 font-bold text-slate-800">
+                                  <span>{srv.serviceName}</span>
+                                  {srv.type === 'product' && (
+                                    <span className="mr-1.5 text-[9px] bg-amber-50 text-amber-700 border border-amber-200 px-1 py-0.2 rounded font-bold">منتج</span>
+                                  )}
+                                </td>
+                                <td className="p-2.5 text-slate-500 text-[11px]">
+                                  {srv.technicianName || '-'}
+                                </td>
+                                <td className="p-2.5 text-center font-mono font-bold">
+                                  {qty}
+                                </td>
+                                <td className="p-2.5 text-left font-mono font-black text-slate-900">
+                                  {(price * qty).toFixed(2)} {settings.currency}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        ) : (
+                          <tr>
+                            <td colSpan={4} className="p-4 text-center text-slate-400">لا توجد خدمات مضافة في هذا الحجز</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* 3. Advance Payments Details (if any) */}
+                {previewBooking.advancePayments && previewBooking.advancePayments.length > 0 && (
+                  <div>
+                    <span className="font-bold text-xs text-slate-800 block mb-2">
+                      💰 تفاصيل الدفعات المقدمة المسددة ({previewBooking.advancePayments.length}):
+                    </span>
+                    <div className="space-y-1.5">
+                      {previewBooking.advancePayments.map((adv, aIdx) => (
+                        <div key={adv.id || aIdx} className="flex justify-between items-center text-xs p-2.5 rounded-lg bg-teal-50/70 border border-teal-200/70">
+                          <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-teal-500"></span>
+                            <span className="font-bold text-teal-900">دفعة #{aIdx + 1}</span>
+                            <span className="text-[11px] text-teal-700">({adv.treasuryName || 'خزينة'} • {adv.date})</span>
+                            {adv.notes && <span className="text-[10px] text-teal-600">- {adv.notes}</span>}
+                          </div>
+                          <div className="font-mono font-black text-teal-800 text-[13px]">
+                            +{Number(adv.amount || 0).toFixed(2)} {settings.currency}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* 4. Financial Summary Card */}
+                <div className="bg-slate-900 text-white p-4 rounded-xl space-y-2 text-xs">
+                  <div className="flex justify-between items-center text-slate-300">
+                    <span>إجمالي قيمة الحجز:</span>
+                    <span className="font-mono font-bold text-sm text-white">{totalAmt.toFixed(2)} {settings.currency}</span>
+                  </div>
+
+                  {totalAdv > 0 && (
+                    <div className="flex justify-between items-center text-teal-300">
+                      <span>إجمالي العربون / المقدم المسدد:</span>
+                      <span className="font-mono font-bold text-sm">-{totalAdv.toFixed(2)} {settings.currency}</span>
+                    </div>
+                  )}
+
+                  <div className="flex justify-between items-center pt-2 border-t border-slate-800 font-black text-sm">
+                    <span className="text-amber-400">المتبقي للتحصيل عند الحضور:</span>
+                    <span className={`font-mono text-base ${remainingAmt > 0 ? 'text-amber-300' : 'text-emerald-400'}`}>
+                      {remainingAmt.toFixed(2)} {settings.currency}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 5. Notes if present */}
+                {(previewBooking.notes || previewBooking.internalNotes) && (
+                  <div className="space-y-2 text-xs">
+                    {previewBooking.notes && (
+                      <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-slate-700">
+                        <strong className="text-slate-800 block mb-0.5">ملاحظات العميل:</strong>
+                        <p>{previewBooking.notes}</p>
+                      </div>
+                    )}
+                    {previewBooking.internalNotes && (
+                      <div className="bg-amber-50 p-2.5 rounded-lg border border-amber-200 text-amber-900">
+                        <strong className="text-amber-800 block mb-0.5">ملاحظات داخلية:</strong>
+                        <p>{previewBooking.internalNotes}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+              </div>
+
+              {/* Footer Actions */}
+              <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setPreviewBooking(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-100 cursor-pointer transition-colors"
+                >
+                  إغلاق
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const b = previewBooking;
+                      setPreviewBooking(null);
+                      handleEditBooking(b);
+                    }}
+                    className="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-700 bg-slate-200/80 hover:bg-slate-200 cursor-pointer flex items-center gap-1.5 transition-colors"
+                  >
+                    <Edit2 size={13} />
+                    <span>تعديل الحجز</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const b = previewBooking;
+                      setPreviewBooking(null);
+                      handleToInvoice(b);
+                    }}
+                    className="px-4 py-2 rounded-xl text-xs font-black text-white bg-primary hover:bg-primary-dark cursor-pointer flex items-center gap-1.5 shadow-sm transition-all"
+                  >
+                    <Scissors size={13} />
+                    <span>تحويل إلى فاتورة في POS</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
     </div>
   );
