@@ -123,22 +123,21 @@ export function DashboardScreen({
     return true;
   };
 
-  // ── حجوزات الوردية الحالية المفتوحة (Shift Bookings) ──
+  // ── حجوزات موعد تنفيذها اليوم (Execution Date Today Bookings) ──
   const shiftBookings = useMemo(() => {
-    if (!isShiftOpen) return [];
-    // تاريخ فتح الوردية الحالية المفتوحة من قاعدة البيانات حصراً
-    const targetShiftDate = (shiftData?.date || shiftDate || '').split('T')[0].split(' ')[0].trim();
-    if (!targetShiftDate) return [];
+    // تاريخ التنفيذ المستهدف (تاريخ الوردية الحالية إن وجدت أو اليوم المحلي)
+    const targetExecutionDate = (isShiftOpen && (shiftData?.date || shiftDate))
+      ? (shiftData?.date || shiftDate).split('T')[0].split(' ')[0].trim()
+      : localToday;
+    if (!targetExecutionDate) return [];
 
     return branchBookings.filter(b => {
       if (b.status === 'completed' || b.status === 'cancelled') return false;
-      // استخراج تاريخ إنشاء الحجز (created_at::date) مع تجاهل أوقات الساعات وتوقيت جهاز العميل تماماً
-      const createdRaw = (b.createdAt || (b as any).created_at || '').trim();
-      if (!createdRaw) return false;
-      const createdDateOnly = createdRaw.split('T')[0].split(' ')[0].trim();
-      return createdDateOnly === targetShiftDate;
+      // فحص موعد تنفيذ الحجز المجدول حصراً (Booking Scheduled Execution Date)
+      const bDateOnly = (b.date || '').trim().split('T')[0].split(' ')[0].trim();
+      return bDateOnly === targetExecutionDate;
     });
-  }, [branchBookings, isShiftOpen, shiftDate, shiftData]);
+  }, [branchBookings, isShiftOpen, shiftDate, shiftData, localToday]);
   const pendingBookings = branchBookings.filter(b => b.status === 'pending');
 
   const handleConfirmBooking = async (bookingId: string) => {
@@ -1052,7 +1051,7 @@ export function DashboardScreen({
           <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
             <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
               <CalendarClock className="text-primary" size={18} />
-              حجوزات اليوم والوردية
+              حجوزات موعد تنفيذها اليوم
             </h3>
             {!isShiftOpen ? (
               <span className="text-[11px] bg-slate-100 text-slate-600 px-2 py-1 rounded-md font-bold">تاريخ اليوم: {localToday}</span>
@@ -1065,7 +1064,7 @@ export function DashboardScreen({
             {shiftBookings.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-slate-400 py-10">
                 <CalendarClock size={40} className="mb-2 opacity-50 text-slate-300" />
-                <p className="text-[13px]">لا توجد حجوزات مجدولة لتاريخ اليوم</p>
+                <p className="text-[13px]">لا توجد حجوزات موعد تنفيذها اليوم</p>
               </div>
             ) : (
               shiftBookings.map(booking => {
@@ -1298,7 +1297,7 @@ export function DashboardScreen({
               </div>
               <div>
                 <h3 className="text-sm sm:text-base font-bold text-slate-800 flex items-center gap-2">
-                  <span>حجوزات الوردية الحالية</span>
+                  <span>حجوزات تم انشائها اليوم</span>
                   <span className="text-[11px] font-extrabold bg-indigo-100 text-indigo-800 px-2.5 py-0.5 rounded-full font-mono">
                     {currentShiftReservations.length}
                   </span>

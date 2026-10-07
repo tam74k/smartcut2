@@ -512,6 +512,52 @@ const isStaffAdvance = (t: any) => {
   );
 };
 
+const isStaffSalary = (t: any) => {
+  const isOut = t.type === 'out' || (t.type as string) === 'expense';
+  if (!isOut) return false;
+  const cat = (t.category || '').toLowerCase();
+  const expCat = ((t as any).expenseCategory || '').toLowerCase();
+  const desc = (t.description || '').toLowerCase();
+  const id = (t.id || '');
+  return (
+    id.startsWith('TRX-SAL-') ||
+    cat === 'salaries' ||
+    cat === 'salary' ||
+    cat.includes('رواتب') ||
+    cat.includes('راتب') ||
+    expCat.includes('رواتب') ||
+    expCat.includes('راتب') ||
+    desc.includes('صرف راتب') ||
+    desc.includes('مسير رواتب')
+  );
+};
+
+const isSupplierOrPurchase = (t: any) => {
+  const isOut = t.type === 'out' || (t.type as string) === 'expense';
+  if (!isOut) return false;
+  const cat = (t.category || '').toLowerCase();
+  const id = (t.id || '');
+  return id.startsWith('TRX-SUP-') || cat === 'supplier_payment' || cat === 'purchase' || cat.includes('مورد');
+};
+
+const isPartnerWithdrawal = (t: any) => {
+  const isOut = t.type === 'out' || (t.type as string) === 'expense';
+  if (!isOut) return false;
+  const cat = (t.category || '').toLowerCase();
+  const id = (t.id || '');
+  return id.startsWith('TRX-PARTNER-') || cat === 'profit_share' || cat.includes('شريك');
+};
+
+const isOperatingExpense = (t: any) => {
+  const isOut = t.type === 'out' || (t.type as string) === 'expense';
+  if (!isOut) return false;
+  if (isStaffAdvance(t)) return false;
+  if (isStaffSalary(t)) return false;
+  if (isSupplierOrPurchase(t)) return false;
+  if (isPartnerWithdrawal(t)) return false;
+  return true;
+};
+
 const isBookingAdvanceTrx = (t: any) => {
   if (t.type !== 'in') return false;
   const cat = (t.category || '').toLowerCase();
@@ -615,12 +661,15 @@ export function OwnerExecutivePortal({
   const [customEndDate, setCustomEndDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
 
   // Bookings Filter & Search State
-  const [bookingStatusFilter, setBookingStatusFilter] = useState<'all' | 'confirmed' | 'pending' | 'completed' | 'cancelled' | 'with_advance'>('all');
+  const [bookingStatusFilter, setBookingStatusFilter] = useState<'all' | 'created_in_period' | 'scheduled_in_period' | 'confirmed' | 'pending' | 'completed' | 'cancelled' | 'with_advance'>('all');
   const [bookingSearchQuery, setBookingSearchQuery] = useState('');
   const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null);
 
   // Finance Revenues Tab Filter (الكل، فواتير، مقدمات حجز)
   const [financeRevenueFilter, setFinanceRevenueFilter] = useState<'all' | 'invoices' | 'advances'>('all');
+
+  // Finance Outflows Tab Filter (الكل، مصروفات تشغيلية، سلف، رواتب)
+  const [financeOutflowFilter, setFinanceOutflowFilter] = useState<'all' | 'expenses' | 'salaries' | 'advances'>('all');
 
   // Salon Treasuries State (Synchronized with Supabase DB)
   const [liveTreasuries, setLiveTreasuries] = useState<Treasury[]>(() => {
@@ -910,17 +959,75 @@ export function OwnerExecutivePortal({
       });
     });
 
-    const totalExpenses = filteredTransactions
-      .filter(t => 
-        t.type === 'out' || 
-        (t.type as string) === 'expense' || 
-        t.category === 'expense' || 
-        t.category === 'مصروفات' || 
-        t.category?.includes('مصروف')
-      )
-      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+    // 1. Operating Expenses (excluding salaries, advances, supplier payments, partner shares)
+    const directExpenseTx = filteredTransactions.filter(isOperatingExpense);
+    const customExpenses = (expenses || []).filter(e => {
+      const inPeriod = isDateInSelectedPeriod(e.date) || 
+        (e.shiftDate && isDateInSelectedPeriod(e.shiftDate)) || 
+        ((e as any).shift_date && isDateInSelectedPeriod((e as any).shift_date));
+      const isBranchMatch = matchesActiveBranch(e.branchId);
+      return inPeriod && isBranchMatch;
+    });
+    const sumCustom = customExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    const sumDirect = directExpenseTx.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+    const totalExpenses = Math.max(sumCustom, sumDirect);
 
-    const netProfit = totalRevenue - totalExpenses;
+    // 2. Staff Salaries Disbursed
+    let totalSalaries = 0;
+    const activeStaff = employees.filter(e => matchesActiveBranch((e as any).branchId));
+    activeStaff.forEach(emp => {
+      (emp.financialRecords || []).forEach((rec: any) => {
+        if (isDateInSelectedPeriod(rec.date) && rec.type === 'salary') {
+          totalSalaries += Number(rec.amount) || 0;
+        }
+      });
+    });
+    const trxSalaries = filteredTransactions.filter(isStaffSalary);
+    if (totalSalaries === 0) {
+      totalSalaries = trxSalaries.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+    } else {
+      trxSalaries.forEach(t => {
+        const amt = Number(t.amount) || 0;
+        const alreadyCounted = activeStaff.some(emp => 
+          (emp.financialRecords || []).some((rec: any) => 
+            rec.type === 'salary' && 
+            Math.abs((Number(rec.amount) || 0) - amt) < 0.01 &&
+            isDateInSelectedPeriod(rec.date)
+          )
+        );
+        if (!alreadyCounted) totalSalaries += amt;
+      });
+    }
+
+    // 3. Staff Advances
+    let totalAdvances = 0;
+    activeStaff.forEach(emp => {
+      (emp.financialRecords || []).forEach((rec: any) => {
+        const isSal = rec.id?.startsWith('FIN-SAL-') || rec.note?.includes('مسير رواتب') || rec.note?.includes('تم استلام صافي الراتب');
+        if (isDateInSelectedPeriod(rec.date) && rec.type === 'advance' && !isSal) {
+          totalAdvances += Number(rec.amount) || 0;
+        }
+      });
+    });
+    const trxAdvances = filteredTransactions.filter(isStaffAdvance);
+    if (totalAdvances === 0) {
+      totalAdvances = trxAdvances.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+    } else {
+      trxAdvances.forEach(t => {
+        const amt = Number(t.amount) || 0;
+        const alreadyCounted = activeStaff.some(emp => 
+          (emp.financialRecords || []).some((rec: any) => 
+            rec.type === 'advance' && 
+            Math.abs((Number(rec.amount) || 0) - amt) < 0.01 &&
+            isDateInSelectedPeriod(rec.date)
+          )
+        );
+        if (!alreadyCounted) totalAdvances += amt;
+      });
+    }
+
+    const totalOutflows = totalExpenses + totalSalaries + totalAdvances;
+    const netProfit = totalRevenue - totalOutflows;
     const avgTicket = filteredInvoices.length > 0 ? (totalRevenue / filteredInvoices.length) : 0;
 
     return {
@@ -932,11 +1039,14 @@ export function OwnerExecutivePortal({
       tabTamara,
       other,
       totalExpenses,
+      totalSalaries,
+      totalAdvances,
+      totalOutflows,
       netProfit,
       invoiceCount: filteredInvoices.length,
       avgTicket
     };
-  }, [filteredInvoices, filteredTransactions, bookings, settings.treasuries, activeBranchId, isMainBranch, isAllBranches, period, dateRange]);
+  }, [filteredInvoices, filteredTransactions, bookings, settings.treasuries, activeBranchId, isMainBranch, isAllBranches, period, dateRange, employees, expenses]);
 
   // ---- حسابات وأرصدة الخزائن المسجلة في النظام (Registered Treasuries Balances & Stats) ----
   const treasuryStats = useMemo(() => {
@@ -1148,14 +1258,8 @@ export function OwnerExecutivePortal({
 
     const grossIncome = grossInvoicesIncome + totalBookingAdvances;
 
-    // 2. All Expenses
-    const directExpenseTx = filteredTransactions.filter(t => 
-      t.type === 'out' || 
-      (t.type as string) === 'expense' || 
-      t.category === 'expense' || 
-      t.category === 'مصروفات' || 
-      t.category?.includes('مصروف')
-    );
+    // 2. All Expenses (Operating Expenses)
+    const directExpenseTx = filteredTransactions.filter(isOperatingExpense);
     const customExpenses = (expenses || []).filter(e => {
       const inPeriod = isDateInSelectedPeriod(e.date) || 
         (e.shiftDate && isDateInSelectedPeriod(e.shiftDate)) || 
@@ -1185,10 +1289,23 @@ export function OwnerExecutivePortal({
       });
     });
 
+    const trxSalaries = filteredTransactions.filter(isStaffSalary);
     if (totalSalaries === 0) {
-      totalSalaries = filteredTransactions
-        .filter(t => t.category?.includes('راتب') || t.category?.includes('رواتب') || t.description?.includes('راتب'))
-        .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+      totalSalaries = trxSalaries.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+    } else {
+      trxSalaries.forEach(t => {
+        const amt = Number(t.amount) || 0;
+        const alreadyCounted = activeStaff.some(emp => 
+          (emp.financialRecords || []).some((rec: any) => 
+            rec.type === 'salary' && 
+            Math.abs((Number(rec.amount) || 0) - amt) < 0.01 &&
+            isDateInSelectedPeriod(rec.date)
+          )
+        );
+        if (!alreadyCounted) {
+          totalSalaries += amt;
+        }
+      });
     }
 
     const trxAdvances = filteredTransactions.filter(isStaffAdvance);
@@ -1350,13 +1467,21 @@ export function OwnerExecutivePortal({
 
       const brGross = brInvoicesGross + brBookingAdvances;
 
-      const brExp = transactions
-        .filter(t => 
-          isBrMatch((t as any).branchId) && 
-          (t.type === 'out' || (t.type as string) === 'expense' || t.category === 'expense' || t.category === 'مصروفات' || t.category?.includes('مصروف')) && 
-          (isDateInSelectedPeriod(t.date) || (t.shiftDate && isDateInSelectedPeriod(t.shiftDate)) || ((t as any).shift_date && isDateInSelectedPeriod((t as any).shift_date)))
-        )
-        .reduce((s, t) => s + (Number(t.amount) || 0), 0);
+      const brDirectExpTx = (transactions || []).filter(t => 
+        isBrMatch((t as any).branchId) && 
+        isOperatingExpense(t) && 
+        (isDateInSelectedPeriod(t.date) || (t.shiftDate && isDateInSelectedPeriod(t.shiftDate)) || ((t as any).shift_date && isDateInSelectedPeriod((t as any).shift_date)))
+      );
+      const brCustomExp = (expenses || []).filter(e => {
+        const inPeriod = isDateInSelectedPeriod(e.date) || 
+          (e.shiftDate && isDateInSelectedPeriod(e.shiftDate)) || 
+          ((e as any).shift_date && isDateInSelectedPeriod((e as any).shift_date));
+        return inPeriod && isBrMatch(e.branchId);
+      });
+      const brExp = Math.max(
+        brCustomExp.reduce((s, e) => s + (Number(e.amount) || 0), 0),
+        brDirectExpTx.reduce((s, t) => s + (Number(t.amount) || 0), 0)
+      );
 
       const brStaff = employees.filter(e => isBrMatch((e as any).branchId));
       let brSalaries = 0;
@@ -1375,6 +1500,27 @@ export function OwnerExecutivePortal({
           }
         });
       });
+
+      const brSalTrx = (transactions || []).filter(t => 
+        isBrMatch(t.branchId) && 
+        isStaffSalary(t) && 
+        (isDateInSelectedPeriod(t.date) || (t.shiftDate && isDateInSelectedPeriod(t.shiftDate)))
+      );
+      if (brSalaries === 0) {
+        brSalaries = brSalTrx.reduce((s, t) => s + (Number(t.amount) || 0), 0);
+      } else {
+        brSalTrx.forEach(t => {
+          const amt = Number(t.amount) || 0;
+          const already = brStaff.some(emp => 
+            (emp.financialRecords || []).some((rec: any) => 
+              rec.type === 'salary' && 
+              Math.abs((Number(rec.amount) || 0) - amt) < 0.01 && 
+              isDateInSelectedPeriod(rec.date)
+            )
+          );
+          if (!already) brSalaries += amt;
+        });
+      }
 
       const brAdvTrx = (transactions || []).filter(t => 
         isBrMatch(t.branchId) && 
@@ -1672,13 +1818,28 @@ export function OwnerExecutivePortal({
     };
   }, [employees, dateRange, filteredInvoices, fingerprintLogs]);
 
-  // 3. Bookings & Clients for Selected Period
+  // 3. Bookings & Clients for Selected Period (Created in Period & Scheduled in Period)
   const bookingsStats = useMemo(() => {
-    const periodList = bookings.filter(b => {
+    // 1. Bookings created during the selected period
+    const createdInPeriodList = bookings.filter(b => {
+      const createdDate = (b as any).createdAt || (b as any).created_at;
+      const inPeriod = isDateInSelectedPeriod(createdDate);
+      const isBranchMatch = matchesActiveBranch((b as any).branchId);
+      return inPeriod && isBranchMatch;
+    });
+
+    // 2. Bookings scheduled for the selected period (appointment date)
+    const scheduledInPeriodList = bookings.filter(b => {
       const inPeriod = isDateInSelectedPeriod(b.date);
       const isBranchMatch = matchesActiveBranch((b as any).branchId);
       return inPeriod && isBranchMatch;
     });
+
+    // 3. Unified unique list of bookings relevant to the period (created in period OR scheduled in period)
+    const periodMap = new Map<string, any>();
+    scheduledInPeriodList.forEach(b => periodMap.set(b.id, b));
+    createdInPeriodList.forEach(b => periodMap.set(b.id, b));
+    const periodList = Array.from(periodMap.values());
 
     const completed = periodList.filter(b => b.status === 'completed').length;
     const confirmed = periodList.filter(b => b.status === 'confirmed').length;
@@ -1709,6 +1870,10 @@ export function OwnerExecutivePortal({
 
     return {
       totalBookings: periodList.length,
+      createdInPeriodCount: createdInPeriodList.length,
+      scheduledInPeriodCount: scheduledInPeriodList.length,
+      createdInPeriodList,
+      scheduledInPeriodList,
       completed,
       confirmed,
       pending,
@@ -1868,11 +2033,194 @@ export function OwnerExecutivePortal({
     return items.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
   }, [filteredInvoices, bookingAdvancesList]);
 
+  // Unified Outflows Journal (Operating Expenses, Staff Salaries, Staff Advances)
+  const combinedOutflows = useMemo(() => {
+    const items: Array<{
+      id: string;
+      kind: 'expense' | 'salary' | 'advance';
+      label: string;
+      title: string;
+      recipientOrCategory: string;
+      amount: number;
+      paymentMethodOrTreasury: string;
+      date: string;
+      time: string;
+      notes: string;
+      timestamp: number;
+    }> = [];
+
+    // Helper to extract clean date & time
+    const parseDateTime = (dStr?: string) => {
+      if (!dStr) return { date: '', time: '', ts: 0 };
+      const d = dStr.includes('T') ? dStr.split('T')[0] : dStr.split(' ')[0];
+      const t = dStr.includes('T') ? dStr.split('T')[1]?.substring(0, 5) || '' : (dStr.split(' ')[1]?.substring(0, 5) || '');
+      const ts = new Date(dStr).getTime() || 0;
+      return { date: d, time: t, ts };
+    };
+
+    // 1. Operating Expenses
+    const directExpenseTx = filteredTransactions.filter(isOperatingExpense);
+    const customExpenses = (expenses || []).filter(e => {
+      const inPeriod = isDateInSelectedPeriod(e.date) || 
+        (e.shiftDate && isDateInSelectedPeriod(e.shiftDate)) || 
+        ((e as any).shift_date && isDateInSelectedPeriod((e as any).shift_date));
+      const isBranchMatch = matchesActiveBranch(e.branchId);
+      return inPeriod && isBranchMatch;
+    });
+
+    if (customExpenses.length > 0) {
+      customExpenses.forEach(exp => {
+        const { date, time, ts } = parseDateTime(exp.date || (exp as any).createdAt);
+        items.push({
+          id: exp.id || `EXP-${Math.random()}`,
+          kind: 'expense',
+          label: 'مصروف تشغيلي',
+          title: exp.title || exp.category || 'مصروف تشغيلي',
+          recipientOrCategory: exp.category || 'عام',
+          amount: Number(exp.amount) || 0,
+          paymentMethodOrTreasury: (exp as any).treasuryName || (exp as any).paymentMethod || 'نقدي',
+          date,
+          time,
+          notes: exp.notes || exp.description || '',
+          timestamp: ts
+        });
+      });
+    } else {
+      directExpenseTx.forEach(tx => {
+        const { date, time, ts } = parseDateTime(tx.date);
+        items.push({
+          id: tx.id,
+          kind: 'expense',
+          label: 'مصروف تشغيلي',
+          title: tx.category || 'مصروف تشغيلي',
+          recipientOrCategory: tx.category || 'مصروفات',
+          amount: Number(tx.amount) || 0,
+          paymentMethodOrTreasury: (tx as any).treasuryName || tx.paymentMethod || 'نقدي',
+          date,
+          time,
+          notes: tx.description || '',
+          timestamp: ts
+        });
+      });
+    }
+
+    // 2. Staff Salaries
+    const activeStaff = employees.filter(e => matchesActiveBranch((e as any).branchId));
+    const addedSalaryKeys = new Set<string>();
+
+    activeStaff.forEach(emp => {
+      (emp.financialRecords || []).forEach((rec: any) => {
+        if (isDateInSelectedPeriod(rec.date) && rec.type === 'salary') {
+          const { date, time, ts } = parseDateTime(rec.date);
+          const amt = Number(rec.amount) || 0;
+          const key = `${emp.name}_${amt}_${date}`;
+          addedSalaryKeys.add(key);
+          items.push({
+            id: rec.id || `SAL-${emp.id}-${date}`,
+            kind: 'salary',
+            label: 'مسير رواتب',
+            title: `راتب: ${emp.name}`,
+            recipientOrCategory: emp.name,
+            amount: amt,
+            paymentMethodOrTreasury: (rec as any).treasuryName || (rec as any).paymentMethod || 'نقدي',
+            date,
+            time,
+            notes: rec.note || 'صرف راتب شهري للموظف',
+            timestamp: ts
+          });
+        }
+      });
+    });
+
+    const trxSalaries = filteredTransactions.filter(isStaffSalary);
+    trxSalaries.forEach(tx => {
+      const { date, time, ts } = parseDateTime(tx.date);
+      const amt = Number(tx.amount) || 0;
+      const matchedEmp = activeStaff.find(e => tx.description?.includes(e.name));
+      const empName = matchedEmp ? matchedEmp.name : (tx.description?.split(' ')[1] || 'موظف');
+      const key = `${empName}_${amt}_${date}`;
+      if (!addedSalaryKeys.has(key)) {
+        addedSalaryKeys.add(key);
+        items.push({
+          id: tx.id,
+          kind: 'salary',
+          label: 'مسير رواتب',
+          title: `راتب: ${empName}`,
+          recipientOrCategory: empName,
+          amount: amt,
+          paymentMethodOrTreasury: (tx as any).treasuryName || tx.paymentMethod || 'نقدي',
+          date,
+          time,
+          notes: tx.description || 'صرف راتب',
+          timestamp: ts
+        });
+      }
+    });
+
+    // 3. Staff Advances
+    const addedAdvanceKeys = new Set<string>();
+    activeStaff.forEach(emp => {
+      (emp.financialRecords || []).forEach((rec: any) => {
+        const isSal = rec.id?.startsWith('FIN-SAL-') || rec.note?.includes('مسير رواتب') || rec.note?.includes('تم استلام صافي الراتب');
+        if (isDateInSelectedPeriod(rec.date) && rec.type === 'advance' && !isSal) {
+          const { date, time, ts } = parseDateTime(rec.date);
+          const amt = Number(rec.amount) || 0;
+          const key = `${emp.name}_${amt}_${date}`;
+          addedAdvanceKeys.add(key);
+          items.push({
+            id: rec.id || `ADV-${emp.id}-${date}`,
+            kind: 'advance',
+            label: 'سلفة موظف',
+            title: `سلفة: ${emp.name}`,
+            recipientOrCategory: emp.name,
+            amount: amt,
+            paymentMethodOrTreasury: (rec as any).treasuryName || (rec as any).paymentMethod || 'نقدي',
+            date,
+            time,
+            notes: rec.note || 'صرف سلفة للموظف',
+            timestamp: ts
+          });
+        }
+      });
+    });
+
+    const trxAdvances = filteredTransactions.filter(isStaffAdvance);
+    trxAdvances.forEach(tx => {
+      const { date, time, ts } = parseDateTime(tx.date);
+      const amt = Number(tx.amount) || 0;
+      const matchedEmp = activeStaff.find(e => tx.description?.includes(e.name));
+      const empName = matchedEmp ? matchedEmp.name : (tx.description?.split(' ')[1] || 'موظف');
+      const key = `${empName}_${amt}_${date}`;
+      if (!addedAdvanceKeys.has(key)) {
+        addedAdvanceKeys.add(key);
+        items.push({
+          id: tx.id,
+          kind: 'advance',
+          label: 'سلفة موظف',
+          title: `سلفة: ${empName}`,
+          recipientOrCategory: empName,
+          amount: amt,
+          paymentMethodOrTreasury: (tx as any).treasuryName || tx.paymentMethod || 'نقدي',
+          date,
+          time,
+          notes: tx.description || 'صرف سلفة',
+          timestamp: ts
+        });
+      }
+    });
+
+    return items.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  }, [filteredTransactions, expenses, employees, activeBranchId, isMainBranch, isAllBranches, period, dateRange]);
+
   // الحجوزات المصفاة في تبويب الحجوزات
   const filteredBookingsList = useMemo(() => {
     let list = bookingsStats.periodList;
 
-    if (bookingStatusFilter === 'with_advance') {
+    if (bookingStatusFilter === 'created_in_period') {
+      list = bookingsStats.createdInPeriodList;
+    } else if (bookingStatusFilter === 'scheduled_in_period') {
+      list = bookingsStats.scheduledInPeriodList;
+    } else if (bookingStatusFilter === 'with_advance') {
       list = list.filter(b => getBookingTotalAdvances(b) > 0);
     } else if (bookingStatusFilter !== 'all') {
       list = list.filter(b => b.status === bookingStatusFilter);
@@ -1893,11 +2241,16 @@ export function OwnerExecutivePortal({
     }
 
     return [...list].sort((a, b) => {
+      if (bookingStatusFilter === 'created_in_period') {
+        const createdA = (a as any).createdAt || (a as any).created_at || a.date;
+        const createdB = (b as any).createdAt || (b as any).created_at || b.date;
+        return new Date(createdB).getTime() - new Date(createdA).getTime();
+      }
       const dateA = `${a.date}T${a.time || '00:00'}`;
       const dateB = `${b.date}T${b.time || '00:00'}`;
       return dateB.localeCompare(dateA);
     });
-  }, [bookingsStats.periodList, bookingStatusFilter, bookingSearchQuery]);
+  }, [bookingsStats, bookingStatusFilter, bookingSearchQuery]);
 
   // Load Users from Supabase on mount
   useEffect(() => {
@@ -2409,23 +2762,77 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                 </div>
               </div>
 
-              {/* 4. Bookings Today */}
+              {/* 4. Bookings Today / Period */}
               <div 
                 onClick={() => setActiveSubTab('bookings')}
                 className="bg-gradient-to-br from-slate-900 to-slate-800/90 p-4 rounded-2xl border border-slate-700/80 shadow-lg relative overflow-hidden cursor-pointer hover:border-purple-500 transition-all group"
               >
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-[11px] font-bold text-slate-400">حجوزات اليوم</span>
+                  <span className="text-[11px] font-bold text-slate-400">حجوزات الفترة</span>
                   <div className="w-7 h-7 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center">
                     <Calendar size={15} />
                   </div>
                 </div>
                 <div className="text-xl font-black text-white tracking-tight">
-                  {bookingsStats.totalBookings} <span className="text-xs font-normal text-purple-400">موعد</span>
+                  {bookingsStats.totalBookings} <span className="text-xs font-normal text-purple-400">حجز</span>
                 </div>
                 <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-800 text-[10px] text-slate-400 font-semibold">
-                  <span className="text-emerald-400">✓ {bookingsStats.completed} اكتملت</span>
+                  <span className="text-purple-300">
+                    ⚡ {bookingsStats.createdInPeriodCount} أُنشئت | 📅 {bookingsStats.scheduledInPeriodCount} موعد
+                  </span>
                   <span className="text-purple-400 group-hover:translate-x-[-2px] transition-transform">جدول ‹</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Outflows Integration Banner (المصروفات • الرواتب • السلف) */}
+            <div 
+              onClick={() => setActiveSubTab('finance')}
+              className="bg-gradient-to-r from-slate-900 via-slate-900/90 to-slate-900 p-4 rounded-2xl border border-slate-800 hover:border-rose-500/50 transition-all cursor-pointer shadow-md group"
+            >
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-rose-500/15 text-rose-400 flex items-center justify-center shrink-0">
+                    <TrendingDown size={18} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-xs font-black text-white">منظومة المنصرفات والالتزامات ({dateRange.label})</h4>
+                      <span className="text-[9px] bg-rose-500/20 text-rose-300 border border-rose-500/30 px-1.5 py-0.5 rounded font-bold">
+                        ربط محاسبي دقيق
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                      تكامل فوري بين المصروفات التشغيلية، ومسيرات الرواتب المنصرفة، وسلف الكادر
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                  <div className="bg-slate-950/70 p-2.5 rounded-xl border border-slate-800/80">
+                    <span className="text-[10px] text-slate-400 block mb-0.5">مصروفات تشغيلية</span>
+                    <span className="font-mono font-black text-rose-400">
+                      {revenueStats.totalExpenses.toLocaleString()} <span className="text-[9px] font-normal text-slate-400">{currency}</span>
+                    </span>
+                  </div>
+                  <div className="bg-slate-950/70 p-2.5 rounded-xl border border-slate-800/80">
+                    <span className="text-[10px] text-slate-400 block mb-0.5">رواتب منصرفة</span>
+                    <span className="font-mono font-black text-amber-400">
+                      {revenueStats.totalSalaries.toLocaleString()} <span className="text-[9px] font-normal text-slate-400">{currency}</span>
+                    </span>
+                  </div>
+                  <div className="bg-slate-950/70 p-2.5 rounded-xl border border-slate-800/80">
+                    <span className="text-[10px] text-slate-400 block mb-0.5">سلف الموظفين</span>
+                    <span className="font-mono font-black text-sky-400">
+                      {revenueStats.totalAdvances.toLocaleString()} <span className="text-[9px] font-normal text-slate-400">{currency}</span>
+                    </span>
+                  </div>
+                  <div className="bg-rose-950/30 p-2.5 rounded-xl border border-rose-500/30">
+                    <span className="text-[10px] text-rose-300 block mb-0.5 font-bold">إجمالي المنصرفات</span>
+                    <span className="font-mono font-black text-rose-300">
+                      -{revenueStats.totalOutflows.toLocaleString()} <span className="text-[9px] font-normal text-rose-400/80">{currency}</span>
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -3450,6 +3857,145 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
               </div>
             </div>
 
+            {/* Unified Outflows Journal (Operating Expenses, Staff Salaries, Staff Advances) */}
+            <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-md">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3 pb-3 border-b border-slate-800">
+                <div className="flex items-center gap-2">
+                  <TrendingDown size={16} className="text-rose-400" />
+                  <div>
+                    <h3 className="text-xs font-black text-white">
+                      سجل المنصرفات والسلف والرواتب ({dateRange.label})
+                    </h3>
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                      ربط محاسبي موحد للمصروفات ومسيرات الرواتب وسلف الكادر
+                    </p>
+                  </div>
+                </div>
+
+                {/* Filter Tabs: الكل | مصروفات تشغيلية | رواتب | سلف */}
+                <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
+                  <button
+                    onClick={() => setFinanceOutflowFilter('all')}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                      financeOutflowFilter === 'all'
+                        ? 'bg-rose-500 text-slate-950 shadow-sm font-black'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    الكل ({combinedOutflows.length})
+                  </button>
+                  <button
+                    onClick={() => setFinanceOutflowFilter('expenses')}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                      financeOutflowFilter === 'expenses'
+                        ? 'bg-rose-500 text-slate-950 shadow-sm font-black'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    مصروفات ({combinedOutflows.filter(o => o.kind === 'expense').length})
+                  </button>
+                  <button
+                    onClick={() => setFinanceOutflowFilter('salaries')}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                      financeOutflowFilter === 'salaries'
+                        ? 'bg-amber-500 text-slate-950 shadow-sm font-black'
+                        : 'text-amber-300/80 hover:text-amber-200'
+                    }`}
+                  >
+                    رواتب ({combinedOutflows.filter(o => o.kind === 'salary').length})
+                  </button>
+                  <button
+                    onClick={() => setFinanceOutflowFilter('advances')}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                      financeOutflowFilter === 'advances'
+                        ? 'bg-sky-500 text-slate-950 shadow-sm font-black'
+                        : 'text-sky-300/80 hover:text-sky-200'
+                    }`}
+                  >
+                    سلف ({combinedOutflows.filter(o => o.kind === 'advance').length})
+                  </button>
+                </div>
+              </div>
+
+              {/* Subtotal Banner for Filtered View */}
+              <div className="flex items-center justify-between bg-slate-950/60 px-3 py-2 rounded-xl mb-3 border border-slate-800/80 text-[11px]">
+                <span className="text-slate-400">
+                  {financeOutflowFilter === 'all' && 'إجمالي المنصرفات والسلف والرواتب المنفذة:'}
+                  {financeOutflowFilter === 'expenses' && 'إجمالي المصروفات التشغيلية المعتمدة:'}
+                  {financeOutflowFilter === 'salaries' && 'إجمالي الرواتب المنصرفة للكادر:'}
+                  {financeOutflowFilter === 'advances' && 'إجمالي سلف الموظفين المسددة:'}
+                </span>
+                <span className="font-mono font-black text-rose-400">
+                  {financeOutflowFilter === 'all' && `-${revenueStats.totalOutflows.toLocaleString()} ${currency}`}
+                  {financeOutflowFilter === 'expenses' && `-${revenueStats.totalExpenses.toLocaleString()} ${currency}`}
+                  {financeOutflowFilter === 'salaries' && `-${revenueStats.totalSalaries.toLocaleString()} ${currency}`}
+                  {financeOutflowFilter === 'advances' && `-${revenueStats.totalAdvances.toLocaleString()} ${currency}`}
+                </span>
+              </div>
+
+              {/* List of Outflows */}
+              <div className="divide-y divide-slate-800 text-xs max-h-80 overflow-y-auto scrollbar-thin">
+                {combinedOutflows
+                  .filter(o => {
+                    if (financeOutflowFilter === 'expenses') return o.kind === 'expense';
+                    if (financeOutflowFilter === 'salaries') return o.kind === 'salary';
+                    if (financeOutflowFilter === 'advances') return o.kind === 'advance';
+                    return true;
+                  })
+                  .map(outflow => (
+                    <div 
+                      key={outflow.id} 
+                      className="py-3 flex items-center justify-between px-2.5 rounded-xl transition-colors hover:bg-slate-800/40"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        {outflow.kind === 'expense' && (
+                          <span className="bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[9px] font-black px-2 py-0.5 rounded-md whitespace-nowrap">
+                            مصروف تشغيلي
+                          </span>
+                        )}
+                        {outflow.kind === 'salary' && (
+                          <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] font-black px-2 py-0.5 rounded-md whitespace-nowrap">
+                            راتب شهري
+                          </span>
+                        )}
+                        {outflow.kind === 'advance' && (
+                          <span className="bg-sky-500/20 text-sky-300 border border-sky-500/40 text-[9px] font-black px-2 py-0.5 rounded-md whitespace-nowrap">
+                            سلفة موظف
+                          </span>
+                        )}
+
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="font-bold text-white text-xs">{outflow.title}</p>
+                            <span className="text-[10px] text-slate-400 font-medium">({outflow.recipientOrCategory})</span>
+                          </div>
+                          <p className="text-[10px] text-slate-400 mt-0.5">
+                            {outflow.date} {outflow.time ? `(${outflow.time})` : ''} 
+                            {outflow.notes ? ` • ${outflow.notes}` : ''}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="text-left shrink-0">
+                        <p className="font-mono font-black text-sm text-rose-400">
+                          -{outflow.amount.toLocaleString()} <span className="text-[10px] font-normal">{currency}</span>
+                        </p>
+                        <p className="text-[10px] text-slate-400 font-medium">{outflow.paymentMethodOrTreasury}</p>
+                      </div>
+                    </div>
+                  ))}
+
+                {combinedOutflows.filter(o => {
+                  if (financeOutflowFilter === 'expenses') return o.kind === 'expense';
+                  if (financeOutflowFilter === 'salaries') return o.kind === 'salary';
+                  if (financeOutflowFilter === 'advances') return o.kind === 'advance';
+                  return true;
+                }).length === 0 && (
+                  <p className="text-center py-8 text-slate-500 text-xs">لا توجد حركات منصرفات أو سلف أو رواتب مطابقة للفترة المحددة</p>
+                )}
+              </div>
+            </div>
+
           </div>
         )}
 
@@ -3539,39 +4085,89 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
           <div className="space-y-4 animate-in fade-in">
             
             {/* 1. Executive Bookings KPI Bar */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5 text-center">
-              <div className="bg-slate-900 p-3 rounded-2xl border border-slate-800">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-9 gap-2 text-center">
+              <div 
+                onClick={() => setBookingStatusFilter('all')}
+                className={`p-3 rounded-2xl border cursor-pointer transition-all ${
+                  bookingStatusFilter === 'all' ? 'bg-purple-950/40 border-purple-500/60 ring-1 ring-purple-500/30' : 'bg-slate-900 border-slate-800 hover:border-slate-700'
+                }`}
+              >
                 <p className="text-xl font-black text-white">{bookingsStats.totalBookings}</p>
                 <p className="text-[10px] font-bold text-slate-400 mt-0.5">مجموع الحجوزات</p>
               </div>
 
-              <div className="bg-slate-900 p-3 rounded-2xl border border-emerald-500/30">
+              <div 
+                onClick={() => setBookingStatusFilter('created_in_period')}
+                className={`p-3 rounded-2xl border cursor-pointer transition-all ${
+                  bookingStatusFilter === 'created_in_period' ? 'bg-purple-950/40 border-purple-400 ring-1 ring-purple-500/40' : 'bg-slate-900 border-purple-500/30 hover:border-purple-400/50'
+                }`}
+              >
+                <p className="text-xl font-black text-purple-300">{bookingsStats.createdInPeriodCount}</p>
+                <p className="text-[10px] font-bold text-purple-300 mt-0.5">⚡ أُنشئت بالفترة</p>
+              </div>
+
+              <div 
+                onClick={() => setBookingStatusFilter('scheduled_in_period')}
+                className={`p-3 rounded-2xl border cursor-pointer transition-all ${
+                  bookingStatusFilter === 'scheduled_in_period' ? 'bg-sky-950/40 border-sky-400 ring-1 ring-sky-500/40' : 'bg-slate-900 border-sky-500/30 hover:border-sky-400/50'
+                }`}
+              >
+                <p className="text-xl font-black text-sky-400">{bookingsStats.scheduledInPeriodCount}</p>
+                <p className="text-[10px] font-bold text-sky-300 mt-0.5">📅 مواعيد بالفترة</p>
+              </div>
+
+              <div 
+                onClick={() => setBookingStatusFilter('completed')}
+                className={`p-3 rounded-2xl border cursor-pointer transition-all ${
+                  bookingStatusFilter === 'completed' ? 'bg-emerald-950/40 border-emerald-400 ring-1 ring-emerald-500/40' : 'bg-slate-900 border-emerald-500/30 hover:border-emerald-400/50'
+                }`}
+              >
                 <p className="text-xl font-black text-emerald-400">{bookingsStats.completed}</p>
                 <p className="text-[10px] font-bold text-slate-400 mt-0.5">مكتملة ✓</p>
               </div>
 
-              <div className="bg-slate-900 p-3 rounded-2xl border border-blue-500/30">
+              <div 
+                onClick={() => setBookingStatusFilter('confirmed')}
+                className={`p-3 rounded-2xl border cursor-pointer transition-all ${
+                  bookingStatusFilter === 'confirmed' ? 'bg-blue-950/40 border-blue-400 ring-1 ring-blue-500/40' : 'bg-slate-900 border-blue-500/30 hover:border-blue-400/50'
+                }`}
+              >
                 <p className="text-xl font-black text-blue-400">{bookingsStats.confirmed}</p>
                 <p className="text-[10px] font-bold text-slate-400 mt-0.5">مؤكدة 📅</p>
               </div>
 
-              <div className="bg-slate-900 p-3 rounded-2xl border border-amber-500/30">
+              <div 
+                onClick={() => setBookingStatusFilter('pending')}
+                className={`p-3 rounded-2xl border cursor-pointer transition-all ${
+                  bookingStatusFilter === 'pending' ? 'bg-amber-950/40 border-amber-400 ring-1 ring-amber-500/40' : 'bg-slate-900 border-amber-500/30 hover:border-amber-400/50'
+                }`}
+              >
                 <p className="text-xl font-black text-amber-400">{bookingsStats.pending}</p>
                 <p className="text-[10px] font-bold text-slate-400 mt-0.5">معلقة ⏳</p>
               </div>
 
-              <div className="bg-slate-900 p-3 rounded-2xl border border-rose-500/30">
+              <div 
+                onClick={() => setBookingStatusFilter('cancelled')}
+                className={`p-3 rounded-2xl border cursor-pointer transition-all ${
+                  bookingStatusFilter === 'cancelled' ? 'bg-rose-950/40 border-rose-400 ring-1 ring-rose-500/40' : 'bg-slate-900 border-rose-500/30 hover:border-rose-400/50'
+                }`}
+              >
                 <p className="text-xl font-black text-rose-400">{bookingsStats.cancelled}</p>
                 <p className="text-[10px] font-bold text-slate-400 mt-0.5">ملغاة ✕</p>
               </div>
 
-              <div className="bg-slate-900 p-3 rounded-2xl border border-purple-500/40 bg-purple-950/10">
+              <div 
+                onClick={() => setBookingStatusFilter('with_advance')}
+                className={`p-3 rounded-2xl border cursor-pointer transition-all bg-purple-950/10 ${
+                  bookingStatusFilter === 'with_advance' ? 'border-purple-400 ring-1 ring-purple-500/40' : 'border-purple-500/40 hover:border-purple-400/60'
+                }`}
+              >
                 <p className="text-xl font-black text-purple-300 font-mono">
                   {bookingsStats.totalAdvances.toLocaleString()}
                   <span className="text-[10px] font-normal text-purple-400 mr-1">{currency}</span>
                 </p>
                 <p className="text-[10px] font-bold text-purple-300 mt-0.5 flex items-center justify-center gap-1">
-                  <span>مقدم حجز محصل 💰</span>
+                  <span>مقدم حجز 💰</span>
                 </p>
               </div>
 
@@ -3625,6 +4221,28 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                   }`}
                 >
                   الكل ({bookingsStats.totalBookings})
+                </button>
+
+                <button
+                  onClick={() => setBookingStatusFilter('created_in_period')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                    bookingStatusFilter === 'created_in_period'
+                      ? 'bg-purple-500 text-slate-950 font-black border-purple-400 shadow-md shadow-purple-500/30'
+                      : 'bg-purple-950/30 text-purple-300 border-purple-500/30 hover:bg-purple-900/40'
+                  }`}
+                >
+                  ⚡ أُنشئت بالفترة ({bookingsStats.createdInPeriodCount})
+                </button>
+
+                <button
+                  onClick={() => setBookingStatusFilter('scheduled_in_period')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                    bookingStatusFilter === 'scheduled_in_period'
+                      ? 'bg-sky-500 text-slate-950 font-black border-sky-400 shadow-md shadow-sky-500/30'
+                      : 'bg-sky-950/30 text-sky-300 border-sky-500/30 hover:bg-sky-900/40'
+                  }`}
+                >
+                  📅 مواعيد بالفترة ({bookingsStats.scheduledInPeriodCount})
                 </button>
 
                 <button
@@ -3696,6 +4314,27 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                 const branchObj = (branches || []).find(br => br.id === (b as any).branchId);
                 const branchName = branchObj ? branchObj.name : '';
 
+                // فحص تواريخ الإنشاء وموعد الحجز
+                const createdRaw = (b as any).createdAt || (b as any).created_at;
+                let createdDateFormatted = '';
+                let isCreatedInPeriod = false;
+                let isScheduledInPeriod = false;
+
+                if (createdRaw) {
+                  isCreatedInPeriod = isDateInSelectedPeriod(createdRaw);
+                  try {
+                    const cd = new Date(createdRaw);
+                    if (!isNaN(cd.getTime())) {
+                      createdDateFormatted = `${cd.getFullYear()}-${String(cd.getMonth() + 1).padStart(2, '0')}-${String(cd.getDate()).padStart(2, '0')} ${String(cd.getHours()).padStart(2, '0')}:${String(cd.getMinutes()).padStart(2, '0')}`;
+                    } else {
+                      createdDateFormatted = String(createdRaw).substring(0, 16);
+                    }
+                  } catch {
+                    createdDateFormatted = String(createdRaw).substring(0, 16);
+                  }
+                }
+                isScheduledInPeriod = isDateInSelectedPeriod(b.date);
+
                 return (
                   <div 
                     key={b.id} 
@@ -3708,6 +4347,20 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                         <span className="font-mono font-black text-xs px-2.5 py-1 rounded-lg bg-slate-950 text-purple-300 border border-purple-500/30">
                           {b.bookingCode ? (b.bookingCode.startsWith('#') ? b.bookingCode : `#${b.bookingCode}`) : `#${b.id.substring(0, 6)}`}
                         </span>
+
+                        {/* Badges for Created in Period & Scheduled in Period */}
+                        {isCreatedInPeriod && (
+                          <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-purple-500/25 text-purple-200 border border-purple-400/40 flex items-center gap-1 shadow-sm">
+                            <span>⚡</span>
+                            <span>أُنشئ بالفترة</span>
+                          </span>
+                        )}
+                        {isScheduledInPeriod && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-sky-500/20 text-sky-300 border border-sky-400/30 flex items-center gap-1">
+                            <span>📅</span>
+                            <span>موعد بالفترة</span>
+                          </span>
+                        )}
 
                         {/* Branch badge if available */}
                         {branchName && (
@@ -3802,16 +4455,25 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                       </div>
 
                       {/* Date & Time Badge */}
-                      <div className="flex items-center gap-3 bg-slate-900 px-3.5 py-2 rounded-xl border border-slate-800 text-xs">
-                        <div className="flex items-center gap-1.5 text-slate-300 font-bold">
-                          <Calendar size={14} className="text-purple-400" />
-                          <span>{b.date}</span>
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 bg-slate-900 px-3.5 py-2 rounded-xl border border-slate-800 text-xs">
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-1.5 text-slate-300 font-bold">
+                            <Calendar size={14} className="text-purple-400" />
+                            <span>موعد الحجز: {b.date}</span>
+                          </div>
+                          <div className="w-px h-4 bg-slate-700 hidden sm:block"></div>
+                          <div className="flex items-center gap-1.5 text-purple-300 font-mono font-bold">
+                            <Clock size={14} className="text-purple-400" />
+                            <span>{b.time || '--:--'}</span>
+                          </div>
                         </div>
-                        <div className="w-px h-4 bg-slate-700"></div>
-                        <div className="flex items-center gap-1.5 text-purple-300 font-mono font-bold">
-                          <Clock size={14} className="text-purple-400" />
-                          <span>{b.time || '--:--'}</span>
-                        </div>
+
+                        {createdDateFormatted && (
+                          <div className="text-[10px] text-slate-400 flex items-center gap-1 sm:border-r sm:pr-2.5 sm:border-slate-800">
+                            <span className="text-purple-400 font-bold">⚡ وُثّق:</span>
+                            <span className="font-mono text-slate-300">{createdDateFormatted}</span>
+                          </div>
+                        )}
                       </div>
                     </div>
 
