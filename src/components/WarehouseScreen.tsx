@@ -39,7 +39,7 @@ export function WarehouseScreen({
 }: {
   settings: AppSettings;
   products: Product[];
-  setProducts: (p: Product[]) => void;
+  setProducts: (p: Product[] | ((prev: Product[]) => Product[])) => void;
   categories: Category[];
   setCategories?: (c: Category[] | ((prev: Category[]) => Category[])) => void;
   employees: Employee[];

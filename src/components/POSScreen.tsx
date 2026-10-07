@@ -1457,22 +1457,27 @@ export function POSScreen({
           isRelevant = usedByService || !usedByProduct;
         }
       } else {
-        // المنتجات: يجب حصراً أن يحتوي التصنيف على منتج واحد على الأقل مصنف كـ "منتج للبيع" (Retail)
-        // التصنيفات التي تحتوي فقط على مواد خام (raw_material) أو تصنيفات المنتجات التي ليس بها سلع للبيع يتم استبعادها تماماً
-        const hasForSaleProduct = activeList.some((p: any) => {
-          const pCatId = (p.categoryId || (p as any).category_id || '').toString().trim();
-          const pCatName = ((p as any).category || '').toString().trim();
-          if (pCatId && pCatId === cat.id) return true;
-          if (pCatName && pCatName === cat.name) return true;
-          if (pCatId && (normalizeText(pCatId) === catNorm || normalizeText(pCatId) === normalizeText(cat.id))) return true;
-          if (pCatName && normalizeText(pCatName) === catNorm) return true;
-          if (pCatId) {
-            const knownCat = categories.find(c => c.id === pCatId);
-            if (knownCat && (knownCat.id === cat.id || normalizeText(knownCat.name) === catNorm)) return true;
-          }
-          return false;
-        });
-        isRelevant = hasForSaleProduct;
+        // المنتجات: قاعدة قطعية - تصنيفات الخدمات (type === 'service') ممنوع منعاً باتاً ظهورها ضمن تبويبات المنتجات
+        if (cat.type === 'service') {
+          isRelevant = false;
+        } else {
+          // يجب حصراً أن يحتوي التصنيف على منتج واحد على الأقل مصنف كـ "منتج للبيع" (Retail)
+          // التصنيفات التي تحتوي فقط على مواد خام (raw_material) أو تصنيفات المنتجات التي ليس بها سلع للبيع يتم استبعادها تماماً
+          const hasForSaleProduct = activeList.some((p: any) => {
+            const pCatId = (p.categoryId || (p as any).category_id || '').toString().trim();
+            const pCatName = ((p as any).category || '').toString().trim();
+            if (pCatId && pCatId === cat.id) return true;
+            if (pCatName && pCatName === cat.name) return true;
+            if (pCatId && (normalizeText(pCatId) === catNorm || normalizeText(pCatId) === normalizeText(cat.id))) return true;
+            if (pCatName && normalizeText(pCatName) === catNorm) return true;
+            if (pCatId) {
+              const knownCat = categories.find(c => c.id === pCatId);
+              if (knownCat && (knownCat.id === cat.id || normalizeText(knownCat.name) === catNorm)) return true;
+            }
+            return false;
+          });
+          isRelevant = hasForSaleProduct;
+        }
       }
 
       if (isRelevant && !seenKeys.has(catNorm)) {
@@ -1490,6 +1495,11 @@ export function POSScreen({
 
       if (!seenKeys.has(rawNorm) && !seenKeys.has(rawCat)) {
         const matchedKnown = categories.find(c => c.id === rawCat || normalizeText(c.name) === rawNorm);
+        // عند عرض المنتجات، يُمنع منعاً باتاً إضافة أي تصنيف خدمي
+        if (!isService && matchedKnown && matchedKnown.type === 'service') {
+          return;
+        }
+
         const displayName = matchedKnown ? matchedKnown.name : rawCat;
         const displayNorm = normalizeText(displayName);
 

@@ -88,8 +88,8 @@ export function ProductsScreen({
   };
 
   const productCategories = useMemo(() => {
-    return categories.filter(c => c.id !== 'all' && (c.type === 'product' || products.some(p => p.categoryId === c.id)));
-  }, [categories, products]);
+    return categories.filter(c => c.id !== 'all' && c.type === 'product');
+  }, [categories]);
 
   const filteredProducts = products.filter(p => {
     const q = normalizeText(searchQuery);
@@ -112,6 +112,64 @@ export function ProductsScreen({
   useEffect(() => {
     setCurrentPage(1);
   }, [searchQuery, categoryFilter, productTypeFilter]);
+
+  // تصحيح فوري لأي منتجات قديمة تم ربطها سابقاً بالخطأ بتصنيف خدمات (مثل الشعر الطبيعي)
+  useEffect(() => {
+    if (!products || products.length === 0 || !categories || categories.length === 0) return;
+
+    const mislinked = products.filter(p => {
+      if (!p.categoryId) return false;
+      const cat = categories.find(c => c.id === p.categoryId);
+      return cat && cat.type === 'service';
+    });
+
+    if (mislinked.length === 0) return;
+
+    let didChange = false;
+    const currentCats = [...categories];
+    const updatedProds = products.map(p => {
+      const cat = categories.find(c => c.id === p.categoryId);
+      if (!cat || cat.type !== 'service') return p;
+
+      didChange = true;
+      let targetCatName = 'منتجات عامة';
+      const pNameNorm = normalizeText(p.name);
+      if (pNameNorm.includes('اكسجين') || p.name.toLowerCase().includes('ox')) {
+        targetCatName = 'اكسجين';
+      } else if (pNameNorm.includes('صبغ') || pNameNorm.includes('لون')) {
+        targetCatName = 'صبغه';
+      } else if (pNameNorm.includes('ماسك') || pNameNorm.includes('سكراب')) {
+        targetCatName = 'ماسك';
+      } else if (pNameNorm.includes('بودر') || pNameNorm.includes('تفتيح')) {
+        targetCatName = 'بودرة تفتيح';
+      }
+
+      let prodCat = currentCats.find(c => c.id !== 'all' && c.type === 'product' && normalizeText(c.name) === normalizeText(targetCatName));
+      if (!prodCat) {
+        prodCat = {
+          id: 'CAT-PRD-AUTO-' + Math.random().toString(36).substr(2, 7) + '-' + Date.now(),
+          name: targetCatName,
+          type: 'product',
+          icon: 'Package',
+          salonId: settings.salonId,
+          branchId: settings.branchId
+        };
+        currentCats.push(prodCat);
+        DB.saveCategory(prodCat, settings.salonId);
+      }
+
+      const corrected = { ...p, categoryId: prodCat.id };
+      DB.saveProduct(corrected, settings.salonId);
+      return corrected;
+    });
+
+    if (didChange) {
+      if (setCategories && currentCats.length > categories.length) {
+        setCategories(currentCats);
+      }
+      setProducts(updatedProds);
+    }
+  }, [products, categories]);
 
   const totalPages = Math.max(1, Math.ceil(filteredProducts.length / itemsPerPage));
   const safePage = Math.min(currentPage, totalPages);
@@ -377,6 +435,38 @@ export function ProductsScreen({
     }
   };
 
+  const getRowField = (r: any, candidates: string[]): string => {
+    if (!r || typeof r !== 'object') return '';
+    // 1. مطابقة مباشرة لاسم الحقل
+    for (const cand of candidates) {
+      if (r[cand] !== undefined && r[cand] !== null && String(r[cand]).trim() !== '') {
+        return String(r[cand]).trim();
+      }
+    }
+    // 2. مطابقة مرنة متجاهلة للمسافات والأقواس وحالة الأحرف
+    const keys = Object.keys(r);
+    for (const cand of candidates) {
+      const cleanCand = cand.trim().toLowerCase().replace(/[\s\-_()]/g, '');
+      for (const k of keys) {
+        const cleanK = k.trim().toLowerCase().replace(/[\s\-_()]/g, '');
+        if (cleanK === cleanCand && r[k] !== undefined && r[k] !== null && String(r[k]).trim() !== '') {
+          return String(r[k]).trim();
+        }
+      }
+    }
+    // 3. مطابقة جزئية للاشتمال
+    for (const cand of candidates) {
+      const cleanCand = cand.trim().toLowerCase();
+      for (const k of keys) {
+        const cleanK = k.trim().toLowerCase();
+        if ((cleanK.includes(cleanCand) || cleanCand.includes(cleanK)) && r[k] !== undefined && r[k] !== null && String(r[k]).trim() !== '') {
+          return String(r[k]).trim();
+        }
+      }
+    }
+    return '';
+  };
+
   const handleExecuteImport = async () => {
     if (importedRows.length === 0 || isImporting) return;
 
@@ -385,9 +475,9 @@ export function ProductsScreen({
     setImportProgress({ current: 0, total: importedRows.length });
 
     try {
-      const newProducts: Product[] = [];
-      const currentSuppliersList = [...suppliers];
-      const currentCategoriesList = [...categories];
+      const updatedProductsList: Product[] = [...products];
+      const currentSuppliersList: Supplier[] = [...suppliers];
+      const currentCategoriesList: Category[] = [...categories];
       let addedSuppliersCount = 0;
       let addedCategoriesCount = 0;
       let successCount = 0;
@@ -396,43 +486,68 @@ export function ProductsScreen({
         const row = importedRows[idx];
         setImportProgress({ current: idx + 1, total: importedRows.length });
 
-        const name = String(row['اسم المنتج'] || row['المنتج'] || row['Product Name'] || row['name'] || '').trim();
+        const name = getRowField(row, ['اسم المنتج', 'المنتج', 'اسم الصنف', 'الصنف', 'Product Name', 'name', 'item_name', 'item']);
         if (!name) continue;
 
-        // قراءة اسم التصنيف بدقة من ملف الإكسل
-        const catName = String(row['اسم التصنيف'] || row['التصنيف'] || row['Category'] || row['category'] || '').trim();
+        // قراءة اسم التصنيف بدقة بالغة من ملف الإكسل مهما اختلفت صياغة الترويسة
+        const catName = getRowField(row, [
+          'اسم التصنيف', 'التصنيف', 'تصنيف', 'فئة', 'الفئة', 'اسم الفئة', 
+          'القسم', 'قسم', 'اسم القسم', 'التصنيف (Category)', 'Category', 'category', 'cat'
+        ]);
+
         let matchedCategory: Category | undefined;
 
         if (catName) {
-          // 1. البحث حصراً في تصنيفات المنتجات (type === 'product') لضمان عدم الخلط مع تصنيفات الخدمات
+          // 1. البحث حصراً في تصنيفات المنتجات (type === 'product') لضمان عدم الخلط إطلاقاً مع تصنيفات الخدمات
           matchedCategory = currentCategoriesList.find(c => 
             c.id !== 'all' && 
             c.type === 'product' && 
             normalizeText(c.name) === normalizeText(catName)
           );
 
-          // 2. إذا لم يكن التصنيف موجوداً ضمن تصنيفات المنتجات، يتم إنشاؤه كتصنيف منتجات جديد فوراً والالتزام باسمه الوارد في الإكسل
+          // 2. إذا لم يكن التصنيف موجوداً ضمن تصنيفات المنتجات، يتم إنشاؤه كتصنيف منتجات جديد فوراً مع الالتزام التام باسمه كما ورد في الإكسل
           if (!matchedCategory) {
-            const newCategory: Category = {
-              id: 'CAT-' + Math.random().toString(36).substr(2, 9) + '-' + Date.now() + '-' + (idx + 1),
-              name: catName, // الالتزام باسم التصنيف كما جاء في الإكسل تماماً
+            const newCatId = 'CAT-PRD-' + Math.random().toString(36).substr(2, 7) + '-' + Date.now() + '-' + (idx + 1);
+            matchedCategory = {
+              id: newCatId,
+              name: catName, // الالتزام باسم التصنيف الوارد في الإكسل نصاً
               type: 'product', // تصنيف خاص بالمنتجات حصراً
               icon: 'Package',
               salonId: settings.salonId,
               branchId: settings.branchId
             };
 
-            currentCategoriesList.push(newCategory);
+            currentCategoriesList.push(matchedCategory);
             addedCategoriesCount++;
-            matchedCategory = newCategory;
 
             // حفظ التصنيف في قاعدة بيانات Supabase فوراً
-            await DB.saveCategory(newCategory, settings.salonId);
+            await DB.saveCategory(matchedCategory, settings.salonId);
+          }
+        } else {
+          // إذا لم يحدد ملف الإكسل أي تصنيف، نبحث عن تصنيف منتجات عام أو ننشئه (ولا نربطه أبداً بتصنيف خدمات)
+          matchedCategory = currentCategoriesList.find(c => 
+            c.id !== 'all' && 
+            c.type === 'product' && 
+            normalizeText(c.name) === normalizeText('منتجات عامة')
+          );
+          if (!matchedCategory) {
+            const newCatId = 'CAT-PRD-GEN-' + Date.now();
+            matchedCategory = {
+              id: newCatId,
+              name: 'منتجات عامة',
+              type: 'product',
+              icon: 'Package',
+              salonId: settings.salonId,
+              branchId: settings.branchId
+            };
+            currentCategoriesList.push(matchedCategory);
+            addedCategoriesCount++;
+            await DB.saveCategory(matchedCategory, settings.salonId);
           }
         }
 
         // قراءة المورد والربط به
-        const supplierRawName = String(row['اسم المورد'] || row['المورد'] || row['Supplier'] || row['supplier'] || '').trim();
+        const supplierRawName = getRowField(row, ['اسم المورد', 'المورد', 'Supplier', 'supplier', 'الموزع', 'الشركة']);
         let matchedSupplier: Supplier | undefined;
         
         if (supplierRawName) {
@@ -451,44 +566,78 @@ export function ProductsScreen({
           }
         }
 
-        const rawType = String(row['نوع المنتج (للبيع / مادة خام)'] || row['نوع المنتج'] || row['النوع'] || row['Product Type'] || row['type'] || '').trim().toLowerCase();
+        const rawType = getRowField(row, ['نوع المنتج (للبيع / مادة خام)', 'نوع المنتج', 'النوع', 'Product Type', 'type']).toLowerCase();
         const pType: 'retail' | 'raw_material' = (rawType.includes('خام') || rawType.includes('raw')) ? 'raw_material' : 'retail';
         const isRaw = pType === 'raw_material';
 
-        const sellPrice = isRaw ? 0 : Number(row['سعر البيع (ر.س)'] || row['سعر البيع'] || row['Sell Price'] || row['sellPrice'] || 0);
-        const costPrice = Number(row['سعر التكلفة (ر.س)'] || row['سعر التكلفة'] || row['Cost Price'] || row['costPrice'] || 0);
-        const openingStock = Number(row['المخزون الافتتاحي'] || row['المخزون'] || row['Opening Stock'] || 0);
-        const reorderLimit = Number(row['حد إعادة الطلب'] || row['حد الطلب'] || row['Reorder Limit'] || 5);
-        const commission = isRaw ? 0 : Number(row['نسبة عمولة البيع (%)'] || row['العمولة'] || row['Commission'] || 0);
-        const barcode = String(row['الباركود'] || row['Barcode'] || '').trim();
+        const sellPriceRaw = getRowField(row, ['سعر البيع (ر.س)', 'سعر البيع', 'سعر بيع', 'Sell Price', 'sellPrice', 'price', 'السعر']);
+        const costPriceRaw = getRowField(row, ['سعر التكلفة (ر.س)', 'سعر التكلفة', 'التكلفة', 'سعر الشراء', 'Cost Price', 'costPrice', 'cost']);
+        const openingStockRaw = getRowField(row, ['المخزون الافتتاحي', 'المخزون', 'الرصيد', 'الكمية', 'Opening Stock', 'stock', 'qty']);
+        const reorderLimitRaw = getRowField(row, ['حد إعادة الطلب', 'حد الطلب', 'حد المخزون', 'Reorder Limit', 'reorderLimit']);
+        const commissionRaw = getRowField(row, ['نسبة عمولة البيع (%)', 'العمولة', 'عمولة', 'Commission', 'commission']);
+        const barcodeRaw = getRowField(row, ['الباركود', 'باركود', 'Barcode', 'barcode', 'كود الصنف (SKU)', 'كود الصنف', 'SKU']);
 
-        const prodItem: Product = {
-          id: 'PRD-' + Math.random().toString(36).substr(2, 9) + '-' + Date.now() + '-' + idx,
-          name,
-          productType: pType,
-          categoryId: matchedCategory?.id || '',
-          supplierId: matchedSupplier?.id,
-          supplierName: matchedSupplier?.name || (supplierRawName || undefined),
-          sellPrice: isNaN(sellPrice) ? 0 : sellPrice,
-          costPrice: isNaN(costPrice) ? 0 : costPrice,
-          openingStock: isNaN(openingStock) ? 0 : openingStock,
-          currentStock: isNaN(openingStock) ? 0 : openingStock,
-          reorderLimit: isNaN(reorderLimit) ? 5 : reorderLimit,
-          commission: isNaN(commission) ? 0 : commission,
-          barcode: barcode || undefined,
-          ...(settings.salonId ? { salonId: settings.salonId } : {}),
-          ...(settings.branchId ? { branchId: settings.branchId } : {})
-        };
+        const sellPrice = isRaw ? 0 : Number(sellPriceRaw || 0);
+        const costPrice = Number(costPriceRaw || 0);
+        const openingStock = Number(openingStockRaw || 0);
+        const reorderLimit = Number(reorderLimitRaw || 5);
+        const commission = isRaw ? 0 : Number(commissionRaw || 0);
+        const cleanBarcode = barcodeRaw.trim() || undefined;
 
-        // رفع المنتج مباشرة إلى قاعدة بيانات Supabase
-        const saved = await DB.saveProduct(prodItem, settings.salonId);
+        // التحقق مما إذا كان الصنف مسجلاً مسبقاً (لتحديث تصنيفه الصحيح فوراً وتجاوز أي ربط قديم خاطئ)
+        const existingIdx = updatedProductsList.findIndex(p => 
+          (cleanBarcode && p.barcode && p.barcode.trim() === cleanBarcode) ||
+          (normalizeText(p.name) === normalizeText(name))
+        );
+
+        let finalProductItem: Product;
+
+        if (existingIdx !== -1) {
+          const oldProd = updatedProductsList[existingIdx];
+          finalProductItem = {
+            ...oldProd,
+            name,
+            productType: pType,
+            categoryId: matchedCategory.id, // تصحيح وتثبيت التصنيف الوارد من الإكسل
+            supplierId: matchedSupplier?.id || oldProd.supplierId,
+            supplierName: matchedSupplier?.name || oldProd.supplierName,
+            sellPrice: isNaN(sellPrice) ? oldProd.sellPrice : sellPrice,
+            costPrice: isNaN(costPrice) ? oldProd.costPrice : costPrice,
+            reorderLimit: isNaN(reorderLimit) ? oldProd.reorderLimit : reorderLimit,
+            commission: isNaN(commission) ? oldProd.commission : commission,
+            barcode: cleanBarcode || oldProd.barcode,
+            ...(settings.salonId ? { salonId: settings.salonId } : {}),
+            ...(settings.branchId ? { branchId: settings.branchId } : {})
+          };
+          updatedProductsList[existingIdx] = finalProductItem;
+        } else {
+          finalProductItem = {
+            id: 'PRD-' + Math.random().toString(36).substr(2, 9) + '-' + Date.now() + '-' + idx,
+            name,
+            productType: pType,
+            categoryId: matchedCategory.id,
+            supplierId: matchedSupplier?.id,
+            supplierName: matchedSupplier?.name || (supplierRawName || undefined),
+            sellPrice: isNaN(sellPrice) ? 0 : sellPrice,
+            costPrice: isNaN(costPrice) ? 0 : costPrice,
+            openingStock: isNaN(openingStock) ? 0 : openingStock,
+            currentStock: isNaN(openingStock) ? 0 : openingStock,
+            reorderLimit: isNaN(reorderLimit) ? 5 : reorderLimit,
+            commission: isNaN(commission) ? 0 : commission,
+            barcode: cleanBarcode,
+            ...(settings.salonId ? { salonId: settings.salonId } : {}),
+            ...(settings.branchId ? { branchId: settings.branchId } : {})
+          };
+          updatedProductsList.push(finalProductItem);
+        }
+
+        const saved = await DB.saveProduct(finalProductItem, settings.salonId);
         if (saved) {
           successCount++;
         }
-        newProducts.push(prodItem);
       }
 
-      if (newProducts.length === 0) {
+      if (updatedProductsList.length === 0) {
         setImportError('لم يتم العثور على منتجات صالحة للاستيراد في الملف.');
         setIsImporting(false);
         return;
@@ -507,19 +656,14 @@ export function ProductsScreen({
         });
       }
 
-      // تحديث الحالة المحلية للمنتجات
-      setProducts(prev => {
-        const prevList = Array.isArray(prev) ? prev : [];
-        const existingIds = new Set(prevList.map(p => p.id));
-        const uniqueNew = newProducts.filter(p => !existingIds.has(p.id));
-        return [...prevList, ...uniqueNew];
-      });
+      // تحديث قائمة المنتجات في الحالة وتطبيق التغييرات فوراً
+      setProducts(updatedProductsList);
 
       setShowImportModal(false);
       setImportedRows([]);
       setImportFileName('');
       
-      let alertMsg = `تم استيراد ورفع ${successCount} منتج بنجاح إلى قاعدة البيانات!`;
+      let alertMsg = `تم استيراد ومعالجة ${successCount} منتج بنجاح وتحديث التصنيفات في النظام!`;
       const notes: string[] = [];
       if (addedCategoriesCount > 0) notes.push(`تمت إضافة ${addedCategoriesCount} تصنيف منتجات جديد تلقائياً`);
       if (addedSuppliersCount > 0) notes.push(`تم تسجيل ${addedSuppliersCount} مورد جديد تلقائياً`);
@@ -1209,11 +1353,17 @@ export function ProductsScreen({
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {importedRows.slice(0, 10).map((r, i) => {
-                        const rawType = String(r['نوع المنتج (للبيع / مادة خام)'] || r['نوع المنتج'] || r['النوع'] || r['Product Type'] || r['type'] || '').trim().toLowerCase();
+                        const rawType = getRowField(r, ['نوع المنتج (للبيع / مادة خام)', 'نوع المنتج', 'النوع', 'Product Type', 'type']).toLowerCase();
                         const isRaw = rawType.includes('خام') || rawType.includes('raw');
+                        const pName = getRowField(r, ['اسم المنتج', 'المنتج', 'اسم الصنف', 'الصنف', 'Product Name', 'name']);
+                        const pCat = getRowField(r, ['اسم التصنيف', 'التصنيف', 'تصنيف', 'فئة', 'الفئة', 'القسم', 'قسم', 'التصنيف (Category)', 'category', 'Category']) || '—';
+                        const pSup = getRowField(r, ['اسم المورد', 'المورد', 'Supplier', 'supplier', 'الموزع']) || '—';
+                        const pSell = isRaw ? '—' : (getRowField(r, ['سعر البيع (ر.س)', 'سعر البيع', 'سعر بيع', 'Sell Price', 'sellPrice', 'price']) || 0);
+                        const pCost = getRowField(r, ['سعر التكلفة (ر.س)', 'سعر التكلفة', 'التكلفة', 'Cost Price', 'costPrice', 'cost']) || 0;
+                        const pStock = getRowField(r, ['المخزون الافتتاحي', 'المخزون', 'الرصيد', 'الكمية', 'Opening Stock', 'stock']) || 0;
                         return (
                           <tr key={i}>
-                            <td className="p-2 font-bold text-slate-800">{r['اسم المنتج'] || r['المنتج'] || r['name']}</td>
+                            <td className="p-2 font-bold text-slate-800">{pName}</td>
                             <td className="p-2">
                               {isRaw ? (
                                 <span className="text-[10px] bg-amber-100 text-amber-800 font-bold px-1.5 py-0.5 rounded">مادة خام</span>
@@ -1221,11 +1371,11 @@ export function ProductsScreen({
                                 <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded">للبيع</span>
                               )}
                             </td>
-                            <td className="p-2 text-slate-600">{r['اسم التصنيف'] || r['التصنيف'] || r['category'] || '-'}</td>
-                            <td className="p-2 text-indigo-600 font-medium">{r['اسم المورد'] || r['المورد'] || r['Supplier'] || '-'}</td>
-                            <td className="p-2 font-mono text-emerald-600 font-bold">{isRaw ? '—' : (r['سعر البيع (ر.س)'] || r['سعر البيع'] || r['sellPrice'] || 0)}</td>
-                            <td className="p-2 font-mono text-slate-500 font-bold">{r['سعر التكلفة (ر.س)'] || r['سعر التكلفة'] || r['costPrice']}</td>
-                            <td className="p-2 font-bold text-slate-700">{r['المخزون الافتتاحي'] || r['المخزون'] || 0}</td>
+                            <td className="p-2 text-slate-600 font-semibold">{pCat}</td>
+                            <td className="p-2 text-indigo-600 font-medium">{pSup}</td>
+                            <td className="p-2 font-mono text-emerald-600 font-bold">{pSell}</td>
+                            <td className="p-2 font-mono text-slate-500 font-bold">{pCost}</td>
+                            <td className="p-2 font-bold text-slate-700">{pStock}</td>
                           </tr>
                         );
                       })}
