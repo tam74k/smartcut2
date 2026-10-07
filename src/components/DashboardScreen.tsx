@@ -123,11 +123,22 @@ export function DashboardScreen({
     return true;
   };
 
-  const shiftBookings = branchBookings.filter(b => {
-    const targetDate = (isShiftOpen && shiftDate) ? shiftDate : localToday;
-    const bDate = (b.date || (b as any).createdAt || (b as any).created_at || '').trim();
-    return bDate.startsWith(targetDate) && b.status !== 'completed' && b.status !== 'cancelled';
-  });
+  // ── حجوزات الوردية الحالية المفتوحة (Shift Bookings) ──
+  const shiftBookings = useMemo(() => {
+    if (!isShiftOpen) return [];
+    // تاريخ فتح الوردية الحالية المفتوحة من قاعدة البيانات حصراً
+    const targetShiftDate = (shiftData?.date || shiftDate || '').split('T')[0].split(' ')[0].trim();
+    if (!targetShiftDate) return [];
+
+    return branchBookings.filter(b => {
+      if (b.status === 'completed' || b.status === 'cancelled') return false;
+      // استخراج تاريخ إنشاء الحجز (created_at::date) مع تجاهل أوقات الساعات وتوقيت جهاز العميل تماماً
+      const createdRaw = (b.createdAt || (b as any).created_at || '').trim();
+      if (!createdRaw) return false;
+      const createdDateOnly = createdRaw.split('T')[0].split(' ')[0].trim();
+      return createdDateOnly === targetShiftDate;
+    });
+  }, [branchBookings, isShiftOpen, shiftDate, shiftData]);
   const pendingBookings = branchBookings.filter(b => b.status === 'pending');
 
   const handleConfirmBooking = async (bookingId: string) => {
@@ -334,30 +345,21 @@ export function DashboardScreen({
 
   // ── الحجوزات المنشأة خلال الوردية الحالية المفتوحة (Current Shift Reservations) ──
   const currentShiftReservations = useMemo(() => {
-    if (!isShiftOpen || !shiftDate) return [];
+    if (!isShiftOpen) return [];
+    // الاعتماد الكامل على تاريخ الوردية المخزن في قاعدة البيانات حصراً
+    const targetShiftDate = (shiftData?.date || shiftDate || '').split('T')[0].split(' ')[0].trim();
+    if (!targetShiftDate) return [];
+
     return branchBookings.filter(b => {
-      // 1. فحص تطابق معرف الوردية المفتوحة صراحة
-      if (shiftData?.shiftId && ((b as any).shiftId === shiftData.shiftId || (b as any).workShiftId === shiftData.shiftId)) {
-        return true;
-      }
-      // 2. فحص تطابق تاريخ الوردية
-      if ((b as any).shiftDate && (b as any).shiftDate.split('T')[0].trim() === shiftDate) {
-        return true;
-      }
-      // 3. الحجوزات التي تم إنشاؤها بعد فتح الوردية المفتوحة
-      const createdRaw = b.createdAt || (b as any).created_at;
-      if (shiftData?.openedAt && createdRaw) {
-        const openedTime = new Date(shiftData.openedAt).getTime();
-        const createdTime = new Date(createdRaw).getTime();
-        if (openedTime > 0 && createdTime >= openedTime) {
-          return true;
-        }
-      }
-      // 4. فحص شرط الوردية العام لتاريخ الإنشاء
-      return matchesCurrentShift(createdRaw, createdRaw, (b as any).shiftId, (b as any).shiftDate);
+      // الشرط المنطقي: تصفية وعرض الحجوزات التي يتطابق تاريخ إنشائها (created_at::date) حصراً مع تاريخ فتح الوردية الحالية المفتوحة (shift_date)
+      // مع تجاهل أوقات الساعات وتجاهل تاريخ ووقت جهاز العميل (Client Device Time) تماماً لتفادي فروق التوقيت أو تداخل الورديات الليلية
+      const createdRaw = (b.createdAt || (b as any).created_at || '').trim();
+      if (!createdRaw) return false;
+      const createdDateOnly = createdRaw.split('T')[0].split(' ')[0].trim();
+      return createdDateOnly === targetShiftDate;
     }).sort((a, b) => {
-      const timeA = new Date(a.createdAt || (a as any).created_at || a.date || 0).getTime();
-      const timeB = new Date(b.createdAt || (b as any).created_at || b.date || 0).getTime();
+      const timeA = new Date(a.createdAt || (a as any).created_at || 0).getTime();
+      const timeB = new Date(b.createdAt || (b as any).created_at || 0).getTime();
       return timeB - timeA;
     });
   }, [branchBookings, isShiftOpen, shiftDate, shiftData]);

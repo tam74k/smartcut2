@@ -839,12 +839,19 @@ export function POSScreen({
     const assignedTipEmployee = employees.find(e => e.id === tipEmployeeId) || employees.find(e => e.id === cart[0]?.employeeId) || employees[0];
     const tipPayoutMode = settings.tipPayoutMethod || 'instant_cash';
 
+    const currentCashierName = currentUser?.name || (currentUser as any)?.username || 'الكاشير';
+    const effectiveClientPhone = selectedClient?.phone || initialBooking?.phone || initialBooking?.clientPhone || (clientSearch && /^[0-9+ -]{7,}$/.test(clientSearch.trim()) ? clientSearch.trim() : undefined);
+
     const initialInv: Invoice = {
       id: 'INV-' + Math.random().toString(36).substr(2,9).toUpperCase(),
       date: isShiftOpen ? (shiftDate + 'T' + new Date().toTimeString().split(' ')[0]) : new Date().toISOString(),
       clientName: selectedClient ? selectedClient.name : (clientSearch || 'عميل نقدي'),
       clientId: selectedClient ? selectedClient.id : undefined,
-      clientPhone: selectedClient ? selectedClient.phone : undefined,
+      clientPhone: effectiveClientPhone,
+      createdBy: currentUser?.id || currentUser?.username || currentUser?.name || undefined,
+      createdByName: currentCashierName,
+      created_by_name: currentCashierName,
+      cashierName: currentCashierName,
       subtotal: subtotal,
       vatAmount: vatAmount,
       total: finalTotal, // net paid (0 if remedy)
@@ -3050,8 +3057,16 @@ export function POSScreen({
                   <p style={{ fontSize: '13px', margin: '0' }}>رقم الفاتورة: {completedInvoice.id}</p>
                   <p style={{ fontSize: '13px', margin: '0' }}>التاريخ: {new Date(completedInvoice.date).toLocaleString('ar-SA')}</p>
                   {completedInvoice.clientName && (
-                    <p style={{ fontSize: '13px', margin: '5px 0 0 0' }}>العميل: {completedInvoice.clientName}</p>
+                    <p style={{ fontSize: '13px', margin: '4px 0 0 0' }}>العميل: {completedInvoice.clientName}</p>
                   )}
+                  {(completedInvoice.clientPhone || selectedClient?.phone || initialBooking?.phone || initialBooking?.clientPhone) && (
+                    <p style={{ fontSize: '13px', margin: '2px 0 0 0' }}>
+                      جوال العميل: <span style={{ fontFamily: 'monospace', fontWeight: 'bold' }} dir="ltr">{completedInvoice.clientPhone || selectedClient?.phone || initialBooking?.phone || initialBooking?.clientPhone}</span>
+                    </p>
+                  )}
+                  <p style={{ fontSize: '13px', margin: '2px 0 0 0' }}>
+                    منفذ العملية (الكاشير): <span style={{ fontWeight: 'bold' }}>{completedInvoice.createdByName || completedInvoice.cashierName || completedInvoice.createdBy || currentUser?.name || (currentUser as any)?.username || 'الكاشير'}</span>
+                  </p>
                 </div>
                 
                 <div style={{ borderBottom: '1px dashed #000', margin: '10px 0' }}></div>

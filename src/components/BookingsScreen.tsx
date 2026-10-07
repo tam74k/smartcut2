@@ -11,7 +11,7 @@ import {
   List, Grid3X3, Eye, CalendarDays, ArrowRight, Sliders, 
   CalendarOff, ShieldAlert, Trash2, Lock, ShieldCheck, Check,
   DollarSign, Wallet, CreditCard, Banknote, XCircle, FileSpreadsheet,
-  MapPin, ShoppingBag, Package, Pencil
+  MapPin, ShoppingBag, Package, Pencil, AlertTriangle, RotateCcw, CheckCircle
 } from 'lucide-react';
 import { 
   isDateBlocked, isHourBlocked, isStaffAvailableOnDate, 
@@ -256,6 +256,16 @@ export function BookingsScreen({
   const [matchingClientInfo, setMatchingClientInfo] = useState<Client | null>(null);
   const [showPhoneSuggestions, setShowPhoneSuggestions] = useState(false);
   const [highlightedPhoneIndex, setHighlightedPhoneIndex] = useState(-1);
+
+  // Cancellation & Deposit Refund Policy Modal State
+  const [cancellingBooking, setCancellingBooking] = useState<Booking | null>(null);
+  const [isRefundDepositSelected, setIsRefundDepositSelected] = useState<boolean>(false);
+  const [refundTreasuryId, setRefundTreasuryId] = useState<string>('');
+  const [isProcessingCancellation, setIsProcessingCancellation] = useState<boolean>(false);
+
+  // Booking Deletion Confirmation Modal State
+  const [deletingBooking, setDeletingBooking] = useState<Booking | null>(null);
+  const [isProcessingDeletion, setIsProcessingDeletion] = useState<boolean>(false);
 
   // Combined clients pool (from clients prop + unique clients in previous bookings)
   const allAvailableClients = useMemo(() => {
@@ -878,6 +888,8 @@ export function BookingsScreen({
       category: 'مقدم حجز',
       description: `دفعة مقدمة / عربون لحجز #${updatedBooking.bookingCode || updatedBooking.id} - العميل: ${updatedBooking.clientName}`,
       treasury: tId,
+      bookingId: updatedBooking.id,
+      shiftId: shiftData?.isOpen ? ((shiftData as any).shiftId || (shiftData as any).id) : undefined,
       createdBy: currentUser?.name || 'الكاشير',
       userId: currentUser?.id,
       userName: currentUser?.name || 'الكاشير',
@@ -1039,6 +1051,8 @@ export function BookingsScreen({
           category: 'مقدم حجز',
           description: `دفعة مقدمة / عربون لحجز #${booking.bookingCode || booking.id} - العميل: ${booking.clientName}`,
           treasury: adv.treasuryId,
+          bookingId: booking.id,
+          shiftId: shiftData?.isOpen ? ((shiftData as any).shiftId || (shiftData as any).id) : undefined,
           createdBy: currentUser?.name || 'الكاشير',
           userId: currentUser?.id,
           userName: currentUser?.name || 'الكاشير',
@@ -1146,81 +1160,216 @@ export function BookingsScreen({
     setSelectedBookingDetails(null);
   };
 
-  const cancelBooking = async (id: string) => {
-    if (window.confirm('هل أنت متأكد من إلغاء هذا الحجز؟')) {
-      try {
-        const nowIso = new Date().toISOString();
-        const currentUserName = currentUser?.name || (currentUser as any)?.username || 'المستخدم';
-        const currentUserId = currentUser?.id;
-        const patchData = {
-          status: 'cancelled',
-          updated_at: nowIso,
-          updated_by: currentUserId || null,
-          updated_by_name: currentUserName
-        };
-        await DB.patch('bookings', id, patchData);
-        setBookings((prev: Booking[]) => prev.map(b => b.id === id ? { 
-          ...b, 
-          status: 'cancelled',
-          updatedAt: nowIso,
-          updated_at: nowIso,
-          updatedBy: currentUserId,
-          updated_by: currentUserId,
-          updatedByName: currentUserName,
-          updated_by_name: currentUserName
-        } : b));
-        try {
-          const stored = localStorage.getItem('smartcut_bookings');
-          if (stored) {
-            const list = JSON.parse(stored);
-            const updated = list.map((b: any) => b.id === id ? { ...b, ...patchData } : b);
-            localStorage.setItem('smartcut_bookings', JSON.stringify(updated));
-          }
-        } catch (e) {}
-        if (selectedBookingDetails?.id === id) {
-          setSelectedBookingDetails(prev => prev ? { 
-            ...prev, 
-            status: 'cancelled',
-            updatedAt: nowIso,
-            updated_at: nowIso,
-            updatedBy: currentUserId,
-            updated_by: currentUserId,
-            updatedByName: currentUserName,
-            updated_by_name: currentUserName
-          } : null);
+  const initiateCancelBooking = (target: Booking | string) => {
+    const b = typeof target === 'string' ? bookings.find(item => item.id === target) : target;
+    if (!b) return;
+
+    if (b.status === 'cancelled') {
+      alert('⚠️ هذا الحجز ملغي مسبقاً.');
+      return;
+    }
+
+    const paidDeposit = getBookingTotalAdvances(b);
+    const allowedDays = Number(settings.depositRefundAllowedDays ?? settings.deposit_refund_allowed_days ?? 0);
+    const createdAtRaw = b.createdAt || (b as any).created_at || b.date;
+    const createdDate = new Date(createdAtRaw);
+    const now = new Date();
+    const diffMs = !isNaN(createdDate.getTime()) ? (now.getTime() - createdDate.getTime()) : 0;
+    const allowedMs = allowedDays * 24 * 60 * 60 * 1000;
+    const isEligible = allowedDays > 0 && diffMs <= allowedMs && paidDeposit > 0 && !b.isRefunded;
+
+    // Default treasury: from first advance or available cash treasury
+    const defaultTreasuryId = (b.advancePayments && b.advancePayments[0]?.treasuryId) 
+      || availableTreasuries[0]?.id 
+      || 'cash';
+
+    setCancellingBooking(b);
+    setIsRefundDepositSelected(isEligible);
+    setRefundTreasuryId(defaultTreasuryId);
+  };
+
+  const cancelBooking = (id: string) => {
+    initiateCancelBooking(id);
+  };
+
+  const confirmCancelBooking = async () => {
+    if (!cancellingBooking) return;
+    setIsProcessingCancellation(true);
+    try {
+      const nowIso = new Date().toISOString();
+      const currentUserName = currentUser?.name || (currentUser as any)?.username || 'المستخدم';
+      const currentUserId = currentUser?.id;
+      const b = cancellingBooking;
+      const paidDeposit = getBookingTotalAdvances(b);
+      const bBranchId = b.branchId || activeBranchId || mainBranchId;
+      const currentShiftId = (shiftData && shiftData.isOpen) ? ((shiftData as any).shiftId || (shiftData as any).id) : undefined;
+      const effectiveShiftDate = (shiftData && shiftData.isOpen && shiftData.date) ? shiftData.date : undefined;
+
+      // Re-verify eligibility
+      const allowedDays = Number(settings.depositRefundAllowedDays ?? settings.deposit_refund_allowed_days ?? 0);
+      const createdAtRaw = b.createdAt || (b as any).created_at || b.date;
+      const createdDate = new Date(createdAtRaw);
+      const now = new Date();
+      const diffMs = !isNaN(createdDate.getTime()) ? (now.getTime() - createdDate.getTime()) : 0;
+      const allowedMs = allowedDays * 24 * 60 * 60 * 1000;
+      const isEligible = allowedDays > 0 && diffMs <= allowedMs && paidDeposit > 0 && !b.isRefunded;
+
+      const shouldRefund = isEligible && isRefundDepositSelected;
+      let newRefundTrx: Transaction | null = null;
+
+      if (shouldRefund) {
+        // Ensure "مسترجع حجوزات" category exists in settings
+        const currentCats = settings.expenseCategories || [];
+        if (!currentCats.includes('مسترجع حجوزات')) {
+          const updatedCats = [...currentCats, 'مسترجع حجوزات'];
+          if (setSettings) setSettings({ ...settings, expenseCategories: updatedCats });
+          DB.saveSettings(settings.salonId, { ...settings, expenseCategories: updatedCats });
         }
-        QueueService.updateTicket('QT-B-' + id, { status: 'cancelled' });
-      } catch (err) {
-        console.error('Error cancelling booking:', err);
+
+        // Exact pattern required:
+        // "إلغاء الحجز رقم [رقم الحجز] للعميلة / [اسم العميلة] - تاريخ الحجز: [تاريخ الحجز المجدول] - تاريخ الإنشاء: [تاريخ ووقت إنشاء الحجز] - منشئ الحجز: [اسم مستخدم الإنشاء] - منفذ الإلغاء: [اسم المستخدم الحالي الذي قام بالإلغاء]"
+        const bookingNum = b.bookingCode || b.id;
+        const clientName = b.clientName || 'العميل';
+        const scheduledDate = b.date + (b.time ? ` (${b.time})` : '');
+        const formattedCreation = formatBookingCreatedAt(b);
+        const creatorName = b.createdByName || (b as any).created_by_name || b.createdBy || 'غير محدد';
+        const cancelUser = currentUserName;
+
+        const refundDesc = `إلغاء الحجز رقم ${bookingNum} للعميلة / ${clientName} - تاريخ الحجز: ${scheduledDate} - تاريخ الإنشاء: ${formattedCreation} - منشئ الحجز: ${creatorName} - منفذ الإلغاء: ${cancelUser}`;
+
+        const transDate = (effectiveShiftDate || new Date().toISOString().split('T')[0]) + 'T' + new Date().toTimeString().split(' ')[0];
+
+        newRefundTrx = {
+          id: 'EXP-REFUND-' + Math.random().toString(36).substr(2, 9),
+          date: transDate,
+          createdAt: nowIso,
+          type: 'out',
+          amount: paidDeposit,
+          category: 'expense',
+          expenseCategory: 'مسترجع حجوزات',
+          description: refundDesc,
+          treasury: refundTreasuryId || availableTreasuries[0]?.id || 'cash',
+          salonId: settings.salonId,
+          branchId: bBranchId,
+          shiftDate: effectiveShiftDate,
+          shiftId: currentShiftId,
+          bookingId: b.id,
+          createdBy: currentUserName,
+          userId: currentUserId,
+          userName: currentUserName
+        } as any;
+
+        if (setTransactions && newRefundTrx) {
+          setTransactions(prev => [newRefundTrx!, ...prev]);
+        }
+        await DB.saveTransaction(newRefundTrx, settings.salonId);
       }
+
+      // Update booking
+      const updatedBookingData: Partial<Booking> = {
+        status: 'cancelled',
+        updatedAt: nowIso,
+        updated_at: nowIso,
+        updatedBy: currentUserId,
+        updated_by: currentUserId,
+        updatedByName: currentUserName,
+        updated_by_name: currentUserName,
+        cancelledAt: nowIso,
+        cancelled_at: nowIso,
+        cancelledBy: currentUserId,
+        cancelled_by: currentUserId,
+        cancelledByName: currentUserName,
+        cancelled_by_name: currentUserName,
+        isRefunded: shouldRefund,
+        is_refunded: shouldRefund,
+        refundAmount: shouldRefund ? paidDeposit : 0,
+        refund_amount: shouldRefund ? paidDeposit : 0,
+        refundDate: shouldRefund ? nowIso : undefined,
+        refund_date: shouldRefund ? nowIso : undefined,
+        refundExpenseId: newRefundTrx?.id,
+        refund_expense_id: newRefundTrx?.id,
+        refundTreasuryId: shouldRefund ? refundTreasuryId : undefined,
+        refund_treasury_id: shouldRefund ? refundTreasuryId : undefined,
+        refundNotes: shouldRefund ? 'تم استرجاع العربون وإدراجه ضمن المصروفات' : (paidDeposit > 0 ? 'تم الإلغاء الإداري دون استرجاع العربون' : undefined),
+        refund_notes: shouldRefund ? 'تم استرجاع العربون وإدراجه ضمن المصروفات' : (paidDeposit > 0 ? 'تم الإلغاء الإداري دون استرجاع العربون' : undefined)
+      };
+
+      await DB.saveBooking({ ...b, ...updatedBookingData }, settings.salonId);
+
+      setBookings((prev: Booking[]) => prev.map(item => item.id === b.id ? { ...item, ...updatedBookingData } : item));
+
+      try {
+        const stored = localStorage.getItem('smartcut_bookings');
+        if (stored) {
+          const list = JSON.parse(stored);
+          const updated = list.map((item: any) => item.id === b.id ? { ...item, ...updatedBookingData } : item);
+          localStorage.setItem('smartcut_bookings', JSON.stringify(updated));
+        }
+      } catch (e) {}
+
+      if (selectedBookingDetails?.id === b.id) {
+        setSelectedBookingDetails(prev => prev ? { ...prev, ...updatedBookingData } : null);
+      }
+
+      QueueService.updateTicket('QT-B-' + b.id, { status: 'cancelled' });
+
+      setCancellingBooking(null);
+
+      if (shouldRefund) {
+        alert(`✅ تم إلغاء الحجز بنجاح واسترجاع العربون بقيمة ${paidDeposit} ${settings.currency} وتوثيقه كمصروف في بند "مسترجع حجوزات" على الوردية الحالية.`);
+      } else {
+        alert(`✅ تم تأكيد إلغاء الحجز بنجاح كإجراء إداري دون أثر مالي.`);
+      }
+    } catch (err: any) {
+      console.error('Error in confirmCancelBooking:', err);
+      alert('حدث خطأ أثناء إلغاء الحجز: ' + (err?.message || ''));
+    } finally {
+      setIsProcessingCancellation(false);
     }
   };
 
-  const handleDeleteBooking = async (id: string) => {
+  const handleDeleteBooking = (id: string) => {
     if (!canDeleteBooking) {
       alert('⛔ عذراً، لا تملك صلاحية حذف الحجز نهائياً.');
       return;
     }
-    if (window.confirm('⚠️ تحذير: هل أنت متأكد من حذف هذا الحجز نهائياً من النظام وقاعدة البيانات؟ لا يمكن التراجع عن هذا الإجراء.')) {
-      try {
-        await DB.deleteBooking(id);
-        setBookings((prev: Booking[]) => prev.filter(b => b.id !== id));
-        try {
-          const stored = localStorage.getItem('smartcut_bookings');
-          if (stored) {
-            const list = JSON.parse(stored);
-            localStorage.setItem('smartcut_bookings', JSON.stringify(list.filter((b: any) => b.id !== id)));
-          }
-        } catch (e) {}
-        if (selectedBookingDetails?.id === id) {
-          setSelectedBookingDetails(null);
-        }
-        QueueService.updateTicket('QT-B-' + id, { status: 'cancelled' });
-        alert('✅ تم حذف الحجز نهائياً بنجاح.');
-      } catch (err) {
-        console.error('Error deleting booking:', err);
-        alert('حدث خطأ أثناء حذف الحجز');
+    const target = bookings.find(b => b.id === id);
+    if (target) {
+      setDeletingBooking(target);
+    }
+  };
+
+  const confirmDeleteBooking = async () => {
+    if (!deletingBooking) return;
+    setIsProcessingDeletion(true);
+    try {
+      const b = deletingBooking;
+      await DB.deleteBooking(b.id, b.bookingCode);
+
+      // Void linked transactions in React state
+      if (setTransactions) {
+        setTransactions((prev: Transaction[]) => prev.filter(t => {
+          const matchBookingId = (t as any).bookingId === b.id || (t as any).booking_id === b.id;
+          const matchDesc = t.description?.includes(b.id) || (b.bookingCode && t.description?.includes(b.bookingCode));
+          const isAdvanceOrRefund = t.category === 'مقدم حجز' || t.category === 'booking_advance' || t.expenseCategory === 'مسترجع حجوزات' || (t as any).expense_category === 'مسترجع حجوزات';
+          return !(matchBookingId || (matchDesc && isAdvanceOrRefund));
+        }));
       }
+
+      setBookings((prev: Booking[]) => prev.filter(item => item.id !== b.id));
+
+      if (selectedBookingDetails?.id === b.id) {
+        setSelectedBookingDetails(null);
+      }
+      QueueService.updateTicket('QT-B-' + b.id, { status: 'cancelled' });
+
+      setDeletingBooking(null);
+      alert('✅ تم حذف الحجز نهائياً وتصفير كافة الحركات المالية المرتبطة به بنجاح.');
+    } catch (err: any) {
+      console.error('Error deleting booking:', err);
+      alert('حدث خطأ أثناء حذف الحجز: ' + (err?.message || ''));
+    } finally {
+      setIsProcessingDeletion(false);
     }
   };
 
@@ -1296,7 +1445,7 @@ export function BookingsScreen({
         </div>
 
         <!-- Info List on single lines without booking number -->
-        <div style="border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 3px 0; margin-bottom: 4px; font-size: 11px; font-weight: bold; color: #000; line-height: 1.4;">
+        <div style="border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 4px 0; margin-bottom: 4px; font-size: 11px; font-weight: bold; color: #000; line-height: 1.45;">
           <div style="display: flex; justify-content: space-between; gap: 8px; white-space: nowrap;">
             <span>التاريخ: <span style="font-weight: bold;">${escapeHtml(booking.date)}</span></span>
             <span>الوقت: <span style="font-weight: bold;">${escapeHtml(formatTo12Hour(booking.time))}</span></span>
@@ -1305,11 +1454,15 @@ export function BookingsScreen({
             <span style="overflow: hidden; text-overflow: ellipsis;">العميل: <span style="font-weight: bold;">${escapeHtml(booking.clientName)}</span></span>
             <span>المكان: <span style="font-weight: bold;">${escapeHtml(booking.location || 'داخل الصالون')}</span></span>
           </div>
-          ${booking.phone ? `
+          ${(booking.phone || booking.clientPhone) ? `
           <div style="display: flex; justify-content: space-between; gap: 8px; white-space: nowrap;">
-            <span>الهاتف: <span style="font-family: monospace; font-weight: bold;">${escapeHtml(booking.phone)}</span></span>
+            <span>جوال العميل: <span style="font-family: monospace; font-weight: bold;" dir="ltr">${escapeHtml(booking.phone || booking.clientPhone || '')}</span></span>
           </div>
           ` : ''}
+          <div style="display: flex; justify-content: space-between; gap: 8px; white-space: nowrap; border-top: 1px dotted #ccc; margin-top: 2px; padding-top: 2px;">
+            <span>منفذ العملية (الموظف):</span>
+            <span style="font-weight: bold;">${escapeHtml(booking.createdByName || (booking as any).created_by_name || booking.createdBy || currentUser?.name || (currentUser as any)?.username || 'الموظف')}</span>
+          </div>
         </div>
 
         <!-- Services & Products on single lines -->
@@ -2401,334 +2554,645 @@ export function BookingsScreen({
       {/* QUICK BOOKING DETAILS MODAL (Interactive Popover) */}
       {/* ========================================================================= */}
       {selectedBookingDetails && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 space-y-4 animate-in fade-in zoom-in duration-150" dir="rtl">
-            <div className="flex justify-between items-start border-b border-slate-100 pb-3">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 md:p-6 overflow-hidden">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full flex flex-col max-h-[85vh] animate-in fade-in zoom-in duration-150 overflow-hidden" dir="rtl">
+            {/* Modal Header - Fixed at Top */}
+            <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 bg-white shrink-0">
               <div>
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-[10px] font-black font-mono text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
-                    #{selectedBookingDetails.id}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[11px] font-black font-mono text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-100">
+                    #{selectedBookingDetails.bookingCode || selectedBookingDetails.id}
                   </span>
                   {selectedBookingDetails.queueNumber && (
                     <span className="text-[11px] font-black font-mono text-indigo-700 bg-indigo-100/70 border border-indigo-200 px-2.5 py-0.5 rounded-full shadow-2xs">
                       دور B-{selectedBookingDetails.queueNumber}
                     </span>
                   )}
+                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${getStatusBadge(selectedBookingDetails.status).bg}`}>
+                    {getStatusBadge(selectedBookingDetails.status).label}
+                  </span>
                 </div>
-                <h3 className="text-lg font-black text-slate-900 mt-1">{selectedBookingDetails.clientName}</h3>
-                <p className="text-xs text-slate-500 font-mono">{selectedBookingDetails.phone}</p>
+                <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+                  <h3 className="text-lg font-black text-slate-900">{selectedBookingDetails.clientName}</h3>
+                  <span className="text-xs text-slate-500 font-mono font-bold" dir="ltr">{selectedBookingDetails.phone}</span>
+                </div>
               </div>
               <button
+                type="button"
                 onClick={() => setSelectedBookingDetails(null)}
-                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 cursor-pointer"
+                className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 hover:text-slate-800 cursor-pointer transition-colors text-base font-bold"
+                title="إغلاق النافذة"
               >
                 ✕
               </button>
             </div>
 
-            {/* Date & Time info */}
-            <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 flex flex-wrap justify-between items-center gap-2 text-xs">
-              <div className="flex items-center gap-1.5 font-bold text-slate-700">
-                <CalendarIcon size={15} className="text-indigo-600" />
-                <span>{selectedBookingDetails.date}</span>
-              </div>
-              <div className="flex items-center gap-1.5 font-mono font-bold text-slate-700">
-                <Clock size={15} className="text-indigo-600" />
-                <span>{formatTo12Hour(selectedBookingDetails.time)}</span>
-              </div>
-              {selectedBookingDetails.location && (
-                <div className="flex items-center gap-1 font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-lg text-[11px]">
-                  <MapPin size={13} className="text-indigo-600" />
-                  <span>{selectedBookingDetails.location}</span>
-                </div>
-              )}
-              <div>
-                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${getStatusBadge(selectedBookingDetails.status).bg}`}>
-                  {getStatusBadge(selectedBookingDetails.status).label}
-                </span>
-              </div>
-            </div>
-
-            {/* Audit / Tracking Info: Created by, created at, updated by, updated at */}
-            <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 space-y-2 text-xs">
-              <div className="flex items-center justify-between text-slate-600">
-                <div className="flex items-center gap-1.5 font-bold">
-                  <Sparkles size={14} className="text-emerald-600" />
-                  <span>تاريخ ووقت الإنشاء:</span>
-                </div>
-                <div className="font-mono text-slate-800 font-bold" dir="ltr">
-                  {formatDateTime(selectedBookingDetails.createdAt || (selectedBookingDetails as any).created_at)}
-                </div>
-              </div>
-              <div className="flex items-center justify-between text-slate-600">
-                <div className="flex items-center gap-1.5 font-bold">
-                  <User size={14} className="text-emerald-600" />
-                  <span>المستخدم المنشئ:</span>
-                </div>
-                <span className="font-black text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg text-[11px]">
-                  {selectedBookingDetails.createdByName || (selectedBookingDetails as any).created_by_name || selectedBookingDetails.createdBy || 'غير محدد'}
-                </span>
-              </div>
-
-              {(selectedBookingDetails.updatedAt || (selectedBookingDetails as any).updated_at || selectedBookingDetails.updatedByName || (selectedBookingDetails as any).updated_by_name) && (
-                <div className="pt-2 border-t border-slate-200/70 space-y-1.5">
-                  <div className="flex items-center justify-between text-slate-600">
-                    <div className="flex items-center gap-1.5 font-bold">
-                      <Clock size={14} className="text-indigo-600" />
-                      <span>تاريخ ووقت آخر تعديل:</span>
-                    </div>
-                    <div className="font-mono text-slate-800 font-bold" dir="ltr">
-                      {formatDateTime(selectedBookingDetails.updatedAt || (selectedBookingDetails as any).updated_at)}
-                    </div>
+            {/* Modal Body - Scrollable */}
+            <div className="p-5 sm:p-6 overflow-y-auto flex-1 space-y-4">
+              {/* Date & Time info */}
+              <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-100 flex flex-wrap justify-between items-center gap-3 text-xs">
+                <div className="flex items-center gap-4 flex-wrap">
+                  <div className="flex items-center gap-1.5 font-bold text-slate-700">
+                    <CalendarIcon size={15} className="text-indigo-600" />
+                    <span>تاريخ الموعد: <strong className="text-slate-900">{selectedBookingDetails.date}</strong></span>
                   </div>
-                  {(selectedBookingDetails.updatedByName || (selectedBookingDetails as any).updated_by_name) && (
-                    <div className="flex items-center justify-between text-slate-600">
-                      <div className="flex items-center gap-1.5 font-bold">
-                        <Edit2 size={13} className="text-indigo-600" />
-                        <span>المستخدم المعدّل:</span>
-                      </div>
-                      <span className="font-black text-indigo-800 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-lg text-[11px]">
-                        {selectedBookingDetails.updatedByName || (selectedBookingDetails as any).updated_by_name}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Internal Admin Notes (ملاحظات داخلية خاصة بالإدارة) */}
-            {selectedBookingDetails.internalNotes && (
-              <div className="bg-amber-50/80 border border-amber-200/90 rounded-2xl p-3 space-y-1.5 shadow-2xs">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 text-xs font-black text-amber-950">
-                    <Lock size={13} className="text-amber-700" />
-                    <span>ملاحظات داخلية (خاصة بالإدارة):</span>
+                  <div className="flex items-center gap-1.5 font-mono font-bold text-slate-700">
+                    <Clock size={15} className="text-indigo-600" />
+                    <span>الوقت: <strong className="text-slate-900">{formatTo12Hour(selectedBookingDetails.time)}</strong></span>
                   </div>
-                  <span className="text-[9px] font-bold text-amber-800 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full flex items-center gap-1">
-                    <span>🔒 سرية • لا تظهر في الإيصال</span>
-                  </span>
                 </div>
-                <p className="text-xs text-amber-950 font-medium whitespace-pre-wrap leading-relaxed pr-1">
-                  {selectedBookingDetails.internalNotes}
-                </p>
-              </div>
-            )}
-
-            {selectedBookingDetails.notes && (
-              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 space-y-1 text-xs">
-                <span className="font-bold text-slate-700">ملاحظات عامة:</span>
-                <p className="text-slate-800 whitespace-pre-wrap">{selectedBookingDetails.notes}</p>
-              </div>
-            )}
-
-            {/* Services & Products List */}
-            <div>
-              <h4 className="text-xs font-black text-slate-800 mb-2">الخدمات والمنتجات المحجوزة:</h4>
-              <div className="space-y-1.5 max-h-40 overflow-y-auto">
-                {selectedBookingDetails.services?.map(s => {
-                  const isProd = s.type === 'product';
-                  const qty = Math.max(1, Number(s.quantity) || 1);
-                  const lineDisc = calculateServiceLineDiscount(s);
-                  const lineFinal = calculateServiceLinePrice(s);
-                  return (
-                    <div key={s.id} className="p-2.5 bg-slate-50 rounded-xl border border-slate-100 flex justify-between items-center text-xs">
-                      <div>
-                        <div className="font-bold text-slate-900 flex items-center gap-1.5">
-                          {isProd && (
-                            <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.2 rounded font-bold">
-                              🛍️ منتج
-                            </span>
-                          )}
-                          <span>{s.serviceName}</span>
-                          {qty > 1 && (
-                            <span className="text-[10px] bg-slate-200 text-slate-800 px-1.5 py-0.2 rounded font-mono font-bold">
-                              ×{qty}
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[10px] text-slate-500">{isProd ? 'البائع:' : 'الفني:'} {s.technicianName}</div>
-                        {lineDisc > 0 && (
-                          <div className="text-[10px] text-rose-600 font-bold">
-                            خصم: -{lineDisc.toFixed(2)} {s.discountType === 'percentage' ? '(' + (s.discountValue || 0) + '%)' : settings.currency}
-                          </div>
-                        )}
-                      </div>
-                      <div className="text-left font-mono font-black text-slate-800">
-                        <div>{lineFinal.toFixed(2)} {settings.currency}</div>
-                        {(lineDisc > 0 || qty > 1) && (
-                          <div className="text-[10px] text-slate-400">
-                            {qty > 1 ? `${Number(s.price || 0).toFixed(2)} × ${qty}` : Number(s.price || 0).toFixed(2)}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Advance Payments (العربون والدفعات المقدمة) Section */}
-            <div className="bg-emerald-50/60 border border-emerald-200/80 rounded-2xl p-3.5 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 font-black text-xs text-emerald-950">
-                  <Banknote size={15} className="text-emerald-700" />
-                  <span>الدفعات المقدمة (العربون المسدد):</span>
-                </div>
-                {selectedBookingDetails.status !== 'completed' && selectedBookingDetails.status !== 'cancelled' && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!shiftData?.isOpen) {
-                        alert('لا يمكن سداد دفعة مقدمة والوردية مغلقة. يرجى فتح وردية أولاً من شاشة الورديات.');
-                        return;
-                      }
-                      const openShiftDate = (shiftData && shiftData.isOpen && shiftData.date) ? shiftData.date : new Date().toISOString().split('T')[0];
-                      setQuickAdvAmount('');
-                      setQuickAdvTreasury(availableTreasuries[0]?.id || 'cash');
-                      setQuickAdvMethod('cash');
-                      setQuickAdvDate(openShiftDate);
-                      setQuickAdvNotes('');
-                      setShowQuickAdvanceModal(true);
-                    }}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 rounded-xl text-[11px] font-black flex items-center gap-1 shadow-xs cursor-pointer transition-all"
-                  >
-                    <Plus size={13} />
-                    <span>سداد دفعة مقدمة</span>
-                  </button>
+                {selectedBookingDetails.location && (
+                  <div className="flex items-center gap-1 font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded-lg text-[11px]">
+                    <MapPin size={13} className="text-indigo-600" />
+                    <span>المكان: {selectedBookingDetails.location}</span>
+                  </div>
                 )}
               </div>
 
-              {getBookingAdvances(selectedBookingDetails).length > 0 ? (
-                <div className="space-y-1.5 max-h-32 overflow-y-auto">
-                  {getBookingAdvances(selectedBookingDetails).map((adv, idx) => (
-                    <div key={adv.id || idx} className="p-2 bg-white rounded-xl border border-emerald-100 flex justify-between items-center text-xs shadow-2xs">
-                      <div>
-                        <div className="font-bold text-slate-800 flex items-center gap-1.5">
-                          <span>دفعة #{idx + 1}:</span>
-                          <span className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded font-bold flex items-center gap-1">
-                            <CreditCard size={11} />
-                            <span>{adv.treasuryName || (adv.paymentMethod === 'card' ? 'شبكة / مدى' : 'كاش (الدرج)') || 'طريقة الدفع'}</span>
+              {/* Two Column Grid for Desktop / Tablet */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Column 1: Services & Advance Payments */}
+                <div className="space-y-4">
+                  {/* Services & Products List */}
+                  <div className="bg-slate-50/70 border border-slate-100 rounded-2xl p-3.5">
+                    <h4 className="text-xs font-black text-slate-800 mb-2.5 flex items-center justify-between">
+                      <span>الخدمات والمنتجات المحجوزة:</span>
+                      <span className="text-[10px] font-bold text-slate-500 font-mono">({selectedBookingDetails.services?.length || 0}) بنود</span>
+                    </h4>
+                    <div className="space-y-2 max-h-56 overflow-y-auto pr-0.5">
+                      {selectedBookingDetails.services?.map(s => {
+                        const isProd = s.type === 'product';
+                        const qty = Math.max(1, Number(s.quantity) || 1);
+                        const lineDisc = calculateServiceLineDiscount(s);
+                        const lineFinal = calculateServiceLinePrice(s);
+                        return (
+                          <div key={s.id} className="p-2.5 bg-white rounded-xl border border-slate-100 flex justify-between items-center text-xs shadow-2xs">
+                            <div>
+                              <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                                {isProd && (
+                                  <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.2 rounded font-bold">
+                                    🛍️ منتج
+                                  </span>
+                                )}
+                                <span>{s.serviceName}</span>
+                                {qty > 1 && (
+                                  <span className="text-[10px] bg-slate-200 text-slate-800 px-1.5 py-0.2 rounded font-mono font-bold">
+                                    ×{qty}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[10px] text-slate-500 mt-0.5">{isProd ? 'البائع:' : 'الفني:'} {s.technicianName}</div>
+                              {lineDisc > 0 && (
+                                <div className="text-[10px] text-rose-600 font-bold mt-0.5">
+                                  خصم: -{lineDisc.toFixed(2)} {s.discountType === 'percentage' ? '(' + (s.discountValue || 0) + '%)' : settings.currency}
+                                </div>
+                              )}
+                            </div>
+                            <div className="text-left font-mono font-black text-slate-800">
+                              <div>{lineFinal.toFixed(2)} {settings.currency}</div>
+                              {(lineDisc > 0 || qty > 1) && (
+                                <div className="text-[10px] text-slate-400">
+                                  {qty > 1 ? `${Number(s.price || 0).toFixed(2)} × ${qty}` : Number(s.price || 0).toFixed(2)}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Advance Payments (العربون والدفعات المقدمة) Section */}
+                  <div className="bg-emerald-50/60 border border-emerald-200/80 rounded-2xl p-3.5 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 font-black text-xs text-emerald-950">
+                        <Banknote size={15} className="text-emerald-700" />
+                        <span>الدفعات المقدمة (العربون المسدد):</span>
+                      </div>
+                      {selectedBookingDetails.status !== 'completed' && selectedBookingDetails.status !== 'cancelled' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!shiftData?.isOpen) {
+                              alert('لا يمكن سداد دفعة مقدمة والوردية مغلقة. يرجى فتح وردية أولاً من شاشة الورديات.');
+                              return;
+                            }
+                            const openShiftDate = (shiftData && shiftData.isOpen && shiftData.date) ? shiftData.date : new Date().toISOString().split('T')[0];
+                            setQuickAdvAmount('');
+                            setQuickAdvTreasury(availableTreasuries[0]?.id || 'cash');
+                            setQuickAdvMethod('cash');
+                            setQuickAdvDate(openShiftDate);
+                            setQuickAdvNotes('');
+                            setShowQuickAdvanceModal(true);
+                          }}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 rounded-xl text-[11px] font-black flex items-center gap-1 shadow-xs cursor-pointer transition-all"
+                        >
+                          <Plus size={13} />
+                          <span>سداد دفعة</span>
+                        </button>
+                      )}
+                    </div>
+
+                    {getBookingAdvances(selectedBookingDetails).length > 0 ? (
+                      <div className="space-y-1.5 max-h-36 overflow-y-auto pr-0.5">
+                        {getBookingAdvances(selectedBookingDetails).map((adv, idx) => (
+                          <div key={adv.id || idx} className="p-2 bg-white rounded-xl border border-emerald-100 flex justify-between items-center text-xs shadow-2xs">
+                            <div>
+                              <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                                <span>دفعة #{idx + 1}:</span>
+                                <span className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded font-bold flex items-center gap-1">
+                                  <CreditCard size={11} />
+                                  <span>{adv.treasuryName || (adv.paymentMethod === 'card' ? 'شبكة / مدى' : 'كاش (الدرج)') || 'طريقة الدفع'}</span>
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-slate-500 font-mono">تاريخ السداد: {adv.date} {adv.notes ? `• ${adv.notes}` : ''}</div>
+                            </div>
+                            <div className="font-mono font-black text-emerald-700">
+                              {Number(adv.amount || 0).toFixed(2)} {settings.currency}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-[11px] text-slate-500 text-center py-2 bg-white/60 rounded-xl border border-dashed border-emerald-200">
+                        لا توجد دفعات مقدمة مسجلة لهذا الحجز
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Column 2: Financial Breakdown, Audit, Notes */}
+                <div className="space-y-4">
+                  {/* Total Price & Advance Breakdown */}
+                  {(() => {
+                    const totals = calculateBookingTotals(selectedBookingDetails);
+                    return (
+                      <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-2 font-bold text-xs">
+                        <h4 className="text-xs font-black text-slate-900 border-b border-slate-200 pb-2">تفاصيل الحساب المالي:</h4>
+                        {totals.totalDiscounts > 0 && (
+                          <div className="flex justify-between items-center text-slate-500">
+                            <span>إجمالي البنود (قبل الخصم):</span>
+                            <span className="font-mono">{totals.grossServices.toFixed(2)} {settings.currency}</span>
+                          </div>
+                        )}
+                        {totals.lineDiscounts > 0 && (
+                          <div className="flex justify-between items-center text-rose-600">
+                            <span>خصومات البنود:</span>
+                            <span className="font-mono">-{totals.lineDiscounts.toFixed(2)} {settings.currency}</span>
+                          </div>
+                        )}
+                        {totals.generalDiscount > 0 && (
+                          <div className="flex justify-between items-center text-rose-600">
+                            <span>خصم إضافي على الحجز ({selectedBookingDetails.discountType === 'percentage' ? (selectedBookingDetails.discountValue || 0) + '%' : 'مبلغ ثابت'}):</span>
+                            <span className="font-mono">-{totals.generalDiscount.toFixed(2)} {settings.currency}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between items-center text-slate-900 bg-white px-3 py-2 rounded-xl border border-slate-200 shadow-2xs">
+                          <span className="font-black">صافي قيمة الحجز:</span>
+                          <span className="text-sm font-mono font-black text-indigo-900">
+                            {totals.netTotal.toFixed(2)} {settings.currency}
                           </span>
                         </div>
-                        <div className="text-[10px] text-slate-500 font-mono">تاريخ السداد: {adv.date} {adv.notes ? `• ${adv.notes}` : ''}</div>
+                        {totals.advances > 0 && (
+                          <>
+                            <div className="flex justify-between items-center text-emerald-700">
+                              <span>إجمالي العربون المسدد:</span>
+                              <span className="text-sm font-mono font-black">
+                                -{totals.advances.toFixed(2)} {settings.currency}
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center text-slate-900 bg-indigo-50/80 p-2.5 rounded-xl border border-indigo-200 shadow-2xs">
+                              <span className="font-black">المتبقي للدفع عند الزيارة:</span>
+                              <span className="text-base text-indigo-700 font-mono font-black">
+                                {totals.remaining.toFixed(2)} {settings.currency}
+                              </span>
+                            </div>
+                          </>
+                        )}
                       </div>
-                      <div className="font-mono font-black text-emerald-700">
-                        {Number(adv.amount || 0).toFixed(2)} {settings.currency}
+                    );
+                  })()}
+
+                  {/* Audit / Tracking Info: Created by, created at, updated by, updated at */}
+                  <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 space-y-2 text-xs">
+                    <div className="flex items-center justify-between text-slate-600">
+                      <div className="flex items-center gap-1.5 font-bold">
+                        <Sparkles size={14} className="text-emerald-600" />
+                        <span>تاريخ ووقت الإنشاء:</span>
+                      </div>
+                      <div className="font-mono text-slate-800 font-bold" dir="ltr">
+                        {formatDateTime(selectedBookingDetails.createdAt || (selectedBookingDetails as any).created_at)}
                       </div>
                     </div>
-                  ))}
+                    <div className="flex items-center justify-between text-slate-600">
+                      <div className="flex items-center gap-1.5 font-bold">
+                        <User size={14} className="text-emerald-600" />
+                        <span>المستخدم المنشئ:</span>
+                      </div>
+                      <span className="font-black text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg text-[11px]">
+                        {selectedBookingDetails.createdByName || (selectedBookingDetails as any).created_by_name || selectedBookingDetails.createdBy || 'غير محدد'}
+                      </span>
+                    </div>
+
+                    {(selectedBookingDetails.updatedAt || (selectedBookingDetails as any).updated_at || selectedBookingDetails.updatedByName || (selectedBookingDetails as any).updated_by_name) && (
+                      <div className="pt-2 border-t border-slate-200/70 space-y-1.5">
+                        <div className="flex items-center justify-between text-slate-600">
+                          <div className="flex items-center gap-1.5 font-bold">
+                            <Clock size={14} className="text-indigo-600" />
+                            <span>تاريخ ووقت آخر تعديل:</span>
+                          </div>
+                          <div className="font-mono text-slate-800 font-bold" dir="ltr">
+                            {formatDateTime(selectedBookingDetails.updatedAt || (selectedBookingDetails as any).updated_at)}
+                          </div>
+                        </div>
+                        {(selectedBookingDetails.updatedByName || (selectedBookingDetails as any).updated_by_name) && (
+                          <div className="flex items-center justify-between text-slate-600">
+                            <div className="flex items-center gap-1.5 font-bold">
+                              <Edit2 size={13} className="text-indigo-600" />
+                              <span>المستخدم المعدّل:</span>
+                            </div>
+                            <span className="font-black text-indigo-800 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-lg text-[11px]">
+                              {selectedBookingDetails.updatedByName || (selectedBookingDetails as any).updated_by_name}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Internal Admin Notes (ملاحظات داخلية خاصة بالإدارة) */}
+                  {selectedBookingDetails.internalNotes && (
+                    <div className="bg-amber-50/80 border border-amber-200/90 rounded-2xl p-3 space-y-1.5 shadow-2xs">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 text-xs font-black text-amber-950">
+                          <Lock size={13} className="text-amber-700" />
+                          <span>ملاحظات داخلية (خاصة بالإدارة):</span>
+                        </div>
+                        <span className="text-[9px] font-bold text-amber-800 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <span>🔒 سرية • لا تظهر في الإيصال</span>
+                        </span>
+                      </div>
+                      <p className="text-xs text-amber-950 font-medium whitespace-pre-wrap leading-relaxed pr-1">
+                        {selectedBookingDetails.internalNotes}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* General Notes */}
+                  {selectedBookingDetails.notes && (
+                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 space-y-1 text-xs">
+                      <span className="font-bold text-slate-700">ملاحظات عامة:</span>
+                      <p className="text-slate-800 whitespace-pre-wrap">{selectedBookingDetails.notes}</p>
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <div className="text-[11px] text-slate-500 text-center py-1">
-                  لا توجد دفعات مقدمة مسجلة لهذا الحجز
-                </div>
-              )}
+              </div>
             </div>
 
-            {/* Total Price & Advance Breakdown */}
-            {(() => {
-              const totals = calculateBookingTotals(selectedBookingDetails);
-              return (
-                <div className="pt-2 border-t border-slate-100 space-y-1.5 font-bold text-xs">
-                  {totals.totalDiscounts > 0 && (
-                    <div className="flex justify-between items-center text-slate-500">
-                      <span>إجمالي البنود (قبل الخصم):</span>
-                      <span className="font-mono">{totals.grossServices.toFixed(2)} {settings.currency}</span>
-                    </div>
-                  )}
-                  {totals.lineDiscounts > 0 && (
-                    <div className="flex justify-between items-center text-rose-600">
-                      <span>خصومات البنود:</span>
-                      <span className="font-mono">-{totals.lineDiscounts.toFixed(2)} {settings.currency}</span>
-                    </div>
-                  )}
-                  {totals.generalDiscount > 0 && (
-                    <div className="flex justify-between items-center text-rose-600">
-                      <span>خصم إضافي على الحجز ({selectedBookingDetails.discountType === 'percentage' ? (selectedBookingDetails.discountValue || 0) + '%' : 'مبلغ ثابت'}):</span>
-                      <span className="font-mono">-{totals.generalDiscount.toFixed(2)} {settings.currency}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between items-center text-slate-900 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
-                    <span className="font-black">صافي قيمة الحجز:</span>
-                    <span className="text-sm font-mono font-black text-indigo-900">
-                      {totals.netTotal.toFixed(2)} {settings.currency}
-                    </span>
-                  </div>
-                  {totals.advances > 0 && (
-                    <>
-                      <div className="flex justify-between items-center text-emerald-700">
-                        <span>إجمالي العربون المسدد:</span>
-                        <span className="text-sm font-mono font-black">
-                          -{totals.advances.toFixed(2)} {settings.currency}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center text-slate-900 bg-indigo-50/70 p-2.5 rounded-xl border border-indigo-200">
-                        <span className="font-black">المتبقي للدفع عند الزيارة:</span>
-                        <span className="text-base text-indigo-700 font-mono font-black">
-                          {totals.remaining.toFixed(2)} {settings.currency}
-                        </span>
-                      </div>
-                    </>
-                  )}
-                </div>
-              );
-            })()}
-
-            {/* Actions */}
-            <div className="pt-2 flex flex-wrap gap-2">
-              {selectedBookingDetails.status !== 'completed' && selectedBookingDetails.status !== 'cancelled' && (
-                <>
-                  <button
-                    onClick={() => {
-                      onToPOS({
-                        ...selectedBookingDetails,
-                        advancePayments: getBookingAdvances(selectedBookingDetails)
-                      });
-                      setSelectedBookingDetails(null);
-                    }}
-                    className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
-                  >
-                    <ShoppingCart size={15} />
-                    <span>تحويل للكاشير POS</span>
-                  </button>
-                  <button
-                    onClick={() => handleEdit(selectedBookingDetails)}
-                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1 cursor-pointer"
-                  >
-                    <Edit2 size={14} />
-                    <span>تعديل</span>
-                  </button>
-                  <button
-                    onClick={() => cancelBooking(selectedBookingDetails.id)}
-                    className="bg-amber-50 hover:bg-amber-100 text-amber-600 px-3 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
-                    title="إلغاء الحجز"
-                  >
-                    <XCircle size={14} />
-                    <span>إلغاء الحجز</span>
-                  </button>
-                </>
-              )}
-              {canDeleteBooking && (
-                <button
-                  onClick={() => handleDeleteBooking(selectedBookingDetails.id)}
-                  className="bg-rose-50 hover:bg-rose-100 text-rose-600 px-3 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
-                  title="حذف الحجز نهائياً من قاعدة البيانات"
-                >
-                  <Trash2 size={14} />
-                  <span>حذف الحجز</span>
-                </button>
-              )}
+            {/* Modal Footer / Actions - Fixed at Bottom */}
+            <div className="px-6 py-3.5 border-t border-slate-100 bg-slate-50/80 shrink-0 flex flex-wrap items-center justify-between gap-2.5">
               <button
-                onClick={() => printBooking(selectedBookingDetails)}
-                className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1 cursor-pointer"
-                title="طباعة"
+                type="button"
+                onClick={() => setSelectedBookingDetails(null)}
+                className="px-4 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold transition-colors cursor-pointer"
               >
-                <Printer size={14} />
+                إغلاق
               </button>
+              <div className="flex flex-wrap items-center gap-2">
+                {selectedBookingDetails.status !== 'completed' && selectedBookingDetails.status !== 'cancelled' && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onToPOS({
+                          ...selectedBookingDetails,
+                          advancePayments: getBookingAdvances(selectedBookingDetails)
+                        });
+                        setSelectedBookingDetails(null);
+                      }}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 shadow-sm cursor-pointer transition-colors"
+                    >
+                      <ShoppingCart size={15} />
+                      <span>تحويل للكاشير POS</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleEdit(selectedBookingDetails)}
+                      className="bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 px-3.5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                    >
+                      <Edit2 size={14} />
+                      <span>تعديل</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => cancelBooking(selectedBookingDetails.id)}
+                      className="bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 px-3.5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                      title="إلغاء الحجز"
+                    >
+                      <XCircle size={14} />
+                      <span>إلغاء الحجز</span>
+                    </button>
+                  </>
+                )}
+                {canDeleteBooking && (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteBooking(selectedBookingDetails.id)}
+                    className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-3.5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                    title="حذف الحجز نهائياً من قاعدة البيانات"
+                  >
+                    <Trash2 size={14} />
+                    <span>حذف الحجز</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => printBooking(selectedBookingDetails)}
+                  className="bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 px-3.5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                  title="طباعة"
+                >
+                  <Printer size={14} />
+                  <span>طباعة</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
+
+      {/* ⚠️ MODAL: CANCELLATION & DEPOSIT REFUND POLICY */}
+      {cancellingBooking && (() => {
+        const b = cancellingBooking;
+        const paidDeposit = getBookingTotalAdvances(b);
+        const allowedDays = Number(settings.depositRefundAllowedDays ?? settings.deposit_refund_allowed_days ?? 0);
+        const createdAtRaw = b.createdAt || (b as any).created_at || b.date;
+        const createdDate = new Date(createdAtRaw);
+        const now = new Date();
+        const diffMs = !isNaN(createdDate.getTime()) ? (now.getTime() - createdDate.getTime()) : 0;
+        const diffDays = Math.max(0, diffMs / (1000 * 60 * 60 * 24));
+        const allowedMs = allowedDays * 24 * 60 * 60 * 1000;
+        const isEligible = allowedDays > 0 && diffMs <= allowedMs && paidDeposit > 0 && !b.isRefunded;
+        const isZeroPolicy = allowedDays <= 0;
+        const remainingMs = Math.max(0, allowedMs - diffMs);
+        const remainingDays = Math.floor(remainingMs / (1000 * 60 * 60 * 24));
+        const remainingHours = Math.floor((remainingMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+
+        const bookingNum = b.bookingCode || b.id;
+        const clientName = b.clientName || 'العميل';
+        const formattedCreation = formatBookingCreatedAt(b);
+        const creatorName = b.createdByName || (b as any).created_by_name || b.createdBy || 'غير محدد';
+        const cancelUser = currentUser?.name || (currentUser as any)?.username || 'المستخدم الحالي';
+        const scheduledDate = b.date + (b.time ? ` (${b.time})` : '');
+
+        const previewRefundDesc = `إلغاء الحجز رقم ${bookingNum} للعميلة / ${clientName} - تاريخ الحجز: ${scheduledDate} - تاريخ الإنشاء: ${formattedCreation} - منشئ الحجز: ${creatorName} - منفذ الإلغاء: ${cancelUser}`;
+
+        return (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[70] flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+            <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full p-6 space-y-5 animate-in fade-in zoom-in duration-150 my-auto border border-slate-100" dir="rtl">
+              {/* Header */}
+              <div className="flex justify-between items-start border-b border-slate-100 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold ${
+                    paidDeposit > 0 ? (isEligible ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600') : 'bg-slate-100 text-slate-600'
+                  }`}>
+                    <AlertTriangle size={24} />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900">
+                      إلغاء الحجز وسياسة استرجاع العربون
+                    </h3>
+                    <p className="text-xs text-slate-500 font-mono mt-0.5">
+                      حجز #{bookingNum} • العميل: {clientName}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCancellingBooking(null)}
+                  disabled={isProcessingCancellation}
+                  className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Booking Summary Card */}
+              <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-2 text-xs">
+                <div className="grid grid-cols-2 gap-2 text-slate-600">
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">تاريخ الحجز المجدول:</span>
+                    <span className="font-bold text-slate-800">{scheduledDate}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">تاريخ ووقت الإنشاء:</span>
+                    <span className="font-bold font-mono text-slate-800">{formattedCreation}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">منشئ الحجز:</span>
+                    <span className="font-bold text-slate-800">{creatorName}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">العربون المسدد (Paid Deposit):</span>
+                    <span className="font-black font-mono text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 inline-block">
+                      {paidDeposit.toFixed(2)} {settings.currency}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Policy & Eligibility Check Section */}
+              {paidDeposit > 0 ? (
+                <div className="space-y-3">
+                  {isEligible ? (
+                    /* CASE B: ضمن المهلة المسموحة */
+                    <div className="bg-emerald-50/70 border border-emerald-200 rounded-2xl p-4 space-y-3">
+                      <div className="flex items-center gap-2 text-emerald-800 font-black text-xs">
+                        <CheckCircle size={16} className="text-emerald-600 shrink-0" />
+                        <span>✅ الحجز مؤهل لاسترجاع العربون</span>
+                      </div>
+                      <p className="text-[11px] text-emerald-700 leading-relaxed">
+                        المهلة المسموحة بالنظام: <strong className="font-mono">{allowedDays} أيام</strong>.
+                        الوقت المتبقي من المهلة: <strong className="font-mono">{remainingDays} يوم و {remainingHours} ساعة</strong>.
+                      </p>
+
+                      {/* Refund Checkbox Option */}
+                      <label className="flex items-start gap-2.5 p-3 bg-white rounded-xl border border-emerald-300 cursor-pointer hover:bg-emerald-50/40 transition-colors shadow-2xs">
+                        <input
+                          type="checkbox"
+                          checked={isRefundDepositSelected}
+                          onChange={e => setIsRefundDepositSelected(e.target.checked)}
+                          className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 mt-0.5 cursor-pointer"
+                        />
+                        <div className="flex-1">
+                          <span className="font-black text-xs text-slate-900 block">
+                            استرجاع مبلغ العربون وإدراجه ضمن المصروفات (Refund Deposit as Expense)
+                          </span>
+                          <span className="text-[10px] text-slate-500 block mt-0.5">
+                            عند التحديد، سيتم تلقائياً صرف العربون ({paidDeposit} {settings.currency}) وقيده كمصروف في بند &quot;مسترجع حجوزات&quot; على الوردية المفتوحة حالياً.
+                          </span>
+                        </div>
+                      </label>
+
+                      {/* Treasury Selection if Refund is Checked */}
+                      {isRefundDepositSelected && (
+                        <div className="space-y-2 pt-1 border-t border-emerald-100">
+                          <div>
+                            <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                              الخزينة المنصرف منها الاسترجاع:
+                            </label>
+                            <select
+                              value={refundTreasuryId}
+                              onChange={e => setRefundTreasuryId(e.target.value)}
+                              className="w-full bg-white border border-emerald-300 rounded-xl px-3 py-1.5 text-xs font-bold focus:border-emerald-600 outline-none shadow-2xs"
+                            >
+                              {availableTreasuries.map(t => (
+                                <option key={t.id} value={t.id}>
+                                  {t.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div className="p-2 bg-emerald-100/50 rounded-lg text-[10px] text-emerald-800 space-y-0.5">
+                            <div className="font-bold flex items-center gap-1">
+                              <span>🏦 الوردية الحالية:</span>
+                              <span>{shiftData?.isOpen ? `مفتوحة (${shiftData.date})` : 'لا توجد وردية مفتوحة'}</span>
+                            </div>
+                            <div className="text-[10px] text-slate-600 font-mono line-clamp-2">
+                              الوصف: {previewRefundDesc}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    /* CASE A: انقضاء المهلة المسموحة أو سياسة 0 */
+                    <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 space-y-2 text-rose-800 text-xs">
+                      <div className="flex items-center gap-2 font-black">
+                        <AlertTriangle size={16} className="text-rose-600 shrink-0" />
+                        <span>⚠️ مهلة استرجاع العربون المحددة بالنظام قد انتهت</span>
+                      </div>
+                      <p className="text-[11px] leading-relaxed text-rose-700">
+                        {isZeroPolicy ? (
+                          <>
+                            وفقاً لإعدادات النظام الحالية، العربون <strong>غير قابل للاسترجاع نهائياً</strong> من اللحظة الأولى لإنشاء الحجز (No Refund Policy - 0 أيام).
+                          </>
+                        ) : (
+                          <>
+                            المهلة المحددة بالنظام لاسترجاع العربون هي <strong className="font-mono">{allowedDays} أيام</strong> من تاريخ الإنشاء، وقد مر حتى الآن <strong className="font-mono">{diffDays.toFixed(1)} يوم</strong>.
+                          </>
+                        )}
+                      </p>
+                      <div className="bg-white/80 p-2.5 rounded-xl border border-rose-100 text-[11px] text-slate-700 font-bold">
+                        ℹ️ الأثر المالي: سيتم تأكيد الإلغاء كإجراء إداري فقط وتغيير حالة الحجز إلى (ملغي)، ولن يتم استرجاع أي مبالغ مالية أو تسجيل أي مصروف في النظام.
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* لا يوجد عربون مسدد */
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 text-xs text-slate-600 text-center">
+                  <p className="font-bold">لم يتم سداد أي عربون مسبق لهذا الحجز.</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">سيتم إلغاء الحجز كإجراء إداري دون أي أثر مالي.</p>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={confirmCancelBooking}
+                  disabled={isProcessingCancellation}
+                  className={`flex-1 py-2.5 rounded-xl text-xs font-black text-white flex items-center justify-center gap-1.5 shadow-md transition-all cursor-pointer ${
+                    isEligible && isRefundDepositSelected
+                      ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20'
+                      : 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/20'
+                  }`}
+                >
+                  {isProcessingCancellation ? (
+                    <span>جارٍ المعالجة...</span>
+                  ) : isEligible && isRefundDepositSelected ? (
+                    <>
+                      <RotateCcw size={15} />
+                      <span>تأكيد الإلغاء واسترجاع العربون ({paidDeposit} {settings.currency})</span>
+                    </>
+                  ) : (
+                    <>
+                      <XCircle size={15} />
+                      <span>تأكيد الإلغاء الإداري فقط</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCancellingBooking(null)}
+                  disabled={isProcessingCancellation}
+                  className="px-4 py-2.5 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer"
+                >
+                  تراجع
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ⚠️ MODAL: FULL BOOKING DELETION & FINANCIAL VOIDING */}
+      {deletingBooking && (() => {
+        const b = deletingBooking;
+        const paidDeposit = getBookingTotalAdvances(b);
+        const bookingNum = b.bookingCode || b.id;
+
+        return (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[70] flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+            <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 space-y-4 animate-in fade-in zoom-in duration-150 my-auto border border-rose-100" dir="rtl">
+              <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center font-bold shrink-0">
+                  <Trash2 size={24} />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">حذف الحجز وتصفير الأثر المالي</h3>
+                  <p className="text-xs text-rose-600 font-bold mt-0.5">حذف نهائي لا رجعة فيه (Financial Voiding)</p>
+                </div>
+              </div>
+
+              <div className="bg-rose-50/70 border border-rose-200 rounded-2xl p-4 space-y-2 text-xs text-rose-900 leading-relaxed">
+                <p className="font-black text-rose-800">
+                  هل أنت متأكد من حذف الحجز رقم #{bookingNum} للعميل ({b.clientName}) نهائياً؟
+                </p>
+                {paidDeposit > 0 ? (
+                  <p className="text-[11px] text-rose-700">
+                    ⚠️ <strong>زوال الأثر المالي التام:</strong> يحتوي هذا الحجز على عربون مسدد بقيمة <strong>({paidDeposit} {settings.currency})</strong>. سيقوم النظام بحذف وتصفير كافة حركات القبض والمصروفات المسترجعة المرتبطة بهذا الحجز من الخزينة، الدرج، مبيعات اليوم، والتقارير المالية كمعاملة ذرية واحدة.
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-slate-600">
+                    سيتم مسح الحجز وتذكرة الانتظار المرتبطة به نهائياً من قاعدة البيانات.
+                  </p>
+                )}
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={confirmDeleteBooking}
+                  disabled={isProcessingDeletion}
+                  className="flex-1 py-2.5 rounded-xl text-xs font-black text-white bg-rose-600 hover:bg-rose-700 shadow-md shadow-rose-600/20 transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  {isProcessingDeletion ? 'جارٍ الحذف والتصفير...' : 'نعم، حذف الحجز وتصفير الأثر المالي'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDeletingBooking(null)}
+                  disabled={isProcessingDeletion}
+                  className="px-4 py-2.5 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* QUICK ADVANCE PAYMENT MODAL */}
       {showQuickAdvanceModal && selectedBookingDetails && (
@@ -4713,11 +5177,15 @@ export function BookingsScreen({
                       <span className="truncate">العميل: {previewBooking.clientName}</span>
                       <span>المكان: {previewBooking.location || 'داخل الصالون'}</span>
                     </div>
-                    {previewBooking.phone && (
+                    {(previewBooking.phone || previewBooking.clientPhone) && (
                       <div className="flex justify-between gap-2 whitespace-nowrap">
-                        <span>الهاتف: <span className="font-mono font-bold">{previewBooking.phone}</span></span>
+                        <span>جوال العميل: <span className="font-mono font-bold" dir="ltr">{previewBooking.phone || previewBooking.clientPhone}</span></span>
                       </div>
                     )}
+                    <div className="flex justify-between gap-2 whitespace-nowrap border-t border-dotted border-black pt-0.5 mt-0.5">
+                      <span>منفذ العملية (الموظف):</span>
+                      <span className="font-bold">{previewBooking.createdByName || (previewBooking as any).created_by_name || previewBooking.createdBy || currentUser?.name || (currentUser as any)?.username || 'الموظف'}</span>
+                    </div>
                   </div>
 
                   {/* Services & Products Table */}

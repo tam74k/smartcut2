@@ -671,6 +671,39 @@ export function EmployeesScreen({
     empId: string, 
     type: 'advance' | 'penalty' | 'bonus' | 'leave' | 'salary_increase' | 'shift_schedule' | 'permission' | 'end_of_service'
   ) => {
+    if (type === 'advance' && !AuthService.canDo('hr_manage_advances', currentUser)) {
+      alert('⛔ عذراً، لا تملك صلاحية صرف السلف النقدية للموظفين (hr_manage_advances).');
+      return;
+    }
+    if (type === 'penalty' && !AuthService.canDo('hr_manage_penalties', currentUser)) {
+      alert('⛔ عذراً، لا تملك صلاحية تطبيق الخصومات أو الجزاءات على الموظفين (hr_manage_penalties).');
+      return;
+    }
+    if (type === 'bonus' && !AuthService.canDo('hr_manage_bonuses', currentUser)) {
+      alert('⛔ عذراً، لا تملك صلاحية تسجيل أو صرف المكافآت للموظفين (hr_manage_bonuses).');
+      return;
+    }
+    if (type === 'salary_increase' && !AuthService.canDo('hr_manage_salary_increments', currentUser)) {
+      alert('⛔ عذراً، لا تملك صلاحية تسجيل أو إقرار زيادات الرواتب (hr_manage_salary_increments).');
+      return;
+    }
+    if (type === 'shift_schedule' && !AuthService.canDo('hr_manage_attendance', currentUser)) {
+      alert('⛔ عذراً، لا تملك صلاحية تعديل مواعيد العمل والورديات (hr_manage_attendance).');
+      return;
+    }
+    if (type === 'leave' && !AuthService.canDo('hr_manage_leaves', currentUser)) {
+      alert('⛔ عذراً، لا تملك صلاحية تسجيل الإجازات (hr_manage_leaves).');
+      return;
+    }
+    if (type === 'permission' && !AuthService.canDo('hr_manage_permissions', currentUser)) {
+      alert('⛔ عذراً، لا تملك صلاحية تسجيل الاستئذانات (hr_manage_permissions).');
+      return;
+    }
+    if (type === 'end_of_service' && !AuthService.canDo('manage_employees', currentUser)) {
+      alert('⛔ عذراً، لا تملك صلاحية إنهاء خدمة الموظفين (manage_employees).');
+      return;
+    }
+
     const emp = employees.find(e => e.id === empId);
     if (!emp) return;
 
@@ -954,45 +987,36 @@ export function EmployeesScreen({
           </div>
           {/* Quick Action Buttons */}
           <div className="flex flex-wrap items-center gap-2 mt-3 sm:mt-0">
-            <button
-              onClick={() => handleOpenQuickAction('advance')}
-              disabled={!AuthService.canDo('hr_manage_advances', currentUser)}
-              className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-all ${
-                AuthService.canDo('hr_manage_advances', currentUser)
-                  ? 'bg-amber-500 hover:bg-amber-600 text-white cursor-pointer'
-                  : 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-60'
-              }`}
-              title={AuthService.canDo('hr_manage_advances', currentUser) ? 'صرف سلفة سريعة' : '⛔ ليس لديك صلاحية صرف سلف'}
-            >
-              <Banknote size={15} />
-              <span>+ سلفة سريعة</span>
-            </button>
-            <button
-              onClick={() => handleOpenQuickAction('bonus')}
-              disabled={!AuthService.canDo('hr_manage_bonuses', currentUser)}
-              className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-all ${
-                AuthService.canDo('hr_manage_bonuses', currentUser)
-                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer'
-                  : 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-60'
-              }`}
-              title={AuthService.canDo('hr_manage_bonuses', currentUser) ? 'تسجيل مكافأة سريعة' : '⛔ ليس لديك صلاحية تسجيل مكافآت'}
-            >
-              <Gift size={15} />
-              <span>+ مكافأة سريعة</span>
-            </button>
-            <button
-              onClick={() => handleOpenQuickAction('penalty')}
-              disabled={!AuthService.canDo('hr_manage_penalties', currentUser)}
-              className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-all ${
-                AuthService.canDo('hr_manage_penalties', currentUser)
-                  ? 'bg-rose-600 hover:bg-rose-700 text-white cursor-pointer'
-                  : 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-60'
-              }`}
-              title={AuthService.canDo('hr_manage_penalties', currentUser) ? 'تسجيل خصم أو جزاء' : '⛔ ليس لديك صلاحية تطبيق خصومات'}
-            >
-              <DollarSign size={15} />
-              <span>+ خصم سريع</span>
-            </button>
+            {AuthService.canDo('hr_manage_advances', currentUser) && (
+              <button
+                onClick={() => handleOpenQuickAction('advance')}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+                title="صرف سلفة سريعة"
+              >
+                <Banknote size={15} />
+                <span>+ سلفة سريعة</span>
+              </button>
+            )}
+            {AuthService.canDo('hr_manage_bonuses', currentUser) && (
+              <button
+                onClick={() => handleOpenQuickAction('bonus')}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+                title="تسجيل مكافأة سريعة"
+              >
+                <Gift size={15} />
+                <span>+ مكافأة سريعة</span>
+              </button>
+            )}
+            {AuthService.canDo('hr_manage_penalties', currentUser) && (
+              <button
+                onClick={() => handleOpenQuickAction('penalty')}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+                title="تسجيل خصم أو جزاء"
+              >
+                <DollarSign size={15} />
+                <span>+ خصم سريع</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -1645,55 +1669,77 @@ export function EmployeesScreen({
                       </td>
                       <td className="p-3">
                         <div className="flex items-center justify-center gap-1">
-                          <button
-                            onClick={() => handleOpenActionModal(emp.id, 'advance')}
-                            className="p-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-lg"
-                            title="تسجيل سلفة"
-                          >
-                            <Banknote size={14} />
-                          </button>
-                          <button
-                            onClick={() => handleOpenActionModal(emp.id, 'penalty')}
-                            className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg"
-                            title="تسجيل خصم/جزاء"
-                          >
-                            <DollarSign size={14} />
-                          </button>
-                          <button
-                            onClick={() => handleOpenActionModal(emp.id, 'bonus')}
-                            className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg"
-                            title="تسجيل مكافأة"
-                          >
-                            <Gift size={14} />
-                          </button>
-                          <button
-                            onClick={() => handleOpenActionModal(emp.id, 'salary_increase')}
-                            className="p-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg"
-                            title="تسجيل زيادة راتب"
-                          >
-                            <TrendingUp size={14} />
-                          </button>
-                          <button
-                            onClick={() => handleOpenActionModal(emp.id, 'shift_schedule')}
-                            className="p-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg"
-                            title="تعديل مواعيد العمل وتاريخ السريان"
-                          >
-                            <Clock size={14} />
-                          </button>
-                          <button
-                            onClick={() => handleOpenActionModal(emp.id, 'end_of_service')}
-                            className="p-1.5 bg-slate-100 hover:bg-rose-100 text-slate-700 hover:text-rose-700 rounded-lg"
-                            title="إنهاء خدمة / بلاك ليست"
-                          >
-                            <UserX size={14} />
-                          </button>
-                          <button
-                            onClick={() => handleEdit(emp)}
-                            className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg"
-                            title="تعديل الموظف"
-                          >
-                            <Edit2 size={14} />
-                          </button>
+                          {AuthService.canDo('hr_manage_advances', currentUser) && (
+                            <button
+                              onClick={() => handleOpenActionModal(emp.id, 'advance')}
+                              className="p-1.5 bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 rounded-lg transition-colors cursor-pointer"
+                              title="تسجيل سلفة"
+                            >
+                              <Banknote size={14} />
+                            </button>
+                          )}
+                          {AuthService.canDo('hr_manage_penalties', currentUser) && (
+                            <button
+                              onClick={() => handleOpenActionModal(emp.id, 'penalty')}
+                              className="p-1.5 bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 rounded-lg transition-colors cursor-pointer"
+                              title="تسجيل خصم/جزاء"
+                            >
+                              <DollarSign size={14} />
+                            </button>
+                          )}
+                          {AuthService.canDo('hr_manage_bonuses', currentUser) && (
+                            <button
+                              onClick={() => handleOpenActionModal(emp.id, 'bonus')}
+                              className="p-1.5 bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 rounded-lg transition-colors cursor-pointer"
+                              title="تسجيل مكافأة"
+                            >
+                              <Gift size={14} />
+                            </button>
+                          )}
+                          {AuthService.canDo('hr_manage_salary_increments', currentUser) && (
+                            <button
+                              onClick={() => handleOpenActionModal(emp.id, 'salary_increase')}
+                              className="p-1.5 bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 rounded-lg transition-colors cursor-pointer"
+                              title="تسجيل زيادة راتب"
+                            >
+                              <TrendingUp size={14} />
+                            </button>
+                          )}
+                          {AuthService.canDo('hr_manage_attendance', currentUser) && (
+                            <button
+                              onClick={() => handleOpenActionModal(emp.id, 'shift_schedule')}
+                              className="p-1.5 bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 rounded-lg transition-colors cursor-pointer"
+                              title="تعديل مواعيد العمل وتاريخ السريان"
+                            >
+                              <Clock size={14} />
+                            </button>
+                          )}
+                          {AuthService.canDo('manage_employees', currentUser) && (
+                            <button
+                              onClick={() => handleOpenActionModal(emp.id, 'end_of_service')}
+                              className="p-1.5 bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"
+                              title="إنهاء خدمة / بلاك ليست"
+                            >
+                              <UserX size={14} />
+                            </button>
+                          )}
+                          {AuthService.canDo('manage_employees', currentUser) && (
+                            <button
+                              onClick={() => handleEdit(emp)}
+                              className="p-1.5 bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 rounded-lg transition-colors cursor-pointer"
+                              title="تعديل الموظف"
+                            >
+                              <Edit2 size={14} />
+                            </button>
+                          )}
+                          {!AuthService.canDo('hr_manage_advances', currentUser) &&
+                           !AuthService.canDo('hr_manage_penalties', currentUser) &&
+                           !AuthService.canDo('hr_manage_bonuses', currentUser) &&
+                           !AuthService.canDo('hr_manage_salary_increments', currentUser) &&
+                           !AuthService.canDo('hr_manage_attendance', currentUser) &&
+                           !AuthService.canDo('manage_employees', currentUser) && (
+                            <span className="text-[10px] text-slate-400 font-bold">--</span>
+                          )}
                         </div>
                       </td>
                     </tr>

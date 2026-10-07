@@ -690,6 +690,26 @@ export interface Booking {
   discountType?: 'percentage' | 'fixed';
   discountValue?: number;
   _localEditedAt?: number;
+  paidDeposit?: number;
+  paid_deposit?: number;
+  isRefunded?: boolean;
+  is_refunded?: boolean;
+  refundAmount?: number;
+  refund_amount?: number;
+  refundDate?: string;
+  refund_date?: string;
+  refundExpenseId?: string;
+  refund_expense_id?: string;
+  refundTreasuryId?: string;
+  refund_treasury_id?: string;
+  cancelledAt?: string;
+  cancelled_at?: string;
+  cancelledBy?: string;
+  cancelled_by?: string;
+  cancelledByName?: string;
+  cancelled_by_name?: string;
+  refundNotes?: string;
+  refund_notes?: string;
 }
 
 export interface CartItem { 
@@ -858,6 +878,8 @@ export interface AppSettings {
   allowNonCashTips?: boolean; // السماح بالبقشيش عبر طرق الدفع غير النقدية (فيزا / شبكة / تحويل)
   inactiveClientsTrackingEnabled?: boolean; // تفعيل متابعة العملاء المنقطعين عن الحضور
   inactiveClientsDays?: number; // عدد أيام الانقطاع المعتمدة لتصنيف العميل كمنقطع (الافتراضي 60)
+  depositRefundAllowedDays?: number; // مهلة استرجاع عربون الحجز بالأيام (0 تعني عدم السماح نهائياً - No Refund Policy)
+  deposit_refund_allowed_days?: number;
 }
 
 
@@ -928,6 +950,9 @@ export interface Invoice {
   etaSubmissionUuid?: string;
   etaStatus?: 'submitted' | 'valid' | 'invalid' | 'not_submitted';
   createdBy?: string;
+  createdByName?: string;
+  created_by_name?: string;
+  cashierName?: string;
   // Before and After photos for quality assurance & customer history
   beforePhotoUrl?: string;
   afterPhotoUrl?: string;
@@ -1228,6 +1253,12 @@ export interface Transaction {
   shiftDate?: string;
   branchId?: string;
   salonId?: string;
+  bookingId?: string;
+  booking_id?: string;
+  shiftId?: string;
+  shift_id?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Product {

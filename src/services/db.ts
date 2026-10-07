@@ -257,6 +257,18 @@ export async function ensureCoreSchema(): Promise<void> {
       ensureColumn('client_portal_accounts', 'linked_salon_codes', 'JSONB'),
       ensureColumn('app_settings', 'inactive_clients_tracking_enabled', 'BOOLEAN'),
       ensureColumn('app_settings', 'inactive_clients_days', 'INT'),
+      ensureColumn('app_settings', 'deposit_refund_allowed_days', 'INT DEFAULT 0'),
+      ensureColumn('transactions', 'booking_id', 'VARCHAR(100)'),
+      ensureColumn('transactions', 'shift_id', 'VARCHAR(100)'),
+      ensureColumn('bookings', 'is_refunded', 'BOOLEAN DEFAULT FALSE'),
+      ensureColumn('bookings', 'refund_amount', 'NUMERIC(12,2) DEFAULT 0'),
+      ensureColumn('bookings', 'refund_date', 'TIMESTAMPTZ'),
+      ensureColumn('bookings', 'refund_expense_id', 'VARCHAR(100)'),
+      ensureColumn('bookings', 'refund_treasury_id', 'VARCHAR(100)'),
+      ensureColumn('bookings', 'cancelled_at', 'TIMESTAMPTZ'),
+      ensureColumn('bookings', 'cancelled_by', 'TEXT'),
+      ensureColumn('bookings', 'cancelled_by_name', 'VARCHAR(255)'),
+      ensureColumn('bookings', 'refund_notes', 'TEXT'),
       ensureColumn('products', 'barcode', 'VARCHAR(100)')
     ]);
   } catch { /* Silent fail */ }
@@ -1185,6 +1197,7 @@ export const DB = {
         ai_model: settings.aiModel || null,
         inactive_clients_tracking_enabled: settings.inactiveClientsTrackingEnabled ?? true,
         inactive_clients_days: Number(settings.inactiveClientsDays) || 60,
+        deposit_refund_allowed_days: Number(settings.depositRefundAllowedDays ?? settings.deposit_refund_allowed_days ?? 0),
         updated_at: new Date().toISOString()
       };
       // Check if existing record exists for this salon
@@ -1492,6 +1505,8 @@ export const DB = {
         date: safeDate, type: t.type, amount: t.amount, category: t.category,
         expense_category: t.expenseCategory || null, description: t.description,
         treasury: t.treasury, invoice_id: (t as any).invoiceId || (t as any).invoice_id || null,
+        booking_id: (t as any).bookingId || (t as any).booking_id || null,
+        shift_id: (t as any).shiftId || (t as any).shift_id || null,
         created_by: t.createdBy || null, user_id: t.userId || null,
         user_name: t.userName || null, shift_date: safeShiftDate
       };
@@ -1557,7 +1572,16 @@ export const DB = {
         internal_notes: b.internalNotes || b.internal_notes || null,
         location: b.location || null,
         discount_type: b.discountType || b.discount_type || 'fixed',
-        discount_value: Number(b.discountValue ?? b.discount_value ?? 0)
+        discount_value: Number(b.discountValue ?? b.discount_value ?? 0),
+        is_refunded: b.isRefunded ?? b.is_refunded ?? false,
+        refund_amount: Number(b.refundAmount ?? b.refund_amount ?? 0),
+        refund_date: b.refundDate || b.refund_date || null,
+        refund_expense_id: b.refundExpenseId || b.refund_expense_id || null,
+        refund_treasury_id: b.refundTreasuryId || b.refund_treasury_id || null,
+        cancelled_at: b.cancelledAt || b.cancelled_at || null,
+        cancelled_by: b.cancelledBy || b.cancelled_by || null,
+        cancelled_by_name: b.cancelledByName || b.cancelled_by_name || null,
+        refund_notes: b.refundNotes || b.refund_notes || null
       };
 
       // الحفظ الفوري في التخزين المحلي لضمان ثبات التعديل وعدم التراجع عنه إطلاقاً
@@ -2438,11 +2462,12 @@ export const DB = {
     } catch (e) { return false; }
   },
 
-  // ---- حذف حجز نهائياً من قاعدة البيانات ----
-  async deleteBooking(bookingId: string) {
+  // ---- حذف حجز نهائياً من قاعدة البيانات وتصفير أثره المالي تماماً (Financial Voiding) ----
+  async deleteBooking(bookingId: string, bookingCode?: string) {
     const client = sb();
-    if (!client || !bookingId) return false;
+    if (!bookingId) return false;
     try {
+      // 1. تحديث التخزين المحلي للحجوزات
       try {
         const stored = localStorage.getItem('smartcut_bookings');
         if (stored) {
@@ -2450,12 +2475,51 @@ export const DB = {
           localStorage.setItem('smartcut_bookings', JSON.stringify(list.filter((b: any) => b.id !== bookingId)));
         }
       } catch (e) {}
+
+      // 2. تصفير وإلغاء أي حركات مالية مسجلة في التخزين المحلي (سندات القبض/المصروفات المسترجعة)
       try {
-        await client.from('queue_tickets').delete().eq('booking_id', bookingId);
-        await client.from('queue_tickets').delete().eq('id', 'QT-B-' + bookingId);
+        const storedTrx = localStorage.getItem('smartcut_transactions');
+        if (storedTrx) {
+          const tList = JSON.parse(storedTrx);
+          const filteredT = tList.filter((t: any) => {
+            const matchBookingId = t.bookingId === bookingId || t.booking_id === bookingId;
+            const matchDesc = t.description?.includes(bookingId) || (bookingCode && t.description?.includes(bookingCode));
+            const isAdvanceOrRefund = t.category === 'مقدم حجز' || t.category === 'booking_advance' || t.expenseCategory === 'مسترجع حجوزات' || t.expense_category === 'مسترجع حجوزات';
+            return !(matchBookingId || (matchDesc && isAdvanceOrRefund));
+          });
+          localStorage.setItem('smartcut_transactions', JSON.stringify(filteredT));
+        }
       } catch (e) {}
-      const { error } = await client.from('bookings').delete().eq('id', bookingId);
-      if (error) { console.error('DB.deleteBooking error:', error.message); return false; }
+
+      if (client) {
+        // 3. محاولة استدعاء الدالة الذرية RPC إذا كانت متوفرة في قاعدة البيانات
+        try {
+          const { error: rpcErr } = await client.rpc('void_and_delete_booking', {
+            p_booking_id: bookingId,
+            p_booking_code: bookingCode || null
+          });
+          if (!rpcErr) return true;
+        } catch {}
+
+        // 4. حذف تذاكر الانتظار المرتبطة
+        try {
+          await client.from('queue_tickets').delete().eq('booking_id', bookingId);
+          await client.from('queue_tickets').delete().eq('id', 'QT-B-' + bookingId);
+        } catch (e) {}
+
+        // 5. تصفير الحركات المالية الخاصة بالعربون والمصروفات المسترجعة (Cascade Financial Voiding)
+        try {
+          await client.from('transactions').delete().eq('booking_id', bookingId);
+          await client.from('transactions').delete().ilike('description', `%${bookingId}%`);
+          if (bookingCode) {
+            await client.from('transactions').delete().ilike('description', `%${bookingCode}%`);
+          }
+        } catch (e) {}
+
+        // 6. حذف الحجز نفسه من جدول الحجوزات
+        const { error } = await client.from('bookings').delete().eq('id', bookingId);
+        if (error) { console.error('DB.deleteBooking error:', error.message); return false; }
+      }
       return true;
     } catch (e) { console.error('DB.deleteBooking exception:', e); return false; }
   },

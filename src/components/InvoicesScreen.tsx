@@ -653,8 +653,16 @@ export function InvoicesScreen({
                           <p style={{ fontSize: '13px', margin: '0' }}>رقم الفاتورة: {inv.id}</p>
                           <p style={{ fontSize: '13px', margin: '0' }}>التاريخ: {new Date(inv.date).toLocaleString('ar-SA')}</p>
                           {inv.clientName && (
-                            <p style={{ fontSize: '13px', margin: '5px 0 0 0' }}>العميل: {inv.clientName}</p>
+                            <p style={{ fontSize: '13px', margin: '4px 0 0 0' }}>العميل: {inv.clientName}</p>
                           )}
+                          {(inv.clientPhone || (inv as any).phone) && (
+                            <p style={{ fontSize: '13px', margin: '2px 0 0 0' }}>
+                              جوال العميل: <span style={{ fontFamily: 'monospace', fontWeight: 'bold' }} dir="ltr">{inv.clientPhone || (inv as any).phone}</span>
+                            </p>
+                          )}
+                          <p style={{ fontSize: '13px', margin: '2px 0 0 0' }}>
+                            منفذ العملية (الكاشير): <span style={{ fontWeight: 'bold' }}>{inv.createdByName || (inv as any).created_by_name || inv.cashierName || inv.createdBy || 'الكاشير'}</span>
+                          </p>
                         </div>
                         
                         <div style={{ borderBottom: '1px dashed #000', margin: '10px 0' }}></div>

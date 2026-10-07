@@ -5,7 +5,7 @@ import {
   Edit2, Shield, Cloud, Sparkles, RefreshCw, X, Check, Database, Download, 
   Upload, HardDrive, AlertTriangle, FileCheck, RefreshCcw, Landmark, FileSpreadsheet,
   QrCode, Key, Send, CheckCircle2, ShieldCheck, HelpCircle, Building2, Layers, Clock, DollarSign,
-  Printer, Wifi, Laptop, Lock, UserX
+  Printer, Wifi, Laptop, Lock, UserX, CalendarCheck, Calendar
 } from 'lucide-react';
 
 import { AuthService, ROLE_LABELS } from '../services/auth';
@@ -86,7 +86,53 @@ export function SettingsScreen({
   const activeBranch = branches.find(b => b.id === activeBranchId) || branches.find(b => b.isMain) || branches[0];
   const isMainBranch = !activeBranch || activeBranch.isMain !== false;
   const isOwnerOrProgrammer = currentUser?.role === 'programmer' || ((currentUser?.role === 'admin' || currentUser?.role === 'owner' || !currentUser?.role) && isMainBranch);
-  const [activeTab, setActiveTab] = useState<'general' | 'printing' | 'users' | 'supabase' | 'treasuries' | 'categories' | 'whatsapp'>('general');
+  type SettingsTab = 'general' | 'bookings' | 'invoicing' | 'finance' | 'hr' | 'clients' | 'backup';
+  const [activeTab, setActiveTab] = useState<SettingsTab>('general');
+
+  const SETTINGS_TABS: { id: SettingsTab; label: string; icon: any; desc: string }[] = [
+    {
+      id: 'general',
+      label: 'الإعدادات العامة وبيانات الصالون',
+      icon: Building2,
+      desc: 'بيانات الصالون الأساسية، الفروع، العملة، الأكواد، البقشيش ولوحة التحكم'
+    },
+    {
+      id: 'bookings',
+      label: 'إعدادات الحجوزات والعربون',
+      icon: CalendarCheck,
+      desc: 'بوابة الحجز أونلاين، سياسة استرجاع العربون، وشروط إيصال الحجز'
+    },
+    {
+      id: 'invoicing',
+      label: 'إعدادات الفواتير والطباعة',
+      icon: Printer,
+      desc: 'مقاس الورق، الطابعات، الضريبة المضافة (VAT)، والربط الإلكتروني (ZATCA/ETA)'
+    },
+    {
+      id: 'finance',
+      label: 'إعدادات الورديات والمالية',
+      icon: Wallet,
+      desc: 'إدارة الخزائن، طرق الدفع والتحويلات، وتصنيفات الخدمات والمنتجات'
+    },
+    {
+      id: 'hr',
+      label: 'إعدادات الحضور والرواتب',
+      icon: Clock,
+      desc: 'قواعد العمل الإضافي، شرائح التأخير، فترات السماح، الاستئذان والغياب'
+    },
+    {
+      id: 'clients',
+      label: 'إعدادات العملاء والولاء والواتساب',
+      icon: MessageSquare,
+      desc: 'مستويات ولاء العملاء (VIP)، متابعة المنقطعين، وبوابة الواتساب'
+    },
+    {
+      id: 'backup',
+      label: 'النسخ الاحتياطي وإدارة النظام',
+      icon: Database,
+      desc: 'سحب نسخة احتياطية محلية، واستعادة البيانات من ملف'
+    },
+  ];
 
   // اختبار طابعة تذاكر الانتظار والكيوسك بالشبكة
   const [printerTestStatus, setPrinterTestStatus] = useState<{ loading: boolean; success?: boolean; message?: string } | null>(null);
@@ -772,15 +818,55 @@ export function SettingsScreen({
         </div>
       )}
 
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-xl font-bold text-slate-800">إعدادات النظام والفرع</h2>
-        <button onClick={handleSave} className="bg-primary hover:bg-primary-dark text-white px-5 py-2.5 rounded-lg text-[13px] font-bold flex items-center gap-2 shadow-sm transition-colors">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+        <div>
+          <h2 className="text-xl font-black text-slate-800 flex items-center gap-2">
+            <span>⚙️</span>
+            <span>إعدادات النظام والفرع</span>
+          </h2>
+          <p className="text-xs text-slate-500 mt-1">
+            التحكم الشامل في إعدادات المنظومة، الفروع، الطباعة، الحجوزات، والمالية
+          </p>
+        </div>
+        <button 
+          type="button"
+          onClick={handleSave} 
+          className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl text-xs font-black flex items-center gap-2 shadow-md shadow-indigo-600/20 transition-all active:scale-95 cursor-pointer"
+        >
           <Save size={16} />
-          حفظ التغييرات
+          <span>حفظ التغييرات</span>
         </button>
       </div>
 
+      {/* Settings Navigation Tabs */}
+      <div className="bg-white rounded-2xl p-2 border border-slate-200/80 shadow-xs mb-6 overflow-x-auto custom-scrollbar">
+        <div className="flex items-center gap-1.5 min-w-max p-0.5">
+          {SETTINGS_TABS.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer whitespace-nowrap ${
+                  isActive
+                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 ring-1 ring-indigo-500'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80 border border-transparent'
+                }`}
+              >
+                <Icon size={16} className={isActive ? 'text-white' : 'text-slate-400'} />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       <div className="grid gap-5">
+        {/* TAB 1: General & Salon */}
+        {activeTab === 'general' && (
+          <div className="space-y-5 animate-in fade-in duration-200">
         {/* Salon ID & Branch ID Integration Card (For Attendance & External Sync) */}
         {(() => {
           const currentSalonId = settings.salonId || currentUser?.salonId || 'غير محدد';
@@ -1057,171 +1143,6 @@ export function SettingsScreen({
               <div className="p-3 bg-white rounded-lg border border-slate-200 text-[11px] text-slate-600 space-y-1">
                 <p className="font-bold text-slate-700">💡 آلية عمل البقشيش الكاش:</p>
                 <p>البقشيش المدفوع نقداً (كاش) يُسلّم ويوزع لحظياً للموظف دون تأثير على حسابات الشبكة الإلكترونية.</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* SaaS Online Booking Link & Direct QR Code Card */}
-
-        <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950 text-white rounded-3xl p-6 border border-slate-800 shadow-xl relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
-
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800 pb-4 mb-5">
-            <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white font-black shadow-lg shadow-emerald-600/30">
-                <QrCode size={22} />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-base font-black text-white">رابط ورمز QR بوابة حجز الصالون الأونلاين (SaaS)</h3>
-                  <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-black px-2 py-0.5 rounded-full">
-                    مخصص ومحمي 🔒
-                  </span>
-                </div>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  رابط مخصص يحتوي على كود الصالون الرئيسي لتسجيل وتوجيه العملاء مباشرة دون خلط مع صالونات أخرى
-                </p>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={handlePrintSalonQr}
-              className="bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 shadow-lg shadow-emerald-600/20 cursor-pointer transition-all active:scale-95"
-            >
-              <QrCode size={15} />
-              <span>طباعة ملصق الباركود للمحل 🖨️</span>
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
-            {/* Left/Center Details */}
-            <div className="md:col-span-2 space-y-4">
-              {/* Salon Code Config */}
-              <div className="bg-slate-950/70 p-4 rounded-2xl border border-slate-800 space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                    <Key size={14} className="text-amber-400" />
-                    <span>كود الصالون المميز (Salon Code / Token):</span>
-                  </label>
-                  <button
-                    type="button"
-                    onClick={generateNewSalonCode}
-                    className="text-[11px] text-indigo-400 hover:text-indigo-300 font-bold flex items-center gap-1 cursor-pointer"
-                  >
-                    <RefreshCw size={12} />
-                    <span>توليد كود عشوائي جديد</span>
-                  </button>
-                </div>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={salonCode}
-                    onChange={(e) => handleChange('salonCode', e.target.value.toLowerCase().replace(/[^a-z0-9]/g, ''))}
-                    placeholder="10a5n"
-                    className="bg-slate-900 border border-slate-700 text-emerald-400 font-mono font-black text-base rounded-xl px-4 py-2.5 outline-none focus:border-emerald-500 tracking-wider flex-1"
-                    dir="ltr"
-                  />
-                  <span className="text-xs text-slate-400 font-medium">كود فريد للـ SaaS</span>
-                </div>
-              </div>
-
-              {/* Direct Link Box */}
-              <div className="bg-slate-950/70 p-4 rounded-2xl border border-slate-800 space-y-2">
-                <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                  <Globe size={14} className="text-emerald-400" />
-                  <span>الرابط المباشر للعميل للحجز والتسجيل التلقائي:</span>
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    readOnly
-                    value={salonBookingUrl}
-                    className="bg-slate-900 border border-slate-700 text-slate-200 font-mono text-xs rounded-xl px-3.5 py-2.5 outline-none w-full select-all"
-                    dir="ltr"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      navigator.clipboard.writeText(salonBookingUrl);
-                      setCopiedBookingLink(true);
-                      setTimeout(() => setCopiedBookingLink(false), 3000);
-                    }}
-                    className={`px-4 py-2.5 rounded-xl text-xs font-black shrink-0 flex items-center gap-1.5 transition-all cursor-pointer ${
-                      copiedBookingLink 
-                        ? 'bg-emerald-600 text-white shadow-md' 
-                        : 'bg-slate-800 hover:bg-slate-700 text-white border border-slate-700'
-                    }`}
-                  >
-                    {copiedBookingLink ? (
-                      <>
-                        <Check size={14} />
-                        <span>تم النسخ!</span>
-                      </>
-                    ) : (
-                      <>
-                        <span>نسخ الرابط 📋</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-3 pt-2">
-                  <a
-                    href={`https://wa.me/?text=${encodeURIComponent(`✨ رابط حجز المواعيد الأونلاين في ${settings.salonName || 'صالون العناية'}:\n${salonBookingUrl}\nكود الصالون: ${salonCode}`)}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-xs font-bold text-emerald-400 hover:text-emerald-300 flex items-center gap-1"
-                  >
-                    <Send size={13} className="rotate-180" />
-                    <span>مشاركة عبر الواتساب للعملاء</span>
-                  </a>
-                  <span className="text-slate-600">•</span>
-                  <a
-                    href={salonBookingUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-xs font-bold text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
-                  >
-                    <span>فتح ومعاينة صفحة الحجز ↗</span>
-                  </a>
-                </div>
-              </div>
-            </div>
-
-            {/* Right QR Code Box */}
-            <div className="bg-slate-950 p-4 rounded-3xl border border-slate-800 text-center flex flex-col items-center justify-center space-y-3">
-              <div className="bg-white p-3 rounded-2xl shadow-lg ring-4 ring-emerald-500/20 inline-block">
-                <img
-                  src={qrImageUrl}
-                  alt="Booking QR Code"
-                  className="w-36 h-36 object-contain"
-                />
-              </div>
-
-              <div>
-                <p className="text-xs font-black text-white">{settings.salonName || 'صالونك'}</p>
-                <p className="text-[10px] text-emerald-400 font-mono font-bold mt-0.5">كود: {salonCode}</p>
-              </div>
-
-              <div className="flex gap-2 w-full">
-                <a
-                  href={qrImageUrl}
-                  download={`SmartCut_QR_${salonCode}.png`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex-1 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 text-[11px] font-bold py-2 rounded-xl text-center"
-                >
-                  تحميل PNG 💾
-                </a>
-                <button
-                  type="button"
-                  onClick={handlePrintSalonQr}
-                  className="flex-1 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 text-[11px] font-bold py-2 rounded-xl cursor-pointer"
-                >
-                  طباعة 🖨️
-                </button>
               </div>
             </div>
           </div>
@@ -1513,163 +1434,6 @@ export function SettingsScreen({
         </div>
         )}
 
-        {/* Modal: Add New Branch */}
-        {isOwnerOrProgrammer && showAddBranchModal && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl p-6 max-w-lg w-full shadow-2xl border border-slate-200 animate-in fade-in max-h-[92vh] overflow-y-auto custom-scrollbar">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
-                <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
-                  <Building2 size={18} className="text-indigo-600" />
-                  <span>طلب تسجيل فرع جديد للصالون</span>
-                </h3>
-                <button 
-                  type="button" 
-                  onClick={() => setShowAddBranchModal(false)}
-                  className="text-slate-400 hover:text-slate-600"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-
-              <form onSubmit={handleCreateBranch} className="space-y-3">
-                <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl text-xs text-amber-900 font-bold">
-                  <p>⏳ ملاحظة: بعد إضافة الفرع، سيكون بحالة <strong>بانتظار التفعيل</strong> لحين اعتماده من إدارة المنظومة (المبرمج الرئيسي).</p>
-                </div>
-
-                {/* Country Selection (Auto configures currency & VAT) */}
-                <div className="bg-indigo-50/70 border border-indigo-200 p-3.5 rounded-xl space-y-3">
-                  <div>
-                    <label className="block text-xs font-bold text-indigo-950 mb-1 flex items-center gap-1.5">
-                      <Globe size={14} className="text-indigo-600" />
-                      <span>دولة الفرع (تحدد العملة ونسبة الضريبة تلقائياً) *</span>
-                    </label>
-                    <select
-                      value={newBranchData.country}
-                      onChange={e => handleCountryChangeForNewBranch(e.target.value)}
-                      className="w-full bg-white border border-indigo-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:border-indigo-600 outline-none shadow-2xs"
-                    >
-                      {Object.keys(COUNTRY_CURRENCY_MAP).map(cName => (
-                        <option key={cName} value={cName}>{cName}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[11px] font-bold text-indigo-900 mb-1">رمز العملة المحدد</label>
-                      <input
-                        type="text"
-                        value={newBranchData.currency}
-                        onChange={e => setNewBranchData({ ...newBranchData, currency: e.target.value })}
-                        className="w-full bg-white border border-indigo-200 rounded-xl px-3 py-1.5 text-xs font-bold font-mono text-indigo-700 outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-bold text-indigo-900 mb-1">نسبة الضريبة القياسية %</label>
-                      <input
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="0.1"
-                        value={newBranchData.vatRate}
-                        onChange={e => setNewBranchData({ ...newBranchData, vatRate: Number(e.target.value) })}
-                        className="w-full bg-white border border-indigo-200 rounded-xl px-3 py-1.5 text-xs font-bold font-mono text-indigo-700 outline-none"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-1">
-                    <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-indigo-950">
-                      <input
-                        type="checkbox"
-                        checked={newBranchData.vatEnabled}
-                        onChange={e => setNewBranchData({ ...newBranchData, vatEnabled: e.target.checked })}
-                        className="w-4 h-4 text-indigo-600 rounded border-indigo-300 focus:ring-indigo-500"
-                      />
-                      <span>تطبيق واحتساب الضريبة على فواتير هذا الفرع</span>
-                    </label>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">اسم الفرع *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="مثال: فرع التحلية، فرع الشيخ زايد، فرع السالمية"
-                    value={newBranchData.name}
-                    onChange={e => setNewBranchData({ ...newBranchData, name: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">المدينة</label>
-                    <input
-                      type="text"
-                      placeholder="مثال: جدة، القاهرة، دبي..."
-                      value={newBranchData.city}
-                      onChange={e => setNewBranchData({ ...newBranchData, city: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">الرقم الضريبي المستقل (إن وجد)</label>
-                    <input
-                      type="text"
-                      placeholder="الرقم الضريبي للفرع..."
-                      value={newBranchData.taxNumber}
-                      onChange={e => setNewBranchData({ ...newBranchData, taxNumber: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none"
-                      dir="ltr"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">رقم الهاتف والتواصل</label>
-                  <input
-                    type="tel"
-                    placeholder="0500000000"
-                    value={newBranchData.phone}
-                    onChange={e => setNewBranchData({ ...newBranchData, phone: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">العنوان التفصيلي</label>
-                  <input
-                    type="text"
-                    placeholder="الشارع، الحي، المعلم القريب..."
-                    value={newBranchData.address}
-                    onChange={e => setNewBranchData({ ...newBranchData, address: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none"
-                  />
-                </div>
-
-                <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
-                  <button
-                    type="button"
-                    onClick={() => setShowAddBranchModal(false)}
-                    className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
-                  >
-                    إلغاء
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition-colors shadow-md shadow-indigo-600/30"
-                  >
-                    إرسال طلب إضافة الفرع
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-
         {/* General Settings */}
         <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
           <div className="flex items-center gap-2 mb-4 border-b border-slate-100 pb-3">
@@ -1761,330 +1525,976 @@ export function SettingsScreen({
         </div>
 
 
-        {/* 👑💎 Comprehensive Client Loyalty Tiers & VIP Management Settings */}
-        {(() => {
-          const defaultTiers = [
-            { id: 'standard', name: 'قياسي', icon: '⭐', spendingThreshold: 0, discountPercentage: 0, color: 'slate', badgeBg: 'bg-slate-100', badgeText: 'text-slate-700', badgeBorder: 'border-slate-300', description: 'المستوى الأساسي الافتراضي لجميع العملاء الجدد' },
-            { id: 'distinguished', name: 'متميز', icon: '🔷', spendingThreshold: 300, discountPercentage: 5, color: 'blue', badgeBg: 'bg-blue-50', badgeText: 'text-blue-700', badgeBorder: 'border-blue-300', description: 'عميل منتظم بإنفاق يتجاوز الحد الأدنى' },
-            { id: 'vip', name: 'VIP', icon: '👑', spendingThreshold: 800, discountPercentage: 10, color: 'amber', badgeBg: 'bg-amber-50', badgeText: 'text-amber-800', badgeBorder: 'border-amber-400', description: 'عضوية كبار الشخصيات مع أولوية وخصم مميز' },
-            { id: 'royal', name: 'ملكي', icon: '💎', spendingThreshold: 1500, discountPercentage: 15, color: 'purple', badgeBg: 'bg-purple-50', badgeText: 'text-purple-800', badgeBorder: 'border-purple-400', description: 'العضوية الملكية البلاتينية لأعلى العملاء إنفاقاً' }
-          ];
+          </div>
+        )}
 
-          const currentTierSettings = settings.tierSettings || {
-            enabled: true,
-            periodMonths: 0,
-            allowTierDiscountWithCashback: false,
-            tiers: defaultTiers as any
-          };
+        {/* TAB 2: Bookings & Deposit */}
+        {activeTab === 'bookings' && (
+          <div className="space-y-5 animate-in fade-in duration-200">
+        {/* SaaS Online Booking Link & Direct QR Code Card */}
 
-          const tiersList = (currentTierSettings.tiers && currentTierSettings.tiers.length > 0)
-            ? currentTierSettings.tiers
-            : defaultTiers as any;
+        <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950 text-white rounded-3xl p-6 border border-slate-800 shadow-xl relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
 
-          const updateSingleTier = (tierId: string, field: 'name' | 'spendingThreshold' | 'discountPercentage', val: any) => {
-            const updatedList = tiersList.map((t: any) => t.id === tierId ? { ...t, [field]: val } : t);
-            handleChange('tierSettings', {
-              ...currentTierSettings,
-              tiers: updatedList
-            });
-          };
-
-          return (
-            <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-5">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-400 via-amber-500 to-purple-600 text-white flex items-center justify-center font-black shadow-md">
-                    👑
-                  </div>
-                  <div>
-                    <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
-                      <span>نظام تصنيف ومستويات العملاء الموحد بالفروع (Loyalty Tiers Engine)</span>
-                      <span className="text-[10px] font-extrabold bg-amber-100 text-amber-900 px-2.5 py-0.5 rounded-full">
-                        4 مستويات قابلة لتعديل الاسم والمزايا
-                      </span>
-                    </h3>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      تحديد مسميات وشروط ونسب الخصم لكل مستوى (مثل: قياسي - متميز - VIP - ملكي) عبر كافة فروع الصالون
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${currentTierSettings.enabled ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>
-                    {currentTierSettings.enabled ? 'نظام المستويات مفعل 🟢' : 'معطل ⚪'}
-                  </span>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      className="sr-only peer"
-                      checked={currentTierSettings.enabled}
-                      onChange={(e) => {
-                        handleChange('tierSettings', {
-                          ...currentTierSettings,
-                          enabled: e.target.checked
-                        });
-                      }}
-                    />
-                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
-                  </label>
-                </div>
-              </div>
-
-              {currentTierSettings.enabled && (
-                <div className="space-y-5 animate-in fade-in">
-                  
-                  {/* General Engine Options */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-200">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">
-                        فترة احتساب إنفاق العميل بالفروع:
-                      </label>
-                      <select
-                        value={currentTierSettings.periodMonths || 0}
-                        onChange={(e) => {
-                          handleChange('tierSettings', {
-                            ...currentTierSettings,
-                            periodMonths: Number(e.target.value)
-                          });
-                        }}
-                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-amber-500"
-                      >
-                        <option value={0}>مدى الحياة (مجموع كافة الزيارات بجميع الفروع)</option>
-                        <option value={3}>آخر 3 أشهر</option>
-                        <option value={6}>آخر 6 أشهر</option>
-                        <option value={12}>آخر 12 شهراً (سنة كاملة)</option>
-                      </select>
-                      <p className="text-[10px] text-slate-400 mt-1">يتم جمع فواتير العميل في هذه المدة لتحديد ترقيته تلقائياً</p>
-                    </div>
-
-                    <div className="flex flex-col justify-between">
-                      <label className="block text-xs font-bold text-slate-700 mb-1">
-                        سياسة الجمع بين خصم الترقية والكاش باك:
-                      </label>
-                      <div className="bg-white p-2.5 rounded-xl border border-slate-200 flex items-center justify-between">
-                        <div>
-                          <p className="text-xs font-black text-slate-800">السماح بخصم الترقية عند سداد كامل الفاتورة بالكاش باك</p>
-                          <p className="text-[10px] text-slate-400">إذا تم الإلغاء، تخصم الفاتورة بسعرها الكامل دون جمع الخصمين</p>
-                        </div>
-                        <label className="relative inline-flex items-center cursor-pointer shrink-0 mr-2">
-                          <input 
-                            type="checkbox" 
-                            className="sr-only peer"
-                            checked={currentTierSettings.allowTierDiscountWithCashback === true}
-                            onChange={(e) => {
-                              handleChange('tierSettings', {
-                                ...currentTierSettings,
-                                allowTierDiscountWithCashback: e.target.checked
-                              });
-                            }}
-                          />
-                          <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
-                        </label>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 4 Tiers Cards Grid */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-                    {tiersList.map((tier: any) => {
-                      const isStandard = tier.id === 'standard';
-                      return (
-                        <div 
-                          key={tier.id}
-                          className={`p-4 rounded-2xl border-2 transition-all flex flex-col justify-between space-y-3 ${
-                            tier.id === 'royal' ? 'bg-purple-50/40 border-purple-300 shadow-sm' :
-                            tier.id === 'vip' ? 'bg-amber-50/40 border-amber-300 shadow-sm' :
-                            tier.id === 'distinguished' ? 'bg-blue-50/40 border-blue-300' : 'bg-slate-50 border-slate-200'
-                          }`}
-                        >
-                          <div>
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="text-xl">{tier.icon}</span>
-                              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${tier.badgeBg} ${tier.badgeText} ${tier.badgeBorder}`}>
-                                {tier.name}
-                              </span>
-                            </div>
-                            <div>
-                              <label className="block text-[11px] font-bold text-slate-600 mb-0.5">اسم المستوى:</label>
-                              <input
-                                type="text"
-                                value={tier.name}
-                                onChange={(e) => updateSingleTier(tier.id, 'name', e.target.value)}
-                                className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-black outline-none focus:border-indigo-600"
-                                placeholder="اسم المستوى..."
-                              />
-                            </div>
-                            <p className="text-[10px] text-slate-500 mt-1">{tier.description}</p>
-                          </div>
-
-                          <div className="space-y-2 pt-2 border-t border-slate-200/60">
-                            <div>
-                              <label className="block text-[11px] font-bold text-slate-700 mb-0.5">
-                                الحد الأدنى للإنفاق ({settings.currency}):
-                              </label>
-                              <input
-                                type="number"
-                                min="0"
-                                disabled={isStandard}
-                                value={tier.spendingThreshold}
-                                onChange={(e) => updateSingleTier(tier.id, 'spendingThreshold', Number(e.target.value))}
-                                className="w-full bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs font-mono font-black outline-none focus:border-indigo-600 disabled:bg-slate-100"
-                              />
-                            </div>
-
-                            <div>
-                              <label className="block text-[11px] font-bold text-slate-700 mb-0.5">
-                                نسبة الخصم المخصصة %:
-                              </label>
-                              <input
-                                type="number"
-                                min="0"
-                                max="100"
-                                disabled={isStandard}
-                                value={tier.discountPercentage}
-                                onChange={(e) => updateSingleTier(tier.id, 'discountPercentage', Number(e.target.value))}
-                                className="w-full bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs font-mono font-black outline-none focus:border-indigo-600 disabled:bg-slate-100 text-indigo-700"
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  <div className="p-3 bg-indigo-50/70 rounded-2xl border border-indigo-200 text-xs text-indigo-950 font-bold flex items-center gap-2">
-                    <span>💡</span>
-                    <span>
-                      بمجرد إدخال رقم العميل في شاشة الكاشير (POS) أو شاشة الحجز، يفحص النظام مستوى العميل عبر كافة فروع الصالون ويظهر شارة المستوى ويطبق نسبة الخصم تلقائياً.
-                    </span>
-                  </div>
-
-                </div>
-              )}
-            </div>
-          );
-        })()}
-
-        {/* ============================================================ */}
-        {/* 👥⏳ Inactive Clients Tracking Settings (متابعة العملاء المنقطعين) */}
-        {/* ============================================================ */}
-        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-5">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800 pb-4 mb-5">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-rose-500 to-amber-500 text-white flex items-center justify-center font-black shadow-md">
-                <UserX size={20} />
+              <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white font-black shadow-lg shadow-emerald-600/30">
+                <QrCode size={22} />
               </div>
               <div>
-                <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
-                  <span>متابعة العملاء المنقطعين عن الحضور (Inactive Clients Tracking)</span>
-                  <span className="text-[10px] font-extrabold bg-rose-100 text-rose-800 px-2.5 py-0.5 rounded-full">
-                    إعادة تنشيط العملاء
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base font-black text-white">رابط ورمز QR بوابة حجز الصالون الأونلاين (SaaS)</h3>
+                  <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-black px-2 py-0.5 rounded-full">
+                    مخصص ومحمي 🔒
                   </span>
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  تحديد معيار الانقطاع (عدد الأيام بدون زيارة) لرصد العملاء الغائبين واستخراج تقرير دوري لمراسلتهم وإعادتهم للصالون
+                </div>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  رابط مخصص يحتوي على كود الصالون الرئيسي لتسجيل وتوجيه العملاء مباشرة دون خلط مع صالونات أخرى
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
-              <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${
-                (settings.inactiveClientsTrackingEnabled ?? true) 
-                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200' 
-                  : 'bg-slate-50 text-slate-500 border-slate-200'
-              }`}>
-                {(settings.inactiveClientsTrackingEnabled ?? true) ? 'المتابعة مفعلة 🟢' : 'معطلة ⚪'}
+            <button
+              type="button"
+              onClick={handlePrintSalonQr}
+              className="bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 shadow-lg shadow-emerald-600/20 cursor-pointer transition-all active:scale-95"
+            >
+              <QrCode size={15} />
+              <span>طباعة ملصق الباركود للمحل 🖨️</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
+            {/* Left/Center Details */}
+            <div className="md:col-span-2 space-y-4">
+              {/* Salon Code Config */}
+              <div className="bg-slate-950/70 p-4 rounded-2xl border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                    <Key size={14} className="text-amber-400" />
+                    <span>كود الصالون المميز (Salon Code / Token):</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={generateNewSalonCode}
+                    className="text-[11px] text-indigo-400 hover:text-indigo-300 font-bold flex items-center gap-1 cursor-pointer"
+                  >
+                    <RefreshCw size={12} />
+                    <span>توليد كود عشوائي جديد</span>
+                  </button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={salonCode}
+                    onChange={(e) => handleChange('salonCode', e.target.value.toLowerCase().replace(/[^a-z0-9]/g, ''))}
+                    placeholder="10a5n"
+                    className="bg-slate-900 border border-slate-700 text-emerald-400 font-mono font-black text-base rounded-xl px-4 py-2.5 outline-none focus:border-emerald-500 tracking-wider flex-1"
+                    dir="ltr"
+                  />
+                  <span className="text-xs text-slate-400 font-medium">كود فريد للـ SaaS</span>
+                </div>
+              </div>
+
+              {/* Direct Link Box */}
+              <div className="bg-slate-950/70 p-4 rounded-2xl border border-slate-800 space-y-2">
+                <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                  <Globe size={14} className="text-emerald-400" />
+                  <span>الرابط المباشر للعميل للحجز والتسجيل التلقائي:</span>
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={salonBookingUrl}
+                    className="bg-slate-900 border border-slate-700 text-slate-200 font-mono text-xs rounded-xl px-3.5 py-2.5 outline-none w-full select-all"
+                    dir="ltr"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(salonBookingUrl);
+                      setCopiedBookingLink(true);
+                      setTimeout(() => setCopiedBookingLink(false), 3000);
+                    }}
+                    className={`px-4 py-2.5 rounded-xl text-xs font-black shrink-0 flex items-center gap-1.5 transition-all cursor-pointer ${
+                      copiedBookingLink 
+                        ? 'bg-emerald-600 text-white shadow-md' 
+                        : 'bg-slate-800 hover:bg-slate-700 text-white border border-slate-700'
+                    }`}
+                  >
+                    {copiedBookingLink ? (
+                      <>
+                        <Check size={14} />
+                        <span>تم النسخ!</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>نسخ الرابط 📋</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3 pt-2">
+                  <a
+                    href={`https://wa.me/?text=${encodeURIComponent(`✨ رابط حجز المواعيد الأونلاين في ${settings.salonName || 'صالون العناية'}:\n${salonBookingUrl}\nكود الصالون: ${salonCode}`)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs font-bold text-emerald-400 hover:text-emerald-300 flex items-center gap-1"
+                  >
+                    <Send size={13} className="rotate-180" />
+                    <span>مشاركة عبر الواتساب للعملاء</span>
+                  </a>
+                  <span className="text-slate-600">•</span>
+                  <a
+                    href={salonBookingUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs font-bold text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
+                  >
+                    <span>فتح ومعاينة صفحة الحجز ↗</span>
+                  </a>
+                </div>
+              </div>
+            </div>
+
+            {/* Right QR Code Box */}
+            <div className="bg-slate-950 p-4 rounded-3xl border border-slate-800 text-center flex flex-col items-center justify-center space-y-3">
+              <div className="bg-white p-3 rounded-2xl shadow-lg ring-4 ring-emerald-500/20 inline-block">
+                <img
+                  src={qrImageUrl}
+                  alt="Booking QR Code"
+                  className="w-36 h-36 object-contain"
+                />
+              </div>
+
+              <div>
+                <p className="text-xs font-black text-white">{settings.salonName || 'صالونك'}</p>
+                <p className="text-[10px] text-emerald-400 font-mono font-bold mt-0.5">كود: {salonCode}</p>
+              </div>
+
+              <div className="flex gap-2 w-full">
+                <a
+                  href={qrImageUrl}
+                  download={`SmartCut_QR_${salonCode}.png`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex-1 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 text-[11px] font-bold py-2 rounded-xl text-center"
+                >
+                  تحميل PNG 💾
+                </a>
+                <button
+                  type="button"
+                  onClick={handlePrintSalonQr}
+                  className="flex-1 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 text-[11px] font-bold py-2 rounded-xl cursor-pointer"
+                >
+                  طباعة 🖨️
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 📅 سياسة وشروط الحجوزات واسترجاع العربون */}
+        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-6">
+          <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+            <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+              <CalendarCheck size={20} />
+            </div>
+            <div>
+              <h3 className="text-base font-black text-slate-900">شروط إيصال الحجز وسياسة استرجاع العربون</h3>
+              <p className="text-xs text-slate-500">تخصيص الشروط المطبوعة أسفل إيصال الحجز وتحديد مهلة استرجاع العربون للصالون</p>
+            </div>
+          </div>
+          {/* 📅 ملاحظات وتنبيهات إيصال الحجز (تخصيص لكل صالون) */}
+          <div className="mt-4 pt-4 border-t border-slate-100">
+            <label className="block text-[12px] font-bold text-slate-700 mb-1 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <span>📅</span>
+                <span>ملاحظات وشروط إيصال الحجز (تظهر في أسفل إيصال الحجز)</span>
               </span>
+              <span className="text-[11px] text-indigo-600 font-bold bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200">
+                مخصصة لكل صالون
+              </span>
+            </label>
+            <textarea
+              rows={3}
+              value={settings.bookingNotes || ''}
+              onChange={(e) => handleChange('bookingNotes', e.target.value)}
+              placeholder="اكتب هنا الشروط أو الملاحظات التي تود ظهورها أسفل إيصال الحجز (مثال: يرجى الحضور قبل الموعد بـ 10 دقائق... في حال التأخر أكثر من 15 دقيقة يتم إلغاء الحجز تلقائياً... العربون غير قابل للاسترداد في حال عدم الحضور)."
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-[13px] focus:border-primary outline-none resize-y transition-colors"
+            />
+            <p className="text-[11px] text-slate-400 mt-1">تُكتب هنا أي شروط أو تعليمات خاصة بالصالون لتظهر مطبوعة أسفل إيصال الحجز للعملاء وتختلف من صالون إلى صالون.</p>
+          </div>
+
+          {/* 💰 سياسة استرجاع عربون الحجز (Deposit Refund Policy) */}
+          <div className="mt-4 pt-4 border-t border-slate-100">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+              <label className="block text-[12px] font-bold text-slate-800 flex items-center gap-1.5">
+                <span className="text-base">⏳</span>
+                <span>مهلة استرجاع عربون الحجز (بالأيام - Deposit Refund Policy):</span>
+              </label>
+              <div className="flex items-center gap-1.5">
+                {Number(settings.depositRefundAllowedDays ?? settings.deposit_refund_allowed_days ?? 0) === 0 ? (
+                  <span className="text-[11px] font-black bg-rose-50 text-rose-700 px-2.5 py-0.5 rounded-full border border-rose-200">
+                    ⛔ غير مسموح بالاسترجاع نهائياً (No Refund Policy)
+                  </span>
+                ) : (
+                  <span className="text-[11px] font-black bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                    ✅ مسموح بالاسترجاع خلال {settings.depositRefundAllowedDays ?? settings.deposit_refund_allowed_days} يوم من وقت الإنشاء
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="w-36">
+                <input
+                  type="number"
+                  min="0"
+                  max="365"
+                  step="1"
+                  value={settings.depositRefundAllowedDays ?? settings.deposit_refund_allowed_days ?? 0}
+                  onChange={(e) => {
+                    const val = Math.max(0, parseInt(e.target.value) || 0);
+                    handleChange('depositRefundAllowedDays', val);
+                    handleChange('deposit_refund_allowed_days', val);
+                  }}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-mono font-bold text-slate-800 text-center focus:border-primary outline-none transition-colors"
+                />
+              </div>
+              <span className="text-xs font-bold text-slate-500">يوم / أيام</span>
+            </div>
+
+            <p className="text-[11px] text-slate-500 mt-2 leading-relaxed">
+              • يحدد هذا الحقل عدد الأيام المسموح خلالها للعميل باسترجاع العربون محسوبة بدقة من تاريخ ووقت إنشاء الحجز الفعلي (<code className="font-mono text-indigo-600 bg-indigo-50 px-1 rounded">created_at</code>).<br />
+              • عند ضبط القيمة على <strong className="text-slate-800">0</strong>: يعتبر النظام العربون غير قابل للاسترداد نهائياً، وعند إلغاء الحجز لا يتم إنشاء أي حركة استرجاع مالية.<br />
+              • عند ضبط قيمة أكبر من صفر (مثلاً <strong className="text-slate-800">3</strong> أو <strong className="text-slate-800">14</strong> يوم): يُسمح بإرجاع العربون وإدراجه تلقائياً كمصروف في بند &quot;مسترجع حجوزات&quot; على الوردية الحالية طالما تم الإلغاء ضمن المهلة المحددة: <span className="font-mono text-slate-700 font-bold">(تاريخ ووقت الإنشاء + X يوم)</span>.
+            </p>
+          </div>
+        </div>
+          </div>
+        )}
+
+        {/* TAB 3: Invoicing, Printing & Taxes */}
+        {activeTab === 'invoicing' && (
+          <div className="space-y-5 animate-in fade-in duration-200">
+        {/* Printer Setup */}
+        <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
+          <div className="flex items-center gap-2 mb-4 border-b border-slate-100 pb-3">
+            <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center">
+              <Receipt size={16} />
+            </div>
+            <h3 className="text-base font-bold text-slate-800">إعدادات طباعة الفواتير والإيصالات</h3>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-[12px] font-bold text-slate-700 mb-1">مقاس ورق الفاتورة</label>
+              <select
+                value={settings.paperSize || '80mm'}
+                onChange={(e) => handleChange('paperSize', e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:border-primary outline-none transition-colors font-semibold"
+              >
+                <option value="80mm">إيصال حراري 80 مم (Thermal 80mm - القياسي)</option>
+                <option value="58mm">إيصال حراري 58 مم (Thermal 58mm)</option>
+                <option value="a4">صفحة قياسية A4</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[12px] font-bold text-slate-700 mb-1">اسم الطابعة المعرفة</label>
+              <input 
+                type="text" 
+                value={settings.printerName}
+                onChange={(e) => handleChange('printerName', e.target.value)}
+                placeholder="مثال: Xprinter-80C"
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:border-primary outline-none transition-colors"
+                dir="ltr"
+              />
+            </div>
+            <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg px-4 py-2">
+              <div>
+                <p className="text-[13px] font-bold text-slate-800">طباعة تلقائية</p>
+                <p className="text-[11px] text-slate-500">طباعة الفاتورة فوراً بعد الدفع</p>
+              </div>
               <label className="relative inline-flex items-center cursor-pointer">
                 <input 
                   type="checkbox" 
                   className="sr-only peer"
-                  checked={settings.inactiveClientsTrackingEnabled ?? true}
-                  onChange={(e) => handleChange('inactiveClientsTrackingEnabled', e.target.checked)}
+                  checked={settings.printAutomatically}
+                  onChange={(e) => handleChange('printAutomatically', e.target.checked)}
                 />
-                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-500"></div>
+                <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
               </label>
             </div>
           </div>
-
-          {(settings.inactiveClientsTrackingEnabled ?? true) && (
-            <div className="space-y-4 animate-in fade-in duration-300">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-center">
-                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2">
-                  <label className="block text-xs font-bold text-slate-800">
-                    مدة الانقطاع المعتمدة لتصنيف العميل كمنقطع (بالأيام):
-                  </label>
-                  <div className="flex items-center gap-3">
-                    <div className="relative flex-1">
-                      <input 
-                        type="number"
-                        min="1"
-                        max="3650"
-                        value={settings.inactiveClientsDays ?? 60}
-                        onChange={(e) => {
-                          const val = Math.max(1, parseInt(e.target.value) || 1);
-                          handleChange('inactiveClientsDays', val);
-                        }}
-                        className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm font-mono font-black text-rose-600 outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-100"
-                        placeholder="60"
-                      />
-                      <span className="absolute left-3 top-2.5 text-xs text-slate-400 font-bold">يوم</span>
-                    </div>
-                  </div>
-                  <p className="text-[11px] text-slate-500 font-medium">
-                    القيمة الافتراضية المقترحة هي <span className="font-bold text-slate-700">60 يوماً</span> (شهران). يمكنك تغييرها لأي رقم تفضله.
-                  </p>
-                </div>
-
-                {/* Quick Presets */}
-                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2">
-                  <label className="block text-xs font-bold text-slate-800">
-                    خيارات جاهزة وسريعة للاختيار:
-                  </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    {[
-                      { days: 30, label: '30 يوم (شهر)' },
-                      { days: 45, label: '45 يوم' },
-                      { days: 60, label: '60 يوم (شهران)' },
-                      { days: 90, label: '90 يوم (3 أشهر)' },
-                    ].map(preset => {
-                      const isSelected = (settings.inactiveClientsDays ?? 60) === preset.days;
-                      return (
-                        <button
-                          key={preset.days}
-                          type="button"
-                          onClick={() => handleChange('inactiveClientsDays', preset.days)}
-                          className={`py-2 px-2 rounded-xl text-xs font-black transition-all cursor-pointer border ${
-                            isSelected 
-                              ? 'bg-rose-500 text-white border-rose-600 shadow-sm' 
-                              : 'bg-white text-slate-700 border-slate-200 hover:border-rose-300 hover:bg-rose-50/50'
-                          }`}
-                        >
-                          {preset.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <p className="text-[11px] text-slate-500">
-                    اضغط على أي زر لتعيين المدة فوراً أو اكتب الرقم الذي تريده في الحقل المقابل.
-                  </p>
-                </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
+            <div>
+              <label className="block text-[12px] font-bold text-slate-700 mb-1">الترويسة العلوية للفاتورة</label>
+              <input
+                type="text"
+                value={settings.receiptHeaderNote || ''}
+                onChange={(e) => handleChange('receiptHeaderNote', e.target.value)}
+                placeholder="أهلاً بكم في صالونكم المميز"
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:border-primary outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-[12px] font-bold text-slate-700 mb-1">التذييل السفلي للفاتورة</label>
+              <input
+                type="text"
+                value={settings.receiptFooterNote || ''}
+                onChange={(e) => handleChange('receiptFooterNote', e.target.value)}
+                placeholder="شكراً لزيارتكم ونسعد بخدمتكم دائماً"
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:border-primary outline-none"
+              />
+            </div>
+          </div>
+        </div>
+        {/* 🖨️ Network & Kiosk Thermal Printer Setup */}
+        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-600 flex items-center justify-center font-bold">
+                <Printer size={22} />
               </div>
-
-              {/* Informative Help Box */}
-              <div className="p-3.5 bg-amber-50/80 rounded-2xl border border-amber-200 text-xs text-amber-950 font-bold flex items-start gap-2.5">
-                <span className="text-base shrink-0">💡</span>
-                <span className="leading-relaxed">
-                  يتم ربط هذه المدة ({settings.inactiveClientsDays ?? 60} يوماً) تلقائياً بـ 
-                  <strong className="text-amber-900 mx-1 underline">تقرير العملاء المنقطعين عن الزيارة</strong>
-                  في شاشة التقارير، ليتم تزويدك بقائمة وافية بهؤلاء العملاء مع تواريخ آخر زياراتهم، وإجمالي إنفاقهم، وزر مباشر لمراسلتهم عبر واتساب لتقديم عروض عودة حصرية.
-                </span>
+              <div>
+                <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                  <span>طابعة تذاكر الانتظار والكيوسك بالشبكة (Network Thermal Printer)</span>
+                  <span className="text-[10px] bg-cyan-100 text-cyan-800 font-mono px-2 py-0.5 rounded-full font-bold">
+                    Direct IP / LAN
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-500">
+                  تحديد عنوان IP الخاص بالطابعة أو كمبيوتر الاستقبال المتصل بالطابعة لطباعة تذاكر التابلت صامتاً وفورياً دون شاشات إضافية
+                </p>
               </div>
             </div>
-          )}
+            <div className="hidden sm:flex items-center gap-1.5 text-xs font-bold text-amber-600 bg-amber-50 border border-amber-200 px-3 py-1 rounded-xl">
+              <Wifi size={14} />
+              <span>طباعة صامتة عبر Wi-Fi</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* IP Address */}
+            <div className="space-y-1">
+              <label className="block text-xs font-bold text-slate-700">
+                عنوان IP الطابعة / الجهاز المتصل بالطابعة:
+              </label>
+              <input
+                type="text"
+                value={settings.thermalPrinterIp || ''}
+                onChange={(e) => handleChange('thermalPrinterIp', e.target.value)}
+                placeholder="مثال: 192.168.1.50"
+                dir="ltr"
+                className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-xs font-mono font-bold text-slate-900 focus:border-amber-500 outline-none"
+              />
+              <p className="text-[10px] text-slate-400">
+                عنوان IP الخاص بجهاز الاستقبال المتصل بالطابعة أو طابعة الشبكة
+              </p>
+            </div>
+
+            {/* Port */}
+            <div className="space-y-1">
+              <label className="block text-xs font-bold text-slate-700">
+                رقم المنفذ (Port):
+              </label>
+              <input
+                type="number"
+                value={settings.thermalPrinterPort || 8080}
+                onChange={(e) => handleChange('thermalPrinterPort', Number(e.target.value) || 8080)}
+                placeholder="8080 أو 9100"
+                dir="ltr"
+                className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-xs font-mono font-bold text-slate-900 focus:border-amber-500 outline-none"
+              />
+              <p className="text-[10px] text-slate-400">
+                افتراضي لخادم الطباعة: 8080 | لطابعات الشبكة المباشرة: 9100
+              </p>
+            </div>
+
+            {/* Endpoint Path */}
+            <div className="space-y-1">
+              <label className="block text-xs font-bold text-slate-700">
+                مسار أمر الطباعة (Endpoint):
+              </label>
+              <input
+                type="text"
+                value={settings.kioskPrinterEndpoint || '/print'}
+                onChange={(e) => handleChange('kioskPrinterEndpoint', e.target.value)}
+                placeholder="/print"
+                dir="ltr"
+                className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-xs font-mono font-bold text-slate-900 focus:border-amber-500 outline-none"
+              />
+              <p className="text-[10px] text-slate-400">
+                المسار البرمجي المخصص (افتراضي: /print)
+              </p>
+            </div>
+          </div>
+
+          {/* Station Auto-Print Option */}
+          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2">
+                <Laptop size={16} className="text-slate-700" />
+                <h4 className="text-xs font-bold text-slate-900">
+                  اعتماد هذا الجهاز الحالي كمحطة طباعة تلقائية لتذاكر الكيوسك (Reception Print Station)
+                </h4>
+              </div>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                إذا كان هذا الكمبيوتر هو المتصل بطابعة الفواتير (USB)، قم بتفعيل هذا الخيار ليقوم النظام بطباعة أي تذكرة تصدر من التابلت فورياً وبشكل صامت.
+              </p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer shrink-0">
+              <input 
+                type="checkbox" 
+                className="sr-only peer"
+                checked={!!settings.isReceptionPrinterStation}
+                onChange={(e) => {
+                  handleChange('isReceptionPrinterStation', e.target.checked);
+                  localStorage.setItem('smartcut_is_printer_station', e.target.checked ? 'true' : 'false');
+                }}
+              />
+              <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
+            </label>
+          </div>
+
+          {/* Test & Status Bar */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-2 border-t border-slate-100">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleTestNetworkPrinter}
+                disabled={printerTestStatus?.loading}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-sm cursor-pointer disabled:opacity-50"
+              >
+                <Printer size={15} />
+                <span>{printerTestStatus?.loading ? 'جاري الفحص...' : '🖨️ طباعة تجريبية واختبار الاتصال'}</span>
+              </button>
+
+              {printerTestStatus && !printerTestStatus.loading && (
+                <span className={`text-xs font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 ${
+                  printerTestStatus.success ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
+                }`}>
+                  {printerTestStatus.success ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
+                  <span>{printerTestStatus.message}</span>
+                </span>
+              )}
+            </div>
+
+            <div className="text-[11px] text-slate-500 bg-slate-100 px-3 py-1.5 rounded-xl">
+              💡 يمكنك تشغيل خادم الطباعة الخفيف على كمبيوتر الاستقبال عبر تشغيل ملف: <code className="text-amber-700 font-bold font-mono">scripts/start_printer_server.bat</code>
+            </div>
+          </div>
         </div>
 
-        {/* ============================================================ */}
+        {/* VAT Settings */}
+        <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
+          <div className="flex items-center gap-2 mb-4 border-b border-slate-100 pb-3">
+            <div className="w-8 h-8 rounded-full bg-emerald-50 text-primary flex items-center justify-center">
+              <Receipt size={16} />
+            </div>
+            <h3 className="text-base font-bold text-slate-800">ضريبة القيمة المضافة (VAT)</h3>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+            <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100">
+              <div>
+                <p className="font-bold text-[13px] text-slate-800">تفعيل الضريبة</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">تطبيق الضريبة على جميع الفواتير</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  className="sr-only peer"
+                  checked={settings.vatEnabled}
+                  onChange={(e) => handleChange('vatEnabled', e.target.checked)}
+                />
+                <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+              </label>
+            </div>
+            
+            {settings.vatEnabled && (
+              <div>
+                <label className="block text-[12px] font-bold text-slate-700 mb-1">نسبة الضريبة (%)</label>
+                <input 
+                  type="number"
+                  value={settings.vatRate}
+                  onChange={(e) => handleChange('vatRate', Number(e.target.value))}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:border-primary outline-none transition-colors"
+                />
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ZATCA SAUDI ARABIA PHASE 2 INTEGRATION - SHOWN ONLY FOR SAUDI ARABIA */}
+        {isSaudi && (
+          <div className="bg-white rounded-2xl p-5 border border-emerald-200 shadow-sm relative overflow-hidden">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4 border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black shadow-md shadow-emerald-600/20">
+                  <Landmark size={20} />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                    <span>🇸🇦 الربط مع هيئة الزكاة والضريبة والجمارك ZATCA (السعودية)</span>
+                    <span className="bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-bold">المرحلة الثانية (فاتورة)</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    إصدار الفواتير الضريبية وتوليد رمز الاستجابة السريع (Phase 2 TLV QR) والتوقيع الرقمي (ECDSA) والربط مع البيئة التجريبية والإنتاجية
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <span className={`text-[11px] font-black px-2.5 py-1 rounded-full border ${zatcaConfig.isOnboarded ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-amber-50 text-amber-800 border-amber-200'}`}>
+                  {zatcaConfig.isOnboarded ? 'جاهز للربط الحي 🟢' : 'بانتظار التهيئة (Onboarding) 🟡'}
+                </span>
+
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    className="sr-only peer"
+                    checked={zatcaConfig.enabled}
+                    onChange={(e) => updateZatca('enabled', e.target.checked)}
+                  />
+                  <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
+                </label>
+              </div>
+            </div>
+
+            {zatcaConfig.enabled && (
+              <div className="space-y-4">
+                {/* Environment & Basic Tax IDs */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">بيئة العمل (Environment)</label>
+                    <select
+                      value={zatcaConfig.environment}
+                      onChange={e => updateZatca('environment', e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-emerald-600 outline-none"
+                    >
+                      <option value="sandbox">🛠️ بيئة المطورين التجريبية (Sandbox)</option>
+                      <option value="simulation">🧪 بيئة المحاكاة والاختبار (Simulation)</option>
+                      <option value="production">🚀 البيئة الحقيقية المباشرة (Production)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">الرقم الضريبي للمنشأة (15 رقماً)</label>
+                    <input
+                      type="text"
+                      value={zatcaConfig.vatNumber}
+                      onChange={e => updateZatca('vatNumber', e.target.value)}
+                      placeholder="300000000000003"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:border-emerald-600 outline-none"
+                      dir="ltr"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">كود وحدة الحل الإلكتروني (EGS Serial)</label>
+                    <input
+                      type="text"
+                      value={zatcaConfig.egsSerialNumber}
+                      onChange={e => updateZatca('egsSerialNumber', e.target.value)}
+                      placeholder="EGS-POS-MAIN-01"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:border-emerald-600 outline-none"
+                      dir="ltr"
+                    />
+                  </div>
+                </div>
+
+                {/* National Address for Tax Invoice */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">المدينة</label>
+                    <input
+                      type="text"
+                      value={zatcaConfig.cityName}
+                      onChange={e => updateZatca('cityName', e.target.value)}
+                      placeholder="الرياض"
+                      className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">اسم الشارع</label>
+                    <input
+                      type="text"
+                      value={zatcaConfig.streetName}
+                      onChange={e => updateZatca('streetName', e.target.value)}
+                      placeholder="طريق الملك فهد"
+                      className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">رقم المبنى</label>
+                    <input
+                      type="text"
+                      value={zatcaConfig.buildingNumber}
+                      onChange={e => updateZatca('buildingNumber', e.target.value)}
+                      placeholder="1234"
+                      className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold"
+                      dir="ltr"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">الرمز البريدي</label>
+                    <input
+                      type="text"
+                      value={zatcaConfig.postalCode}
+                      onChange={e => updateZatca('postalCode', e.target.value)}
+                      placeholder="12345"
+                      className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold"
+                      dir="ltr"
+                    />
+                  </div>
+                </div>
+
+                {/* Onboarding Wizard (CSR & CSID) */}
+                <div className="bg-emerald-50/50 p-4 rounded-2xl border border-emerald-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-emerald-950 flex items-center gap-1.5">
+                      <Key size={16} className="text-emerald-700" />
+                      <span>خطوات التهيئة والربط (ZATCA Onboarding Wizard):</span>
+                    </span>
+                    <span className="text-[10px] text-emerald-800 font-bold bg-emerald-100 px-2 py-0.5 rounded">
+                      Fatoora Portal
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+                    <div className="sm:col-span-6">
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                        رمز التحقق لمرة واحدة (OTP من بوابة فاتورة - 6 أرقام):
+                      </label>
+                      <input
+                        type="text"
+                        maxLength={6}
+                        value={zatcaOtpInput}
+                        onChange={e => setZatcaOtpInput(e.target.value)}
+                        placeholder="123456"
+                        className="w-full bg-white border border-emerald-300 rounded-xl px-3 py-2 text-xs font-mono font-bold tracking-widest outline-none text-center"
+                        dir="ltr"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-3">
+                      <button
+                        type="button"
+                        onClick={handleRequestComplianceCsid}
+                        disabled={zatcaOnboardingBusy}
+                        className="w-full bg-emerald-700 hover:bg-emerald-800 text-white py-2 rounded-xl text-xs font-black transition-all shadow-sm flex items-center justify-center gap-1"
+                      >
+                        <span>1. طلب شهادة الامتثال</span>
+                      </button>
+                    </div>
+
+                    <div className="sm:col-span-3">
+                      <button
+                        type="button"
+                        onClick={handleRequestProductionCsid}
+                        disabled={zatcaOnboardingBusy || !zatcaConfig.complianceCsid}
+                        className="w-full bg-emerald-900 hover:bg-black text-white py-2 rounded-xl text-xs font-black transition-all shadow-sm flex items-center justify-center gap-1 disabled:bg-slate-300"
+                      >
+                        <span>2. تفعيل الإنتاج (PCSID)</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {zatcaConfig.complianceCsid && (
+                    <div className="text-[11px] font-mono text-emerald-900 bg-emerald-100/70 p-2 rounded-lg truncate">
+                      ✓ Compliance CSID: {zatcaConfig.complianceCsid}
+                    </div>
+                  )}
+                </div>
+
+                {/* Actions & Connection Test */}
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={handleTestZatca}
+                      disabled={zatcaTesting}
+                      className="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-all"
+                    >
+                      {zatcaTesting ? <RefreshCw size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                      <span>فحص الاتصال بمنظومة الزكاة</span>
+                    </button>
+
+                    {zatcaTestResult && (
+                      <span className={`text-xs font-bold ${zatcaTestResult.success ? 'text-emerald-700' : 'text-rose-600'}`}>
+                        {zatcaTestResult.message}
+                      </span>
+                    )}
+                  </div>
+
+                  <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={zatcaConfig.autoReportB2C}
+                      onChange={e => updateZatca('autoReportB2C', e.target.checked)}
+                      className="w-4 h-4 text-emerald-600 rounded"
+                    />
+                    <span>إبلاغ تلقائي عن فواتير الأفراد (B2C) خلال 24 ساعة</span>
+                  </label>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ETA EGYPT E-INVOICE & E-RECEIPT INTEGRATION - SHOWN ONLY FOR EGYPT */}
+        {isEgypt && (
+          <div className="bg-white rounded-2xl p-5 border border-sky-200 shadow-sm relative overflow-hidden">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4 border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-sky-600 text-white flex items-center justify-center font-black shadow-md shadow-sky-600/20">
+                  <FileSpreadsheet size={20} />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                    <span>🇪🇬 منظومة الفاتورة والإيصال الإلكتروني - مصلحة الضرائب المصرية (ETA)</span>
+                    <span className="bg-sky-100 text-sky-800 text-[10px] px-2 py-0.5 rounded-full font-bold">POS e-Receipt v1.2</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    إرسال الإيصالات الإلكترونية لنقاط البيع (B2C) والربط مع منظومة مصلحة الضرائب عبر OAuth2 Client Credentials
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <span className={`text-[11px] font-black px-2.5 py-1 rounded-full border ${etaConfig.enabled ? 'bg-sky-50 text-sky-800 border-sky-200' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
+                  {etaConfig.enabled ? 'مفعل 🟢' : 'معطل ⚪'}
+                </span>
+
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    className="sr-only peer"
+                    checked={etaConfig.enabled}
+                    onChange={(e) => updateEta('enabled', e.target.checked)}
+                  />
+                  <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-sky-600"></div>
+                </label>
+              </div>
+            </div>
+
+            {etaConfig.enabled && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">البيئة (Environment)</label>
+                    <select
+                      value={etaConfig.environment}
+                      onChange={e => updateEta('environment', e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-sky-600 outline-none"
+                    >
+                      <option value="preproduction">🧪 البيئة التجريبية (Pre-production)</option>
+                      <option value="production">🚀 البيئة الفعلية الحية (Production)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">رقم التسجيل الضريبي (9 أرقام)</label>
+                    <input
+                      type="text"
+                      value={etaConfig.taxRegistrationNumber}
+                      onChange={e => updateEta('taxRegistrationNumber', e.target.value)}
+                      placeholder="123456789"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:border-sky-600 outline-none"
+                      dir="ltr"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">كود النشاط الضريبي (Activity)</label>
+                    <input
+                      type="text"
+                      value={etaConfig.taxpayerActivityCode}
+                      onChange={e => updateEta('taxpayerActivityCode', e.target.value)}
+                      placeholder="9602 (صالونات وتجميل)"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:border-sky-600 outline-none"
+                      dir="ltr"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">الرقم التسلسلي لنقطة البيع (POS)</label>
+                    <input
+                      type="text"
+                      value={etaConfig.posSerialNumber}
+                      onChange={e => updateEta('posSerialNumber', e.target.value)}
+                      placeholder="POS-EGY-001"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:border-sky-600 outline-none"
+                      dir="ltr"
+                    />
+                  </div>
+                </div>
+
+                {/* OAuth2 Client Credentials */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-sky-50/50 p-3.5 rounded-2xl border border-sky-200">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Client ID (معرف المنظومة)</label>
+                    <input
+                      type="text"
+                      value={etaConfig.clientId}
+                      onChange={e => updateEta('clientId', e.target.value)}
+                      placeholder="e.g. 5f8d9b1c-..."
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold outline-none"
+                      dir="ltr"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Client Secret (المفتاح السري)</label>
+                    <input
+                      type="password"
+                      value={etaConfig.clientSecret}
+                      onChange={e => updateEta('clientSecret', e.target.value)}
+                      placeholder="••••••••••••••••"
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold outline-none"
+                      dir="ltr"
+                    />
+                  </div>
+                </div>
+
+                {/* ETA Test Connection */}
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={handleTestEta}
+                      disabled={etaTesting}
+                      className="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-all"
+                    >
+                      {etaTesting ? <RefreshCw size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                      <span>فحص وتوليد رمز المصادقة (ETA Token)</span>
+                    </button>
+
+                    {etaTestResult && (
+                      <span className={`text-xs font-bold ${etaTestResult.success ? 'text-sky-700' : 'text-rose-600'}`}>
+                        {etaTestResult.message}
+                      </span>
+                    )}
+                  </div>
+
+                  <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={etaConfig.autoSubmitReceipts}
+                      onChange={e => updateEta('autoSubmitReceipts', e.target.checked)}
+                      className="w-4 h-4 text-sky-600 rounded"
+                    />
+                    <span>إرسال الإيصالات تلقائياً لمصلحة الضرائب عند الدفع</span>
+                  </label>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+          </div>
+        )}
+
+        {/* TAB 4: Finance & Treasuries */}
+        {activeTab === 'finance' && (
+          <div className="space-y-5 animate-in fade-in duration-200">
+        {/* Treasuries Settings */}
+        <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
+          <div className="flex items-center gap-2 mb-4 border-b border-slate-100 pb-3">
+            <div className="w-8 h-8 rounded-full bg-amber-50 text-amber-500 flex items-center justify-center">
+              <Wallet size={16} />
+            </div>
+            <h3 className="text-base font-bold text-slate-800">إدارة الخزائن (طرق الدفع)</h3>
+          </div>
+          <div className="space-y-4">
+            <div className="flex gap-2">
+              <input 
+                type="text" 
+                placeholder="اسم الخزينة الجديدة..." 
+                className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-[13px] outline-none focus:border-primary"
+                value={newTreasuryName}
+                onChange={e => setNewTreasuryName(e.target.value)}
+              />
+              <button onClick={addTreasury} className="bg-slate-800 text-white px-4 py-2 rounded-lg text-[13px] font-bold hover:bg-slate-900 flex items-center gap-1">
+                {editingCategoryId ? <Save size={14} /> : <Plus size={14} />} {editingCategoryId ? 'حفظ' : 'إضافة'}
+              </button>
+              {editingCategoryId && (
+                <button onClick={() => { setEditingCategoryId(null); setNewCategoryName(''); }} className="bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-[13px] font-bold hover:bg-slate-300">إلغاء</button>
+              )}
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {settings.treasuries.map(t => (
+                <div key={t.id} className="border border-slate-200 rounded-lg p-3 flex justify-between items-center bg-slate-50">
+                  <span className="font-bold text-[13px] text-slate-700">{t.name} {t.isMain && <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded ml-2">أساسية</span>}</span>
+                  {!t.isMain && (
+                    <button onClick={() => deleteTreasury(t.id)} className="text-red-400 hover:text-red-600 transition-colors">
+                      <Trash2 size={16} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        
+        {/* Categories Settings */}
+        <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
+          <div className="flex items-center gap-2 mb-4 border-b border-slate-100 pb-3">
+            <div className="w-8 h-8 rounded-full bg-indigo-50 text-indigo-500 flex items-center justify-center">
+              <Plus size={16} />
+            </div>
+            <h3 className="text-base font-bold text-slate-800">إدارة التصنيفات</h3>
+          </div>
+          <div className="space-y-4">
+            <div className="flex gap-2">
+              <input 
+                type="text" 
+                placeholder="اسم التصنيف الجديد..." 
+                className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-[13px] outline-none focus:border-primary"
+                value={newCategoryName}
+                onChange={e => setNewCategoryName(e.target.value)}
+              />
+              <select 
+                className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-[13px] outline-none focus:border-primary"
+                value={newCategoryType}
+                onChange={e => setNewCategoryType(e.target.value as 'service' | 'product')}
+              >
+                <option value="service">خدمات</option>
+                <option value="product">منتجات</option>
+              </select>
+              <button onClick={addCategory} className="bg-slate-800 text-white px-4 py-2 rounded-lg text-[13px] font-bold hover:bg-slate-900 flex items-center gap-1">
+                <Plus size={14} /> إضافة
+              </button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {categories && categories.filter(c => c.id !== 'all').map(c => (
+                <div key={c.id} className="border border-slate-200 rounded-lg p-3 flex justify-between items-center bg-slate-50">
+                  <div className="flex flex-col"><span className="font-bold text-[13px] text-slate-700">{c.name}</span><span className="text-[10px] text-slate-500">{c.type === 'product' ? 'منتجات' : 'خدمات'}</span></div>
+                  
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => handleEditCategory(c)} className="text-blue-400 hover:text-blue-600 transition-colors">
+                      <Edit2 size={16} />
+                    </button>
+                    <button onClick={() => deleteCategory(c.id)} className="text-red-400 hover:text-red-600 transition-colors">
+                    <Trash2 size={16} />
+                  </button>
+                  </div>
+
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+          </div>
+        )}
+
+        {/* TAB 5: HR & Attendance */}
+        {activeTab === 'hr' && (
+          <div className="space-y-5 animate-in fade-in duration-200">
         {/* HR, Attendance, Overtime, Delays & Permissions Settings */}
         {/* ============================================================ */}
         {(() => {
@@ -2519,731 +2929,336 @@ export function SettingsScreen({
           );
         })()}
 
-        {/* Treasuries Settings */}
-        <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
-          <div className="flex items-center gap-2 mb-4 border-b border-slate-100 pb-3">
-            <div className="w-8 h-8 rounded-full bg-amber-50 text-amber-500 flex items-center justify-center">
-              <Wallet size={16} />
-            </div>
-            <h3 className="text-base font-bold text-slate-800">إدارة الخزائن (طرق الدفع)</h3>
           </div>
-          <div className="space-y-4">
-            <div className="flex gap-2">
-              <input 
-                type="text" 
-                placeholder="اسم الخزينة الجديدة..." 
-                className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-[13px] outline-none focus:border-primary"
-                value={newTreasuryName}
-                onChange={e => setNewTreasuryName(e.target.value)}
-              />
-              <button onClick={addTreasury} className="bg-slate-800 text-white px-4 py-2 rounded-lg text-[13px] font-bold hover:bg-slate-900 flex items-center gap-1">
-                {editingCategoryId ? <Save size={14} /> : <Plus size={14} />} {editingCategoryId ? 'حفظ' : 'إضافة'}
-              </button>
-              {editingCategoryId && (
-                <button onClick={() => { setEditingCategoryId(null); setNewCategoryName(''); }} className="bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-[13px] font-bold hover:bg-slate-300">إلغاء</button>
+        )}
+
+        {/* TAB 6: Clients, Loyalty & WhatsApp */}
+        {activeTab === 'clients' && (
+          <div className="space-y-5 animate-in fade-in duration-200">
+        {/* 👑💎 Comprehensive Client Loyalty Tiers & VIP Management Settings */}
+        {(() => {
+          const defaultTiers = [
+            { id: 'standard', name: 'قياسي', icon: '⭐', spendingThreshold: 0, discountPercentage: 0, color: 'slate', badgeBg: 'bg-slate-100', badgeText: 'text-slate-700', badgeBorder: 'border-slate-300', description: 'المستوى الأساسي الافتراضي لجميع العملاء الجدد' },
+            { id: 'distinguished', name: 'متميز', icon: '🔷', spendingThreshold: 300, discountPercentage: 5, color: 'blue', badgeBg: 'bg-blue-50', badgeText: 'text-blue-700', badgeBorder: 'border-blue-300', description: 'عميل منتظم بإنفاق يتجاوز الحد الأدنى' },
+            { id: 'vip', name: 'VIP', icon: '👑', spendingThreshold: 800, discountPercentage: 10, color: 'amber', badgeBg: 'bg-amber-50', badgeText: 'text-amber-800', badgeBorder: 'border-amber-400', description: 'عضوية كبار الشخصيات مع أولوية وخصم مميز' },
+            { id: 'royal', name: 'ملكي', icon: '💎', spendingThreshold: 1500, discountPercentage: 15, color: 'purple', badgeBg: 'bg-purple-50', badgeText: 'text-purple-800', badgeBorder: 'border-purple-400', description: 'العضوية الملكية البلاتينية لأعلى العملاء إنفاقاً' }
+          ];
+
+          const currentTierSettings = settings.tierSettings || {
+            enabled: true,
+            periodMonths: 0,
+            allowTierDiscountWithCashback: false,
+            tiers: defaultTiers as any
+          };
+
+          const tiersList = (currentTierSettings.tiers && currentTierSettings.tiers.length > 0)
+            ? currentTierSettings.tiers
+            : defaultTiers as any;
+
+          const updateSingleTier = (tierId: string, field: 'name' | 'spendingThreshold' | 'discountPercentage', val: any) => {
+            const updatedList = tiersList.map((t: any) => t.id === tierId ? { ...t, [field]: val } : t);
+            handleChange('tierSettings', {
+              ...currentTierSettings,
+              tiers: updatedList
+            });
+          };
+
+          return (
+            <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-5">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-400 via-amber-500 to-purple-600 text-white flex items-center justify-center font-black shadow-md">
+                    👑
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                      <span>نظام تصنيف ومستويات العملاء الموحد بالفروع (Loyalty Tiers Engine)</span>
+                      <span className="text-[10px] font-extrabold bg-amber-100 text-amber-900 px-2.5 py-0.5 rounded-full">
+                        4 مستويات قابلة لتعديل الاسم والمزايا
+                      </span>
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      تحديد مسميات وشروط ونسب الخصم لكل مستوى (مثل: قياسي - متميز - VIP - ملكي) عبر كافة فروع الصالون
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${currentTierSettings.enabled ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>
+                    {currentTierSettings.enabled ? 'نظام المستويات مفعل 🟢' : 'معطل ⚪'}
+                  </span>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      className="sr-only peer"
+                      checked={currentTierSettings.enabled}
+                      onChange={(e) => {
+                        handleChange('tierSettings', {
+                          ...currentTierSettings,
+                          enabled: e.target.checked
+                        });
+                      }}
+                    />
+                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
+                  </label>
+                </div>
+              </div>
+
+              {currentTierSettings.enabled && (
+                <div className="space-y-5 animate-in fade-in">
+                  
+                  {/* General Engine Options */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        فترة احتساب إنفاق العميل بالفروع:
+                      </label>
+                      <select
+                        value={currentTierSettings.periodMonths || 0}
+                        onChange={(e) => {
+                          handleChange('tierSettings', {
+                            ...currentTierSettings,
+                            periodMonths: Number(e.target.value)
+                          });
+                        }}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-amber-500"
+                      >
+                        <option value={0}>مدى الحياة (مجموع كافة الزيارات بجميع الفروع)</option>
+                        <option value={3}>آخر 3 أشهر</option>
+                        <option value={6}>آخر 6 أشهر</option>
+                        <option value={12}>آخر 12 شهراً (سنة كاملة)</option>
+                      </select>
+                      <p className="text-[10px] text-slate-400 mt-1">يتم جمع فواتير العميل في هذه المدة لتحديد ترقيته تلقائياً</p>
+                    </div>
+
+                    <div className="flex flex-col justify-between">
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        سياسة الجمع بين خصم الترقية والكاش باك:
+                      </label>
+                      <div className="bg-white p-2.5 rounded-xl border border-slate-200 flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-black text-slate-800">السماح بخصم الترقية عند سداد كامل الفاتورة بالكاش باك</p>
+                          <p className="text-[10px] text-slate-400">إذا تم الإلغاء، تخصم الفاتورة بسعرها الكامل دون جمع الخصمين</p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer shrink-0 mr-2">
+                          <input 
+                            type="checkbox" 
+                            className="sr-only peer"
+                            checked={currentTierSettings.allowTierDiscountWithCashback === true}
+                            onChange={(e) => {
+                              handleChange('tierSettings', {
+                                ...currentTierSettings,
+                                allowTierDiscountWithCashback: e.target.checked
+                              });
+                            }}
+                          />
+                          <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 4 Tiers Cards Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+                    {tiersList.map((tier: any) => {
+                      const isStandard = tier.id === 'standard';
+                      return (
+                        <div 
+                          key={tier.id}
+                          className={`p-4 rounded-2xl border-2 transition-all flex flex-col justify-between space-y-3 ${
+                            tier.id === 'royal' ? 'bg-purple-50/40 border-purple-300 shadow-sm' :
+                            tier.id === 'vip' ? 'bg-amber-50/40 border-amber-300 shadow-sm' :
+                            tier.id === 'distinguished' ? 'bg-blue-50/40 border-blue-300' : 'bg-slate-50 border-slate-200'
+                          }`}
+                        >
+                          <div>
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-xl">{tier.icon}</span>
+                              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${tier.badgeBg} ${tier.badgeText} ${tier.badgeBorder}`}>
+                                {tier.name}
+                              </span>
+                            </div>
+                            <div>
+                              <label className="block text-[11px] font-bold text-slate-600 mb-0.5">اسم المستوى:</label>
+                              <input
+                                type="text"
+                                value={tier.name}
+                                onChange={(e) => updateSingleTier(tier.id, 'name', e.target.value)}
+                                className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-black outline-none focus:border-indigo-600"
+                                placeholder="اسم المستوى..."
+                              />
+                            </div>
+                            <p className="text-[10px] text-slate-500 mt-1">{tier.description}</p>
+                          </div>
+
+                          <div className="space-y-2 pt-2 border-t border-slate-200/60">
+                            <div>
+                              <label className="block text-[11px] font-bold text-slate-700 mb-0.5">
+                                الحد الأدنى للإنفاق ({settings.currency}):
+                              </label>
+                              <input
+                                type="number"
+                                min="0"
+                                disabled={isStandard}
+                                value={tier.spendingThreshold}
+                                onChange={(e) => updateSingleTier(tier.id, 'spendingThreshold', Number(e.target.value))}
+                                className="w-full bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs font-mono font-black outline-none focus:border-indigo-600 disabled:bg-slate-100"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-[11px] font-bold text-slate-700 mb-0.5">
+                                نسبة الخصم المخصصة %:
+                              </label>
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                disabled={isStandard}
+                                value={tier.discountPercentage}
+                                onChange={(e) => updateSingleTier(tier.id, 'discountPercentage', Number(e.target.value))}
+                                className="w-full bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs font-mono font-black outline-none focus:border-indigo-600 disabled:bg-slate-100 text-indigo-700"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="p-3 bg-indigo-50/70 rounded-2xl border border-indigo-200 text-xs text-indigo-950 font-bold flex items-center gap-2">
+                    <span>💡</span>
+                    <span>
+                      بمجرد إدخال رقم العميل في شاشة الكاشير (POS) أو شاشة الحجز، يفحص النظام مستوى العميل عبر كافة فروع الصالون ويظهر شارة المستوى ويطبق نسبة الخصم تلقائياً.
+                    </span>
+                  </div>
+
+                </div>
               )}
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {settings.treasuries.map(t => (
-                <div key={t.id} className="border border-slate-200 rounded-lg p-3 flex justify-between items-center bg-slate-50">
-                  <span className="font-bold text-[13px] text-slate-700">{t.name} {t.isMain && <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded ml-2">أساسية</span>}</span>
-                  {!t.isMain && (
-                    <button onClick={() => deleteTreasury(t.id)} className="text-red-400 hover:text-red-600 transition-colors">
-                      <Trash2 size={16} />
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+          );
+        })()}
 
-        
-        {/* Categories Settings */}
-        <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
-          <div className="flex items-center gap-2 mb-4 border-b border-slate-100 pb-3">
-            <div className="w-8 h-8 rounded-full bg-indigo-50 text-indigo-500 flex items-center justify-center">
-              <Plus size={16} />
-            </div>
-            <h3 className="text-base font-bold text-slate-800">إدارة التصنيفات</h3>
-          </div>
-          <div className="space-y-4">
-            <div className="flex gap-2">
-              <input 
-                type="text" 
-                placeholder="اسم التصنيف الجديد..." 
-                className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-[13px] outline-none focus:border-primary"
-                value={newCategoryName}
-                onChange={e => setNewCategoryName(e.target.value)}
-              />
-              <select 
-                className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-[13px] outline-none focus:border-primary"
-                value={newCategoryType}
-                onChange={e => setNewCategoryType(e.target.value as 'service' | 'product')}
-              >
-                <option value="service">خدمات</option>
-                <option value="product">منتجات</option>
-              </select>
-              <button onClick={addCategory} className="bg-slate-800 text-white px-4 py-2 rounded-lg text-[13px] font-bold hover:bg-slate-900 flex items-center gap-1">
-                <Plus size={14} /> إضافة
-              </button>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {categories && categories.filter(c => c.id !== 'all').map(c => (
-                <div key={c.id} className="border border-slate-200 rounded-lg p-3 flex justify-between items-center bg-slate-50">
-                  <div className="flex flex-col"><span className="font-bold text-[13px] text-slate-700">{c.name}</span><span className="text-[10px] text-slate-500">{c.type === 'product' ? 'منتجات' : 'خدمات'}</span></div>
-                  
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => handleEditCategory(c)} className="text-blue-400 hover:text-blue-600 transition-colors">
-                      <Edit2 size={16} />
-                    </button>
-                    <button onClick={() => deleteCategory(c.id)} className="text-red-400 hover:text-red-600 transition-colors">
-                    <Trash2 size={16} />
-                  </button>
-                  </div>
-
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* VAT Settings */}
-        <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
-          <div className="flex items-center gap-2 mb-4 border-b border-slate-100 pb-3">
-            <div className="w-8 h-8 rounded-full bg-emerald-50 text-primary flex items-center justify-center">
-              <Receipt size={16} />
-            </div>
-            <h3 className="text-base font-bold text-slate-800">ضريبة القيمة المضافة (VAT)</h3>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
-            <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100">
-              <div>
-                <p className="font-bold text-[13px] text-slate-800">تفعيل الضريبة</p>
-                <p className="text-[11px] text-slate-500 mt-0.5">تطبيق الضريبة على جميع الفواتير</p>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input 
-                  type="checkbox" 
-                  className="sr-only peer"
-                  checked={settings.vatEnabled}
-                  onChange={(e) => handleChange('vatEnabled', e.target.checked)}
-                />
-                <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
-              </label>
-            </div>
-            
-            {settings.vatEnabled && (
-              <div>
-                <label className="block text-[12px] font-bold text-slate-700 mb-1">نسبة الضريبة (%)</label>
-                <input 
-                  type="number"
-                  value={settings.vatRate}
-                  onChange={(e) => handleChange('vatRate', Number(e.target.value))}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:border-primary outline-none transition-colors"
-                />
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* ZATCA SAUDI ARABIA PHASE 2 INTEGRATION - SHOWN ONLY FOR SAUDI ARABIA */}
-        {isSaudi && (
-          <div className="bg-white rounded-2xl p-5 border border-emerald-200 shadow-sm relative overflow-hidden">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4 border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black shadow-md shadow-emerald-600/20">
-                  <Landmark size={20} />
-                </div>
-                <div>
-                  <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
-                    <span>🇸🇦 الربط مع هيئة الزكاة والضريبة والجمارك ZATCA (السعودية)</span>
-                    <span className="bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-bold">المرحلة الثانية (فاتورة)</span>
-                  </h3>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    إصدار الفواتير الضريبية وتوليد رمز الاستجابة السريع (Phase 2 TLV QR) والتوقيع الرقمي (ECDSA) والربط مع البيئة التجريبية والإنتاجية
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <span className={`text-[11px] font-black px-2.5 py-1 rounded-full border ${zatcaConfig.isOnboarded ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-amber-50 text-amber-800 border-amber-200'}`}>
-                  {zatcaConfig.isOnboarded ? 'جاهز للربط الحي 🟢' : 'بانتظار التهيئة (Onboarding) 🟡'}
-                </span>
-
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input 
-                    type="checkbox" 
-                    className="sr-only peer"
-                    checked={zatcaConfig.enabled}
-                    onChange={(e) => updateZatca('enabled', e.target.checked)}
-                  />
-                  <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
-                </label>
-              </div>
-            </div>
-
-            {zatcaConfig.enabled && (
-              <div className="space-y-4">
-                {/* Environment & Basic Tax IDs */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">بيئة العمل (Environment)</label>
-                    <select
-                      value={zatcaConfig.environment}
-                      onChange={e => updateZatca('environment', e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-emerald-600 outline-none"
-                    >
-                      <option value="sandbox">🛠️ بيئة المطورين التجريبية (Sandbox)</option>
-                      <option value="simulation">🧪 بيئة المحاكاة والاختبار (Simulation)</option>
-                      <option value="production">🚀 البيئة الحقيقية المباشرة (Production)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">الرقم الضريبي للمنشأة (15 رقماً)</label>
-                    <input
-                      type="text"
-                      value={zatcaConfig.vatNumber}
-                      onChange={e => updateZatca('vatNumber', e.target.value)}
-                      placeholder="300000000000003"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:border-emerald-600 outline-none"
-                      dir="ltr"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">كود وحدة الحل الإلكتروني (EGS Serial)</label>
-                    <input
-                      type="text"
-                      value={zatcaConfig.egsSerialNumber}
-                      onChange={e => updateZatca('egsSerialNumber', e.target.value)}
-                      placeholder="EGS-POS-MAIN-01"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:border-emerald-600 outline-none"
-                      dir="ltr"
-                    />
-                  </div>
-                </div>
-
-                {/* National Address for Tax Invoice */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-600 mb-1">المدينة</label>
-                    <input
-                      type="text"
-                      value={zatcaConfig.cityName}
-                      onChange={e => updateZatca('cityName', e.target.value)}
-                      placeholder="الرياض"
-                      className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-600 mb-1">اسم الشارع</label>
-                    <input
-                      type="text"
-                      value={zatcaConfig.streetName}
-                      onChange={e => updateZatca('streetName', e.target.value)}
-                      placeholder="طريق الملك فهد"
-                      className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-600 mb-1">رقم المبنى</label>
-                    <input
-                      type="text"
-                      value={zatcaConfig.buildingNumber}
-                      onChange={e => updateZatca('buildingNumber', e.target.value)}
-                      placeholder="1234"
-                      className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold"
-                      dir="ltr"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-600 mb-1">الرمز البريدي</label>
-                    <input
-                      type="text"
-                      value={zatcaConfig.postalCode}
-                      onChange={e => updateZatca('postalCode', e.target.value)}
-                      placeholder="12345"
-                      className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold"
-                      dir="ltr"
-                    />
-                  </div>
-                </div>
-
-                {/* Onboarding Wizard (CSR & CSID) */}
-                <div className="bg-emerald-50/50 p-4 rounded-2xl border border-emerald-200 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-black text-emerald-950 flex items-center gap-1.5">
-                      <Key size={16} className="text-emerald-700" />
-                      <span>خطوات التهيئة والربط (ZATCA Onboarding Wizard):</span>
-                    </span>
-                    <span className="text-[10px] text-emerald-800 font-bold bg-emerald-100 px-2 py-0.5 rounded">
-                      Fatoora Portal
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
-                    <div className="sm:col-span-6">
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                        رمز التحقق لمرة واحدة (OTP من بوابة فاتورة - 6 أرقام):
-                      </label>
-                      <input
-                        type="text"
-                        maxLength={6}
-                        value={zatcaOtpInput}
-                        onChange={e => setZatcaOtpInput(e.target.value)}
-                        placeholder="123456"
-                        className="w-full bg-white border border-emerald-300 rounded-xl px-3 py-2 text-xs font-mono font-bold tracking-widest outline-none text-center"
-                        dir="ltr"
-                      />
-                    </div>
-
-                    <div className="sm:col-span-3">
-                      <button
-                        type="button"
-                        onClick={handleRequestComplianceCsid}
-                        disabled={zatcaOnboardingBusy}
-                        className="w-full bg-emerald-700 hover:bg-emerald-800 text-white py-2 rounded-xl text-xs font-black transition-all shadow-sm flex items-center justify-center gap-1"
-                      >
-                        <span>1. طلب شهادة الامتثال</span>
-                      </button>
-                    </div>
-
-                    <div className="sm:col-span-3">
-                      <button
-                        type="button"
-                        onClick={handleRequestProductionCsid}
-                        disabled={zatcaOnboardingBusy || !zatcaConfig.complianceCsid}
-                        className="w-full bg-emerald-900 hover:bg-black text-white py-2 rounded-xl text-xs font-black transition-all shadow-sm flex items-center justify-center gap-1 disabled:bg-slate-300"
-                      >
-                        <span>2. تفعيل الإنتاج (PCSID)</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {zatcaConfig.complianceCsid && (
-                    <div className="text-[11px] font-mono text-emerald-900 bg-emerald-100/70 p-2 rounded-lg truncate">
-                      ✓ Compliance CSID: {zatcaConfig.complianceCsid}
-                    </div>
-                  )}
-                </div>
-
-                {/* Actions & Connection Test */}
-                <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-                  <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={handleTestZatca}
-                      disabled={zatcaTesting}
-                      className="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-all"
-                    >
-                      {zatcaTesting ? <RefreshCw size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                      <span>فحص الاتصال بمنظومة الزكاة</span>
-                    </button>
-
-                    {zatcaTestResult && (
-                      <span className={`text-xs font-bold ${zatcaTestResult.success ? 'text-emerald-700' : 'text-rose-600'}`}>
-                        {zatcaTestResult.message}
-                      </span>
-                    )}
-                  </div>
-
-                  <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-700">
-                    <input
-                      type="checkbox"
-                      checked={zatcaConfig.autoReportB2C}
-                      onChange={e => updateZatca('autoReportB2C', e.target.checked)}
-                      className="w-4 h-4 text-emerald-600 rounded"
-                    />
-                    <span>إبلاغ تلقائي عن فواتير الأفراد (B2C) خلال 24 ساعة</span>
-                  </label>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ETA EGYPT E-INVOICE & E-RECEIPT INTEGRATION - SHOWN ONLY FOR EGYPT */}
-        {isEgypt && (
-          <div className="bg-white rounded-2xl p-5 border border-sky-200 shadow-sm relative overflow-hidden">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4 border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-sky-600 text-white flex items-center justify-center font-black shadow-md shadow-sky-600/20">
-                  <FileSpreadsheet size={20} />
-                </div>
-                <div>
-                  <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
-                    <span>🇪🇬 منظومة الفاتورة والإيصال الإلكتروني - مصلحة الضرائب المصرية (ETA)</span>
-                    <span className="bg-sky-100 text-sky-800 text-[10px] px-2 py-0.5 rounded-full font-bold">POS e-Receipt v1.2</span>
-                  </h3>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    إرسال الإيصالات الإلكترونية لنقاط البيع (B2C) والربط مع منظومة مصلحة الضرائب عبر OAuth2 Client Credentials
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <span className={`text-[11px] font-black px-2.5 py-1 rounded-full border ${etaConfig.enabled ? 'bg-sky-50 text-sky-800 border-sky-200' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
-                  {etaConfig.enabled ? 'مفعل 🟢' : 'معطل ⚪'}
-                </span>
-
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input 
-                    type="checkbox" 
-                    className="sr-only peer"
-                    checked={etaConfig.enabled}
-                    onChange={(e) => updateEta('enabled', e.target.checked)}
-                  />
-                  <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-sky-600"></div>
-                </label>
-              </div>
-            </div>
-
-            {etaConfig.enabled && (
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">البيئة (Environment)</label>
-                    <select
-                      value={etaConfig.environment}
-                      onChange={e => updateEta('environment', e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-sky-600 outline-none"
-                    >
-                      <option value="preproduction">🧪 البيئة التجريبية (Pre-production)</option>
-                      <option value="production">🚀 البيئة الفعلية الحية (Production)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">رقم التسجيل الضريبي (9 أرقام)</label>
-                    <input
-                      type="text"
-                      value={etaConfig.taxRegistrationNumber}
-                      onChange={e => updateEta('taxRegistrationNumber', e.target.value)}
-                      placeholder="123456789"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:border-sky-600 outline-none"
-                      dir="ltr"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">كود النشاط الضريبي (Activity)</label>
-                    <input
-                      type="text"
-                      value={etaConfig.taxpayerActivityCode}
-                      onChange={e => updateEta('taxpayerActivityCode', e.target.value)}
-                      placeholder="9602 (صالونات وتجميل)"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:border-sky-600 outline-none"
-                      dir="ltr"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">الرقم التسلسلي لنقطة البيع (POS)</label>
-                    <input
-                      type="text"
-                      value={etaConfig.posSerialNumber}
-                      onChange={e => updateEta('posSerialNumber', e.target.value)}
-                      placeholder="POS-EGY-001"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:border-sky-600 outline-none"
-                      dir="ltr"
-                    />
-                  </div>
-                </div>
-
-                {/* OAuth2 Client Credentials */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-sky-50/50 p-3.5 rounded-2xl border border-sky-200">
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Client ID (معرف المنظومة)</label>
-                    <input
-                      type="text"
-                      value={etaConfig.clientId}
-                      onChange={e => updateEta('clientId', e.target.value)}
-                      placeholder="e.g. 5f8d9b1c-..."
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold outline-none"
-                      dir="ltr"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Client Secret (المفتاح السري)</label>
-                    <input
-                      type="password"
-                      value={etaConfig.clientSecret}
-                      onChange={e => updateEta('clientSecret', e.target.value)}
-                      placeholder="••••••••••••••••"
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold outline-none"
-                      dir="ltr"
-                    />
-                  </div>
-                </div>
-
-                {/* ETA Test Connection */}
-                <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-                  <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={handleTestEta}
-                      disabled={etaTesting}
-                      className="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-all"
-                    >
-                      {etaTesting ? <RefreshCw size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                      <span>فحص وتوليد رمز المصادقة (ETA Token)</span>
-                    </button>
-
-                    {etaTestResult && (
-                      <span className={`text-xs font-bold ${etaTestResult.success ? 'text-sky-700' : 'text-rose-600'}`}>
-                        {etaTestResult.message}
-                      </span>
-                    )}
-                  </div>
-
-                  <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-700">
-                    <input
-                      type="checkbox"
-                      checked={etaConfig.autoSubmitReceipts}
-                      onChange={e => updateEta('autoSubmitReceipts', e.target.checked)}
-                      className="w-4 h-4 text-sky-600 rounded"
-                    />
-                    <span>إرسال الإيصالات تلقائياً لمصلحة الضرائب عند الدفع</span>
-                  </label>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Printer Setup */}
-        <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
-          <div className="flex items-center gap-2 mb-4 border-b border-slate-100 pb-3">
-            <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center">
-              <Receipt size={16} />
-            </div>
-            <h3 className="text-base font-bold text-slate-800">إعدادات طباعة الفواتير والإيصالات</h3>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-[12px] font-bold text-slate-700 mb-1">مقاس ورق الفاتورة</label>
-              <select
-                value={settings.paperSize || '80mm'}
-                onChange={(e) => handleChange('paperSize', e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:border-primary outline-none transition-colors font-semibold"
-              >
-                <option value="80mm">إيصال حراري 80 مم (Thermal 80mm - القياسي)</option>
-                <option value="58mm">إيصال حراري 58 مم (Thermal 58mm)</option>
-                <option value="a4">صفحة قياسية A4</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-[12px] font-bold text-slate-700 mb-1">اسم الطابعة المعرفة</label>
-              <input 
-                type="text" 
-                value={settings.printerName}
-                onChange={(e) => handleChange('printerName', e.target.value)}
-                placeholder="مثال: Xprinter-80C"
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:border-primary outline-none transition-colors"
-                dir="ltr"
-              />
-            </div>
-            <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg px-4 py-2">
-              <div>
-                <p className="text-[13px] font-bold text-slate-800">طباعة تلقائية</p>
-                <p className="text-[11px] text-slate-500">طباعة الفاتورة فوراً بعد الدفع</p>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input 
-                  type="checkbox" 
-                  className="sr-only peer"
-                  checked={settings.printAutomatically}
-                  onChange={(e) => handleChange('printAutomatically', e.target.checked)}
-                />
-                <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
-              </label>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
-            <div>
-              <label className="block text-[12px] font-bold text-slate-700 mb-1">الترويسة العلوية للفاتورة</label>
-              <input
-                type="text"
-                value={settings.receiptHeaderNote || ''}
-                onChange={(e) => handleChange('receiptHeaderNote', e.target.value)}
-                placeholder="أهلاً بكم في صالونكم المميز"
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:border-primary outline-none"
-              />
-            </div>
-            <div>
-              <label className="block text-[12px] font-bold text-slate-700 mb-1">التذييل السفلي للفاتورة</label>
-              <input
-                type="text"
-                value={settings.receiptFooterNote || ''}
-                onChange={(e) => handleChange('receiptFooterNote', e.target.value)}
-                placeholder="شكراً لزيارتكم ونسعد بخدمتكم دائماً"
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:border-primary outline-none"
-              />
-            </div>
-          </div>
-
-          {/* 📅 ملاحظات وتنبيهات إيصال الحجز (تخصيص لكل صالون) */}
-          <div className="mt-4 pt-4 border-t border-slate-100">
-            <label className="block text-[12px] font-bold text-slate-700 mb-1 flex items-center justify-between">
-              <span className="flex items-center gap-1.5">
-                <span>📅</span>
-                <span>ملاحظات وشروط إيصال الحجز (تظهر في أسفل إيصال الحجز)</span>
-              </span>
-              <span className="text-[11px] text-indigo-600 font-bold bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200">
-                مخصصة لكل صالون
-              </span>
-            </label>
-            <textarea
-              rows={3}
-              value={settings.bookingNotes || ''}
-              onChange={(e) => handleChange('bookingNotes', e.target.value)}
-              placeholder="اكتب هنا الشروط أو الملاحظات التي تود ظهورها أسفل إيصال الحجز (مثال: يرجى الحضور قبل الموعد بـ 10 دقائق... في حال التأخر أكثر من 15 دقيقة يتم إلغاء الحجز تلقائياً... العربون غير قابل للاسترداد في حال عدم الحضور)."
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-[13px] focus:border-primary outline-none resize-y transition-colors"
-            />
-            <p className="text-[11px] text-slate-400 mt-1">تُكتب هنا أي شروط أو تعليمات خاصة بالصالون لتظهر مطبوعة أسفل إيصال الحجز للعملاء وتختلف من صالون إلى صالون.</p>
-          </div>
-        </div>
-
-        {/* 🖨️ Network & Kiosk Thermal Printer Setup */}
-        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+        {/* ============================================================ */}
+        {/* 👥⏳ Inactive Clients Tracking Settings (متابعة العملاء المنقطعين) */}
+        {/* ============================================================ */}
+        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-5">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-600 flex items-center justify-center font-bold">
-                <Printer size={22} />
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-rose-500 to-amber-500 text-white flex items-center justify-center font-black shadow-md">
+                <UserX size={20} />
               </div>
               <div>
                 <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
-                  <span>طابعة تذاكر الانتظار والكيوسك بالشبكة (Network Thermal Printer)</span>
-                  <span className="text-[10px] bg-cyan-100 text-cyan-800 font-mono px-2 py-0.5 rounded-full font-bold">
-                    Direct IP / LAN
+                  <span>متابعة العملاء المنقطعين عن الحضور (Inactive Clients Tracking)</span>
+                  <span className="text-[10px] font-extrabold bg-rose-100 text-rose-800 px-2.5 py-0.5 rounded-full">
+                    إعادة تنشيط العملاء
                   </span>
                 </h3>
-                <p className="text-xs text-slate-500">
-                  تحديد عنوان IP الخاص بالطابعة أو كمبيوتر الاستقبال المتصل بالطابعة لطباعة تذاكر التابلت صامتاً وفورياً دون شاشات إضافية
+                <p className="text-xs text-slate-500 mt-0.5">
+                  تحديد معيار الانقطاع (عدد الأيام بدون زيارة) لرصد العملاء الغائبين واستخراج تقرير دوري لمراسلتهم وإعادتهم للصالون
                 </p>
               </div>
             </div>
-            <div className="hidden sm:flex items-center gap-1.5 text-xs font-bold text-amber-600 bg-amber-50 border border-amber-200 px-3 py-1 rounded-xl">
-              <Wifi size={14} />
-              <span>طباعة صامتة عبر Wi-Fi</span>
+
+            <div className="flex items-center gap-3">
+              <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${
+                (settings.inactiveClientsTrackingEnabled ?? true) 
+                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200' 
+                  : 'bg-slate-50 text-slate-500 border-slate-200'
+              }`}>
+                {(settings.inactiveClientsTrackingEnabled ?? true) ? 'المتابعة مفعلة 🟢' : 'معطلة ⚪'}
+              </span>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  className="sr-only peer"
+                  checked={settings.inactiveClientsTrackingEnabled ?? true}
+                  onChange={(e) => handleChange('inactiveClientsTrackingEnabled', e.target.checked)}
+                />
+                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-500"></div>
+              </label>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {/* IP Address */}
-            <div className="space-y-1">
-              <label className="block text-xs font-bold text-slate-700">
-                عنوان IP الطابعة / الجهاز المتصل بالطابعة:
-              </label>
-              <input
-                type="text"
-                value={settings.thermalPrinterIp || ''}
-                onChange={(e) => handleChange('thermalPrinterIp', e.target.value)}
-                placeholder="مثال: 192.168.1.50"
-                dir="ltr"
-                className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-xs font-mono font-bold text-slate-900 focus:border-amber-500 outline-none"
-              />
-              <p className="text-[10px] text-slate-400">
-                عنوان IP الخاص بجهاز الاستقبال المتصل بالطابعة أو طابعة الشبكة
-              </p>
-            </div>
+          {(settings.inactiveClientsTrackingEnabled ?? true) && (
+            <div className="space-y-4 animate-in fade-in duration-300">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-center">
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2">
+                  <label className="block text-xs font-bold text-slate-800">
+                    مدة الانقطاع المعتمدة لتصنيف العميل كمنقطع (بالأيام):
+                  </label>
+                  <div className="flex items-center gap-3">
+                    <div className="relative flex-1">
+                      <input 
+                        type="number"
+                        min="1"
+                        max="3650"
+                        value={settings.inactiveClientsDays ?? 60}
+                        onChange={(e) => {
+                          const val = Math.max(1, parseInt(e.target.value) || 1);
+                          handleChange('inactiveClientsDays', val);
+                        }}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm font-mono font-black text-rose-600 outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-100"
+                        placeholder="60"
+                      />
+                      <span className="absolute left-3 top-2.5 text-xs text-slate-400 font-bold">يوم</span>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-slate-500 font-medium">
+                    القيمة الافتراضية المقترحة هي <span className="font-bold text-slate-700">60 يوماً</span> (شهران). يمكنك تغييرها لأي رقم تفضله.
+                  </p>
+                </div>
 
-            {/* Port */}
-            <div className="space-y-1">
-              <label className="block text-xs font-bold text-slate-700">
-                رقم المنفذ (Port):
-              </label>
-              <input
-                type="number"
-                value={settings.thermalPrinterPort || 8080}
-                onChange={(e) => handleChange('thermalPrinterPort', Number(e.target.value) || 8080)}
-                placeholder="8080 أو 9100"
-                dir="ltr"
-                className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-xs font-mono font-bold text-slate-900 focus:border-amber-500 outline-none"
-              />
-              <p className="text-[10px] text-slate-400">
-                افتراضي لخادم الطباعة: 8080 | لطابعات الشبكة المباشرة: 9100
-              </p>
-            </div>
-
-            {/* Endpoint Path */}
-            <div className="space-y-1">
-              <label className="block text-xs font-bold text-slate-700">
-                مسار أمر الطباعة (Endpoint):
-              </label>
-              <input
-                type="text"
-                value={settings.kioskPrinterEndpoint || '/print'}
-                onChange={(e) => handleChange('kioskPrinterEndpoint', e.target.value)}
-                placeholder="/print"
-                dir="ltr"
-                className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-xs font-mono font-bold text-slate-900 focus:border-amber-500 outline-none"
-              />
-              <p className="text-[10px] text-slate-400">
-                المسار البرمجي المخصص (افتراضي: /print)
-              </p>
-            </div>
-          </div>
-
-          {/* Station Auto-Print Option */}
-          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <div className="space-y-0.5">
-              <div className="flex items-center gap-2">
-                <Laptop size={16} className="text-slate-700" />
-                <h4 className="text-xs font-bold text-slate-900">
-                  اعتماد هذا الجهاز الحالي كمحطة طباعة تلقائية لتذاكر الكيوسك (Reception Print Station)
-                </h4>
+                {/* Quick Presets */}
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2">
+                  <label className="block text-xs font-bold text-slate-800">
+                    خيارات جاهزة وسريعة للاختيار:
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {[
+                      { days: 30, label: '30 يوم (شهر)' },
+                      { days: 45, label: '45 يوم' },
+                      { days: 60, label: '60 يوم (شهران)' },
+                      { days: 90, label: '90 يوم (3 أشهر)' },
+                    ].map(preset => {
+                      const isSelected = (settings.inactiveClientsDays ?? 60) === preset.days;
+                      return (
+                        <button
+                          key={preset.days}
+                          type="button"
+                          onClick={() => handleChange('inactiveClientsDays', preset.days)}
+                          className={`py-2 px-2 rounded-xl text-xs font-black transition-all cursor-pointer border ${
+                            isSelected 
+                              ? 'bg-rose-500 text-white border-rose-600 shadow-sm' 
+                              : 'bg-white text-slate-700 border-slate-200 hover:border-rose-300 hover:bg-rose-50/50'
+                          }`}
+                        >
+                          {preset.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    اضغط على أي زر لتعيين المدة فوراً أو اكتب الرقم الذي تريده في الحقل المقابل.
+                  </p>
+                </div>
               </div>
-              <p className="text-[11px] text-slate-500 leading-relaxed">
-                إذا كان هذا الكمبيوتر هو المتصل بطابعة الفواتير (USB)، قم بتفعيل هذا الخيار ليقوم النظام بطباعة أي تذكرة تصدر من التابلت فورياً وبشكل صامت.
-              </p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer shrink-0">
-              <input 
-                type="checkbox" 
-                className="sr-only peer"
-                checked={!!settings.isReceptionPrinterStation}
-                onChange={(e) => {
-                  handleChange('isReceptionPrinterStation', e.target.checked);
-                  localStorage.setItem('smartcut_is_printer_station', e.target.checked ? 'true' : 'false');
-                }}
-              />
-              <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
-            </label>
-          </div>
 
-          {/* Test & Status Bar */}
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-2 border-t border-slate-100">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleTestNetworkPrinter}
-                disabled={printerTestStatus?.loading}
-                className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-sm cursor-pointer disabled:opacity-50"
-              >
-                <Printer size={15} />
-                <span>{printerTestStatus?.loading ? 'جاري الفحص...' : '🖨️ طباعة تجريبية واختبار الاتصال'}</span>
-              </button>
-
-              {printerTestStatus && !printerTestStatus.loading && (
-                <span className={`text-xs font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 ${
-                  printerTestStatus.success ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
-                }`}>
-                  {printerTestStatus.success ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
-                  <span>{printerTestStatus.message}</span>
+              {/* Informative Help Box */}
+              <div className="p-3.5 bg-amber-50/80 rounded-2xl border border-amber-200 text-xs text-amber-950 font-bold flex items-start gap-2.5">
+                <span className="text-base shrink-0">💡</span>
+                <span className="leading-relaxed">
+                  يتم ربط هذه المدة ({settings.inactiveClientsDays ?? 60} يوماً) تلقائياً بـ 
+                  <strong className="text-amber-900 mx-1 underline">تقرير العملاء المنقطعين عن الزيارة</strong>
+                  في شاشة التقارير، ليتم تزويدك بقائمة وافية بهؤلاء العملاء مع تواريخ آخر زياراتهم، وإجمالي إنفاقهم، وزر مباشر لمراسلتهم عبر واتساب لتقديم عروض عودة حصرية.
                 </span>
-              )}
+              </div>
             </div>
-
-            <div className="text-[11px] text-slate-500 bg-slate-100 px-3 py-1.5 rounded-xl">
-              💡 يمكنك تشغيل خادم الطباعة الخفيف على كمبيوتر الاستقبال عبر تشغيل ملف: <code className="text-amber-700 font-bold font-mono">scripts/start_printer_server.bat</code>
-            </div>
-          </div>
+          )}
         </div>
 
+        {/* ============================================================ */}
         {/* Evolution API & WhatsApp Integration */}
         <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -3320,6 +3335,12 @@ export function SettingsScreen({
             </button>
           </div>
         </div>
+          </div>
+        )}
+
+        {/* TAB 7: Backup & Data */}
+        {activeTab === 'backup' && (
+          <div className="space-y-5 animate-in fade-in duration-200">
         {/* SYSTEM BACKUP & RESTORE SECTION */}
         <div className="bg-white rounded-3xl p-6 border-2 border-indigo-200/80 shadow-md space-y-6">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-slate-100 pb-4">
@@ -3493,8 +3514,183 @@ export function SettingsScreen({
             </div>
           )}
         </div>
+          </div>
+        )}
 
+        {/* Bottom Quick Save Bar */}
+        <div className="flex items-center justify-between bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs mt-2">
+          <div className="flex items-center gap-2 text-xs text-slate-500 font-bold">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
+            <span>يتم تطبيق وتثبيت التعديلات فور النقر على زر الحفظ</span>
+          </div>
+          <button 
+            type="button"
+            onClick={handleSave} 
+            className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl text-xs font-black flex items-center gap-2 shadow-md shadow-indigo-600/20 transition-all active:scale-95 cursor-pointer"
+          >
+            <Save size={16} />
+            <span>حفظ كافة التغييرات</span>
+          </button>
+        </div>
       </div>
+
+        {/* Modal: Add New Branch */}
+        {isOwnerOrProgrammer && showAddBranchModal && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl p-6 max-w-lg w-full shadow-2xl border border-slate-200 animate-in fade-in max-h-[92vh] overflow-y-auto custom-scrollbar">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+                <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
+                  <Building2 size={18} className="text-indigo-600" />
+                  <span>طلب تسجيل فرع جديد للصالون</span>
+                </h3>
+                <button 
+                  type="button" 
+                  onClick={() => setShowAddBranchModal(false)}
+                  className="text-slate-400 hover:text-slate-600"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <form onSubmit={handleCreateBranch} className="space-y-3">
+                <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl text-xs text-amber-900 font-bold">
+                  <p>⏳ ملاحظة: بعد إضافة الفرع، سيكون بحالة <strong>بانتظار التفعيل</strong> لحين اعتماده من إدارة المنظومة (المبرمج الرئيسي).</p>
+                </div>
+
+                {/* Country Selection (Auto configures currency & VAT) */}
+                <div className="bg-indigo-50/70 border border-indigo-200 p-3.5 rounded-xl space-y-3">
+                  <div>
+                    <label className="block text-xs font-bold text-indigo-950 mb-1 flex items-center gap-1.5">
+                      <Globe size={14} className="text-indigo-600" />
+                      <span>دولة الفرع (تحدد العملة ونسبة الضريبة تلقائياً) *</span>
+                    </label>
+                    <select
+                      value={newBranchData.country}
+                      onChange={e => handleCountryChangeForNewBranch(e.target.value)}
+                      className="w-full bg-white border border-indigo-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:border-indigo-600 outline-none shadow-2xs"
+                    >
+                      {Object.keys(COUNTRY_CURRENCY_MAP).map(cName => (
+                        <option key={cName} value={cName}>{cName}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-indigo-900 mb-1">رمز العملة المحدد</label>
+                      <input
+                        type="text"
+                        value={newBranchData.currency}
+                        onChange={e => setNewBranchData({ ...newBranchData, currency: e.target.value })}
+                        className="w-full bg-white border border-indigo-200 rounded-xl px-3 py-1.5 text-xs font-bold font-mono text-indigo-700 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-indigo-900 mb-1">نسبة الضريبة القياسية %</label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        value={newBranchData.vatRate}
+                        onChange={e => setNewBranchData({ ...newBranchData, vatRate: Number(e.target.value) })}
+                        className="w-full bg-white border border-indigo-200 rounded-xl px-3 py-1.5 text-xs font-bold font-mono text-indigo-700 outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1">
+                    <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-indigo-950">
+                      <input
+                        type="checkbox"
+                        checked={newBranchData.vatEnabled}
+                        onChange={e => setNewBranchData({ ...newBranchData, vatEnabled: e.target.checked })}
+                        className="w-4 h-4 text-indigo-600 rounded border-indigo-300 focus:ring-indigo-500"
+                      />
+                      <span>تطبيق واحتساب الضريبة على فواتير هذا الفرع</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">اسم الفرع *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="مثال: فرع التحلية، فرع الشيخ زايد، فرع السالمية"
+                    value={newBranchData.name}
+                    onChange={e => setNewBranchData({ ...newBranchData, name: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">المدينة</label>
+                    <input
+                      type="text"
+                      placeholder="مثال: جدة، القاهرة، دبي..."
+                      value={newBranchData.city}
+                      onChange={e => setNewBranchData({ ...newBranchData, city: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">الرقم الضريبي المستقل (إن وجد)</label>
+                    <input
+                      type="text"
+                      placeholder="الرقم الضريبي للفرع..."
+                      value={newBranchData.taxNumber}
+                      onChange={e => setNewBranchData({ ...newBranchData, taxNumber: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none"
+                      dir="ltr"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">رقم الهاتف والتواصل</label>
+                  <input
+                    type="tel"
+                    placeholder="0500000000"
+                    value={newBranchData.phone}
+                    onChange={e => setNewBranchData({ ...newBranchData, phone: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">العنوان التفصيلي</label>
+                  <input
+                    type="text"
+                    placeholder="الشارع، الحي، المعلم القريب..."
+                    value={newBranchData.address}
+                    onChange={e => setNewBranchData({ ...newBranchData, address: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddBranchModal(false)}
+                    className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
+                  >
+                    إلغاء
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition-colors shadow-md shadow-indigo-600/30"
+                  >
+                    إرسال طلب إضافة الفرع
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
     </div>
   );
 }

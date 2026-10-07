@@ -1,0 +1,226 @@
+{
+  "name": "Smart Booking Assistant - With Phone",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -200,
+        180
+      ],
+      "id": "chat-trigger-node",
+      "name": "When chat message received"
+    },
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "=أنت مساعد ذكي ومدير حجوزات احترافي.\nتاريخ ووقت اليوم الحالي هو: {{ $now.format('YYYY-MM-DD HH:mm:ss') }} (يوم {{ $now.format('dddd') }}).\n\nمهمتك:\n1. استخراج تفاصيل الحجز من رسالة المدير باللغة العربية بدقة عالية.\n2. تحويل التواريخ والأوقات النسبية (مثل: 'الخميس القادم', 'غداً', 'الساعة 8 مساءً') إلى صيغة قياسية محددة (YYYY-MM-DD HH:mm:ss) بناءً على توقيت اليوم الموضح أعلاه.\n3. استخراج البيانات التالية:\n   - client_name: اسم العميل\n   - client_phone: رقم هاتف أو موبايل العميل (أرقام فقط أو تركه فارغاً إذا لم يذكر)\n   - booking_date: تاريخ ووقت الموعد بصيغة YYYY-MM-DD HH:mm:ss\n   - services: الخدمات المطلوبة نصياً مفصولة بفواصل\n   - deposit: مبلغ العربون المدفوع (أرقام فقط، 0 إذا لم يُذكر)\n   - payment_method: طريقة الدفع (كاش، فودافون كاش، محفظة، فيزا)\n   - notes: أي تفاصيل أو ملاحظات إضافية\n4. استدعاء أداة (insert_booking) لحفظ الحجز في قاعدة البيانات.\n5. بعد اكتمال التسجيل، قم بالرد على المدير بملخص أنيق ومنسق يحتوي على (اسم العميل، رقم الهاتف، الموعد، الخدمات، العربون وطريقة الدفع).\n6. إذا كانت هناك بيانات أساسية ناقصة مثل اسم العميل أو الموعد، اطلبها من المدير قبل استدعاء الأداة."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        60,
+        180
+      ],
+      "id": "ai-agent-node",
+      "name": "AI Booking Agent"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.5-flash",
+        "options": {
+          "temperature": 0.1
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        20,
+        400
+      ],
+      "id": "gemini-model-node",
+      "name": "Google Gemini Chat Model"
+    },
+    {
+      "parameters": {
+        "contextWindowLength": 10
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        140,
+        400
+      ],
+      "id": "agent-memory-node",
+      "name": "Window Buffer Memory"
+    },
+    {
+      "parameters": {
+        "name": "insert_booking",
+        "description": "أداة لتسجيل وحفظ حجز جديد في قاعدة البيانات سوبابيز مع رقم هاتف العميل والتفاصيل الكاملة",
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "client_name",
+              "displayName": "Client Name",
+              "type": "string",
+              "description": "اسم العميل"
+            },
+            {
+              "name": "client_phone",
+              "displayName": "Client Phone",
+              "type": "string",
+              "description": "رقم موبايل أو هاتف العميل"
+            },
+            {
+              "name": "booking_date",
+              "displayName": "Booking Date",
+              "type": "string",
+              "description": "تاريخ ووقت الحجز بصيغة YYYY-MM-DD HH:mm:ss"
+            },
+            {
+              "name": "services",
+              "displayName": "Services",
+              "type": "string",
+              "description": "الخدمات المطلوبة مفصولة بفواصل"
+            },
+            {
+              "name": "deposit",
+              "displayName": "Deposit",
+              "type": "number",
+              "description": "مبلغ العربون المدفوع كرقم"
+            },
+            {
+              "name": "payment_method",
+              "displayName": "Payment Method",
+              "type": "string",
+              "description": "طريقة الدفع مثل كاش أو محفظة"
+            },
+            {
+              "name": "notes",
+              "displayName": "Notes",
+              "type": "string",
+              "description": "أي ملاحظات إضافية"
+            }
+          ]
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2,
+      "position": [
+        260,
+        400
+      ],
+      "id": "booking-tool-node",
+      "name": "Booking Tool"
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "tableId": "bookings",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "client_name",
+              "fieldValue": "={{ $json.client_name }}"
+            },
+            {
+              "fieldId": "client_phone",
+              "fieldValue": "={{ $json.client_phone }}"
+            },
+            {
+              "fieldId": "booking_date",
+              "fieldValue": "={{ $json.booking_date }}"
+            },
+            {
+              "fieldId": "services",
+              "fieldValue": "={{ $json.services }}"
+            },
+            {
+              "fieldId": "deposit",
+              "fieldValue": "={{ $json.deposit }}"
+            },
+            {
+              "fieldId": "payment_method",
+              "fieldValue": "={{ $json.payment_method }}"
+            },
+            {
+              "fieldId": "notes",
+              "fieldValue": "={{ $json.notes }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        500,
+        400
+      ],
+      "id": "supabase-node",
+      "name": "Insert to Supabase"
+    }
+  ],
+  "connections": {
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "AI Booking Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Booking Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Window Buffer Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Booking Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Booking Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Booking Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ],
+      "main": [
+        [
+          {
+            "node": "Insert to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

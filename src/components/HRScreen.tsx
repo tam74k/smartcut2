@@ -2119,168 +2119,166 @@ export function HRScreen({
             </button>
           </div>
 
-          <button
-            onClick={() => {
-              if (!AuthService.canDo('hr_manage_attendance', currentUser)) {
-                alert('⛔ عذراً، لا تملك صلاحية تسجيل أو تعديل الحضور والانصراف والدوام اليدوي (hr_manage_attendance).');
-                return;
-              }
-              setAttendanceForm({
-                empId: selectedEmpId || activeEmployees[0]?.id || '',
-                date: selectedSingleDay || now.toISOString().split('T')[0],
-                checkIn: '09:00',
-                checkOut: '18:00',
-                isNextDayCheckout: false,
-                status: 'regular',
-                notes: ''
-              });
-              setShowAttendanceModal(true);
-            }}
-            disabled={!AuthService.canDo('hr_manage_attendance', currentUser)}
-            className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer ${
-              !AuthService.canDo('hr_manage_attendance', currentUser)
-                ? 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-60'
-                : 'bg-indigo-600 hover:bg-indigo-700 text-white'
-            }`}
-            title={!AuthService.canDo('hr_manage_attendance', currentUser) ? 'ليس لديك صلاحية تسجيل أو تعديل الحضور والانصراف' : 'تسجيل أو تعديل حضور يدوي'}
-          >
-            <Plus size={15} />
-            <span>تسجيل / تعديل حضور ⏱️</span>
-          </button>
+          {/* 1. تسجيل / تعديل حضور ⏱️ */}
+          {AuthService.canDo('hr_manage_attendance', currentUser) && (
+            <button
+              onClick={() => {
+                setAttendanceForm({
+                  empId: selectedEmpId || activeEmployees[0]?.id || '',
+                  date: selectedSingleDay || now.toISOString().split('T')[0],
+                  checkIn: '09:00',
+                  checkOut: '18:00',
+                  isNextDayCheckout: false,
+                  status: 'regular',
+                  notes: ''
+                });
+                setShowAttendanceModal(true);
+              }}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              title="تسجيل أو تعديل حضور يدوي"
+            >
+              <Plus size={15} />
+              <span>تسجيل / تعديل حضور ⏱️</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => {
-              if (!AuthService.canDo('hr_manage_salary_increments', currentUser)) {
-                alert('⛔ عذراً، لا تملك صلاحية إقرار أو تطبيق زيادات الرواتب (hr_manage_salary_increments).');
-                return;
-              }
-              setTargetEmpId(selectedEmpId || activeEmployees[0]?.id || '');
-              setSelectedEmpIdsForBulk(activeEmployees.map(e => e.id));
-              setIncrementValue(10);
-              setIncrementType('percentage');
-              setEffectiveDate(now.toISOString().split('T')[0]);
-              setIncrementReason('ترقية / علاوة سنوية');
-              setApprovedBy(currentUser?.name || 'مدير النظام');
-              setShowSalaryIncrementModal(true);
-            }}
-            disabled={!AuthService.canDo('hr_manage_salary_increments', currentUser)}
-            className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md transition-all cursor-pointer ${
-              !AuthService.canDo('hr_manage_salary_increments', currentUser)
-                ? 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-60'
-                : 'bg-purple-600 hover:bg-purple-700 text-white shadow-purple-600/20'
-            }`}
-            title={!AuthService.canDo('hr_manage_salary_increments', currentUser) ? 'ليس لديك صلاحية تسجيل وزيادة الرواتب' : 'تسجيل زيادة راتب'}
-          >
-            <TrendingUp size={15} />
-            <span>تسجيل زيادة راتب 📈</span>
-          </button>
+          {/* 2. تسجيل زيادة راتب 📈 */}
+          {AuthService.canDo('hr_manage_salary_increments', currentUser) && (
+            <button
+              onClick={() => {
+                setTargetEmpId(selectedEmpId || activeEmployees[0]?.id || '');
+                setSelectedEmpIdsForBulk(activeEmployees.map(e => e.id));
+                setIncrementValue(10);
+                setIncrementType('percentage');
+                setEffectiveDate(now.toISOString().split('T')[0]);
+                setIncrementReason('ترقية / علاوة سنوية');
+                setApprovedBy(currentUser?.name || 'مدير النظام');
+                setShowSalaryIncrementModal(true);
+              }}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+              title="تسجيل زيادة راتب"
+            >
+              <TrendingUp size={15} />
+              <span>تسجيل زيادة راتب 📈</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => setShowSalaryHistoryModal(true)}
-            className="bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-colors cursor-pointer"
-          >
-            <History size={15} className="text-indigo-600" />
-            <span>سجل الزيادات 📜</span>
-          </button>
+          {/* 3. سجل الزيادات 📜 */}
+          {(AuthService.canDo('hr_manage_salary_increments', currentUser) || AuthService.canDo('manage_salaries', currentUser)) && (
+            <button
+              onClick={() => setShowSalaryHistoryModal(true)}
+              className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+            >
+              <History size={15} className="text-indigo-600" />
+              <span>سجل الزيادات 📜</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => handleOpenLeaveModal()}
-            disabled={!AuthService.canDo('hr_manage_leaves', currentUser)}
-            className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md transition-all cursor-pointer ${
-              !AuthService.canDo('hr_manage_leaves', currentUser)
-                ? 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-60'
-                : 'bg-sky-600 hover:bg-sky-700 text-white shadow-sky-600/20'
-            }`}
-            title={!AuthService.canDo('hr_manage_leaves', currentUser) ? 'ليس لديك صلاحية تسجيل الإجازات' : 'تسجيل إجازة'}
-          >
-            <Palmtree size={15} />
-            <span>تسجيل إجازة 🏖️</span>
-          </button>
+          {/* 4. تسجيل إجازة 🏖️ */}
+          {AuthService.canDo('hr_manage_leaves', currentUser) && (
+            <button
+              onClick={() => handleOpenLeaveModal()}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+              title="تسجيل إجازة"
+            >
+              <Palmtree size={15} />
+              <span>تسجيل إجازة 🏖️</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => setShowLeavesListModal(true)}
-            className="bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 px-3 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-colors cursor-pointer"
-          >
-            <Calendar size={15} className="text-sky-600" />
-            <span>سجل الإجازات 📋</span>
-          </button>
+          {/* 5. سجل الإجازات 📋 */}
+          {AuthService.canDo('hr_manage_leaves', currentUser) && (
+            <button
+              onClick={() => setShowLeavesListModal(true)}
+              className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-3 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+            >
+              <Calendar size={15} className="text-indigo-600" />
+              <span>سجل الإجازات 📋</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => handleOpenPermissionModal()}
-            disabled={!AuthService.canDo('hr_manage_permissions', currentUser)}
-            className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md transition-all cursor-pointer ${
-              !AuthService.canDo('hr_manage_permissions', currentUser)
-                ? 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-60'
-                : 'bg-teal-600 hover:bg-teal-700 text-white shadow-teal-600/20'
-            }`}
-            title={!AuthService.canDo('hr_manage_permissions', currentUser) ? 'ليس لديك صلاحية تسجيل الاستئذانات' : 'تسجيل استئذان'}
-          >
-            <Timer size={15} />
-            <span>تسجيل استئذان ⏱️</span>
-          </button>
+          {/* 6. تسجيل استئذان ⏱️ */}
+          {AuthService.canDo('hr_manage_permissions', currentUser) && (
+            <button
+              onClick={() => handleOpenPermissionModal()}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+              title="تسجيل استئذان"
+            >
+              <Timer size={15} />
+              <span>تسجيل استئذان ⏱️</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => setShowPermissionsListModal(true)}
-            className="bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 px-3 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-colors cursor-pointer"
-          >
-            <DoorOpen size={15} className="text-teal-600" />
-            <span>سجل الاستئذانات 🚪</span>
-          </button>
+          {/* 7. سجل الاستئذانات 🚪 */}
+          {AuthService.canDo('hr_manage_permissions', currentUser) && (
+            <button
+              onClick={() => setShowPermissionsListModal(true)}
+              className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-3 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+            >
+              <DoorOpen size={15} className="text-indigo-600" />
+              <span>سجل الاستئذانات 🚪</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => setShowPayrollAuditModal(true)}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md shadow-indigo-600/20 transition-all cursor-pointer"
-            title="مراجعة وتدقيق الاستقطاعات وأرصدة الأذونات قبل اعتماد المسير"
-          >
-            <ShieldCheck size={15} />
-            <span>تدقيق الاستقطاعات والمسير 📑</span>
-          </button>
+          {/* 8. تدقيق الاستقطاعات والمسير 📑 */}
+          {(AuthService.canDo('hr_disburse_payroll', currentUser) || AuthService.canDo('manage_salaries', currentUser)) && (
+            <button
+              onClick={() => setShowPayrollAuditModal(true)}
+              className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+              title="مراجعة وتدقيق الاستقطاعات وأرصدة الأذونات قبل اعتماد المسير"
+            >
+              <ShieldCheck size={15} className="text-indigo-600" />
+              <span>تدقيق الاستقطاعات والمسير 📑</span>
+            </button>
+          )}
 
-          <button
-            type="button"
-            onClick={() => setShowCommissionsSummaryModal(true)}
-            className="bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
-            title="عرض ملخص تفصيلي لعمولات الموظف والفواتير المستحقة عنها"
-          >
-            <Coins size={15} className="text-amber-600" />
-            <span>ملخص العمولات التفصيلي</span>
-          </button>
+          {/* 9. ملخص العمولات التفصيلي */}
+          {AuthService.canDo('hr_manage_commissions', currentUser) && (
+            <button
+              type="button"
+              onClick={() => setShowCommissionsSummaryModal(true)}
+              className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+              title="عرض ملخص تفصيلي لعمولات الموظف والفواتير المستحقة عنها"
+            >
+              <Coins size={15} className="text-indigo-600" />
+              <span>ملخص العمولات التفصيلي</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => handleOpenCommissionModal()}
-            disabled={!AuthService.canDo('hr_manage_commissions', currentUser)}
-            className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md transition-all cursor-pointer ${
-              !AuthService.canDo('hr_manage_commissions', currentUser)
-                ? 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-60'
-                : 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-600/20'
-            }`}
-            title={!AuthService.canDo('hr_manage_commissions', currentUser) ? 'ليس لديك صلاحية صرف عمولة' : 'صرف عمولة'}
-          >
-            <Coins size={15} />
-            <span>صرف عمولة 💵</span>
-          </button>
+          {/* 10. صرف عمولة 💵 */}
+          {AuthService.canDo('hr_manage_commissions', currentUser) && (
+            <button
+              onClick={() => handleOpenCommissionModal()}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+              title="صرف عمولة"
+            >
+              <Coins size={15} />
+              <span>صرف عمولة 💵</span>
+            </button>
+          )}
 
-          <button
-            onClick={handleOpenDisbursementModal}
-            disabled={!AuthService.canDo('hr_disburse_payroll', currentUser)}
-            className={`px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md transition-all cursor-pointer ${
-              !AuthService.canDo('hr_disburse_payroll', currentUser)
-                ? 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-60'
-                : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20'
-            }`}
-            title={!AuthService.canDo('hr_disburse_payroll', currentUser) ? 'ليس لديك صلاحية صرف مسير الرواتب' : 'صرف مسير الرواتب 💰'}
-          >
-            <DollarSign size={16} />
-            <span>صرف مسير الرواتب 💰</span>
-          </button>
+          {/* 11. صرف مسير الرواتب 💰 */}
+          {AuthService.canDo('hr_disburse_payroll', currentUser) && (
+            <button
+              onClick={handleOpenDisbursementModal}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+              title="صرف مسير الرواتب 💰"
+            >
+              <DollarSign size={16} />
+              <span>صرف مسير الرواتب 💰</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => handleOpenSalarySlip()}
-            className="bg-slate-900 hover:bg-slate-800 text-white px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
-          >
-            <Printer size={15} />
-            <span>قسيمة الراتب (80mm)</span>
-          </button>
+          {/* 12. قسيمة الراتب (80mm) */}
+          {(AuthService.canDo('manage_salaries', currentUser) || AuthService.canDo('hr_disburse_payroll', currentUser)) && (
+            <button
+              onClick={() => handleOpenSalarySlip()}
+              className="bg-slate-900 hover:bg-slate-800 text-white px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+            >
+              <Printer size={15} />
+              <span>قسيمة الراتب (80mm)</span>
+            </button>
+          )}
         </div>
       </div>
 
