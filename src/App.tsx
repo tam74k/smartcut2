@@ -51,6 +51,7 @@ import { MobileBottomNav } from './components/MobileBottomNav';
 import { SubscriptionBanner } from './components/SubscriptionBanner';
 import { printQueueSlipDirect } from './utils/printQueueSlip';
 import { handlePrintReceipt } from './utils/print';
+import { UserMenuDropdown, getUserInitials } from './components/UserMenuDropdown';
 import { AuthService, ROLE_LABELS } from './services/auth';
 import { SupabaseService } from './services/supabase';
 import { DB, dbClientToApp, dbEmployeeToApp, dbServiceToApp, dbProductToApp, toCamel } from './services/db';
@@ -3234,27 +3235,35 @@ export default function App() {
             })}
           </nav>
 
-          {/* User profile & Logout */}
+          {/* User profile & Dropdown Menu */}
           <div className="p-3 border-t border-slate-100 bg-slate-50/50">
-            <div className="flex items-center justify-between mb-2 p-2 bg-white rounded-xl border border-slate-200/80 shadow-xs">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-xs">
-                  {currentUser.name.charAt(0)}
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-slate-800 leading-tight truncate">{currentUser.name}</p>
-                  <p className="text-[10px] text-slate-400 font-medium">{ROLE_LABELS[currentUser.role] || currentUser.role}</p>
+            <UserMenuDropdown
+              currentUser={currentUser}
+              setCurrentUser={setCurrentUser}
+              onLogout={handleLogout}
+              onOpenSettings={() => {
+                if (AuthService.canAccess('settings', currentUser)) {
+                  setActiveTab('settings');
+                } else {
+                  alert('ليس لديك صلاحية الوصول إلى شاشة الإعدادات.');
+                }
+              }}
+              settings={settings}
+              activeBranch={activeBranch}
+              placement="sidebar"
+            >
+              <div className="flex items-center justify-between p-2 bg-white hover:bg-slate-50 rounded-xl border border-slate-200/80 shadow-xs transition-colors cursor-pointer w-full group">
+                <div className="flex items-center gap-2 overflow-hidden">
+                  <div className="w-8 h-8 rounded-full bg-sky-100 text-sky-800 flex items-center justify-center font-black text-xs shrink-0 border border-sky-200 shadow-2xs group-hover:scale-105 transition-transform">
+                    {getUserInitials(currentUser.name)}
+                  </div>
+                  <div className="truncate text-right">
+                    <p className="text-xs font-bold text-slate-800 leading-tight truncate group-hover:text-primary transition-colors">{currentUser.name}</p>
+                    <p className="text-[10px] text-slate-400 font-medium">{ROLE_LABELS[currentUser.role] || currentUser.role}</p>
+                  </div>
                 </div>
               </div>
-            </div>
-
-            <button 
-              onClick={handleLogout}
-              className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-red-600 hover:bg-red-50 text-xs font-bold transition-colors"
-            >
-              <LogOut size={16} />
-              <span>تسجيل الخروج</span>
-            </button>
+            </UserMenuDropdown>
           </div>
         </aside>
 
@@ -3379,16 +3388,32 @@ export default function App() {
 
               <div className="hidden sm:block w-px h-5 bg-slate-200 mx-1"></div>
 
-              {/* User Avatar */}
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center font-extrabold text-xs shadow-sm">
-                  {currentUser.name.charAt(0)}
+              {/* User Avatar & Dropdown */}
+              <UserMenuDropdown
+                currentUser={currentUser}
+                setCurrentUser={setCurrentUser}
+                onLogout={handleLogout}
+                onOpenSettings={() => {
+                  if (AuthService.canAccess('settings', currentUser)) {
+                    setActiveTab('settings');
+                  } else {
+                    alert('ليس لديك صلاحية الوصول إلى شاشة الإعدادات.');
+                  }
+                }}
+                settings={settings}
+                activeBranch={activeBranch}
+                placement="header"
+              >
+                <div className="flex items-center gap-2.5 p-1 hover:bg-slate-100/80 rounded-2xl transition-all cursor-pointer group select-none">
+                  <div className="w-9 h-9 rounded-full bg-sky-100 text-sky-800 flex items-center justify-center font-black text-xs sm:text-sm border-2 border-white shadow-xs group-hover:scale-105 transition-transform">
+                    {getUserInitials(currentUser.name)}
+                  </div>
+                  <div className="hidden md:block text-right">
+                    <p className="text-xs font-bold text-slate-800 leading-tight group-hover:text-primary transition-colors">{currentUser.name}</p>
+                    <p className="text-[10px] text-slate-400 font-semibold">{ROLE_LABELS[currentUser.role] || currentUser.role}</p>
+                  </div>
                 </div>
-                <div className="hidden md:block text-right">
-                  <p className="text-xs font-bold text-slate-800 leading-tight">{currentUser.name}</p>
-                  <p className="text-[10px] text-slate-400 font-semibold">{ROLE_LABELS[currentUser.role] || currentUser.role}</p>
-                </div>
-              </div>
+              </UserMenuDropdown>
             </div>
           </header>
 

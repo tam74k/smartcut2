@@ -642,9 +642,73 @@ export class AuthService {
     const users = this.getUsers();
     const idx = users.findIndex(u => u.id === userId);
     if (idx === -1) return false;
-    if (users[idx].password !== oldPass) return false;
+    const currentPass = users[idx].password || (users[idx] as any).passwordHash || (users[idx] as any).password_hash || '';
+    if (currentPass !== oldPass) return false;
     users[idx].password = newPass;
     this.saveUsers(users);
+    this.setSession(users[idx]);
+    DB.saveUser(users[idx]);
     return true;
+  }
+
+  public static async changePasswordAsync(
+    userId: string, 
+    oldPass: string, 
+    newPass: string, 
+    userObj?: AppUser | null
+  ): Promise<{ success: boolean; message?: string }> {
+    const cleanOld = (oldPass || '').trim();
+    const cleanNew = (newPass || '').trim();
+
+    if (!cleanNew) {
+      return { success: false, message: 'يرجى إدخال كلمة المرور الجديدة' };
+    }
+    if (cleanNew.length < 4) {
+      return { success: false, message: 'كلمة المرور الجديدة يجب ألا تقل عن 4 خانات' };
+    }
+
+    // 1. حساب المبرمج الرئيسي (Programmer)
+    if (userObj?.role === 'programmer' || userId === MASTER_PROGRAMMER_USER.id || userId === 'usr-programmer') {
+      const currentProgPass = this.getProgrammerPassword();
+      if (cleanOld !== currentProgPass && cleanOld !== MASTER_PROGRAMMER_USER.password) {
+        return { success: false, message: 'كلمة المرور الحالية غير صحيحة' };
+      }
+      await this.updateProgrammerPassword(cleanNew);
+      return { success: true };
+    }
+
+    // 2. مستخدمو الصالون العاديون
+    const users = this.getUsers();
+    let idx = users.findIndex(u => u.id === userId);
+    if (idx === -1 && userObj?.username) {
+      idx = users.findIndex(u => u.username.toLowerCase() === userObj.username.toLowerCase());
+    }
+
+    let targetUser: AppUser;
+
+    if (idx !== -1) {
+      targetUser = users[idx];
+      const currentPass = targetUser.password || (targetUser as any).passwordHash || (targetUser as any).password_hash || '';
+      if (currentPass && currentPass !== cleanOld) {
+        return { success: false, message: 'كلمة المرور الحالية غير صحيحة' };
+      }
+      targetUser.password = cleanNew;
+      users[idx] = targetUser;
+    } else if (userObj) {
+      const currentPass = userObj.password || (userObj as any).passwordHash || (userObj as any).password_hash || '';
+      if (currentPass && currentPass !== cleanOld) {
+        return { success: false, message: 'كلمة المرور الحالية غير صحيحة' };
+      }
+      targetUser = { ...userObj, password: cleanNew };
+      users.push(targetUser);
+    } else {
+      return { success: false, message: 'لم يتم العثور على حساب المستخدم في النظام' };
+    }
+
+    this.saveUsers(users);
+    this.setSession(targetUser);
+    await DB.saveUser(targetUser);
+
+    return { success: true };
   }
 }
