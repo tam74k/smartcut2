@@ -79,6 +79,7 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
   const [newSalonForm, setNewSalonForm] = useState({
     salonName: '',
     ownerName: '',
+    username: '',
     email: '',
     phone: '',
     country: 'المملكة العربية السعودية',
@@ -315,6 +316,7 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
     const res = await SubscriptionService.registerNewSalon({
       salonName: newSalonForm.salonName,
       ownerName: newSalonForm.ownerName || newSalonForm.salonName,
+      username: newSalonForm.username?.trim().toLowerCase() || undefined,
       email: newSalonForm.email,
       phone: newSalonForm.phone,
       country: newSalonForm.country,
@@ -325,8 +327,11 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
     if (res?.salon) {
       await DB.saveSalon(res.salon);
       if (res.branch) await DB.saveBranch(res.branch);
-      if (res.user) await DB.saveUser(res.user);
       if (res.settings) await DB.saveSettings(res.salon.id, res.settings);
+      if (res.user) {
+        AuthService.saveUser(res.user);
+        await DB.saveUser(res.user);
+      }
     }
 
     await loadData();
@@ -334,6 +339,7 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
     setNewSalonForm({
       salonName: '',
       ownerName: '',
+      username: '',
       email: '',
       phone: '',
       country: 'المملكة العربية السعودية',
@@ -341,7 +347,7 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
       trialDays: 7,
       plan: 'pro'
     });
-    alert('✅ تم إنشاء الصالون وتجهيز الحساب والتجربة المجانية (7 أيام) وحفظه بقاعدة البيانات بنجاح!');
+    alert('✅ تم إنشاء الصالون وتجهيز الحساب والتجربة المجانية (7 أيام) وحفظ المستخدم بقاعدة البيانات بنجاح!');
   };
 
   const handleToggleActive = async (salon: SalonTenant) => {
@@ -1307,6 +1313,16 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
+                  <label className="block text-[11px] font-bold text-slate-400 mb-1">اسم مستخدم الحساب الأساسي (اختياري)</label>
+                  <input
+                    type="text"
+                    value={newSalonForm.username}
+                    onChange={e => setNewSalonForm({ ...newSalonForm, username: e.target.value.toLowerCase().replace(/\s+/g, '') })}
+                    placeholder="admin_salon"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none font-mono"
+                  />
+                </div>
+                <div>
                   <label className="block text-[11px] font-bold text-slate-400 mb-1">البريد الإلكتروني</label>
                   <input
                     type="email"
@@ -1317,18 +1333,19 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none"
                   />
                 </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-400 mb-1">الدولة</label>
-                  <select
-                    value={newSalonForm.country}
-                    onChange={e => setNewSalonForm({ ...newSalonForm, country: e.target.value })}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none"
-                  >
-                    {Object.keys(COUNTRY_CURRENCY_MAP).map(c => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                  </select>
-                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-400 mb-1">الدولة</label>
+                <select
+                  value={newSalonForm.country}
+                  onChange={e => setNewSalonForm({ ...newSalonForm, country: e.target.value })}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none"
+                >
+                  {Object.keys(COUNTRY_CURRENCY_MAP).map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
               </div>
 
               <div className="grid grid-cols-2 gap-3">

@@ -34,6 +34,8 @@ import {
 } from 'lucide-react';
 import { SalonTenant, Branch, SubscriptionPaymentRecord } from '../types';
 import { SubscriptionService, COUNTRY_CURRENCY_MAP } from '../services/subscriptionService';
+import { DB } from '../services/db';
+import { AuthService } from '../services/auth';
 
 interface SaaSSubscriptionsScreenProps {
   onSwitchSalon?: (salon: SalonTenant) => void;
@@ -73,6 +75,7 @@ export function SaaSSubscriptionsScreen({ onSwitchSalon }: SaaSSubscriptionsScre
     salonName: '',
     salonType: 'men' as 'men' | 'women' | 'mixed',
     ownerName: '',
+    username: '',
     email: '',
     phone: '',
     country: 'المملكة العربية السعودية',
@@ -187,10 +190,11 @@ export function SaaSSubscriptionsScreen({ onSwitchSalon }: SaaSSubscriptionsScre
       return;
     }
 
-    await SubscriptionService.registerNewSalon({
+    const res = await SubscriptionService.registerNewSalon({
       salonName: newSalonForm.salonName,
       salonType: newSalonForm.salonType,
       ownerName: newSalonForm.ownerName || newSalonForm.salonName,
+      username: newSalonForm.username?.trim().toLowerCase() || undefined,
       email: newSalonForm.email,
       phone: newSalonForm.phone,
       country: newSalonForm.country,
@@ -198,11 +202,22 @@ export function SaaSSubscriptionsScreen({ onSwitchSalon }: SaaSSubscriptionsScre
       customTrialDays: Number(newSalonForm.trialDays) || 7
     });
 
+    if (res?.salon) {
+      await DB.saveSalon(res.salon);
+      if (res.branch) await DB.saveBranch(res.branch);
+      if (res.settings) await DB.saveSettings(res.salon.id, res.settings);
+      if (res.user) {
+        AuthService.saveUser(res.user);
+        await DB.saveUser(res.user);
+      }
+    }
+
     setShowAddModal(false);
     setNewSalonForm({
       salonName: '',
       salonType: 'men',
       ownerName: '',
+      username: '',
       email: '',
       phone: '',
       country: 'المملكة العربية السعودية',
@@ -212,7 +227,7 @@ export function SaaSSubscriptionsScreen({ onSwitchSalon }: SaaSSubscriptionsScre
       initialStatus: 'trial'
     });
     loadAllData();
-    alert('✅ تم تسجيل الصالون بنجاح وتجهيز حسابه في المنظومة!');
+    alert('✅ تم تسجيل الصالون بنجاح وتجهيز حسابه في المنظومة وقاعدة البيانات!');
   };
 
   // Open Renewal Modal
@@ -1332,6 +1347,17 @@ export function SaaSSubscriptionsScreen({ onSwitchSalon }: SaaSSubscriptionsScre
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">اسم مستخدم الحساب الأساسي (اختياري)</label>
+                  <input
+                    type="text"
+                    placeholder="admin_salon"
+                    value={newSalonForm.username}
+                    onChange={e => setNewSalonForm({ ...newSalonForm, username: e.target.value.toLowerCase().replace(/\s+/g, '') })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold font-mono outline-none focus:border-emerald-600"
+                  />
+                </div>
+
+                <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">البريد الإلكتروني للصالون *</label>
                   <input
                     type="email"
@@ -1342,7 +1368,9 @@ export function SaaSSubscriptionsScreen({ onSwitchSalon }: SaaSSubscriptionsScre
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-emerald-600"
                   />
                 </div>
+              </div>
 
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">كلمة المرور الافتراضية</label>
                   <input
@@ -1353,7 +1381,6 @@ export function SaaSSubscriptionsScreen({ onSwitchSalon }: SaaSSubscriptionsScre
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold font-mono outline-none focus:border-emerald-600"
                   />
                 </div>
-              </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>

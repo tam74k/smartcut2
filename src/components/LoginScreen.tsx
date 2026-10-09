@@ -281,8 +281,13 @@ export function LoginScreen({ onLoginSuccess, settings, onOpenSaaSAdmin }: Login
         phone: regForm.phone.trim(),
         country: regForm.country,
         password: regForm.password,
-        customTrialDays: 7
       });
+
+      // تأكيد إضافي لحفظ حساب المستخدم الأساسي في جدول users و AuthService
+      if (result?.user) {
+        AuthService.saveUser(result.user);
+        await DB.saveUser(result.user);
+      }
 
       setIsLoading(false);
       setRegSuccess(true);

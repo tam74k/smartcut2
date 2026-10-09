@@ -1003,12 +1003,29 @@ export const DB = {
 
   async saveUser(u: any) {
     const client = sb();
-    if (!client) return false;
+    if (!client) {
+      try {
+        const storedUsers = localStorage.getItem('smartcut_users');
+        const usersList = storedUsers ? JSON.parse(storedUsers) : [];
+        const cleanUsername = (u.username || '').trim().toLowerCase();
+        const existingIdx = usersList.findIndex((x: any) => x.id === u.id || (x.username && x.username.toLowerCase() === cleanUsername));
+        if (existingIdx >= 0) {
+          usersList[existingIdx] = { ...usersList[existingIdx], ...u, username: cleanUsername };
+        } else {
+          usersList.push({ ...u, username: cleanUsername });
+        }
+        localStorage.setItem('smartcut_users', JSON.stringify(usersList));
+      } catch {}
+      return false;
+    }
+
     try {
       const validSalonId = toSalonUUID(u.salonId);
       const validBranchId = toBranchUUID(u.branchId);
       const cleanUsername = (u.username || '').trim().toLowerCase();
       const userUuid = u.id && u.id.includes('-') && u.id.length === 36 ? u.id : DB.generateUUID();
+      const pass = u.password || u.passwordHash || '123456';
+
       const snap: any = {
         id: userUuid,
         salon_id: validSalonId,
@@ -1018,23 +1035,86 @@ export const DB = {
         username: cleanUsername,
         email: u.email || null,
         employee_id: u.employeeId || null,
-        password_hash: u.password || u.passwordHash || '123456',
+        password_hash: pass,
         name: u.name || cleanUsername,
         role: u.role === 'kiosk' ? 'custom' : (u.role || 'owner'),
         custom_role_id: u.customRoleId || null,
         phone: u.phone || null,
         active: u.active !== false,
-        screens: u.screens || ['*'],
-        actions: u.actions || ['*'],
+        screens: Array.isArray(u.screens) ? u.screens : ['*'],
+        actions: Array.isArray(u.actions) ? u.actions : ['*'],
         avatar: u.avatar || null,
         updated_at: new Date().toISOString()
       };
+
+      // Sync immediately with localStorage cache
+      try {
+        const storedUsers = localStorage.getItem('smartcut_users');
+        const usersList = storedUsers ? JSON.parse(storedUsers) : [];
+        const existingIdx = usersList.findIndex((x: any) => x.id === snap.id || (x.username && x.username.toLowerCase() === cleanUsername));
+        const appObj = dbUserToApp(snap);
+        if (existingIdx >= 0) {
+          usersList[existingIdx] = { ...usersList[existingIdx], ...appObj };
+        } else {
+          usersList.push(appObj);
+        }
+        localStorage.setItem('smartcut_users', JSON.stringify(usersList));
+      } catch {}
+
       let { error } = await client.from('users').upsert(snap, { onConflict: 'username' });
+
+      // Handle branch_id foreign key constraint error if branch doesn't exist yet
+      if (error && error.message && (error.message.includes('branch_id') || error.message.includes('branches'))) {
+        delete snap.branch_id;
+        const retry = await client.from('users').upsert(snap, { onConflict: 'username' });
+        error = retry.error;
+      }
+
+      // Handle employee_id foreign key or column error
       if (error && error.message && error.message.includes('employee_id')) {
         delete snap.employee_id;
         const retry = await client.from('users').upsert(snap, { onConflict: 'username' });
         error = retry.error;
       }
+
+      // Handle password_hash vs password column naming differences
+      if (error && error.message && error.message.includes('password_hash')) {
+        delete snap.password_hash;
+        snap.password = pass;
+        const retry = await client.from('users').upsert(snap, { onConflict: 'username' });
+        error = retry.error;
+      }
+
+      // If ON CONFLICT fails due to missing unique index or constraint mismatch, fallback to check-and-update/insert
+      if (error && error.message && (
+        error.message.includes('ON CONFLICT') || 
+        error.message.includes('conflict target') || 
+        error.message.includes('unique constraint') ||
+        error.message.includes('users_username_key')
+      )) {
+        const { data: existingUser } = await client.from('users').select('id').ilike('username', cleanUsername).maybeSingle();
+        if (existingUser?.id) {
+          snap.id = existingUser.id;
+          const retry = await client.from('users').update(snap).eq('id', existingUser.id);
+          error = retry.error;
+        } else {
+          const retry = await client.from('users').insert(snap);
+          error = retry.error;
+        }
+      }
+
+      // Handle any missing column error
+      if (error && error.message) {
+        const missingColMatch = error.message.match(/Could not find the '([^']+)' column of 'users'/i) 
+          || error.message.match(/column "([^"]+)" of relation "users" does not exist/i);
+        if (missingColMatch) {
+          const colName = missingColMatch[1];
+          delete snap[colName];
+          const retry = await client.from('users').upsert(snap, { onConflict: 'username' });
+          error = retry.error;
+        }
+      }
+
       if (error) { 
         console.error('DB.saveUser error:', error.message); 
         return false; 

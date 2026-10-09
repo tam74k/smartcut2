@@ -181,7 +181,19 @@ export const SubscriptionService = {
       evolutionInstanceName: `${salonCode.toLowerCase()}_main`
     };
 
-    const chosenUsername = data.username?.trim().toLowerCase() || data.email.split('@')[0] || 'admin';
+    let chosenUsername = data.username?.trim().toLowerCase() || data.email.split('@')[0]?.trim().toLowerCase().replace(/[^a-z0-9_.-]/g, '') || `owner_${salonCode.toLowerCase()}`;
+    if (!chosenUsername || chosenUsername.length < 3) {
+      chosenUsername = `owner_${salonCode.toLowerCase()}`;
+    }
+
+    try {
+      const isTaken = await AuthService.isUsernameTakenAsync(chosenUsername);
+      if (isTaken) {
+        chosenUsername = `${chosenUsername}_${salonCode.toLowerCase()}`;
+      }
+    } catch (e) {
+      console.warn('Error checking username collision during salon registration:', e);
+    }
 
     const newAdminUser: AppUser = {
       id: generateUUID(),
@@ -252,11 +264,23 @@ export const SubscriptionService = {
     const allBranches = this.getBranches();
     this.saveBranches([...allBranches, newBranch]);
 
-    // 3. Save directly and instantly to Supabase Cloud Database (public.users)
-    await DB.saveUser(newAdminUser);
-    await DB.saveSettings(salonId, initialSettings);
-    await DB.saveSalon(newSalon);
-    await DB.saveBranch(newBranch);
+    // 3. Save directly and instantly to Supabase Cloud Database:
+    // Important: Save Salon first, then Branch second, so foreign key constraints on public.users are satisfied
+    try {
+      await DB.saveSalon(newSalon);
+      await DB.saveBranch(newBranch);
+      await DB.saveSettings(salonId, initialSettings);
+      
+      // Save primary user directly into public.users table in Supabase
+      const userSaved = await DB.saveUser(newAdminUser);
+      if (!userSaved) {
+        console.warn('Initial saveUser attempt in Supabase returned false, retrying after short delay...');
+        await new Promise(r => setTimeout(r, 300));
+        await DB.saveUser(newAdminUser);
+      }
+    } catch (cloudErr) {
+      console.error('Failed to save new salon entities to cloud database:', cloudErr);
+    }
 
     return { salon: newSalon, user: newAdminUser, branch: newBranch, settings: initialSettings };
   },
