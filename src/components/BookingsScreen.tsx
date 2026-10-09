@@ -967,9 +967,36 @@ export function BookingsScreen({
     const isEditing = Boolean(editingBooking);
 
     // تاريخ ووقت الإنشاء محمي تماماً ولا يتغير مع أي تعديلات تتم لاحقاً على الحجز
-    const bookingCreatedAt = isEditing 
+    let bookingCreatedAt = isEditing 
       ? (editingBooking?.createdAt || (editingBooking as any)?.created_at || (newBooking.createdAt as string) || nowIso)
       : nowIso;
+
+    // حماية تامة لتاريخ الإنشاء: منع تعيين تاريخ الإنشاء لموعد حجز مستقبلي
+    const targetBookingDateStr = (effectiveBookingDate || '').toString().slice(0, 10);
+    const todayStrForCreation = nowIso.slice(0, 10);
+    const nowMs = Date.now();
+    if (bookingCreatedAt) {
+      const cDateStr = bookingCreatedAt.slice(0, 10);
+      const isFutureCreation = new Date(bookingCreatedAt).getTime() > (nowMs + 86400000);
+      const isMatchesFutureAppt = Boolean(targetBookingDateStr && targetBookingDateStr > todayStrForCreation && cDateStr === targetBookingDateStr);
+      if (isFutureCreation || isMatchesFutureAppt) {
+        const advs = (newBooking.advancePayments && newBooking.advancePayments.length > 0)
+          ? newBooking.advancePayments
+          : (editingBooking?.advancePayments || []);
+        const validAdv = advs.find((a: any) => {
+          const d = a.paymentDate || (a as any).payment_date || a.date;
+          return d && new Date(d).getTime() <= (nowMs + 86400000);
+        });
+        if (validAdv) {
+          const d = validAdv.paymentDate || (validAdv as any).payment_date || validAdv.date;
+          bookingCreatedAt = d.includes('T') ? d : `${d}T12:00:00.000Z`;
+        } else if (shiftData?.date && shiftData.date <= todayStrForCreation) {
+          bookingCreatedAt = `${shiftData.date}T12:00:00.000Z`;
+        } else {
+          bookingCreatedAt = nowIso;
+        }
+      }
+    }
     const bookingCreatedBy = isEditing
       ? (editingBooking?.createdBy || (editingBooking as any)?.created_by || newBooking.createdBy)
       : currentUserId;
@@ -1185,10 +1212,14 @@ export function BookingsScreen({
 
     const paidDeposit = getBookingTotalAdvances(b);
     const allowedDays = Number(settings.depositRefundAllowedDays ?? settings.deposit_refund_allowed_days ?? 0);
-    const createdAtRaw = b.createdAt || (b as any).created_at || b.date;
-    const createdDate = new Date(createdAtRaw);
+    const firstAdvDate = (b.advancePayments && b.advancePayments[0]?.paymentDate) || (b.advancePayments && b.advancePayments[0]?.date);
+    const createdAtRaw = b.createdAt || (b as any).created_at || firstAdvDate || b.shiftDate || new Date().toISOString();
+    let createdDate = new Date(createdAtRaw);
+    if (isNaN(createdDate.getTime()) || createdDate.getTime() > (Date.now() + 86400000)) {
+      createdDate = new Date();
+    }
     const now = new Date();
-    const diffMs = !isNaN(createdDate.getTime()) ? (now.getTime() - createdDate.getTime()) : 0;
+    const diffMs = (now.getTime() - createdDate.getTime());
     const allowedMs = allowedDays * 24 * 60 * 60 * 1000;
     const isEligible = allowedDays > 0 && diffMs <= allowedMs && paidDeposit > 0 && !b.isRefunded;
 
@@ -1221,10 +1252,14 @@ export function BookingsScreen({
 
       // Re-verify eligibility
       const allowedDays = Number(settings.depositRefundAllowedDays ?? settings.deposit_refund_allowed_days ?? 0);
-      const createdAtRaw = b.createdAt || (b as any).created_at || b.date;
-      const createdDate = new Date(createdAtRaw);
+      const firstAdvDate = (b.advancePayments && b.advancePayments[0]?.paymentDate) || (b.advancePayments && b.advancePayments[0]?.date);
+      const createdAtRaw = b.createdAt || (b as any).created_at || firstAdvDate || b.shiftDate || new Date().toISOString();
+      let createdDate = new Date(createdAtRaw);
+      if (isNaN(createdDate.getTime()) || createdDate.getTime() > (Date.now() + 86400000)) {
+        createdDate = new Date();
+      }
       const now = new Date();
-      const diffMs = !isNaN(createdDate.getTime()) ? (now.getTime() - createdDate.getTime()) : 0;
+      const diffMs = (now.getTime() - createdDate.getTime());
       const allowedMs = allowedDays * 24 * 60 * 60 * 1000;
       const isEligible = allowedDays > 0 && diffMs <= allowedMs && paidDeposit > 0 && !b.isRefunded;
 
@@ -2939,10 +2974,14 @@ export function BookingsScreen({
         const b = cancellingBooking;
         const paidDeposit = getBookingTotalAdvances(b);
         const allowedDays = Number(settings.depositRefundAllowedDays ?? settings.deposit_refund_allowed_days ?? 0);
-        const createdAtRaw = b.createdAt || (b as any).created_at || b.date;
-        const createdDate = new Date(createdAtRaw);
+        const firstAdvDate = (b.advancePayments && b.advancePayments[0]?.paymentDate) || (b.advancePayments && b.advancePayments[0]?.date);
+        const createdAtRaw = b.createdAt || (b as any).created_at || firstAdvDate || b.shiftDate || new Date().toISOString();
+        let createdDate = new Date(createdAtRaw);
+        if (isNaN(createdDate.getTime()) || createdDate.getTime() > (Date.now() + 86400000)) {
+          createdDate = new Date();
+        }
         const now = new Date();
-        const diffMs = !isNaN(createdDate.getTime()) ? (now.getTime() - createdDate.getTime()) : 0;
+        const diffMs = (now.getTime() - createdDate.getTime());
         const diffDays = Math.max(0, diffMs / (1000 * 60 * 60 * 24));
         const allowedMs = allowedDays * 24 * 60 * 60 * 1000;
         const isEligible = allowedDays > 0 && diffMs <= allowedMs && paidDeposit > 0 && !b.isRefunded;

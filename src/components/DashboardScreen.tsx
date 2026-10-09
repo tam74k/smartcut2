@@ -88,16 +88,28 @@ export function DashboardScreen({
     ? (shiftData?.date || shiftDate).split('T')[0].split(' ')[0].trim()
     : '';
 
-  // دالة فحص العمليات التابعة للوردية الحالية المفتوحة حصراً طبقاً لتاريخ الفاتورة / الحركة وتجاهل تاريخ ووقت الإنشاء
-  const matchesCurrentShift = (dateStr?: string, _createdAtStr?: string, _itemShiftId?: string, itemShiftDate?: string) => {
+  // دالة فحص العمليات التابعة للوردية الحالية المفتوحة حصراً طبقاً لتاريخ الوردية أو تاريخ الحركة
+  const matchesCurrentShift = (dateStr?: string, _createdAtStr?: string, itemShiftId?: string, itemShiftDate?: string) => {
     // 1. إذا كانت الوردية مغلقة، يجب تصفير كافة المؤشرات للبدء بنظافة كاملة (0)
     if (!isShiftOpen || !targetShiftDate) return false;
 
-    // 2. فحص التاريخ الفعلي للعملية / الفاتورة / الحركة ومقارنته حصراً بتاريخ الوردية المفتوحة
-    const rawDate = (dateStr || itemShiftDate || '').trim();
-    if (!rawDate) return false;
-    const dateOnly = rawDate.includes('T') ? rawDate.split('T')[0].trim() : rawDate.split(' ')[0].trim();
-    return dateOnly === targetShiftDate;
+    // 2. إذا كان العنصر يحمل معرف وردية مطابق للوردية الحالية
+    if (itemShiftId && shiftData?.shiftId && itemShiftId === shiftData.shiftId) {
+      return true;
+    }
+
+    // 3. إذا كان العنصر يحمل تاريخ وردية مطابق لتاريخ الوردية الحالية المفتوحة
+    if (itemShiftDate && itemShiftDate.split('T')[0].split(' ')[0].trim() === targetShiftDate) {
+      return true;
+    }
+
+    // 4. فحص التاريخ الفعلي للعملية ومقارنته حصراً بتاريخ الوردية المفتوحة
+    const dateOnly = (dateStr || '').split('T')[0].split(' ')[0].trim();
+    if (dateOnly && dateOnly === targetShiftDate) {
+      return true;
+    }
+
+    return false;
   };
 
   // ── حجوزات موعد تنفيذها اليوم (Execution Date Today Bookings) ──
@@ -249,7 +261,29 @@ export function DashboardScreen({
           : []);
 
       advances.forEach((adv: any) => {
-        const advDate = (adv.date || adv.shiftDate || b.shiftDate || b.date || '').split('T')[0].trim();
+        // استخراج تاريخ سداد الدفعة المقدمة الفعلي
+        let advDate = '';
+        const rawAdvShift = (adv.shiftDate || (adv as any).shift_date || '').split('T')[0].trim();
+        const rawAdvDate = (adv.paymentDate || (adv as any).payment_date || adv.date || '').split('T')[0].trim();
+        const rawCreated = ((b as any).createdAt || (b as any).created_at || '').split('T')[0].trim();
+        const rawBShift = (b.shiftDate || (b as any).shift_date || '').split('T')[0].trim();
+
+        if (rawAdvShift) {
+          advDate = rawAdvShift;
+        } else if (rawAdvDate && new Date(rawAdvDate).getTime() <= Date.now() + 86400000) {
+          advDate = rawAdvDate;
+        } else if (rawCreated && new Date(rawCreated).getTime() <= Date.now() + 86400000) {
+          advDate = rawCreated;
+        } else if (rawBShift) {
+          advDate = rawBShift;
+        } else if (rawAdvDate) {
+          advDate = rawAdvDate;
+        } else if (b.date && new Date(b.date).getTime() <= Date.now() + 86400000) {
+          advDate = (b.date || '').split('T')[0].trim();
+        } else {
+          advDate = localToday;
+        }
+
         if (advDate !== targetDate) return;
         const advTreasuryId = adv.treasuryId || adv.paymentMethod || 'cash';
         if (!matcher(advTreasuryId)) return;
@@ -299,19 +333,26 @@ export function DashboardScreen({
     });
   }, [branchInvoices, isShiftOpen, shiftDate, shiftData, targetShiftDate]);
 
-  // ── الحجوزات التابعة للوردية الحالية المفتوحة (Current Shift Reservations) ──
+  // ── الحجوزات المنشأة خلال الوردية الحالية المفتوحة (Current Shift Reservations) ──
   const currentShiftReservations = useMemo(() => {
     if (!isShiftOpen || !targetShiftDate) return [];
 
     return branchBookings.filter(b => {
-      // الشرط: فحص تاريخ الوردية أو تاريخ الحجز الفعلي ومطابقته حصراً مع تاريخ الوردية المفتوحة
-      const bDate = (b.shiftDate || b.date || '').trim();
-      if (!bDate) return false;
-      const bDateOnly = bDate.split('T')[0].split(' ')[0].trim();
-      return bDateOnly === targetShiftDate;
+      if (b.status === 'cancelled') return false;
+      // 1. الحجوزات التي تم إنشاؤها وتسجيلها خلال تاريخ الوردية المفتوحة
+      const createdRaw = ((b as any).createdAt || (b as any).created_at || b.shiftDate || '').trim();
+      const createdDateOnly = createdRaw.split('T')[0].split(' ')[0].trim();
+      if (createdDateOnly === targetShiftDate) return true;
+
+      // 2. أو الحجوزات التي تم سداد دفعة مقدمة لها خلال تاريخ الوردية المفتوحة
+      const advances = (b.advancePayments && Array.isArray(b.advancePayments)) ? b.advancePayments : [];
+      return advances.some((adv: any) => {
+        const aDate = (adv.shiftDate || (adv as any).shift_date || adv.paymentDate || (adv as any).payment_date || adv.date || '').split('T')[0].trim();
+        return aDate === targetShiftDate;
+      });
     }).sort((a, b) => {
-      const timeA = new Date(a.date || a.createdAt || (a as any).created_at || 0).getTime();
-      const timeB = new Date(b.date || b.createdAt || (b as any).created_at || 0).getTime();
+      const timeA = new Date(a.createdAt || (a as any).created_at || a.shiftDate || (a.advancePayments && a.advancePayments[0]?.paymentDate) || 0).getTime();
+      const timeB = new Date(b.createdAt || (b as any).created_at || b.shiftDate || (b.advancePayments && b.advancePayments[0]?.paymentDate) || 0).getTime();
       return timeB - timeA;
     });
   }, [branchBookings, isShiftOpen, shiftDate, shiftData, targetShiftDate]);

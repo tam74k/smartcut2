@@ -166,7 +166,17 @@ export function IncomeReportReceipt({
               : []);
 
           advances.forEach((adv: any) => {
-            const advDate = (adv.date || (b as any).createdAt || (b as any).created_at || b.date || '').split('T')[0].trim();
+            const rawAdvDate = adv.paymentDate || (adv as any).payment_date || adv.shiftDate || adv.date;
+            let advDate = '';
+            if (rawAdvDate && String(rawAdvDate).trim()) {
+              advDate = String(rawAdvDate).split('T')[0].trim();
+            } else if ((b as any).createdAt || (b as any).created_at) {
+              advDate = String((b as any).createdAt || (b as any).created_at).split('T')[0].trim();
+            } else if (b.shiftDate) {
+              advDate = String(b.shiftDate).split('T')[0].trim();
+            } else if (b.date && new Date(b.date).getTime() <= Date.now() + 86400000) {
+              advDate = String(b.date).split('T')[0].trim();
+            }
             if (advDate === dateStr) {
               const amt = Number(adv.amount) || 0;
               if (amt <= 0) return;

@@ -568,26 +568,38 @@ const isBookingAdvanceTrx = (t: any) => {
   return false;
 };
 
-// استخراج التاريخ الفعلي لسداد مقدم الحجز (تاريخ الدفعة الفعلي أولاً، ثم تاريخ الوردية أو تاريخ الحجز) دون الاعتماد على موعد تنفيذ الحجز
+// استخراج التاريخ الفعلي لسداد مقدم الحجز (تاريخ الدفعة الفعلي أو تاريخ الوردية أو تاريخ الإنشاء) دون الاعتماد على موعد تنفيذ الحجز المستقبلي
 const getAdvanceEffectiveDate = (adv: any, b: any): string => {
-  const advDate = adv?.date;
-  if (advDate && typeof advDate === 'string' && advDate.trim()) {
-    return advDate.includes('T') ? advDate.split('T')[0].trim() : advDate.split(' ')[0].trim();
-  }
   const shiftDateVal = adv?.shiftDate || (adv as any)?.shift_date || b?.shiftDate || (b as any)?.shift_date;
   if (shiftDateVal && typeof shiftDateVal === 'string' && shiftDateVal.trim()) {
     return shiftDateVal.includes('T') ? shiftDateVal.split('T')[0].trim() : shiftDateVal.split(' ')[0].trim();
   }
+  const advDate = adv?.paymentDate || (adv as any)?.payment_date || adv?.date;
+  if (advDate && typeof advDate === 'string' && advDate.trim()) {
+    const cleanAdv = advDate.includes('T') ? advDate.split('T')[0].trim() : advDate.split(' ')[0].trim();
+    if (new Date(cleanAdv).getTime() <= Date.now() + 86400000) {
+      return cleanAdv;
+    }
+  }
   const created = (b as any)?.createdAt || (b as any)?.created_at;
   if (created && typeof created === 'string' && created.trim()) {
-    return created.includes('T') ? created.split('T')[0].trim() : created.split(' ')[0].trim();
+    const cleanCreated = created.includes('T') ? created.split('T')[0].trim() : created.split(' ')[0].trim();
+    if (new Date(cleanCreated).getTime() <= Date.now() + 86400000) {
+      return cleanCreated;
+    }
   }
-  // الموعد المجدول كحل أخير فقط إذا لم يتوفر أي تاريخ إنشاء أو سداد
+  if (advDate && typeof advDate === 'string' && advDate.trim()) {
+    return advDate.includes('T') ? advDate.split('T')[0].trim() : advDate.split(' ')[0].trim();
+  }
+  // الموعد المجدول كحل أخير فقط إذا كان في الماضي أو اليوم وليس موعداً مستقبلياً
   const scheduled = b?.date;
   if (scheduled && typeof scheduled === 'string' && scheduled.trim()) {
-    return scheduled.includes('T') ? scheduled.split('T')[0].trim() : scheduled.split(' ')[0].trim();
+    const cleanSched = scheduled.includes('T') ? scheduled.split('T')[0].trim() : scheduled.split(' ')[0].trim();
+    if (new Date(cleanSched).getTime() <= Date.now() + 86400000) {
+      return cleanSched;
+    }
   }
-  return '';
+  return new Date().toISOString().split('T')[0];
 };
 
 // أدوات مساعدة لقراءة تفاصيل الحجوزات ومقدمات الحجز والخدمات بدقة عالية
@@ -1957,12 +1969,12 @@ export function OwnerExecutivePortal({
       const isBranchMatch = matchesActiveBranch((b as any).branchId);
       if (!isBranchMatch) return false;
 
-      const bEffectiveDate = (b.shiftDate || b.date || (b as any).createdAt || (b as any).created_at || '').split('T')[0].split(' ')[0].trim();
+      const bCreatedDate = ((b as any).createdAt || (b as any).created_at || b.shiftDate || '').split('T')[0].split(' ')[0].trim();
       if (targetShift) {
-        return bEffectiveDate === targetShift;
+        return bCreatedDate === targetShift;
       }
 
-      return isDateInSelectedPeriod(bEffectiveDate);
+      return isDateInSelectedPeriod(bCreatedDate);
     });
 
     // 2. Bookings scheduled for the selected period (appointment date)
@@ -2322,8 +2334,8 @@ export function OwnerExecutivePortal({
 
     return [...list].sort((a, b) => {
       if (bookingStatusFilter === 'created_in_period') {
-        const createdA = (a as any).createdAt || (a as any).created_at || a.date;
-        const createdB = (b as any).createdAt || (b as any).created_at || b.date;
+        const createdA = (a as any).createdAt || (a as any).created_at || a.shiftDate || (a.advancePayments && a.advancePayments[0]?.paymentDate) || '';
+        const createdB = (b as any).createdAt || (b as any).created_at || b.shiftDate || (b.advancePayments && b.advancePayments[0]?.paymentDate) || '';
         return new Date(createdB).getTime() - new Date(createdA).getTime();
       }
       const dateA = `${a.date}T${a.time || '00:00'}`;

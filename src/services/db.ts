@@ -412,7 +412,38 @@ export const DB = {
             try { camel.services = JSON.parse(camel.services); } catch { camel.services = []; }
           }
           if (!Array.isArray(camel.services)) camel.services = [];
-          camel.createdAt = camel.createdAt || camel.created_at;
+
+          let cDate = camel.createdAt || camel.created_at;
+          const bDate = camel.date ? String(camel.date).split('T')[0].trim() : '';
+          const nowMs = Date.now();
+          const isFutureCreation = Boolean(cDate && new Date(cDate).getTime() > (nowMs + 86400000));
+          const isMatchesFutureAppt = Boolean(bDate && cDate && cDate.startsWith(bDate) && new Date(bDate).getTime() > nowMs);
+
+          if (isFutureCreation || isMatchesFutureAppt) {
+            // تصحيح تاريخ الإنشاء: يجب ألا يكون تاريخ الإنشاء في المستقبل أو مساوياً لموعد الحجز المستقبلي
+            const firstAdv = (advs || []).find((a: any) => {
+              const d = a.paymentDate || (a as any).payment_date || a.date;
+              return d && new Date(d).getTime() <= (nowMs + 86400000);
+            });
+            if (firstAdv) {
+              const d = firstAdv.paymentDate || (firstAdv as any).payment_date || firstAdv.date;
+              cDate = d.includes('T') ? d : `${d}T12:00:00.000Z`;
+            } else if (camel.shiftDate && new Date(camel.shiftDate).getTime() <= (nowMs + 86400000)) {
+              cDate = `${camel.shiftDate}T12:00:00.000Z`;
+            } else {
+              const todayStr = new Date().toISOString().split('T')[0];
+              cDate = `${todayStr}T12:00:00.000Z`;
+            }
+            try {
+              const client = sb();
+              if (client && camel.id) {
+                client.from('bookings').update({ created_at: cDate }).eq('id', camel.id).then();
+              }
+            } catch {}
+          }
+
+          camel.createdAt = cDate || new Date().toISOString();
+          camel.created_at = camel.createdAt;
           camel.createdBy = camel.createdBy || camel.created_by;
           camel.createdByName = camel.createdByName || camel.created_by_name || camel.createdBy;
           camel.updatedAt = camel.updatedAt || camel.updated_at;
@@ -1624,6 +1655,27 @@ export const DB = {
       const rawClientId = b.clientId || b.client_id;
       const safeClientId = (rawClientId && UUID_REGEX.test(rawClientId)) ? rawClientId : null;
 
+      const nowIso = new Date().toISOString();
+      let safeCreatedAt = b.createdAt || b.created_at;
+      const nowMs = Date.now();
+      const isFutureCreation = Boolean(safeCreatedAt && new Date(safeCreatedAt).getTime() > (nowMs + 86400000));
+      const isMatchesFutureAppt = Boolean(safeDate && safeCreatedAt && safeCreatedAt.startsWith(safeDate) && new Date(safeDate).getTime() > nowMs);
+
+      if (!safeCreatedAt || isFutureCreation || isMatchesFutureAppt) {
+        const firstAdv = cleanAdvances.find((a: any) => {
+          const d = a.paymentDate || (a as any).payment_date || a.date;
+          return d && new Date(d).getTime() <= (nowMs + 86400000);
+        });
+        if (firstAdv) {
+          const d = firstAdv.paymentDate || (firstAdv as any).payment_date || firstAdv.date;
+          safeCreatedAt = d.includes('T') ? d : `${d}T12:00:00.000Z`;
+        } else if (b.shiftDate && new Date(b.shiftDate).getTime() <= (nowMs + 86400000)) {
+          safeCreatedAt = `${b.shiftDate}T12:00:00.000Z`;
+        } else {
+          safeCreatedAt = nowIso;
+        }
+      }
+
       const snap: any = {
         id: b.id,
         salon_id: validSalonId || null,
@@ -1640,7 +1692,7 @@ export const DB = {
         date: safeDate,
         time: rawTime.length >= 5 ? rawTime.substring(0, 5) : rawTime,
         status: b.status || 'confirmed',
-        created_at: b.createdAt || b.created_at || appointmentDateTime,
+        created_at: safeCreatedAt,
         created_by: b.createdBy || b.created_by || null,
         created_by_name: b.createdByName || b.created_by_name || null,
         updated_at: b.updatedAt || b.updated_at || new Date().toISOString(),
@@ -1665,7 +1717,7 @@ export const DB = {
       };
 
       // الحفظ الفوري في التخزين المحلي لضمان ثبات التعديل وعدم التراجع عنه إطلاقاً
-      const localItem = { ...b, _localEditedAt: Date.now() };
+      const localItem = { ...b, createdAt: safeCreatedAt, created_at: safeCreatedAt, _localEditedAt: Date.now() };
       try {
         const stored = localStorage.getItem('smartcut_bookings');
         const list = stored ? JSON.parse(stored) : [];

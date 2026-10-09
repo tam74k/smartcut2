@@ -1433,8 +1433,33 @@ export default function App() {
           JSON.stringify(b.advancePayments) !== JSON.stringify(old.advancePayments)
         );
 
+        const bDateStr = b.date ? String(b.date).split('T')[0].trim() : '';
+        let validCreatedAt = b.createdAt || (b as any).created_at;
+        const nowMs = Date.now();
+        const isFutureCreation = Boolean(validCreatedAt && new Date(validCreatedAt).getTime() > (nowMs + 86400000));
+        const isMatchesFutureAppt = Boolean(bDateStr && validCreatedAt && validCreatedAt.startsWith(bDateStr) && new Date(bDateStr).getTime() > nowMs);
+
+        if (isFutureCreation || isMatchesFutureAppt) {
+          const advs = b.advancePayments || [];
+          const validAdv = advs.find((a: any) => {
+            const d = a.paymentDate || (a as any).payment_date || a.date;
+            return d && new Date(d).getTime() <= (nowMs + 86400000);
+          });
+          if (validAdv) {
+            const d = validAdv.paymentDate || (validAdv as any).payment_date || validAdv.date;
+            validCreatedAt = d.includes('T') ? d : `${d}T12:00:00.000Z`;
+          } else if (b.shiftDate && new Date(b.shiftDate).getTime() <= (nowMs + 86400000)) {
+            validCreatedAt = `${b.shiftDate}T12:00:00.000Z`;
+          } else {
+            const todayStr = new Date().toISOString().split('T')[0];
+            validCreatedAt = `${todayStr}T12:00:00.000Z`;
+          }
+        }
+
         return {
           ...b,
+          createdAt: validCreatedAt || b.createdAt || nowIso,
+          created_at: validCreatedAt || (b as any).created_at || nowIso,
           salonId: (b as any).salonId || currentSalonId,
           branchId: (b as any).branchId || activeBranchId,
           updatedAt: isModified ? (b.updatedAt || nowIso) : b.updatedAt,

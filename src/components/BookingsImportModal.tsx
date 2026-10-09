@@ -309,11 +309,15 @@ function extractRowAdvances(row: any, bookingDate: string, bookingCode: string, 
     'payment method 2', 'treasury 2', 'method 2'
   ]);
 
+  const todayStr = new Date().toISOString().split('T')[0];
+  const isFutureAppt = bookingDate && new Date(bookingDate).getTime() > Date.now();
+  const safeAdvDate = isFutureAppt ? todayStr : bookingDate;
+
   if (amt2 > 0) {
     const { treasuryId, treasuryName, paymentMethod } = resolvePaymentMethodAndTreasury(rawMethod2, 'card');
     result.push({
       id: `ADV-${bookingCode || 'IMP'}-2-${Math.random().toString(36).substr(2, 6)}`,
-      date: bookingDate,
+      date: safeAdvDate,
       amount: amt2,
       treasuryId,
       treasuryName,
@@ -338,7 +342,7 @@ function extractRowAdvances(row: any, bookingDate: string, bookingCode: string, 
       const { treasuryId, treasuryName, paymentMethod } = resolvePaymentMethodAndTreasury(rawSingleMethod, 'cash');
       result.push({
         id: `ADV-${bookingCode || 'IMP'}-${Math.random().toString(36).substr(2, 6)}`,
-        date: bookingDate,
+        date: safeAdvDate,
         amount: singleAmt,
         treasuryId,
         treasuryName,
@@ -700,11 +704,15 @@ export function BookingsImportModal({
 
       // إنشاء قيد مالي لكل عربون في الخزينة المعنية وتاريخ الوردية
       const effectiveShiftDate = (shiftData && shiftData.isOpen && shiftData.date) ? shiftData.date : candidate.date;
+      const isFutureAppt = candidate.date && new Date(candidate.date).getTime() > Date.now();
+      const advPaymentDay = isFutureAppt ? (effectiveShiftDate || new Date().toISOString().split('T')[0]) : candidate.date;
+      const advPaymentDateTime = `${advPaymentDay}T${apptTime}`;
+
       for (const adv of advances) {
         if (adv.amount > 0) {
           const trx: Transaction = {
             id: 'TRX-' + (adv.id || Math.random().toString(36).substr(2, 9)),
-            date: appointmentDateTime,
+            date: advPaymentDateTime,
             shiftDate: effectiveShiftDate,
             type: 'in',
             amount: adv.amount,
@@ -728,7 +736,7 @@ export function BookingsImportModal({
         }
       }
 
-      // تجهيز كائن الحجز مع تثبيت توقيت الموعد المحلي التام
+      // تجهيز كائن الحجز مع تثبيت توقيت الموعد وتاريخ الإنشاء الحالي
       const booking: Booking = {
         id: candidate.id.startsWith('B-') ? candidate.id : `B-${candidate.id}`,
         salonId: settings.salonId,
@@ -746,7 +754,7 @@ export function BookingsImportModal({
         internalNotes: candidate.internalNotes || undefined,
         branchId: effectiveBranchId,
         source: 'pos',
-        createdAt: appointmentDateTime
+        createdAt: new Date().toISOString()
       };
 
       try {
@@ -774,7 +782,7 @@ export function BookingsImportModal({
             loyaltyPoints: 0,
             cashback: 0,
             lastVisit: candidate.date,
-            createdAt: `${candidate.date}T12:00:00`,
+            createdAt: new Date().toISOString(),
             notes: 'تمت إضافته تلقائياً عبر استيراد الحجوزات السابقة من إكسل'
           };
           newClientsList.push(newClient);
