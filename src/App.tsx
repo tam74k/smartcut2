@@ -58,6 +58,7 @@ import { DB, dbClientToApp, dbEmployeeToApp, dbServiceToApp, dbProductToApp, toC
 import { SubscriptionService } from './services/subscriptionService';
 import { QueueService } from './services/queueService';
 import { hasEmployeeFixedCommission } from './utils/commissionHelper';
+import { isMatchingTreasury, resolveMainTreasury } from './utils/treasury';
 import { 
   AppSettings, Transaction, Booking, Invoice, ServiceItem, Category, Employee, Product, AppUser, 
   SaaSSubscription, Branch, Partner, PartnerTransaction, PromoCode, PromoCodeUsage, TipRecord, 
@@ -313,6 +314,7 @@ export default function App() {
   const [allSalons, setAllSalons] = useState<any[]>(() => SubscriptionService.getSalons());
 
   // Shift State scoped per active branch & persisted in localStorage + Supabase
+  const lastClosedShiftTimeRef = useRef<number>(0);
   const [branchShifts, setBranchShifts] = useState<Record<string, { 
     isOpen: boolean, 
     date: string, 
@@ -350,16 +352,16 @@ export default function App() {
       }
       if (!next.isOpen) {
         Object.keys(updated).forEach(bKey => {
-          if (updated[bKey]?.isOpen) {
-            updated[bKey] = {
-              ...updated[bKey],
-              isOpen: false,
-              date: '',
-              initialCash: 0,
-              lastClosedAt: next.lastClosedAt || new Date().toISOString()
-            };
-          }
+          updated[bKey] = {
+            ...updated[bKey],
+            isOpen: false,
+            date: '',
+            initialCash: 0,
+            shiftId: undefined,
+            lastClosedAt: next.lastClosedAt || new Date().toISOString()
+          };
         });
+        try { localStorage.removeItem('smartcut_active_work_shift'); } catch (e) {}
       }
       try { localStorage.setItem('smartcut_work_shifts_state', JSON.stringify(updated)); } catch (e) {}
       return updated;
@@ -367,6 +369,11 @@ export default function App() {
   };
 
   const applyActiveWorkShift = useCallback((activeShift: any, branchId: string) => {
+    // Cooldown guard: If the shift was closed locally within the last 45 seconds, reject any stale in-flight open shift from Supabase
+    if (Date.now() - lastClosedShiftTimeRef.current < 45000) {
+      return;
+    }
+
     if (activeShift && (activeShift.status === 'open' || !activeShift.closedAt)) {
       setBranchShifts(prev => {
         const current = prev[branchId] || prev['b-main'];
@@ -407,6 +414,7 @@ export default function App() {
               isOpen: false,
               date: '',
               initialCash: 0,
+              shiftId: undefined,
               lastClosedAt: new Date().toISOString()
             };
           }
@@ -1767,7 +1775,7 @@ export default function App() {
     });
   };
 
-  const handleOpenShift = () => {
+  const handleOpenShift = async () => {
     if (checkReadOnlyAndWarn()) return;
     if (shiftData.isOpen) {
       alert('⚠️ هناك وردية مفتوحة بالفعل لهذا الصالون!');
@@ -1811,189 +1819,277 @@ export default function App() {
       createdAt: nowIso
     };
 
-    DB.saveWorkShift(newWorkShift);
+    lastClosedShiftTimeRef.current = 0;
+    await DB.saveWorkShift(newWorkShift);
     setShiftData({ isOpen: true, date: openShiftForm.date, initialCash: openShiftForm.initialCash, shiftId, openedAt: nowIso });
     setShowOpenModal(false);
   };
 
-  const handleConfirmCloseShift = () => {
+  const handleConfirmCloseShift = async () => {
     if (checkReadOnlyAndWarn()) return;
-    const activeBranch = branches.find(b => b.id === activeBranchId) || branches[0];
-    const definedTreasuries = (settings.treasuries && settings.treasuries.length > 0)
-      ? settings.treasuries
-      : [
-          { id: 'main', name: 'الخزنة الرئيسية', isMain: true },
-          { id: 'cash', name: 'كاش (الدرج)', isMain: false },
-          { id: 'card', name: 'شبكة / فيزا', isMain: false }
-        ];
-    const mainTreasury = definedTreasuries.find(t => t.isMain) || definedTreasuries.find(t => t.id === 'main') || definedTreasuries[0];
-    const newTransactions: Transaction[] = [];
-    const now = (shiftData?.isOpen && shiftData?.date) 
-      ? (shiftData.date + 'T' + new Date().toTimeString().split(' ')[0]) 
-      : new Date().toISOString();
-
-    definedTreasuries.forEach(t => {
-      if (t.id === mainTreasury.id) return;
-
-      // 1. Transactions directly in this treasury
-      const tTrx = transactions.filter(trx => 
-        (trx.treasury === t.id || (trx as any).treasuryId === t.id) &&
-        (!trx.salonId || !settings.salonId || trx.salonId === settings.salonId)
-      );
-
-      const invoiceIdsInTrx = new Set(
-        tTrx.filter(trx => trx.type === 'in' && ((trx as any).invoiceId || (trx as any).invoice_id))
-          .map(trx => (trx as any).invoiceId || (trx as any).invoice_id)
-      );
-
-      // 2. Add sales from invoices that don't have separate transaction rows
-      const unrecordedInvoiceSales = branchInvoices.reduce((sum, inv) => {
-        if (inv.status === 'cancelled') return sum;
-        if (invoiceIdsInTrx.has(inv.id)) return sum;
-        const methods = inv.paymentMethods && inv.paymentMethods.length > 0
-          ? inv.paymentMethods
-          : [{ amount: Number(inv.total) || 0, treasuryId: inv.paymentMethod || 'cash' }];
-        const matched = methods.filter((m: any) => m.treasuryId === t.id);
-        return sum + matched.reduce((s: number, m: any) => s + (Number(m.amount) || 0), 0);
-      }, 0);
-
-      const totalIn = tTrx.filter(trx => trx.type === 'in').reduce((s, x) => s + (Number(x.amount) || 0), 0) + unrecordedInvoiceSales;
-      const totalOut = tTrx.filter(trx => trx.type === 'out').reduce((s, x) => s + (Number(x.amount) || 0), 0);
-      const net = Math.round((totalIn - totalOut) * 100) / 100;
-
-      if (net > 0) {
-        newTransactions.push({
-          id: 'TRX-OUT-' + Math.random().toString(36).substr(2,9),
-          salonId: settings.salonId,
-          date: now,
-          type: 'out',
-          amount: net,
-          category: 'transfer',
-          description: `تصفير خزينة (${t.name}) ونقل الرصيد بالكامل (${net} ر.س) إلى (${mainTreasury.name}) - فرع ${activeBranch?.name || ''}`,
-          treasury: t.id,
-          branchId: activeBranchId,
-          branchCode: activeBranch?.code,
-          createdBy: currentUser?.name || 'الكاشير',
-          userId: currentUser?.id,
-          userName: currentUser?.name || 'الكاشير',
-          shiftDate: shiftData.date
-        });
-        newTransactions.push({
-          id: 'TRX-IN-' + Math.random().toString(36).substr(2,9),
-          salonId: settings.salonId,
-          date: now,
-          type: 'in',
-          amount: net,
-          category: 'transfer',
-          description: `تحويل تصفير وردية من (${t.name}) بمبلغ (${net} ر.س) إلى (${mainTreasury.name}) - فرع ${activeBranch?.name || ''}`,
-          treasury: mainTreasury.id,
-          branchId: activeBranchId,
-          branchCode: activeBranch?.code,
-          createdBy: currentUser?.name || 'الكاشير',
-          userId: currentUser?.id,
-          userName: currentUser?.name || 'الكاشير',
-          shiftDate: shiftData.date
-        });
+    try {
+      lastClosedShiftTimeRef.current = Date.now();
+      const activeBranch = branches.find(b => b.id === activeBranchId) || branches[0];
+      const definedTreasuries = (settings.treasuries && settings.treasuries.length > 0)
+        ? [...settings.treasuries]
+        : [
+            { id: 'main', name: 'الخزنة الرئيسية', isMain: true },
+            { id: 'cash', name: 'كاش (الدرج)', isMain: false },
+            { id: 'card', name: 'شبكة / فيزا', isMain: false }
+          ];
+      const mainTreasury = resolveMainTreasury(definedTreasuries);
+      if (!definedTreasuries.some(t => t.id === mainTreasury.id)) {
+        definedTreasuries.unshift(mainTreasury);
       }
-    });
 
-    if (newTransactions.length > 0) {
-      setTransactions(prev => [...prev, ...newTransactions]);
-      DB.saveTransactions(newTransactions, settings.salonId);
-    }
+      const newTransactions: Transaction[] = [];
+      const currentShiftDate = (shiftData?.isOpen && shiftData?.date) 
+        ? shiftData.date 
+        : new Date().toISOString().split('T')[0];
+      const currentShiftId = (shiftData as any)?.shiftId || (shiftData as any)?.id || ('SHIFT-' + Math.random().toString(36).substr(2, 9).toUpperCase());
+      const now = currentShiftDate + 'T' + new Date().toTimeString().split(' ')[0];
 
-    // Persist shift closure in DB
-    const shiftInvoices = branchInvoices.filter(i => 
-      i.status !== 'cancelled' && 
-      (i.date.startsWith(shiftData.date) || (shiftData.date && (i as any).created_at?.startsWith(shiftData.date)))
-    );
-    const totalSales = shiftInvoices.reduce((s, i) => s + (Number(i.total) || 0), 0);
-    const totalCashSales = shiftInvoices.reduce((s, i) => {
-      const splits = i.paymentMethods && i.paymentMethods.length > 0
-        ? i.paymentMethods
-        : [{ amount: Number(i.total) || 0, treasuryId: i.paymentMethod || 'cash' }];
-      const cashSplit = splits.find((pm: any) => pm.treasuryId === 'cash' || pm.treasuryId?.includes('cash'))?.amount;
-      return s + (Number(cashSplit) || 0);
-    }, 0);
-    const totalCardSales = Math.max(0, totalSales - totalCashSales);
-
-    const isStaffAdvance = (t: any) => {
-      const isOut = t.type === 'out' || (t.type as string) === 'expense';
-      if (!isOut) return false;
-      const cat = (t.category || '').toLowerCase();
-      const expCat = ((t as any).expenseCategory || '').toLowerCase();
-      const desc = (t.description || '').toLowerCase();
-      return (
-        cat === 'staff_advance' ||
-        cat === 'hr_advance' ||
-        cat === 'advance' ||
-        cat.includes('سلف') ||
-        expCat.includes('سلف') ||
-        desc.includes('سلفة') ||
-        desc.includes('سلف')
+      // Operational collections filtered by current shift
+      const shiftInvoices = branchInvoices.filter(i => 
+        i.status !== 'cancelled' && 
+        ((i.shiftDate && i.shiftDate === currentShiftDate) || i.date.startsWith(currentShiftDate))
       );
-    };
 
-    const isCashTreasury = (tId?: string) => !tId || tId === 'cash' || tId === 'main';
+      const shiftTransactions = branchTransactions.filter(t => 
+        (t.shiftDate && t.shiftDate === currentShiftDate) || 
+        ((t as any).shift_date && (t as any).shift_date === currentShiftDate) || 
+        t.date.startsWith(currentShiftDate)
+      );
 
-    // Operational shift expenses (exclude advances, internal transfers and zeroing)
-    const shiftExpenses = branchTransactions.filter(t => 
-      ((t.shiftDate && t.shiftDate === shiftData.date) || ((t as any).shift_date && (t as any).shift_date === shiftData.date) || t.date.startsWith(shiftData.date)) && 
-      (t.type === 'out' || (t.type as string) === 'expense' || t.category === 'expense' || t.category === 'مصروفات' || t.category?.includes('مصروف')) &&
-      !isStaffAdvance(t) &&
-      t.category !== 'transfer' &&
-      !t.description?.includes('تصفير') &&
-      !t.description?.includes('تحويل')
-    ).reduce((s, t) => s + (Number(t.amount) || 0), 0);
+      const isStaffAdvance = (t: any) => {
+        const isOut = t.type === 'out' || (t.type as string) === 'expense';
+        if (!isOut) return false;
+        const cat = (t.category || '').toLowerCase();
+        const expCat = ((t as any).expenseCategory || '').toLowerCase();
+        const desc = (t.description || '').toLowerCase();
+        return (
+          cat === 'staff_advance' ||
+          cat === 'hr_advance' ||
+          cat === 'advance' ||
+          cat.includes('سلف') ||
+          expCat.includes('سلف') ||
+          desc.includes('سلفة') ||
+          desc.includes('سلف')
+        );
+      };
 
-    // Staff advances disbursed during this shift
-    const shiftAdvances = branchTransactions.filter(t => 
-      ((t.shiftDate && t.shiftDate === shiftData.date) || ((t as any).shift_date && (t as any).shift_date === shiftData.date) || t.date.startsWith(shiftData.date)) && 
-      isStaffAdvance(t)
-    ).reduce((s, t) => s + (Number(t.amount) || 0), 0);
+      const isAdvanceTrx = (trx: any) => {
+        if (trx.type !== 'in') return false;
+        const cat = trx.category || '';
+        if (cat === 'booking_advance' || cat === 'مقدم حجز' || cat === 'عربون حجز' || cat === 'عربون' || cat === 'مقدم') return true;
+        if (cat === 'advance' && !trx.description?.includes('سلف')) return true;
+        const desc = trx.description || '';
+        return desc.includes('عربون') || desc.includes('مقدم حجز') || desc.includes('دفعة مقدمة');
+      };
 
-    const cashExpenses = branchTransactions.filter(t => 
-      ((t.shiftDate && t.shiftDate === shiftData.date) || ((t as any).shift_date && (t as any).shift_date === shiftData.date) || t.date.startsWith(shiftData.date)) && 
-      (t.type === 'out' || (t.type as string) === 'expense' || t.category === 'expense' || t.category === 'مصروفات' || t.category?.includes('مصروف')) &&
-      !isStaffAdvance(t) &&
-      t.category !== 'transfer' &&
-      !t.description?.includes('تصفير') &&
-      !t.description?.includes('تحويل') &&
-      isCashTreasury(t.treasury || (t as any).treasuryId)
-    ).reduce((s, t) => s + (Number(t.amount) || 0), 0);
+      // Calculate and generate zeroing / transfer transactions for all sub-treasuries
+      definedTreasuries.forEach(t => {
+        if (t.id === mainTreasury.id) return;
 
-    const cashAdvances = branchTransactions.filter(t => 
-      ((t.shiftDate && t.shiftDate === shiftData.date) || ((t as any).shift_date && (t as any).shift_date === shiftData.date) || t.date.startsWith(shiftData.date)) && 
-      isStaffAdvance(t) &&
-      isCashTreasury(t.treasury || (t as any).treasuryId)
-    ).reduce((s, t) => s + (Number(t.amount) || 0), 0);
+        // Transactions matching this treasury in the current shift
+        const tTrx = shiftTransactions.filter(trx => 
+          isMatchingTreasury(trx.treasury || (trx as any).treasuryId, t.id, definedTreasuries)
+        );
 
-    const expectedCash = (Number(shiftData.initialCash) || 0) + totalCashSales - (cashExpenses + cashAdvances);
+        const invoiceIdsInTrx = new Set(
+          tTrx.filter(trx => trx.type === 'in' && ((trx as any).invoiceId || (trx as any).invoice_id))
+            .map(trx => (trx as any).invoiceId || (trx as any).invoice_id)
+        );
 
-    const closedShift: Partial<WorkShift> = {
-      id: (shiftData as any).shiftId || ('SHIFT-' + Math.random().toString(36).substr(2, 9).toUpperCase()),
-      salonId: settings.salonId,
-      branchId: activeBranchId,
-      shiftDate: shiftData.date,
-      closedAt: now,
-      closedByUserId: currentUser?.id,
-      closedByUserName: currentUser?.name || 'الكاشير',
-      initialCash: Number(shiftData.initialCash) || 0,
-      expectedCash,
-      totalSales,
-      totalCashSales,
-      totalCardSales,
-      totalExpenses: shiftExpenses,
-      totalAdvances: shiftAdvances,
-      status: 'closed'
-    };
-    DB.saveWorkShift(closedShift);
-    
-    // تصفير عداد الأدوار للوردية القادمة ليبدأ من 1
-    QueueService.resetShiftQueue(settings.salonId, activeBranchId, shiftData.date);
+        // Sales from invoices that don't have separate transaction rows
+        const unrecordedInvoiceSales = shiftInvoices.reduce((sum, inv) => {
+          if (invoiceIdsInTrx.has(inv.id)) return sum;
+          const methods = inv.paymentMethods && inv.paymentMethods.length > 0
+            ? inv.paymentMethods
+            : [{ amount: Number(inv.total) || 0, treasuryId: inv.paymentMethod || 'cash' }];
+          const matched = methods.filter((m: any) => isMatchingTreasury(m.treasuryId, t.id, definedTreasuries));
+          return sum + matched.reduce((s: number, m: any) => s + (Number(m.amount) || 0), 0);
+        }, 0);
 
-    setShiftData({ isOpen: false, date: '', initialCash: 0, lastClosedAt: now });
-    setShowCloseModal(false);
+        const recordedSales = tTrx.filter(trx => trx.type === 'in' && (trx.category === 'sales' || trx.category === 'مبيعات')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+        const sales = unrecordedInvoiceSales + recordedSales;
+
+        // Booking advances collected during this shift for this treasury
+        const trxAdvances = tTrx.filter(isAdvanceTrx).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+        let unrecordedAdvSum = 0;
+        (branchBookings || []).forEach(b => {
+          if (b.status === 'cancelled') return;
+          const advances = (b.advancePayments || (b as any).advance_payments || []);
+          if (Array.isArray(advances)) {
+            advances.forEach((adv: any) => {
+              const advDate = adv.date ? adv.date.split('T')[0] : '';
+              if (advDate === currentShiftDate && Number(adv.amount) > 0) {
+                if (isMatchingTreasury(adv.treasuryId || adv.paymentMethod, t.id, definedTreasuries)) {
+                  const alreadyInTrx = tTrx.some(trx => 
+                    Number(trx.amount) === Number(adv.amount) && (
+                      trx.description?.includes(b.bookingCode || '') || 
+                      trx.description?.includes(b.id || '') || 
+                      trx.description?.includes(b.clientName || '')
+                    )
+                  );
+                  if (!alreadyInTrx) {
+                    unrecordedAdvSum += Number(adv.amount) || 0;
+                  }
+                }
+              }
+            });
+          }
+        });
+        const bookingAdvances = trxAdvances + unrecordedAdvSum;
+
+        const totalIncome = sales + bookingAdvances;
+
+        // Outflows for this treasury in this shift
+        const expenses = tTrx.filter(trx => 
+          (trx.type === 'out' || (trx as any).type === 'expense') && 
+          !isStaffAdvance(trx) && 
+          trx.category !== 'transfer' && 
+          !trx.description?.includes('تصفير') && 
+          !trx.description?.includes('تحويل')
+        ).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+
+        const advances = tTrx.filter(isStaffAdvance).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+        const transfersIn = tTrx.filter(trx => trx.type === 'in' && trx.category === 'transfer').reduce((s, x) => s + (Number(x.amount) || 0), 0);
+        const transfersOut = tTrx.filter(trx => trx.type === 'out' && trx.category === 'transfer').reduce((s, x) => s + (Number(x.amount) || 0), 0);
+        const deposits = tTrx.filter(trx => trx.type === 'in' && (trx.category === 'deposit' || trx.category === 'إيداع')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+
+        const recordedInitialCash = tTrx.filter(trx => trx.type === 'in' && (trx.category === 'عهدة افتتاحية' || trx.category === 'initial_cash')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+        const isCashDrawer = t.id === 'cash' || (!definedTreasuries.some(tr => tr.id === 'cash') && (t.id === 'main' || t.isMain));
+        const initialCashSum = recordedInitialCash > 0 ? recordedInitialCash : (isCashDrawer ? (Number(shiftData.initialCash) || 0) : 0);
+
+        const shiftNet = Math.round(((totalIncome + transfersIn + deposits + initialCashSum) - (expenses + advances + transfersOut)) * 100) / 100;
+
+        // Also check overall cumulative balance in transactions for this treasury to guarantee it is completely zeroed
+        const overallTrx = branchTransactions.filter(trx => isMatchingTreasury(trx.treasury || (trx as any).treasuryId, t.id, definedTreasuries));
+        const overallIn = overallTrx.filter(trx => trx.type === 'in').reduce((s, x) => s + (Number(x.amount) || 0), 0) + unrecordedInvoiceSales + unrecordedAdvSum;
+        const overallOut = overallTrx.filter(trx => trx.type === 'out' || (trx as any).type === 'expense').reduce((s, x) => s + (Number(x.amount) || 0), 0);
+        const overallBalance = Math.round((overallIn - overallOut) * 100) / 100;
+
+        const amountToTransfer = Math.max(0, shiftNet > 0 ? (overallBalance > 0 ? Math.max(shiftNet, overallBalance) : shiftNet) : overallBalance);
+
+        if (amountToTransfer > 0) {
+          newTransactions.push({
+            id: 'TRX-OUT-' + Math.random().toString(36).substr(2, 9),
+            salonId: settings.salonId,
+            date: now,
+            createdAt: new Date().toISOString(),
+            type: 'out',
+            amount: amountToTransfer,
+            category: 'transfer',
+            description: `تصفير خزينة (${t.name}) ونقل الرصيد بالكامل (${amountToTransfer} ${settings.currency || 'ر.س'}) إلى (${mainTreasury.name}) - فرع ${activeBranch?.name || ''}`,
+            treasury: t.id,
+            branchId: activeBranchId,
+            branchCode: activeBranch?.code,
+            createdBy: currentUser?.name || 'الكاشير',
+            userId: currentUser?.id,
+            userName: currentUser?.name || 'الكاشير',
+            shiftDate: currentShiftDate,
+            shiftId: currentShiftId
+          });
+          newTransactions.push({
+            id: 'TRX-IN-' + Math.random().toString(36).substr(2, 9),
+            salonId: settings.salonId,
+            date: now,
+            createdAt: new Date().toISOString(),
+            type: 'in',
+            amount: amountToTransfer,
+            category: 'transfer',
+            description: `تحويل تصفير وردية من (${t.name}) بمبلغ (${amountToTransfer} ${settings.currency || 'ر.س'}) إلى (${mainTreasury.name}) - فرع ${activeBranch?.name || ''}`,
+            treasury: mainTreasury.id,
+            branchId: activeBranchId,
+            branchCode: activeBranch?.code,
+            createdBy: currentUser?.name || 'الكاشير',
+            userId: currentUser?.id,
+            userName: currentUser?.name || 'الكاشير',
+            shiftDate: currentShiftDate,
+            shiftId: currentShiftId
+          });
+        }
+      });
+
+      if (newTransactions.length > 0) {
+        setTransactions(prev => [...prev, ...newTransactions]);
+        await DB.saveTransactions(newTransactions, settings.salonId);
+      }
+
+      // Shift closure statistics calculation
+      const totalSales = shiftInvoices.reduce((s, i) => s + (Number(i.total) || 0), 0);
+      const totalCashSales = shiftInvoices.reduce((s, i) => {
+        const splits = i.paymentMethods && i.paymentMethods.length > 0
+          ? i.paymentMethods
+          : [{ amount: Number(i.total) || 0, treasuryId: i.paymentMethod || 'cash' }];
+        const cashSplit = splits.find((pm: any) => isMatchingTreasury(pm.treasuryId, 'cash', definedTreasuries))?.amount;
+        return s + (Number(cashSplit) || 0);
+      }, 0);
+      const totalCardSales = Math.max(0, totalSales - totalCashSales);
+
+      const shiftExpenses = shiftTransactions.filter(t => 
+        (t.type === 'out' || (t.type as string) === 'expense' || t.category === 'expense' || t.category === 'مصروفات' || t.category?.includes('مصروف')) &&
+        !isStaffAdvance(t) &&
+        t.category !== 'transfer' &&
+        !t.description?.includes('تصفير') &&
+        !t.description?.includes('تحويل')
+      ).reduce((s, t) => s + (Number(t.amount) || 0), 0);
+
+      const shiftAdvances = shiftTransactions.filter(t => isStaffAdvance(t)).reduce((s, t) => s + (Number(t.amount) || 0), 0);
+
+      const cashExpenses = shiftTransactions.filter(t => 
+        (t.type === 'out' || (t.type as string) === 'expense' || t.category === 'expense' || t.category === 'مصروفات' || t.category?.includes('مصروف')) &&
+        !isStaffAdvance(t) &&
+        t.category !== 'transfer' &&
+        !t.description?.includes('تصفير') &&
+        !t.description?.includes('تحويل') &&
+        isMatchingTreasury(t.treasury || (t as any).treasuryId, 'cash', definedTreasuries)
+      ).reduce((s, t) => s + (Number(t.amount) || 0), 0);
+
+      const cashAdvances = shiftTransactions.filter(t => 
+        isStaffAdvance(t) &&
+        isMatchingTreasury(t.treasury || (t as any).treasuryId, 'cash', definedTreasuries)
+      ).reduce((s, t) => s + (Number(t.amount) || 0), 0);
+
+      const expectedCash = (Number(shiftData.initialCash) || 0) + totalCashSales - (cashExpenses + cashAdvances);
+
+      const closedShift: Partial<WorkShift> = {
+        id: currentShiftId,
+        salonId: settings.salonId,
+        branchId: activeBranchId,
+        shiftDate: currentShiftDate,
+        closedAt: now,
+        closedByUserId: currentUser?.id,
+        closedByUserName: currentUser?.name || 'الكاشير',
+        initialCash: Number(shiftData.initialCash) || 0,
+        expectedCash,
+        totalSales,
+        totalCashSales,
+        totalCardSales,
+        totalExpenses: shiftExpenses,
+        totalAdvances: shiftAdvances,
+        status: 'closed'
+      };
+
+      // Persist closed shift in DB & mark all open shifts for this salon as closed
+      await DB.saveWorkShift(closedShift);
+      
+      // تصفير عداد الأدوار للوردية القادمة ليبدأ من 1
+      QueueService.resetShiftQueue(settings.salonId, activeBranchId, currentShiftDate);
+
+      // Cleanly clear local shift state
+      setShiftData({ isOpen: false, date: '', initialCash: 0, lastClosedAt: now });
+      try {
+        localStorage.removeItem('smartcut_active_work_shift');
+      } catch (e) {}
+
+      setShowCloseModal(false);
+      alert(`تم إغلاق الوردية (${currentShiftDate}) وتصفير الخزائن وترحيل المبالغ إلى ${mainTreasury.name} بنجاح.`);
+    } catch (err: any) {
+      console.error('handleConfirmCloseShift error:', err);
+      alert('حدث خطأ أثناء إغلاق الوردية: ' + (err.message || 'يرجى المحاولة مرة أخرى'));
+    }
   };
 
   // معالج طباعة تقرير إغلاق الوردية (حراري أو A4)

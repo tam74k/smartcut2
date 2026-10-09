@@ -2734,19 +2734,62 @@ export const DB = {
     }
   },
 
+  async closeAllActiveShifts(salonId: string, branchId?: string, closedAt?: string): Promise<boolean> {
+    const client = sb();
+    if (!client) return false;
+    try {
+      const validSalonId = toSalonUUID(salonId || getSalonId());
+      if (!validSalonId) return false;
+      const closeTimestamp = closedAt || new Date().toISOString();
+      const { error } = await client
+        .from('work_shifts')
+        .update({
+          status: 'closed',
+          closed_at: closeTimestamp
+        })
+        .eq('salon_id', validSalonId)
+        .or('status.eq.open,closed_at.is.null');
+      if (error) {
+        console.error('DB.closeAllActiveShifts error:', error.message);
+        return false;
+      }
+      return true;
+    } catch (e) {
+      console.error('DB.closeAllActiveShifts exception:', e);
+      return false;
+    }
+  },
+
   async saveWorkShift(ws: any): Promise<boolean> {
     const client = sb();
     if (!client || !ws) return false;
     try {
       const validSalonId = toSalonUUID(ws.salonId || getSalonId());
       const validBranchId = ws.branchId ? (toBranchUUID(ws.branchId) || ws.branchId) : null;
+      const isClosed = ws.status === 'closed' || Boolean(ws.closedAt);
+
+      if (isClosed && validSalonId) {
+        const closeTimestamp = ws.closedAt || new Date().toISOString();
+        // 1. Mark any and all open shifts for this salon as closed in Supabase to prevent stale shifts from lingering
+        await client
+          .from('work_shifts')
+          .update({
+            status: 'closed',
+            closed_at: closeTimestamp,
+            closed_by_user_id: ws.closedByUserId || null,
+            closed_by_user_name: ws.closedByUserName || null
+          })
+          .eq('salon_id', validSalonId)
+          .or('status.eq.open,closed_at.is.null');
+      }
+
       const snap: any = {
         id: ws.id,
         salon_id: validSalonId,
         branch_id: validBranchId,
         shift_date: ws.shiftDate,
         ...(ws.openedAt ? { opened_at: ws.openedAt } : (ws.status === 'open' ? { opened_at: new Date().toISOString() } : {})),
-        closed_at: ws.closedAt || null,
+        closed_at: ws.closedAt || (isClosed ? (ws.closedAt || new Date().toISOString()) : null),
         opened_by_user_id: ws.openedByUserId || null,
         opened_by_user_name: ws.openedByUserName || null,
         opened_by_role: ws.openedByRole || null,
@@ -2760,7 +2803,7 @@ export const DB = {
         total_cash_sales: ws.totalCashSales !== undefined ? Number(ws.totalCashSales) : null,
         total_card_sales: ws.totalCardSales !== undefined ? Number(ws.totalCardSales) : null,
         total_expenses: ws.totalExpenses !== undefined ? Number(ws.totalExpenses) : null,
-        status: ws.status || (ws.closedAt ? 'closed' : 'open'),
+        status: ws.status || (isClosed ? 'closed' : 'open'),
         notes: ws.notes || null,
         created_at: ws.createdAt || new Date().toISOString()
       };

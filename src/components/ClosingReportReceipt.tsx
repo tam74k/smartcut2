@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { AppSettings, Transaction, Invoice, Treasury, Booking } from '../types';
+import { isMatchingTreasury, getTreasuryLabel } from '../utils/treasury';
 
 export function ClosingReportReceipt({
   settings,
@@ -76,66 +77,12 @@ export function ClosingReportReceipt({
   const hasCashTreasury = useMemo(() => allTreasuries.some(t => t.id === 'cash'), [allTreasuries]);
   const hasMainTreasury = useMemo(() => allTreasuries.some(t => t.id === 'main' || t.isMain), [allTreasuries]);
 
-  const isMatchingTreasury = (tId: string | undefined, targetId: string) => {
-    // 1. Direct match
-    if (tId && tId === targetId) return true;
-
-    // 2. Handling undefined / empty treasury ID
-    // In POS operations, untagged / cash invoices or movements belong to cash drawer ('cash')
-    if (!tId) {
-      if (hasCashTreasury) {
-        return targetId === 'cash';
-      }
-      if (hasMainTreasury) {
-        const mainObj = allTreasuries.find(t => t.id === targetId && (t.isMain || t.id === 'main'));
-        return Boolean(mainObj);
-      }
-      return targetId === allTreasuries[0]?.id;
-    }
-
-    // 3. Normalized cash aliases
-    if (tId === 'cash' || tId === 'نقدي' || tId === 'كاش') {
-      if (targetId === 'cash') return true;
-      // Only fallback to main if there is NO cash treasury at all
-      if (!hasCashTreasury && (targetId === 'main' || allTreasuries.find(t => t.id === targetId)?.isMain)) {
-        return true;
-      }
-      return false;
-    }
-
-    // 4. Normalized main treasury aliases
-    if (tId === 'main' || tId === 'الرئيسية' || tId === 'الخزنة الرئيسية') {
-      if (targetId === 'main') return true;
-      const targetObj = allTreasuries.find(t => t.id === targetId);
-      if (targetObj?.isMain && !hasCashTreasury) return true;
-      return Boolean(targetObj?.isMain && targetId !== 'cash');
-    }
-
-    // 5. Normalized card aliases
-    if (targetId === 'card') {
-      return tId === 'card' || tId === 'mada' || tId === 'visa' || tId === 'mastercard' || tId === 'شبكة' || tId === 'شبكة / مدى';
-    }
-
-    // 6. Normalized bank transfer aliases
-    if (targetId === 'bank_transfer' || targetId === 'transfer') {
-      return tId === 'bank_transfer' || tId === 'transfer' || tId === 'bank' || tId === 'تحويل بنكي';
-    }
-
-    return false;
+  const isMatchingTreasuryLocal = (tId: string | undefined, targetId: string) => {
+    return isMatchingTreasury(tId, targetId, allTreasuries);
   };
 
-  const getTreasuryLabel = (tId: string | undefined) => {
-    if (!tId) {
-      const cashT = allTreasuries.find(t => t.id === 'cash');
-      return cashT ? cashT.name : 'كاش (الدرج)';
-    }
-    const found = allTreasuries.find(t => t.id === tId);
-    if (found) return found.name;
-    if (tId === 'cash') return 'كاش (الدرج)';
-    if (tId === 'main') return 'الخزنة الرئيسية';
-    if (tId === 'card' || tId === 'mada') return 'شبكة / مدى';
-    if (tId === 'bank_transfer' || tId === 'transfer') return 'تحويل بنكي';
-    return tId;
+  const getTreasuryLabelLocal = (tId: string | undefined) => {
+    return getTreasuryLabel(tId, allTreasuries);
   };
 
   // Helper to detect if a transaction represents a booking advance
@@ -197,7 +144,7 @@ export function ClosingReportReceipt({
         id: t.id,
         amount: Number(t.amount) || 0,
         treasuryId: tId,
-        label: getTreasuryLabel(tId),
+        label: getTreasuryLabelLocal(tId),
         desc: t.description
       });
     });
@@ -206,7 +153,7 @@ export function ClosingReportReceipt({
         id: adv.id,
         amount: adv.amount,
         treasuryId: adv.treasuryId,
-        label: getTreasuryLabel(adv.treasuryId),
+        label: getTreasuryLabelLocal(adv.treasuryId),
         desc: `دفعة مقدمة لحجز #${adv.bookingCode} - ${adv.clientName}`
       });
     });
@@ -232,7 +179,7 @@ export function ClosingReportReceipt({
 
   // Helper to categorize per treasury
   const getStats = (treasuryId: string) => {
-    const tTrx = transactions.filter(t => isMatchingTreasury(t.treasury || (t as any).treasuryId, treasuryId));
+    const tTrx = transactions.filter(t => isMatchingTreasuryLocal(t.treasury || (t as any).treasuryId, treasuryId));
 
     // Track invoice IDs that already exist as transactions in tTrx to avoid double counting
     const invoiceIdsInTrx = new Set(
@@ -247,7 +194,7 @@ export function ClosingReportReceipt({
       const methods = inv.paymentMethods && inv.paymentMethods.length > 0
         ? inv.paymentMethods
         : [{ amount: Number(inv.total) || 0, treasuryId: inv.paymentMethod || 'cash' }];
-      const matched = methods.filter((pm: any) => isMatchingTreasury(pm.treasuryId, treasuryId));
+      const matched = methods.filter((pm: any) => isMatchingTreasuryLocal(pm.treasuryId, treasuryId));
       return sum + matched.reduce((s: number, m: any) => s + (Number(m.amount) || 0), 0);
     }, 0);
 
@@ -261,7 +208,7 @@ export function ClosingReportReceipt({
     // Booking advances for this treasury
     const trxAdvances = tTrx.filter(isAdvanceTrx).reduce((s, x) => s + (Number(x.amount) || 0), 0);
     const unrecordedAdvSum = unrecordedBookingAdvances
-      .filter(adv => isMatchingTreasury(adv.treasuryId, treasuryId))
+      .filter(adv => isMatchingTreasuryLocal(adv.treasuryId, treasuryId))
       .reduce((s, x) => s + x.amount, 0);
     const bookingAdvances = trxAdvances + unrecordedAdvSum;
 
