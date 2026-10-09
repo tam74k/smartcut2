@@ -315,6 +315,21 @@ export default function App() {
 
   // Shift State scoped per active branch & persisted in localStorage + Supabase
   const lastClosedShiftTimeRef = useRef<number>(0);
+  const lastClosedShiftRef = useRef<{ id?: string; date?: string; timestamp: number } | null>((() => {
+    try {
+      const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('smartcut_last_closed_shift') : null;
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return null;
+  })());
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('smartcut_last_closed_shift');
+      if (saved) lastClosedShiftRef.current = JSON.parse(saved);
+    } catch (e) {}
+  }, []);
+
   const [branchShifts, setBranchShifts] = useState<Record<string, { 
     isOpen: boolean, 
     date: string, 
@@ -369,6 +384,17 @@ export default function App() {
   };
 
   const applyActiveWorkShift = useCallback((activeShift: any, branchId: string) => {
+    // Session & Persistence Guard: If activeShift matches the shift closed in this session (by ID or shiftDate), REJECT IT!
+    if (activeShift && lastClosedShiftRef.current) {
+      const closed = lastClosedShiftRef.current;
+      const isSameId = closed.id && (activeShift.id === closed.id);
+      const isSameDate = closed.date && (activeShift.shiftDate === closed.date);
+      // If within 12 hours of closing this date or ID, reject resurrection completely
+      if ((isSameId || isSameDate) && (Date.now() - (closed.timestamp || 0) < 12 * 3600 * 1000)) {
+        activeShift = null;
+      }
+    }
+
     // Cooldown guard: If the shift was closed locally within the last 45 seconds, reject any stale in-flight open shift from Supabase
     if (Date.now() - lastClosedShiftTimeRef.current < 45000) {
       return;
@@ -1820,6 +1846,10 @@ export default function App() {
     };
 
     lastClosedShiftTimeRef.current = 0;
+    lastClosedShiftRef.current = null;
+    try {
+      localStorage.removeItem('smartcut_last_closed_shift');
+    } catch (e) {}
     await DB.saveWorkShift(newWorkShift);
     setShiftData({ isOpen: true, date: openShiftForm.date, initialCash: openShiftForm.initialCash, shiftId, openedAt: nowIso });
     setShowOpenModal(false);
@@ -2082,6 +2112,15 @@ export default function App() {
       setShiftData({ isOpen: false, date: '', initialCash: 0, lastClosedAt: now });
       try {
         localStorage.removeItem('smartcut_active_work_shift');
+      } catch (e) {}
+
+      lastClosedShiftRef.current = {
+        id: currentShiftId,
+        date: currentShiftDate,
+        timestamp: Date.now()
+      };
+      try {
+        localStorage.setItem('smartcut_last_closed_shift', JSON.stringify(lastClosedShiftRef.current));
       } catch (e) {}
 
       setShowCloseModal(false);

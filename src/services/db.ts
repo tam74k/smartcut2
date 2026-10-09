@@ -2707,20 +2707,53 @@ export const DB = {
       const openShifts = data.filter((s: any) => s.status !== 'closed' && !s.closed_at);
       if (openShifts.length === 0) return null;
 
+      // Check if there is a recently closed shift that supersedes these open shifts
+      const { data: latestClosed } = await client
+        .from('work_shifts')
+        .select('id, shift_date, closed_at, opened_at')
+        .eq('salon_id', validSalonId)
+        .eq('status', 'closed')
+        .not('closed_at', 'is', null)
+        .order('closed_at', { ascending: false })
+        .limit(1);
+
+      let eligibleOpenShifts = openShifts;
+      if (latestClosed && latestClosed.length > 0) {
+        const lastClosed = latestClosed[0];
+        const lastClosedTime = new Date(lastClosed.closed_at).getTime();
+
+        eligibleOpenShifts = openShifts.filter((s: any) => {
+          const shiftOpenTime = s.opened_at ? new Date(s.opened_at).getTime() : 0;
+          // If shift was opened on or before the latest closure, or has the exact same date as a closed shift
+          if (shiftOpenTime && shiftOpenTime <= lastClosedTime) {
+            // Auto-heal stale zombie shift in DB by primary key
+            client.from('work_shifts').update({ status: 'closed', closed_at: lastClosed.closed_at }).eq('id', s.id).then(() => {}, () => {});
+            return false;
+          }
+          if (s.shift_date && lastClosed.shift_date && s.shift_date <= lastClosed.shift_date) {
+            client.from('work_shifts').update({ status: 'closed', closed_at: lastClosed.closed_at }).eq('id', s.id).then(() => {}, () => {});
+            return false;
+          }
+          return true;
+        });
+
+        if (eligibleOpenShifts.length === 0) return null;
+      }
+
       const targetBranchId = branchId && branchId !== 'all' ? (toBranchUUID(branchId) || branchId) : null;
 
       // 1. Direct match on branch_id
       if (targetBranchId) {
-        const exactMatch = openShifts.find((s: any) => s.branch_id === targetBranchId);
+        const exactMatch = eligibleOpenShifts.find((s: any) => s.branch_id === targetBranchId);
         if (exactMatch) return toCamel(exactMatch);
       }
 
       // 2. Generic or default branch match
-      const genericMatch = openShifts.find((s: any) => !s.branch_id || s.branch_id === 'b-main' || s.branch_id === 'all');
+      const genericMatch = eligibleOpenShifts.find((s: any) => !s.branch_id || s.branch_id === 'b-main' || s.branch_id === 'all');
       if (genericMatch) return toCamel(genericMatch);
 
       // 3. Fallback: Return the latest open shift for the salon (guarantees cross-device sync)
-      const latestOpenShift = openShifts[0];
+      const latestOpenShift = eligibleOpenShifts[0];
 
       // Auto-heal branch_id in database if target branch is known and different
       if (targetBranchId && latestOpenShift.branch_id !== targetBranchId) {
@@ -2741,17 +2774,27 @@ export const DB = {
       const validSalonId = toSalonUUID(salonId || getSalonId());
       if (!validSalonId) return false;
       const closeTimestamp = closedAt || new Date().toISOString();
-      const { error } = await client
+
+      // 1. Fetch all open shifts by ID
+      const { data: openRows } = await client
         .from('work_shifts')
-        .update({
-          status: 'closed',
-          closed_at: closeTimestamp
-        })
+        .select('id')
         .eq('salon_id', validSalonId)
         .or('status.eq.open,closed_at.is.null');
-      if (error) {
-        console.error('DB.closeAllActiveShifts error:', error.message);
-        return false;
+
+      if (openRows && openRows.length > 0) {
+        const openIds = openRows.map((r: any) => r.id);
+        const { error } = await client
+          .from('work_shifts')
+          .update({
+            status: 'closed',
+            closed_at: closeTimestamp
+          })
+          .in('id', openIds);
+        if (error) {
+          console.error('DB.closeAllActiveShifts error:', error.message);
+          return false;
+        }
       }
       return true;
     } catch (e) {
@@ -2770,17 +2813,29 @@ export const DB = {
 
       if (isClosed && validSalonId) {
         const closeTimestamp = ws.closedAt || new Date().toISOString();
-        // 1. Mark any and all open shifts for this salon as closed in Supabase to prevent stale shifts from lingering
-        await client
-          .from('work_shifts')
-          .update({
-            status: 'closed',
-            closed_at: closeTimestamp,
-            closed_by_user_id: ws.closedByUserId || null,
-            closed_by_user_name: ws.closedByUserName || null
-          })
-          .eq('salon_id', validSalonId)
-          .or('status.eq.open,closed_at.is.null');
+        try {
+          // 1. Mark any and all open shifts for this salon as closed in Supabase to prevent stale shifts from lingering
+          const { data: openRows } = await client
+            .from('work_shifts')
+            .select('id')
+            .eq('salon_id', validSalonId)
+            .or('status.eq.open,closed_at.is.null');
+
+          if (openRows && openRows.length > 0) {
+            const openIds = openRows.map((r: any) => r.id);
+            await client
+              .from('work_shifts')
+              .update({
+                status: 'closed',
+                closed_at: closeTimestamp,
+                closed_by_user_id: ws.closedByUserId || null,
+                closed_by_user_name: ws.closedByUserName || null
+              })
+              .in('id', openIds);
+          }
+        } catch (closeErr) {
+          console.warn('DB.saveWorkShift bulk close warning:', closeErr);
+        }
       }
 
       const snap: any = {
