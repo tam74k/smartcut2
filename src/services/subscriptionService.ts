@@ -173,11 +173,15 @@ export const SubscriptionService = {
       id: branchId,
       salonId: salonId,
       salonCode: salonCode,
-      code: 'BR-MAIN',
+      code: 'BR-01',
       name: 'الفرع الرئيسي',
       phone: data.phone,
+      country: data.country,
+      currency: countryMeta.currency,
       isMain: true,
       isActive: true,
+      status: 'active',
+      createdAt: now.toISOString(),
       evolutionInstanceName: `${salonCode.toLowerCase()}_main`
     };
 
@@ -200,7 +204,7 @@ export const SubscriptionService = {
       salonId: salonId,
       salonCode: salonCode,
       branchId: branchId,
-      branchCode: 'BR-MAIN',
+      branchCode: 'BR-01',
       username: chosenUsername,
       email: data.email,
       password: data.password || '123456',
@@ -216,7 +220,7 @@ export const SubscriptionService = {
       salonId: salonId,
       salonCode: salonCode,
       branchId: branchId,
-      branchCode: 'BR-MAIN',
+      branchCode: 'BR-01',
       isSalonActive: true,
       subscriptionStatus: 'trial',
       subscriptionEndDate: endDate,
@@ -296,33 +300,8 @@ export const SubscriptionService = {
         this.saveBranches(DEFAULT_INITIAL_BRANCHES);
       }
       if (salonId) {
-        const salonBranches = branches.filter(b => b.salonId === salonId);
-        if (salonBranches.length > 0) {
-          return salonBranches;
-        }
-        // Auto-create official main branch with code BR-01 for this salon if none exists
-        const salons = this.getSalons();
-        const salon = salons.find(s => s.id === salonId);
-        if (salon) {
-          const autoMainBranch: Branch = {
-            id: generateUUID(),
-            salonId: salon.id,
-            salonCode: salon.code,
-            code: 'BR-01',
-            name: `الفرع الرئيسي (${salon.name})`,
-            phone: salon.phone,
-            country: salon.country,
-            currency: salon.currency,
-            isMain: true,
-            isActive: true,
-            status: 'active',
-            createdAt: new Date().toISOString()
-          };
-          branches.push(autoMainBranch);
-          this.saveBranches(branches);
-          DB.saveBranch(autoMainBranch);
-          return [autoMainBranch];
-        }
+        const cleanSalonId = salonId.trim().toLowerCase();
+        return branches.filter(b => b.salonId && b.salonId.trim().toLowerCase() === cleanSalonId);
       }
       return branches;
     } catch (e) {

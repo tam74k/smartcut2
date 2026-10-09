@@ -68,7 +68,8 @@ import {
 export default function App() {
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
   const [activeTab, setActiveTab] = useState('pos');
-  const [showMobileSidebar, setShowMobileSidebar] = useState(false);
+  // القائمة الجانبية مخفية في الوضع الافتراضي
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isCloudConnected, setIsCloudConnected] = useState(false);
   const [isDbLoading, setIsDbLoading] = useState(false);
 
@@ -660,9 +661,12 @@ export default function App() {
           if (dbBranches && dbBranches.length > 0) {
             SubscriptionService.saveBranches(dbBranches);
           }
-          const salonBranches = (dbBranches && dbBranches.length > 0) ? dbBranches : SubscriptionService.getBranches(sId);
+          const rawBranches = (dbBranches && dbBranches.length > 0) ? dbBranches : SubscriptionService.getBranches(sId);
+          const salonBranches = rawBranches.filter((b, idx, arr) => 
+            arr.findIndex(x => x.id === b.id || (x.code && b.code && x.code.toLowerCase() === b.code.toLowerCase())) === idx
+          );
           const finalBranches = salonBranches.length > 0 ? salonBranches : [
-            { id: 'b-main', salonId: sId, name: `الفرع الرئيسي (${activeSalon.name})`, code: 'B01', isMain: true, phone: activeSalon.phone, address: activeSalon.country, isActive: true, status: 'active' }
+            { id: 'b-main', salonId: sId, name: 'الفرع الرئيسي', code: 'BR-01', isMain: true, phone: activeSalon.phone, address: activeSalon.country, isActive: true, status: 'active' }
           ];
           setBranches(finalBranches);
 
@@ -1081,9 +1085,12 @@ export default function App() {
         DB.loadEssentialData(s.id)
       ]);
       
-      const sBranches = (dbBranches && dbBranches.length > 0) ? dbBranches : SubscriptionService.getBranches(s.id);
+      const rawBranches = (dbBranches && dbBranches.length > 0) ? dbBranches : SubscriptionService.getBranches(s.id);
+      const sBranches = rawBranches.filter((b, idx, arr) => 
+        arr.findIndex(x => x.id === b.id || (x.code && b.code && x.code.toLowerCase() === b.code.toLowerCase())) === idx
+      );
       const finalBranches = sBranches.length > 0 ? sBranches : [
-        { id: 'b-main', salonId: s.id, name: `الفرع الرئيسي (${s.name})`, code: 'B01', isMain: true, phone: s.phone, address: s.country, isActive: true, status: 'active' }
+        { id: 'b-main', salonId: s.id, name: 'الفرع الرئيسي', code: 'BR-01', isMain: true, phone: s.phone, address: s.country, isActive: true, status: 'active' }
       ];
       setBranches(finalBranches);
       setActiveBranchId(finalBranches[0].id);
@@ -2905,9 +2912,12 @@ export default function App() {
         trialDays: salon.trialDays || 7
       });
       const dbBranches = await DB.fetchBranches(salon.id);
-      const salonBranches = (dbBranches && dbBranches.length > 0) ? dbBranches : (salon.id ? SubscriptionService.getBranches(salon.id) : []);
+      const rawBranches = (dbBranches && dbBranches.length > 0) ? dbBranches : (salon.id ? SubscriptionService.getBranches(salon.id) : []);
+      const salonBranches = rawBranches.filter((b, idx, arr) => 
+        arr.findIndex(x => x.id === b.id || (x.code && b.code && x.code.toLowerCase() === b.code.toLowerCase())) === idx
+      );
       setBranches(salonBranches.length > 0 ? salonBranches : [
-        { id: 'b-main', salonId: salon.id, name: `الفرع الرئيسي (${salon.name})`, code: 'B01', isMain: true, phone: salon.phone, address: salon.country, isActive: true, status: 'active' }
+        { id: 'b-main', salonId: salon.id, name: 'الفرع الرئيسي', code: 'BR-01', isMain: true, phone: salon.phone, address: salon.country, isActive: true, status: 'active' }
       ]);
       let branchIdToUse = 'b-main';
       if (u.branchId) {
@@ -3222,82 +3232,93 @@ export default function App() {
 
       <div className="flex flex-1 overflow-hidden relative">
         {/* 2. DESKTOP SIDEBAR */}
-        <aside className="hidden lg:flex w-64 bg-white border-l border-slate-200 shadow-sm flex-col z-20">
-          <div className="p-4 flex items-center gap-3 border-b border-slate-100">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-md shadow-emerald-500/20">
-              <Scissors size={20} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <h1 className="font-extrabold text-sm tracking-tight text-slate-900 leading-none truncate">
-                {settings.salonName || 'SMART CUT'}
-              </h1>
-              <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider mt-1 flex items-center gap-1">
-                <Sparkles size={10} />
-                <span>v2.0 PRO SaaS</span>
-              </p>
-            </div>
-          </div>
-
-          {/* Navigation links */}
-          <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-1 scrollbar-thin">
-            {allowedMenuItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = activeTab === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => setActiveTab(item.id)}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 text-right ${
-                    isActive 
-                      ? 'bg-emerald-600 text-white font-extrabold shadow-md shadow-emerald-600/20 translate-x-1' 
-                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 font-semibold'
-                  }`}
-                >
-                  <Icon size={18} className={isActive ? 'text-white' : 'text-slate-400'} strokeWidth={isActive ? 2.5 : 2} />
-                  <span className="text-xs">{item.label}</span>
-                </button>
-              );
-            })}
-          </nav>
-
-          {/* User profile & Dropdown Menu */}
-          <div className="p-3 border-t border-slate-100 bg-slate-50/50">
-            <UserMenuDropdown
-              currentUser={currentUser}
-              setCurrentUser={setCurrentUser}
-              onLogout={handleLogout}
-              onOpenSettings={() => {
-                if (AuthService.canAccess('settings', currentUser)) {
-                  setActiveTab('settings');
-                } else {
-                  alert('ليس لديك صلاحية الوصول إلى شاشة الإعدادات.');
-                }
-              }}
-              settings={settings}
-              activeBranch={activeBranch}
-              placement="sidebar"
-            >
-              <div className="flex items-center justify-between p-2 bg-white hover:bg-slate-50 rounded-xl border border-slate-200/80 shadow-xs transition-colors cursor-pointer w-full group">
-                <div className="flex items-center gap-2 overflow-hidden">
-                  <div className="w-8 h-8 rounded-full bg-sky-100 text-sky-800 flex items-center justify-center font-black text-xs shrink-0 border border-sky-200 shadow-2xs group-hover:scale-105 transition-transform">
-                    {getUserInitials(currentUser.name)}
-                  </div>
-                  <div className="truncate text-right">
-                    <p className="text-xs font-bold text-slate-800 leading-tight truncate group-hover:text-primary transition-colors">{currentUser.name}</p>
-                    <p className="text-[10px] text-slate-400 font-medium">{ROLE_LABELS[currentUser.role] || currentUser.role}</p>
-                  </div>
+        {isSidebarOpen && (
+          <aside className="hidden lg:flex w-64 bg-white border-l border-slate-200 shadow-md flex-col z-20 shrink-0 animate-in slide-in-from-right duration-200">
+            <div className="p-4 flex items-center justify-between border-b border-slate-100">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-md shadow-emerald-500/20 shrink-0">
+                  <Scissors size={20} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h1 className="font-extrabold text-sm tracking-tight text-slate-900 leading-none truncate">
+                    {settings.salonName || 'SMART CUT'}
+                  </h1>
+                  <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider mt-1 flex items-center gap-1">
+                    <Sparkles size={10} />
+                    <span>v2.0 PRO SaaS</span>
+                  </p>
                 </div>
               </div>
-            </UserMenuDropdown>
-          </div>
-        </aside>
+              <button 
+                onClick={() => setIsSidebarOpen(false)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                title="إغلاق القائمة"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Navigation links */}
+            <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-1 scrollbar-thin">
+              {allowedMenuItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => setActiveTab(item.id)}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 text-right cursor-pointer ${
+                      isActive 
+                        ? 'bg-emerald-600 text-white font-extrabold shadow-md shadow-emerald-600/20 translate-x-1' 
+                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 font-semibold'
+                    }`}
+                  >
+                    <Icon size={18} className={isActive ? 'text-white' : 'text-slate-400'} strokeWidth={isActive ? 2.5 : 2} />
+                    <span className="text-xs">{item.label}</span>
+                  </button>
+                );
+              })}
+            </nav>
+
+            {/* User profile & Dropdown Menu */}
+            <div className="p-3 border-t border-slate-100 bg-slate-50/50">
+              <UserMenuDropdown
+                currentUser={currentUser}
+                setCurrentUser={setCurrentUser}
+                onLogout={handleLogout}
+                onOpenSettings={() => {
+                  if (AuthService.canAccess('settings', currentUser)) {
+                    setActiveTab('settings');
+                  } else {
+                    alert('ليس لديك صلاحية الوصول إلى شاشة الإعدادات.');
+                  }
+                }}
+                settings={settings}
+                activeBranch={activeBranch}
+                placement="sidebar"
+              >
+                <div className="flex items-center justify-between p-2 bg-white hover:bg-slate-50 rounded-xl border border-slate-200/80 shadow-xs transition-colors cursor-pointer w-full group">
+                  <div className="flex items-center gap-2 overflow-hidden">
+                    <div className="w-8 h-8 rounded-full bg-sky-100 text-sky-800 flex items-center justify-center font-black text-xs shrink-0 border border-sky-200 shadow-2xs group-hover:scale-105 transition-transform">
+                      {getUserInitials(currentUser.name)}
+                    </div>
+                    <div className="truncate text-right">
+                      <p className="text-xs font-bold text-slate-800 leading-tight truncate group-hover:text-primary transition-colors">{currentUser.name}</p>
+                      <p className="text-[10px] text-slate-400 font-medium">{ROLE_LABELS[currentUser.role] || currentUser.role}</p>
+                    </div>
+                  </div>
+                </div>
+              </UserMenuDropdown>
+            </div>
+          </aside>
+        )}
 
         {/* 3. MOBILE SIDEBAR DRAWER OVERLAY */}
-        {showMobileSidebar && (
+        {isSidebarOpen && (
           <div className="lg:hidden fixed inset-0 z-50 flex">
             <div 
               className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm"
-              onClick={() => setShowMobileSidebar(false)}
+              onClick={() => setIsSidebarOpen(false)}
             />
             <div className="relative w-72 max-w-[80vw] bg-white h-full shadow-2xl flex flex-col z-10 animate-in slide-in-from-right duration-300">
               <div className="p-4 flex items-center justify-between border-b border-slate-100">
@@ -3310,7 +3331,7 @@ export default function App() {
                     <p className="text-[10px] text-emerald-600 font-bold">SMART CUT PRO</p>
                   </div>
                 </div>
-                <button onClick={() => setShowMobileSidebar(false)} className="p-1 rounded-lg text-slate-400 hover:bg-slate-100">
+                <button onClick={() => setIsSidebarOpen(false)} className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-slate-100" title="إغلاق القائمة">
                   <X size={20} />
                 </button>
               </div>
@@ -3324,7 +3345,7 @@ export default function App() {
                       key={item.id}
                       onClick={() => {
                         setActiveTab(item.id);
-                        setShowMobileSidebar(false);
+                        setIsSidebarOpen(false);
                       }}
                       className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-right text-xs font-bold transition-all ${
                         isActive ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-700 hover:bg-slate-100'
@@ -3355,13 +3376,22 @@ export default function App() {
           {/* Header Topbar */}
           <header className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-3 sm:px-6 shadow-xs z-10 shrink-0">
             <div className="flex items-center gap-3">
-              {/* Mobile Hamburger Menu Toggle */}
+              {/* Sidebar Menu / Close Toggle Button (turns from Menu to Close X when opened) */}
               <button
-                onClick={() => setShowMobileSidebar(true)}
-                className="lg:hidden p-2 rounded-xl text-slate-600 hover:bg-slate-100 active:scale-95 transition-all"
-                title="القائمة"
+                onClick={() => setIsSidebarOpen(prev => !prev)}
+                className={`p-2 rounded-xl transition-all duration-200 active:scale-95 cursor-pointer flex items-center justify-center border shadow-2xs ${
+                  isSidebarOpen 
+                    ? 'bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-100 hover:text-rose-700 ring-2 ring-rose-200/50' 
+                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100 hover:text-slate-900'
+                }`}
+                title={isSidebarOpen ? "إخفاء القائمة الجانبية" : "إظهار القائمة الجانبية"}
+                aria-label={isSidebarOpen ? "إخفاء القائمة الجانبية" : "إظهار القائمة الجانبية"}
               >
-                <Menu size={20} />
+                {isSidebarOpen ? (
+                  <X size={20} className="stroke-[2.5]" />
+                ) : (
+                  <Menu size={20} className="stroke-[2.2]" />
+                )}
               </button>
 
               <h2 className="text-sm sm:text-base font-extrabold text-slate-800 flex items-center gap-2">
@@ -3476,7 +3506,7 @@ export default function App() {
       <MobileBottomNav
         activeTab={activeTab}
         setActiveTab={setActiveTab}
-        onOpenMobileMenu={() => setShowMobileSidebar(true)}
+        onOpenMobileMenu={() => setIsSidebarOpen(prev => !prev)}
         canAccess={screen => AuthService.canAccess(screen, currentUser)}
       />
 
