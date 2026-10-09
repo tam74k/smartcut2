@@ -68,14 +68,13 @@ export function TreasuryScreen({
       return;
     }
 
-    const effectiveDay = (shiftData && shiftData.isOpen && shiftData.date) 
-      ? shiftData.date 
-      : (transactionDate || new Date().toISOString().split('T')[0]);
+    const effectiveDay = transactionDate || (shiftData && shiftData.isOpen && shiftData.date ? shiftData.date : new Date().toISOString().split('T')[0]);
     const nowIso = new Date().toISOString();
     const tTime = nowIso.split('T')[1] || '12:00:00.000Z';
     const date = effectiveDay + 'T' + tTime;
-    const sDate = (shiftData && shiftData.isOpen) ? shiftData.date : undefined;
-    const sId = (shiftData && shiftData.isOpen) ? ((shiftData as any).shiftId || (shiftData as any).id) : undefined;
+    const isMatchingCurrentShift = Boolean(shiftData && shiftData.isOpen && shiftData.date === effectiveDay);
+    const sDate = isMatchingCurrentShift ? shiftData.date : effectiveDay;
+    const sId = isMatchingCurrentShift ? ((shiftData as any).shiftId || (shiftData as any).id) : undefined;
     
     if (modalType === 'transfer') {
       if (treasuryId === toTreasuryId) {

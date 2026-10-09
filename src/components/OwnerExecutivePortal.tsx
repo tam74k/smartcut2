@@ -568,15 +568,15 @@ const isBookingAdvanceTrx = (t: any) => {
   return false;
 };
 
-// استخراج التاريخ الفعلي لسداد مقدم الحجز (تاريخ الوردية، تاريخ الدفعة أو تاريخ إنشاء الحجز) دون الاعتماد على موعد تنفيذ الحجز
+// استخراج التاريخ الفعلي لسداد مقدم الحجز (تاريخ الدفعة الفعلي أولاً، ثم تاريخ الوردية أو تاريخ الحجز) دون الاعتماد على موعد تنفيذ الحجز
 const getAdvanceEffectiveDate = (adv: any, b: any): string => {
-  const shiftDateVal = adv?.shiftDate || (adv as any)?.shift_date || b?.shiftDate || (b as any)?.shift_date;
-  if (shiftDateVal && typeof shiftDateVal === 'string' && shiftDateVal.trim()) {
-    return shiftDateVal.includes('T') ? shiftDateVal.split('T')[0].trim() : shiftDateVal.split(' ')[0].trim();
-  }
   const advDate = adv?.date;
   if (advDate && typeof advDate === 'string' && advDate.trim()) {
     return advDate.includes('T') ? advDate.split('T')[0].trim() : advDate.split(' ')[0].trim();
+  }
+  const shiftDateVal = adv?.shiftDate || (adv as any)?.shift_date || b?.shiftDate || (b as any)?.shift_date;
+  if (shiftDateVal && typeof shiftDateVal === 'string' && shiftDateVal.trim()) {
+    return shiftDateVal.includes('T') ? shiftDateVal.split('T')[0].trim() : shiftDateVal.split(' ')[0].trim();
   }
   const created = (b as any)?.createdAt || (b as any)?.created_at;
   if (created && typeof created === 'string' && created.trim()) {
@@ -964,26 +964,15 @@ export function OwnerExecutivePortal({
       const isBranchMatch = matchesActiveBranch(inv.branchId);
       if (!isBranchMatch || inv.status === 'cancelled') return false;
 
-      // عندما تكون الفترة هي اليوم وهناك وردية مفتوحة، الارتباط حصراً بالوردية المفتوحة
+      // عندما تكون الفترة هي اليوم وهناك وردية مفتوحة، الارتباط حصراً بتاريخ الوردية المفتوحة ومقارنته بتاريخ الفاتورة الفعلي
       if (period === 'today' && shiftData?.isOpen && shiftData?.date) {
         const targetShift = shiftData.date.split('T')[0].trim();
-        if (shiftData.shiftId && (inv.shiftId === shiftData.shiftId || (inv as any).workShiftId === shiftData.shiftId)) {
-          return true;
-        }
-        if (inv.shiftDate && inv.shiftDate.split('T')[0].trim() === targetShift) {
-          return true;
-        }
-        if ((inv as any).shift_date && (inv as any).shift_date.split('T')[0].trim() === targetShift) {
-          return true;
-        }
-        const invDateOnly = (inv.date || '').split('T')[0].trim();
+        const invDateOnly = (inv.date || inv.shiftDate || (inv as any).shift_date || '').split('T')[0].split(' ')[0].trim();
         return invDateOnly === targetShift;
       }
 
-      const inPeriod = isDateInSelectedPeriod(inv.date) || 
-        (inv.shiftDate && isDateInSelectedPeriod(inv.shiftDate)) || 
-        ((inv as any).shift_date && isDateInSelectedPeriod((inv as any).shift_date));
-      return inPeriod;
+      const invDate = (inv.date || inv.shiftDate || (inv as any).shift_date || '').split('T')[0].split(' ')[0].trim();
+      return isDateInSelectedPeriod(invDate);
     });
   }, [invoices, dateRange, activeBranchId, isMainBranch, isAllBranches, period, shiftData]);
 
@@ -994,26 +983,15 @@ export function OwnerExecutivePortal({
       const isBranchMatch = matchesActiveBranch((t as any).branchId);
       if (!isBranchMatch) return false;
 
-      // عندما تكون الفترة هي اليوم وهناك وردية مفتوحة، الارتباط حصراً بالوردية المفتوحة
+      // عندما تكون الفترة هي اليوم وهناك وردية مفتوحة، الارتباط حصراً بتاريخ الوردية المفتوحة ومقارنته بتاريخ المعاملة الفعلي
       if (period === 'today' && shiftData?.isOpen && shiftData?.date) {
         const targetShift = shiftData.date.split('T')[0].trim();
-        if (shiftData.shiftId && (t.shiftId === shiftData.shiftId || (t as any).workShiftId === shiftData.shiftId)) {
-          return true;
-        }
-        if (t.shiftDate && t.shiftDate.split('T')[0].trim() === targetShift) {
-          return true;
-        }
-        if ((t as any).shift_date && (t as any).shift_date.split('T')[0].trim() === targetShift) {
-          return true;
-        }
-        const tDateOnly = (t.date || '').split('T')[0].trim();
+        const tDateOnly = (t.date || t.shiftDate || (t as any).shift_date || '').split('T')[0].split(' ')[0].trim();
         return tDateOnly === targetShift;
       }
 
-      const inPeriod = isDateInSelectedPeriod(t.date) || 
-        (t.shiftDate && isDateInSelectedPeriod(t.shiftDate)) || 
-        ((t as any).shift_date && isDateInSelectedPeriod((t as any).shift_date));
-      return inPeriod;
+      const tDate = (t.date || t.shiftDate || (t as any).shift_date || '').split('T')[0].split(' ')[0].trim();
+      return isDateInSelectedPeriod(tDate);
     });
   }, [transactions, dateRange, activeBranchId, isMainBranch, period, shiftData]);
 
@@ -1182,9 +1160,8 @@ export function OwnerExecutivePortal({
     // 1. Operating Expenses (excluding salaries, advances, supplier payments, partner shares)
     const directExpenseTx = filteredTransactions.filter(isOperatingExpense);
     const customExpenses = (expenses || []).filter(e => {
-      const inPeriod = isDateInSelectedPeriod(e.date) || 
-        (e.shiftDate && isDateInSelectedPeriod(e.shiftDate)) || 
-        ((e as any).shift_date && isDateInSelectedPeriod((e as any).shift_date));
+      const expDate = (e.date || e.shiftDate || (e as any).shift_date || '').split('T')[0].split(' ')[0].trim();
+      const inPeriod = isDateInSelectedPeriod(expDate);
       const isBranchMatch = matchesActiveBranch(e.branchId);
       return inPeriod && isBranchMatch;
     });
@@ -1415,9 +1392,8 @@ export function OwnerExecutivePortal({
     // 2. All Expenses (Operating Expenses)
     const directExpenseTx = filteredTransactions.filter(isOperatingExpense);
     const customExpenses = (expenses || []).filter(e => {
-      const inPeriod = isDateInSelectedPeriod(e.date) || 
-        (e.shiftDate && isDateInSelectedPeriod(e.shiftDate)) || 
-        ((e as any).shift_date && isDateInSelectedPeriod((e as any).shift_date));
+      const expDate = (e.date || e.shiftDate || (e as any).shift_date || '').split('T')[0].split(' ')[0].trim();
+      const inPeriod = isDateInSelectedPeriod(expDate);
       const isBranchMatch = matchesActiveBranch(e.branchId);
       return inPeriod && isBranchMatch;
     });
@@ -1981,16 +1957,12 @@ export function OwnerExecutivePortal({
       const isBranchMatch = matchesActiveBranch((b as any).branchId);
       if (!isBranchMatch) return false;
 
+      const bEffectiveDate = (b.shiftDate || b.date || (b as any).createdAt || (b as any).created_at || '').split('T')[0].split(' ')[0].trim();
       if (targetShift) {
-        if (shiftData?.shiftId && (b.shiftId === shiftData.shiftId || (b as any).workShiftId === shiftData.shiftId)) return true;
-        if (b.shiftDate && b.shiftDate.split('T')[0].trim() === targetShift) return true;
-        const createdDate = ((b as any).createdAt || (b as any).created_at || '').split('T')[0].trim();
-        return createdDate === targetShift;
+        return bEffectiveDate === targetShift;
       }
 
-      const createdDate = (b as any).createdAt || (b as any).created_at;
-      const inPeriod = isDateInSelectedPeriod(createdDate);
-      return inPeriod;
+      return isDateInSelectedPeriod(bEffectiveDate);
     });
 
     // 2. Bookings scheduled for the selected period (appointment date)
@@ -1998,13 +1970,12 @@ export function OwnerExecutivePortal({
       const isBranchMatch = matchesActiveBranch((b as any).branchId);
       if (!isBranchMatch) return false;
 
+      const schedDate = (b.date || '').split('T')[0].split(' ')[0].trim();
       if (targetShift) {
-        const schedDate = (b.date || '').split('T')[0].trim();
         return schedDate === targetShift;
       }
 
-      const inPeriod = isDateInSelectedPeriod(b.date);
-      return inPeriod;
+      return isDateInSelectedPeriod(schedDate);
     });
 
     // 3. Bookings with advance payment collected in the selected period
@@ -2014,7 +1985,7 @@ export function OwnerExecutivePortal({
       return advances.some(a => {
         const aDate = getAdvanceEffectiveDate(a, b);
         if (targetShift) {
-          return aDate === targetShift || (a.shiftDate && a.shiftDate.split('T')[0].trim() === targetShift) || (b.shiftDate && b.shiftDate.split('T')[0].trim() === targetShift);
+          return aDate === targetShift;
         }
         return isDateInSelectedPeriod(aDate);
       });

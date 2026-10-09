@@ -292,15 +292,16 @@ export function EmployeesScreen({
 
       const branchCodeToUse = settings.branches?.find(b => b.id === activeBranchId)?.code || (emp as any).branchCode || 'BR-01';
       const nowIso = new Date().toISOString();
-      const currentShiftId = shiftData?.isOpen ? (shiftData as any)?.shiftId : undefined;
-      const currentShiftDate = shiftData?.isOpen ? shiftData.date : undefined;
+      const isShiftMatch = Boolean(shiftData?.isOpen && shiftData.date === quickActionForm.date);
+      const effectiveShiftDate = isShiftMatch ? shiftData.date : quickActionForm.date;
+      const effectiveShiftId = isShiftMatch ? (shiftData as any)?.shiftId : undefined;
 
       const trx: Transaction = {
         id: 'TRX-ADV-' + Math.random().toString(36).substring(2, 9),
         date: quickActionForm.date + 'T' + new Date().toTimeString().split(' ')[0],
         createdAt: nowIso,
-        shiftDate: currentShiftDate,
-        shiftId: currentShiftId,
+        shiftDate: effectiveShiftDate,
+        shiftId: effectiveShiftId,
         type: 'out',
         amount: quickActionForm.amount,
         category: 'hr_advance',
@@ -319,8 +320,8 @@ export function EmployeesScreen({
         id: 'FIN-' + Math.random().toString(36).substring(2, 9),
         date: quickActionForm.date,
         createdAt: nowIso,
-        shiftDate: currentShiftDate,
-        shiftId: currentShiftId,
+        shiftDate: effectiveShiftDate,
+        shiftId: effectiveShiftId,
         type: 'advance',
         amount: quickActionForm.amount,
         treasuryId: quickActionForm.treasuryId,
@@ -750,15 +751,16 @@ export function EmployeesScreen({
 
         const branchCodeToUse = settings.branches?.find(b => b.id === activeBranchId)?.code || (emp as any).branchCode || 'BR-01';
         const nowIso = new Date().toISOString();
-        const currentShiftId = shiftData?.isOpen ? (shiftData as any)?.shiftId : undefined;
-        const currentShiftDate = shiftData?.isOpen ? shiftData.date : undefined;
+        const isShiftMatch = Boolean(shiftData?.isOpen && shiftData.date === advanceForm.date);
+        const effectiveShiftDate = isShiftMatch ? shiftData.date : advanceForm.date;
+        const effectiveShiftId = isShiftMatch ? (shiftData as any)?.shiftId : undefined;
 
         const trx: Transaction = {
           id: 'TRX-ADV-' + Math.random().toString(36).substring(2, 9),
           date: advanceForm.date + 'T' + new Date().toTimeString().split(' ')[0],
           createdAt: nowIso,
-          shiftDate: currentShiftDate,
-          shiftId: currentShiftId,
+          shiftDate: effectiveShiftDate,
+          shiftId: effectiveShiftId,
           type: 'out',
           amount: advanceForm.amount,
           category: 'hr_advance',
@@ -777,8 +779,8 @@ export function EmployeesScreen({
           id: 'FIN-' + Math.random().toString(36).substring(2, 9),
           date: advanceForm.date,
           createdAt: nowIso,
-          shiftDate: currentShiftDate,
-          shiftId: currentShiftId,
+          shiftDate: effectiveShiftDate,
+          shiftId: effectiveShiftId,
           type: 'advance',
           amount: advanceForm.amount,
           treasuryId: advanceForm.treasuryId,

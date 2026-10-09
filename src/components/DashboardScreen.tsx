@@ -88,45 +88,16 @@ export function DashboardScreen({
     ? (shiftData?.date || shiftDate).split('T')[0].split(' ')[0].trim()
     : '';
 
-  // دالة فحص العمليات التابعة للوردية الحالية المفتوحة حصراً
-  const matchesCurrentShift = (dateStr?: string, createdAtStr?: string, itemShiftId?: string, itemShiftDate?: string) => {
+  // دالة فحص العمليات التابعة للوردية الحالية المفتوحة حصراً طبقاً لتاريخ الفاتورة / الحركة وتجاهل تاريخ ووقت الإنشاء
+  const matchesCurrentShift = (dateStr?: string, _createdAtStr?: string, _itemShiftId?: string, itemShiftDate?: string) => {
     // 1. إذا كانت الوردية مغلقة، يجب تصفير كافة المؤشرات للبدء بنظافة كاملة (0)
     if (!isShiftOpen || !targetShiftDate) return false;
 
-    // 2. إذا كان العنصر يحمل معرّف وردية مطابق للوردية الحالية
-    if (itemShiftId && shiftData?.shiftId && itemShiftId === shiftData.shiftId) {
-      return true;
-    }
-
-    // 3. إذا كان العنصر يحمل تاريخ وردية مطابق لتاريخ الوردية الحالية المفتوحة
-    if (itemShiftDate && itemShiftDate.split('T')[0].trim() === targetShiftDate) {
-      return true;
-    }
-
-    if (!dateStr && !createdAtStr) return false;
-    const cleanDate = (dateStr || '').trim();
-    const cleanCreated = (createdAtStr || '').trim();
-
-    // 4. فحص تطابق التاريخ مع تاريخ الوردية المفتوحة
-    const dateOnly = cleanDate.split('T')[0].trim();
-    const createdDateOnly = cleanCreated.split('T')[0].trim();
-    const dateMatches = dateOnly === targetShiftDate || createdDateOnly === targetShiftDate ||
-      cleanDate.startsWith(targetShiftDate) || cleanCreated.startsWith(targetShiftDate);
-    if (!dateMatches) return false;
-
-    // 5. في حال وجود إغلاق وردية سابقة في نفس اليوم، استبعاد العمليات التي تمت قبل وقت الإغلاق السابق فقط
-    // ملاحظة حاسمة: إذا كان السجل يحمل تاريخ اليوم فقط بدون وقت، نعتبره تابعاً للوردية الحالية ولا نستبعده
-    if (shiftData?.lastClosedAt) {
-      const hasTime = cleanCreated.includes('T') || cleanDate.includes('T') || cleanDate.includes(' ');
-      if (hasTime) {
-        const timeToCompare = cleanCreated.includes('T') ? cleanCreated : cleanDate;
-        const lastClosedTime = new Date(shiftData.lastClosedAt).getTime();
-        const itemTime = new Date(timeToCompare).getTime();
-        if (itemTime > 0 && itemTime <= lastClosedTime) return false;
-      }
-    }
-
-    return true;
+    // 2. فحص التاريخ الفعلي للعملية / الفاتورة / الحركة ومقارنته حصراً بتاريخ الوردية المفتوحة
+    const rawDate = (dateStr || itemShiftDate || '').trim();
+    if (!rawDate) return false;
+    const dateOnly = rawDate.includes('T') ? rawDate.split('T')[0].trim() : rawDate.split(' ')[0].trim();
+    return dateOnly === targetShiftDate;
   };
 
   // ── حجوزات موعد تنفيذها اليوم (Execution Date Today Bookings) ──
@@ -278,7 +249,7 @@ export function DashboardScreen({
           : []);
 
       advances.forEach((adv: any) => {
-        const advDate = (adv.shiftDate || adv.date || b.shiftDate || b.date || (b as any).createdAt || '').split('T')[0].trim();
+        const advDate = (adv.date || adv.shiftDate || b.shiftDate || b.date || '').split('T')[0].trim();
         if (advDate !== targetDate) return;
         const advTreasuryId = adv.treasuryId || adv.paymentMethod || 'cash';
         if (!matcher(advTreasuryId)) return;
@@ -320,25 +291,7 @@ export function DashboardScreen({
     if (!isShiftOpen || !targetShiftDate) return [];
     return branchInvoices.filter(inv => {
       if (inv.status === 'cancelled') return false;
-      // 1. فحص تطابق معرف الوردية المفتوحة صراحة
-      if (shiftData?.shiftId && (inv.shiftId === shiftData.shiftId || (inv as any).workShiftId === shiftData.shiftId)) {
-        return true;
-      }
-      // 2. فحص تطابق تاريخ الوردية
-      if (inv.shiftDate && inv.shiftDate.split('T')[0].trim() === targetShiftDate) {
-        return true;
-      }
-      // 3. فحص وقت الإنشاء بعد فتح الوردية المفتوحة
-      const invDateTime = inv.date || (inv as any).createdAt || (inv as any).created_at;
-      if (shiftData?.openedAt && invDateTime) {
-        const openedTime = new Date(shiftData.openedAt).getTime();
-        const invTime = new Date(invDateTime).getTime();
-        if (openedTime > 0 && invTime >= openedTime) {
-          return true;
-        }
-      }
-      // 4. فحص شرط الوردية العام
-      return matchesCurrentShift(inv.date, (inv as any).createdAt || (inv as any).created_at, inv.shiftId, inv.shiftDate);
+      return matchesCurrentShift(inv.date, undefined, undefined, inv.shiftDate);
     }).sort((a, b) => {
       const timeA = new Date(a.date || (a as any).createdAt || 0).getTime();
       const timeB = new Date(b.date || (b as any).createdAt || 0).getTime();
@@ -346,20 +299,19 @@ export function DashboardScreen({
     });
   }, [branchInvoices, isShiftOpen, shiftDate, shiftData, targetShiftDate]);
 
-  // ── الحجوزات المنشأة خلال الوردية الحالية المفتوحة (Current Shift Reservations) ──
+  // ── الحجوزات التابعة للوردية الحالية المفتوحة (Current Shift Reservations) ──
   const currentShiftReservations = useMemo(() => {
     if (!isShiftOpen || !targetShiftDate) return [];
 
     return branchBookings.filter(b => {
-      // الشرط المنطقي: تصفية وعرض الحجوزات التي يتطابق تاريخ إنشائها (created_at::date) حصراً مع تاريخ فتح الوردية الحالية المفتوحة (shift_date)
-      // مع تجاهل أوقات الساعات وتجاهل تاريخ ووقت جهاز العميل (Client Device Time) تماماً لتفادي فروق التوقيت أو تداخل الورديات الليلية
-      const createdRaw = (b.createdAt || (b as any).created_at || '').trim();
-      if (!createdRaw) return false;
-      const createdDateOnly = createdRaw.split('T')[0].split(' ')[0].trim();
-      return createdDateOnly === targetShiftDate;
+      // الشرط: فحص تاريخ الوردية أو تاريخ الحجز الفعلي ومطابقته حصراً مع تاريخ الوردية المفتوحة
+      const bDate = (b.shiftDate || b.date || '').trim();
+      if (!bDate) return false;
+      const bDateOnly = bDate.split('T')[0].split(' ')[0].trim();
+      return bDateOnly === targetShiftDate;
     }).sort((a, b) => {
-      const timeA = new Date(a.createdAt || (a as any).created_at || 0).getTime();
-      const timeB = new Date(b.createdAt || (b as any).created_at || 0).getTime();
+      const timeA = new Date(a.date || a.createdAt || (a as any).created_at || 0).getTime();
+      const timeB = new Date(b.date || b.createdAt || (b as any).created_at || 0).getTime();
       return timeB - timeA;
     });
   }, [branchBookings, isShiftOpen, shiftDate, shiftData, targetShiftDate]);
@@ -475,13 +427,18 @@ export function DashboardScreen({
 
     const amount = Number(advAmount);
     
+    const timePart = new Date().toTimeString().split(' ')[0] || '12:00:00';
+    const effectiveDate = targetShiftDate ? `${targetShiftDate}T${timePart}` : new Date().toISOString();
+
     // Add to booking advances
     const newAdvance = {
       id: Math.random().toString(36).substr(2,9),
       amount,
       treasuryId: treasury.id,
       treasuryName: treasury.name,
-      date: new Date().toISOString()
+      date: effectiveDate,
+      shiftDate: targetShiftDate || undefined,
+      shiftId: shiftData?.shiftId || undefined
     };
     
     setBookings(bookings.map(b => 
@@ -491,12 +448,15 @@ export function DashboardScreen({
     // Add transaction
     const newTrx: Transaction = {
       id: 'TRX-' + Math.random().toString(36).substr(2,9),
-      date: new Date().toISOString(),
+      date: effectiveDate,
       type: 'in',
       amount,
       category: 'مقدم حجز',
       description: `مقدم حجز للعميل ${booking.clientName}`,
-      treasury: treasury.id
+      treasury: treasury.id,
+      shiftDate: targetShiftDate || undefined,
+      shiftId: shiftData?.shiftId || undefined,
+      branchId: booking.branchId || (booking as any).branch_id || activeBranchId
     };
     setTransactions([...transactions, newTrx]);
 

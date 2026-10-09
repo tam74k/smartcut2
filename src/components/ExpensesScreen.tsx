@@ -216,13 +216,13 @@ export function ExpensesScreen({
       return;
     }
 
-    const effectiveDay = (shiftData && shiftData.isOpen && shiftData.date) 
-      ? shiftData.date 
-      : (transactionDate || new Date().toISOString().split('T')[0]);
+    const effectiveDay = transactionDate || (shiftData && shiftData.isOpen && shiftData.date ? shiftData.date : new Date().toISOString().split('T')[0]);
     const nowIso = new Date().toISOString();
     const tTime = nowIso.split('T')[1] || '12:00:00.000Z';
     const tDate = effectiveDay + 'T' + tTime;
-    const currentShiftId = (shiftData && shiftData.isOpen) ? ((shiftData as any).shiftId || (shiftData as any).id) : undefined;
+    const isMatchingCurrentShift = Boolean(shiftData && shiftData.isOpen && shiftData.date === effectiveDay);
+    const assignedShiftDate = isMatchingCurrentShift ? shiftData.date : effectiveDay;
+    const assignedShiftId = isMatchingCurrentShift ? ((shiftData as any).shiftId || (shiftData as any).id) : undefined;
 
     if (editingExpenseId) {
       setTransactions(transactions.map(t => {
@@ -236,8 +236,8 @@ export function ExpensesScreen({
             expenseCategory: expenseCategory,
             description: description,
             treasury: treasuryId,
-            shiftDate: shiftData.isOpen ? shiftData.date : (t as any).shiftDate,
-            shiftId: shiftData.isOpen ? (currentShiftId || (t as any).shiftId) : (t as any).shiftId,
+            shiftDate: assignedShiftDate,
+            shiftId: assignedShiftId,
             updatedAt: nowIso
           };
           DB.saveTransaction(updated, settings.salonId);
@@ -258,8 +258,8 @@ export function ExpensesScreen({
         treasury: treasuryId,
         salonId: settings.salonId,
         branchId: activeBranchId,
-        shiftDate: shiftData.isOpen ? shiftData.date : undefined,
-        shiftId: currentShiftId
+        shiftDate: assignedShiftDate,
+        shiftId: assignedShiftId
       } as any;
       setTransactions([newTrx, ...transactions]);
       DB.saveTransaction(newTrx, settings.salonId);

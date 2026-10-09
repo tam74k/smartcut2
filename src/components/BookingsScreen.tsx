@@ -800,7 +800,10 @@ export function BookingsScreen({
     const tName = selectedTreasuryObj?.name || (tId === 'cash' ? 'كاش (الدرج)' : 'طريقة الدفع');
 
     const effectiveShiftDate = (shiftData && shiftData.isOpen && shiftData.date) ? shiftData.date : undefined;
-    const advDate = effectiveShiftDate || advDateInput || new Date().toISOString().split('T')[0];
+    const advDate = advDateInput || effectiveShiftDate || new Date().toISOString().split('T')[0];
+    const isShiftMatch = Boolean(effectiveShiftDate && advDate === effectiveShiftDate);
+    const advShiftDate = isShiftMatch ? effectiveShiftDate : advDate;
+    const advShiftId = isShiftMatch ? ((shiftData as any)?.shiftId || (shiftData as any)?.id) : undefined;
 
     const newAdv: AdvancePayment = {
       id: 'ADV-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
@@ -808,6 +811,8 @@ export function BookingsScreen({
       treasuryId: tId,
       treasuryName: tName,
       date: advDate,
+      shiftDate: advShiftDate,
+      shiftId: advShiftId,
       paymentMethod: advMethodInput || 'cash',
       notes: advNotesInput.trim() || undefined
     };
@@ -843,7 +848,10 @@ export function BookingsScreen({
     const selectedTreasuryObj = currentTreasuries.find(t => t.id === tId);
     const tName = selectedTreasuryObj?.name || (tId === 'cash' ? 'كاش (الدرج)' : 'طريقة الدفع');
     const effectiveShiftDate = (shiftData && shiftData.isOpen && shiftData.date) ? shiftData.date : undefined;
-    const advDate = effectiveShiftDate || quickAdvDate || new Date().toISOString().split('T')[0];
+    const advDate = quickAdvDate || effectiveShiftDate || new Date().toISOString().split('T')[0];
+    const isShiftMatch = Boolean(effectiveShiftDate && advDate === effectiveShiftDate);
+    const advShiftDate = isShiftMatch ? effectiveShiftDate : advDate;
+    const advShiftId = isShiftMatch ? ((shiftData as any)?.shiftId || (shiftData as any)?.id) : undefined;
 
     const newAdv: AdvancePayment = {
       id: 'ADV-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
@@ -851,6 +859,8 @@ export function BookingsScreen({
       treasuryId: tId,
       treasuryName: tName,
       date: advDate,
+      shiftDate: advShiftDate,
+      shiftId: advShiftId,
       paymentMethod: quickAdvMethod || 'cash',
       notes: quickAdvNotes.trim() || undefined
     };
@@ -882,14 +892,14 @@ export function BookingsScreen({
     const newTrx: Transaction = {
       id: 'TRX-ADV-' + Math.random().toString(36).substr(2, 9),
       date: advDate + 'T' + new Date().toTimeString().split(' ')[0],
-      shiftDate: effectiveShiftDate,
+      shiftDate: advShiftDate,
       type: 'in',
       amount: amt,
       category: 'مقدم حجز',
       description: `دفعة مقدمة / عربون لحجز #${updatedBooking.bookingCode || updatedBooking.id} - العميل: ${updatedBooking.clientName}`,
       treasury: tId,
       bookingId: updatedBooking.id,
-      shiftId: shiftData?.isOpen ? ((shiftData as any).shiftId || (shiftData as any).id) : undefined,
+      shiftId: advShiftId,
       createdBy: currentUser?.name || 'الكاشير',
       userId: currentUser?.id,
       userName: currentUser?.name || 'الكاشير',
@@ -1041,18 +1051,22 @@ export function BookingsScreen({
     if (brandNewAdvances.length > 0) {
       const effectiveShiftDate = (shiftData && shiftData.isOpen && shiftData.date) ? shiftData.date : undefined;
       const newTrxs: Transaction[] = brandNewAdvances.map(adv => {
-        const transDate = (effectiveShiftDate || adv.date || new Date().toISOString().split('T')[0]) + 'T' + new Date().toTimeString().split(' ')[0];
+        const advDatePart = adv.date ? adv.date.split('T')[0] : (effectiveShiftDate || new Date().toISOString().split('T')[0]);
+        const transDate = advDatePart + 'T' + new Date().toTimeString().split(' ')[0];
+        const isShiftMatch = Boolean(effectiveShiftDate && advDatePart === effectiveShiftDate);
+        const transShiftDate = isShiftMatch ? effectiveShiftDate : advDatePart;
+        const transShiftId = isShiftMatch ? ((shiftData as any).shiftId || (shiftData as any).id) : undefined;
         return {
           id: 'TRX-ADV-' + Math.random().toString(36).substr(2, 9),
           date: transDate,
-          shiftDate: effectiveShiftDate,
+          shiftDate: transShiftDate,
           type: 'in',
           amount: adv.amount,
           category: 'مقدم حجز',
           description: `دفعة مقدمة / عربون لحجز #${booking.bookingCode || booking.id} - العميل: ${booking.clientName}`,
           treasury: adv.treasuryId,
           bookingId: booking.id,
-          shiftId: shiftData?.isOpen ? ((shiftData as any).shiftId || (shiftData as any).id) : undefined,
+          shiftId: transShiftId,
           createdBy: currentUser?.name || 'الكاشير',
           userId: currentUser?.id,
           userName: currentUser?.name || 'الكاشير',

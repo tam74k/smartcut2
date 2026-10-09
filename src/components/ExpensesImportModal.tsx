@@ -261,7 +261,9 @@ export function ExpensesImportModal({
       const c = toImport[i];
       // إجبار التوقيت على الظهيرة T12:00:00 لحماية القيد المالي من أي إزاحة مناطق زمنية
       const fullDateTime = `${c.date}T12:00:00`;
-      const effectiveShiftDate = (shiftData && shiftData.isOpen && shiftData.date) ? shiftData.date : c.date;
+      const isShiftMatch = Boolean(shiftData && shiftData.isOpen && shiftData.date === c.date);
+      const effectiveShiftDate = isShiftMatch ? shiftData.date : c.date;
+      const effectiveShiftId = isShiftMatch ? ((shiftData as any).shiftId || (shiftData as any).id) : undefined;
 
       const fullDesc = [c.description, c.referenceNo ? `(مرجع: ${c.referenceNo})` : '', c.notes ? `- ${c.notes}` : '']
         .filter(Boolean).join(' ');
@@ -270,6 +272,7 @@ export function ExpensesImportModal({
         id: 'EXP-IMP-' + Math.random().toString(36).substr(2, 9),
         date: fullDateTime,
         shiftDate: effectiveShiftDate,
+        shiftId: effectiveShiftId,
         type: 'out',
         amount: c.amount,
         category: 'expense',
