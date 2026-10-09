@@ -83,10 +83,15 @@ export function DashboardScreen({
   const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   const utcToday = now.toISOString().split('T')[0];
 
+  // تاريخ الوردية المفتوحة المستهدف حصراً
+  const targetShiftDate = (isShiftOpen && (shiftData?.date || shiftDate))
+    ? (shiftData?.date || shiftDate).split('T')[0].split(' ')[0].trim()
+    : '';
+
   // دالة فحص العمليات التابعة للوردية الحالية المفتوحة حصراً
   const matchesCurrentShift = (dateStr?: string, createdAtStr?: string, itemShiftId?: string, itemShiftDate?: string) => {
     // 1. إذا كانت الوردية مغلقة، يجب تصفير كافة المؤشرات للبدء بنظافة كاملة (0)
-    if (!isShiftOpen || !shiftDate) return false;
+    if (!isShiftOpen || !targetShiftDate) return false;
 
     // 2. إذا كان العنصر يحمل معرّف وردية مطابق للوردية الحالية
     if (itemShiftId && shiftData?.shiftId && itemShiftId === shiftData.shiftId) {
@@ -94,7 +99,7 @@ export function DashboardScreen({
     }
 
     // 3. إذا كان العنصر يحمل تاريخ وردية مطابق لتاريخ الوردية الحالية المفتوحة
-    if (itemShiftDate && itemShiftDate.split('T')[0].trim() === shiftDate) {
+    if (itemShiftDate && itemShiftDate.split('T')[0].trim() === targetShiftDate) {
       return true;
     }
 
@@ -105,8 +110,8 @@ export function DashboardScreen({
     // 4. فحص تطابق التاريخ مع تاريخ الوردية المفتوحة
     const dateOnly = cleanDate.split('T')[0].trim();
     const createdDateOnly = cleanCreated.split('T')[0].trim();
-    const dateMatches = dateOnly === shiftDate || createdDateOnly === shiftDate ||
-      cleanDate.startsWith(shiftDate) || cleanCreated.startsWith(shiftDate);
+    const dateMatches = dateOnly === targetShiftDate || createdDateOnly === targetShiftDate ||
+      cleanDate.startsWith(targetShiftDate) || cleanCreated.startsWith(targetShiftDate);
     if (!dateMatches) return false;
 
     // 5. في حال وجود إغلاق وردية سابقة في نفس اليوم، استبعاد العمليات التي تمت قبل وقت الإغلاق السابق فقط
@@ -127,9 +132,7 @@ export function DashboardScreen({
   // ── حجوزات موعد تنفيذها اليوم (Execution Date Today Bookings) ──
   const shiftBookings = useMemo(() => {
     // تاريخ التنفيذ المستهدف (تاريخ الوردية الحالية إن وجدت أو اليوم المحلي)
-    const targetExecutionDate = (isShiftOpen && (shiftData?.date || shiftDate))
-      ? (shiftData?.date || shiftDate).split('T')[0].split(' ')[0].trim()
-      : localToday;
+    const targetExecutionDate = targetShiftDate || localToday;
     if (!targetExecutionDate) return [];
 
     return branchBookings.filter(b => {
@@ -138,7 +141,7 @@ export function DashboardScreen({
       const bDateOnly = (b.date || '').trim().split('T')[0].split(' ')[0].trim();
       return bDateOnly === targetExecutionDate;
     });
-  }, [branchBookings, isShiftOpen, shiftDate, shiftData, localToday]);
+  }, [branchBookings, isShiftOpen, shiftDate, shiftData, localToday, targetShiftDate]);
   const pendingBookings = branchBookings.filter(b => b.status === 'pending');
 
   const handleConfirmBooking = async (bookingId: string) => {
@@ -254,9 +257,9 @@ export function DashboardScreen({
   // مقدمات الحجز المحصلة في تاريخ اليوم/الوردية حسب الخزينة (من المعاملات ومن جدول الحجوزات)
   const getBookingAdvancesForTreasury = (matcher: (treasuryId?: string) => boolean) => {
     if (!isShiftOpen) return 0;
-    const targetDate = (isShiftOpen && shiftDate) ? shiftDate : localToday;
+    const targetDate = targetShiftDate || localToday;
 
-    // 1. من جدول المعاملات المالية المباشرة لليوم
+    // 1. من جدول المعاملات المالية المباشرة لليوم/الوردية
     const fromTrx = todayTrx.filter(t => 
       t.type === 'in' && 
       (t.category === 'مقدم حجز' || t.category === 'booking_advance' || t.category === 'advance' || (t.description && t.description.includes('مقدم حجز'))) &&
@@ -264,7 +267,7 @@ export function DashboardScreen({
     );
     const sumTrx = fromTrx.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
 
-    // 2. من جدول الحجوزات (لأي حجز مسجل به دفعات مقدمة بتاريخ اليوم ولم تسجل في transactions)
+    // 2. من جدول الحجوزات (لأي حجز مسجل به دفعات مقدمة بتاريخ الوردية ولم تسجل في transactions)
     let fromBookingsOnly = 0;
     (branchBookings || []).forEach(b => {
       if (b.status === 'cancelled') return;
@@ -275,7 +278,7 @@ export function DashboardScreen({
           : []);
 
       advances.forEach((adv: any) => {
-        const advDate = (adv.date || b.date || (b as any).createdAt || '').split('T')[0].trim();
+        const advDate = (adv.shiftDate || adv.date || b.shiftDate || b.date || (b as any).createdAt || '').split('T')[0].trim();
         if (advDate !== targetDate) return;
         const advTreasuryId = adv.treasuryId || adv.paymentMethod || 'cash';
         if (!matcher(advTreasuryId)) return;
@@ -299,7 +302,7 @@ export function DashboardScreen({
   // مقدمات الحجز المحصلة في الوردية الحالية إجمالياً (تُحتسب ضمن مبيعات اليوم لأنها فلوس دخلت فعلياً للمحل)
   const todayBookingAdvances = useMemo(() => {
     return getBookingAdvancesForTreasury(() => true);
-  }, [todayTrx, branchBookings, isShiftOpen, shiftDate, localToday]);
+  }, [todayTrx, branchBookings, isShiftOpen, shiftDate, shiftData, localToday, targetShiftDate]);
 
   const todaySalesRevenue = useMemo(() => {
     if (!isShiftOpen) return 0;
@@ -314,7 +317,7 @@ export function DashboardScreen({
 
   // ── فواتير الوردية الحالية المفتوحة (Current Shift Invoices) ──
   const currentShiftInvoices = useMemo(() => {
-    if (!isShiftOpen || !shiftDate) return [];
+    if (!isShiftOpen || !targetShiftDate) return [];
     return branchInvoices.filter(inv => {
       if (inv.status === 'cancelled') return false;
       // 1. فحص تطابق معرف الوردية المفتوحة صراحة
@@ -322,7 +325,7 @@ export function DashboardScreen({
         return true;
       }
       // 2. فحص تطابق تاريخ الوردية
-      if (inv.shiftDate && inv.shiftDate.split('T')[0].trim() === shiftDate) {
+      if (inv.shiftDate && inv.shiftDate.split('T')[0].trim() === targetShiftDate) {
         return true;
       }
       // 3. فحص وقت الإنشاء بعد فتح الوردية المفتوحة
@@ -341,14 +344,11 @@ export function DashboardScreen({
       const timeB = new Date(b.date || (b as any).createdAt || 0).getTime();
       return timeB - timeA;
     });
-  }, [branchInvoices, isShiftOpen, shiftDate, shiftData]);
+  }, [branchInvoices, isShiftOpen, shiftDate, shiftData, targetShiftDate]);
 
   // ── الحجوزات المنشأة خلال الوردية الحالية المفتوحة (Current Shift Reservations) ──
   const currentShiftReservations = useMemo(() => {
-    if (!isShiftOpen) return [];
-    // الاعتماد الكامل على تاريخ الوردية المخزن في قاعدة البيانات حصراً
-    const targetShiftDate = (shiftData?.date || shiftDate || '').split('T')[0].split(' ')[0].trim();
-    if (!targetShiftDate) return [];
+    if (!isShiftOpen || !targetShiftDate) return [];
 
     return branchBookings.filter(b => {
       // الشرط المنطقي: تصفية وعرض الحجوزات التي يتطابق تاريخ إنشائها (created_at::date) حصراً مع تاريخ فتح الوردية الحالية المفتوحة (shift_date)
@@ -362,7 +362,7 @@ export function DashboardScreen({
       const timeB = new Date(b.createdAt || (b as any).created_at || 0).getTime();
       return timeB - timeA;
     });
-  }, [branchBookings, isShiftOpen, shiftDate, shiftData]);
+  }, [branchBookings, isShiftOpen, shiftDate, shiftData, targetShiftDate]);
 
   const shiftInvoicesTotalAmount = useMemo(() => {
     return currentShiftInvoices.reduce((sum, inv) => sum + (Number(inv.total) || 0), 0);
@@ -557,7 +557,20 @@ export function DashboardScreen({
 
   return (
     <div className="p-6 w-full h-full overflow-y-auto relative">
-      <h2 className="text-xl font-bold text-slate-800 mb-5">نظرة عامة (لوحة التحكم)</h2>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+        <h2 className="text-xl font-bold text-slate-800">نظرة عامة (لوحة التحكم)</h2>
+        {isShiftOpen && targetShiftDate ? (
+          <div className="inline-flex items-center gap-2 bg-emerald-50 text-emerald-800 border border-emerald-200 px-3 py-1.5 rounded-xl font-bold text-xs shadow-xs">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span>الوردية المفتوحة: <strong className="font-mono text-emerald-900">{targetShiftDate}</strong></span>
+          </div>
+        ) : (
+          <div className="inline-flex items-center gap-2 bg-slate-100 text-slate-600 border border-slate-200 px-3 py-1.5 rounded-xl font-medium text-xs">
+            <span className="w-2.5 h-2.5 rounded-full bg-slate-400"></span>
+            <span>الوردية مغلقة (تاريخ اليوم: {localToday})</span>
+          </div>
+        )}
+      </div>
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <div 
@@ -565,7 +578,9 @@ export function DashboardScreen({
           className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between cursor-pointer hover:border-primary/50 transition-colors"
         >
           <div>
-            <p className="text-slate-500 text-[12px] font-bold mb-1">مبيعات اليوم (اضغط للتفاصيل)</p>
+            <p className="text-slate-500 text-[12px] font-bold mb-1">
+              {isShiftOpen && targetShiftDate ? `مبيعات الوردية (${targetShiftDate})` : 'مبيعات اليوم'} (اضغط للتفاصيل)
+            </p>
             <h3 className="text-lg font-extrabold text-emerald-600 font-mono">{todaySalesRevenue.toFixed(2)} <span className="text-sm font-normal text-slate-500">{settings.currency}</span></h3>
             {todayBookingAdvances > 0 && (
               <p className="text-[11px] font-bold text-teal-600 flex items-center gap-1 mt-1">
@@ -580,7 +595,9 @@ export function DashboardScreen({
         </div>
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
           <div>
-            <p className="text-slate-500 text-[12px] font-bold mb-1">فواتير اليوم</p>
+            <p className="text-slate-500 text-[12px] font-bold mb-1">
+              {isShiftOpen ? 'فواتير الوردية' : 'فواتير اليوم'}
+            </p>
             <h3 className="text-lg font-extrabold text-slate-800">{todayInvoicesCount} <span className="text-sm font-normal text-slate-400">فاتورة</span></h3>
           </div>
           <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-500 flex items-center justify-center">
@@ -589,7 +606,9 @@ export function DashboardScreen({
         </div>
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
           <div>
-            <p className="text-slate-500 text-[12px] font-bold mb-1">مصروفات اليوم</p>
+            <p className="text-slate-500 text-[12px] font-bold mb-1">
+              {isShiftOpen ? 'مصروفات الوردية' : 'مصروفات اليوم'}
+            </p>
             <h3 className="text-lg font-extrabold text-slate-800 font-mono">{totalExpense.toFixed(2)} <span className="text-sm font-normal text-slate-500">{settings.currency}</span></h3>
           </div>
           <div className="w-10 h-10 rounded-full bg-red-50 text-red-500 flex items-center justify-center">
@@ -598,7 +617,7 @@ export function DashboardScreen({
         </div>
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
           <div>
-            <p className="text-slate-500 text-[12px] font-bold mb-1">{isShiftOpen ? 'سلف الوردية الحالية' : 'سلف اليوم'}</p>
+            <p className="text-slate-500 text-[12px] font-bold mb-1">{isShiftOpen ? 'سلف الوردية' : 'سلف اليوم'}</p>
             <h3 className="text-lg font-extrabold text-slate-800 font-mono">{totalAdvancesGiven.toFixed(2)} <span className="text-sm font-normal text-slate-500">{settings.currency}</span></h3>
           </div>
           <div className="w-10 h-10 rounded-full bg-amber-50 text-amber-500 flex items-center justify-center">
@@ -612,7 +631,7 @@ export function DashboardScreen({
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4 border-b border-slate-700/80 pb-3">
             <div>
               <h3 className="font-black text-base flex items-center gap-2 text-white">
-                <span>تفاصيل الخزائن والإيرادات ({isShiftOpen && shiftDate ? `وردية: ${shiftDate}` : 'الوردية مغلقة - تصفير أدراج الوردية'})</span>
+                <span>تفاصيل الخزائن والإيرادات ({isShiftOpen && targetShiftDate ? `وردية: ${targetShiftDate}` : 'الوردية مغلقة - تصفير أدراج الوردية'})</span>
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">تفصيل دقيق يوضح عهدة ومبيعات الوردية، مع إظهار الرصيد الفعلي المتراكم للخزينة الرئيسية بشكل مستمر</p>
             </div>
@@ -727,11 +746,11 @@ export function DashboardScreen({
                     </div>
 
                     <div className="space-y-2 text-xs">
-                      {/* مبيعات اليوم الموجهة لها */}
+                      {/* مبيعات اليوم/الوردية الموجهة لها */}
                       <div className="flex justify-between items-center text-slate-300">
                         <span className="flex items-center gap-1">
                           <span>🛍️</span>
-                          <span>مبيعات اليوم الموجهة لها:</span>
+                          <span>{isShiftOpen ? 'مبيعات الوردية الموجهة لها:' : 'مبيعات اليوم الموجهة لها:'}</span>
                         </span>
                         <span className="text-emerald-400 font-bold font-mono">+{sales.toFixed(2)} {settings.currency}</span>
                       </div>
@@ -747,12 +766,12 @@ export function DashboardScreen({
                         </span>
                       </div>
 
-                      {/* إيداعات وتحويلات اليوم */}
+                      {/* إيداعات وتحويلات اليوم/الوردية */}
                       {otherIn > 0 && (
                         <div className="flex justify-between items-center text-slate-300">
                           <span className="flex items-center gap-1">
                             <span>📥</span>
-                            <span>إيداعات وتحويلات اليوم:</span>
+                            <span>{isShiftOpen ? 'إيداعات وتحويلات الوردية:' : 'إيداعات وتحويلات اليوم:'}</span>
                           </span>
                           <span className="text-teal-400 font-bold font-mono">+{otherIn.toFixed(2)} {settings.currency}</span>
                         </div>
@@ -769,11 +788,11 @@ export function DashboardScreen({
                         </div>
                       )}
 
-                      {/* مسحوبات ومصروفات اليوم */}
+                      {/* مسحوبات ومصروفات اليوم/الوردية */}
                       <div className="flex justify-between items-center text-slate-300 border-b border-slate-700/80 pb-2">
                         <span className="flex items-center gap-1">
                           <span>💸</span>
-                          <span>مسحوبات ومصروفات اليوم:</span>
+                          <span>{isShiftOpen ? 'مسحوبات ومصروفات الوردية:' : 'مسحوبات ومصروفات اليوم:'}</span>
                         </span>
                         <span className="text-rose-400 font-bold font-mono">-{regularExpenses.toFixed(2)} {settings.currency}</span>
                       </div>
@@ -843,7 +862,7 @@ export function DashboardScreen({
                     <div className="flex justify-between items-center text-slate-300">
                       <span className="flex items-center gap-1">
                         <span>🛍️</span>
-                        <span>مبيعات وإيرادات اليوم:</span>
+                        <span>{isShiftOpen ? 'مبيعات وإيرادات الوردية:' : 'مبيعات وإيرادات اليوم:'}</span>
                       </span>
                       <span className="text-emerald-400 font-bold font-mono">+{sales.toFixed(2)} {settings.currency}</span>
                     </div>
@@ -864,7 +883,7 @@ export function DashboardScreen({
                       <div className="flex justify-between items-center text-slate-300">
                         <span className="flex items-center gap-1">
                           <span>📥</span>
-                          <span>إيداعات أخرى:</span>
+                          <span>{isShiftOpen ? 'إيداعات أخرى (الوردية):' : 'إيداعات أخرى:'}</span>
                         </span>
                         <span className="text-teal-400 font-bold font-mono">+{otherIn.toFixed(2)} {settings.currency}</span>
                       </div>
@@ -885,7 +904,7 @@ export function DashboardScreen({
                     <div className="flex justify-between items-center text-slate-300 border-b border-slate-700/80 pb-2">
                       <span className="flex items-center gap-1">
                         <span>💸</span>
-                        <span>مسحوبات ومصروفات:</span>
+                        <span>{isShiftOpen ? 'مسحوبات ومصروفات الوردية:' : 'مسحوبات ومصروفات:'}</span>
                       </span>
                       <span className="text-rose-400 font-bold font-mono">-{regularExpenses.toFixed(2)} {settings.currency}</span>
                     </div>
@@ -1055,9 +1074,9 @@ export function DashboardScreen({
               حجوزات موعد تنفيذها اليوم
             </h3>
             {!isShiftOpen ? (
-              <span className="text-[11px] bg-slate-100 text-slate-600 px-2 py-1 rounded-md font-bold">تاريخ اليوم: {localToday}</span>
+              <span className="text-[11px] bg-slate-100 text-slate-600 px-2 py-1 rounded-md font-bold">الوردية مغلقة (اليوم: {localToday})</span>
             ) : (
-              <span className="text-[11px] bg-emerald-50 text-primary px-2 py-1 rounded-md font-bold">تاريخ الوردية: {shiftDate}</span>
+              <span className="text-[11px] bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded-md font-bold">تاريخ الوردية المفتوحة: {targetShiftDate}</span>
             )}
           </div>
           
@@ -1065,7 +1084,7 @@ export function DashboardScreen({
             {shiftBookings.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-slate-400 py-10">
                 <CalendarClock size={40} className="mb-2 opacity-50 text-slate-300" />
-                <p className="text-[13px]">لا توجد حجوزات موعد تنفيذها اليوم</p>
+                <p className="text-[13px]">{isShiftOpen ? `لا توجد حجوزات موعد تنفيذها في تاريخ الوردية (${targetShiftDate})` : 'لا توجد حجوزات موعد تنفيذها اليوم'}</p>
               </div>
             ) : (
               shiftBookings.map(booking => {
@@ -1312,7 +1331,7 @@ export function DashboardScreen({
                 </h3>
                 <p className="text-[11px] text-slate-500 font-medium">
                   {isShiftOpen 
-                    ? `الحجوزات التي تم إنشاؤها وتسجيلها خلال هذه الوردية`
+                    ? `الحجوزات التي تم إنشاؤها وتسجيلها خلال تاريخ الوردية المفتوحة (${targetShiftDate})`
                     : 'الوردية مغلقة حالياً'}
                 </p>
               </div>

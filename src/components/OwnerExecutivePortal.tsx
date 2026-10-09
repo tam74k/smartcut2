@@ -568,8 +568,12 @@ const isBookingAdvanceTrx = (t: any) => {
   return false;
 };
 
-// استخراج التاريخ الفعلي لسداد مقدم الحجز (تاريخ الدفعة أو تاريخ إنشاء الحجز) دون الاعتماد على موعد تنفيذ الحجز
+// استخراج التاريخ الفعلي لسداد مقدم الحجز (تاريخ الوردية، تاريخ الدفعة أو تاريخ إنشاء الحجز) دون الاعتماد على موعد تنفيذ الحجز
 const getAdvanceEffectiveDate = (adv: any, b: any): string => {
+  const shiftDateVal = adv?.shiftDate || (adv as any)?.shift_date || b?.shiftDate || (b as any)?.shift_date;
+  if (shiftDateVal && typeof shiftDateVal === 'string' && shiftDateVal.trim()) {
+    return shiftDateVal.includes('T') ? shiftDateVal.split('T')[0].trim() : shiftDateVal.split(' ')[0].trim();
+  }
   const advDate = adv?.date;
   if (advDate && typeof advDate === 'string' && advDate.trim()) {
     return advDate.includes('T') ? advDate.split('T')[0].trim() : advDate.split(' ')[0].trim();
@@ -867,7 +871,13 @@ export function OwnerExecutivePortal({
       return { start: '2000-01-01', end: '2099-12-31', label: 'كامل المدة (الكل)' };
     }
     if (period === 'today') {
-      return { start: todayStr, end: todayStr, label: shiftData?.isOpen && shiftData?.date ? `اليوم (${todayStr})` : 'اليوم' };
+      return { 
+        start: todayStr, 
+        end: todayStr, 
+        label: (shiftData?.isOpen && shiftData?.date) 
+          ? `الوردية المفتوحة (${todayStr})` 
+          : `اليوم (${todayStr})` 
+      };
     }
     if (period === 'yesterday') {
       const y = new Date(Date.now() - 86400000);
@@ -934,11 +944,15 @@ export function OwnerExecutivePortal({
     const d = cleanDate.match(/^\d{4}-\d{2}-\d{2}/)?.[0] || cleanDate;
 
     if (period === 'today') {
+      // إذا كانت الوردية مفتوحة، الارتباط حصرياً بتاريخ الوردية المفتوحة وليس تاريخ اليوم
+      if (shiftData?.isOpen && shiftData?.date) {
+        const targetShift = shiftData.date.split('T')[0].trim();
+        return d === targetShift;
+      }
       const now = new Date();
       const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
       const utcToday = now.toISOString().split('T')[0];
-      const shiftDate = (shiftData?.isOpen && shiftData?.date) ? shiftData.date : null;
-      return d === localToday || d === utcToday || (shiftDate !== null && d === shiftDate);
+      return d === localToday || d === utcToday;
     }
 
     return d >= dateRange.start && d <= dateRange.end;
@@ -947,9 +961,29 @@ export function OwnerExecutivePortal({
   // 1. Financial Filtering & Calculations for Selected Period (Filtered by active branch / all branches)
   const filteredInvoices = useMemo(() => {
     return invoices.filter(inv => {
-      const inPeriod = isDateInSelectedPeriod(inv.date);
       const isBranchMatch = matchesActiveBranch(inv.branchId);
-      return inPeriod && isBranchMatch && inv.status !== 'cancelled';
+      if (!isBranchMatch || inv.status === 'cancelled') return false;
+
+      // عندما تكون الفترة هي اليوم وهناك وردية مفتوحة، الارتباط حصراً بالوردية المفتوحة
+      if (period === 'today' && shiftData?.isOpen && shiftData?.date) {
+        const targetShift = shiftData.date.split('T')[0].trim();
+        if (shiftData.shiftId && (inv.shiftId === shiftData.shiftId || (inv as any).workShiftId === shiftData.shiftId)) {
+          return true;
+        }
+        if (inv.shiftDate && inv.shiftDate.split('T')[0].trim() === targetShift) {
+          return true;
+        }
+        if ((inv as any).shift_date && (inv as any).shift_date.split('T')[0].trim() === targetShift) {
+          return true;
+        }
+        const invDateOnly = (inv.date || '').split('T')[0].trim();
+        return invDateOnly === targetShift;
+      }
+
+      const inPeriod = isDateInSelectedPeriod(inv.date) || 
+        (inv.shiftDate && isDateInSelectedPeriod(inv.shiftDate)) || 
+        ((inv as any).shift_date && isDateInSelectedPeriod((inv as any).shift_date));
+      return inPeriod;
     });
   }, [invoices, dateRange, activeBranchId, isMainBranch, isAllBranches, period, shiftData]);
 
@@ -957,11 +991,29 @@ export function OwnerExecutivePortal({
 
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
+      const isBranchMatch = matchesActiveBranch((t as any).branchId);
+      if (!isBranchMatch) return false;
+
+      // عندما تكون الفترة هي اليوم وهناك وردية مفتوحة، الارتباط حصراً بالوردية المفتوحة
+      if (period === 'today' && shiftData?.isOpen && shiftData?.date) {
+        const targetShift = shiftData.date.split('T')[0].trim();
+        if (shiftData.shiftId && (t.shiftId === shiftData.shiftId || (t as any).workShiftId === shiftData.shiftId)) {
+          return true;
+        }
+        if (t.shiftDate && t.shiftDate.split('T')[0].trim() === targetShift) {
+          return true;
+        }
+        if ((t as any).shift_date && (t as any).shift_date.split('T')[0].trim() === targetShift) {
+          return true;
+        }
+        const tDateOnly = (t.date || '').split('T')[0].trim();
+        return tDateOnly === targetShift;
+      }
+
       const inPeriod = isDateInSelectedPeriod(t.date) || 
         (t.shiftDate && isDateInSelectedPeriod(t.shiftDate)) || 
         ((t as any).shift_date && isDateInSelectedPeriod((t as any).shift_date));
-      const isBranchMatch = matchesActiveBranch((t as any).branchId);
-      return inPeriod && isBranchMatch;
+      return inPeriod;
     });
   }, [transactions, dateRange, activeBranchId, isMainBranch, period, shiftData]);
 
@@ -1788,8 +1840,11 @@ export function OwnerExecutivePortal({
   // 2. Staff Attendance & Delays for Selected Period (Bound to Real Supabase Fingerprint Logs)
   const attendanceStats = useMemo(() => {
     const activeStaff = employees.filter(e => !e.isBlacklisted && e.isActive !== false);
-    const now = new Date();
-    const dayNameEn = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][now.getDay()];
+    const targetDateStr = (period === 'today' && shiftData?.isOpen && shiftData?.date)
+      ? shiftData.date.split('T')[0].trim()
+      : (dateRange.start || new Date().toLocaleDateString('en-CA'));
+    const targetDateObj = new Date(targetDateStr + 'T12:00:00');
+    const dayNameEn = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][targetDateObj.getDay()];
 
     const records = activeStaff.map(emp => {
       let scheduledCheckIn = emp.checkInTime || '09:00';
@@ -1804,7 +1859,7 @@ export function OwnerExecutivePortal({
       const schedMin = (scheduledParts[0] || 9) * 60 + (scheduledParts[1] || 0);
 
       // Check if employee is on leave or weekly off
-      const isLeave = emp.leaveRecords?.some(l => dateRange.end >= l.startDate && dateRange.start <= l.endDate);
+      const isLeave = emp.leaveRecords?.some(l => targetDateStr >= l.startDate && targetDateStr <= l.endDate);
       const isOff = (emp.weeklyDaysOff || ['Friday']).includes(dayNameEn);
 
       // Sales generated by this employee in period
@@ -1829,9 +1884,13 @@ export function OwnerExecutivePortal({
         const matchesEmp = log.employeeId === emp.id || 
           log.employee_id === emp.id || 
           (emp.fingerprintCode && (log.fingerprintCode === emp.fingerprintCode || log.fingerprint_code === emp.fingerprintCode));
-        const logDateStr = (log.timestamp || log.created_at || '').split('T')[0];
-        const inPeriod = isDateInSelectedPeriod(logDateStr);
-        return matchesEmp && inPeriod;
+        if (!matchesEmp) return false;
+
+        const logDateStr = (log.timestamp || log.created_at || '').split('T')[0].trim();
+        if (period === 'today' && shiftData?.isOpen && shiftData?.date) {
+          return logDateStr === targetDateStr;
+        }
+        return isDateInSelectedPeriod(logDateStr);
       });
 
       // Find earliest check-in log in period (exclude check_out logs)
@@ -1844,8 +1903,6 @@ export function OwnerExecutivePortal({
         const checkInIso = firstCheckIn.timestamp || firstCheckIn.created_at || '';
 
         // Extract literal wall-clock time string (HH:mm) directly from string.
-        // Never use new Date().getHours() on ISO timestamps with +00:00 / Z,
-        // because it shifts UTC by local timezone (+3h in Egypt/Saudi = 180 min phantom delay)!
         let checkInTimeStr = '09:00';
         if (checkInIso.includes('T')) {
           checkInTimeStr = checkInIso.split('T')[1].substring(0, 5);
@@ -1913,30 +1970,54 @@ export function OwnerExecutivePortal({
       totalStaff: activeStaff.length,
       totalDelayMin
     };
-  }, [employees, dateRange, filteredInvoices, fingerprintLogs]);
+  }, [employees, dateRange, filteredInvoices, fingerprintLogs, period, shiftData]);
 
   // 3. Bookings & Clients for Selected Period (Created in Period & Scheduled in Period)
   const bookingsStats = useMemo(() => {
+    const targetShift = (period === 'today' && shiftData?.isOpen && shiftData?.date) ? shiftData.date.split('T')[0].trim() : null;
+
     // 1. Bookings created during the selected period
     const createdInPeriodList = bookings.filter(b => {
+      const isBranchMatch = matchesActiveBranch((b as any).branchId);
+      if (!isBranchMatch) return false;
+
+      if (targetShift) {
+        if (shiftData?.shiftId && (b.shiftId === shiftData.shiftId || (b as any).workShiftId === shiftData.shiftId)) return true;
+        if (b.shiftDate && b.shiftDate.split('T')[0].trim() === targetShift) return true;
+        const createdDate = ((b as any).createdAt || (b as any).created_at || '').split('T')[0].trim();
+        return createdDate === targetShift;
+      }
+
       const createdDate = (b as any).createdAt || (b as any).created_at;
       const inPeriod = isDateInSelectedPeriod(createdDate);
-      const isBranchMatch = matchesActiveBranch((b as any).branchId);
-      return inPeriod && isBranchMatch;
+      return inPeriod;
     });
 
     // 2. Bookings scheduled for the selected period (appointment date)
     const scheduledInPeriodList = bookings.filter(b => {
-      const inPeriod = isDateInSelectedPeriod(b.date);
       const isBranchMatch = matchesActiveBranch((b as any).branchId);
-      return inPeriod && isBranchMatch;
+      if (!isBranchMatch) return false;
+
+      if (targetShift) {
+        const schedDate = (b.date || '').split('T')[0].trim();
+        return schedDate === targetShift;
+      }
+
+      const inPeriod = isDateInSelectedPeriod(b.date);
+      return inPeriod;
     });
 
     // 3. Bookings with advance payment collected in the selected period
     const advancePaidInPeriodList = bookings.filter(b => {
       if (b.status === 'cancelled' || !matchesActiveBranch((b as any).branchId)) return false;
       const advances = getBookingAdvancesList(b);
-      return advances.some(a => isDateInSelectedPeriod(getAdvanceEffectiveDate(a, b)));
+      return advances.some(a => {
+        const aDate = getAdvanceEffectiveDate(a, b);
+        if (targetShift) {
+          return aDate === targetShift || (a.shiftDate && a.shiftDate.split('T')[0].trim() === targetShift) || (b.shiftDate && b.shiftDate.split('T')[0].trim() === targetShift);
+        }
+        return isDateInSelectedPeriod(aDate);
+      });
     });
 
     // Unified unique list of bookings relevant to the period (created in period OR scheduled in period OR advance paid in period)
@@ -2549,7 +2630,7 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                 period === 'today' ? 'bg-amber-500 text-slate-950 shadow-xs' : 'text-slate-300 hover:bg-slate-800'
               }`}
             >
-              اليوم
+              {shiftData?.isOpen && shiftData?.date ? `الوردية المفتوحة (${shiftData.date.split('T')[0].trim()})` : 'اليوم'}
             </button>
 
             <button
@@ -2633,6 +2714,27 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
               </span>
             </div>
           )}
+        </div>
+
+        {/* SHIFT STATUS BANNER */}
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 bg-slate-900/80 px-3.5 py-2 rounded-2xl border border-slate-800 text-xs shadow-sm">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-slate-400 font-bold">حالة وردية العمل:</span>
+            {shiftData?.isOpen && shiftData?.date ? (
+              <span className="inline-flex items-center gap-1.5 bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 px-2.5 py-0.5 rounded-full font-black text-[11px]">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span>وردية مفتوحة بتاريخ: <strong className="font-mono text-emerald-200">{shiftData.date.split('T')[0].trim()}</strong></span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 bg-slate-800 text-slate-400 border border-slate-700 px-2.5 py-0.5 rounded-full font-bold text-[11px]">
+                <span className="w-2 h-2 rounded-full bg-slate-500"></span>
+                <span>الوردية مغلقة (يتم عرض تاريخ اليوم: {new Date().toLocaleDateString('en-CA')})</span>
+              </span>
+            )}
+          </div>
+          <div className="text-[11px] text-slate-400">
+            مصدر الأرقام: <strong className="text-amber-300 font-mono">{dateRange.label}</strong>
+          </div>
         </div>
       </div>
 
@@ -2728,7 +2830,9 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                 className="bg-gradient-to-br from-slate-900 to-slate-800/90 p-4 rounded-2xl border border-slate-700/80 shadow-lg relative overflow-hidden cursor-pointer hover:border-emerald-500 transition-all group"
               >
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-[11px] font-bold text-slate-400">إيراد اليوم</span>
+                  <span className="text-[11px] font-bold text-slate-400">
+                    {period === 'today' && shiftData?.isOpen && shiftData?.date ? `إيراد الوردية (${shiftData.date.split('T')[0].trim()})` : 'إيراد اليوم'}
+                  </span>
                   <div className="w-7 h-7 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
                     <DollarSign size={15} />
                   </div>
@@ -2751,7 +2855,9 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                 className="bg-gradient-to-br from-slate-900 to-slate-800/90 p-4 rounded-2xl border border-slate-700/80 shadow-lg relative overflow-hidden cursor-pointer hover:border-amber-500 transition-all group"
               >
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-[11px] font-bold text-slate-400">حضور الكادر</span>
+                  <span className="text-[11px] font-bold text-slate-400">
+                    {period === 'today' && shiftData?.isOpen && shiftData?.date ? 'حضور الكادر (الوردية)' : 'حضور الكادر'}
+                  </span>
                   <div className="w-7 h-7 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center">
                     <Clock size={15} />
                   </div>
@@ -2776,7 +2882,9 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                 className="bg-gradient-to-br from-slate-900 to-slate-800/90 p-4 rounded-2xl border border-slate-700/80 shadow-lg relative overflow-hidden cursor-pointer hover:border-blue-500 transition-all group"
               >
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-[11px] font-bold text-slate-400">عملاء اليوم</span>
+                  <span className="text-[11px] font-bold text-slate-400">
+                    {period === 'today' && shiftData?.isOpen && shiftData?.date ? 'عملاء الوردية' : 'عملاء اليوم'}
+                  </span>
                   <div className="w-7 h-7 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center">
                     <Users size={15} />
                   </div>
@@ -2808,7 +2916,7 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                   <span className="text-purple-300">
                     ⚡ {bookingsStats.createdInPeriodCount} أُنشئت | 📅 {bookingsStats.scheduledInPeriodCount} موعد
                   </span>
-                  <span className="text-purple-400 group-hover:translate-x-[-2px] transition-transform">جدول ‹</span>
+                  <span className="text-purple-400 group-hover:translate-x-[-2px] transition-transform">عرض ‹</span>
                 </div>
               </div>
             </div>
