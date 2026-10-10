@@ -252,7 +252,7 @@ export const handlePrintReceipt = (elementId: string, isLandscape: boolean = fal
   printWindow.document.close();
 };
 
-export const printHtml = (htmlContent: string, title: string = 'طباعة') => {
+export const printHtml = (htmlContent: string, title: string = 'طباعة', paperSize: '80mm' | '58mm' | 'a4' = '80mm') => {
   const safeContent = sanitizePrintHtml(htmlContent);
 
   let printWindow: Window | null = null;
@@ -263,10 +263,14 @@ export const printHtml = (htmlContent: string, title: string = 'طباعة') => 
   }
 
   if (!printWindow || printWindow.closed || typeof printWindow.closed === 'undefined') {
-    const success = printViaHiddenIframe(safeContent, false, '80mm');
+    const success = printViaHiddenIframe(safeContent, false, paperSize);
     if (!success) window.print();
     return;
   }
+
+  let widthStyle = 'width: 70mm; max-width: 70mm;';
+  if (paperSize === '58mm') widthStyle = 'width: 50mm; max-width: 50mm;';
+  if (paperSize === 'a4') widthStyle = 'width: 200mm; max-width: 200mm;';
 
   printWindow.document.write(`<!DOCTYPE html>
 <html dir="rtl" lang="ar">
@@ -274,11 +278,11 @@ export const printHtml = (htmlContent: string, title: string = 'طباعة') => 
   <meta charset="utf-8">
   <title>${title}</title>
   <style>
-    ${getPrintStyles('80mm', false)}
+    ${getPrintStyles(paperSize, false)}
   </style>
 </head>
-<body class="bg-white text-black text-xs">
-  <div style="width: 72mm; max-width: 72mm; margin: 0 auto; padding: 2mm;">
+<body class="bg-white text-black text-xs" style="margin: 0; padding: 0; display: flex; justify-content: center; align-items: flex-start;">
+  <div style="${widthStyle} margin: 0 auto; padding: 1mm; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: flex-start;">
     ${safeContent}
   </div>
   <script>

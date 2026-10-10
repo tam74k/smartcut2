@@ -37,7 +37,7 @@ export function ThermalSalarySlip({
   const { employee } = summary;
 
   return (
-    <div id="print-salary-slip" className="w-[80mm] max-w-[80mm] bg-white p-3 text-slate-900 text-xs font-sans">
+    <div id="print-salary-slip" className="w-full max-w-[65mm] mx-auto bg-white p-2.5 text-slate-900 text-xs font-sans box-border">
       {/* Header */}
       <div className="text-center pb-2 border-b border-dashed border-slate-300">
         <h2 className="text-sm font-black tracking-tight">{settings.salonName || 'SMART CUT'}</h2>

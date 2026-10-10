@@ -21,7 +21,7 @@ export function CustodyReportReceipt({
   const totalCustody = custodyTrxs.reduce((sum, t) => sum + t.amount, 0);
 
   return (
-    <div id="print-custody-receipt" className="w-[80mm] max-w-[80mm] bg-white p-3 text-slate-900 text-xs font-sans">
+    <div id="print-custody-receipt" className="w-full max-w-[65mm] mx-auto bg-white p-2.5 text-slate-900 text-xs font-sans box-border">
       {/* Header */}
       <div className="text-center pb-2 border-b border-dashed border-slate-300">
         <h2 className="text-sm font-black tracking-tight">{settings.salonName || 'SMART CUT'}</h2>
