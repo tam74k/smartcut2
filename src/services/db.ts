@@ -294,7 +294,8 @@ export async function ensureCoreSchema(): Promise<void> {
       ensureColumn('products', 'cost_price', 'NUMERIC(10,2)'),
       ensureColumn('products', 'sell_price', 'NUMERIC(10,2)'),
       ensureColumn('products', 'branch_id', 'VARCHAR(100)'),
-      ensureColumn('products', 'is_active', 'BOOLEAN')
+      ensureColumn('products', 'is_active', 'BOOLEAN'),
+      ensureColumn('categories', 'is_active', 'BOOLEAN DEFAULT TRUE')
     ]);
   } catch { /* Silent fail */ }
 }
@@ -2277,14 +2278,31 @@ export const DB = {
   },
 
   // ---- التصنيفات ----
-  async fetchCategories(salonId?: string) { return DB.fetchAll<any>('categories', undefined, salonId); },
+  async fetchCategories(salonId?: string) { 
+    const rows = await DB.fetchAll<any>('categories', undefined, salonId); 
+    return (rows || []).map(dbCategoryToApp);
+  },
   async saveCategory(c: any, salonId?: string) {
     const client = sb(); if (!client || !c) return null;
     const validSalonId = toSalonUUID(salonId || c.salonId || getSalonId());
-    const { error } = await client.from('categories').upsert(
-      { id: c.id, salon_id: validSalonId, name: c.name, icon: c.icon || 'Scissors', type: c.type || 'service' },
-      { onConflict: 'id' }
-    );
+    const payload: any = { 
+      id: c.id, 
+      salon_id: validSalonId, 
+      name: c.name, 
+      icon: c.icon || 'Scissors', 
+      type: c.type || 'service',
+      is_active: c.isActive !== false
+    };
+
+    let { error } = await client.from('categories').upsert(payload, { onConflict: 'id' });
+
+    if (error && (error.code === '42703' || error.message?.includes('schema cache') || error.message?.includes('is_active') || error.message?.includes('column'))) {
+      ensureColumn('categories', 'is_active', 'BOOLEAN DEFAULT TRUE').catch(() => {});
+      delete payload.is_active;
+      const retry = await client.from('categories').upsert(payload, { onConflict: 'id' });
+      error = retry.error;
+    }
+
     if (error) console.error('DB.saveCategory error:', error.message);
     return error ? null : c;
   },
@@ -4237,6 +4255,20 @@ export function dbProductToApp(row: any): any {
     branchId: c.branchId || row.branch_id || undefined,
     isActive: c.isActive !== false && row.is_active !== false,
     productType: (c.productType || row.product_type || row.type || 'retail') as 'retail' | 'raw_material'
+  };
+}
+
+export function dbCategoryToApp(row: any): any {
+  if (!row) return {} as any;
+  const c = toCamel(row);
+  return {
+    id: c.id || row.id || '',
+    salonId: c.salonId || row.salon_id || undefined,
+    branchId: c.branchId || row.branch_id || undefined,
+    name: c.name || row.name || '',
+    icon: c.icon || row.icon || 'Scissors',
+    type: (c.type || row.type || 'service') as 'service' | 'product',
+    isActive: c.isActive !== false && row.is_active !== false,
   };
 }
 

@@ -54,7 +54,7 @@ import { handlePrintReceipt } from './utils/print';
 import { UserMenuDropdown, getUserInitials } from './components/UserMenuDropdown';
 import { AuthService, ROLE_LABELS } from './services/auth';
 import { SupabaseService } from './services/supabase';
-import { DB, dbClientToApp, dbEmployeeToApp, dbServiceToApp, dbProductToApp, toCamel } from './services/db';
+import { DB, dbClientToApp, dbEmployeeToApp, dbServiceToApp, dbProductToApp, dbCategoryToApp, toCamel } from './services/db';
 import { SubscriptionService } from './services/subscriptionService';
 import { QueueService } from './services/queueService';
 import { hasEmployeeFixedCommission } from './utils/commissionHelper';
@@ -561,7 +561,7 @@ export default function App() {
       setProducts(data.products.map(dbProductToApp));
     }
     if (data.categories && Array.isArray(data.categories) && data.categories.length > 0) {
-      setCategories(data.categories);
+      setCategories(data.categories.map(dbCategoryToApp));
     }
     if (data.suppliers) setSuppliers(data.suppliers);
     if (data.purchaseInvoices) setPurchaseInvoices(data.purchaseInvoices);
@@ -712,8 +712,8 @@ export default function App() {
           setActiveBranchId(branchIdToUse);
 
           if (essentialData) {
-            const validCats = essentialData.categories || [];
-            setCategories(validCats.length ? validCats : [{ id: 'all', name: 'الكل' }]);
+            const validCats = (essentialData.categories || []).map(dbCategoryToApp);
+            setCategories(validCats.length ? validCats : [{ id: 'all', name: 'الكل', isActive: true }]);
             setServices(essentialData.services ? essentialData.services.map(dbServiceToApp) : []);
             setEmployees(essentialData.employees ? essentialData.employees.map(dbEmployeeToApp) : []);
             setClients(essentialData.clients ? essentialData.clients.map(dbClientToApp) : []);
@@ -865,7 +865,7 @@ export default function App() {
 
         // Sync Categories
         if (polledCategories && Array.isArray(polledCategories) && polledCategories.length > 0) {
-          setCategories(polledCategories);
+          setCategories(polledCategories.map(dbCategoryToApp));
         }
 
         // Sync Purchase Invoices
@@ -1178,8 +1178,8 @@ export default function App() {
       }
 
       if (essentialData) {
-        const validCats = essentialData.categories || [];
-        setCategories(validCats.length ? validCats : [{ id: 'all', name: 'الكل' }]);
+        const validCats = (essentialData.categories || []).map(dbCategoryToApp);
+        setCategories(validCats.length ? validCats : [{ id: 'all', name: 'الكل', isActive: true }]);
         setServices(essentialData.services ? essentialData.services.map(dbServiceToApp) : []);
         setEmployees(essentialData.employees ? essentialData.employees.map(dbEmployeeToApp) : []);
         setClients(essentialData.clients ? essentialData.clients.map(dbClientToApp) : []);
@@ -1460,6 +1460,7 @@ export default function App() {
       const nextSalonCats = typeof updater === 'function' ? updater(currentSalonCats) : updater;
       const tagged = nextSalonCats.map(c => ({ 
         ...c, 
+        isActive: c.isActive !== false,
         salonId: c.salonId || currentSalonId, 
         branchId: c.branchId || activeBranch?.id || activeBranchId,
         branchCode: (c as any).branchCode || activeBranch?.code || 'BR-01'
@@ -1734,7 +1735,7 @@ export default function App() {
         });
       }
       if (polledCategories && Array.isArray(polledCategories) && polledCategories.length > 0) {
-        setCategories(polledCategories);
+        setCategories(polledCategories.map(dbCategoryToApp));
       }
       if (polledPurchases && Array.isArray(polledPurchases)) {
         setPurchaseInvoices(polledPurchases);
@@ -3290,8 +3291,8 @@ export default function App() {
         localStorage.setItem('smartcut_active_salon_id', salon.id);
         const essentialData = await DB.loadEssentialData(salon.id);
         if (essentialData) {
-          const validCats = essentialData.categories || [];
-          setCategories(validCats.length ? validCats : [{ id: 'all', name: 'الكل' }]);
+          const validCats = (essentialData.categories || []).map(dbCategoryToApp);
+          setCategories(validCats.length ? validCats : [{ id: 'all', name: 'الكل', isActive: true }]);
           setServices(essentialData.services ? essentialData.services.map(dbServiceToApp) : []);
           setEmployees(essentialData.employees ? essentialData.employees.map(dbEmployeeToApp) : []);
           setClients(essentialData.clients ? essentialData.clients.map(dbClientToApp) : []);

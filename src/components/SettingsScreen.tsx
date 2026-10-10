@@ -162,6 +162,7 @@ export function SettingsScreen({
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newCategoryType, setNewCategoryType] = useState<'service' | 'product'>('service');
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [settingsCategoryStatusFilter, setSettingsCategoryStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [showSuccess, setShowSuccess] = useState(false);
   const [successMsg, setSuccessMsg] = useState('تم حفظ الإعدادات بنجاح');
 
@@ -731,24 +732,47 @@ export function SettingsScreen({
   };
 
   const addCategory = async () => {
-    if(!newCategoryName) return;
+    if(!newCategoryName.trim()) return;
     const targetSalonId = settings.salonId || currentUser?.salonId;
     if (editingCategoryId) {
       const existing = categories.find(c => c.id === editingCategoryId);
-      const updatedCat: Category = { ...existing, id: editingCategoryId, name: newCategoryName, type: newCategoryType, salonId: targetSalonId } as Category;
+      const updatedCat: Category = { 
+        ...existing, 
+        id: editingCategoryId, 
+        name: newCategoryName.trim(), 
+        type: newCategoryType, 
+        isActive: existing?.isActive !== false,
+        salonId: targetSalonId 
+      } as Category;
       setCategories(categories.map(c => c.id === editingCategoryId ? updatedCat : c));
       if (targetSalonId) {
         await DB.saveCategory(updatedCat, targetSalonId);
       }
       setEditingCategoryId(null);
     } else {
-      const newC: Category = { id: 'CAT-' + Math.random().toString(36).substring(2,9), name: newCategoryName, type: newCategoryType, salonId: targetSalonId };
+      const newC: Category = { 
+        id: 'CAT-' + Math.random().toString(36).substring(2,9), 
+        name: newCategoryName.trim(), 
+        type: newCategoryType, 
+        isActive: true,
+        salonId: targetSalonId 
+      };
       setCategories([...categories, newC]);
       if (targetSalonId) {
         await DB.saveCategory(newC, targetSalonId);
       }
     }
     setNewCategoryName('');
+  };
+
+  const toggleCategoryStatus = async (c: Category) => {
+    const targetSalonId = settings.salonId || currentUser?.salonId;
+    const newStatus = c.isActive === false;
+    const updated: Category = { ...c, isActive: newStatus, salonId: targetSalonId };
+    setCategories(categories.map(cat => cat.id === c.id ? updated : cat));
+    if (targetSalonId) {
+      await DB.saveCategory(updated, targetSalonId);
+    }
   };
 
   const handleEditCategory = (c: Category) => {
@@ -2442,12 +2466,54 @@ export function SettingsScreen({
         
         {/* Categories Settings */}
         <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
-          <div className="flex items-center gap-2 mb-4 border-b border-slate-100 pb-3">
-            <div className="w-8 h-8 rounded-full bg-indigo-50 text-indigo-500 flex items-center justify-center">
-              <Plus size={16} />
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 border-b border-slate-100 pb-3">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-indigo-50 text-indigo-500 flex items-center justify-center">
+                <Plus size={16} />
+              </div>
+              <h3 className="text-base font-bold text-slate-800">إدارة التصنيفات</h3>
             </div>
-            <h3 className="text-base font-bold text-slate-800">إدارة التصنيفات</h3>
+
+            {/* Status Filter for Categories */}
+            <div className="flex items-center bg-slate-100 p-1 rounded-xl gap-1">
+              <button
+                type="button"
+                onClick={() => setSettingsCategoryStatusFilter('all')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  settingsCategoryStatusFilter === 'all'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                الكل
+              </button>
+              <button
+                type="button"
+                onClick={() => setSettingsCategoryStatusFilter('active')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                  settingsCategoryStatusFilter === 'active'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-slate-500 hover:text-emerald-700'
+                }`}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                <span>نشط</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSettingsCategoryStatusFilter('inactive')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                  settingsCategoryStatusFilter === 'inactive'
+                    ? 'bg-rose-600 text-white shadow-xs'
+                    : 'text-slate-500 hover:text-rose-700'
+                }`}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+                <span>غير نشط</span>
+              </button>
+            </div>
           </div>
+
           <div className="space-y-4">
             <div className="flex gap-2">
               <input 
@@ -2470,21 +2536,48 @@ export function SettingsScreen({
               </button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {categories && categories.filter(c => c.id !== 'all').map(c => (
-                <div key={c.id} className="border border-slate-200 rounded-lg p-3 flex justify-between items-center bg-slate-50">
-                  <div className="flex flex-col"><span className="font-bold text-[13px] text-slate-700">{c.name}</span><span className="text-[10px] text-slate-500">{c.type === 'product' ? 'منتجات' : 'خدمات'}</span></div>
-                  
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => handleEditCategory(c)} className="text-blue-400 hover:text-blue-600 transition-colors">
-                      <Edit2 size={16} />
-                    </button>
-                    <button onClick={() => deleteCategory(c.id)} className="text-red-400 hover:text-red-600 transition-colors">
-                    <Trash2 size={16} />
-                  </button>
-                  </div>
-
-                </div>
-              ))}
+              {categories && categories
+                .filter(c => {
+                  if (c.id === 'all') return false;
+                  if (settingsCategoryStatusFilter === 'active' && c.isActive === false) return false;
+                  if (settingsCategoryStatusFilter === 'inactive' && c.isActive !== false) return false;
+                  return true;
+                })
+                .map(c => {
+                  const isActive = c.isActive !== false;
+                  return (
+                    <div key={c.id} className="border border-slate-200 rounded-xl p-3 flex justify-between items-center bg-slate-50 hover:bg-white transition-colors">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="font-bold text-[13px] text-slate-800">{c.name}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-slate-500">{c.type === 'product' ? '🛍️ منتجات' : '✂️ خدمات'}</span>
+                          <button
+                            type="button"
+                            onClick={() => toggleCategoryStatus(c)}
+                            title={isActive ? 'انقر للتعطيل' : 'انقر للتفعيل'}
+                            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold border cursor-pointer ${
+                              isActive
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : 'bg-slate-100 text-slate-500 border-slate-200'
+                            }`}
+                          >
+                            <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-slate-400'}`}></span>
+                            <span>{isActive ? 'نشط' : 'غير نشط'}</span>
+                          </button>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => handleEditCategory(c)} title="تعديل" className="text-blue-500 hover:text-blue-700 transition-colors cursor-pointer p-1">
+                          <Edit2 size={15} />
+                        </button>
+                        <button onClick={() => deleteCategory(c.id)} title="حذف" className="text-red-400 hover:text-red-600 transition-colors cursor-pointer p-1">
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
             </div>
           </div>
         </div>

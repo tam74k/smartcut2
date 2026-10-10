@@ -1442,7 +1442,7 @@ export function POSScreen({
 
     // 1. فحص قائمة التصنيفات المسجلة بالنظام (categories)
     (categories || []).forEach(cat => {
-      if (!cat || !cat.name || cat.id === 'all') return;
+      if (!cat || !cat.name || cat.id === 'all' || cat.isActive === false) return;
       const catNorm = normalizeText(cat.name);
 
       let isRelevant = false;

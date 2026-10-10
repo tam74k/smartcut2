@@ -217,6 +217,7 @@ export interface Category {
   name: string; 
   icon?: string; 
   type?: 'service' | 'product'; 
+  isActive?: boolean;
 }
 
 export interface ServiceItem { 
