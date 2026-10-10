@@ -228,9 +228,15 @@ export async function ensureCoreSchema(): Promise<void> {
       ensureColumn('work_shifts', 'expected_cash', 'NUMERIC(12,2)'),
       ensureColumn('work_shifts', 'actual_cash', 'NUMERIC(12,2)'),
       ensureColumn('work_shifts', 'cash_difference', 'NUMERIC(12,2)'),
+      ensureColumn('work_shifts', 'total_sales', 'NUMERIC(12,2)'),
+      ensureColumn('work_shifts', 'total_cash_sales', 'NUMERIC(12,2)'),
+      ensureColumn('work_shifts', 'total_card_sales', 'NUMERIC(12,2)'),
+      ensureColumn('work_shifts', 'total_expenses', 'NUMERIC(12,2)'),
+      ensureColumn('work_shifts', 'total_advances', 'NUMERIC(12,2)'),
       ensureColumn('work_shifts', 'transferred_to_treasury', 'VARCHAR(255)'),
       ensureColumn('work_shifts', 'transferred_amount', 'NUMERIC(12,2)'),
       ensureColumn('work_shifts', 'status', 'VARCHAR(50)'),
+      ensureColumn('work_shifts', 'notes', 'TEXT'),
       ensureColumn('invoices', 'shift_code', 'VARCHAR(100)'),
       ensureColumn('invoices', 'shift_id', 'VARCHAR(100)'),
       ensureColumn('invoices', 'shift_date', 'VARCHAR(50)'),
@@ -2894,7 +2900,29 @@ export const DB = {
         notes: ws.notes || null,
         created_at: ws.createdAt || new Date().toISOString()
       };
-      const { error } = await client.from('work_shifts').upsert(snap, { onConflict: 'id' });
+      let { error } = await client.from('work_shifts').upsert(snap, { onConflict: 'id' });
+
+      // الترميم الذاتي التلقائي لأي أعمدة مفقودة في جدول work_shifts
+      let missingColTries = 0;
+      while (error && missingColTries < 8 && ((error as any).code === '42703' || error.message.includes('column') || error.message.includes('PGRST204') || error.message.includes('schema cache'))) {
+        missingColTries++;
+        const match = error.message.match(/column ["']?([a-zA-Z0-9_]+)["']?/i) || 
+                      error.message.match(/Could not find the '([a-zA-Z0-9_]+)' column/i);
+        const colName = match ? match[1] : null;
+        if (colName && snap.hasOwnProperty(colName)) {
+          console.warn(`DB.saveWorkShift: column '${colName}' missing in Supabase work_shifts table, auto-healing and retrying...`);
+          const colType = (colName.includes('cash') || colName.includes('sales') || colName.includes('expenses') || colName.includes('advances') || colName.includes('amount') || colName.includes('difference'))
+            ? 'NUMERIC(12,2)'
+            : colName.includes('_at') ? 'TIMESTAMPTZ' : (colName === 'notes' ? 'TEXT' : 'VARCHAR(255)');
+          ensureColumn('work_shifts', colName, colType).catch(() => {});
+          delete snap[colName];
+          const retryRes = await client.from('work_shifts').upsert(snap, { onConflict: 'id' });
+          error = retryRes.error;
+        } else {
+          break;
+        }
+      }
+
       if (error) { console.error('DB.saveWorkShift error:', error.message); return false; }
       return true;
     } catch (e) { console.error('DB.saveWorkShift exception:', e); return false; }
