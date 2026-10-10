@@ -1496,6 +1496,10 @@ export default function App() {
         });
       }
 
+      try {
+        localStorage.setItem('smartcut_products', JSON.stringify(res));
+      } catch (e) {}
+
       return res;
     });
   };

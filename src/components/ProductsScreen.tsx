@@ -343,7 +343,7 @@ export function ProductsScreen({
 
   const handleSaveProduct = async () => {
     if (!formData.name.trim()) return setErrorMsg('الرجاء إدخال اسم المنتج');
-    if (!formData.categoryId) return setErrorMsg('الرجاء اختيار التصنيف');
+    if (!formData.categoryId || formData.categoryId === 'all') return setErrorMsg('الرجاء اختيار تصنيف محدد للمنتج');
     
     const isRaw = formData.productType === 'raw_material';
     const sPrice = isRaw ? (Number(formData.sellPrice) || 0) : Number(formData.sellPrice);
@@ -364,7 +364,7 @@ export function ProductsScreen({
     try {
       // 1. التأكد أولاً من حفظ التصنيف في قاعدة البيانات إن لم يكن مسجلاً لتفادي قيود المفاتيح الأجنبية
       const targetCategory = categories.find(c => c.id === formData.categoryId);
-      if (targetCategory) {
+      if (targetCategory && targetCategory.id !== 'all') {
         await DB.saveCategory(targetCategory, settings.salonId).catch(() => {});
       }
 
@@ -416,19 +416,25 @@ export function ProductsScreen({
       // 2. الحفظ المباشر في قاعدة البيانات Supabase مع انتظار اكتمال التسجيل
       const saved = await DB.saveProduct(productToSave, settings.salonId);
       if (!saved) {
-        console.warn('DB.saveProduct returned null, attempting fallback to ensure product remains available');
+        setErrorMsg('تعذر حفظ الصنف في قاعدة البيانات السحابية. يرجى التحقق من اتصال الإنترنت أو صحة البيانات.');
+        setIsSavingProduct(false);
+        return;
       }
 
-      // 3. تحديث قائمة المنتجات في الحالة (State) فوراً
+      // 3. تحديث قائمة المنتجات في الحالة (State) والتخزين المحلي فوراً
       if (editingProductId) {
         setProducts(prev => {
           const list = Array.isArray(prev) ? prev : products;
-          return list.map(p => p.id === editingProductId ? productToSave : p);
+          const updated = list.map(p => p.id === editingProductId ? productToSave : p);
+          try { localStorage.setItem('smartcut_products', JSON.stringify(updated)); } catch {}
+          return updated;
         });
       } else {
         setProducts(prev => {
           const list = Array.isArray(prev) ? prev : products;
-          return [...list.filter(p => p.id !== productToSave.id), productToSave];
+          const updated = [...list.filter(p => p.id !== productToSave.id), productToSave];
+          try { localStorage.setItem('smartcut_products', JSON.stringify(updated)); } catch {}
+          return updated;
         });
       }
 

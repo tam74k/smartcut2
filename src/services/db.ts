@@ -2296,7 +2296,16 @@ export const DB = {
   async saveProduct(p: any, salonId?: string) {
     const client = sb(); if (!client || !p) return null;
     const rawSalonId = salonId || p.salonId || getSalonId();
-    const validSalonId = toSalonUUID(rawSalonId);
+    let validSalonId = toSalonUUID(rawSalonId);
+
+    // إذا لم يكن معرّف الصالون بصيغة UUID صالحة، نسترجع معرّف أول صالون مسجل في Supabase
+    if (!validSalonId) {
+      try {
+        const { data: firstSalon } = await client.from('salons').select('id').limit(1).maybeSingle();
+        if (firstSalon?.id) validSalonId = firstSalon.id;
+      } catch {}
+    }
+
     const validBranchId = toBranchUUID(p.branchId);
 
     const payload: any = {
@@ -2320,57 +2329,116 @@ export const DB = {
       payload.supplier_id = p.supplierId;
     }
 
-    let { error } = await client.from('products').upsert(payload, { onConflict: 'id' });
+    let lastError: any = null;
 
-    // 1. المعالجة الذاتية التلقائية لغياب أي عمود في جدول المنتجات
-    let missingColTries = 0;
-    while (error && missingColTries < 8 && ((error as any).code === '42703' || error.message.includes('column') || error.message.includes('PGRST204') || error.message.includes('schema cache'))) {
-      missingColTries++;
-      const match = error.message.match(/column ["']?([a-zA-Z0-9_]+)["']?/i) || 
-                    error.message.match(/Could not find the '([a-zA-Z0-9_]+)' column/i);
-      const colName = match ? match[1] : null;
-      if (colName && payload.hasOwnProperty(colName)) {
-        console.warn(`DB.saveProduct: column '${colName}' missing in Supabase products table, removing and retrying...`);
-        const colType = (colName.includes('price') || colName.includes('stock') || colName.includes('limit') || colName.includes('commission')) 
-          ? 'NUMERIC(10,2)' 
-          : colName === 'is_active' ? 'BOOLEAN' : 'VARCHAR(100)';
-        ensureColumn('products', colName, colType).catch(() => {});
-        delete payload[colName];
-
-        if (colName === 'sell_price' && !payload.hasOwnProperty('price')) {
-          payload.price = Number(p.sellPrice ?? 0);
-        }
-        if (colName === 'current_stock' && !payload.hasOwnProperty('stock')) {
-          payload.stock = Number(p.currentStock ?? 0);
-        }
-
-        const retry = await client.from('products').upsert(payload, { onConflict: 'id' });
-        error = retry.error;
-      } else {
+    // حلقة الترميم الذاتي الشاملة ضد جميع قيود وأخطاء قاعدة البيانات
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const res = await client.from('products').upsert(payload, { onConflict: 'id' });
+      if (!res.error) {
+        lastError = null;
         break;
       }
+
+      lastError = res.error;
+      const errMsg = lastError.message || '';
+      const errCode = (lastError as any).code || '';
+
+      // 1. معالجة غياب الأعمدة في قاعدة البيانات (PGRST204 أو 42703 أو schema cache)
+      if (errCode === '42703' || errMsg.includes('schema cache') || errMsg.includes('PGRST204') || errMsg.includes('column')) {
+        const match = errMsg.match(/column ["']?([a-zA-Z0-9_]+)["']?/i) || 
+                      errMsg.match(/Could not find the '([a-zA-Z0-9_]+)' column/i);
+        const colName = match ? match[1] : null;
+        if (colName && payload.hasOwnProperty(colName)) {
+          console.warn(`DB.saveProduct: column '${colName}' missing in Supabase products table, adapting schema and retrying...`);
+          const colType = (colName.includes('price') || colName.includes('stock') || colName.includes('limit') || colName.includes('commission')) 
+            ? 'NUMERIC(10,2)' 
+            : colName === 'is_active' ? 'BOOLEAN' : 'VARCHAR(100)';
+          ensureColumn('products', colName, colType).catch(() => {});
+          delete payload[colName];
+
+          // محاولة المطابقة مع أسماء الحقول البديلة في قواعد البيانات القديمة
+          if (colName === 'sell_price') {
+            payload.selling_price = Number(p.sellPrice ?? 0);
+          } else if (colName === 'selling_price') {
+            payload.price = Number(p.sellPrice ?? 0);
+          }
+
+          if (colName === 'current_stock') {
+            payload.stock_quantity = Number(p.currentStock ?? 0);
+          } else if (colName === 'stock_quantity') {
+            payload.stock = Number(p.currentStock ?? 0);
+          }
+
+          if (colName === 'reorder_limit') {
+            payload.min_quantity = Number(p.reorderLimit ?? 5);
+          }
+
+          if (colName === 'product_type') {
+            payload.type = p.productType || 'retail';
+          }
+
+          continue;
+        }
+      }
+
+      // 2. معالجة قيود المفاتيح الأجنبية (23503)
+      if (errCode === '23503' || errMsg.includes('foreign key') || errMsg.includes('violates foreign key')) {
+        console.warn('DB.saveProduct: foreign key violation, auto-healing relations and retrying...', errMsg);
+        if (payload.category_id && (errMsg.includes('category') || errMsg.includes('categories'))) {
+          payload.category_id = null;
+          continue;
+        }
+        if (payload.supplier_id && (errMsg.includes('supplier') || errMsg.includes('suppliers'))) {
+          delete payload.supplier_id;
+          continue;
+        }
+        if (payload.branch_id && (errMsg.includes('branch') || errMsg.includes('branches'))) {
+          payload.branch_id = null;
+          continue;
+        }
+        if (payload.salon_id && (errMsg.includes('salon') || errMsg.includes('salons'))) {
+          try {
+            const { data: firstSalon } = await client.from('salons').select('id').limit(1).maybeSingle();
+            if (firstSalon?.id && payload.salon_id !== firstSalon.id) {
+              payload.salon_id = firstSalon.id;
+              continue;
+            }
+          } catch {}
+          payload.salon_id = null;
+          continue;
+        }
+        // تصفير المفاتيح الخارجية كخيار أمان
+        payload.category_id = null;
+        delete payload.supplier_id;
+        payload.branch_id = null;
+        continue;
+      }
+
+      // 3. معالجة تكرار الباركود (23505)
+      if (errCode === '23505' || errMsg.includes('unique') || errMsg.includes('duplicate key')) {
+        console.warn('DB.saveProduct: unique violation (duplicate barcode), removing barcode and retrying...', errMsg);
+        delete payload.barcode;
+        continue;
+      }
+
+      // 4. معالجة قيد عدم القبول للقيمة الفارغة في salon_id (23502)
+      if ((errCode === '23502' || errMsg.includes('not-null')) && errMsg.includes('salon_id')) {
+        console.warn('DB.saveProduct: salon_id is required, resolving salon ID from database...');
+        try {
+          const { data: firstSalon } = await client.from('salons').select('id').limit(1).maybeSingle();
+          if (firstSalon?.id) {
+            payload.salon_id = firstSalon.id;
+            continue;
+          }
+        } catch {}
+      }
+
+      // توقف إذا كان الخطأ غير قابل للمعالجة
+      break;
     }
 
-    // 2. معالجة قيود المفاتيح الأجنبية Foreign Key Constraints (التصنيف، المورد، الفرع، الصالون)
-    if (error && ((error as any).code === '23503' || error.message.includes('foreign key') || error.message.includes('violates foreign key'))) {
-      console.warn('DB.saveProduct: foreign key violation, resetting foreign keys and retrying...', error.message);
-      payload.category_id = null;
-      delete payload.supplier_id;
-      payload.branch_id = null;
-      const retry = await client.from('products').upsert(payload, { onConflict: 'id' });
-      error = retry.error;
-    }
-
-    // 3. معالجة تكرار الباركود في حال وجود قيد فريد (Unique Constraint)
-    if (error && ((error as any).code === '23505' || error.message.includes('unique') || error.message.includes('duplicate key'))) {
-      console.warn('DB.saveProduct: unique violation (possibly duplicate barcode), retrying without barcode...', error.message);
-      delete payload.barcode;
-      const retry = await client.from('products').upsert(payload, { onConflict: 'id' });
-      error = retry.error;
-    }
-
-    if (error) { 
-      console.error('DB.saveProduct error:', error.message); 
+    if (lastError) { 
+      console.error('DB.saveProduct error after retry attempts:', lastError.message); 
       return null; 
     }
     return p;
@@ -4156,11 +4224,11 @@ export function dbProductToApp(row: any): any {
     id: c.id || row.id || '',
     name: c.name || row.name || '',
     categoryId: c.categoryId || row.category_id || row.category || '',
-    sellPrice: Number(c.sellPrice ?? row.sell_price ?? 0),
-    costPrice: Number(c.costPrice ?? row.cost_price ?? 0),
-    reorderLimit: Number(c.reorderLimit ?? row.reorder_limit ?? 5),
+    sellPrice: Number(c.sellPrice ?? row.sell_price ?? row.selling_price ?? row.price ?? 0),
+    costPrice: Number(c.costPrice ?? row.cost_price ?? row.cost ?? 0),
+    reorderLimit: Number(c.reorderLimit ?? row.reorder_limit ?? row.min_quantity ?? 5),
     openingStock: Number(c.openingStock ?? row.opening_stock ?? 0),
-    currentStock: Number(c.currentStock ?? row.current_stock ?? 0),
+    currentStock: Number(c.currentStock ?? row.current_stock ?? row.stock_quantity ?? row.stock ?? 0),
     commission: Number(c.commission ?? 0),
     barcode: c.barcode || row.barcode || '',
     supplierId: c.supplierId || row.supplier_id || undefined,
@@ -4168,7 +4236,7 @@ export function dbProductToApp(row: any): any {
     salonId: c.salonId || row.salon_id || undefined,
     branchId: c.branchId || row.branch_id || undefined,
     isActive: c.isActive !== false && row.is_active !== false,
-    productType: (c.productType || row.product_type || 'retail') as 'retail' | 'raw_material'
+    productType: (c.productType || row.product_type || row.type || 'retail') as 'retail' | 'raw_material'
   };
 }
 
