@@ -1305,6 +1305,7 @@ export default function App() {
   const branchPurchaseInvoices = salonPurchaseInvoices;
   const branchSupplierPayments = salonSupplierPayments;
   const branchInventoryCounts = salonInventoryCounts;
+  const branchItemMovements = salonItemMovements;
   const branchSalesReturns = salonSalesReturns;
  
   const currentModalExpectedCash = useMemo(() => {
