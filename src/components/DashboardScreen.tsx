@@ -88,22 +88,29 @@ export function DashboardScreen({
     ? (shiftData?.date || shiftDate).split('T')[0].split(' ')[0].trim()
     : '';
 
-  // دالة فحص العمليات التابعة للوردية الحالية المفتوحة حصراً طبقاً لتاريخ الوردية أو تاريخ الحركة
+  // دالة فحص العمليات التابعة للوردية الحالية المفتوحة حصراً طبقاً لمعرف الوردية أو تاريخها
   const matchesCurrentShift = (dateStr?: string, _createdAtStr?: string, itemShiftId?: string, itemShiftDate?: string) => {
     // 1. إذا كانت الوردية مغلقة، يجب تصفير كافة المؤشرات للبدء بنظافة كاملة (0)
     if (!isShiftOpen || !targetShiftDate) return false;
 
-    // 2. إذا كان العنصر يحمل معرف وردية مطابق للوردية الحالية
-    if (itemShiftId && shiftData?.shiftId && itemShiftId === shiftData.shiftId) {
-      return true;
+    const currentShiftId = shiftData?.shiftId || (shiftData as any)?.id;
+
+    // 2. إذا كان معرف الوردية متوفراً، يعامل كمعيار قطعي للفصل بين ورديات نفس اليوم
+    if (currentShiftId && itemShiftId) {
+      return itemShiftId === currentShiftId;
     }
 
-    // 3. إذا كان العنصر يحمل تاريخ وردية مطابق لتاريخ الوردية الحالية المفتوحة
+    // 3. إذا كان العنصر ينتمي لمعرف وردية أخرى
+    if (currentShiftId && itemShiftId && itemShiftId !== currentShiftId) {
+      return false;
+    }
+
+    // 4. إذا كان العنصر يحمل تاريخ وردية مطابق لتاريخ الوردية الحالية المفتوحة (توافقية للسجلات بدون shiftId)
     if (itemShiftDate && itemShiftDate.split('T')[0].split(' ')[0].trim() === targetShiftDate) {
       return true;
     }
 
-    // 4. فحص التاريخ الفعلي للعملية ومقارنته حصراً بتاريخ الوردية المفتوحة
+    // 5. فحص التاريخ الفعلي للعملية ومقارنته حصراً بتاريخ الوردية المفتوحة
     const dateOnly = (dateStr || '').split('T')[0].split(' ')[0].trim();
     if (dateOnly && dateOnly === targetShiftDate) {
       return true;
@@ -325,7 +332,7 @@ export function DashboardScreen({
     if (!isShiftOpen || !targetShiftDate) return [];
     return branchInvoices.filter(inv => {
       if (inv.status === 'cancelled') return false;
-      return matchesCurrentShift(inv.date, undefined, undefined, inv.shiftDate);
+      return matchesCurrentShift(inv.date, (inv as any).createdAt || (inv as any).created_at, (inv as any).shiftId || (inv as any).shift_id, (inv as any).shiftDate || (inv as any).shift_date);
     }).sort((a, b) => {
       const timeA = new Date(a.date || (a as any).createdAt || 0).getTime();
       const timeB = new Date(b.date || (b as any).createdAt || 0).getTime();

@@ -384,13 +384,12 @@ export default function App() {
   };
 
   const applyActiveWorkShift = useCallback((activeShift: any, branchId: string) => {
-    // Session & Persistence Guard: If activeShift matches the shift closed in this session (by ID or shiftDate), REJECT IT!
+    // Session & Persistence Guard: If activeShift matches the shift closed in this session (by ID), REJECT IT!
     if (activeShift && lastClosedShiftRef.current) {
       const closed = lastClosedShiftRef.current;
       const isSameId = closed.id && (activeShift.id === closed.id);
-      const isSameDate = closed.date && (activeShift.shiftDate === closed.date);
-      // If within 12 hours of closing this date or ID, reject resurrection completely
-      if ((isSameId || isSameDate) && (Date.now() - (closed.timestamp || 0) < 12 * 3600 * 1000)) {
+      // If within 12 hours of closing this shift ID, reject resurrection completely
+      if (isSameId && (Date.now() - (closed.timestamp || 0) < 12 * 3600 * 1000)) {
         activeShift = null;
       }
     }
@@ -403,11 +402,13 @@ export default function App() {
     if (activeShift && (activeShift.status === 'open' || !activeShift.closedAt)) {
       setBranchShifts(prev => {
         const current = prev[branchId] || prev['b-main'];
+        const shiftCode = activeShift.shiftCode || (activeShift as any).shift_code;
         if (
           current?.isOpen === true &&
           current?.date === activeShift.shiftDate &&
           current?.initialCash === (Number(activeShift.initialCash) || 0) &&
-          current?.shiftId === activeShift.id
+          current?.shiftId === activeShift.id &&
+          current?.shiftCode === shiftCode
         ) {
           return prev;
         }
@@ -416,7 +417,9 @@ export default function App() {
           date: activeShift.shiftDate,
           initialCash: Number(activeShift.initialCash) || 0,
           shiftId: activeShift.id,
-          openedAt: activeShift.openedAt || (activeShift as any).opened_at || activeShift.createdAt || (activeShift as any).created_at
+          shiftCode: shiftCode,
+          openedAt: activeShift.openedAt || (activeShift as any).opened_at || activeShift.createdAt || (activeShift as any).created_at,
+          openedByUserName: activeShift.openedByUserName || (activeShift as any).opened_by_user_name
         };
         const updated = {
           ...prev,
@@ -453,6 +456,7 @@ export default function App() {
 
   const [showOpenModal, setShowOpenModal] = useState(false);
   const [showCloseModal, setShowCloseModal] = useState(false);
+  const [closeShiftActualCash, setCloseShiftActualCash] = useState<string>('');
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const [openShiftForm, setOpenShiftForm] = useState({ date: new Date().toISOString().split('T')[0], initialCash: 0 });
 
@@ -1295,8 +1299,61 @@ export default function App() {
   const branchPurchaseInvoices = salonPurchaseInvoices;
   const branchSupplierPayments = salonSupplierPayments;
   const branchInventoryCounts = salonInventoryCounts;
-  const branchItemMovements = salonItemMovements;
   const branchSalesReturns = salonSalesReturns;
+ 
+  const currentModalExpectedCash = useMemo(() => {
+    if (!shiftData.isOpen) return 0;
+    const curDate = shiftData.date;
+    const curShiftId = (shiftData as any)?.shiftId;
+    const definedTreasuries = (settings.treasuries && settings.treasuries.length > 0)
+      ? settings.treasuries
+      : [{ id: 'cash', name: 'كاش (الدرج)', isMain: false }];
+      
+    const shiftInvs = branchInvoices.filter(i => {
+      if (i.status === 'cancelled') return false;
+      if (i.shiftId && curShiftId) return i.shiftId === curShiftId;
+      return (i.shiftDate && curDate && i.shiftDate === curDate) || i.date.startsWith(curDate);
+    });
+    
+    const totalCashSales = shiftInvs.reduce((s, i) => {
+      const splits = i.paymentMethods && i.paymentMethods.length > 0
+        ? i.paymentMethods
+        : [{ amount: Number(i.total) || 0, treasuryId: i.paymentMethod || 'cash' }];
+      const cashSplit = splits.find((pm: any) => isMatchingTreasury(pm.treasuryId, 'cash', definedTreasuries))?.amount;
+      return s + (Number(cashSplit) || 0);
+    }, 0);
+
+    const shiftTrxs = branchTransactions.filter(t => {
+      const tShiftId = t.shiftId || (t as any).shift_id;
+      if (tShiftId && curShiftId) return tShiftId === curShiftId;
+      return (t.shiftDate && curDate && t.shiftDate === curDate) || t.date.startsWith(curDate);
+    });
+
+    const isStaffAdv = (t: any) => {
+      const isOut = t.type === 'out' || (t.type as string) === 'expense';
+      if (!isOut) return false;
+      const cat = (t.category || '').toLowerCase();
+      const expCat = ((t as any).expenseCategory || '').toLowerCase();
+      const desc = (t.description || '').toLowerCase();
+      return cat === 'staff_advance' || cat === 'hr_advance' || cat === 'advance' || cat.includes('سلف') || expCat.includes('سلف') || desc.includes('سلفة') || desc.includes('سلف');
+    };
+
+    const cashExpenses = shiftTrxs.filter(t => 
+      (t.type === 'out' || (t.type as string) === 'expense' || t.category === 'expense' || t.category === 'مصروفات' || t.category?.includes('مصروف')) &&
+      !isStaffAdv(t) &&
+      t.category !== 'transfer' &&
+      !t.description?.includes('تصفير') &&
+      !t.description?.includes('تحويل') &&
+      isMatchingTreasury(t.treasury || (t as any).treasuryId, 'cash', definedTreasuries)
+    ).reduce((s, t) => s + (Number(t.amount) || 0), 0);
+
+    const cashAdvances = shiftTrxs.filter(t => 
+      isStaffAdv(t) &&
+      isMatchingTreasury(t.treasury || (t as any).treasuryId, 'cash', definedTreasuries)
+    ).reduce((s, t) => s + (Number(t.amount) || 0), 0);
+
+    return Math.round(((Number(shiftData.initialCash) || 0) + totalCashSales - (cashExpenses + cashAdvances)) * 100) / 100;
+  }, [shiftData, branchInvoices, branchTransactions, settings.treasuries]);
 
   // ============================================================
   // Subscription & Read-Only Protection Rules
@@ -1441,7 +1498,14 @@ export default function App() {
     setTransactions(prev => {
       const currentSalonTrxs = prev.filter(t => !(t as any).salonId || (t as any).salonId === currentSalonId);
       const next = typeof updater === 'function' ? updater(currentSalonTrxs) : updater;
-      const tagged = next.map(t => ({ ...t, salonId: (t as any).salonId || currentSalonId, branchId: (t as any).branchId || activeBranchId } as any));
+      const tagged = next.map(t => ({ 
+        ...t, 
+        salonId: (t as any).salonId || currentSalonId, 
+        branchId: (t as any).branchId || activeBranchId,
+        shiftId: (t as any).shiftId || (shiftData?.isOpen ? (shiftData as any).shiftId : undefined),
+        shiftCode: (t as any).shiftCode || (shiftData?.isOpen ? (shiftData as any).shiftCode : undefined),
+        shiftDate: (t as any).shiftDate || (shiftData?.isOpen ? shiftData.date : undefined)
+      } as any));
       const other = prev.filter(t => (t as any).salonId && (t as any).salonId !== currentSalonId);
       const res = [...other, ...tagged];
       DB.saveTransactions(tagged);
@@ -1811,6 +1875,19 @@ export default function App() {
     const shiftId = 'SHIFT-' + Math.random().toString(36).substr(2, 9).toUpperCase();
     const nowIso = new Date().toISOString();
 
+    // توليد كود وردية تسلسلي وفريد لنفس اليوم (e.g. SH-20261010-01, SH-20261010-02)
+    const cleanDate = openShiftForm.date.replace(/-/g, '');
+    let seq = 1;
+    try {
+      const existingShifts = await DB.fetchWorkShifts(settings.salonId, activeBranchId);
+      const sameDayShifts = existingShifts.filter((s: any) => s.shiftDate === openShiftForm.date);
+      seq = sameDayShifts.length + 1;
+    } catch (e) {
+      console.warn('Error fetching existing shifts for code sequence:', e);
+    }
+    const shiftSeq = seq.toString().padStart(2, '0');
+    const shiftCode = `SH-${cleanDate}-${shiftSeq}`;
+
     if (openShiftForm.initialCash > 0) {
       const cashTreasury = settings.treasuries.find(t => t.id === 'cash') || settings.treasuries[0];
       const newTrx: Transaction = {
@@ -1819,12 +1896,14 @@ export default function App() {
         type: 'in',
         amount: openShiftForm.initialCash,
         category: 'عهدة افتتاحية',
-        description: `عهدة افتتاحية للوردية (${currentUser?.name || 'الكاشير'}) - فرع ${activeBranch?.name || ''}`,
+        description: `عهدة افتتاحية للوردية [${shiftCode}] (${currentUser?.name || 'الكاشير'}) - فرع ${activeBranch?.name || ''}`,
         treasury: cashTreasury.id,
         createdBy: currentUser?.name || 'الكاشير',
         userId: currentUser?.id,
         userName: currentUser?.name || 'الكاشير',
         shiftDate: openShiftForm.date,
+        shiftId,
+        shiftCode,
         branchId: activeBranchId,
         branchCode: activeBranch?.code
       };
@@ -1833,6 +1912,7 @@ export default function App() {
 
     const newWorkShift: WorkShift = {
       id: shiftId,
+      shiftCode,
       salonId: settings.salonId,
       branchId: activeBranchId,
       shiftDate: openShiftForm.date,
@@ -1851,7 +1931,15 @@ export default function App() {
       localStorage.removeItem('smartcut_last_closed_shift');
     } catch (e) {}
     await DB.saveWorkShift(newWorkShift);
-    setShiftData({ isOpen: true, date: openShiftForm.date, initialCash: openShiftForm.initialCash, shiftId, openedAt: nowIso });
+    setShiftData({ 
+      isOpen: true, 
+      date: openShiftForm.date, 
+      initialCash: openShiftForm.initialCash, 
+      shiftId, 
+      shiftCode, 
+      openedAt: nowIso, 
+      openedByUserName: currentUser?.name || 'الكاشير' 
+    });
     setShowOpenModal(false);
   };
 
@@ -1877,19 +1965,27 @@ export default function App() {
         ? shiftData.date 
         : new Date().toISOString().split('T')[0];
       const currentShiftId = (shiftData as any)?.shiftId || (shiftData as any)?.id || ('SHIFT-' + Math.random().toString(36).substr(2, 9).toUpperCase());
+      const currentShiftCode = (shiftData as any)?.shiftCode || '';
       const now = currentShiftDate + 'T' + new Date().toTimeString().split(' ')[0];
 
-      // Operational collections filtered by current shift
-      const shiftInvoices = branchInvoices.filter(i => 
-        i.status !== 'cancelled' && 
-        ((i.shiftDate && i.shiftDate === currentShiftDate) || i.date.startsWith(currentShiftDate))
-      );
+      // Operational collections filtered strictly by current shift to isolate multiple cashiers on the same day
+      const shiftInvoices = branchInvoices.filter(i => {
+        if (i.status === 'cancelled') return false;
+        if (i.shiftId && currentShiftId) {
+          return i.shiftId === currentShiftId;
+        }
+        return (i.shiftDate && i.shiftDate === currentShiftDate) || i.date.startsWith(currentShiftDate);
+      });
 
-      const shiftTransactions = branchTransactions.filter(t => 
-        (t.shiftDate && t.shiftDate === currentShiftDate) || 
-        ((t as any).shift_date && (t as any).shift_date === currentShiftDate) || 
-        t.date.startsWith(currentShiftDate)
-      );
+      const shiftTransactions = branchTransactions.filter(t => {
+        const tShiftId = t.shiftId || (t as any).shift_id;
+        if (tShiftId && currentShiftId) {
+          return tShiftId === currentShiftId;
+        }
+        return (t.shiftDate && t.shiftDate === currentShiftDate) || 
+               ((t as any).shift_date && (t as any).shift_date === currentShiftDate) || 
+               t.date.startsWith(currentShiftDate);
+      });
 
       const isStaffAdvance = (t: any) => {
         const isOut = t.type === 'out' || (t.type as string) === 'expense';
@@ -2011,7 +2107,7 @@ export default function App() {
             type: 'out',
             amount: amountToTransfer,
             category: 'transfer',
-            description: `تصفير خزينة (${t.name}) ونقل الرصيد بالكامل (${amountToTransfer} ${settings.currency || 'ر.س'}) إلى (${mainTreasury.name}) - فرع ${activeBranch?.name || ''}`,
+            description: `تصفير خزينة (${t.name}) بالوردية [${currentShiftCode || currentShiftDate}] ونقل الرصيد (${amountToTransfer} ${settings.currency || 'ر.س'}) إلى (${mainTreasury.name}) - كاشير: ${currentUser?.name || 'الكاشير'}`,
             treasury: t.id,
             branchId: activeBranchId,
             branchCode: activeBranch?.code,
@@ -2019,7 +2115,8 @@ export default function App() {
             userId: currentUser?.id,
             userName: currentUser?.name || 'الكاشير',
             shiftDate: currentShiftDate,
-            shiftId: currentShiftId
+            shiftId: currentShiftId,
+            shiftCode: currentShiftCode
           });
           newTransactions.push({
             id: 'TRX-IN-' + Math.random().toString(36).substr(2, 9),
@@ -2029,7 +2126,7 @@ export default function App() {
             type: 'in',
             amount: amountToTransfer,
             category: 'transfer',
-            description: `تحويل تصفير وردية من (${t.name}) بمبلغ (${amountToTransfer} ${settings.currency || 'ر.س'}) إلى (${mainTreasury.name}) - فرع ${activeBranch?.name || ''}`,
+            description: `تحويل تصفير وردية [${currentShiftCode || currentShiftDate}] من (${t.name}) بمبلغ (${amountToTransfer} ${settings.currency || 'ر.س'}) إلى (${mainTreasury.name}) - كاشير: ${currentUser?.name || 'الكاشير'}`,
             treasury: mainTreasury.id,
             branchId: activeBranchId,
             branchCode: activeBranch?.code,
@@ -2037,7 +2134,8 @@ export default function App() {
             userId: currentUser?.id,
             userName: currentUser?.name || 'الكاشير',
             shiftDate: currentShiftDate,
-            shiftId: currentShiftId
+            shiftId: currentShiftId,
+            shiftCode: currentShiftCode
           });
         }
       });
@@ -2083,22 +2181,37 @@ export default function App() {
       ).reduce((s, t) => s + (Number(t.amount) || 0), 0);
 
       const expectedCash = (Number(shiftData.initialCash) || 0) + totalCashSales - (cashExpenses + cashAdvances);
+      const actualCashNum = closeShiftActualCash !== '' && !isNaN(Number(closeShiftActualCash))
+        ? Number(closeShiftActualCash)
+        : expectedCash;
+      const cashDifference = Math.round((actualCashNum - expectedCash) * 100) / 100;
+
+      const totalTransferredToMain = newTransactions
+        .filter(t => t.type === 'in' && t.treasury === mainTreasury.id && t.category === 'transfer')
+        .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
 
       const closedShift: Partial<WorkShift> = {
         id: currentShiftId,
+        shiftCode: currentShiftCode,
         salonId: settings.salonId,
         branchId: activeBranchId,
         shiftDate: currentShiftDate,
+        openedAt: (shiftData as any)?.openedAt,
+        openedByUserName: (shiftData as any)?.openedByUserName,
         closedAt: now,
         closedByUserId: currentUser?.id,
         closedByUserName: currentUser?.name || 'الكاشير',
         initialCash: Number(shiftData.initialCash) || 0,
         expectedCash,
+        actualCash: actualCashNum,
+        cashDifference,
         totalSales,
         totalCashSales,
         totalCardSales,
         totalExpenses: shiftExpenses,
         totalAdvances: shiftAdvances,
+        transferredToTreasury: mainTreasury.name,
+        transferredAmount: totalTransferredToMain,
         status: 'closed'
       };
 
@@ -2109,7 +2222,7 @@ export default function App() {
       QueueService.resetShiftQueue(settings.salonId, activeBranchId, currentShiftDate);
 
       // Cleanly clear local shift state
-      setShiftData({ isOpen: false, date: '', initialCash: 0, lastClosedAt: now });
+      setShiftData({ isOpen: false, date: '', initialCash: 0, lastClosedAt: now, shiftId: undefined, shiftCode: undefined });
       try {
         localStorage.removeItem('smartcut_active_work_shift');
       } catch (e) {}
@@ -2124,7 +2237,29 @@ export default function App() {
       } catch (e) {}
 
       setShowCloseModal(false);
-      alert(`تم إغلاق الوردية (${currentShiftDate}) وتصفير الخزائن وترحيل المبالغ إلى ${mainTreasury.name} بنجاح.`);
+      setCloseShiftActualCash('');
+
+      const diffMsg = Math.abs(cashDifference) < 0.01 
+        ? 'الكاش مطابق تماماً ✓' 
+        : cashDifference < 0 
+          ? `يوجد عجز نقدي بقيمة ${Math.abs(cashDifference)} ${settings.currency}` 
+          : `توجد زيادة نقدية بقيمة ${cashDifference} ${settings.currency}`;
+
+      const openNext = window.confirm(
+        `✅ تم إغلاق وردية الكاشير (${currentUser?.name || ''}) بنجاح!\n` +
+        `• كود الوردية: ${currentShiftCode || currentShiftId}\n` +
+        `• الكاش الفعلي: ${actualCashNum} ${settings.currency} (${diffMsg})\n` +
+        `• المبالغ المحولة للخزينة الرئيسية: ${totalTransferredToMain} ${settings.currency}\n\n` +
+        `هل ترغب في فتح وردية الكاشير التالي الآن؟`
+      );
+
+      if (openNext) {
+        setOpenShiftForm({
+          date: currentShiftDate,
+          initialCash: 0
+        });
+        setShowOpenModal(true);
+      }
     } catch (err: any) {
       console.error('handleConfirmCloseShift error:', err);
       alert('حدث خطأ أثناء إغلاق الوردية: ' + (err.message || 'يرجى المحاولة مرة أخرى'));
@@ -2164,6 +2299,9 @@ export default function App() {
       salonId: settings.salonId,
       branchId: activeBranchId,
       branchCode: activeBranch?.code,
+      shiftId: invoice.shiftId || (shiftData?.isOpen ? (shiftData as any).shiftId : undefined),
+      shiftCode: invoice.shiftCode || (shiftData?.isOpen ? (shiftData as any).shiftCode : undefined),
+      shiftDate: invoice.shiftDate || (shiftData?.isOpen ? shiftData.date : undefined),
       paymentMethods: invoice.paymentMethods && invoice.paymentMethods.length > 0 ? invoice.paymentMethods : paymentSplits
     };
     setInvoices(prev => [invoiceWithBranch, ...prev.filter(i => i.id !== invoiceWithBranch.id)]);
@@ -2529,6 +2667,8 @@ export default function App() {
           activeBranchId={activeBranchId}
           isShiftOpen={shiftData.isOpen} 
           shiftDate={shiftData.date} 
+          shiftId={(shiftData as any)?.shiftId}
+          shiftCode={(shiftData as any)?.shiftCode}
           initialBooking={activeBookingForPOS} 
           initialHeldInvoice={activeHeldInvoiceForPOS}
           onClearInitial={() => {
@@ -3657,17 +3797,79 @@ export default function App() {
               <div id="shift-closing-report-receipt-container" className="bg-white shadow-sm p-4 w-full rounded-2xl">
                 <ClosingReportReceipt 
                   settings={settings}
-                  transactions={transactions.filter(t => (t.shiftDate && shiftData.date && t.shiftDate === shiftData.date) || t.date.startsWith(shiftData.date))}
-                  invoices={invoices.filter(i => (i.shiftDate && shiftData.date && i.shiftDate === shiftData.date) || i.date.startsWith(shiftData.date))}
+                  transactions={transactions.filter(t => {
+                    const tShiftId = t.shiftId || (t as any).shift_id;
+                    if (tShiftId && (shiftData as any)?.shiftId) {
+                      return tShiftId === (shiftData as any).shiftId;
+                    }
+                    return (t.shiftDate && shiftData.date && t.shiftDate === shiftData.date) || t.date.startsWith(shiftData.date);
+                  })}
+                  invoices={invoices.filter(i => {
+                    if (i.status === 'cancelled') return false;
+                    if (i.shiftId && (shiftData as any)?.shiftId) {
+                      return i.shiftId === (shiftData as any).shiftId;
+                    }
+                    return (i.shiftDate && shiftData.date && i.shiftDate === shiftData.date) || i.date.startsWith(shiftData.date);
+                  })}
                   bookings={branchBookings}
                   dateLabel={shiftData.date}
                   initialCash={shiftData.initialCash}
                   userName={currentUser?.name || settings.ownerName || 'المسؤول'}
+                  shiftCode={(shiftData as any)?.shiftCode}
+                  openedByUserName={(shiftData as any)?.openedByUserName}
+                  openedAt={(shiftData as any)?.openedAt}
+                  closedByUserName={currentUser?.name || 'الكاشير'}
+                  closedAt={new Date().toISOString()}
+                  expectedCash={currentModalExpectedCash}
+                  actualCash={closeShiftActualCash !== '' && !isNaN(Number(closeShiftActualCash)) ? Number(closeShiftActualCash) : currentModalExpectedCash}
+                  cashDifference={(closeShiftActualCash !== '' && !isNaN(Number(closeShiftActualCash)) ? Number(closeShiftActualCash) : currentModalExpectedCash) - currentModalExpectedCash}
+                  mainTreasuryName={settings.treasuries?.find(t => t.id === 'main' || t.isMain)?.name || 'الخزينة الرئيسية'}
                 />
               </div>
             </div>
             
             <div className="p-4 bg-slate-50 border-t border-slate-100 flex flex-col gap-2.5">
+              {/* مدخل الكاش الفعلي المعدود في الدرج */}
+              <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-2xs space-y-2">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="font-bold text-slate-600">الكاش المتوقع بالدرج:</span>
+                  <span className="font-mono font-black text-slate-800">{currentModalExpectedCash.toFixed(2)} {settings.currency}</span>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    الكاش الفعلي المعدود في الدرج (للتسليم للكاشير التالي):
+                  </label>
+                  <div className="relative">
+                    <input 
+                      type="number" 
+                      className="w-full border border-slate-300 rounded-xl pr-3 pl-12 py-2 font-black text-slate-900 outline-none focus:border-emerald-600 bg-slate-50 text-sm"
+                      value={closeShiftActualCash}
+                      onChange={e => setCloseShiftActualCash(e.target.value)}
+                      placeholder={currentModalExpectedCash.toFixed(2)}
+                    />
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold">{settings.currency}</span>
+                  </div>
+                </div>
+                {closeShiftActualCash !== '' && (
+                  <div className={`text-xs font-bold px-2 py-1 rounded flex justify-between ${
+                    Math.abs(Number(closeShiftActualCash) - currentModalExpectedCash) < 0.01
+                      ? 'bg-emerald-50 text-emerald-800'
+                      : Number(closeShiftActualCash) < currentModalExpectedCash
+                        ? 'bg-rose-50 text-rose-800'
+                        : 'bg-blue-50 text-blue-800'
+                  }`}>
+                    <span>الفارق:</span>
+                    <span className="font-mono" dir="ltr">
+                      {Math.abs(Number(closeShiftActualCash) - currentModalExpectedCash) < 0.01
+                        ? '0.00 (متطابق تماماً ✓)'
+                        : (Number(closeShiftActualCash) - currentModalExpectedCash) < 0
+                          ? `عجز: ${Math.abs(Number(closeShiftActualCash) - currentModalExpectedCash).toFixed(2)} -`
+                          : `زيادة: +${(Number(closeShiftActualCash) - currentModalExpectedCash).toFixed(2)}`}
+                    </span>
+                  </div>
+                )}
+              </div>
+
               <div className="flex items-center gap-2">
                 <button 
                   onClick={() => handlePrintClosingShiftReport(settings.paperSize || '80mm')}

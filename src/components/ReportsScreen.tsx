@@ -1,6 +1,6 @@
-import { useState, useMemo, useEffect } from 'react';
-import { AppSettings, Transaction, Invoice, Branch, TipRecord, AppUser, Booking, SalesReturn, Client, getClientTier } from '../types';
-import { Calendar, FileBarChart, Download, TrendingUp, TrendingDown, DollarSign, Printer, CheckCircle2, Clock, Wallet, Coins, ShoppingCart, Truck, Edit2, Trash2, RefreshCw, AlertTriangle, User, X, Check, Save, MapPin, RotateCcw, Package, Scissors, UserX, MessageSquare, Phone, Sparkles, Copy, Gift, Crown } from 'lucide-react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
+import { AppSettings, Transaction, Invoice, Branch, TipRecord, AppUser, Booking, SalesReturn, Client, WorkShift, getClientTier } from '../types';
+import { Calendar, FileBarChart, Download, TrendingUp, TrendingDown, DollarSign, Printer, CheckCircle2, Clock, Wallet, Coins, ShoppingCart, Truck, Edit2, Trash2, RefreshCw, AlertTriangle, User, X, Check, Save, MapPin, RotateCcw, Package, Scissors, UserX, MessageSquare, Phone, Sparkles, Copy, Gift, Crown, FileText } from 'lucide-react';
 import { ClosingReportReceipt } from './ClosingReportReceipt';
 import { ServicesReportReceipt } from './ServicesReportReceipt';
 import { EmployeesReportReceipt } from './EmployeesReportReceipt';
@@ -135,6 +135,29 @@ export function ReportsScreen({
   const [activeFrom, setActiveFrom] = useState(defaultFirstDay);
   const [activeTo, setActiveTo] = useState(defaultLastDay);
   const [activeReportType, setActiveReportType] = useState('income');
+  const [workShifts, setWorkShifts] = useState<WorkShift[]>([]);
+  const [isLoadingShifts, setIsLoadingShifts] = useState(false);
+  const [selectedShiftCashier, setSelectedShiftCashier] = useState<string>('all');
+  const [activeShiftForReceipt, setActiveShiftForReceipt] = useState<WorkShift | null>(null);
+
+  const loadWorkShifts = useCallback(async () => {
+    if (!settings.salonId) return;
+    setIsLoadingShifts(true);
+    try {
+      const list = await DB.fetchWorkShifts(settings.salonId, activeBranchId);
+      setWorkShifts(list);
+    } catch (err) {
+      console.error('Error fetching work shifts:', err);
+    } finally {
+      setIsLoadingShifts(false);
+    }
+  }, [settings.salonId, activeBranchId]);
+
+  useEffect(() => {
+    if (reportType === 'shifts' || activeReportType === 'shifts') {
+      loadWorkShifts();
+    }
+  }, [reportType, activeReportType, loadWorkShifts]);
 
   const mainBranch = (branches && branches[0]) || { id: 'b-main', name: 'الفرع الرئيسي' };
   const mainBranchId = mainBranch.id;
@@ -1349,6 +1372,33 @@ export function ReportsScreen({
       });
 
       exportToExcel(filename, 'تقرير الدخل', headers, rows);
+    } else if (activeReportType === 'shifts') {
+      const headers = ['كود الوردية', 'التاريخ', 'فتح الوردية بواسطة', 'وقت الفتح', 'إغلاق الوردية بواسطة', 'وقت الإغلاق', 'العهدة الافتتاحية', 'إجمالي المبيعات', 'مبيعات كاش', 'مبيعات شبكة', 'إجمالي المصروفات والسلف', 'الكاش المتوقع', 'الكاش الفعلي', 'الفارق', 'المحول للخزينة الرئيسية', 'الحالة'];
+      const filtered = (workShifts || []).filter((s: any) => {
+        const sDate = (s.shiftDate || (s.openedAt || '').split('T')[0] || '');
+        const inDate = (!activeFrom || sDate >= activeFrom) && (!activeTo || sDate <= activeTo);
+        const matchesUser = !selectedShiftCashier || selectedShiftCashier === 'all' || s.openedByUserName === selectedShiftCashier || s.closedByUserName === selectedShiftCashier;
+        return inDate && matchesUser;
+      });
+      const rows = filtered.map(s => [
+        s.shiftCode || s.id,
+        s.shiftDate || '',
+        s.openedByUserName || 'الكاشير',
+        s.openedAt ? new Date(s.openedAt).toLocaleTimeString('ar-SA') : '',
+        s.closedByUserName || '',
+        s.closedAt ? new Date(s.closedAt).toLocaleTimeString('ar-SA') : '',
+        Number(s.initialCash) || 0,
+        Number(s.totalSales) || 0,
+        Number(s.totalCashSales) || 0,
+        Number(s.totalCardSales) || 0,
+        (Number(s.totalExpenses) || 0) + (Number(s.totalAdvances) || 0),
+        Number(s.expectedCash) || 0,
+        Number(s.actualCash) || 0,
+        Number(s.cashDifference) || 0,
+        Number(s.transferredAmount) || 0,
+        s.status === 'closed' ? 'مغلقة' : 'مفتوحة'
+      ]);
+      exportToExcel(filename, 'تقرير_الورديات', headers, rows);
     } else if (activeReportType === 'expenses') {
       const headers = ['رقم السند', 'التاريخ', 'المبلغ', 'التصنيف', 'البيان', 'الخزينة'];
       const filtered = transactions.filter(t => {
@@ -1633,6 +1683,7 @@ export function ReportsScreen({
           <div>
             <label className="block text-xs font-bold text-slate-500 mb-1">نوع التقرير</label>
             <select value={reportType} onChange={(e) => setReportType(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary font-semibold text-slate-700 bg-white">
+              <option value="shifts">📋 تقرير الورديات وتسليم الكاشيرات (كود الوردية Z-Report)</option>
               <option value="inactive_clients">👥 تقرير العملاء المنقطعين عن الزيارة (إعادة التنشيط)</option>
               <option value="net_profit">💎 تقرير الأرباح الصافية (معادلة صافي الربح وقائمة الدخل)</option>
               <option value="sales_returns">🔄 تقرير مرتجعات المبيعات والبنود المستردة</option>
@@ -1663,6 +1714,36 @@ export function ReportsScreen({
             </button>
           </div>
         </div>
+
+        {/* Sub-filters for Shifts Report */}
+        {reportType === 'shifts' && (
+          <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap gap-4 items-center animate-in fade-in">
+            <div className="flex-1 min-w-[220px]">
+              <label className="block text-xs font-bold text-slate-600 mb-1">فلترة حسب الكاشير أو المستخدم:</label>
+              <select
+                value={selectedShiftCashier}
+                onChange={(e) => setSelectedShiftCashier(e.target.value)}
+                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-primary"
+              >
+                <option value="all">👥 جميع الكاشيرات والمستخدمين</option>
+                {Array.from(new Set(workShifts.map(s => s.openedByUserName || s.closedByUserName || '').filter(Boolean))).map(cashierName => (
+                  <option key={cashierName} value={cashierName}>{cashierName}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-end">
+              <button
+                type="button"
+                onClick={loadWorkShifts}
+                disabled={isLoadingShifts}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <RefreshCw size={14} className={isLoadingShifts ? 'animate-spin' : ''} />
+                <span>تحديث قائمة الورديات</span>
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Sub-filters for Advances Report */}
         {reportType === 'advances' && (
@@ -2374,7 +2455,7 @@ export function ReportsScreen({
             </div>
           </div>
         </div>
-      ) : isGenerated && activeReportType !== 'inactive_clients' && activeReportType !== 'sales_returns' && activeReportType !== 'unpaid_bookings' ? (
+      ) : isGenerated && activeReportType !== 'inactive_clients' && activeReportType !== 'sales_returns' && activeReportType !== 'unpaid_bookings' && activeReportType !== 'shifts' ? (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm border-r-4 border-r-emerald-500 flex justify-between items-center">
             <div>
@@ -2457,6 +2538,12 @@ export function ReportsScreen({
             returnsTreasuryFilter={returnsTreasuryFilter}
             returnsSearch={returnsSearch}
             branchInvoices={branchInvoices}
+            workShifts={workShifts}
+            isLoadingShifts={isLoadingShifts}
+            loadWorkShifts={loadWorkShifts}
+            selectedShiftCashier={selectedShiftCashier}
+            activeShiftForReceipt={activeShiftForReceipt}
+            setActiveShiftForReceipt={setActiveShiftForReceipt}
           />
         </div>
       )}
@@ -2507,7 +2594,13 @@ function ReportTable({
   returnsFilterType = 'all',
   returnsTreasuryFilter = 'all',
   returnsSearch = '',
-  branchInvoices = []
+  branchInvoices = [],
+  workShifts = [],
+  isLoadingShifts = false,
+  loadWorkShifts,
+  selectedShiftCashier = 'all',
+  activeShiftForReceipt,
+  setActiveShiftForReceipt
 }: any) {
   const start = new Date(activeFrom);
   const end = new Date(activeTo);
@@ -2751,7 +2844,240 @@ function ReportTable({
     );
   }
 
-  
+  if (reportType === 'shifts') {
+    const filteredShifts = (workShifts || []).filter((s: any) => {
+      const sDate = (s.shiftDate || (s.openedAt || '').split('T')[0] || '');
+      const inDateRange = (!activeFrom || sDate >= activeFrom) && (!activeTo || sDate <= activeTo);
+      const matchesCashier = !selectedShiftCashier || selectedShiftCashier === 'all' || 
+        s.openedByUserName === selectedShiftCashier || 
+        s.closedByUserName === selectedShiftCashier;
+      return inDateRange && matchesCashier;
+    });
+
+    const totalSalesSum = filteredShifts.reduce((acc, s) => acc + (Number(s.totalSales) || 0), 0);
+    const totalCashSalesSum = filteredShifts.reduce((acc, s) => acc + (Number(s.totalCashSales) || 0), 0);
+    const totalCardSalesSum = filteredShifts.reduce((acc, s) => acc + (Number(s.totalCardSales) || 0), 0);
+    const totalTransferredSum = filteredShifts.reduce((acc, s) => acc + (Number(s.transferredAmount) || 0), 0);
+    const totalDiffSum = filteredShifts.reduce((acc, s) => acc + (Number(s.cashDifference) || 0), 0);
+    const totalExpensesSum = filteredShifts.reduce((acc, s) => acc + ((Number(s.totalExpenses) || 0) + (Number(s.totalAdvances) || 0)), 0);
+
+    return (
+      <div className="p-4 sm:p-6 space-y-6">
+        {/* ملخص إحصائي سريع للورديات */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-center">
+            <p className="text-xs font-bold text-slate-500 mb-1">إجمالي الورديات</p>
+            <p className="text-2xl font-black text-slate-800 font-mono">{filteredShifts.length}</p>
+          </div>
+          <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-center">
+            <p className="text-xs font-bold text-emerald-700 mb-1">إجمالي المبيعات</p>
+            <p className="text-2xl font-black text-emerald-800 font-mono">{totalSalesSum.toFixed(2)} <span className="text-xs font-normal">{settings.currency}</span></p>
+            <p className="text-[10px] text-emerald-600 mt-1">كاش: {totalCashSalesSum.toFixed(2)} | شبكة: {totalCardSalesSum.toFixed(2)}</p>
+          </div>
+          <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 text-center">
+            <p className="text-xs font-bold text-rose-700 mb-1">المصروفات والسلف</p>
+            <p className="text-2xl font-black text-rose-800 font-mono">{totalExpensesSum.toFixed(2)} <span className="text-xs font-normal">{settings.currency}</span></p>
+          </div>
+          <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 text-center">
+            <p className="text-xs font-bold text-blue-700 mb-1">المرحل للخزينة الرئيسية</p>
+            <p className="text-2xl font-black text-blue-800 font-mono">{totalTransferredSum.toFixed(2)} <span className="text-xs font-normal">{settings.currency}</span></p>
+            <p className={`text-[10px] font-bold mt-1 ${Math.abs(totalDiffSum) < 0.01 ? 'text-slate-500' : totalDiffSum < 0 ? 'text-rose-600' : 'text-blue-600'}`}>
+              فروقات الكاش: {totalDiffSum >= 0 ? `+${totalDiffSum.toFixed(2)}` : totalDiffSum.toFixed(2)}
+            </p>
+          </div>
+        </div>
+
+        {/* جدول الورديات */}
+        {filteredShifts.length === 0 ? (
+          <div className="text-center py-12 text-slate-400">
+            <p className="text-base font-bold">لا توجد ورديات مسجلة في هذا النطاق الزمني</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto rounded-2xl border border-slate-200">
+            <table className="w-full text-right text-xs">
+              <thead className="bg-slate-100 text-slate-700 font-extrabold border-b border-slate-200">
+                <tr>
+                  <th className="py-3 px-3">كود الوردية</th>
+                  <th className="py-3 px-3">التاريخ</th>
+                  <th className="py-3 px-3">فتح الوردية</th>
+                  <th className="py-3 px-3">إغلاق وتسليم</th>
+                  <th className="py-3 px-3 text-center">العهدة</th>
+                  <th className="py-3 px-3 text-center">المبيعات</th>
+                  <th className="py-3 px-3 text-center">المصروفات والسلف</th>
+                  <th className="py-3 px-3 text-center">المتوقع / الفعلي</th>
+                  <th className="py-3 px-3 text-center">الفارق</th>
+                  <th className="py-3 px-3 text-center">المرحل للخزينة</th>
+                  <th className="py-3 px-3 text-center">الحالة</th>
+                  <th className="py-3 px-3 text-center">إجراء</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredShifts.map((shift: any) => {
+                  const sCode = shift.shiftCode || shift.id?.substring(0, 8);
+                  const isClosed = shift.status === 'closed' || Boolean(shift.closedAt);
+                  const expCash = Number(shift.expectedCash) || 0;
+                  const actCash = Number(shift.actualCash) || 0;
+                  const diff = shift.cashDifference !== undefined ? Number(shift.cashDifference) : (actCash - expCash);
+                  const diffStatus = Math.abs(diff) < 0.01 
+                    ? 'متطابق ✓' 
+                    : diff < 0 
+                      ? `عجز (${Math.abs(diff).toFixed(2)})` 
+                      : `زيادة (+${diff.toFixed(2)})`;
+                  const diffColor = Math.abs(diff) < 0.01 
+                    ? 'text-slate-600' 
+                    : diff < 0 
+                      ? 'text-rose-600 font-bold' 
+                      : 'text-blue-600 font-bold';
+
+                  return (
+                    <tr key={shift.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="py-3 px-3 font-mono font-bold text-slate-800">
+                        <span className="bg-slate-900 text-white text-[11px] px-2 py-0.5 rounded font-mono">
+                          {sCode}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 font-semibold text-slate-700 whitespace-nowrap">
+                        {shift.shiftDate || (shift.openedAt ? shift.openedAt.split('T')[0] : '-')}
+                      </td>
+                      <td className="py-3 px-3 whitespace-nowrap">
+                        <div className="font-bold text-slate-800">{shift.openedByUserName || 'الكاشير'}</div>
+                        <div className="text-[10px] text-slate-400 font-mono">
+                          {shift.openedAt ? new Date(shift.openedAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }) : '-'}
+                        </div>
+                      </td>
+                      <td className="py-3 px-3 whitespace-nowrap">
+                        <div className="font-bold text-slate-800">{shift.closedByUserName || (isClosed ? 'المسؤول' : '-')}</div>
+                        <div className="text-[10px] text-slate-400 font-mono">
+                          {shift.closedAt ? new Date(shift.closedAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }) : '-'}
+                        </div>
+                      </td>
+                      <td className="py-3 px-3 text-center font-mono font-bold text-slate-700">
+                        {(Number(shift.initialCash) || 0).toFixed(2)}
+                      </td>
+                      <td className="py-3 px-3 text-center">
+                        <span className="font-mono font-black text-emerald-700">
+                          {(Number(shift.totalSales) || 0).toFixed(2)}
+                        </span>
+                        <div className="text-[10px] text-slate-400">
+                          نقد: {(Number(shift.totalCashSales) || 0).toFixed(2)} | شبكة: {(Number(shift.totalCardSales) || 0).toFixed(2)}
+                        </div>
+                      </td>
+                      <td className="py-3 px-3 text-center font-mono font-bold text-rose-600">
+                        {((Number(shift.totalExpenses) || 0) + (Number(shift.totalAdvances) || 0)).toFixed(2)}
+                      </td>
+                      <td className="py-3 px-3 text-center font-mono text-[11px]">
+                        <div>متوقع: <span className="font-bold">{expCash.toFixed(2)}</span></div>
+                        <div>فعلي: <span className="font-bold">{actCash.toFixed(2)}</span></div>
+                      </td>
+                      <td className={`py-3 px-3 text-center font-mono ${diffColor}`}>
+                        {diffStatus}
+                      </td>
+                      <td className="py-3 px-3 text-center font-mono font-black text-blue-700">
+                        {(Number(shift.transferredAmount) || 0).toFixed(2)}
+                      </td>
+                      <td className="py-3 px-3 text-center whitespace-nowrap">
+                        {isClosed ? (
+                          <span className="bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full text-[10px] font-bold">مغلقة</span>
+                        ) : (
+                          <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full text-[10px] font-bold animate-pulse">مفتوحة 🟢</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-3 text-center whitespace-nowrap">
+                        <button
+                          onClick={() => setActiveShiftForReceipt(shift)}
+                          className="bg-slate-800 hover:bg-slate-900 text-white font-bold px-2.5 py-1.5 rounded-lg text-[11px] inline-flex items-center gap-1 transition-all shadow-xs cursor-pointer active:scale-95"
+                          title="عرض وطباعة إيصال إغلاق الوردية"
+                        >
+                          <Printer size={13} className="text-emerald-400" />
+                          <span>Z-Report</span>
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Modal لمعاينة وطباعة إيصال الوردية المحددة */}
+        {activeShiftForReceipt && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md my-8 overflow-hidden">
+              <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                <h3 className="font-extrabold text-sm text-slate-800">
+                  إيصال الوردية [{activeShiftForReceipt.shiftCode || activeShiftForReceipt.id?.substring(0, 8)}]
+                </h3>
+                <button onClick={() => setActiveShiftForReceipt(null)} className="text-slate-400 hover:text-red-500 font-bold">✕</button>
+              </div>
+              <div className="p-4 overflow-hidden flex justify-center bg-slate-100 max-h-[60vh] overflow-y-auto">
+                <div id="print-shift-receipt-container" className="bg-white shadow-sm p-4 w-full rounded-2xl">
+                  <ClosingReportReceipt 
+                    settings={settings}
+                    transactions={transactions.filter((t: any) => {
+                      const tShiftId = t.shiftId || t.shift_id;
+                      if (tShiftId && activeShiftForReceipt.id) {
+                        return tShiftId === activeShiftForReceipt.id;
+                      }
+                      return (t.shiftDate && t.shiftDate === activeShiftForReceipt.shiftDate) || (t.date && t.date.startsWith(activeShiftForReceipt.shiftDate));
+                    })}
+                    invoices={invoices.filter((i: any) => {
+                      if (i.status === 'cancelled') return false;
+                      if (i.shiftId && activeShiftForReceipt.id) {
+                        return i.shiftId === activeShiftForReceipt.id;
+                      }
+                      return (i.shiftDate && i.shiftDate === activeShiftForReceipt.shiftDate) || (i.date && i.date.startsWith(activeShiftForReceipt.shiftDate));
+                    })}
+                    bookings={bookings}
+                    dateLabel={activeShiftForReceipt.shiftDate}
+                    initialCash={activeShiftForReceipt.initialCash}
+                    userName={activeShiftForReceipt.closedByUserName || activeShiftForReceipt.openedByUserName || 'الكاشير'}
+                    shiftCode={activeShiftForReceipt.shiftCode}
+                    openedByUserName={activeShiftForReceipt.openedByUserName}
+                    openedAt={activeShiftForReceipt.openedAt}
+                    closedByUserName={activeShiftForReceipt.closedByUserName}
+                    closedAt={activeShiftForReceipt.closedAt}
+                    expectedCash={activeShiftForReceipt.expectedCash}
+                    actualCash={activeShiftForReceipt.actualCash}
+                    cashDifference={activeShiftForReceipt.cashDifference}
+                    transferredAmount={activeShiftForReceipt.transferredAmount}
+                    mainTreasuryName={activeShiftForReceipt.transferredToTreasury || 'الخزينة الرئيسية'}
+                  />
+                </div>
+              </div>
+              <div className="p-4 bg-slate-50 border-t border-slate-100 flex gap-2">
+                <button 
+                  onClick={() => {
+                    import('../utils/print').then(m => m.handlePrintReceipt('print-shift-receipt-container', false, '80mm'));
+                  }}
+                  className="flex-1 bg-slate-900 hover:bg-slate-800 text-white font-extrabold py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 text-xs shadow cursor-pointer active:scale-95"
+                >
+                  <Printer size={15} className="text-emerald-400" />
+                  <span>طباعة حراري (80mm)</span>
+                </button>
+                <button 
+                  onClick={() => {
+                    import('../utils/print').then(m => m.handlePrintReceipt('print-shift-receipt-container', true, 'a4'));
+                  }}
+                  className="bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 font-extrabold py-2.5 px-4 rounded-xl transition-all flex items-center justify-center gap-1 text-xs shadow-xs cursor-pointer active:scale-95"
+                >
+                  <FileText size={15} className="text-slate-500" />
+                  <span>A4</span>
+                </button>
+                <button
+                  onClick={() => setActiveShiftForReceipt(null)}
+                  className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold px-3 py-2.5 rounded-xl text-xs cursor-pointer"
+                >
+                  إغلاق
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   if (reportType === 'services_report') {
     const filteredInvoices = invoices.filter((i: Invoice) => {
       const iDateStr = i.date.split('T')[0]; return iDateStr >= activeFrom && iDateStr <= activeTo;

@@ -246,6 +246,7 @@ export interface ServiceItem {
 
 export interface WorkShift {
   id: string;
+  shiftCode?: string; // كود الوردية المميز e.g. SH-20261010-01
   salonId?: string;
   branchId?: string;
   shiftDate: string; // YYYY-MM-DD
@@ -265,6 +266,8 @@ export interface WorkShift {
   totalCardSales?: number;
   totalExpenses?: number;
   totalAdvances?: number;
+  transferredToTreasury?: string;
+  transferredAmount?: number;
   status: 'open' | 'closed';
   notes?: string;
   createdAt?: string;
@@ -964,6 +967,10 @@ export interface Invoice {
   // Sales Returns Tracking
   returnedAmount?: number;
   returnIds?: string[];
+  // Shift Attribution
+  shiftDate?: string;
+  shiftId?: string;
+  shiftCode?: string;
 }
 
 // ============================================================
@@ -1257,6 +1264,8 @@ export interface Transaction {
   booking_id?: string;
   shiftId?: string;
   shift_id?: string;
+  shiftCode?: string;
+  shift_code?: string;
   createdAt?: string;
   updatedAt?: string;
 }

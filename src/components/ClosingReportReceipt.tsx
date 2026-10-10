@@ -9,7 +9,17 @@ export function ClosingReportReceipt({
   bookings = [],
   dateLabel,
   initialCash = 0,
-  userName
+  userName,
+  shiftCode,
+  openedByUserName,
+  openedAt,
+  closedByUserName,
+  closedAt,
+  expectedCash,
+  actualCash,
+  cashDifference,
+  transferredAmount,
+  mainTreasuryName
 }: {
   settings: AppSettings,
   transactions: Transaction[],
@@ -17,7 +27,17 @@ export function ClosingReportReceipt({
   bookings?: Booking[],
   dateLabel: string,
   initialCash?: number,
-  userName?: string
+  userName?: string,
+  shiftCode?: string,
+  openedByUserName?: string,
+  openedAt?: string,
+  closedByUserName?: string,
+  closedAt?: string,
+  expectedCash?: number,
+  actualCash?: number,
+  cashDifference?: number,
+  transferredAmount?: number,
+  mainTreasuryName?: string
 }) {
   const effectiveUserName = userName || settings.ownerName || 'المسؤول';
 
@@ -275,10 +295,24 @@ export function ClosingReportReceipt({
         {settings.logoUrl && (
           <img src={settings.logoUrl} alt="Logo" className="w-24 h-24 mx-auto mb-2 object-contain grayscale" />
         )}
-        <h2 className="text-xl font-bold mb-2">{settings.salonName || 'اسم الصالون'}</h2>
-        <h1 className="text-xl font-bold">تقرير إغلاق الوردية</h1>
-        <p className="text-xs mt-1">تاريخ: {dateLabel}</p>
-        <p className="text-xs">المستخدم: {effectiveUserName}</p>
+        <h2 className="text-xl font-bold mb-1">{settings.salonName || 'اسم الصالون'}</h2>
+        <h1 className="text-lg font-black border-y border-black py-1 my-1">تقرير إغلاق وتسليم الوردية (Z-Report)</h1>
+        {shiftCode && (
+          <div className="my-1.5">
+            <span className="bg-slate-900 text-white font-mono font-bold text-xs px-2.5 py-1 rounded inline-block">
+              كود الوردية: {shiftCode}
+            </span>
+          </div>
+        )}
+        <p className="text-xs mt-1 font-bold">تاريخ: {dateLabel}</p>
+        {openedByUserName && (
+          <p className="text-xs text-gray-800">
+            فتح الوردية: {openedByUserName} {openedAt ? `(${new Date(openedAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })})` : ''}
+          </p>
+        )}
+        <p className="text-xs text-gray-800">
+          إغلاق الوردية: {closedByUserName || effectiveUserName} {closedAt ? `(${new Date(closedAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })})` : ''}
+        </p>
       </div>
 
       <div className="mb-4">
@@ -394,6 +428,69 @@ export function ClosingReportReceipt({
           </div>
         );
       })}
+
+      {/* قسم مطابقة النقدية وتسليم العهدة للكاشير */}
+      {(expectedCash !== undefined || actualCash !== undefined) && (
+        <div className="my-4 p-3 bg-slate-50 border-2 border-black rounded-lg text-xs space-y-1.5">
+          <div className="font-black text-center border-b border-black pb-1 mb-1.5 text-sm">
+            💵 مطابقة النقدية (الكاش) وتسليم العهدة
+          </div>
+          {expectedCash !== undefined && (
+            <div className="flex justify-between font-bold">
+              <span>الكاش المتوقع بالدرج:</span>
+              <span className="font-mono">{expectedCash.toFixed(2)} {settings.currency}</span>
+            </div>
+          )}
+          {actualCash !== undefined && (
+            <div className="flex justify-between font-bold">
+              <span>الكاش الفعلي المعدود:</span>
+              <span className="font-mono">{actualCash.toFixed(2)} {settings.currency}</span>
+            </div>
+          )}
+          {cashDifference !== undefined && (
+            <div className={`flex justify-between font-black border-t border-dashed border-black pt-1 ${
+              Math.abs(cashDifference) < 0.01 
+                ? 'text-emerald-700' 
+                : cashDifference < 0 
+                  ? 'text-red-700' 
+                  : 'text-blue-700'
+            }`}>
+              <span>الفارق (العجز / الزيادة):</span>
+              <span className="font-mono dir-ltr" dir="ltr">
+                {Math.abs(cashDifference) < 0.01 
+                  ? '0.00 (متطابق تماماً ✓)' 
+                  : cashDifference < 0 
+                    ? `عجز: ${Math.abs(cashDifference).toFixed(2)} -` 
+                    : `زيادة: +${cashDifference.toFixed(2)}`}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* قسم تصفير الوردية والترحيل للخزينة الرئيسية */}
+      {transferredAmount !== undefined && transferredAmount > 0 && (
+        <div className="my-3 p-2.5 bg-emerald-50 border border-emerald-400 rounded-lg text-xs text-emerald-900 text-center font-bold">
+          <div>🔄 تم تصفير رصيد الوردية وترحيله بالكامل</div>
+          <div className="text-sm font-black font-mono mt-0.5">
+            {transferredAmount.toFixed(2)} {settings.currency} ⬅️ {mainTreasuryName || 'الخزينة الرئيسية'}
+          </div>
+        </div>
+      )}
+
+      {/* توقيعات التسليم والتسلم */}
+      <div className="grid grid-cols-2 gap-2 mt-5 pt-3 border-t border-black border-dashed text-[11px] text-center">
+        <div>
+          <p className="font-bold">مسلّم الوردية</p>
+          <p className="text-[10px] text-gray-600 mt-0.5">({closedByUserName || effectiveUserName})</p>
+          <div className="h-7 border-b border-gray-400 mt-1"></div>
+        </div>
+        <div>
+          <p className="font-bold">مستلم الوردية</p>
+          <p className="text-[10px] text-gray-600 mt-0.5">(الكاشير المستلم)</p>
+          <div className="h-7 border-b border-gray-400 mt-1"></div>
+        </div>
+      </div>
 
       <div className="text-center mt-6 text-xs border-t border-black pt-2">
         <p>تم استخراج التقرير من النظام</p>

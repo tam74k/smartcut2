@@ -216,16 +216,25 @@ export async function ensureCoreSchema(): Promise<void> {
       ensureColumn('work_shifts', 'salon_id', 'UUID'),
       ensureColumn('work_shifts', 'branch_id', 'VARCHAR(100)'),
       ensureColumn('work_shifts', 'shift_date', 'VARCHAR(50)'),
+      ensureColumn('work_shifts', 'shift_code', 'VARCHAR(100)'),
       ensureColumn('work_shifts', 'opened_at', 'TIMESTAMPTZ'),
       ensureColumn('work_shifts', 'closed_at', 'TIMESTAMPTZ'),
       ensureColumn('work_shifts', 'opened_by_user_id', 'VARCHAR(100)'),
       ensureColumn('work_shifts', 'opened_by_user_name', 'VARCHAR(255)'),
       ensureColumn('work_shifts', 'opened_by_role', 'VARCHAR(100)'),
+      ensureColumn('work_shifts', 'closed_by_user_id', 'VARCHAR(100)'),
+      ensureColumn('work_shifts', 'closed_by_user_name', 'VARCHAR(255)'),
       ensureColumn('work_shifts', 'initial_cash', 'NUMERIC(12,2)'),
       ensureColumn('work_shifts', 'expected_cash', 'NUMERIC(12,2)'),
       ensureColumn('work_shifts', 'actual_cash', 'NUMERIC(12,2)'),
       ensureColumn('work_shifts', 'cash_difference', 'NUMERIC(12,2)'),
+      ensureColumn('work_shifts', 'transferred_to_treasury', 'VARCHAR(255)'),
+      ensureColumn('work_shifts', 'transferred_amount', 'NUMERIC(12,2)'),
       ensureColumn('work_shifts', 'status', 'VARCHAR(50)'),
+      ensureColumn('invoices', 'shift_code', 'VARCHAR(100)'),
+      ensureColumn('invoices', 'shift_id', 'VARCHAR(100)'),
+      ensureColumn('invoices', 'shift_date', 'VARCHAR(50)'),
+      ensureColumn('transactions', 'shift_code', 'VARCHAR(100)'),
       ensureColumn('app_settings', 'overtime_settings', 'JSONB'),
       ensureColumn('app_settings', 'attendance_settings', 'JSONB'),
       ensureColumn('app_settings', 'commission_settings', 'JSONB'),
@@ -1581,7 +1590,10 @@ export const DB = {
         zatca_qr: inv.zatcaQr || null, zatca_hash: inv.zatcaHash || null,
         zatca_reporting_status: inv.zatcaReportingStatus || 'not_submitted',
         eta_submission_uuid: inv.etaSubmissionUuid || null, eta_status: inv.etaStatus || 'not_submitted',
-        created_by: inv.createdBy || null
+        created_by: inv.createdBy || null,
+        shift_id: inv.shiftId || (inv as any).shift_id || null,
+        shift_code: inv.shiftCode || (inv as any).shift_code || null,
+        shift_date: inv.shiftDate ? String(inv.shiftDate).split('T')[0].trim() : ((inv as any).shift_date ? String((inv as any).shift_date).split('T')[0].trim() : null)
       };
       let { error } = await client.from('invoices').upsert(snap, { onConflict: 'id' });
       if (error && error.code === '23503' && snap.client_id) {
@@ -1619,7 +1631,8 @@ export const DB = {
         booking_id: (t as any).bookingId || (t as any).booking_id || null,
         shift_id: (t as any).shiftId || (t as any).shift_id || null,
         created_by: t.createdBy || null, user_id: t.userId || null,
-        user_name: t.userName || null, shift_date: safeShiftDate
+        user_name: t.userName || null, shift_date: safeShiftDate,
+        shift_code: (t as any).shiftCode || (t as any).shift_code || null
       };
       const { error } = await client.from('transactions').upsert(snap, { onConflict: 'id' });
       if (error) { console.error('DB.saveTransaction error:', error.message); return null; }
@@ -2724,13 +2737,13 @@ export const DB = {
 
         eligibleOpenShifts = openShifts.filter((s: any) => {
           const shiftOpenTime = s.opened_at ? new Date(s.opened_at).getTime() : 0;
-          // If shift was opened on or before the latest closure, or has the exact same date as a closed shift
+          // If shift was opened on or before the latest closure, or is from an older calendar day
           if (shiftOpenTime && shiftOpenTime <= lastClosedTime) {
             // Auto-heal stale zombie shift in DB by primary key
             client.from('work_shifts').update({ status: 'closed', closed_at: lastClosed.closed_at }).eq('id', s.id).then(() => {}, () => {});
             return false;
           }
-          if (s.shift_date && lastClosed.shift_date && s.shift_date <= lastClosed.shift_date) {
+          if (s.shift_date && lastClosed.shift_date && s.shift_date < lastClosed.shift_date) {
             client.from('work_shifts').update({ status: 'closed', closed_at: lastClosed.closed_at }).eq('id', s.id).then(() => {}, () => {});
             return false;
           }
@@ -2843,6 +2856,7 @@ export const DB = {
         salon_id: validSalonId,
         branch_id: validBranchId,
         shift_date: ws.shiftDate,
+        shift_code: ws.shiftCode || null,
         ...(ws.openedAt ? { opened_at: ws.openedAt } : (ws.status === 'open' ? { opened_at: new Date().toISOString() } : {})),
         closed_at: ws.closedAt || (isClosed ? (ws.closedAt || new Date().toISOString()) : null),
         opened_by_user_id: ws.openedByUserId || null,
@@ -2858,6 +2872,9 @@ export const DB = {
         total_cash_sales: ws.totalCashSales !== undefined ? Number(ws.totalCashSales) : null,
         total_card_sales: ws.totalCardSales !== undefined ? Number(ws.totalCardSales) : null,
         total_expenses: ws.totalExpenses !== undefined ? Number(ws.totalExpenses) : null,
+        total_advances: ws.totalAdvances !== undefined ? Number(ws.totalAdvances) : null,
+        transferred_to_treasury: ws.transferredToTreasury || null,
+        transferred_amount: ws.transferredAmount !== undefined ? Number(ws.transferredAmount) : null,
         status: ws.status || (isClosed ? 'closed' : 'open'),
         notes: ws.notes || null,
         created_at: ws.createdAt || new Date().toISOString()
