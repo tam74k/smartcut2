@@ -332,12 +332,34 @@ export function ProductsScreen({
     const updated = { ...p, isActive: nextActive };
     setProducts(prev => {
       const list = Array.isArray(prev) ? prev : products;
-      return list.map(item => item.id === p.id ? updated : item);
+      const nextList = list.map(item => item.id === p.id ? updated : item);
+      try {
+        localStorage.setItem('smartcut_products', JSON.stringify(nextList));
+      } catch (e) {}
+      return nextList;
     });
     try {
       await DB.saveProduct(updated, settings.salonId);
     } catch (err) {
       console.error('Error toggling active status in DB:', err);
+    }
+  };
+
+  const handleToggleProductType = async (p: Product) => {
+    const nextType: 'retail' | 'raw_material' = p.productType === 'raw_material' ? 'retail' : 'raw_material';
+    const updated: Product = { ...p, productType: nextType };
+    setProducts(prev => {
+      const list = Array.isArray(prev) ? prev : products;
+      const nextList = list.map(item => item.id === p.id ? updated : item);
+      try {
+        localStorage.setItem('smartcut_products', JSON.stringify(nextList));
+      } catch (e) {}
+      return nextList;
+    });
+    try {
+      await DB.saveProduct(updated, settings.salonId);
+    } catch (err) {
+      console.error('Error toggling product type in DB:', err);
     }
   };
 
@@ -905,17 +927,23 @@ export function ProductsScreen({
                       </button>
                     </td>
                     <td className="p-4 whitespace-nowrap">
-                      {p.productType === 'raw_material' ? (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-extrabold bg-amber-50 text-amber-700 border border-amber-200 shadow-xs">
-                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                          مادة خام
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-xs">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                          للبيع
-                        </span>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleToggleProductType(p)}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-black transition-all cursor-pointer shadow-2xs active:scale-95 ${
+                          p.productType === 'raw_material'
+                            ? 'bg-amber-50 text-amber-700 border border-amber-300 hover:bg-amber-100 hover:border-amber-400 ring-1 ring-amber-500/20'
+                            : 'bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100 hover:border-emerald-400 ring-1 ring-emerald-500/20'
+                        }`}
+                        title={
+                          p.productType === 'raw_material'
+                            ? 'انقر للتحويل إلى: للبيع (POS)'
+                            : 'انقر للتحويل إلى: مادة خام (استهلاك)'
+                        }
+                      >
+                        <span className={`w-2 h-2 rounded-full ${p.productType === 'raw_material' ? 'bg-amber-500' : 'bg-emerald-500'}`}></span>
+                        <span>{p.productType === 'raw_material' ? 'مادة خام' : 'للبيع'}</span>
+                      </button>
                     </td>
                     <td className="p-4 text-slate-600 whitespace-nowrap">{categories.find(c => c.id === p.categoryId)?.name || p.categoryId || '—'}</td>
                     <td className="p-4 text-slate-600 font-medium whitespace-nowrap">
