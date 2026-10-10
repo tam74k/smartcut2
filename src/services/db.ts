@@ -278,7 +278,17 @@ export async function ensureCoreSchema(): Promise<void> {
       ensureColumn('bookings', 'cancelled_by', 'TEXT'),
       ensureColumn('bookings', 'cancelled_by_name', 'VARCHAR(255)'),
       ensureColumn('bookings', 'refund_notes', 'TEXT'),
-      ensureColumn('products', 'barcode', 'VARCHAR(100)')
+      ensureColumn('products', 'barcode', 'VARCHAR(100)'),
+      ensureColumn('products', 'product_type', 'VARCHAR(50)'),
+      ensureColumn('products', 'supplier_id', 'VARCHAR(100)'),
+      ensureColumn('products', 'commission', 'NUMERIC(10,2)'),
+      ensureColumn('products', 'reorder_limit', 'NUMERIC(10,2)'),
+      ensureColumn('products', 'opening_stock', 'NUMERIC(10,2)'),
+      ensureColumn('products', 'current_stock', 'NUMERIC(10,2)'),
+      ensureColumn('products', 'cost_price', 'NUMERIC(10,2)'),
+      ensureColumn('products', 'sell_price', 'NUMERIC(10,2)'),
+      ensureColumn('products', 'branch_id', 'VARCHAR(100)'),
+      ensureColumn('products', 'is_active', 'BOOLEAN')
     ]);
   } catch { /* Silent fail */ }
 }
@@ -2279,13 +2289,14 @@ export const DB = {
   async fetchProducts(salonId?: string) { return DB.fetchAll<any>('products', undefined, salonId); },
   async saveProduct(p: any, salonId?: string) {
     const client = sb(); if (!client || !p) return null;
-    const validSalonId = toSalonUUID(salonId || p.salonId || getSalonId());
+    const rawSalonId = salonId || p.salonId || getSalonId();
+    const validSalonId = toSalonUUID(rawSalonId);
     const validBranchId = toBranchUUID(p.branchId);
 
     const payload: any = {
       id: p.id,
-      salon_id: validSalonId,
-      branch_id: validBranchId,
+      salon_id: validSalonId || null,
+      branch_id: validBranchId || null,
       category_id: p.categoryId || null,
       name: p.name,
       sell_price: Number(p.sellPrice ?? 0),
@@ -2305,45 +2316,49 @@ export const DB = {
 
     let { error } = await client.from('products').upsert(payload, { onConflict: 'id' });
 
-    // 0. معالجة غياب عمود product_type إن لم يكن مضافاً بعد
-    if (error && (error.message.includes('product_type') || (error as any).code === '42703')) {
-      console.warn('DB.saveProduct: product_type column missing in Supabase, retrying without product_type...');
-      ensureColumn('products', 'product_type', 'VARCHAR(50)').catch(() => {});
-      delete payload.product_type;
-      const retry = await client.from('products').upsert(payload, { onConflict: 'id' });
-      error = retry.error;
+    // 1. المعالجة الذاتية التلقائية لغياب أي عمود في جدول المنتجات
+    let missingColTries = 0;
+    while (error && missingColTries < 8 && ((error as any).code === '42703' || error.message.includes('column') || error.message.includes('PGRST204') || error.message.includes('schema cache'))) {
+      missingColTries++;
+      const match = error.message.match(/column ["']?([a-zA-Z0-9_]+)["']?/i) || 
+                    error.message.match(/Could not find the '([a-zA-Z0-9_]+)' column/i);
+      const colName = match ? match[1] : null;
+      if (colName && payload.hasOwnProperty(colName)) {
+        console.warn(`DB.saveProduct: column '${colName}' missing in Supabase products table, removing and retrying...`);
+        const colType = (colName.includes('price') || colName.includes('stock') || colName.includes('limit') || colName.includes('commission')) 
+          ? 'NUMERIC(10,2)' 
+          : colName === 'is_active' ? 'BOOLEAN' : 'VARCHAR(100)';
+        ensureColumn('products', colName, colType).catch(() => {});
+        delete payload[colName];
+
+        if (colName === 'sell_price' && !payload.hasOwnProperty('price')) {
+          payload.price = Number(p.sellPrice ?? 0);
+        }
+        if (colName === 'current_stock' && !payload.hasOwnProperty('stock')) {
+          payload.stock = Number(p.currentStock ?? 0);
+        }
+
+        const retry = await client.from('products').upsert(payload, { onConflict: 'id' });
+        error = retry.error;
+      } else {
+        break;
+      }
     }
 
-    // 1. معالجة غياب عمود supplier_id إن لم يكن مضافاً بعد في قاعدة بيانات العميل
-    if (error && (error.message.includes('supplier_id') || error.message.includes('PGRST204') || (error as any).code === '42703')) {
-      console.warn('DB.saveProduct: supplier_id column missing in Supabase, retrying without supplier_id and triggering ensureColumn...');
-      ensureColumn('products', 'supplier_id', 'VARCHAR(100)').catch(() => {});
-      delete payload.supplier_id;
-      const retry = await client.from('products').upsert(payload, { onConflict: 'id' });
-      error = retry.error;
-    }
-
-    // 1.1 معالجة غياب عمود barcode إن لم يكن مضافاً بعد
-    if (error && (error.message.includes('barcode') || (error as any).code === '42703')) {
-      console.warn('DB.saveProduct: barcode column missing in Supabase, retrying without barcode...');
-      ensureColumn('products', 'barcode', 'VARCHAR(100)').catch(() => {});
-      delete payload.barcode;
-      const retry = await client.from('products').upsert(payload, { onConflict: 'id' });
-      error = retry.error;
-    }
-
-    // 2. معالجة قيد المفتاح الأجنبي للتصنيف category_id
-    if (error && (error.message.includes('category_id') || error.message.includes('foreign key') || (error as any).code === '23503')) {
-      console.warn('DB.saveProduct: foreign key violation on category_id, retrying with category_id = null...');
+    // 2. معالجة قيود المفاتيح الأجنبية Foreign Key Constraints (التصنيف، المورد، الفرع، الصالون)
+    if (error && ((error as any).code === '23503' || error.message.includes('foreign key') || error.message.includes('violates foreign key'))) {
+      console.warn('DB.saveProduct: foreign key violation, resetting foreign keys and retrying...', error.message);
       payload.category_id = null;
+      delete payload.supplier_id;
+      payload.branch_id = null;
       const retry = await client.from('products').upsert(payload, { onConflict: 'id' });
       error = retry.error;
     }
 
-    // 3. معالجة قيد المفتاح الأجنبي للفرع branch_id
-    if (error && (error.message.includes('branch_id') || (error as any).code === '23503')) {
-      console.warn('DB.saveProduct: foreign key violation on branch_id, retrying with branch_id = null...');
-      payload.branch_id = null;
+    // 3. معالجة تكرار الباركود في حال وجود قيد فريد (Unique Constraint)
+    if (error && ((error as any).code === '23505' || error.message.includes('unique') || error.message.includes('duplicate key'))) {
+      console.warn('DB.saveProduct: unique violation (possibly duplicate barcode), retrying without barcode...', error.message);
+      delete payload.barcode;
       const retry = await client.from('products').upsert(payload, { onConflict: 'id' });
       error = retry.error;
     }

@@ -854,7 +854,13 @@ export default function App() {
 
         // Sync Products
         if (polledProducts && Array.isArray(polledProducts)) {
-          setProducts(polledProducts.map(dbProductToApp));
+          setProducts(prev => {
+            const polledMapped = polledProducts.map(dbProductToApp);
+            if (polledProducts.length === 0) return prev;
+            const polledIds = new Set(polledMapped.map(p => p.id));
+            const pendingLocal = prev.filter(p => !polledIds.has(p.id) && (!p.salonId || p.salonId === sId));
+            return [...polledMapped, ...pendingLocal];
+          });
         }
 
         // Sync Categories
@@ -1472,12 +1478,23 @@ export default function App() {
 
       // رصد وحذف أي منتج تم حذفه من قاعدة بيانات Supabase
       const removed = currentSalonProds.filter(oldP => !next.some(newP => newP.id === oldP.id));
-      removed.forEach(p => DB.deleteProduct(p.id));
+      removed.forEach(p => DB.deleteProduct(p.id).catch(() => {}));
 
       const tagged = next.map(p => ({ ...p, salonId: p.salonId || currentSalonId, branchId: p.branchId || activeBranchId }));
       const other = prev.filter(p => p.salonId && p.salonId !== currentSalonId);
       const res = [...other, ...tagged];
-      DB.saveProducts(tagged);
+
+      // حفظ المنتجات الجديدة أو المعدلة فقط لمنع تكرار وحجب الطلبات
+      const changed = tagged.filter(newP => {
+        const oldP = currentSalonProds.find(o => o.id === newP.id);
+        return !oldP || JSON.stringify(oldP) !== JSON.stringify(newP);
+      });
+      if (changed.length > 0) {
+        Promise.all(changed.map(p => DB.saveProduct(p, currentSalonId))).catch(err => {
+          console.warn('Error saving changed products to DB:', err);
+        });
+      }
+
       return res;
     });
   };
@@ -1703,7 +1720,13 @@ export default function App() {
         DB.loadSectionData('warehouse', sId)
       ]);
       if (polledProducts && Array.isArray(polledProducts)) {
-        setProducts(polledProducts.map(dbProductToApp));
+        setProducts(prev => {
+          const polledMapped = polledProducts.map(dbProductToApp);
+          if (polledProducts.length === 0) return prev;
+          const polledIds = new Set(polledMapped.map(p => p.id));
+          const pendingLocal = prev.filter(p => !polledIds.has(p.id) && (!p.salonId || p.salonId === sId));
+          return [...polledMapped, ...pendingLocal];
+        });
       }
       if (polledCategories && Array.isArray(polledCategories) && polledCategories.length > 0) {
         setCategories(polledCategories);

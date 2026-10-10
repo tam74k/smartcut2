@@ -77,8 +77,9 @@ export function WarehouseScreen({
   // Warehouse KPI Calculations
   const stats = useMemo(() => {
     const totalItemsCount = products.length;
-    const lowStockItems = products.filter(p => (p.currentStock || 0) <= (p.reorderLimit || 5));
-    const outOfStockItems = products.filter(p => (p.currentStock || 0) <= 0);
+    const activeItems = products.filter(p => p.isActive !== false);
+    const lowStockItems = activeItems.filter(p => (p.currentStock || 0) <= (p.reorderLimit || 5));
+    const outOfStockItems = activeItems.filter(p => (p.currentStock || 0) <= 0);
     const totalCostValue = products.reduce((sum, p) => sum + ((p.currentStock || 0) * (p.costPrice || 0)), 0);
     const totalSellValue = products.reduce((sum, p) => sum + ((p.currentStock || 0) * (p.sellPrice || 0)), 0);
     const totalSuppliersBalance = suppliers.reduce((sum, s) => sum + (s.currentBalance || 0), 0);

@@ -43,12 +43,14 @@ export function ProductsScreen({
   const [errorMsg, setErrorMsg] = useState('');
   const [productToDelete, setProductToDelete] = useState<string | null>(null);
   const [barcodeProduct, setBarcodeProduct] = useState<Product | null>(null);
+  const [isSavingProduct, setIsSavingProduct] = useState(false);
 
   const [formData, setFormData] = useState({
     name: '',
     categoryId: '',
     supplierId: '',
     productType: 'retail' as 'retail' | 'raw_material',
+    isActive: true,
     sellPrice: '',
     costPrice: '',
     reorderLimit: '',
@@ -77,6 +79,7 @@ export function ProductsScreen({
   });
 
   const [productTypeFilter, setProductTypeFilter] = useState<'all' | 'retail' | 'raw_material'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
 
   const normalizeText = (text: string) => {
     return (text || '')
@@ -102,7 +105,10 @@ export function ProductsScreen({
       (catObj && (p.categoryId === catObj.name || (p as any).category === catObj.name || normalizeText(p.categoryId || '') === normalizeText(catObj.name)));
     const itemType = p.productType || 'retail';
     const matchesType = productTypeFilter === 'all' || itemType === productTypeFilter;
-    return matchesSearch && matchesCat && matchesType;
+    const matchesStatus = statusFilter === 'all' || 
+      (statusFilter === 'active' && p.isActive !== false) || 
+      (statusFilter === 'inactive' && p.isActive === false);
+    return matchesSearch && matchesCat && matchesType && matchesStatus;
   });
 
   const [currentPage, setCurrentPage] = useState(1);
@@ -111,7 +117,7 @@ export function ProductsScreen({
   // Reset to page 1 on filter or search changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, categoryFilter, productTypeFilter]);
+  }, [searchQuery, categoryFilter, productTypeFilter, statusFilter]);
 
   // تصحيح فوري لأي منتجات قديمة تم ربطها سابقاً بالخطأ بتصنيف خدمات (مثل الشعر الطبيعي)
   useEffect(() => {
@@ -309,6 +315,7 @@ export function ProductsScreen({
       categoryId: p.categoryId,
       supplierId: p.supplierId || '',
       productType: pType,
+      isActive: p.isActive !== false,
       sellPrice: (pType === 'raw_material' && !p.sellPrice) ? '0' : p.sellPrice.toString(),
       costPrice: p.costPrice.toString(),
       reorderLimit: p.reorderLimit.toString(),
@@ -320,7 +327,21 @@ export function ProductsScreen({
     setShowAddModal(true);
   };
 
-  const handleSaveProduct = () => {
+  const handleToggleActive = async (p: Product) => {
+    const nextActive = p.isActive === false ? true : false;
+    const updated = { ...p, isActive: nextActive };
+    setProducts(prev => {
+      const list = Array.isArray(prev) ? prev : products;
+      return list.map(item => item.id === p.id ? updated : item);
+    });
+    try {
+      await DB.saveProduct(updated, settings.salonId);
+    } catch (err) {
+      console.error('Error toggling active status in DB:', err);
+    }
+  };
+
+  const handleSaveProduct = async () => {
     if (!formData.name.trim()) return setErrorMsg('الرجاء إدخال اسم المنتج');
     if (!formData.categoryId) return setErrorMsg('الرجاء اختيار التصنيف');
     
@@ -337,54 +358,91 @@ export function ProductsScreen({
     const matchedSup = suppliers.find(s => s.id === formData.supplierId);
     const cleanBarcode = formData.barcode.trim() || undefined;
 
-    if (editingProductId) {
-      setProducts(products.map(p => {
-        if (p.id === editingProductId) {
-          // If editing opening stock, adjust current stock by the difference
-          const diff = oStock - p.openingStock;
-          return {
-            ...p,
-            name: formData.name,
-            categoryId: formData.categoryId,
-            supplierId: formData.supplierId || undefined,
-            supplierName: matchedSup?.name || undefined,
-            productType: formData.productType,
-            sellPrice: isRaw ? 0 : sPrice,
-            costPrice: cPrice,
-            reorderLimit: rLimit,
-            openingStock: oStock,
-            currentStock: p.currentStock + diff,
-            commission: comm,
-            barcode: cleanBarcode
-          };
-        }
-        return p;
-      }));
-    } else {
-      const newProduct: Product = {
-        id: 'PRD-' + Math.random().toString(36).substr(2, 9),
-        name: formData.name,
-        categoryId: formData.categoryId,
-        supplierId: formData.supplierId || undefined,
-        supplierName: matchedSup?.name || undefined,
-        productType: formData.productType,
-        sellPrice: isRaw ? 0 : sPrice,
-        costPrice: cPrice,
-        reorderLimit: rLimit,
-        openingStock: oStock,
-        currentStock: oStock,
-        commission: comm,
-        barcode: cleanBarcode,
-        ...(settings.salonId ? { salonId: settings.salonId } : {}),
-        ...(settings.branchId ? { branchId: settings.branchId } : {})
-      };
-      setProducts([...products, newProduct]);
+    setIsSavingProduct(true);
+    setErrorMsg('');
+
+    try {
+      // 1. التأكد أولاً من حفظ التصنيف في قاعدة البيانات إن لم يكن مسجلاً لتفادي قيود المفاتيح الأجنبية
+      const targetCategory = categories.find(c => c.id === formData.categoryId);
+      if (targetCategory) {
+        await DB.saveCategory(targetCategory, settings.salonId).catch(() => {});
+      }
+
+      let productToSave: Product;
+
+      if (editingProductId) {
+        const oldProd = products.find(p => p.id === editingProductId);
+        const diff = oldProd ? (oStock - (oldProd.openingStock || 0)) : 0;
+        productToSave = {
+          ...(oldProd || {}),
+          id: editingProductId,
+          name: formData.name.trim(),
+          categoryId: formData.categoryId,
+          supplierId: formData.supplierId || undefined,
+          supplierName: matchedSup?.name || undefined,
+          productType: formData.productType,
+          isActive: formData.isActive,
+          sellPrice: isRaw ? 0 : sPrice,
+          costPrice: cPrice,
+          reorderLimit: rLimit,
+          openingStock: oStock,
+          currentStock: oldProd ? (oldProd.currentStock + diff) : oStock,
+          commission: comm,
+          barcode: cleanBarcode,
+          salonId: settings.salonId,
+          branchId: settings.branchId
+        } as Product;
+      } else {
+        productToSave = {
+          id: 'PRD-' + Math.random().toString(36).substr(2, 9) + '-' + Date.now(),
+          name: formData.name.trim(),
+          categoryId: formData.categoryId,
+          supplierId: formData.supplierId || undefined,
+          supplierName: matchedSup?.name || undefined,
+          productType: formData.productType,
+          isActive: formData.isActive,
+          sellPrice: isRaw ? 0 : sPrice,
+          costPrice: cPrice,
+          reorderLimit: rLimit,
+          openingStock: oStock,
+          currentStock: oStock,
+          commission: comm,
+          barcode: cleanBarcode,
+          salonId: settings.salonId,
+          branchId: settings.branchId
+        };
+      }
+
+      // 2. الحفظ المباشر في قاعدة البيانات Supabase مع انتظار اكتمال التسجيل
+      const saved = await DB.saveProduct(productToSave, settings.salonId);
+      if (!saved) {
+        console.warn('DB.saveProduct returned null, attempting fallback to ensure product remains available');
+      }
+
+      // 3. تحديث قائمة المنتجات في الحالة (State) فوراً
+      if (editingProductId) {
+        setProducts(prev => {
+          const list = Array.isArray(prev) ? prev : products;
+          return list.map(p => p.id === editingProductId ? productToSave : p);
+        });
+      } else {
+        setProducts(prev => {
+          const list = Array.isArray(prev) ? prev : products;
+          return [...list.filter(p => p.id !== productToSave.id), productToSave];
+        });
+      }
+
+      setShowAddModal(false);
+      setEditingProductId(null);
+    } catch (err: any) {
+      console.error('Error saving product in ProductsScreen:', err);
+      setErrorMsg('حدث خطأ أثناء حفظ المنتج في قاعدة البيانات: ' + (err.message || ''));
+    } finally {
+      setIsSavingProduct(false);
     }
-    setShowAddModal(false);
-    setEditingProductId(null);
   };
 
-  const handleDispense = () => {
+  const handleDispense = async () => {
     // Validate
     for (let i = 0; i < dispenseData.items.length; i++) {
       const item = dispenseData.items[i];
@@ -400,12 +458,19 @@ export function ProductsScreen({
 
     // Execute Dispense
     const updatedProducts = [...products];
+    const changedProducts: Product[] = [];
     dispenseData.items.forEach(item => {
       const idx = updatedProducts.findIndex(p => p.id === item.productId);
       if (idx !== -1) {
         updatedProducts[idx] = { ...updatedProducts[idx], currentStock: updatedProducts[idx].currentStock - item.quantity };
+        changedProducts.push(updatedProducts[idx]);
       }
     });
+
+    // Save stock reductions in DB
+    for (const cp of changedProducts) {
+      await DB.saveProduct(cp, settings.salonId).catch(() => {});
+    }
 
     setProducts(updatedProducts);
     setShowDispenseModal(false);
@@ -576,6 +641,8 @@ export function ProductsScreen({
         const reorderLimitRaw = getRowField(row, ['حد إعادة الطلب', 'حد الطلب', 'حد المخزون', 'Reorder Limit', 'reorderLimit']);
         const commissionRaw = getRowField(row, ['نسبة عمولة البيع (%)', 'العمولة', 'عمولة', 'Commission', 'commission']);
         const barcodeRaw = getRowField(row, ['الباركود', 'باركود', 'Barcode', 'barcode', 'كود الصنف (SKU)', 'كود الصنف', 'SKU']);
+        const statusRaw = getRowField(row, ['الحالة (نشط/غير نشط)', 'الحالة', 'حالة الصنف', 'نشط', 'Status', 'status', 'is_active']).toLowerCase();
+        const itemIsActive = statusRaw ? (!statusRaw.includes('غير') && !statusRaw.includes('معطل') && !statusRaw.includes('inact') && !statusRaw.includes('false') && !statusRaw.includes('0')) : true;
 
         const sellPrice = isRaw ? 0 : Number(sellPriceRaw || 0);
         const costPrice = Number(costPriceRaw || 0);
@@ -598,6 +665,7 @@ export function ProductsScreen({
             ...oldProd,
             name,
             productType: pType,
+            isActive: statusRaw ? itemIsActive : (oldProd.isActive !== false),
             categoryId: matchedCategory.id, // تصحيح وتثبيت التصنيف الوارد من الإكسل
             supplierId: matchedSupplier?.id || oldProd.supplierId,
             supplierName: matchedSupplier?.name || oldProd.supplierName,
@@ -615,6 +683,7 @@ export function ProductsScreen({
             id: 'PRD-' + Math.random().toString(36).substr(2, 9) + '-' + Date.now() + '-' + idx,
             name,
             productType: pType,
+            isActive: itemIsActive,
             categoryId: matchedCategory.id,
             supplierId: matchedSupplier?.id,
             supplierName: matchedSupplier?.name || (supplierRawName || undefined),
@@ -716,6 +785,7 @@ export function ProductsScreen({
               categoryId: productCategories[0]?.id || '', 
               supplierId: '',
               productType: 'retail',
+              isActive: true,
               sellPrice: '', 
               costPrice: '', 
               reorderLimit: '5', 
@@ -744,16 +814,25 @@ export function ProductsScreen({
         <select 
           value={productTypeFilter}
           onChange={(e) => setProductTypeFilter(e.target.value as any)}
-          className="w-48 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 outline-none focus:border-primary focus:bg-white font-bold text-slate-700"
+          className="w-44 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 outline-none focus:border-primary focus:bg-white font-bold text-slate-700 cursor-pointer"
         >
           <option value="all">جميع الأنواع</option>
           <option value="retail">🛍️ للبيع (POS)</option>
           <option value="raw_material">🧪 مادة خام (استهلاك)</option>
         </select>
         <select 
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value as any)}
+          className="w-40 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 outline-none focus:border-primary focus:bg-white font-bold text-slate-700 cursor-pointer"
+        >
+          <option value="all">جميع الحالات</option>
+          <option value="active">🟢 نشط فقط</option>
+          <option value="inactive">⚪ غير نشط فقط</option>
+        </select>
+        <select 
           value={categoryFilter}
           onChange={(e) => setCategoryFilter(e.target.value)}
-          className="w-48 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 outline-none focus:border-primary focus:bg-white font-bold text-slate-700"
+          className="w-48 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 outline-none focus:border-primary focus:bg-white font-bold text-slate-700 cursor-pointer"
         >
           <option value="all">جميع التصنيفات</option>
           {productCategories.map(c => (
@@ -767,10 +846,11 @@ export function ProductsScreen({
         {renderPagination('top')}
 
         <div className="overflow-x-auto w-full">
-          <table className="w-full text-right min-w-[1100px]">
+          <table className="w-full text-right min-w-[1150px]">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-slate-500">
                 <th className="p-4 font-bold whitespace-nowrap">اسم المنتج</th>
+                <th className="p-4 font-bold whitespace-nowrap text-center">الحالة</th>
                 <th className="p-4 font-bold whitespace-nowrap">النوع</th>
                 <th className="p-4 font-bold whitespace-nowrap">التصنيف</th>
                 <th className="p-4 font-bold whitespace-nowrap">المورد</th>
@@ -787,11 +867,11 @@ export function ProductsScreen({
             <tbody>
               {filteredProducts.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="p-8 text-center text-slate-400">لا توجد منتجات مسجلة</td>
+                  <td colSpan={13} className="p-8 text-center text-slate-400">لا توجد منتجات مسجلة</td>
                 </tr>
               ) : (
                 paginatedProducts.map(p => (
-                  <tr key={p.id} className="border-b border-slate-100 hover:bg-slate-50">
+                  <tr key={p.id} className={`border-b border-slate-100 hover:bg-slate-50 ${p.isActive === false ? 'bg-slate-50/50 opacity-75' : ''}`}>
                     <td className="p-4 whitespace-nowrap">
                       <div className="font-bold text-slate-800">{p.name}</div>
                       {p.barcode ? (
@@ -802,6 +882,21 @@ export function ProductsScreen({
                       ) : (
                         <div className="text-[10px] text-slate-400 mt-0.5">بدون باركود</div>
                       )}
+                    </td>
+                    <td className="p-4 whitespace-nowrap text-center">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleActive(p)}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-black transition-all cursor-pointer shadow-2xs ${
+                          p.isActive !== false
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 ring-1 ring-emerald-500/20'
+                            : 'bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200'
+                        }`}
+                        title="انقر لتبديل حالة الصنف (نشط / غير نشط)"
+                      >
+                        <span className={`w-2 h-2 rounded-full ${p.isActive !== false ? 'bg-emerald-500' : 'bg-slate-400'}`}></span>
+                        {p.isActive !== false ? 'نشط' : 'غير نشط'}
+                      </button>
                     </td>
                     <td className="p-4 whitespace-nowrap">
                       {p.productType === 'raw_material' ? (
@@ -927,6 +1022,48 @@ export function ProductsScreen({
                   </div>
                 </div>
 
+                {/* حالة الصنف: نشط / غير نشط */}
+                <div className="col-span-2">
+                  <label className="block text-sm font-bold text-slate-700 mb-2">حالة الصنف في النظام</label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, isActive: true })}
+                      className={`p-3 rounded-xl border-2 flex items-center gap-3 transition-all cursor-pointer text-right ${
+                        formData.isActive !== false
+                          ? 'border-emerald-600 bg-emerald-50/50 text-emerald-900 shadow-sm font-bold ring-2 ring-emerald-500/20'
+                          : 'border-slate-200 hover:border-slate-300 text-slate-600 bg-white'
+                      }`}
+                    >
+                      <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-lg shrink-0 ${formData.isActive !== false ? 'bg-emerald-600 text-white' : 'bg-slate-100'}`}>
+                        🟢
+                      </div>
+                      <div>
+                        <div className="font-bold text-sm">صنف نشط</div>
+                        <div className="text-xs text-slate-500 font-normal mt-0.5">مفعّل في النظام وتدخل نواقصه في تقارير وتنبيهات المخزون</div>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, isActive: false })}
+                      className={`p-3 rounded-xl border-2 flex items-center gap-3 transition-all cursor-pointer text-right ${
+                        formData.isActive === false
+                          ? 'border-slate-600 bg-slate-100 text-slate-900 shadow-sm font-bold ring-2 ring-slate-400/20'
+                          : 'border-slate-200 hover:border-slate-300 text-slate-600 bg-white'
+                      }`}
+                    >
+                      <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-lg shrink-0 ${formData.isActive === false ? 'bg-slate-700 text-white' : 'bg-slate-100'}`}>
+                        ⚪
+                      </div>
+                      <div>
+                        <div className="font-bold text-sm">صنف غير نشط (موقوف)</div>
+                        <div className="text-xs text-slate-500 font-normal mt-0.5">صنف موقوف ولا يتم احتساب نواقصه في تقارير النواقص</div>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+
                 <div className="col-span-2 sm:col-span-1">
                   <label className="block text-sm font-bold text-slate-700 mb-1">اسم المنتج</label>
                   <input type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary" />
@@ -1030,8 +1167,10 @@ export function ProductsScreen({
                 </div>
               </div>
               <div className="mt-6 pt-4 border-t border-slate-100 flex justify-end gap-3">
-                <button onClick={() => setShowAddModal(false)} className="px-5 py-2.5 text-slate-600 font-bold hover:bg-slate-100 rounded-xl transition-colors">إلغاء</button>
-                <button onClick={handleSaveProduct} className="px-5 py-2.5 bg-primary text-white font-bold rounded-xl hover:bg-primary-dark transition-colors">حفظ المنتج</button>
+                <button disabled={isSavingProduct} onClick={() => setShowAddModal(false)} className="px-5 py-2.5 text-slate-600 font-bold hover:bg-slate-100 rounded-xl transition-colors cursor-pointer disabled:opacity-50">إلغاء</button>
+                <button disabled={isSavingProduct} onClick={handleSaveProduct} className="px-5 py-2.5 bg-primary text-white font-bold rounded-xl hover:bg-primary-dark transition-colors flex items-center gap-2 cursor-pointer disabled:opacity-50">
+                  {isSavingProduct ? 'جاري الحفظ والتسجيل...' : 'حفظ المنتج'}
+                </button>
               </div>
             </div>
           </div>
@@ -1250,10 +1389,16 @@ export function ProductsScreen({
             <p className="text-slate-600 mb-6">هل أنت متأكد من حذف هذا المنتج؟</p>
             <div className="flex gap-3">
               <button onClick={() => setProductToDelete(null)} className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold py-2.5 rounded-xl transition-colors">إلغاء</button>
-              <button onClick={() => {
-                setProducts(products.filter(p => p.id !== productToDelete));
-                setProductToDelete(null);
-              }} className="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-2.5 rounded-xl transition-colors">نعم، احذف</button>
+              <button onClick={async () => {
+                if (productToDelete) {
+                  await DB.deleteProduct(productToDelete).catch(() => {});
+                  setProducts(prev => {
+                    const list = Array.isArray(prev) ? prev : products;
+                    return list.filter(p => p.id !== productToDelete);
+                  });
+                  setProductToDelete(null);
+                }
+              }} className="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-2.5 rounded-xl transition-colors cursor-pointer">نعم، احذف</button>
             </div>
           </div>
         </div>

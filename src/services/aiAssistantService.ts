@@ -563,7 +563,7 @@ export async function processAIChatMessage(
   );
 
   if (isShortageQuery) {
-    const shortages = context.products.filter(p => (p.stock || 0) <= (p.minStockAlert || 5));
+    const shortages = context.products.filter(p => p.isActive !== false && (p.stock || p.currentStock || 0) <= (p.minStockAlert || p.reorderLimit || 5));
 
     if (shortages.length === 0) {
       return {
@@ -696,7 +696,7 @@ export async function processAIChatMessage(
           status: i.status,
           items: i.items?.map(it => ({ service: it.serviceName, price: it.price, employee: it.technicianName }))
         })),
-        shortageProducts: context.products.filter(p => (p.stock || 0) <= (p.minStockAlert || 5)).map(p => ({
+        shortageProducts: context.products.filter(p => p.isActive !== false && (p.stock || p.currentStock || 0) <= (p.minStockAlert || p.reorderLimit || 5)).map(p => ({
           name: p.name,
           stock: p.stock,
           minStockAlert: p.minStockAlert,

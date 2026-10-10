@@ -1051,10 +1051,10 @@ export function DashboardScreen({
             تنبيهات نواقص المخزون
           </h3>
           <div className="space-y-3">
-            {products && products.filter(p => p.currentStock <= p.reorderLimit).length === 0 ? (
+            {products && products.filter(p => p.isActive !== false && p.currentStock <= p.reorderLimit).length === 0 ? (
               <p className="text-sm text-slate-500 text-center py-4">لا يوجد نواقص في المخزون</p>
             ) : (
-              products && products.filter(p => p.currentStock <= p.reorderLimit).slice(0, 5).map(p => (
+              products && products.filter(p => p.isActive !== false && p.currentStock <= p.reorderLimit).slice(0, 5).map(p => (
                 <div key={p.id} className="flex justify-between items-center p-2 hover:bg-slate-50 rounded-lg transition-colors border border-transparent hover:border-slate-100">
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-full flex items-center justify-center bg-orange-50 text-orange-500">

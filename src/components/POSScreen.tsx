@@ -1856,6 +1856,7 @@ export function POSScreen({
     // 1. Search products (retail)
     const matchedProduct = products.find(p => 
       (!p.productType || p.productType === 'retail') && 
+      p.isActive !== false &&
       p.barcode && p.barcode.trim().toLowerCase() === code
     );
 
@@ -1986,7 +1987,7 @@ export function POSScreen({
                 setSearchQuery(val);
                 const code = val.trim().toLowerCase();
                 if (code) {
-                  const isExactBarcode = products.some(p => (!p.productType || p.productType === 'retail') && p.barcode && p.barcode.trim().toLowerCase() === code) ||
+                  const isExactBarcode = products.some(p => (!p.productType || p.productType === 'retail') && p.isActive !== false && p.barcode && p.barcode.trim().toLowerCase() === code) ||
                                         items.some(s => s.barcode && s.barcode.trim().toLowerCase() === code);
                   if (isExactBarcode) {
                     const handled = handleBarcodeScan(code);

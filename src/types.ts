@@ -1284,6 +1284,9 @@ export interface Product {
   supplierId?: string;
   supplierName?: string;
   productType?: 'retail' | 'raw_material'; // 'retail' (للبيع) | 'raw_material' (مادة خام)
+  isActive?: boolean; // حالة الصنف: نشط أو غير نشط
+  salonId?: string;
+  branchId?: string;
 }
 
 export interface Supplier {
