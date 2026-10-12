@@ -3799,18 +3799,37 @@ export const DB = {
     }
   },
 
-  async resetSalonToTrialDB(salonId: string, trialDays: number = 7, plan: string = 'starter'): Promise<any> {
+  async resetSalonToTrialDB(salonId: string, trialDays: number = 7, plan?: string): Promise<any> {
     const client = sb();
     const validSalonId = toSalonUUID(salonId);
+    const subModule = await import('./subscriptionService');
+    const localSalon = subModule.SubscriptionService.getSalon(salonId);
+
+    let existingDbSalon: any = null;
+    if (client) {
+      try {
+        const { data } = await client.from('salons').select('*').eq('id', validSalonId).maybeSingle();
+        existingDbSalon = data;
+      } catch (e) {
+        console.warn('Could not fetch existing salon from db:', e);
+      }
+    }
+
+    const effectivePlan = plan || existingDbSalon?.subscription_plan || localSalon?.subscriptionPlan || 'pro';
+    const effectiveMaxBranches = existingDbSalon?.max_branches || localSalon?.maxBranches || 3;
+    const effectiveMaxUsers = existingDbSalon?.max_users || localSalon?.maxUsers || 10;
+
     const startDate = new Date().toISOString().split('T')[0];
     const endDate = new Date(Date.now() + trialDays * 86400000).toISOString().split('T')[0];
 
     const updates = {
       subscription_status: 'trial',
-      subscription_plan: plan,
+      subscription_plan: effectivePlan,
       subscription_start_date: startDate,
       subscription_end_date: endDate,
       trial_days: trialDays,
+      max_branches: effectiveMaxBranches,
+      max_users: effectiveMaxUsers,
       is_active: true,
       updated_at: new Date().toISOString()
     };
@@ -3823,17 +3842,17 @@ export const DB = {
           id: subId,
           salon_id: validSalonId,
           tenant_id: validSalonId,
-          plan_id: plan,
+          plan_id: effectivePlan,
           status: 'trial',
           start_date: startDate,
           end_date: endDate,
-          total_branches: 1,
-          total_employees: 5,
+          total_branches: effectiveMaxBranches,
+          total_employees: effectiveMaxUsers,
           billing_cycle: 'trial',
           currency: 'SAR',
           paid_amount: 0,
           payment_method: 'free_trial',
-          notes: `إعادة إلى الفترة التجريبية بواسطة المبرمج (${trialDays} أيام)`
+          notes: `إعادة إلى الفترة التجريبية بواسطة المبرمج (${trialDays} أيام) - باقة ${effectivePlan}`
         });
       } catch (e) {
         console.warn('DB update failed during reset to trial:', e);
@@ -3846,13 +3865,99 @@ export const DB = {
       isSalonActive: true
     });
 
-    const subModule = await import('./subscriptionService');
     return subModule.SubscriptionService.updateSalon(salonId, {
       subscriptionStatus: 'trial',
-      subscriptionPlan: plan as any,
+      subscriptionPlan: effectivePlan as any,
       subscriptionStartDate: startDate,
       subscriptionEndDate: endDate,
       trialDays,
+      maxBranches: effectiveMaxBranches,
+      maxUsers: effectiveMaxUsers,
+      isActive: true
+    });
+  },
+
+  async extendSalonTrialDB(salonId: string, additionalDays: number = 7): Promise<any> {
+    const client = sb();
+    const validSalonId = toSalonUUID(salonId);
+    const subModule = await import('./subscriptionService');
+    const localSalon = subModule.SubscriptionService.getSalon(salonId);
+
+    let existingDbSalon: any = null;
+    if (client) {
+      try {
+        const { data } = await client.from('salons').select('*').eq('id', validSalonId).maybeSingle();
+        existingDbSalon = data;
+      } catch (e) {
+        console.warn('Could not fetch existing salon from db:', e);
+      }
+    }
+
+    const effectivePlan = existingDbSalon?.subscription_plan || localSalon?.subscriptionPlan || 'pro';
+    const effectiveMaxBranches = existingDbSalon?.max_branches || localSalon?.maxBranches || 3;
+    const effectiveMaxUsers = existingDbSalon?.max_users || localSalon?.maxUsers || 10;
+    const currentTrialDays = Number(existingDbSalon?.trial_days || localSalon?.trialDays || 7);
+    const newTrialDays = currentTrialDays + additionalDays;
+
+    const currentEndDateStr = existingDbSalon?.subscription_end_date || localSalon?.subscriptionEndDate;
+    let baseDate = new Date();
+    if (currentEndDateStr) {
+      const parsedEnd = new Date(currentEndDateStr);
+      if (!isNaN(parsedEnd.getTime()) && parsedEnd.getTime() > Date.now()) {
+        baseDate = parsedEnd;
+      }
+    }
+    const newEndDate = new Date(baseDate.getTime() + additionalDays * 86400000).toISOString().split('T')[0];
+
+    const updates = {
+      subscription_status: 'trial',
+      subscription_plan: effectivePlan,
+      subscription_end_date: newEndDate,
+      trial_days: newTrialDays,
+      max_branches: effectiveMaxBranches,
+      max_users: effectiveMaxUsers,
+      is_active: true,
+      updated_at: new Date().toISOString()
+    };
+
+    if (client) {
+      try {
+        await client.from('salons').update(updates).eq('id', validSalonId);
+        const subId = 'SUB-EXT-' + Math.random().toString(36).substring(2, 7).toUpperCase();
+        await client.from('tenant_subscriptions').insert({
+          id: subId,
+          salon_id: validSalonId,
+          tenant_id: validSalonId,
+          plan_id: effectivePlan,
+          status: 'trial',
+          start_date: existingDbSalon?.subscription_start_date || localSalon?.subscriptionStartDate || new Date().toISOString().split('T')[0],
+          end_date: newEndDate,
+          total_branches: effectiveMaxBranches,
+          total_employees: effectiveMaxUsers,
+          billing_cycle: 'trial',
+          currency: 'SAR',
+          paid_amount: 0,
+          payment_method: 'free_trial',
+          notes: `تمديد الفترة التجريبية بواسطة المبرمج (+${additionalDays} أيام) - الباقة: ${effectivePlan}`
+        });
+      } catch (e) {
+        console.warn('DB update failed during extend trial:', e);
+      }
+    }
+
+    await DB.saveSettings(validSalonId, {
+      subscriptionStatus: 'trial',
+      subscriptionEndDate: newEndDate,
+      isSalonActive: true
+    });
+
+    return subModule.SubscriptionService.updateSalon(salonId, {
+      subscriptionStatus: 'trial',
+      subscriptionPlan: effectivePlan as any,
+      subscriptionEndDate: newEndDate,
+      trialDays: newTrialDays,
+      maxBranches: effectiveMaxBranches,
+      maxUsers: effectiveMaxUsers,
       isActive: true
     });
   },

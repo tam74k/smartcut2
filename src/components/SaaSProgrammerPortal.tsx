@@ -37,11 +37,11 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
   const [selectedControlSalon, setSelectedControlSalon] = useState<SalonTenant | null>(null);
   const [controlForm, setControlForm] = useState({
     status: 'trial' as 'active' | 'trial' | 'expired' | 'suspended',
-    plan: 'starter' as 'starter' | 'growth' | 'enterprise' | 'pro',
+    plan: 'pro' as 'starter' | 'growth' | 'enterprise' | 'pro',
     startDate: '',
     endDate: '',
-    maxBranches: 1,
-    maxUsers: 5,
+    maxBranches: 3,
+    maxUsers: 10,
     isActive: true
   });
 
@@ -397,18 +397,30 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
 
   const handleApplyExtend = async () => {
     if (!showExtendModal) return;
-    const updated = SubscriptionService.extendDays(showExtendModal.id, extendDaysCount);
-    if (updated) {
-      setSalons(prev => prev.map(s => s.id === updated.id ? updated : s));
-      await DB.saveSalon(updated);
-      await DB.saveSettings(updated.id, {
-        subscriptionEndDate: updated.subscriptionEndDate,
-        subscriptionStatus: 'active',
-        isSalonActive: true
-      });
+    const isTrial = showExtendModal.subscriptionStatus === 'trial';
+    let updated: SalonTenant | null = null;
+
+    if (isTrial) {
+      updated = await DB.extendSalonTrialDB(showExtendModal.id, extendDaysCount);
+    } else {
+      updated = SubscriptionService.extendDays(showExtendModal.id, extendDaysCount);
+      if (updated) {
+        await DB.saveSalon(updated);
+        await DB.saveSettings(updated.id, {
+          subscriptionEndDate: updated.subscriptionEndDate,
+          subscriptionStatus: 'active',
+          isSalonActive: true
+        });
+      }
     }
+
+    if (updated) {
+      setSalons(prev => prev.map(s => s.id === updated!.id ? updated! : s));
+    }
+    const currentPlanName = updated?.subscriptionPlan || showExtendModal.subscriptionPlan || 'pro';
     setShowExtendModal(null);
-    alert(`✅ تم تمديد فترة اشتراك ${showExtendModal.name} بنجاح بمقدار +${extendDaysCount} يوماً وحفظها بقاعدة البيانات!`);
+    alert(`✅ تم تمديد فترة ${isTrial ? 'التجربة' : 'الاشتراك'} لصالون (${showExtendModal.name}) بنجاح بمقدار +${extendDaysCount} يوماً (الباقة: ${currentPlanName}) وحفظها بقاعدة البيانات!`);
+    loadData();
   };
 
   // Master Subscription Control Handlers
@@ -416,24 +428,39 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
     setSelectedControlSalon(salon);
     setControlForm({
       status: salon.subscriptionStatus || (salon.isActive ? 'active' : 'expired'),
-      plan: (salon.subscriptionPlan as any) || 'starter',
+      plan: (salon.subscriptionPlan as any) || 'pro',
       startDate: salon.subscriptionStartDate || new Date().toISOString().split('T')[0],
       endDate: salon.subscriptionEndDate || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
-      maxBranches: salon.maxBranches || 1,
-      maxUsers: salon.maxUsers || 5,
+      maxBranches: salon.maxBranches || 3,
+      maxUsers: salon.maxUsers || 10,
       isActive: salon.isActive !== false
     });
   };
 
-  const handleExecuteResetToTrial = async (salon: SalonTenant, days: number = 7, plan: string = 'starter') => {
-    if (!confirm(`هل أنت متأكد من إعادة حساب صالون (${salon.name}) إلى الوضع التجريبي المجاني لمدة (${days} أيام) وإلغاء أي تفعيل رسمي سابق؟`)) {
+  const handleExecuteExtendTrial = async (salon: SalonTenant, days: number = 7) => {
+    const currentPlan = salon.subscriptionPlan || 'pro';
+    if (!confirm(`هل أنت متأكد من تمديد الفترة التجريبية لصالون (${salon.name}) بمقدار (+${days} أيام) مع الحفاظ على باقة (${currentPlan})؟`)) {
       return;
     }
-    const updated = await DB.resetSalonToTrialDB(salon.id, days, plan);
+    const updated = await DB.extendSalonTrialDB(salon.id, days);
     if (updated) {
       setSalons(prev => prev.map(s => s.id === salon.id ? { ...s, ...updated } : s));
       setSelectedControlSalon(null);
-      alert(`✅ تم إعادة صالون (${salon.name}) إلى الوضع التجريبي بنجاح (${days} أيام) وتحديث السحابة!`);
+      alert(`✅ تم تمديد الفترة التجريبية لصالون (${salon.name}) بنجاح (+${days} أيام) مع الحفاظ على باقة (${currentPlan}) وتحديث السحابة!`);
+      loadData();
+    }
+  };
+
+  const handleExecuteResetToTrial = async (salon: SalonTenant, days: number = 7, plan?: string) => {
+    const targetPlan = plan || salon.subscriptionPlan || 'pro';
+    if (!confirm(`هل أنت متأكد من إعادة حساب صالون (${salon.name}) إلى الوضع التجريبي المجاني لمدة (${days} أيام) على باقة (${targetPlan}) وإلغاء أي تفعيل رسمي سابق؟`)) {
+      return;
+    }
+    const updated = await DB.resetSalonToTrialDB(salon.id, days, targetPlan);
+    if (updated) {
+      setSalons(prev => prev.map(s => s.id === salon.id ? { ...s, ...updated } : s));
+      setSelectedControlSalon(null);
+      alert(`✅ تم إعادة صالون (${salon.name}) إلى الوضع التجريبي بنجاح (${days} أيام - باقة ${targetPlan}) وتحديث السحابة!`);
       loadData();
     }
   };
@@ -480,8 +507,8 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
       subscriptionPlan: controlForm.plan,
       subscriptionStartDate: controlForm.startDate,
       subscriptionEndDate: controlForm.endDate,
-      maxBranches: Number(controlForm.maxBranches) || 1,
-      maxUsers: Number(controlForm.maxUsers) || 5,
+      maxBranches: Number(controlForm.maxBranches) || selectedControlSalon.maxBranches || 3,
+      maxUsers: Number(controlForm.maxUsers) || selectedControlSalon.maxUsers || 10,
       isActive: controlForm.isActive
     };
 
@@ -1387,11 +1414,25 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
           <div className="bg-slate-900 border border-slate-700 rounded-3xl p-6 max-w-sm w-full shadow-2xl text-slate-100 animate-in fade-in">
             <h3 className="font-black text-sm text-white mb-2 flex items-center gap-2">
               <Calendar size={18} className="text-indigo-400" />
-              <span>تمديد اشتراك: {showExtendModal.name}</span>
+              <span>{showExtendModal.subscriptionStatus === 'trial' ? 'تمديد الفترة التجريبية' : 'تمديد الاشتراك'}: {showExtendModal.name}</span>
             </h3>
-            <p className="text-xs text-slate-400 mb-4">
-              التاريخ الحالي للانتهاء: <span className="font-mono text-indigo-300 font-bold">{showExtendModal.subscriptionEndDate}</span>
-            </p>
+            <div className="text-xs text-slate-400 mb-4 space-y-1 bg-slate-800/60 p-2.5 rounded-xl border border-slate-700/60">
+              <div className="flex items-center justify-between">
+                <span>نوع الحساب / الباقة:</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-mono font-bold text-indigo-300 uppercase">{showExtendModal.subscriptionPlan || 'pro'}</span>
+                  {showExtendModal.subscriptionStatus === 'trial' ? (
+                    <span className="px-1.5 py-0.5 rounded text-[10px] bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">فترة تجريبية</span>
+                  ) : (
+                    <span className="px-1.5 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">اشتراك مفعل</span>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>تاريخ الانتهاء الحالي:</span>
+                <span className="font-mono text-slate-200 font-bold">{showExtendModal.subscriptionEndDate || 'غير محدد'}</span>
+              </div>
+            </div>
 
             <div className="space-y-3">
               <label className="block text-[11px] font-bold text-slate-400">اختر عدد الأيام المراد إضافتها:</label>
@@ -1833,36 +1874,72 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
                   <span>إجراءات التصحيح الفورية (إعادة للتجريبي أو إلغاء الاشتراك)</span>
                 </h4>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {/* Reset to Trial Box */}
-                  <div className="bg-slate-900/80 border border-amber-900/40 rounded-xl p-3.5 flex flex-col justify-between">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {/* Extend Trial Box */}
+                  <div className="bg-slate-900/80 border border-indigo-900/40 rounded-xl p-3.5 flex flex-col justify-between">
                     <div>
-                      <p className="font-bold text-xs text-amber-300 flex items-center gap-1.5 mb-1">
-                        <Clock size={13} />
-                        <span>إعادة الحساب للوضع التجريبي المجاني</span>
+                      <p className="font-bold text-xs text-indigo-300 flex items-center gap-1.5 mb-1">
+                        <Calendar size={13} />
+                        <span>تمديد الفترة التجريبية (+أيام)</span>
                       </p>
                       <p className="text-[10px] text-slate-400 leading-relaxed mb-3">
-                        يقوم بإلغاء أي تفعيل باقة خاطئ، وتصفير حالة الحساب فوراً إلى "تجريبي" وإعادة تعيين تاريخ الانتهاء بالسحابة.
+                        يضيف أياماً لتاريخ الانتهاء الحالي مع الحفاظ على باقة <span className="text-indigo-300 font-bold uppercase">({selectedControlSalon.subscriptionPlan || 'pro'})</span> وحدود الفروع والمستخدمين دون تحويل لـ starter.
                       </p>
                     </div>
                     <div className="flex items-center gap-1.5 pt-2 border-t border-slate-800">
                       <button
                         type="button"
-                        onClick={() => handleExecuteResetToTrial(selectedControlSalon, 7, 'starter')}
+                        onClick={() => handleExecuteExtendTrial(selectedControlSalon, 7)}
+                        className="flex-1 py-1.5 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-600/40 font-bold rounded-lg text-[11px] transition-all cursor-pointer"
+                      >
+                        +7 أيام
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleExecuteExtendTrial(selectedControlSalon, 14)}
+                        className="flex-1 py-1.5 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-600/40 font-bold rounded-lg text-[11px] transition-all cursor-pointer"
+                      >
+                        +14 يوماً
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleExecuteExtendTrial(selectedControlSalon, 30)}
+                        className="flex-1 py-1.5 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-600/40 font-bold rounded-lg text-[11px] transition-all cursor-pointer"
+                      >
+                        +30 يوماً
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Reset to Trial Box */}
+                  <div className="bg-slate-900/80 border border-amber-900/40 rounded-xl p-3.5 flex flex-col justify-between">
+                    <div>
+                      <p className="font-bold text-xs text-amber-300 flex items-center gap-1.5 mb-1">
+                        <Clock size={13} />
+                        <span>إعادة التعيين للتجريبي من اليوم</span>
+                      </p>
+                      <p className="text-[10px] text-slate-400 leading-relaxed mb-3">
+                        تصفير وبدء التجربة من اليوم مع الحفاظ على باقة <span className="text-amber-300 font-bold uppercase">({selectedControlSalon.subscriptionPlan || 'pro'})</span> وحدود الحساب.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1.5 pt-2 border-t border-slate-800">
+                      <button
+                        type="button"
+                        onClick={() => handleExecuteResetToTrial(selectedControlSalon, 7, selectedControlSalon.subscriptionPlan || 'pro')}
                         className="flex-1 py-1.5 bg-amber-600/20 hover:bg-amber-600 text-amber-300 hover:text-white border border-amber-600/40 font-bold rounded-lg text-[11px] transition-all cursor-pointer"
                       >
                         7 أيام
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleExecuteResetToTrial(selectedControlSalon, 14, 'starter')}
+                        onClick={() => handleExecuteResetToTrial(selectedControlSalon, 14, selectedControlSalon.subscriptionPlan || 'pro')}
                         className="flex-1 py-1.5 bg-amber-600/20 hover:bg-amber-600 text-amber-300 hover:text-white border border-amber-600/40 font-bold rounded-lg text-[11px] transition-all cursor-pointer"
                       >
                         14 يوماً
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleExecuteResetToTrial(selectedControlSalon, 30, 'starter')}
+                        onClick={() => handleExecuteResetToTrial(selectedControlSalon, 30, selectedControlSalon.subscriptionPlan || 'pro')}
                         className="flex-1 py-1.5 bg-amber-600/20 hover:bg-amber-600 text-amber-300 hover:text-white border border-amber-600/40 font-bold rounded-lg text-[11px] transition-all cursor-pointer"
                       >
                         30 يوماً
@@ -1875,10 +1952,10 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
                     <div>
                       <p className="font-bold text-xs text-rose-300 flex items-center gap-1.5 mb-1">
                         <ShieldAlert size={13} />
-                        <span>إلغاء الاشتراك فوراً وفرض القراءة فقط</span>
+                        <span>إلغاء الاشتراك وقفل الحساب</span>
                       </p>
                       <p className="text-[10px] text-slate-400 leading-relaxed mb-3">
-                        يقوم بإنهاء صلاحية الصالون وقفل المنظومة لوضع العرض فقط (Read-Only) لمنع إضافة أو تعديل الفواتير حتى يسدد.
+                        يقوم بإنهاء صلاحية الصالون فوراً وقفل المنظومة لوضع العرض فقط (Read-Only) لمنع إضافة أو تعديل الفواتير.
                       </p>
                     </div>
                     <div className="pt-2 border-t border-slate-800">
@@ -1888,7 +1965,7 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
                         className="w-full py-1.5 bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-600/40 font-black rounded-lg text-[11px] transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md shadow-rose-950/50"
                       >
                         <Lock size={12} />
-                        <span>إنهاء الاشتراك فوراً وقفل الحساب 🛑</span>
+                        <span>إنهاء الاشتراك وقفل الحساب 🛑</span>
                       </button>
                     </div>
                   </div>

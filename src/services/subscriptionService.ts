@@ -552,9 +552,15 @@ export const SubscriptionService = {
     const baseDate = currentEnd > new Date() ? currentEnd : new Date();
     const newEnd = new Date(baseDate.getTime() + additionalDays * 24 * 3600 * 1000);
 
+    const isTrial = salon.subscriptionStatus === 'trial';
+    const targetStatus = isTrial ? 'trial' : 'active';
+    const effectivePlan = salon.subscriptionPlan || 'pro';
+
     return this.updateSalon(salonId, {
       subscriptionEndDate: newEnd.toISOString().split('T')[0],
-      subscriptionStatus: 'active',
+      subscriptionStatus: targetStatus,
+      subscriptionPlan: effectivePlan,
+      trialDays: isTrial ? ((Number(salon.trialDays) || 7) + additionalDays) : salon.trialDays,
       isActive: true
     });
   },
