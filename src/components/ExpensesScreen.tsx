@@ -15,11 +15,13 @@ import {
   TrendingDown, 
   DollarSign, 
   Layers,
-  ArrowUpDown
+  ArrowUpDown,
+  Printer
 } from 'lucide-react';
 import { DB } from '../services/db';
 import { ExpensesImportModal } from './ExpensesImportModal';
 import { AuthService } from '../services/auth';
+import { printThermalFinancialVoucher } from './ThermalFinancialVoucher';
 
 export function ExpensesScreen({
   settings,
@@ -202,6 +204,25 @@ export function ExpensesScreen({
     }
   };
 
+  const handlePrintExpenseReceipt = (exp: Transaction) => {
+    const treasuryName = settings.treasuries.find(t => t.id === exp.treasury)?.name || exp.treasury || 'الخزينة الرئيسية';
+    const expDateStr = exp.date 
+      ? (exp.date.includes('T') ? exp.date.replace('T', ' ').substring(0, 19) : exp.date) 
+      : new Date().toISOString().replace('T', ' ').substring(0, 19);
+
+    printThermalFinancialVoucher(settings, {
+      voucherType: 'expense',
+      voucherNumber: exp.id,
+      date: expDateStr,
+      expenseCategory: exp.expenseCategory || 'عام',
+      amount: Number(exp.amount),
+      treasuryName: treasuryName,
+      note: exp.description || 'مصروف مسجل بالنظام',
+      issuedBy: currentUser?.name || 'مدير النظام',
+      shiftDate: exp.shiftDate
+    });
+  };
+
   const handleSaveExpense = () => {
     if (!amount || amount <= 0) {
       setErrorMsg('الرجاء إدخال مبلغ صحيح');
@@ -263,6 +284,9 @@ export function ExpensesScreen({
       } as any;
       setTransactions([newTrx, ...transactions]);
       DB.saveTransaction(newTrx, settings.salonId);
+
+      // طباعة إيصال المصروف الحراري فوراً عند الإضافة (مشابه لإيصال السلفة)
+      handlePrintExpenseReceipt(newTrx);
     }
     setShowAddModal(false);
     setEditingExpenseId(null);
@@ -704,6 +728,13 @@ export function ExpensesScreen({
                   <td className="p-4 text-center whitespace-nowrap">
                     <div className="flex items-center justify-center gap-1.5">
                       <button 
+                        onClick={() => handlePrintExpenseReceipt(exp)} 
+                        className="text-emerald-600 hover:bg-emerald-50 p-2 rounded-lg transition-colors cursor-pointer" 
+                        title="طباعة إيصال المصروف الحراري (80mm / 58mm)"
+                      >
+                        <Printer size={15} />
+                      </button>
+                      <button 
                         onClick={() => handleEditClick(exp)} 
                         className="text-blue-600 hover:bg-blue-50 p-2 rounded-lg transition-colors cursor-pointer" 
                         title="تعديل المصروف"
@@ -798,9 +829,26 @@ export function ExpensesScreen({
                 </select>
               </div>
             </div>
-            <div className="p-4 bg-slate-50 border-t border-slate-100">
-              <button onClick={handleSaveExpense} className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-3 rounded-xl transition-colors">
-                {editingExpenseId ? 'تحديث المصروف' : 'حفظ المصروف'}
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center gap-2">
+              {editingExpenseId && (
+                <button 
+                  type="button"
+                  onClick={() => {
+                    const currentExp = transactions.find(t => t.id === editingExpenseId);
+                    if (currentExp) handlePrintExpenseReceipt(currentExp);
+                  }}
+                  className="px-4 py-3 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold rounded-xl transition-colors flex items-center gap-1.5 text-xs whitespace-nowrap cursor-pointer shadow-xs"
+                >
+                  <Printer size={15} />
+                  <span>طباعة الإيصال</span>
+                </button>
+              )}
+              <button 
+                onClick={handleSaveExpense} 
+                className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-md"
+              >
+                <Printer size={16} />
+                <span>{editingExpenseId ? 'تحديث المصروف' : 'حفظ وطباعة إيصال المصروف'}</span>
               </button>
             </div>
           </div>

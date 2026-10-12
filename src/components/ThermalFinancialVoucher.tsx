@@ -3,12 +3,16 @@ import { AppSettings, Employee } from '../types';
 import { printHtml } from '../utils/print';
 
 export interface FinancialVoucherData {
-  voucherType: 'salary' | 'advance' | 'penalty' | 'bonus' | 'commission_payout';
+  voucherType: 'salary' | 'advance' | 'penalty' | 'bonus' | 'commission_payout' | 'expense';
   voucherNumber: string;
   date: string;
-  employeeName: string;
-  employeeCode: string;
-  employeeRole: string;
+  employeeName?: string;
+  employeeCode?: string;
+  employeeRole?: string;
+  expenseCategory?: string;
+  beneficiary?: string;
+  branchName?: string;
+  shiftDate?: string;
   amount?: number;
   days?: number;
   treasuryName?: string;
@@ -30,8 +34,11 @@ export function ThermalFinancialVoucher({
   const isPenalty = data.voucherType === 'penalty';
   const isBonus = data.voucherType === 'bonus';
   const isCommission = data.voucherType === 'commission_payout';
+  const isExpense = data.voucherType === 'expense';
 
-  const title = isSalary
+  const title = isExpense
+    ? 'سند صرف مصروف'
+    : isSalary
     ? 'سند صرف راتب شهري'
     : isCommission
     ? 'سند صرف عمولة مستحقة'
@@ -78,26 +85,64 @@ export function ThermalFinancialVoucher({
           <span className="text-slate-600 font-bold whitespace-nowrap">المستخدم:</span>
           <span className="text-slate-800 font-bold text-left truncate">{data.issuedBy}</span>
         </div>
+        {data.shiftDate && (
+          <div className="flex justify-between items-center gap-1">
+            <span className="text-slate-600 font-bold whitespace-nowrap">تاريخ الوردية:</span>
+            <span className="font-mono text-slate-800 text-left text-[9px]">{data.shiftDate}</span>
+          </div>
+        )}
       </div>
 
-      {/* Employee Details */}
-      <div className="p-1.5 border border-dashed border-slate-300 rounded-lg text-[10px] space-y-1 mb-1.5">
-        <div className="flex justify-between items-center gap-1">
-          <span className="text-slate-600 font-bold whitespace-nowrap">اسم الموظف:</span>
-          <span className="font-black text-slate-900 text-left break-words">{data.employeeName}</span>
+      {/* Details Box: Expense vs Employee */}
+      {isExpense ? (
+        <div className="p-1.5 border border-dashed border-slate-300 rounded-lg text-[10px] space-y-1 mb-1.5 bg-slate-50/50">
+          <div className="flex justify-between items-center gap-1">
+            <span className="text-slate-600 font-bold whitespace-nowrap">بند الصرف:</span>
+            <span className="font-black text-purple-900 text-left break-words">{data.expenseCategory || 'عام'}</span>
+          </div>
+          {data.treasuryName && (
+            <div className="flex justify-between items-center gap-1 text-[9.5px]">
+              <span className="text-slate-600 whitespace-nowrap">الخزينة المسحوب منها:</span>
+              <span className="font-bold text-slate-800 text-left">{data.treasuryName}</span>
+            </div>
+          )}
+          {data.beneficiary && (
+            <div className="flex justify-between items-center gap-1 text-[9.5px]">
+              <span className="text-slate-600 whitespace-nowrap">المستلم / المستفيد:</span>
+              <span className="text-slate-800 font-bold text-left">{data.beneficiary}</span>
+            </div>
+          )}
+          {data.branchName && (
+            <div className="flex justify-between items-center gap-1 text-[9.5px]">
+              <span className="text-slate-600 whitespace-nowrap">الفرع:</span>
+              <span className="text-slate-800 font-bold text-left">{data.branchName}</span>
+            </div>
+          )}
         </div>
-        <div className="flex justify-between items-center gap-1 text-[9.5px]">
-          <span className="text-slate-600 whitespace-nowrap">كود البصمة:</span>
-          <span className="font-mono font-bold text-indigo-700 ltr">#{data.employeeCode}</span>
+      ) : (
+        <div className="p-1.5 border border-dashed border-slate-300 rounded-lg text-[10px] space-y-1 mb-1.5">
+          <div className="flex justify-between items-center gap-1">
+            <span className="text-slate-600 font-bold whitespace-nowrap">اسم الموظف:</span>
+            <span className="font-black text-slate-900 text-left break-words">{data.employeeName}</span>
+          </div>
+          {data.employeeCode && (
+            <div className="flex justify-between items-center gap-1 text-[9.5px]">
+              <span className="text-slate-600 whitespace-nowrap">كود البصمة:</span>
+              <span className="font-mono font-bold text-indigo-700 ltr">#{data.employeeCode}</span>
+            </div>
+          )}
+          {data.employeeRole && (
+            <div className="flex justify-between items-center gap-1 text-[9.5px]">
+              <span className="text-slate-600 whitespace-nowrap">المسمى الوظيفي:</span>
+              <span className="text-slate-800 text-left">{data.employeeRole}</span>
+            </div>
+          )}
         </div>
-        <div className="flex justify-between items-center gap-1 text-[9.5px]">
-          <span className="text-slate-600 whitespace-nowrap">المسمى الوظيفي:</span>
-          <span className="text-slate-800 text-left">{data.employeeRole}</span>
-        </div>
-      </div>
+      )}
 
       {/* Amount Box */}
       <div className={`p-2 rounded-xl text-center space-y-0.5 mb-1.5 border ${
+        isExpense ? 'bg-rose-50 border-rose-300 text-rose-950' :
         isSalary ? 'bg-emerald-50 border-emerald-300 text-emerald-950' :
         isCommission ? 'bg-indigo-50 border-indigo-300 text-indigo-950' :
         isAdvance ? 'bg-amber-50 border-amber-300 text-amber-950' :
@@ -105,7 +150,7 @@ export function ThermalFinancialVoucher({
         'bg-emerald-50 border-emerald-300 text-emerald-950'
       }`}>
         <p className="text-[9.5px] font-bold">
-          {isSalary ? 'صافي الراتب المصروف' : isCommission ? 'مبلغ العمولة المنصرف' : isAdvance ? 'المبلغ المنصرف للموظف' : isPenalty ? 'قيمة الخصم المستقطع' : 'قيمة المكافأة'}
+          {isExpense ? 'إجمالي المبلغ المصروف' : isSalary ? 'صافي الراتب المصروف' : isCommission ? 'مبلغ العمولة المنصرف' : isAdvance ? 'المبلغ المنصرف للموظف' : isPenalty ? 'قيمة الخصم المستقطع' : 'قيمة المكافأة'}
         </p>
         <h3 className="text-sm sm:text-base font-black font-mono">
           {data.amount !== undefined && data.amount > 0 
@@ -118,7 +163,7 @@ export function ThermalFinancialVoucher({
 
       {/* Statement / Details */}
       <div className="p-1.5 bg-slate-50 border border-slate-200 rounded-lg text-[9.5px] space-y-1 mb-2">
-        {data.treasuryName && (
+        {!isExpense && data.treasuryName && (
           <div className="flex justify-between items-center gap-1">
             <span className="text-slate-600 font-bold whitespace-nowrap">الخزنة المنصرف منها:</span>
             <span className="font-bold text-slate-800 text-left truncate">{data.treasuryName}</span>
@@ -135,7 +180,7 @@ export function ThermalFinancialVoucher({
       {/* Signatures */}
       <div className="pt-2 border-t-2 border-slate-900 grid grid-cols-2 gap-2 text-[8.5px] text-center text-slate-700">
         <div className="space-y-4">
-          <p className="font-black leading-tight">توقيع المستلم / المقر</p>
+          <p className="font-black leading-tight">{isExpense ? 'توقيع المستلم / المستفيد' : 'توقيع المستلم / المقر'}</p>
           <div className="border-b border-dashed border-slate-400 w-16 mx-auto"></div>
         </div>
         <div className="space-y-4">
@@ -163,8 +208,11 @@ export function printThermalFinancialVoucher(settings: AppSettings, data: Financ
   const isPenalty = data.voucherType === 'penalty';
   const isBonus = data.voucherType === 'bonus';
   const isCommission = data.voucherType === 'commission_payout';
+  const isExpense = data.voucherType === 'expense';
 
-  const title = isSalary
+  const title = isExpense
+    ? 'سند صرف مصروف'
+    : isSalary
     ? 'سند صرف راتب شهري'
     : isCommission
     ? 'سند صرف عمولة مستحقة'
@@ -213,40 +261,72 @@ export function printThermalFinancialVoucher(settings: AppSettings, data: Financ
           <span style="font-family: monospace; color: #334155; direction: ltr; unicode-bidi: embed; font-size: 8.5px; white-space: nowrap;">${data.date}</span>
         </div>
         <div style="display: flex; justify-content: space-between; align-items: center; gap: 4px;">
-          <span style="color: #64748b; font-weight: bold; white-space: nowrap;">المستخدم:</span>
+          <span style="color: #64748b; font-weight: bold; white-space: nowrap;">المستخدم المسؤول:</span>
           <span style="color: #334155; font-weight: bold; text-align: left; word-break: break-word;">${data.issuedBy}</span>
         </div>
+        ${data.shiftDate ? `
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 4px; margin-top: 2px;">
+          <span style="color: #64748b; font-weight: bold; white-space: nowrap;">تاريخ الوردية:</span>
+          <span style="font-family: monospace; color: #334155; font-size: 8.5px; text-align: left;">${data.shiftDate}</span>
+        </div>` : ''}
       </div>
 
+      ${isExpense ? `
+      <!-- Expense Info -->
+      <div style="padding: 4px 5px; border: 1px dashed #cbd5e1; border-radius: 6px; font-size: 9.5px; margin-bottom: 4px; box-sizing: border-box; background: #faf5ff;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px; gap: 4px;">
+          <span style="color: #64748b; font-weight: bold; white-space: nowrap;">بند الصرف:</span>
+          <span style="font-weight: 900; color: #6b21a8; text-align: left; word-break: break-word;">${data.expenseCategory || 'عام'}</span>
+        </div>
+        ${data.treasuryName ? `
+        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 9px; margin-bottom: 2px; gap: 4px;">
+          <span style="color: #64748b; white-space: nowrap;">الخزينة المسحوب منها:</span>
+          <span style="font-weight: bold; color: #0f172a; text-align: left;">${data.treasuryName}</span>
+        </div>` : ''}
+        ${data.beneficiary ? `
+        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 9px; margin-bottom: 2px; gap: 4px;">
+          <span style="color: #64748b; white-space: nowrap;">المستلم / المستفيد:</span>
+          <span style="color: #334155; font-weight: bold; text-align: left;">${data.beneficiary}</span>
+        </div>` : ''}
+        ${data.branchName ? `
+        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 9px; gap: 4px;">
+          <span style="color: #64748b; white-space: nowrap;">الفرع:</span>
+          <span style="color: #334155; text-align: left;">${data.branchName}</span>
+        </div>` : ''}
+      </div>
+      ` : `
       <!-- Employee Info -->
       <div style="padding: 4px 5px; border: 1px dashed #cbd5e1; border-radius: 6px; font-size: 9.5px; margin-bottom: 4px; box-sizing: border-box;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px; gap: 4px;">
           <span style="color: #64748b; font-weight: bold; white-space: nowrap;">اسم الموظف:</span>
-          <span style="font-weight: 900; color: #0f172a; text-align: left; word-break: break-word;">${data.employeeName}</span>
+          <span style="font-weight: 900; color: #0f172a; text-align: left; word-break: break-word;">${data.employeeName || '-'}</span>
         </div>
+        ${data.employeeCode ? `
         <div style="display: flex; justify-content: space-between; align-items: center; font-size: 9px; margin-bottom: 2px; gap: 4px;">
           <span style="color: #64748b; white-space: nowrap;">كود البصمة:</span>
           <span style="font-family: monospace; font-weight: bold; color: #4338ca; direction: ltr;">#${data.employeeCode}</span>
-        </div>
+        </div>` : ''}
+        ${data.employeeRole ? `
         <div style="display: flex; justify-content: space-between; align-items: center; font-size: 9px; gap: 4px;">
           <span style="color: #64748b; white-space: nowrap;">المسمى الوظيفي:</span>
           <span style="color: #334155; text-align: left;">${data.employeeRole}</span>
-        </div>
+        </div>` : ''}
       </div>
+      `}
 
       <!-- Amount Box -->
-      <div style="padding: 6px 4px; border-radius: 8px; text-align: center; margin-bottom: 4px; border: 1px solid #cbd5e1; background: ${isSalary ? '#f0fdf4' : isCommission ? '#eef2ff' : isAdvance ? '#fffbeb' : isPenalty ? '#fff1f2' : '#f0fdf4'}; box-sizing: border-box;">
+      <div style="padding: 6px 4px; border-radius: 8px; text-align: center; margin-bottom: 4px; border: 1px solid #cbd5e1; background: ${isExpense ? '#fff1f2' : isSalary ? '#f0fdf4' : isCommission ? '#eef2ff' : isAdvance ? '#fffbeb' : isPenalty ? '#fff1f2' : '#f0fdf4'}; box-sizing: border-box;">
         <p style="margin: 0; font-size: 9.5px; font-weight: bold; color: #475569;">
-          ${isSalary ? 'صافي الراتب المصروف' : isCommission ? 'مبلغ العمولة المنصرف' : isAdvance ? 'المبلغ المنصرف للموظف' : isPenalty ? 'قيمة الخصم المستقطع' : 'قيمة المكافأة'}
+          ${isExpense ? 'إجمالي المبلغ المصروف' : isSalary ? 'صافي الراتب المصروف' : isCommission ? 'مبلغ العمولة المنصرف' : isAdvance ? 'المبلغ المنصرف للموظف' : isPenalty ? 'قيمة الخصم المستقطع' : 'قيمة المكافأة'}
         </p>
-        <h3 style="margin: 2px 0 0; font-size: 15px; font-weight: 900; font-family: monospace; color: ${isSalary ? '#166534' : isCommission ? '#3730a3' : isAdvance ? '#92400e' : isPenalty ? '#9f1239' : '#166534'};">
+        <h3 style="margin: 2px 0 0; font-size: 15px; font-weight: 900; font-family: monospace; color: ${isExpense ? '#be123c' : isSalary ? '#166534' : isCommission ? '#3730a3' : isAdvance ? '#92400e' : isPenalty ? '#9f1239' : '#166534'};">
           ${amountDisplay}
         </h3>
       </div>
 
       <!-- Statement / Reason -->
       <div style="padding: 4px 5px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 9.5px; margin-bottom: 5px; box-sizing: border-box;">
-        ${treasuryHtml}
+        ${!isExpense ? treasuryHtml : ''}
         <div style="margin-top: 2px;">
           <span style="color: #64748b; font-weight: bold; display: block; margin-bottom: 2px;">البيان والسبب:</span>
           <div style="font-weight: bold; color: #0f172a; background: #fff; padding: 3px 5px; border-radius: 4px; border: 1px solid #e2e8f0; font-size: 9.5px; word-break: break-word;">
@@ -258,7 +338,7 @@ export function printThermalFinancialVoucher(settings: AppSettings, data: Financ
       <!-- Signatures -->
       <div style="padding-top: 5px; border-top: 2px solid #0f172a; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; text-align: center; font-size: 8.5px; color: #334155; box-sizing: border-box;">
         <div style="padding: 0 2px;">
-          <p style="margin: 0 0 18px; font-weight: 900; line-height: 1.2;">توقيع المستلم / المقر</p>
+          <p style="margin: 0 0 18px; font-weight: 900; line-height: 1.2;">${isExpense ? 'توقيع المستلم / المستفيد' : 'توقيع المستلم / المقر'}</p>
           <div style="border-bottom: 1px dashed #94a3b8; width: 75%; margin: 0 auto;"></div>
         </div>
         <div style="padding: 0 2px;">
@@ -274,4 +354,37 @@ export function printThermalFinancialVoucher(settings: AppSettings, data: Financ
   `;
 
   printHtml(html, title, settings.paperSize || '80mm');
+}
+
+/**
+ * Direct print helper for thermal expense voucher (80mm/58mm)
+ */
+export function printThermalExpenseVoucher(
+  settings: AppSettings, 
+  expenseData: {
+    voucherNumber: string;
+    date: string;
+    expenseCategory: string;
+    amount: number;
+    treasuryName?: string;
+    description: string;
+    issuedBy: string;
+    shiftDate?: string;
+    beneficiary?: string;
+    branchName?: string;
+  }
+) {
+  printThermalFinancialVoucher(settings, {
+    voucherType: 'expense',
+    voucherNumber: expenseData.voucherNumber,
+    date: expenseData.date,
+    expenseCategory: expenseData.expenseCategory,
+    amount: expenseData.amount,
+    treasuryName: expenseData.treasuryName,
+    note: expenseData.description,
+    issuedBy: expenseData.issuedBy,
+    shiftDate: expenseData.shiftDate,
+    beneficiary: expenseData.beneficiary,
+    branchName: expenseData.branchName
+  });
 }

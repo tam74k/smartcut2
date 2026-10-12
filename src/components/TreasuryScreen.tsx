@@ -1,10 +1,11 @@
 import { useState, useMemo } from 'react';
 import { AppSettings, Transaction, Treasury, Branch, AppUser, Invoice, Booking } from '../types';
-import { Wallet, ArrowDownRight, ArrowUpRight, ArrowRightLeft, XCircle, Download, Building2, Trash2, Loader2, CalendarCheck } from 'lucide-react';
+import { Wallet, ArrowDownRight, ArrowUpRight, ArrowRightLeft, XCircle, Download, Building2, Trash2, Loader2, CalendarCheck, Printer } from 'lucide-react';
 import { exportToExcel } from '../utils/exportExcel';
 import { AuthService } from '../services/auth';
 import { DB } from '../services/db';
 import { getBookingAdvances } from './BookingsScreen';
+import { printThermalFinancialVoucher } from './ThermalFinancialVoucher';
 
 export function TreasuryScreen({ 
   settings, 
@@ -143,6 +144,40 @@ export function TreasuryScreen({
   };
 
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const handlePrintTransactionVoucher = (trx: Transaction) => {
+    const isAdv = isStaffAdvance(trx);
+    const treasuryName = settings.treasuries.find(t => t.id === trx.treasury)?.name || trx.treasury || 'الخزينة الرئيسية';
+    const dateStr = trx.date 
+      ? (trx.date.includes('T') ? trx.date.replace('T', ' ').substring(0, 19) : trx.date) 
+      : new Date().toISOString().replace('T', ' ').substring(0, 19);
+
+    if (isAdv) {
+      printThermalFinancialVoucher(settings, {
+        voucherType: 'advance',
+        voucherNumber: trx.id,
+        date: dateStr,
+        employeeName: trx.description || 'موظف',
+        amount: Number(trx.amount),
+        treasuryName: treasuryName,
+        note: trx.description || 'سلفة نقدية',
+        issuedBy: trx.userName || trx.createdBy || currentUser?.name || 'مدير النظام',
+        shiftDate: trx.shiftDate
+      });
+    } else {
+      printThermalFinancialVoucher(settings, {
+        voucherType: 'expense',
+        voucherNumber: trx.id,
+        date: dateStr,
+        expenseCategory: trx.expenseCategory || translateCategory(trx.category),
+        amount: Number(trx.amount),
+        treasuryName: treasuryName,
+        note: trx.description || 'سند صرف مصروف',
+        issuedBy: trx.userName || trx.createdBy || currentUser?.name || 'مدير النظام',
+        shiftDate: trx.shiftDate
+      });
+    }
+  };
 
   const handleDeleteTransaction = async (trx: Transaction) => {
     // 1. فحص الصلاحيات
@@ -948,20 +983,31 @@ export function TreasuryScreen({
                     </td>
                     <td className="py-3.5 px-4 text-slate-600 font-medium max-w-xs truncate">{trx.description || '-'}</td>
                     <td className="py-3.5 px-4 text-center">
-                      <button
-                        onClick={() => handleDeleteTransaction(trx)}
-                        disabled={deletingId === trx.id}
-                        className={`text-slate-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition-all cursor-pointer ${
-                          deletingId === trx.id ? 'opacity-50 pointer-events-none' : ''
-                        }`}
-                        title="حذف الحركة المالية"
-                      >
-                        {deletingId === trx.id ? (
-                          <Loader2 size={15} className="animate-spin text-red-600" />
-                        ) : (
-                          <Trash2 size={15} />
+                      <div className="flex items-center justify-center gap-1">
+                        {(trx.type === 'out' || (trx.type as string) === 'expense') && (
+                          <button
+                            onClick={() => handlePrintTransactionVoucher(trx)}
+                            className="text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 p-1.5 rounded-lg transition-all cursor-pointer"
+                            title="طباعة إيصال السند المالي الحراري (80mm / 58mm)"
+                          >
+                            <Printer size={15} />
+                          </button>
                         )}
-                      </button>
+                        <button
+                          onClick={() => handleDeleteTransaction(trx)}
+                          disabled={deletingId === trx.id}
+                          className={`text-slate-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition-all cursor-pointer ${
+                            deletingId === trx.id ? 'opacity-50 pointer-events-none' : ''
+                          }`}
+                          title="حذف الحركة المالية"
+                        >
+                          {deletingId === trx.id ? (
+                            <Loader2 size={15} className="animate-spin text-red-600" />
+                          ) : (
+                            <Trash2 size={15} />
+                          )}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
