@@ -482,9 +482,51 @@ export function EmployeesScreen({
     });
   };
 
-  const handleDelete = (id: string) => {
-    if (confirm('هل أنت متأكد من حذف هذا الموظف؟')) {
-      setEmployees(employees.filter(e => e.id !== id));
+  const handleDelete = async (id: string, empName?: string) => {
+    const targetEmp = employees.find(e => e.id === id);
+    const displayName = empName || targetEmp?.name || 'هذا الموظف';
+
+    if (!confirm(`تحذير نهائي:\nهل أنت متأكد من حذف بيانات الموظف (${displayName}) نهائياً من النظام وقاعدة البيانات؟\nلن يمكن التراجع عن هذا الإجراء.`)) {
+      return;
+    }
+
+    try {
+      // 1. Remove from local state
+      const updatedList = employees.filter(e => e.id !== id);
+      setEmployees(updatedList);
+
+      // 2. Reset editing form if this employee was being edited
+      if (editingId === id) {
+        setEditingId(null);
+        setFormData(defaultFormData);
+        setOnlineUsername('');
+        setOnlineUserPassword('123456');
+        setUsernameStatus('idle');
+      }
+
+      // 3. Remove linked online user account if exists
+      try {
+        const storedUsers = localStorage.getItem('smartcut_users');
+        if (storedUsers) {
+          const usersList: AppUser[] = JSON.parse(storedUsers);
+          const linkedUser = usersList.find(u => u.employeeId === id || (targetEmp?.userId && u.id === targetEmp.userId));
+          if (linkedUser) {
+            await DB.deleteUser(linkedUser.id);
+            const remainingUsers = usersList.filter(u => u.id !== linkedUser.id && u.employeeId !== id);
+            localStorage.setItem('smartcut_users', JSON.stringify(remainingUsers));
+          }
+        }
+      } catch (err) {
+        console.warn('Error removing linked online user:', err);
+      }
+
+      // 4. Delete permanently from Supabase & Cloud DB
+      await DB.deleteEmployee(id, settings.salonId);
+
+      alert(`✅ تم حذف بيانات الموظف (${displayName}) نهائياً بنجاح!`);
+    } catch (error) {
+      console.error('Error deleting employee:', error);
+      alert('حدث خطأ أثناء محاولة حذف الموظف، يرجى المحاولة مرة أخرى.');
     }
   };
 
@@ -1142,10 +1184,23 @@ export function EmployeesScreen({
         <div className="space-y-6">
           {/* Add / Edit Form Card */}
           <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs">
-            <h3 className="text-base font-black text-slate-800 mb-4 pb-3 border-b border-slate-100 flex items-center gap-2">
-              <Sparkles size={18} className="text-indigo-600" />
-              <span>{editingId ? 'تعديل بيانات موظف' : 'إضافة موظف جديد إلى الكادر'}</span>
-            </h3>
+            <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100 flex-wrap gap-2">
+              <h3 className="text-base font-black text-slate-800 flex items-center gap-2">
+                <Sparkles size={18} className="text-indigo-600" />
+                <span>{editingId ? `تعديل بيانات موظف: ${formData.name || ''}` : 'إضافة موظف جديد إلى الكادر'}</span>
+              </h3>
+              {editingId && AuthService.canDo('manage_employees', currentUser) && (
+                <button
+                  type="button"
+                  onClick={() => handleDelete(editingId, formData.name)}
+                  className="px-3.5 py-1.5 bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white border border-rose-200 hover:border-rose-600 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  title="حذف هذا الموظف نهائياً من قاعدة البيانات"
+                >
+                  <Trash2 size={14} />
+                  <span>حذف الموظف نهائياً</span>
+                </button>
+              )}
+            </div>
 
             <div className="flex flex-col md:flex-row gap-6 items-start mb-6 pb-6 border-b border-slate-100">
               {/* Employee Avatar Upload Box */}
@@ -1556,12 +1611,23 @@ export function EmployeesScreen({
                 </span>
               </label>
 
-              <div className="flex gap-2 w-full sm:w-auto">
+              <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
+                {editingId && AuthService.canDo('manage_employees', currentUser) && (
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(editingId, formData.name)}
+                    className="px-4 py-2.5 bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white border border-rose-200 hover:border-rose-600 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                    title="حذف الموظف نهائياً من قاعدة البيانات"
+                  >
+                    <Trash2 size={15} />
+                    <span>حذف الموظف نهائياً</span>
+                  </button>
+                )}
                 {editingId && (
                   <button
                     type="button"
                     onClick={() => { setEditingId(null); setFormData(defaultFormData); setOnlineUsername(''); setOnlineUserPassword('123456'); setUsernameStatus('idle'); }}
-                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold"
+                    className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
                   >
                     إلغاء
                   </button>
@@ -1569,7 +1635,7 @@ export function EmployeesScreen({
                 <button
                   type="button"
                   onClick={handleSaveEmployee}
-                  className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black shadow-md shadow-indigo-600/20 flex items-center justify-center gap-1.5"
+                  className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black shadow-md shadow-indigo-600/20 flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <Save size={15} />
                   <span>{editingId ? 'حفظ التعديلات' : 'إضافة الموظف'}</span>
@@ -1732,6 +1798,15 @@ export function EmployeesScreen({
                               title="تعديل الموظف"
                             >
                               <Edit2 size={14} />
+                            </button>
+                          )}
+                          {AuthService.canDo('manage_employees', currentUser) && (
+                            <button
+                              onClick={() => handleDelete(emp.id, emp.name)}
+                              className="p-1.5 bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"
+                              title="حذف الموظف نهائياً"
+                            >
+                              <Trash2 size={14} />
                             </button>
                           )}
                           {!AuthService.canDo('hr_manage_advances', currentUser) &&

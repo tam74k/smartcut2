@@ -1936,6 +1936,54 @@ export const DB = {
     } catch (e2) { console.error('DB.saveEmployee exception:', e2); return null; }
   },
   async saveEmployees(list: any[], salonId?: string) { for (const e of list) await DB.saveEmployee(e, salonId); return true; },
+  async deleteEmployee(employeeId: string, salonId?: string): Promise<boolean> {
+    const client = sb(); if (!client || !employeeId) return false;
+    const validSalonId = toSalonUUID(salonId || getSalonId());
+    try {
+      // 1. Delete linked user account if exists
+      try {
+        const storedUsers = localStorage.getItem('smartcut_users');
+        const usersList: any[] = storedUsers ? JSON.parse(storedUsers) : [];
+        const linkedUser = usersList.find(u => u.employeeId === employeeId);
+        if (linkedUser?.id) {
+          await DB.deleteUser(linkedUser.id);
+          const remainingUsers = usersList.filter(u => u.employeeId !== employeeId);
+          localStorage.setItem('smartcut_users', JSON.stringify(remainingUsers));
+        }
+      } catch (err) {
+        console.warn('DB.deleteEmployee user cleanup error:', err);
+      }
+
+      // 2. Cascade delete transfers & custodies
+      try {
+        await client.from('employee_branch_transfers').delete().eq('employee_id', employeeId);
+      } catch {}
+      try {
+        await client.from('employee_custodies').delete().eq('employee_id', employeeId);
+      } catch {}
+
+      // 3. Delete employee record from Supabase
+      const { error } = await client.from('employees').delete().eq('id', employeeId);
+      if (error) {
+        console.error('DB.deleteEmployee error:', error.message);
+        return false;
+      }
+
+      // 4. Update localStorage cache
+      try {
+        const cached = localStorage.getItem('smartcut_cache_employees');
+        if (cached) {
+          const list: any[] = JSON.parse(cached);
+          localStorage.setItem('smartcut_cache_employees', JSON.stringify(list.filter(e => e.id !== employeeId)));
+        }
+      } catch {}
+
+      return true;
+    } catch (e) {
+      console.error('DB.deleteEmployee exception:', e);
+      return false;
+    }
+  },
 
   // ---- الخدمات ----
   async fetchServices(salonId?: string) { return DB.fetchAll<any>('services', undefined, salonId); },
