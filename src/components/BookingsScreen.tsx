@@ -1631,62 +1631,6 @@ export function BookingsScreen({
     setPreviewBooking(booking);
   };
 
-  // Open Preview directly from Add/Edit Modal
-  const handlePreviewFromAddEditModal = () => {
-    if (!newBooking.clientName?.trim() || !newBooking.phone?.trim()) {
-      alert('يرجى إدخال اسم العميل ورقم الموبايل أولاً لمعاينة الإيصال');
-      return;
-    }
-
-    const hasServiceDiscounts = (newBooking.services || []).some(s => Number(s.discountValue || 0) > 0);
-    const hasTotalDiscount = Number(newBooking.discountValue || 0) > 0;
-
-    const finalServices = (newBooking.services || []).map(s => ({
-      ...s,
-      quantity: Math.max(1, Number(s.quantity) || 1),
-      discountType: s.discountType || 'fixed',
-      discountValue: hasTotalDiscount ? 0 : Number(s.discountValue || 0)
-    }));
-    const finalDiscountValue = hasServiceDiscounts ? 0 : Number(newBooking.discountValue || 0);
-    const finalDiscountType = newBooking.discountType || 'fixed';
-
-    const totals = calculateBookingTotals({
-      ...newBooking,
-      services: finalServices,
-      discountValue: finalDiscountValue,
-      discountType: finalDiscountType
-    });
-
-    const defaultBookingDate = (shiftData && shiftData.isOpen && shiftData.date) ? shiftData.date : new Date().toISOString().split('T')[0];
-    const effectiveBookingDate = newBooking.date || ((!editingBooking && shiftData?.isOpen && shiftData.date) ? shiftData.date : defaultBookingDate);
-    const bBranchId = editingBooking?.branchId || activeBranchId || mainBranchId;
-
-    const draftBooking: Booking = {
-      id: editingBooking ? editingBooking.id : ('B-PREVIEW-' + Math.random().toString(36).substr(2, 5).toUpperCase()),
-      bookingCode: editingBooking?.bookingCode || 'SC-PREVIEW',
-      salonId: settings.salonId,
-      clientName: newBooking.clientName.trim(),
-      phone: newBooking.phone.trim(),
-      customerEmail: newBooking.customerEmail?.trim() || undefined,
-      notes: newBooking.notes?.trim() || undefined,
-      internalNotes: newBooking.internalNotes?.trim() || undefined,
-      date: effectiveBookingDate,
-      time: newBooking.time || '10:00',
-      status: newBooking.status || 'confirmed',
-      location: newBooking.location?.trim() || undefined,
-      services: finalServices,
-      advancePayments: newBooking.advancePayments || [],
-      totalAmount: totals.netTotal,
-      discountType: finalDiscountType,
-      discountValue: finalDiscountValue,
-      branchId: bBranchId,
-      queueNumber: editingBooking?.queueNumber || 1,
-      createdAt: editingBooking?.createdAt || (newBooking.createdAt as string) || new Date().toISOString()
-    };
-
-    setPreviewBooking(draftBooking);
-  };
-
   // Status Styling Helper
   const getStatusBadge = (status?: string) => {
     switch (status) {
@@ -4525,15 +4469,6 @@ export function BookingsScreen({
                   className="flex-1 sm:flex-initial px-4 py-2 text-xs font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-100 rounded-xl cursor-pointer transition-colors"
                 >
                   إلغاء
-                </button>
-                <button
-                  type="button"
-                  onClick={handlePreviewFromAddEditModal}
-                  className="flex-1 sm:flex-initial px-3.5 py-2 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-xl cursor-pointer flex items-center justify-center gap-1.5 transition-colors"
-                  title="معاينة إيصال الحجز قبل الحفظ"
-                >
-                  <Printer size={14} />
-                  <span>معاينة الإيصال</span>
                 </button>
                 <button
                   type="button"
