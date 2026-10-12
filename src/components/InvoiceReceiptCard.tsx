@@ -15,6 +15,24 @@ interface InvoiceReceiptCardProps {
   className?: string;
 }
 
+/**
+ * Check if the salon or branch is located in Saudi Arabia
+ */
+export const isSaudiSalon = (settings: AppSettings, branches?: Branch[], branchId?: string): boolean => {
+  const branchObj = branches?.find(b => b.id === branchId);
+  const country = (branchObj?.country || settings.country || '').trim();
+  const currency = (branchObj?.currency || settings.currency || '').trim().toUpperCase();
+
+  // If currency is SAR, it is Saudi Arabia
+  if (currency === 'SAR') return true;
+  // If country name indicates Saudi Arabia
+  if (/السعودية|saudi|ksa|^sa$/i.test(country)) return true;
+  // If explicitly non-Saudi
+  if (/مصر|egypt|egp|إمارات|امارات|uae|aed|كويت|kuwait|kwd|عمان|oman|قطر|qatar|بحرين|bahrain|أردن|اردن|jordan/i.test(country)) return false;
+
+  return false;
+};
+
 export const formatInvoiceDate = (dateRaw?: string): string => {
   if (!dateRaw) return new Date().toISOString().split('T')[0];
   const d = new Date(dateRaw);
@@ -152,41 +170,36 @@ export const executePrintInvoiceReceipt = (elementId: string, invoiceId?: string
   <meta charset="utf-8">
   <title>طباعة الفاتورة${invoiceId ? ' - ' + escapeHtml(invoiceId) : ''}</title>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    * { box-sizing: border-box; margin: 0; padding: 0; color: #000 !important; }
     body {
       margin: 0 auto;
-      padding: 2mm;
+      padding: 1.5mm 2.5mm;
       background-color: #fff;
       direction: rtl;
       text-align: right;
-      font-family: system-ui, -apple-system, sans-serif;
-      color: #000;
-      font-size: 11px;
+      font-family: "Cairo", system-ui, -apple-system, sans-serif;
+      color: #000 !important;
+      font-size: 10.5px;
       font-weight: bold;
       line-height: 1.35;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
     @page { size: 80mm auto; margin: 0; }
-    @media print { body { padding: 0; margin: 0 auto; width: 280px; } }
+    @media print { 
+      body { padding: 0; margin: 0 auto; width: 280px; color: #000 !important; }
+      * { color: #000 !important; }
+    }
+    table { width: 100% !important; border-collapse: collapse !important; color: #000 !important; }
+    th, td { color: #000 !important; }
     .flex { display: flex !important; }
     .justify-between { justify-content: space-between !important; }
     .items-center { align-items: center !important; }
     .truncate { overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
-    .whitespace-nowrap { white-space: nowrap !important; }
-    .whitespace-normal { white-space: normal !important; }
-    .break-words { word-break: break-word !important; }
     .font-mono { font-family: monospace !important; }
     .font-bold { font-weight: bold !important; }
     .text-center { text-align: center !important; }
     .text-left { text-align: left !important; }
-    .border-y { border-top: 1px solid #000 !important; border-bottom: 1px solid #000 !important; }
-    .border-t { border-top: 1px solid #000 !important; }
-    .border-b { border-bottom: 1px solid #000 !important; }
-    .border-dashed { border-style: dashed !important; }
-    .border-dotted { border-style: dotted !important; }
-    .border { border: 1px solid #000 !important; }
-    .border-black { border-color: #000 !important; }
   </style>
 </head>
 <body>
@@ -232,16 +245,15 @@ export const InvoiceReceiptCard: React.FC<InvoiceReceiptCardProps> = ({
   className = ''
 }) => {
   const totals = calculateInvoiceReceiptTotals(invoice, settings);
-  const createdDateTimeStr = formatInvoiceCreatedAt(invoice);
   const invoiceDateStr = formatInvoiceDate(invoice.date);
   const invoiceTimeStr = formatInvoiceTime(invoice.date);
   const cleanAddress = getInvoiceCleanAddress(invoice, settings, branches, activeBranchId);
   const contactPhones = getInvoiceContactPhones(invoice, settings, branches, activeBranchId);
   const branchObj = branches?.find(b => b.id === (invoice.branchId || activeBranchId));
   const branchName = branchObj?.name || 'داخل الصالون';
-  const salonTitle = settings.salonName || 'صالون سمارت كت';
+  const salonTitle = settings.salonName || 'صالون العناية';
   const barcodeCode = invoice.id || 'INV000000';
-  const barcodeSvg = generateCode39Svg(barcodeCode, 20);
+  const barcodeSvg = generateCode39Svg(barcodeCode, 24);
 
   const cashierName = invoice.createdByName || 
     (invoice as any).created_by_name || 
@@ -251,13 +263,15 @@ export const InvoiceReceiptCard: React.FC<InvoiceReceiptCardProps> = ({
     (currentUser as any)?.username || 
     'الكاشير';
 
-  const zatcaQrValue = invoice.zatcaQr || (settings.taxNumber ? generateZatcaQrBase64({
+  // Check if salon is in Saudi Arabia for ZATCA QR
+  const showZatcaQr = isSaudiSalon(settings, branches, invoice.branchId || activeBranchId);
+  const zatcaQrValue = showZatcaQr ? (invoice.zatcaQr || (settings.taxNumber ? generateZatcaQrBase64({
     sellerName: salonTitle,
     vatRegistrationNumber: settings.taxNumber,
     timestamp: invoice.date || new Date().toISOString(),
     invoiceTotal: invoice.total,
     vatTotal: totals.vatAmt
-  }) : '');
+  }) : '')) : '';
 
   const invoiceBadge = invoice.status === 'cancelled'
     ? 'فاتورة ملغاة'
@@ -268,93 +282,111 @@ export const InvoiceReceiptCard: React.FC<InvoiceReceiptCardProps> = ({
   return (
     <div
       id={id}
-      className={`bg-white p-3.5 rounded-xl shadow-xs border border-black w-full max-w-[300px] text-black font-sans space-y-1 text-[11px] font-bold select-text ${className}`}
+      className={`bg-white shadow-sm w-full max-w-[280px] text-black font-sans select-text ${className}`}
       dir="rtl"
-      style={{ fontFamily: 'system-ui, -apple-system, sans-serif', color: '#000', direction: 'rtl', textAlign: 'right' }}
+      style={{
+        width: '100%',
+        maxWidth: '72mm',
+        padding: '3.5mm 4mm',
+        fontFamily: '"Cairo", system-ui, -apple-system, sans-serif',
+        color: '#000',
+        backgroundColor: '#fff',
+        direction: 'rtl',
+        textAlign: 'right',
+        margin: '0 auto',
+        boxSizing: 'border-box'
+      }}
     >
       {/* 1. Salon Header */}
-      <div className="text-center space-y-0.5" style={{ textAlign: 'center' }}>
+      <div style={{ textAlign: 'center', marginBottom: '8px' }}>
         {settings.logoUrl && (
           <img
             src={sanitizeUrl(settings.logoUrl)}
             alt="Logo"
-            className="max-h-10 mx-auto mb-1"
-            style={{ maxHeight: '40px', margin: '0 auto 3px', display: 'block' }}
+            style={{ maxWidth: '70px', maxHeight: '70px', margin: '0 auto 4px auto', display: 'block' }}
           />
         )}
-        <h2 className="text-base font-bold text-black" style={{ fontSize: '15px', fontWeight: 'bold', margin: '0', color: '#000' }}>
+        <h2 style={{ fontSize: '14px', fontWeight: 'bold', margin: '0 0 3px 0', color: '#000', lineHeight: '1.25' }}>
           {salonTitle}
         </h2>
         <div
-          className="inline-block border border-black px-2 py-0.5 font-bold text-[11px] text-black mt-0.5"
-          style={{ display: 'inline-block', border: '1.5px solid #000', padding: '1px 8px', fontSize: '11px', fontWeight: 'bold', marginTop: '3px', color: '#000' }}
+          style={{
+            display: 'inline-block',
+            border: '1px solid #000',
+            padding: '1px 7px',
+            fontSize: '10px',
+            fontWeight: 'bold',
+            marginTop: '2px',
+            color: '#000'
+          }}
         >
           {invoiceBadge}
         </div>
+
+        {/* 2. Barcode section under Salon Name */}
+        {barcodeCode && (
+          <div style={{ margin: '5px auto 3px auto', maxWidth: '180px', textAlign: 'center' }}>
+            <div
+              dangerouslySetInnerHTML={{ __html: barcodeSvg }}
+              style={{ display: 'flex', justifyContent: 'center' }}
+            />
+            <div style={{ fontFamily: 'monospace', fontSize: '10px', fontWeight: 'bold', letterSpacing: '1px', marginTop: '1px', color: '#000' }}>
+              {barcodeCode}
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* 2. Barcode section */}
-      <div className="text-center py-0.5 bg-white" style={{ textAlign: 'center', margin: '2px 0 4px', padding: '2px 0' }}>
-        <div
-          className="max-w-[170px] mx-auto"
-          style={{ maxWidth: '170px', margin: '0 auto' }}
-          dangerouslySetInnerHTML={{ __html: barcodeSvg }}
-        />
-        <div
-          className="font-mono text-xs font-bold tracking-wider text-black mt-0.5"
-          style={{ fontFamily: 'monospace', fontSize: '11px', fontWeight: 'bold', letterSpacing: '1px', color: '#000', marginTop: '2px' }}
-        >
-          {barcodeCode}
-        </div>
-      </div>
+      <div style={{ borderBottom: '1px dashed #000', margin: '6px 0' }}></div>
 
-      {/* 3. Info List on single lines */}
-      <div
-        className="space-y-0.5 text-[11px] font-bold text-black border-y border-dashed border-black py-1 leading-tight"
-        style={{ borderTop: '1px dashed #000', borderBottom: '1px dashed #000', padding: '4px 0', marginBottom: '4px', fontSize: '11px', fontWeight: 'bold', color: '#000', lineHeight: '1.45' }}
-      >
-        <div className="flex justify-between gap-2 whitespace-nowrap" style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', whiteSpace: 'nowrap' }}>
-          <span>التاريخ: <span style={{ fontWeight: 'bold' }}>{invoiceDateStr}</span></span>
-          <span>الوقت: <span style={{ fontWeight: 'bold' }}>{invoiceTimeStr}</span></span>
+      {/* 3. Invoice Metadata List (Each on its own line) */}
+      <div style={{ fontSize: '10.5px', fontWeight: 'bold', color: '#000', lineHeight: '1.45', marginBottom: '6px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#000' }}>
+          <span>رقم الفاتورة:</span>
+          <span style={{ fontFamily: 'monospace', fontWeight: 'bold', color: '#000' }}>{invoice.id}</span>
         </div>
-        <div className="flex justify-between gap-2 whitespace-nowrap" style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', whiteSpace: 'nowrap' }}>
-          <span className="truncate" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            العميل: <span style={{ fontWeight: 'bold' }}>{invoice.clientName || 'عميل نقدي'}</span>
-          </span>
-          <span>الفرع: <span style={{ fontWeight: 'bold' }}>{branchName}</span></span>
+        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#000' }}>
+          <span>التاريخ:</span>
+          <span style={{ color: '#000' }}>{invoiceDateStr} {invoiceTimeStr}</span>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#000' }}>
+          <span>العميل:</span>
+          <span style={{ fontWeight: 'bold', color: '#000' }}>{invoice.clientName || 'عميل نقدي'}</span>
         </div>
         {invoice.clientPhone && (
-          <div className="flex justify-between gap-2 whitespace-nowrap" style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', whiteSpace: 'nowrap' }}>
-            <span>
-              جوال العميل: <span className="font-mono font-bold" style={{ fontFamily: 'monospace', fontWeight: 'bold' }} dir="ltr">{invoice.clientPhone}</span>
-            </span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', color: '#000' }}>
+            <span>جوال العميل:</span>
+            <span style={{ fontFamily: 'monospace', fontWeight: 'bold', color: '#000' }} dir="ltr">{invoice.clientPhone}</span>
           </div>
         )}
+        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#000' }}>
+          <span>الفرع:</span>
+          <span style={{ color: '#000' }}>{branchName}</span>
+        </div>
         {settings.taxNumber && (
-          <div className="flex justify-between gap-2 whitespace-nowrap" style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', whiteSpace: 'nowrap' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', color: '#000' }}>
             <span>الرقم الضريبي:</span>
-            <span className="font-mono font-bold" style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{settings.taxNumber}</span>
+            <span style={{ fontFamily: 'monospace', fontWeight: 'bold', color: '#000' }}>{settings.taxNumber}</span>
           </div>
         )}
-        <div
-          className="flex justify-between gap-2 whitespace-nowrap border-t border-dotted border-black pt-0.5 mt-0.5"
-          style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', whiteSpace: 'nowrap', borderTop: '1px dotted #ccc', marginTop: '2px', paddingTop: '2px' }}
-        >
+        <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dotted #000', marginTop: '2px', paddingTop: '2px', color: '#000' }}>
           <span>منفذ العملية (الكاشير):</span>
-          <span style={{ fontWeight: 'bold' }}>{cashierName}</span>
+          <span style={{ fontWeight: 'bold', color: '#000' }}>{cashierName}</span>
         </div>
       </div>
 
+      <div style={{ borderBottom: '1px dashed #000', margin: '6px 0' }}></div>
+
       {/* 4. Services & Products Table */}
-      <div className="space-y-0.5 text-[11px] font-bold text-black" style={{ marginBottom: '4px', fontSize: '11px', fontWeight: 'bold', color: '#000' }}>
-        <div
-          className="border-b border-black pb-0.5 flex justify-between font-bold text-black"
-          style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1.5px solid #000', paddingBottom: '2px', marginBottom: '2px', fontWeight: 'bold', color: '#000' }}
-        >
-          <span>البند (خدمة / منتج)</span>
-          <span>السعر</span>
-        </div>
-        <div className="divide-y divide-dotted divide-black">
+      <table style={{ width: '100%', fontSize: '10.5px', textAlign: 'right', borderCollapse: 'collapse', color: '#000', margin: '4px 0' }}>
+        <thead>
+          <tr style={{ borderBottom: '1.5px solid #000', color: '#000' }}>
+            <th style={{ padding: '3px 0', width: '52%', textAlign: 'right', color: '#000', fontWeight: 'bold' }}>الصنف</th>
+            <th style={{ padding: '3px 0', width: '18%', textAlign: 'center', color: '#000', fontWeight: 'bold' }}>الكمية</th>
+            <th style={{ padding: '3px 0', width: '30%', textAlign: 'left', color: '#000', fontWeight: 'bold' }}>السعر</th>
+          </tr>
+        </thead>
+        <tbody>
           {invoice.items?.map((item, idx) => {
             const isProd = item.type === 'product';
             const qty = Math.max(1, Number(item.quantity) || 1);
@@ -362,120 +394,88 @@ export const InvoiceReceiptCard: React.FC<InvoiceReceiptCardProps> = ({
             const lineFinal = (Number(item.price) || 0) * qty;
 
             return (
-              <div
-                key={item.id || idx}
-                className="py-0.5 flex justify-between items-center whitespace-nowrap gap-1.5 font-bold text-black"
-                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '2px 0', borderBottom: '1px dotted #000', fontWeight: 'bold', color: '#000', whiteSpace: 'nowrap', gap: '6px' }}
-              >
-                <div className="truncate" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  <span style={{ fontWeight: 'bold' }}>{item.serviceName}</span>
-                  {qty > 1 && <span style={{ fontWeight: 'bold' }}> (×{qty})</span>}
-                  {isProd && (
-                    <span
-                      className="text-[9px] border border-black px-1 py-0 mr-1 font-bold"
-                      style={{ fontSize: '9px', fontWeight: 'bold', border: '1px solid #000', padding: '0 2px', marginRight: '2px' }}
-                    >
-                      منتج
-                    </span>
-                  )}
+              <tr key={item.id || idx} style={{ borderBottom: '1px dotted #000', color: '#000' }}>
+                <td style={{ padding: '3px 0', textAlign: 'right', color: '#000' }}>
+                  <div style={{ fontWeight: 'bold', color: '#000', lineHeight: '1.25' }}>
+                    {item.serviceName}
+                    {isProd && (
+                      <span style={{ fontSize: '9px', border: '1px solid #000', padding: '0 2px', marginRight: '3px', fontWeight: 'bold', color: '#000' }}>
+                        منتج
+                      </span>
+                    )}
+                  </div>
                   {item.technicianName && (
-                    <span
-                      className="text-[9px] mr-1 font-normal text-slate-800"
-                      style={{ fontSize: '9px', fontWeight: 'bold', marginRight: '2px', color: '#333' }}
-                    >
-                      ({item.technicianName})
-                    </span>
+                    <div style={{ fontSize: '9.5px', color: '#000', fontWeight: 'bold', marginTop: '1px' }}>
+                      بواسطة: {item.technicianName}
+                    </div>
                   )}
                   {lineDisc > 0 && (
-                    <span
-                      className="text-[9px] mr-1 font-bold"
-                      style={{ fontSize: '9px', fontWeight: 'bold', marginRight: '2px' }}
-                    >
-                      [خصم: -{lineDisc.toFixed(2)}]
-                    </span>
+                    <div style={{ fontSize: '9px', color: '#000', fontWeight: 'bold' }}>
+                      خصم: -{lineDisc.toFixed(2)}
+                    </div>
                   )}
-                </div>
-                <div
-                  className="text-left font-mono flex-shrink-0 text-black font-bold"
-                  style={{ fontFamily: 'monospace', fontWeight: 'bold', textAlign: 'left', flexShrink: 0, color: '#000' }}
-                >
+                </td>
+                <td style={{ padding: '3px 0', textAlign: 'center', fontWeight: 'bold', color: '#000' }}>
+                  {qty}
+                </td>
+                <td style={{ padding: '3px 0', textAlign: 'left', fontWeight: 'bold', color: '#000', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
                   {lineFinal.toFixed(2)} {settings.currency}
-                </div>
-              </div>
+                </td>
+              </tr>
             );
           })}
-        </div>
-      </div>
+        </tbody>
+      </table>
+
+      <div style={{ borderBottom: '1px dashed #000', margin: '6px 0' }}></div>
 
       {/* 5. Totals Section */}
-      <div
-        className="border-t border-dashed border-black pt-1 space-y-0.5 text-[11px] font-bold text-black leading-tight"
-        style={{ borderTop: '1px dashed #000', paddingTop: '3px', marginBottom: '4px', fontSize: '11px', fontWeight: 'bold', color: '#000', lineHeight: '1.4' }}
-      >
+      <div style={{ fontSize: '10.5px', lineHeight: '1.45', color: '#000', fontWeight: 'bold' }}>
         {totals.totalDiscounts > 0 && (
-          <div className="flex justify-between whitespace-nowrap" style={{ display: 'flex', justifyContent: 'space-between', whiteSpace: 'nowrap', marginBottom: '1px', fontWeight: 'bold', color: '#000' }}>
-            <span>إجمالي البنود:</span>
-            <span className="font-mono font-bold" style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{totals.grossItems.toFixed(2)} {settings.currency}</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', color: '#000', marginBottom: '1px' }}>
+            <span>المجموع:</span>
+            <span style={{ fontFamily: 'monospace', fontWeight: 'bold', color: '#000' }}>{totals.grossItems.toFixed(2)} {settings.currency}</span>
           </div>
         )}
 
         {totals.lineDiscounts > 0 && (
-          <div className="flex justify-between whitespace-nowrap" style={{ display: 'flex', justifyContent: 'space-between', whiteSpace: 'nowrap', marginBottom: '1px', fontWeight: 'bold', color: '#000' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', color: '#000', marginBottom: '1px' }}>
             <span>خصم البنود:</span>
-            <span className="font-mono font-bold" style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>-{totals.lineDiscounts.toFixed(2)} {settings.currency}</span>
+            <span style={{ fontFamily: 'monospace', fontWeight: 'bold', color: '#000' }}>-{totals.lineDiscounts.toFixed(2)} {settings.currency}</span>
           </div>
         )}
 
         {totals.generalDiscount > 0 && (
-          <div className="flex justify-between whitespace-nowrap" style={{ display: 'flex', justifyContent: 'space-between', whiteSpace: 'nowrap', marginBottom: '1px', fontWeight: 'bold', color: '#000' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', color: '#000', marginBottom: '1px' }}>
             <span>الخصم الإضافي:</span>
-            <span className="font-mono font-bold" style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>-{totals.generalDiscount.toFixed(2)} {settings.currency}</span>
+            <span style={{ fontFamily: 'monospace', fontWeight: 'bold', color: '#000' }}>-{totals.generalDiscount.toFixed(2)} {settings.currency}</span>
           </div>
         )}
 
         {settings.vatEnabled && (
           <>
-            <div className="flex justify-between whitespace-nowrap text-[10px]" style={{ display: 'flex', justifyContent: 'space-between', whiteSpace: 'nowrap', marginBottom: '1px', fontWeight: 'bold', color: '#000', fontSize: '10px' }}>
-              <span>المبلغ الخاضع للضريبة:</span>
-              <span className="font-mono font-bold" style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{totals.baseTotal.toFixed(2)} {settings.currency}</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', color: '#000', fontSize: '10px', marginBottom: '1px' }}>
+              <span>المبلغ قبل الضريبة:</span>
+              <span style={{ fontFamily: 'monospace', fontWeight: 'bold', color: '#000' }}>{totals.baseTotal.toFixed(2)} {settings.currency}</span>
             </div>
-            <div className="flex justify-between whitespace-nowrap text-[10px]" style={{ display: 'flex', justifyContent: 'space-between', whiteSpace: 'nowrap', marginBottom: '1px', fontWeight: 'bold', color: '#000', fontSize: '10px' }}>
-              <span>ضريبة القيمة المضافة ({settings.vatRate || 15}%):</span>
-              <span className="font-mono font-bold" style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{totals.vatAmt.toFixed(2)} {settings.currency}</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', color: '#000', fontSize: '10px', marginBottom: '1px' }}>
+              <span>الضريبة ({settings.vatRate || 15}%):</span>
+              <span style={{ fontFamily: 'monospace', fontWeight: 'bold', color: '#000' }}>{totals.vatAmt.toFixed(2)} شامل</span>
             </div>
           </>
         )}
 
-        <div
-          className="flex justify-between font-bold text-black border-y border-dashed border-black py-0.5 whitespace-nowrap"
-          style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed #000', borderBottom: '1px dashed #000', padding: '2px 0', margin: '2px 0', whiteSpace: 'nowrap', fontSize: '11px', fontWeight: 'bold', color: '#000' }}
-        >
-          <span>الصافي الإجمالي:</span>
-          <span className="font-mono font-bold" style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{totals.netTotal.toFixed(2)} {settings.currency}</span>
-        </div>
-
         {totals.advanceDeduction > 0 && (
-          <div className="space-y-0.5 pt-0.5">
-            <div className="flex justify-between whitespace-nowrap" style={{ display: 'flex', justifyContent: 'space-between', whiteSpace: 'nowrap', marginBottom: '1px', fontWeight: 'bold', color: '#000' }}>
+          <div style={{ margin: '3px 0', padding: '2px 0', borderTop: '1px dotted #000', borderBottom: '1px dotted #000' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', color: '#000', fontWeight: 'bold' }}>
               <span>المدفوع مقدماً (عربون الحجز):</span>
-              <span className="font-mono font-bold" style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>-{totals.advanceDeduction.toFixed(2)} {settings.currency}</span>
-            </div>
-            <div
-              className="flex justify-between font-bold text-black border-t border-black pt-0.5 whitespace-nowrap"
-              style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1.5px solid #000', paddingTop: '2px', marginTop: '2px', whiteSpace: 'nowrap', fontSize: '11px', fontWeight: 'bold', color: '#000' }}
-            >
-              <span>الصافي المدفوع اليوم:</span>
-              <span className="font-mono font-bold" style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{totals.netPaidToday.toFixed(2)} {settings.currency}</span>
+              <span style={{ fontFamily: 'monospace', fontWeight: 'bold', color: '#000' }}>-{totals.advanceDeduction.toFixed(2)} {settings.currency}</span>
             </div>
             {advanceList.length > 0 && (
-              <div
-                className="p-1 rounded-sm text-[10px] space-y-0.5 mt-0.5 border border-black text-black font-bold"
-                style={{ marginTop: '3px', fontSize: '10px', fontWeight: 'bold', border: '1px solid #000', padding: '2px 4px', color: '#000' }}
-              >
-                <span className="block mb-0.5" style={{ display: 'block', marginBottom: '1px', fontWeight: 'bold' }}>تفاصيل الدفعات المقدمة:</span>
-                {advanceList.map((adv, i) => (
-                  <div key={adv.id || i} className="flex justify-between whitespace-nowrap font-mono text-black font-bold" style={{ display: 'flex', justifyContent: 'space-between', whiteSpace: 'nowrap', fontFamily: 'monospace', fontWeight: 'bold', color: '#000' }}>
-                    <span>• دفعة {i + 1} ({adv.treasuryName || (adv as any).paymentMethod || 'نقداً'}):</span>
+              <div style={{ fontSize: '9.5px', color: '#000', marginTop: '2px' }}>
+                {advanceList.map((adv, idx) => (
+                  <div key={adv.id || idx} style={{ display: 'flex', justifyContent: 'space-between', paddingLeft: '4px', color: '#000', fontFamily: 'monospace', fontWeight: 'bold' }}>
+                    <span>• {adv.treasuryName || (adv as any).paymentMethod || 'دفعة'} ({adv.date?.split('T')[0] || ''}):</span>
                     <span>{Number(adv.amount || 0).toFixed(2)} {settings.currency}</span>
                   </div>
                 ))}
@@ -484,19 +484,32 @@ export const InvoiceReceiptCard: React.FC<InvoiceReceiptCardProps> = ({
           </div>
         )}
 
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          fontWeight: 'bold',
+          fontSize: '12px',
+          marginTop: '4px',
+          paddingTop: '3px',
+          borderTop: '1.5px solid #000',
+          borderBottom: '1.5px solid #000',
+          paddingBottom: '3px',
+          color: '#000'
+        }}>
+          <span>الصافي المدفوع اليوم:</span>
+          <span style={{ fontFamily: 'monospace', fontWeight: 'bold', color: '#000' }}>{totals.netPaidToday.toFixed(2)} {settings.currency}</span>
+        </div>
+
         {/* Payment Methods */}
         {invoice.paymentMethods && invoice.paymentMethods.length > 0 && (
-          <div
-            className="p-1 rounded-sm text-[10px] space-y-0.5 mt-1 border border-black text-black font-bold"
-            style={{ marginTop: '3px', fontSize: '10px', fontWeight: 'bold', border: '1px solid #000', padding: '2px 4px', color: '#000' }}
-          >
-            <span className="block mb-0.5" style={{ display: 'block', marginBottom: '1px', fontWeight: 'bold' }}>طرق الدفع:</span>
+          <div style={{ marginTop: '4px', paddingTop: '3px', borderTop: '1px dashed #000', fontSize: '10px', color: '#000' }}>
+            <div style={{ fontWeight: 'bold', marginBottom: '2px', color: '#000' }}>طرق الدفع:</div>
             {invoice.paymentMethods.map((pm, idx) => {
               const tName = pm.treasuryId === 'cashback'
                 ? 'كاش باك'
-                : (settings.treasuries?.find(t => t.id === pm.treasuryId)?.name || (pm as any).paymentMethod || 'نقداً');
+                : (settings.treasuries?.find(t => t.id === pm.treasuryId)?.name || (pm as any).paymentMethod || 'غير محدد');
               return (
-                <div key={idx} className="flex justify-between whitespace-nowrap font-mono text-black font-bold" style={{ display: 'flex', justifyContent: 'space-between', whiteSpace: 'nowrap', fontFamily: 'monospace', fontWeight: 'bold', color: '#000' }}>
+                <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', color: '#000', fontFamily: 'monospace', fontWeight: 'bold' }}>
                   <span>• {tName}:</span>
                   <span>{Number(pm.amount || 0).toFixed(2)} {settings.currency}</span>
                 </div>
@@ -506,62 +519,31 @@ export const InvoiceReceiptCard: React.FC<InvoiceReceiptCardProps> = ({
         )}
       </div>
 
-      {/* 6. Issuance date & time on single line */}
-      <div
-        className="flex justify-between border-t border-dashed border-black pt-1 mt-1 text-[10px] font-bold text-black whitespace-nowrap"
-        style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed #000', paddingTop: '2px', marginTop: '3px', fontSize: '10px', fontWeight: 'bold', color: '#000', whiteSpace: 'nowrap' }}
-      >
-        <span>تاريخ ووقت إصدار الفاتورة:</span>
-        <span className="font-mono font-bold" style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{createdDateTimeStr}</span>
-      </div>
-
-      {/* 7. ZATCA QR Code (if applicable) */}
-      {zatcaQrValue && (
-        <div className="pt-1 flex flex-col items-center justify-center" style={{ paddingTop: '4px', textAlign: 'center' }}>
+      {/* 6. ZATCA QR Code (Shown ONLY for Saudi Arabia) */}
+      {showZatcaQr && zatcaQrValue && (
+        <div style={{ paddingTop: '6px', textAlign: 'center' }}>
           <div style={{ display: 'inline-block', backgroundColor: '#fff', padding: '2px' }}>
-            <QRCodeSVG value={zatcaQrValue} size={84} level="M" />
+            <QRCodeSVG value={zatcaQrValue} size={75} level="M" />
           </div>
-          <div className="text-[9px] text-black font-bold mt-0.5" style={{ fontSize: '9px', fontWeight: 'bold', color: '#000', marginTop: '2px' }}>
+          <div style={{ fontSize: '9px', fontWeight: 'bold', color: '#000', marginTop: '2px' }}>
             رمز الفاتورة الإلكترونية (ZATCA)
           </div>
         </div>
       )}
 
-      {/* 8. Salon Notes */}
-      {settings.bookingNotes && (
-        <div
-          className="p-1 border border-dashed border-black text-center text-[10px] font-bold whitespace-pre-wrap text-black"
-          style={{ marginTop: '3px', padding: '3px 5px', border: '1px dashed #000', textAlign: 'center', fontSize: '10px', fontWeight: 'bold', whiteSpace: 'pre-wrap', color: '#000' }}
-        >
-          {settings.bookingNotes}
-        </div>
-      )}
-
-      {/* 9. Footer: Address, contact phones, appreciation message */}
-      {(cleanAddress || contactPhones) && (
-        <div
-          className="pt-1.5 border-t border-dashed border-black text-center text-[10px] font-bold text-black space-y-0.5"
-          style={{ marginTop: '4px', paddingTop: '3px', borderTop: '1px dashed #000', textAlign: 'center', fontSize: '10px', fontWeight: 'bold', lineHeight: '1.35', color: '#000' }}
-        >
-          {cleanAddress && (
-            <div className="leading-tight break-words whitespace-normal font-bold text-black" style={{ whiteSpace: 'normal', wordBreak: 'break-word', fontWeight: 'bold', color: '#000', marginBottom: '2px' }}>
-              العنوان: {cleanAddress}
-            </div>
-          )}
-          {contactPhones && (
-            <div className="leading-tight font-bold text-black" style={{ whiteSpace: 'normal', wordBreak: 'break-word', fontWeight: 'bold', color: '#000' }}>
-              <span>أرقام الاتصال: </span>
-              <span className="font-mono font-bold" style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{contactPhones}</span>
-            </div>
-          )}
-        </div>
-      )}
-
-      <div
-        className="text-center text-[10px] font-bold text-black pt-0.5"
-        style={{ textAlign: 'center', marginTop: '3px', fontSize: '10px', fontWeight: 'bold', color: '#000' }}
-      >
-        شكراً لزيارتكم!
+      {/* 7. Footer: Appreciation, address, and phones */}
+      <div style={{ textAlign: 'center', marginTop: '8px', paddingTop: '5px', borderTop: '1px dashed #000', fontSize: '10px', fontWeight: 'bold', color: '#000' }}>
+        <p style={{ margin: '0 0 3px 0', color: '#000' }}>شكراً لزيارتكم!</p>
+        {cleanAddress && (
+          <p style={{ fontSize: '9.5px', fontWeight: 'bold', margin: '2px 0', color: '#000', whiteSpace: 'normal', wordBreak: 'break-word' }}>
+            العنوان: {cleanAddress}
+          </p>
+        )}
+        {contactPhones && (
+          <p style={{ fontSize: '9.5px', fontWeight: 'bold', margin: '2px 0', color: '#000' }}>
+            جوال: <span style={{ fontFamily: 'monospace', fontWeight: 'bold', color: '#000' }} dir="ltr">{contactPhones}</span>
+          </p>
+        )}
       </div>
     </div>
   );

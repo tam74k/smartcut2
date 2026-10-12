@@ -18,7 +18,7 @@ import { SupabaseService } from '../services/supabase';
 import { isBarberEmployee, isReferralEligibleEmployee } from '../utils/employeeHelper';
 import { SalesReturnModal } from './SalesReturnModal';
 import { generateCode39Svg } from '../utils/printQueueSlip';
-import { InvoiceReceiptCard, executePrintInvoiceReceipt } from './InvoiceReceiptCard';
+import { InvoiceReceiptCard, executePrintInvoiceReceipt, isSaudiSalon } from './InvoiceReceiptCard';
 
 export const getCartItemPrice = (c: CartItem | any): number => {
   if (!c) return 0;
@@ -927,17 +927,19 @@ export function POSScreen({
       paymentMethods: splits
     };
 
-    // 🇸🇦 ZATCA Phase 1 & 2 QR Code Generation & Reporting
+    // 🇸🇦 ZATCA Phase 1 & 2 QR Code Generation & Reporting (Saudi Arabia Only)
     let zatcaQr = '';
     let zatcaReportingStatus: Invoice['zatcaReportingStatus'] = 'not_submitted';
-    try {
-      zatcaQr = await ZatcaService.generateZatcaQR(initialInv, settings, settings.zatcaSettings);
-      if (settings.zatcaSettings?.enabled && settings.zatcaSettings.autoReportB2C) {
-        const zatcaRes = await ZatcaService.reportSimplifiedInvoice(initialInv, settings, settings.zatcaSettings);
-        zatcaReportingStatus = zatcaRes.reportingStatus;
+    if (isSaudiSalon(settings, branches, activeBranchId)) {
+      try {
+        zatcaQr = await ZatcaService.generateZatcaQR(initialInv, settings, settings.zatcaSettings);
+        if (settings.zatcaSettings?.enabled && settings.zatcaSettings.autoReportB2C) {
+          const zatcaRes = await ZatcaService.reportSimplifiedInvoice(initialInv, settings, settings.zatcaSettings);
+          zatcaReportingStatus = zatcaRes.reportingStatus;
+        }
+      } catch (err) {
+        console.warn('ZATCA QR Generation warning:', err);
       }
-    } catch (err) {
-      console.warn('ZATCA QR Generation warning:', err);
     }
 
     // 🇪🇬 ETA Egypt e-Receipt Submission
