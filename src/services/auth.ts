@@ -1,5 +1,6 @@
 import { AppUser, UserRole, ActionPermission, CustomRole } from '../types';
-import { DB } from './db';
+import { DB, dbUserToApp } from './db';
+import { SupabaseService } from './supabase';
 
 const STORAGE_KEYS = {
   USERS: 'smartcut_users',
@@ -252,10 +253,33 @@ export class AuthService {
     return deduped;
   }
 
+  public static getCurrentSalonId(): string {
+    try {
+      const active = localStorage.getItem('smartcut_active_salon_id');
+      if (active) return active;
+      const session = this.getSession();
+      if (session?.salonId) return session.salonId;
+      const s = localStorage.getItem('smartcut_app_settings');
+      if (s) {
+        const parsed = JSON.parse(s);
+        if (parsed?.salonId) return parsed.salonId;
+      }
+    } catch {}
+    return '';
+  }
+
   public static getUsers(salonId?: string): AppUser[] {
     const all = this.initUsers().filter(u => u.role !== 'programmer' && u.username !== 'programmer');
-    if (!salonId) return all;
-    return all.filter(u => !u.salonId || u.salonId === salonId);
+    const targetSalonId = salonId || this.getCurrentSalonId();
+    if (!targetSalonId) {
+      // إذا لم يتوفر أي سياق للصالون، نمنع تسريب أي مستخدم له معرف صالون آخر
+      return all.filter(u => !u.salonId);
+    }
+    return all.filter(u => {
+      // عزل صارم: المستخدم يجب أن ينتمي للصالون المطلوب بالمعرف أو بالكود
+      if (!u.salonId && !u.salonCode) return false;
+      return u.salonId === targetSalonId || (u.salonCode && u.salonCode === targetSalonId);
+    });
   }
 
   public static isUsernameTaken(username: string, excludeUserId?: string, salonId?: string): boolean {
@@ -275,8 +299,18 @@ export class AuthService {
       return true;
     }
     try {
-      const dbUsers = await DB.fetchUsers();
-      return dbUsers.some(u => u.username.toLowerCase() === clean && u.id !== excludeUserId && (!excludeEmployeeId || u.employeeId !== excludeEmployeeId));
+      const client = SupabaseService.getClient();
+      if (client) {
+        const { data } = await client
+          .from('users')
+          .select('id, employee_id')
+          .ilike('username', clean)
+          .maybeSingle();
+        if (data && data.id !== excludeUserId && (!excludeEmployeeId || data.employee_id !== excludeEmployeeId)) {
+          return true;
+        }
+      }
+      return false;
     } catch {
       return false;
     }
@@ -524,37 +558,35 @@ export class AuthService {
       return null;
     }
 
-    // 2. Query Supabase users directly (Source of Truth)
+    // 2. Query Supabase directly for the specific user (Source of Truth)
     try {
-      const dbUsers = await DB.fetchUsers();
-      if (dbUsers && dbUsers.length > 0) {
-        const currentLocal = this.initUsers();
-        for (const dbu of dbUsers) {
+      const client = SupabaseService.getClient();
+      if (client) {
+        const { data: matchedDbUser, error } = await client
+          .from('users')
+          .select('*')
+          .or(`username.ilike.${cleanId},email.ilike.${cleanId},phone.eq.${cleanId}`)
+          .maybeSingle();
+
+        if (matchedDbUser && !error) {
+          const dbu = dbUserToApp(matchedDbUser);
+          const currentLocal = this.initUsers();
           const idx = currentLocal.findIndex(l => l.username.toLowerCase() === dbu.username.toLowerCase());
           if (idx >= 0) {
             currentLocal[idx] = {
               ...currentLocal[idx],
               ...dbu,
-              password: dbu.password || dbu.passwordHash || (dbu as any).password_hash || currentLocal[idx].password
+              password: dbu.password || (dbu as any).passwordHash || (dbu as any).password_hash || currentLocal[idx].password
             };
           } else {
             currentLocal.push(dbu);
           }
-        }
-        localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(currentLocal));
+          localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(currentLocal));
 
-        const matched = currentLocal.find(
-          u => (u.username.toLowerCase() === cleanId || 
-                (u.email && u.email.toLowerCase() === cleanId) || 
-                (u.phone && u.phone.replace(/\D/g, '') === cleanId.replace(/\D/g, ''))) && 
-               u.active !== false
-        );
-
-        if (matched) {
-          const targetPass = matched.password || (matched as any).passwordHash || (matched as any).password_hash || '';
+          const targetPass = dbu.password || (dbu as any).passwordHash || (dbu as any).password_hash || '';
           if (targetPass && targetPass === cleanPass) {
-            this.setSession(matched);
-            return matched;
+            this.setSession(dbu);
+            return dbu;
           }
           // Password did not match -> Reject login immediately!
           return null;

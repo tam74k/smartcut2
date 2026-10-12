@@ -46,7 +46,7 @@ export function toSalonUUID(id?: string | null): string {
           const match = salonsList.find((sl: any) => sl.id === id || sl.code?.toLowerCase() === id.toLowerCase() || sl.salonCode?.toLowerCase() === id.toLowerCase() || sl.name === id);
           if (match && UUID_REGEX.test(match.id)) return match.id;
         }
-        if (UUID_REGEX.test(salonsList[0].id)) return salonsList[0].id;
+        if (!id && UUID_REGEX.test(salonsList[0].id)) return salonsList[0].id;
       }
     }
   } catch (e) {}
@@ -1048,13 +1048,35 @@ export const DB = {
     const client = sb();
     if (!client) return [];
     try {
-      let q = client.from('users').select('*');
-      if (salonId) {
-        q = q.eq('salon_id', toSalonUUID(salonId));
+      const targetSalonId = salonId || getSalonId();
+      if (!targetSalonId) {
+        console.warn('DB.fetchUsers: No salonId provided or found; returning empty list for strict tenant isolation.');
+        return [];
       }
+
+      const validUuid = toSalonUUID(targetSalonId);
+      let q = client.from('users').select('*');
+      
+      if (validUuid && validUuid === targetSalonId) {
+        q = q.eq('salon_id', validUuid);
+      } else if (validUuid) {
+        q = q.or(`salon_id.eq.${validUuid},salon_code.eq.${targetSalonId}`);
+      } else {
+        q = q.eq('salon_code', targetSalonId);
+      }
+
       const { data, error } = await q.order('created_at', { ascending: true });
       if (error) { console.error('DB.fetchUsers:', error.message); return []; }
-      return (data || []).map(dbUserToApp);
+      
+      const mapped = (data || []).map(dbUserToApp);
+      // عزل صارم ثنائي الطبقة في الذاكرة لضمان عدم تسرب أي مستخدم من صالون آخر
+      return mapped.filter(u => {
+        if (u.role === 'programmer' || u.username === 'programmer') return false;
+        if (validUuid && u.salonId === validUuid) return true;
+        if (u.salonId === targetSalonId) return true;
+        if (u.salonCode && u.salonCode === targetSalonId) return true;
+        return false;
+      });
     } catch (e) { return []; }
   },
 

@@ -842,8 +842,23 @@ export function OwnerExecutivePortal({
     loadDbSettings();
   }, [settings.salonId]);
 
-  // User Management State
-  const [users, setUsers] = useState<AppUser[]>(() => AuthService.getUsers());
+  // User Management State (معزولة صارماً للصالون الحالي)
+  const currentSalonId = settings?.salonId || currentUser?.salonId || '';
+  const [users, setUsers] = useState<AppUser[]>(() => AuthService.getUsers(currentSalonId));
+
+  // فلترة صارمة ومؤكدة تضمن عدم ظهور أي مستخدم ينتمي لصالون آخر
+  const salonUsers = useMemo(() => {
+    const targetSalonId = settings?.salonId || currentUser?.salonId || '';
+    if (!targetSalonId) return [];
+    return users.filter(u => {
+      if (!u) return false;
+      if (u.role === 'programmer' || u.username === 'programmer') return false;
+      const matchesSalonId = Boolean(u.salonId && u.salonId === targetSalonId);
+      const matchesSalonCode = Boolean(u.salonCode && settings?.salonCode && u.salonCode === settings.salonCode);
+      return matchesSalonId || matchesSalonCode;
+    });
+  }, [users, settings?.salonId, currentUser?.salonId, settings?.salonCode]);
+
   const [showAddUserModal, setShowAddUserModal] = useState(false);
   const [newUserForm, setNewUserForm] = useState({
     name: '',
@@ -2342,16 +2357,24 @@ export function OwnerExecutivePortal({
   useEffect(() => {
     async function loadDbUsers() {
       try {
-        const dbUsers = await DB.fetchUsers(settings.salonId);
+        const targetSalonId = settings.salonId || (settings as any).salonCode || '';
+        if (!targetSalonId) return;
+        const dbUsers = await DB.fetchUsers(targetSalonId);
         if (dbUsers && dbUsers.length > 0) {
-          setUsers(dbUsers);
+          const salonFiltered = dbUsers.filter(u => {
+            if (u.role === 'programmer' || u.username === 'programmer') return false;
+            const matchesId = Boolean(u.salonId && (u.salonId === targetSalonId || u.salonId === (settings as any).salonCode));
+            const matchesCode = Boolean(u.salonCode && (u.salonCode === targetSalonId || u.salonCode === (settings as any).salonCode));
+            return matchesId || matchesCode;
+          });
+          setUsers(salonFiltered);
         }
       } catch (e) {
         console.warn('Error fetching users from DB in owner portal:', e);
       }
     }
     loadDbUsers();
-  }, [settings.salonId]);
+  }, [settings.salonId, (settings as any).salonCode]);
 
   // Quick live refresh
   const handleLiveRefresh = async () => {
@@ -2362,14 +2385,25 @@ export function OwnerExecutivePortal({
       }
       setLastRefreshed(new Date());
       try {
-        const dbUsers = await DB.fetchUsers(settings.salonId);
-        if (dbUsers && dbUsers.length > 0) {
-          setUsers(dbUsers);
+        const targetSalonId = settings.salonId || (settings as any).salonCode || '';
+        if (targetSalonId) {
+          const dbUsers = await DB.fetchUsers(targetSalonId);
+          if (dbUsers && dbUsers.length > 0) {
+            const salonFiltered = dbUsers.filter(u => {
+              if (u.role === 'programmer' || u.username === 'programmer') return false;
+              const matchesId = Boolean(u.salonId && (u.salonId === targetSalonId || u.salonId === (settings as any).salonCode));
+              const matchesCode = Boolean(u.salonCode && (u.salonCode === targetSalonId || u.salonCode === (settings as any).salonCode));
+              return matchesId || matchesCode;
+            });
+            setUsers(salonFiltered);
+          } else {
+            setUsers(AuthService.getUsers(targetSalonId));
+          }
         } else {
-          setUsers(AuthService.getUsers());
+          setUsers(AuthService.getUsers(currentSalonId));
         }
       } catch {
-        setUsers(AuthService.getUsers());
+        setUsers(AuthService.getUsers(currentSalonId));
       }
     } catch (e) {
       console.warn('Error refreshing owner portal data:', e);
@@ -2431,13 +2465,19 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
 
   // Toggle user active status (bound to Supabase DB)
   const handleToggleUserActive = async (targetUser: AppUser) => {
+    const targetSalonId = settings.salonId || (settings as any).salonCode || currentSalonId;
     const newActiveState = !targetUser.active;
-    const updatedUser: AppUser = { ...targetUser, active: newActiveState };
+    const updatedUser: AppUser = { 
+      ...targetUser, 
+      active: newActiveState,
+      salonId: targetUser.salonId || targetSalonId,
+      salonCode: targetUser.salonCode || (settings as any).salonCode
+    };
     const updatedUsers = users.map(u => u.id === targetUser.id ? updatedUser : u);
     setUsers(updatedUsers);
-    AuthService.saveUsers(updatedUsers);
+    AuthService.saveUser(updatedUser);
     try {
-      await DB.saveUser(updatedUser, settings.salonId);
+      await DB.saveUser(updatedUser, targetSalonId);
     } catch (err) {
       console.warn('DB.saveUser error:', err);
     }
@@ -2460,14 +2500,17 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
       return;
     }
 
-    if (AuthService.isUsernameTaken(cleanUsername)) {
+    const targetSalonId = settings.salonId || (settings as any).salonCode || currentSalonId;
+
+    if (AuthService.isUsernameTaken(cleanUsername, undefined, targetSalonId)) {
       setUserFormError(`اسم المستخدم (${cleanUsername}) مستخدم مسبقاً في المنظومة`);
       return;
     }
 
     const newUser: AppUser = {
       id: 'usr-' + Math.random().toString(36).substring(2, 9),
-      salonId: settings.salonId,
+      salonId: targetSalonId,
+      salonCode: (settings as any).salonCode,
       branchId: activeBranchId,
       name: newUserForm.name.trim(),
       username: cleanUsername,
@@ -2481,9 +2524,9 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
 
     const updated = [...users, newUser];
     setUsers(updated);
-    AuthService.saveUsers(updated);
+    AuthService.saveUser(newUser);
     try {
-      await DB.saveUser(newUser, settings.salonId);
+      await DB.saveUser(newUser, targetSalonId);
     } catch (err) {
       console.warn('DB.saveUser error:', err);
     }
@@ -4764,6 +4807,9 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                 <h3 className="text-xs font-black text-white flex items-center gap-1.5">
                   <Shield size={16} className="text-emerald-400" />
                   <span>مستخدمي النظام وصلاحيات الوصول</span>
+                  <span className="bg-emerald-500/20 text-emerald-400 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                    {salonUsers.length}
+                  </span>
                 </h3>
                 <p className="text-[11px] text-slate-400 mt-0.5">يمكنك تعطيل أو تفعيل أي مستخدم فوراً بنقرة واحدة</p>
               </div>
@@ -4779,7 +4825,14 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
 
             {/* Users List */}
             <div className="space-y-2.5">
-              {users.map(u => (
+              {salonUsers.length === 0 ? (
+                <div className="p-10 text-center bg-slate-900 rounded-2xl border border-slate-800 space-y-2">
+                  <Shield size={36} className="mx-auto text-slate-600 mb-2" />
+                  <p className="text-sm font-bold text-slate-400">لا يوجد مستخدمون مسجلون لهذا الصالون حالياً</p>
+                  <p className="text-xs text-slate-500">يمكنك الضغط على زر "إضافة مستخدم" لإنشاء حساب جديد خاص بصالونك</p>
+                </div>
+              ) : (
+                salonUsers.map(u => (
                 <div 
                   key={u.id}
                   className={`p-3.5 rounded-2xl border transition-all flex items-center justify-between gap-3 ${
@@ -4829,7 +4882,8 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                     )}
                   </button>
                 </div>
-              ))}
+              ))
+            )}
             </div>
 
           </div>
