@@ -3,7 +3,7 @@ import {
   Search, Plus, Minus, Trash2, User, CreditCard, Banknote, Scissors, 
   Tag, X, Package, Clock, UserCog, Calendar, CheckCircle2, Image as ImageIcon,
   Wrench, ShieldAlert, Camera, Crown, Sparkles, PauseCircle, PlayCircle,
-  FilePlus2, Layers, Zap, AlertCircle, DollarSign, Coffee, Sliders, Save, AlertTriangle, RotateCcw, QrCode
+  FilePlus2, Layers, Zap, AlertCircle, DollarSign, Coffee, Sliders, Save, AlertTriangle, RotateCcw, QrCode, Printer
 } from 'lucide-react';
 import { 
   AppSettings, CartItem, ServiceItem, Booking, Invoice, Client, Category, Employee,
@@ -18,6 +18,7 @@ import { SupabaseService } from '../services/supabase';
 import { isBarberEmployee, isReferralEligibleEmployee } from '../utils/employeeHelper';
 import { SalesReturnModal } from './SalesReturnModal';
 import { generateCode39Svg } from '../utils/printQueueSlip';
+import { InvoiceReceiptCard, executePrintInvoiceReceipt } from './InvoiceReceiptCard';
 
 export const getCartItemPrice = (c: CartItem | any): number => {
   if (!c) return 0;
@@ -79,12 +80,14 @@ export function POSScreen({
   setTips,
   currentUser,
   activeBranchId,
+  branches = [],
   salesReturns = [],
   onProcessSalesReturn,
   onRefreshServices
 }: { 
   settings: AppSettings, 
   activeBranchId?: string,
+  branches?: any[],
   isShiftOpen: boolean,
   shiftDate: string,
   shiftId?: string,
@@ -1093,28 +1096,8 @@ export function POSScreen({
   };
 
   const printReceipt = () => {
-    const printContent = document.getElementById('receipt-content')?.outerHTML;
-    if (printContent) {
-      const printWindow = window.open('', '', 'width=800,height=600');
-      if (printWindow) {
-        printWindow.document.write('<html><head><title>طباعة الفاتورة</title>');
-        printWindow.document.write('<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">');
-        printWindow.document.write('<style>');
-        printWindow.document.write('body { margin: 0; display: flex; justify-content: center; background-color: #fff; direction: rtl; }');
-        printWindow.document.write('@media print { body { padding: 0; margin: 0; } @page { margin: 0; } }');
-        printWindow.document.write('</style>');
-        printWindow.document.write('</head><body>');
-        printWindow.document.write(printContent);
-        printWindow.document.write('</body></html>');
-        printWindow.document.close();
-        
-        printWindow.setTimeout(() => {
-          printWindow.focus();
-          printWindow.print();
-          printWindow.close();
-        }, 500);
-      }
-    }
+    if (!completedInvoice) return;
+    executePrintInvoiceReceipt('receipt-content', completedInvoice.id);
   };
 
   const handleClientSearch = () => {
@@ -3052,179 +3035,58 @@ export function POSScreen({
 
       {/* Receipt / Invoice Print Modal */}
       {showReceiptModal && completedInvoice && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-              <h3 className="font-bold text-lg text-slate-800">معاينة الفاتورة</h3>
-              <button onClick={() => { setShowReceiptModal(false); setCompletedInvoice(null); resetToFreshInvoice(false); }} className="text-slate-400 hover:text-slate-600 transition-colors cursor-pointer" title="إغلاق والعودة لنقطة البيع"><X size={20}/></button>
-            </div>
-            
-            {/* Thermal Paper Preview Area */}
-            <div className="bg-slate-200 p-8 overflow-y-auto flex justify-center" style={{ fontFamily: '"Cairo", sans-serif' }}>
-              <div id="receipt-content" className="bg-white shadow-sm" style={{ width: '100%', maxWidth: '72mm', padding: '5mm', fontFamily: '"Cairo", sans-serif', color: '#000', margin: '0 auto', boxSizing: 'border-box' }}>
-                <div style={{ textAlign: 'center', marginBottom: '15px' }}>
-                  {settings.logoUrl && (
-                    <img src={settings.logoUrl} alt="Logo" style={{ maxWidth: '80px', maxHeight: '80px', margin: '0 auto 10px auto', display: 'block' }} />
-                  )}
-                  <h2 style={{ fontSize: '18px', fontWeight: 'bold', margin: '0 0 5px 0' }}>{settings.salonName || 'صالون العناية'}</h2>
-                  
-                  {/* باركود رقم الفاتورة أسفل اسم الصالون لسهولة البحث بالمسح الضوئي */}
-                  {completedInvoice?.id && (
-                    <div style={{ margin: '6px auto 4px auto', maxWidth: '210px', textAlign: 'center' }}>
-                      <div 
-                        dangerouslySetInnerHTML={{ __html: generateCode39Svg(completedInvoice.id, 28) }} 
-                        style={{ display: 'flex', justifyContent: 'center' }}
-                      />
-                      <div style={{ fontFamily: 'monospace', fontSize: '11px', fontWeight: 'bold', letterSpacing: '1px', marginTop: '2px', color: '#000' }}>
-                        {completedInvoice.id}
-                      </div>
-                    </div>
-                  )}
-
-                  <div style={{ borderBottom: '1px dashed #000', margin: '12px 0' }}></div>
-                  
-                  <p style={{ fontSize: '13px', margin: '0' }}>رقم الفاتورة: {completedInvoice.id}</p>
-                  <p style={{ fontSize: '13px', margin: '0' }}>التاريخ: {new Date(completedInvoice.date).toLocaleString('ar-SA')}</p>
-                  {completedInvoice.clientName && (
-                    <p style={{ fontSize: '13px', margin: '4px 0 0 0' }}>العميل: {completedInvoice.clientName}</p>
-                  )}
-                  {(completedInvoice.clientPhone || selectedClient?.phone || initialBooking?.phone || initialBooking?.clientPhone) && (
-                    <p style={{ fontSize: '13px', margin: '2px 0 0 0' }}>
-                      جوال العميل: <span style={{ fontFamily: 'monospace', fontWeight: 'bold' }} dir="ltr">{completedInvoice.clientPhone || selectedClient?.phone || initialBooking?.phone || initialBooking?.clientPhone}</span>
-                    </p>
-                  )}
-                  <p style={{ fontSize: '13px', margin: '2px 0 0 0' }}>
-                    منفذ العملية (الكاشير): <span style={{ fontWeight: 'bold' }}>{completedInvoice.createdByName || completedInvoice.cashierName || completedInvoice.createdBy || currentUser?.name || (currentUser as any)?.username || 'الكاشير'}</span>
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-[60] p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[92vh]" dir="rtl">
+            {/* Header */}
+            <div className="flex justify-between items-center p-4 px-5 border-b border-slate-100 bg-slate-50/70">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                  <Printer size={18} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">معاينة إيصال الفاتورة</h3>
+                  <p className="text-[11px] text-slate-500 font-mono">
+                    {completedInvoice.id} • {completedInvoice.clientName || 'عميل نقدي'}
                   </p>
                 </div>
-                
-                <div style={{ borderBottom: '1px dashed #000', margin: '10px 0' }}></div>
-                
-                <table style={{ width: '100%', fontSize: '13px', textAlign: 'right', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid #000' }}>
-                      <th style={{ padding: '8px 0', width: '50%' }}>الصنف</th>
-                      <th style={{ padding: '8px 0', textAlign: 'center', width: '20%' }}>الكمية</th>
-                      <th style={{ padding: '8px 0', textAlign: 'left', width: '30%' }}>السعر</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {completedInvoice.items.map((item, idx) => (
-                      <tr key={idx} style={{ borderBottom: '1px dotted #ccc' }}>
-                        <td style={{ padding: '8px 0' }}>
-                          <div style={{ fontWeight: 'bold' }}>{item.serviceName}</div>
-                          <div style={{ fontSize: '11px', color: '#555' }}>بواسطة: {item.technicianName || '-'}</div>
-                          {Boolean(item.discountAmount && item.discountAmount > 0) && (
-                            <div style={{ fontSize: '10px', color: '#e11d48', fontWeight: 'bold' }}>
-                              خصم: -{item.discountAmount?.toFixed(2)} (الأصلي: {item.originalPrice?.toFixed(2)})
-                            </div>
-                          )}
-                        </td>
-                        <td style={{ padding: '8px 0', textAlign: 'center' }}>{item.quantity || 1}</td>
-                        <td style={{ padding: '8px 0', textAlign: 'left' }}>
-                          <div>{item.price.toFixed(2)}</div>
-                          {Boolean(item.originalPrice && item.originalPrice > item.price) && (
-                            <div style={{ fontSize: '10px', color: '#999', textDecoration: 'line-through' }}>
-                              {item.originalPrice?.toFixed(2)}
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                
-                <div style={{ borderBottom: '1px dashed #000', margin: '10px 0' }}></div>
-                
-                <div style={{ fontSize: '14px', lineHeight: '1.8' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span>المجموع:</span>
-                    <span>{completedInvoice.items.reduce((sum, item) => sum + (item.price * (item.quantity || 1)), 0).toFixed(2)}</span>
-                  </div>
-                  {completedInvoice.discount > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>الخصم:</span>
-                      <span>- {completedInvoice.discount.toFixed(2)}</span>
-                    </div>
-                  )}
-                  {settings.vatEnabled && (() => {
-                    const invoiceSubtotal = completedInvoice.items.reduce((sum, item) => sum + (item.price * (item.quantity || 1)), 0);
-                    const totalInclusive = Math.max(0, invoiceSubtotal - completedInvoice.discount);
-                    const baseTotal = totalInclusive / (1 + settings.vatRate / 100);
-                    const vatAmt = totalInclusive - baseTotal;
-                    return (
-                      <>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
-                          <span>المبلغ قبل الضريبة:</span>
-                          <span>{baseTotal.toFixed(2)}</span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
-                          <span>الضريبة ({settings.vatRate}%):</span>
-                          <span>{vatAmt.toFixed(2)} شامل</span>
-                        </div>
-                      </>
-                    );
-                  })()}
-                  {((completedInvoice.advanceDeduction || 0) > 0 || advanceDeduction > 0) && (() => {
-                    const advAmt = completedInvoice.advanceDeduction || advanceDeduction;
-                    const advList = completedInvoice.advancePayments || activeAdvancePayments;
-                    return (
-                      <div style={{ margin: '4px 0', padding: '4px 0', borderTop: '1px dotted #a7f3d0', borderBottom: '1px dotted #a7f3d0' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#059669', fontWeight: 'bold' }}>
-                          <span>المدفوع مقدماً (عربون الحجز):</span>
-                          <span>- {advAmt.toFixed(2)}</span>
-                        </div>
-                        {advList && advList.length > 0 && (
-                          <div style={{ fontSize: '10px', color: '#047857', marginTop: '2px' }}>
-                            {advList.map((adv, idx) => (
-                              <div key={adv.id || idx} style={{ display: 'flex', justifyContent: 'space-between', paddingLeft: '8px' }}>
-                                <span>• {adv.treasuryName || adv.paymentMethod || 'دفعة'} ({adv.date?.split('T')[0] || ''}):</span>
-                                <span>{adv.amount.toFixed(2)}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '15px', marginTop: '5px', paddingTop: '5px', borderTop: '1px solid #000' }}>
-                    <span>الصافي المدفوع اليوم:</span>
-                    <span>{completedInvoice.total.toFixed(2)} {settings.currency}</span>
-                  </div>
-                  {completedInvoice.paymentMethods && completedInvoice.paymentMethods.length > 0 && (
-                    <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed #ccc', fontSize: '12px' }}>
-                      <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>طرق الدفع:</div>
-                      {completedInvoice.paymentMethods.map((pm, idx) => (
-                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span>{pm.treasuryId === 'cashback' ? 'كاش باك' : (settings.treasuries.find(t => t.id === pm.treasuryId)?.name || 'غير محدد')}</span>
-                          <span>{pm.amount.toFixed(2)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                </div>
-
-                <div style={{ textAlign: 'center', marginTop: '25px', fontSize: '13px', fontWeight: 'bold' }}>
-                  <p style={{ margin: '0 0 10px 0' }}>شكراً لزيارتكم!</p>
-                  {settings.phone && <p style={{ fontSize: '12px', fontWeight: 'normal', margin: '2px 0' }}>جوال: {settings.phone}</p>}
-                  {settings.address && <p style={{ fontSize: '12px', fontWeight: 'normal', margin: '2px 0' }}>العنوان: {settings.address}</p>}
-                </div>
               </div>
+              <button
+                type="button"
+                onClick={() => { setShowReceiptModal(false); setCompletedInvoice(null); resetToFreshInvoice(false); }}
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 cursor-pointer transition-colors"
+              >
+                ✕
+              </button>
             </div>
 
-            <div className="p-4 bg-white border-t border-slate-100 flex gap-3">
-              <button 
+            {/* Body: Thermal Paper Style */}
+            <div className="p-3 sm:p-5 bg-slate-100/90 overflow-y-auto flex justify-center">
+              <InvoiceReceiptCard
+                id="receipt-content"
+                invoice={completedInvoice}
+                settings={settings}
+                branches={branches}
+                activeBranchId={activeBranchId}
+                currentUser={currentUser}
+              />
+            </div>
+
+            {/* Modal Footer Buttons */}
+            <div className="p-4 bg-white border-t border-slate-100 flex gap-2.5">
+              <button
+                type="button"
                 onClick={() => { setShowReceiptModal(false); setCompletedInvoice(null); resetToFreshInvoice(false); }}
-                className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors cursor-pointer"
+                className="flex-1 py-2.5 px-4 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 cursor-pointer transition-colors"
               >
                 إغلاق وبدء فاتورة جديدة
               </button>
-              <button 
+              <button
+                type="button"
                 onClick={printReceipt}
-                className="flex-1 py-3 bg-primary hover:bg-primary-dark text-white font-bold rounded-xl shadow-md transition-colors"
+                className="flex-1 py-2.5 px-4 rounded-xl text-xs font-black text-white bg-indigo-600 hover:bg-indigo-700 shadow-md cursor-pointer flex items-center justify-center gap-2 transition-all"
               >
-                طباعة الفاتورة
+                <Printer size={15} />
+                <span>طباعة الفاتورة الآن</span>
               </button>
             </div>
           </div>

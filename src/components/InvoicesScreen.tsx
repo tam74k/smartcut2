@@ -9,6 +9,7 @@ import { DB } from '../services/db';
 import { InvoicesImportModal } from './InvoicesImportModal';
 import { SalesReturnModal } from './SalesReturnModal';
 import { generateCode39Svg } from '../utils/printQueueSlip';
+import { InvoiceReceiptCard, executePrintInvoiceReceipt } from './InvoiceReceiptCard';
 
 export const getEffectiveInvoiceTotal = (inv: Invoice | any): number => {
   if (!inv) return 0;
@@ -285,28 +286,7 @@ export function InvoicesScreen({
   };
   
   const handlePrint = (invoice: Invoice) => {
-    // Generate simple print view
-    const printContent = document.getElementById(`invoice-print-${invoice.id}`)?.outerHTML;
-    if (printContent) {
-      const printWindow = window.open('', '', 'width=800,height=600');
-      if (printWindow) {
-        printWindow.document.write('<html><head><title>طباعة الفاتورة</title>');
-        printWindow.document.write('<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">');
-        printWindow.document.write('<style>');
-        printWindow.document.write('body { margin: 0; display: flex; justify-content: center; background-color: #fff; direction: rtl; }');
-        printWindow.document.write('@media print { body { padding: 0; margin: 0; } @page { margin: 0; } }');
-        printWindow.document.write('</style>');
-        printWindow.document.write('</head><body>');
-        printWindow.document.write(printContent);
-        printWindow.document.write('</body></html>');
-        
-        printWindow.setTimeout(() => {
-          printWindow.focus();
-          printWindow.print();
-          printWindow.close();
-        }, 500);
-      }
-    }
+    executePrintInvoiceReceipt(`invoice-print-${invoice.id}`, invoice.id);
   };
 
   const mainBranch = (branches && branches[0]) || { id: 'b-main', name: 'الفرع الرئيسي' };
@@ -626,147 +606,16 @@ export function InvoicesScreen({
                       )}
                     </div>
                     
-                    {/* Hidden printable receipt */}
+                    {/* Hidden printable receipt matching BookingsScreen / POS format */}
                     <div className="hidden">
-                      <div id={`invoice-print-${inv.id}`} className="bg-white shadow-sm" style={{ width: '100%', maxWidth: '72mm', padding: '5mm', fontFamily: '"Cairo", sans-serif', color: '#000', margin: '0 auto', boxSizing: 'border-box' }}>
-                        <div style={{ textAlign: 'center', marginBottom: '15px' }}>
-                          {settings.logoUrl && (
-                            <img src={settings.logoUrl} alt="Logo" style={{ maxWidth: '80px', maxHeight: '80px', margin: '0 auto 10px auto', display: 'block' }} />
-                          )}
-                          <h2 style={{ fontSize: '18px', fontWeight: 'bold', margin: '0 0 5px 0' }}>{settings.salonName || 'صالون العناية'}</h2>
-                          
-                          {/* باركود رقم الفاتورة أسفل اسم الصالون لسهولة البحث بالمسح الضوئي */}
-                          {inv?.id && (
-                            <div style={{ margin: '6px auto 4px auto', maxWidth: '210px', textAlign: 'center' }}>
-                              <div 
-                                dangerouslySetInnerHTML={{ __html: generateCode39Svg(inv.id, 28) }} 
-                                style={{ display: 'flex', justifyContent: 'center' }}
-                              />
-                              <div style={{ fontFamily: 'monospace', fontSize: '11px', fontWeight: 'bold', letterSpacing: '1px', marginTop: '2px', color: '#000' }}>
-                                {inv.id}
-                              </div>
-                            </div>
-                          )}
-
-                          <div style={{ borderBottom: '1px dashed #000', margin: '12px 0' }}></div>
-                          
-                          <p style={{ fontSize: '13px', margin: '0' }}>رقم الفاتورة: {inv.id}</p>
-                          <p style={{ fontSize: '13px', margin: '0' }}>التاريخ: {new Date(inv.date).toLocaleString('ar-SA')}</p>
-                          {inv.clientName && (
-                            <p style={{ fontSize: '13px', margin: '4px 0 0 0' }}>العميل: {inv.clientName}</p>
-                          )}
-                          {(inv.clientPhone || (inv as any).phone) && (
-                            <p style={{ fontSize: '13px', margin: '2px 0 0 0' }}>
-                              جوال العميل: <span style={{ fontFamily: 'monospace', fontWeight: 'bold' }} dir="ltr">{inv.clientPhone || (inv as any).phone}</span>
-                            </p>
-                          )}
-                          <p style={{ fontSize: '13px', margin: '2px 0 0 0' }}>
-                            منفذ العملية (الكاشير): <span style={{ fontWeight: 'bold' }}>{inv.createdByName || (inv as any).created_by_name || inv.cashierName || inv.createdBy || 'الكاشير'}</span>
-                          </p>
-                        </div>
-                        
-                        <div style={{ borderBottom: '1px dashed #000', margin: '10px 0' }}></div>
-                        
-                        <table style={{ width: '100%', fontSize: '13px', textAlign: 'right', borderCollapse: 'collapse' }}>
-                          <thead>
-                            <tr style={{ borderBottom: '1px solid #000' }}>
-                              <th style={{ padding: '8px 0', width: '50%' }}>الصنف</th>
-                              <th style={{ padding: '8px 0', textAlign: 'center', width: '20%' }}>الكمية</th>
-                              <th style={{ padding: '8px 0', textAlign: 'left', width: '30%' }}>السعر</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {inv.items.map((item, idx) => (
-                              <tr key={idx} style={{ borderBottom: '1px dotted #ccc' }}>
-                                <td style={{ padding: '8px 0' }}>
-                                  <div style={{ fontWeight: 'bold' }}>{item.serviceName}</div>
-                                  <div style={{ fontSize: '11px', color: '#555' }}>بواسطة: {item.technicianName || '-'}</div>
-                                </td>
-                                <td style={{ padding: '8px 0', textAlign: 'center' }}>{item.quantity || 1}</td>
-                                <td style={{ padding: '8px 0', textAlign: 'left' }}>{item.price.toFixed(2)}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                        
-                        <div style={{ borderBottom: '1px dashed #000', margin: '10px 0' }}></div>
-                        
-                        <div style={{ fontSize: '14px', lineHeight: '1.8' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                            <span>المجموع:</span>
-                            <span>{inv.items.reduce((sum, item) => sum + (item.price * (item.quantity || 1)), 0).toFixed(2)}</span>
-                          </div>
-                          {inv.discount > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                              <span>الخصم:</span>
-                              <span>- {inv.discount.toFixed(2)}</span>
-                            </div>
-                          )}
-                          {settings.vatEnabled && (() => {
-                            const invoiceSubtotal = inv.items.reduce((sum, item) => sum + (item.price * (item.quantity || 1)), 0);
-                            const totalInclusive = Math.max(0, invoiceSubtotal - inv.discount);
-                            const baseTotal = totalInclusive / (1 + settings.vatRate / 100);
-                            const vatAmt = totalInclusive - baseTotal;
-                            return (
-                              <>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
-                                  <span>المبلغ قبل الضريبة:</span>
-                                  <span>{baseTotal.toFixed(2)}</span>
-                                </div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
-                                  <span>الضريبة ({settings.vatRate}%):</span>
-                                  <span>{vatAmt.toFixed(2)} شامل</span>
-                                </div>
-                              </>
-                            );
-                          })()}
-                          {inv.advanceDeduction !== undefined && inv.advanceDeduction > 0 && (
-                            <div style={{ margin: '4px 0', padding: '4px 0', borderTop: '1px dotted #a7f3d0', borderBottom: '1px dotted #a7f3d0' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#059669', fontWeight: 'bold' }}>
-                                <span>المدفوع مقدماً (عربون الحجز):</span>
-                                <span>- {inv.advanceDeduction.toFixed(2)}</span>
-                              </div>
-                              {inv.advancePayments && inv.advancePayments.length > 0 && (
-                                <div style={{ fontSize: '10px', color: '#047857', marginTop: '2px' }}>
-                                  {inv.advancePayments.map((adv, idx) => (
-                                    <div key={adv.id || idx} style={{ display: 'flex', justifyContent: 'space-between', paddingLeft: '8px' }}>
-                                      <span>• {adv.treasuryName || adv.paymentMethod || 'دفعة'} ({adv.date?.split('T')[0] || ''}):</span>
-                                      <span>{adv.amount.toFixed(2)}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '15px', marginTop: '5px', paddingTop: '5px', borderTop: '1px solid #000' }}>
-                            <span>الصافي المدفوع اليوم:</span>
-                            <span>{getEffectiveInvoiceTotal(inv).toFixed(2)} {settings.currency}</span>
-                          </div>
-                          {inv.paymentMethods && inv.paymentMethods.length > 0 && (
-                            <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed #ccc', fontSize: '12px' }}>
-                              <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>طرق الدفع:</div>
-                              {inv.paymentMethods.map((pm, idx) => (
-                                <div key={idx} style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                  <span>{pm.treasuryId === 'cashback' ? 'كاش باك' : (settings.treasuries.find(t => t.id === pm.treasuryId)?.name || 'غير محدد')}</span>
-                                  <span>{pm.amount.toFixed(2)}</span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                          
-                          {inv.status === 'cancelled' && (
-                            <div style={{ textAlign: 'center', margin: '10px 0', padding: '5px', border: '2px solid red', color: 'red', fontWeight: 'bold' }}>
-                              فاتورة ملغاة
-                            </div>
-                          )}
-                        </div>
-
-                        <div style={{ textAlign: 'center', marginTop: '25px', fontSize: '13px', fontWeight: 'bold' }}>
-                          <p style={{ margin: '0 0 10px 0' }}>شكراً لزيارتكم!</p>
-                          {settings.phone && <p style={{ fontSize: '12px', fontWeight: 'normal', margin: '2px 0' }}>جوال: {settings.phone}</p>}
-                          {settings.address && <p style={{ fontSize: '12px', fontWeight: 'normal', margin: '2px 0' }}>العنوان: {settings.address}</p>}
-                        </div>
-                      </div>
+                      <InvoiceReceiptCard
+                        id={`invoice-print-${inv.id}`}
+                        invoice={inv}
+                        settings={settings}
+                        branches={branches}
+                        activeBranchId={activeBranchId}
+                        currentUser={currentUser}
+                      />
                     </div>
 
                   </td>

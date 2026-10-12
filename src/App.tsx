@@ -2694,6 +2694,7 @@ export default function App() {
         <POSScreen 
           settings={settings} 
           activeBranchId={activeBranchId}
+          branches={branches}
           isShiftOpen={shiftData.isOpen} 
           shiftDate={shiftData.date} 
           shiftId={(shiftData as any)?.shiftId}
