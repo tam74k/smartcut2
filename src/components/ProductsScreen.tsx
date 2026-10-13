@@ -998,124 +998,88 @@ export function ProductsScreen({
 
       {/* Add/Edit Product Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden">
-            <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-              <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-3 sm:p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[92vh]">
+            {/* Modal Header */}
+            <div className="p-3.5 px-5 border-b border-slate-100 flex justify-between items-center bg-slate-50 shrink-0">
+              <h3 className="font-bold text-base sm:text-lg text-slate-800 flex items-center gap-2">
                 <Package className="text-primary" size={20} /> 
                 {editingProductId ? 'تعديل بيانات بطاقة منتج' : 'بطاقة منتج جديد'}
               </h3>
-              <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-red-500"><X size={20}/></button>
+              <button 
+                onClick={() => setShowAddModal(false)} 
+                className="text-slate-400 hover:text-red-500 p-1 rounded-lg hover:bg-slate-200/50 transition-colors cursor-pointer"
+                title="إغلاق"
+              >
+                <X size={20}/>
+              </button>
             </div>
-            <div className="p-6">
+
+            {/* Modal Body (Scrollable if height exceeds screen) */}
+            <div className="p-5 overflow-y-auto flex-1">
               {errorMsg && (
-                <div className="p-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-200 font-bold mb-4">
+                <div className="p-3 bg-red-50 text-red-700 text-xs sm:text-sm rounded-lg border border-red-200 font-bold mb-4">
                   {errorMsg}
                 </div>
               )}
-              <div className="grid grid-cols-2 gap-4">
-                {/* اختيار نوع المنتج: للبيع أو مادة خام */}
-                <div className="col-span-2">
-                  <label className="block text-sm font-bold text-slate-700 mb-2">نوع المنتج والهدف منه</label>
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setFormData({ ...formData, productType: 'retail' })}
-                      className={`p-3 rounded-xl border-2 flex items-center gap-3 transition-all cursor-pointer text-right ${
-                        formData.productType !== 'raw_material'
-                          ? 'border-emerald-600 bg-emerald-50/50 text-emerald-900 shadow-sm font-bold ring-2 ring-emerald-500/20'
-                          : 'border-slate-200 hover:border-slate-300 text-slate-600 bg-white'
-                      }`}
-                    >
-                      <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-lg shrink-0 ${formData.productType !== 'raw_material' ? 'bg-emerald-600 text-white' : 'bg-slate-100'}`}>
-                        🛍️
-                      </div>
-                      <div>
-                        <div className="font-bold text-sm">منتج للبيع (Retail)</div>
-                        <div className="text-xs text-slate-500 font-normal mt-0.5">يظهر في شاشة الكاشير (POS) ويباع للعملاء</div>
-                      </div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setFormData({ ...formData, productType: 'raw_material', sellPrice: '0', commission: '0' })}
-                      className={`p-3 rounded-xl border-2 flex items-center gap-3 transition-all cursor-pointer text-right ${
-                        formData.productType === 'raw_material'
-                          ? 'border-amber-500 bg-amber-50/60 text-amber-900 shadow-sm font-bold ring-2 ring-amber-500/20'
-                          : 'border-slate-200 hover:border-slate-300 text-slate-600 bg-white'
-                      }`}
-                    >
-                      <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-lg shrink-0 ${formData.productType === 'raw_material' ? 'bg-amber-500 text-white' : 'bg-slate-100'}`}>
-                        🧪
-                      </div>
-                      <div>
-                        <div className="font-bold text-sm">مادة خام (استهلاك داخلي)</div>
-                        <div className="text-xs text-slate-500 font-normal mt-0.5">لا يظهر في الكاشير، مخصص للاستهلاك والصرف</div>
-                      </div>
-                    </button>
-                  </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                {/* اختيار نوع المنتج والهدف منه (قائمة منسدلة) */}
+                <div className="col-span-1">
+                  <label className="block text-xs font-bold text-slate-700 mb-1">نوع المنتج والهدف منه</label>
+                  <select
+                    value={formData.productType}
+                    onChange={e => {
+                      const pType = e.target.value as 'retail' | 'raw_material';
+                      if (pType === 'raw_material') {
+                        setFormData({ ...formData, productType: 'raw_material', sellPrice: '0', commission: '0' });
+                      } else {
+                        setFormData({ ...formData, productType: 'retail' });
+                      }
+                    }}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary font-bold text-slate-800 bg-white text-xs sm:text-sm"
+                  >
+                    <option value="retail">🛍️ منتج للبيع (Retail) - يظهر في POS</option>
+                    <option value="raw_material">🧪 مادة خام (استهلاك داخلي) - لا يباع</option>
+                  </select>
                 </div>
 
-                {/* حالة الصنف: نشط / غير نشط */}
-                <div className="col-span-2">
-                  <label className="block text-sm font-bold text-slate-700 mb-2">حالة الصنف في النظام</label>
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setFormData({ ...formData, isActive: true })}
-                      className={`p-3 rounded-xl border-2 flex items-center gap-3 transition-all cursor-pointer text-right ${
-                        formData.isActive !== false
-                          ? 'border-emerald-600 bg-emerald-50/50 text-emerald-900 shadow-sm font-bold ring-2 ring-emerald-500/20'
-                          : 'border-slate-200 hover:border-slate-300 text-slate-600 bg-white'
-                      }`}
-                    >
-                      <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-lg shrink-0 ${formData.isActive !== false ? 'bg-emerald-600 text-white' : 'bg-slate-100'}`}>
-                        🟢
-                      </div>
-                      <div>
-                        <div className="font-bold text-sm">صنف نشط</div>
-                        <div className="text-xs text-slate-500 font-normal mt-0.5">مفعّل في النظام وتدخل نواقصه في تقارير وتنبيهات المخزون</div>
-                      </div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setFormData({ ...formData, isActive: false })}
-                      className={`p-3 rounded-xl border-2 flex items-center gap-3 transition-all cursor-pointer text-right ${
-                        formData.isActive === false
-                          ? 'border-slate-600 bg-slate-100 text-slate-900 shadow-sm font-bold ring-2 ring-slate-400/20'
-                          : 'border-slate-200 hover:border-slate-300 text-slate-600 bg-white'
-                      }`}
-                    >
-                      <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-lg shrink-0 ${formData.isActive === false ? 'bg-slate-700 text-white' : 'bg-slate-100'}`}>
-                        ⚪
-                      </div>
-                      <div>
-                        <div className="font-bold text-sm">صنف غير نشط (موقوف)</div>
-                        <div className="text-xs text-slate-500 font-normal mt-0.5">صنف موقوف ولا يتم احتساب نواقصه في تقارير النواقص</div>
-                      </div>
-                    </button>
-                  </div>
+                {/* حالة الصنف في النظام (قائمة منسدلة) */}
+                <div className="col-span-1">
+                  <label className="block text-xs font-bold text-slate-700 mb-1">حالة الصنف في النظام</label>
+                  <select
+                    value={formData.isActive !== false ? 'active' : 'inactive'}
+                    onChange={e => setFormData({ ...formData, isActive: e.target.value === 'active' })}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary font-bold text-slate-800 bg-white text-xs sm:text-sm"
+                  >
+                    <option value="active">🟢 صنف نشط (مفعّل في النظام والتنبيهات)</option>
+                    <option value="inactive">⚪ صنف غير نشط (موقوف عن التقارير)</option>
+                  </select>
                 </div>
 
-                <div className="col-span-2 sm:col-span-1">
-                  <label className="block text-sm font-bold text-slate-700 mb-1">اسم المنتج</label>
-                  <input type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary" />
+                <div className="col-span-1">
+                  <label className="block text-xs font-bold text-slate-700 mb-1">اسم المنتج</label>
+                  <input 
+                    type="text" 
+                    value={formData.name} 
+                    onChange={e => setFormData({...formData, name: e.target.value})} 
+                    placeholder="اكتب اسم المنتج..."
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary text-xs sm:text-sm" 
+                  />
                 </div>
 
-                <div className="col-span-2 sm:col-span-1">
+                <div className="col-span-1">
                   <div className="flex items-center justify-between mb-1">
-                    <label className="block text-sm font-bold text-slate-700 flex items-center gap-1.5">
-                      <QrCode size={15} className="text-primary" />
+                    <label className="block text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                      <QrCode size={14} className="text-primary" />
                       الباركود (Barcode)
                     </label>
                     <button 
                       type="button" 
                       onClick={generateUniqueBarcode}
-                      className="text-xs text-primary hover:text-primary-dark font-bold flex items-center gap-1 bg-primary/10 hover:bg-primary/20 px-2.5 py-0.5 rounded-lg transition-colors cursor-pointer"
+                      className="text-[11px] text-primary hover:text-primary-dark font-bold flex items-center gap-1 bg-primary/10 hover:bg-primary/20 px-2 py-0.5 rounded-lg transition-colors cursor-pointer"
                       title="توليد باركود تلقائي فريد للمنتج"
                     >
-                      <Sparkles size={12} />
+                      <Sparkles size={11} />
                       توليد تلقائي
                     </button>
                   </div>
@@ -1125,7 +1089,7 @@ export function ProductsScreen({
                       value={formData.barcode} 
                       onChange={e => setFormData({...formData, barcode: e.target.value})} 
                       placeholder="امسح الباركود أو اكتبه..." 
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary font-mono text-sm tracking-wider" 
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary font-mono text-xs sm:text-sm tracking-wider" 
                     />
                     {formData.barcode && (
                       <button 
@@ -1139,29 +1103,47 @@ export function ProductsScreen({
                     )}
                   </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">التصنيف</label>
-                  <select value={formData.categoryId} onChange={e => setFormData({...formData, categoryId: e.target.value})} className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary">
+
+                <div className="col-span-1">
+                  <label className="block text-xs font-bold text-slate-700 mb-1">التصنيف</label>
+                  <select 
+                    value={formData.categoryId} 
+                    onChange={e => setFormData({...formData, categoryId: e.target.value})} 
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary text-xs sm:text-sm bg-white"
+                  >
                     <option value="">-- اختر التصنيف --</option>
                     {productCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
                 </div>
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">المورد</label>
-                  <select value={formData.supplierId} onChange={e => setFormData({...formData, supplierId: e.target.value})} className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary">
+
+                <div className="col-span-1">
+                  <label className="block text-xs font-bold text-slate-700 mb-1">المورد</label>
+                  <select 
+                    value={formData.supplierId} 
+                    onChange={e => setFormData({...formData, supplierId: e.target.value})} 
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary text-xs sm:text-sm bg-white"
+                  >
                     <option value="">بدون مورد (غير محدد)</option>
                     {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
                 </div>
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">رصيد أول المدة</label>
-                  <input type="number" value={formData.openingStock} onChange={e => setFormData({...formData, openingStock: e.target.value})} className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary" />
+
+                <div className="col-span-1">
+                  <label className="block text-xs font-bold text-slate-700 mb-1">سعر التكلفة ({settings.currency})</label>
+                  <input 
+                    type="number" 
+                    value={formData.costPrice} 
+                    onChange={e => setFormData({...formData, costPrice: e.target.value})} 
+                    placeholder="0.00"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary text-xs sm:text-sm font-semibold" 
+                  />
                 </div>
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">
+
+                <div className="col-span-1">
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
                     سعر البيع ({settings.currency})
                     {formData.productType === 'raw_material' && (
-                      <span className="text-amber-600 text-xs font-normal mr-1.5">(غير متاح للبيع)</span>
+                      <span className="text-amber-600 text-[11px] font-normal mr-1.5">(غير متاح للبيع)</span>
                     )}
                   </label>
                   <input 
@@ -1169,24 +1151,40 @@ export function ProductsScreen({
                     value={formData.productType === 'raw_material' ? '0' : formData.sellPrice} 
                     disabled={formData.productType === 'raw_material'}
                     onChange={e => setFormData({...formData, sellPrice: e.target.value})} 
-                    className={`w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary ${
+                    placeholder="0.00"
+                    className={`w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary text-xs sm:text-sm font-semibold ${
                       formData.productType === 'raw_material' ? 'bg-slate-100 text-slate-400 cursor-not-allowed select-none' : ''
                     }`} 
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">سعر التكلفة ({settings.currency})</label>
-                  <input type="number" value={formData.costPrice} onChange={e => setFormData({...formData, costPrice: e.target.value})} className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary" />
+
+                <div className="col-span-1">
+                  <label className="block text-xs font-bold text-slate-700 mb-1">رصيد أول المدة</label>
+                  <input 
+                    type="number" 
+                    value={formData.openingStock} 
+                    onChange={e => setFormData({...formData, openingStock: e.target.value})} 
+                    placeholder="0"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary text-xs sm:text-sm font-semibold" 
+                  />
                 </div>
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">حد الطلب (التنبيه)</label>
-                  <input type="number" value={formData.reorderLimit} onChange={e => setFormData({...formData, reorderLimit: e.target.value})} className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary" />
+
+                <div className="col-span-1">
+                  <label className="block text-xs font-bold text-slate-700 mb-1">حد الطلب (التنبيه)</label>
+                  <input 
+                    type="number" 
+                    value={formData.reorderLimit} 
+                    onChange={e => setFormData({...formData, reorderLimit: e.target.value})} 
+                    placeholder="5"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary text-xs sm:text-sm font-semibold" 
+                  />
                 </div>
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">
+
+                <div className="col-span-1">
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
                     عمولة البيع
                     {formData.productType === 'raw_material' && (
-                      <span className="text-slate-400 text-xs font-normal mr-1.5">(لا تنطبق للمواد الخام)</span>
+                      <span className="text-slate-400 text-[11px] font-normal mr-1.5">(لا تنطبق للمواد الخام)</span>
                     )}
                   </label>
                   <input 
@@ -1194,18 +1192,33 @@ export function ProductsScreen({
                     value={formData.productType === 'raw_material' ? '0' : formData.commission} 
                     disabled={formData.productType === 'raw_material'}
                     onChange={e => setFormData({...formData, commission: e.target.value})} 
-                    className={`w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary ${
+                    placeholder="0"
+                    className={`w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary text-xs sm:text-sm font-semibold ${
                       formData.productType === 'raw_material' ? 'bg-slate-100 text-slate-400 cursor-not-allowed select-none' : ''
                     }`} 
                   />
                 </div>
               </div>
-              <div className="mt-6 pt-4 border-t border-slate-100 flex justify-end gap-3">
-                <button disabled={isSavingProduct} onClick={() => setShowAddModal(false)} className="px-5 py-2.5 text-slate-600 font-bold hover:bg-slate-100 rounded-xl transition-colors cursor-pointer disabled:opacity-50">إلغاء</button>
-                <button disabled={isSavingProduct} onClick={handleSaveProduct} className="px-5 py-2.5 bg-primary text-white font-bold rounded-xl hover:bg-primary-dark transition-colors flex items-center gap-2 cursor-pointer disabled:opacity-50">
-                  {isSavingProduct ? 'جاري الحفظ والتسجيل...' : 'حفظ المنتج'}
-                </button>
-              </div>
+            </div>
+
+            {/* Modal Footer (Always Visible) */}
+            <div className="p-3.5 px-5 border-t border-slate-100 flex justify-end gap-3 bg-slate-50 shrink-0">
+              <button 
+                type="button"
+                disabled={isSavingProduct} 
+                onClick={() => setShowAddModal(false)} 
+                className="px-5 py-2.5 text-slate-600 font-bold hover:bg-slate-200 rounded-xl transition-colors cursor-pointer disabled:opacity-50 text-xs sm:text-sm"
+              >
+                إلغاء
+              </button>
+              <button 
+                type="button"
+                disabled={isSavingProduct} 
+                onClick={handleSaveProduct} 
+                className="px-6 py-2.5 bg-primary text-white font-bold rounded-xl hover:bg-primary-dark transition-colors flex items-center gap-2 cursor-pointer disabled:opacity-50 shadow-sm active:scale-95 text-xs sm:text-sm"
+              >
+                {isSavingProduct ? 'جاري الحفظ والتسجيل...' : (editingProductId ? 'تحديث المنتج' : 'حفظ المنتج')}
+              </button>
             </div>
           </div>
         </div>
