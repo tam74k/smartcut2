@@ -255,9 +255,12 @@ export interface WorkShift {
   closedAt?: string; // ISO String
   openedByUserId?: string;
   openedByUserName?: string;
+  openedByName?: string;
   openedByRole?: string;
   closedByUserId?: string;
   closedByUserName?: string;
+  closedByName?: string;
+  closedByRole?: string;
   initialCash: number; // العهدة الافتتاحية
   expectedCash?: number; // الكاش المتوقع في الدرج عند الإغلاق
   actualCash?: number; // الكاش الفعلي المعدود في الدرج

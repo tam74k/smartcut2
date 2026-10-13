@@ -1896,10 +1896,24 @@ export default function App() {
 
   const handleOpenShift = async () => {
     if (checkReadOnlyAndWarn()) return;
-    if (shiftData.isOpen) {
-      alert('⚠️ هناك وردية مفتوحة بالفعل لهذا الصالون!');
+    if (shiftData.isOpen || Object.values(branchShifts).some((s: any) => s && s.isOpen)) {
+      alert('⚠️ لا يمكن فتح وردية جديدة: توجد وردية أخرى مفتوحة بالفعل لهذا الصالون! يرجى إغلاق الوردية الحالية أولاً.');
       return;
     }
+
+    // التحقق الصارم من قاعدة البيانات لمنع فتح أكثر من وردية لنفس الصالون عبر الأجهزة
+    try {
+      const activeDbShift = await DB.getActiveWorkShift(settings.salonId);
+      if (activeDbShift && (activeDbShift.status === 'open' || !activeDbShift.closedAt)) {
+        applyActiveWorkShift(activeDbShift, activeBranchId);
+        alert(`⚠️ لا يمكن فتح وردية جديدة: توجد وردية أخرى مفتوحة بالفعل لهذا الصالون في قاعدة البيانات (كود الوردية: ${activeDbShift.shiftCode || activeDbShift.id}). يرجى إغلاقها أولاً.`);
+        setShowOpenModal(false);
+        return;
+      }
+    } catch (e) {
+      console.warn('Error verifying active shift in DB:', e);
+    }
+
     const activeBranch = branches.find(b => b.id === activeBranchId) || branches[0];
     const shiftId = 'SHIFT-' + Math.random().toString(36).substr(2, 9).toUpperCase();
     const nowIso = new Date().toISOString();
@@ -1948,6 +1962,7 @@ export default function App() {
       openedAt: nowIso,
       openedByUserId: currentUser?.id,
       openedByUserName: currentUser?.name || 'الكاشير',
+      openedByName: currentUser?.name || 'الكاشير',
       openedByRole: currentUser?.role || 'cashier',
       initialCash: Number(openShiftForm.initialCash) || 0,
       status: 'open',
@@ -1967,7 +1982,10 @@ export default function App() {
       shiftId, 
       shiftCode, 
       openedAt: nowIso, 
-      openedByUserName: currentUser?.name || 'الكاشير' 
+      openedByUserId: currentUser?.id,
+      openedByUserName: currentUser?.name || 'الكاشير',
+      openedByName: currentUser?.name || 'الكاشير',
+      openedByRole: currentUser?.role || 'cashier'
     });
     setShowOpenModal(false);
   };
@@ -2219,17 +2237,22 @@ export default function App() {
         .filter(t => t.type === 'in' && t.treasury === mainTreasury.id && t.category === 'transfer')
         .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
 
-      const closedShift: Partial<WorkShift> = {
+      const closedShift: Partial<WorkShift> & Record<string, any> = {
         id: currentShiftId,
         shiftCode: currentShiftCode,
         salonId: settings.salonId,
         branchId: activeBranchId,
         shiftDate: currentShiftDate,
-        openedAt: (shiftData as any)?.openedAt,
-        openedByUserName: (shiftData as any)?.openedByUserName,
+        openedAt: (shiftData as any)?.openedAt || now,
+        openedByUserId: (shiftData as any)?.openedByUserId || currentUser?.id,
+        openedByUserName: (shiftData as any)?.openedByUserName || currentUser?.name || 'الكاشير',
+        openedByName: (shiftData as any)?.openedByName || (shiftData as any)?.openedByUserName || currentUser?.name || 'الكاشير',
+        openedByRole: (shiftData as any)?.openedByRole || currentUser?.role || 'cashier',
         closedAt: now,
         closedByUserId: currentUser?.id,
         closedByUserName: currentUser?.name || 'الكاشير',
+        closedByName: currentUser?.name || 'الكاشير',
+        closedByRole: currentUser?.role || 'cashier',
         initialCash: Number(shiftData.initialCash) || 0,
         expectedCash,
         actualCash: actualCashNum,
@@ -2246,6 +2269,7 @@ export default function App() {
 
       // Persist closed shift in DB & mark all open shifts for this salon as closed
       await DB.saveWorkShift(closedShift);
+      await DB.closeAllActiveShifts(settings.salonId, activeBranchId, now, currentUser?.id, currentUser?.name);
       
       // تصفير عداد الأدوار للوردية القادمة ليبدأ من 1
       QueueService.resetShiftQueue(settings.salonId, activeBranchId, currentShiftDate);
@@ -2265,30 +2289,11 @@ export default function App() {
         localStorage.setItem('smartcut_last_closed_shift', JSON.stringify(lastClosedShiftRef.current));
       } catch (e) {}
 
+      // فتح نافذة طباعة تقرير الإغلاق فوراً ومع الإغلاق تلقائياً
+      handlePrintClosingShiftReport(settings.paperSize || '80mm');
+
       setShowCloseModal(false);
       setCloseShiftActualCash('');
-
-      const diffMsg = Math.abs(cashDifference) < 0.01 
-        ? 'الكاش مطابق تماماً ✓' 
-        : cashDifference < 0 
-          ? `يوجد عجز نقدي بقيمة ${Math.abs(cashDifference)} ${settings.currency}` 
-          : `توجد زيادة نقدية بقيمة ${cashDifference} ${settings.currency}`;
-
-      const openNext = window.confirm(
-        `✅ تم إغلاق وردية الكاشير (${currentUser?.name || ''}) بنجاح!\n` +
-        `• كود الوردية: ${currentShiftCode || currentShiftId}\n` +
-        `• الكاش الفعلي: ${actualCashNum} ${settings.currency} (${diffMsg})\n` +
-        `• المبالغ المحولة للخزينة الرئيسية: ${totalTransferredToMain} ${settings.currency}\n\n` +
-        `هل ترغب في فتح وردية الكاشير التالي الآن؟`
-      );
-
-      if (openNext) {
-        setOpenShiftForm({
-          date: currentShiftDate,
-          initialCash: 0
-        });
-        setShowOpenModal(true);
-      }
     } catch (err: any) {
       console.error('handleConfirmCloseShift error:', err);
       alert('حدث خطأ أثناء إغلاق الوردية: ' + (err.message || 'يرجى المحاولة مرة أخرى'));
@@ -3737,7 +3742,22 @@ export default function App() {
 
               {AuthService.canDo('manage_shifts', currentUser) && (
                 <button 
-                  onClick={() => shiftData.isOpen ? setShowCloseModal(true) : setShowOpenModal(true)}
+                  onClick={async () => {
+                    if (shiftData.isOpen || Object.values(branchShifts).some((s: any) => s && s.isOpen)) {
+                      setShowCloseModal(true);
+                      return;
+                    }
+                    try {
+                      const activeDbShift = await DB.getActiveWorkShift(settings.salonId);
+                      if (activeDbShift && (activeDbShift.status === 'open' || !activeDbShift.closedAt)) {
+                        applyActiveWorkShift(activeDbShift, activeBranchId);
+                        alert(`⚠️ توجد وردية مفتوحة بالفعل لهذا الصالون (كود الوردية: ${activeDbShift.shiftCode || activeDbShift.id}). يرجى إغلاقها أولاً قبل فتح وردية جديدة.`);
+                        setShowCloseModal(true);
+                        return;
+                      }
+                    } catch (e) {}
+                    setShowOpenModal(true);
+                  }}
                   className={`px-3 py-1.5 rounded-xl font-extrabold text-xs shadow-xs transition-all active:scale-95 cursor-pointer ${
                     shiftData.isOpen ? 'bg-slate-800 hover:bg-slate-900 text-white' : 'bg-emerald-600 hover:bg-emerald-700 text-white'
                   }`}
@@ -3819,9 +3839,11 @@ export default function App() {
       {showCloseModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md my-8 overflow-hidden">
-            <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-              <h3 className="font-extrabold text-base text-slate-800">إغلاق الوردية الحالية (Z-Report)</h3>
-              <button onClick={() => setShowCloseModal(false)} className="text-slate-400 hover:text-red-500 font-bold">✕</button>
+            <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+              <div>
+                <h3 className="font-extrabold text-base text-slate-800">إغلاق الوردية الحالية (Z-Report)</h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">مراجعة أرقام الوردية ومطابقة النقدية بالدرج قبل الإغلاق</p>
+              </div>
             </div>
             <div className="p-4 overflow-hidden flex justify-center bg-slate-100 max-h-[60vh] overflow-y-auto">
               <div id="shift-closing-report-receipt-container" className="bg-white shadow-sm p-4 w-full rounded-2xl">
@@ -3900,30 +3922,26 @@ export default function App() {
                 )}
               </div>
 
-              <div className="flex items-center gap-2">
+              {/* أزرار الإجراءات: زر تراجع وزر إغلاق فقط */}
+              <div className="flex items-center gap-3 pt-2">
                 <button 
-                  onClick={() => handlePrintClosingShiftReport(settings.paperSize || '80mm')}
-                  className="flex-1 bg-slate-900 hover:bg-slate-800 text-white font-extrabold py-3 rounded-xl transition-all flex items-center justify-center gap-2 text-xs shadow active:scale-[0.99] cursor-pointer"
-                  title="طباعة إيصال التقرير لطابعة الإيصالات الحرارية (80mm / 58mm)"
+                  type="button"
+                  onClick={() => {
+                    setShowCloseModal(false);
+                    setCloseShiftActualCash('');
+                  }}
+                  className="flex-1 bg-white hover:bg-slate-100 text-slate-700 font-extrabold py-3 rounded-xl transition-all text-xs border border-slate-300 shadow-xs cursor-pointer active:scale-[0.99] text-center"
                 >
-                  <Printer size={16} className="text-emerald-400" />
-                  <span>طباعة تقرير الوردية الحراري</span>
+                  تراجع
                 </button>
                 <button 
-                  onClick={() => handlePrintClosingShiftReport('a4')}
-                  className="bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 font-extrabold py-3 px-3 rounded-xl transition-all flex items-center justify-center gap-1 text-xs shadow-xs active:scale-[0.99] cursor-pointer whitespace-nowrap"
-                  title="طباعة التقرير على ورق A4 عادي"
+                  type="button"
+                  onClick={handleConfirmCloseShift}
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white font-extrabold py-3 rounded-xl transition-all text-xs shadow-md cursor-pointer active:scale-[0.99] text-center flex items-center justify-center gap-1.5"
                 >
-                  <FileText size={15} className="text-slate-500" />
-                  <span>A4</span>
+                  إغلاق الوردية
                 </button>
               </div>
-              <button 
-                onClick={handleConfirmCloseShift}
-                className="w-full bg-red-600 hover:bg-red-700 text-white font-extrabold py-3 rounded-xl transition-all text-xs shadow cursor-pointer active:scale-[0.99]"
-              >
-                تأكيد إغلاق الوردية وتصفير الخزائن
-              </button>
             </div>
           </div>
         </div>

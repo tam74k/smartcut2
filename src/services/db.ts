@@ -221,9 +221,12 @@ export async function ensureCoreSchema(): Promise<void> {
       ensureColumn('work_shifts', 'closed_at', 'TIMESTAMPTZ'),
       ensureColumn('work_shifts', 'opened_by_user_id', 'VARCHAR(100)'),
       ensureColumn('work_shifts', 'opened_by_user_name', 'VARCHAR(255)'),
+      ensureColumn('work_shifts', 'opened_by_name', 'VARCHAR(255)'),
       ensureColumn('work_shifts', 'opened_by_role', 'VARCHAR(100)'),
       ensureColumn('work_shifts', 'closed_by_user_id', 'VARCHAR(100)'),
       ensureColumn('work_shifts', 'closed_by_user_name', 'VARCHAR(255)'),
+      ensureColumn('work_shifts', 'closed_by_name', 'VARCHAR(255)'),
+      ensureColumn('work_shifts', 'closed_by_role', 'VARCHAR(100)'),
       ensureColumn('work_shifts', 'initial_cash', 'NUMERIC(12,2)'),
       ensureColumn('work_shifts', 'expected_cash', 'NUMERIC(12,2)'),
       ensureColumn('work_shifts', 'actual_cash', 'NUMERIC(12,2)'),
@@ -2957,7 +2960,7 @@ export const DB = {
     }
   },
 
-  async closeAllActiveShifts(salonId: string, branchId?: string, closedAt?: string): Promise<boolean> {
+  async closeAllActiveShifts(salonId: string, branchId?: string, closedAt?: string, closedByUserId?: string, closedByUserName?: string): Promise<boolean> {
     const client = sb();
     if (!client) return false;
     try {
@@ -2974,12 +2977,18 @@ export const DB = {
 
       if (openRows && openRows.length > 0) {
         const openIds = openRows.map((r: any) => r.id);
+        const updatePayload: any = {
+          status: 'closed',
+          closed_at: closeTimestamp
+        };
+        if (closedByUserId) updatePayload.closed_by_user_id = closedByUserId;
+        if (closedByUserName) {
+          updatePayload.closed_by_user_name = closedByUserName;
+          updatePayload.closed_by_name = closedByUserName;
+        }
         const { error } = await client
           .from('work_shifts')
-          .update({
-            status: 'closed',
-            closed_at: closeTimestamp
-          })
+          .update(updatePayload)
           .in('id', openIds);
         if (error) {
           console.error('DB.closeAllActiveShifts error:', error.message);
@@ -3013,14 +3022,19 @@ export const DB = {
 
           if (openRows && openRows.length > 0) {
             const openIds = openRows.map((r: any) => r.id);
+            const closePayload: any = {
+              status: 'closed',
+              closed_at: closeTimestamp,
+              closed_by_user_id: ws.closedByUserId || ws.closed_by_user_id || null,
+              closed_by_user_name: ws.closedByUserName || ws.closed_by_user_name || ws.closedByName || ws.closed_by_name || null,
+              closed_by_name: ws.closedByUserName || ws.closed_by_user_name || ws.closedByName || ws.closed_by_name || null
+            };
+            if (ws.closedByRole || ws.closed_by_role) {
+              closePayload.closed_by_role = ws.closedByRole || ws.closed_by_role;
+            }
             await client
               .from('work_shifts')
-              .update({
-                status: 'closed',
-                closed_at: closeTimestamp,
-                closed_by_user_id: ws.closedByUserId || null,
-                closed_by_user_name: ws.closedByUserName || null
-              })
+              .update(closePayload)
               .in('id', openIds);
           }
         } catch (closeErr) {
@@ -3036,11 +3050,14 @@ export const DB = {
         shift_code: ws.shiftCode || null,
         ...(ws.openedAt ? { opened_at: ws.openedAt } : (ws.status === 'open' ? { opened_at: new Date().toISOString() } : {})),
         closed_at: ws.closedAt || (isClosed ? (ws.closedAt || new Date().toISOString()) : null),
-        opened_by_user_id: ws.openedByUserId || null,
-        opened_by_user_name: ws.openedByUserName || null,
-        opened_by_role: ws.openedByRole || null,
-        closed_by_user_id: ws.closedByUserId || null,
-        closed_by_user_name: ws.closedByUserName || null,
+        opened_by_user_id: ws.openedByUserId || ws.opened_by_user_id || null,
+        opened_by_user_name: ws.openedByUserName || ws.opened_by_user_name || ws.openedByName || ws.opened_by_name || null,
+        opened_by_name: ws.openedByUserName || ws.opened_by_user_name || ws.openedByName || ws.opened_by_name || null,
+        opened_by_role: ws.openedByRole || ws.opened_by_role || null,
+        closed_by_user_id: ws.closedByUserId || ws.closed_by_user_id || null,
+        closed_by_user_name: ws.closedByUserName || ws.closed_by_user_name || ws.closedByName || ws.closed_by_name || null,
+        closed_by_name: ws.closedByUserName || ws.closed_by_user_name || ws.closedByName || ws.closed_by_name || null,
+        closed_by_role: ws.closedByRole || ws.closed_by_role || null,
         initial_cash: Number(ws.initialCash) || 0,
         expected_cash: ws.expectedCash !== undefined ? Number(ws.expectedCash) : null,
         actual_cash: ws.actualCash !== undefined ? Number(ws.actualCash) : null,

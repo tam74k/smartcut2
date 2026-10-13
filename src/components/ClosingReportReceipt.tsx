@@ -304,47 +304,47 @@ export function ClosingReportReceipt({
             </span>
           </div>
         )}
-        <p className="text-xs mt-1 font-bold">تاريخ: {dateLabel}</p>
+        <p className="text-xs mt-1 font-bold text-black">تاريخ: {dateLabel}</p>
         {openedByUserName && (
-          <p className="text-xs text-gray-800">
+          <p className="text-xs text-black font-semibold">
             فتح الوردية: {openedByUserName} {openedAt ? `(${new Date(openedAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })})` : ''}
           </p>
         )}
-        <p className="text-xs text-gray-800">
+        <p className="text-xs text-black font-semibold">
           إغلاق الوردية: {closedByUserName || effectiveUserName} {closedAt ? `(${new Date(closedAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })})` : ''}
         </p>
       </div>
 
       <div className="mb-4">
         {/* إحصائيات الفواتير */}
-        <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold">
+        <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold text-black">
           <span>عدد الفواتير:</span>
           <span className="font-mono">{invoiceCount}</span>
         </div>
-        <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold">
+        <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold text-black">
           <span>إجمالي مبيعات الفواتير:</span>
           <span className="font-mono">{totalInvoicesSales.toFixed(2)}</span>
         </div>
 
         {/* إحصائيات مقدمات الحجوزات */}
-        <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold text-emerald-900">
+        <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold text-black">
           <span>عدد مقدمات الحجوزات:</span>
           <span className="font-mono">{totalAdvancesCount}</span>
         </div>
-        <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold text-emerald-900">
+        <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold text-black">
           <span>إجمالي مقدمات الحجوزات:</span>
           <span className="font-mono">{totalAdvancesAmount.toFixed(2)}</span>
         </div>
 
         {/* توزيع مقدمات الحجوزات حسب طريقة الدفع */}
         {advancesByPaymentMethod.length > 0 && (
-          <div className="my-2 p-2 bg-slate-50 border border-slate-300 rounded text-xs">
-            <div className="font-extrabold text-slate-800 mb-1 border-b border-slate-200 pb-1 flex justify-between">
+          <div className="my-2 p-2 bg-slate-50 border border-slate-300 rounded text-xs text-black">
+            <div className="font-extrabold text-black mb-1 border-b border-slate-200 pb-1 flex justify-between">
               <span>توزيع المقدمات حسب طريقة الدفع:</span>
-              <span className="text-[10px] text-slate-500 font-normal">({totalAdvancesCount} حجز)</span>
+              <span className="text-[10px] text-black font-bold">({totalAdvancesCount} حجز)</span>
             </div>
             {advancesByPaymentMethod.map((pm, idx) => (
-              <div key={idx} className="flex justify-between py-0.5 text-slate-700">
+              <div key={idx} className="flex justify-between py-0.5 text-black font-medium">
                 <span>• {pm.name} ({pm.count}):</span>
                 <span className="font-mono font-bold">{pm.amount.toFixed(2)} {settings.currency}</span>
               </div>
@@ -392,28 +392,28 @@ export function ClosingReportReceipt({
                 <span>إجمالي الدخل المحصل:</span>
                 <span className="font-mono">{stats.income.toFixed(2)}</span>
               </div>
-              <div className="flex justify-between text-gray-700 pr-2">
+              <div className="flex justify-between text-black pr-2">
                 <span>- مبيعات الفواتير:</span>
                 <span className="font-mono">{stats.sales.toFixed(2)}</span>
               </div>
               {stats.bookingAdvances > 0 && (
-                <div className="flex justify-between font-bold text-emerald-800 pr-2 bg-emerald-50 py-0.5 rounded">
+                <div className="flex justify-between font-bold text-black pr-2 bg-emerald-50 py-0.5 rounded">
                   <span>- مقدمات وعربون الحجوزات:</span>
                   <span className="font-mono">{stats.bookingAdvances.toFixed(2)}</span>
                 </div>
               )}
 
-              <div className="flex justify-between mt-1"><span>مبالغ الإضافة (بدون تحويل):</span><span className="font-mono">{stats.deposits.toFixed(2)}</span></div>
-              <div className="flex justify-between"><span>مبالغ الإضافة بالتحويل:</span><span className="font-mono">{stats.transfersIn.toFixed(2)}</span></div>
+              <div className="flex justify-between mt-1 text-black"><span>مبالغ الإضافة (بدون تحويل):</span><span className="font-mono">{stats.deposits.toFixed(2)}</span></div>
+              <div className="flex justify-between text-black"><span>مبالغ الإضافة بالتحويل:</span><span className="font-mono">{stats.transfersIn.toFixed(2)}</span></div>
               
-              <div className="flex justify-between mt-1 text-gray-700"><span>إجمالي المصروفات:</span><span className="font-mono">{stats.expenses.toFixed(2)}</span></div>
-              <div className="flex justify-between text-gray-700"><span>إجمالي رواتب:</span><span className="font-mono">{stats.salaries.toFixed(2)}</span></div>
-              <div className="flex justify-between text-gray-700"><span>إجمالي سلف:</span><span className="font-mono">{stats.advances.toFixed(2)}</span></div>
-              <div className="flex justify-between text-gray-700"><span>إجمالي مشتروات:</span><span className="font-mono">{stats.purchases.toFixed(2)}</span></div>
-              <div className="flex justify-between text-gray-700"><span>دفعات وسداد موردين:</span><span className="font-mono">{stats.supplierPayments.toFixed(2)}</span></div>
-              <div className="flex justify-between text-gray-700"><span>نسب الموظفين (العمولات):</span><span className="font-mono">{stats.commissions.toFixed(2)}</span></div>
-              <div className="flex justify-between text-gray-700"><span>مبالغ السحب (بدون تحويل):</span><span className="font-mono">{stats.withdrawals.toFixed(2)}</span></div>
-              <div className="flex justify-between text-gray-700"><span>مبالغ السحب بالتحويل:</span><span className="font-mono">{stats.transfersOut.toFixed(2)}</span></div>
+              <div className="flex justify-between mt-1 text-black"><span>إجمالي المصروفات:</span><span className="font-mono">{stats.expenses.toFixed(2)}</span></div>
+              <div className="flex justify-between text-black"><span>إجمالي رواتب:</span><span className="font-mono">{stats.salaries.toFixed(2)}</span></div>
+              <div className="flex justify-between text-black"><span>إجمالي سلف:</span><span className="font-mono">{stats.advances.toFixed(2)}</span></div>
+              <div className="flex justify-between text-black"><span>إجمالي مشتروات:</span><span className="font-mono">{stats.purchases.toFixed(2)}</span></div>
+              <div className="flex justify-between text-black"><span>دفعات وسداد موردين:</span><span className="font-mono">{stats.supplierPayments.toFixed(2)}</span></div>
+              <div className="flex justify-between text-black"><span>نسب الموظفين (العمولات):</span><span className="font-mono">{stats.commissions.toFixed(2)}</span></div>
+              <div className="flex justify-between text-black"><span>مبالغ السحب (بدون تحويل):</span><span className="font-mono">{stats.withdrawals.toFixed(2)}</span></div>
+              <div className="flex justify-between text-black"><span>مبالغ السحب بالتحويل:</span><span className="font-mono">{stats.transfersOut.toFixed(2)}</span></div>
               
               <div className="flex justify-between font-bold border-t border-black border-dashed pt-1 mt-1 text-sm">
                 <span>الصافي:</span>
@@ -482,13 +482,13 @@ export function ClosingReportReceipt({
       <div className="grid grid-cols-2 gap-2 mt-5 pt-3 border-t border-black border-dashed text-[11px] text-center">
         <div>
           <p className="font-bold">مسلّم الوردية</p>
-          <p className="text-[10px] text-gray-600 mt-0.5">({closedByUserName || effectiveUserName})</p>
-          <div className="h-7 border-b border-gray-400 mt-1"></div>
+          <p className="text-[10px] text-black font-semibold mt-0.5">({closedByUserName || effectiveUserName})</p>
+          <div className="h-7 border-b border-black mt-1"></div>
         </div>
         <div>
           <p className="font-bold">مستلم الوردية</p>
-          <p className="text-[10px] text-gray-600 mt-0.5">(الكاشير المستلم)</p>
-          <div className="h-7 border-b border-gray-400 mt-1"></div>
+          <p className="text-[10px] text-black font-semibold mt-0.5">(الكاشير المستلم)</p>
+          <div className="h-7 border-b border-black mt-1"></div>
         </div>
       </div>
 
