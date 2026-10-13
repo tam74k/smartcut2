@@ -7,7 +7,7 @@ COPY . .
 RUN npm run build
 
 # مرحلة التشغيل (Nginx)
-FROM nginx:alpine
+FROM nginx:1.31.3-alpine3.24-slim
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
