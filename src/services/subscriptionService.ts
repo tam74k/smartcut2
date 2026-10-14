@@ -159,7 +159,7 @@ export const SubscriptionService = {
       currency: countryMeta.currency,
       isActive: true,
       subscriptionStatus: 'trial',
-      subscriptionPlan: 'pro',
+      subscriptionPlan: 'growth',
       subscriptionStartDate: startDate,
       subscriptionEndDate: endDate,
       trialDays: trialDays,
@@ -286,7 +286,7 @@ export const SubscriptionService = {
       // 4. Record new subscription / trial row in tenant_subscriptions
       await DB.recordTenantSubscription({
         salonId: salonId,
-        planId: newSalon.subscriptionPlan || 'pro',
+        planId: newSalon.subscriptionPlan || 'growth',
         status: newSalon.subscriptionStatus || 'trial',
         startDate: startDate,
         endDate: endDate,
@@ -726,7 +726,7 @@ export const SubscriptionService = {
     // 1. Record in Supabase tenant_subscriptions table!
     DB.recordTenantSubscription({
       salonId: salon.id,
-      planId: salon.subscriptionPlan || 'pro',
+      planId: salon.subscriptionPlan || 'growth',
       status: 'active',
       startDate: startDateStr,
       endDate: endDateStr,

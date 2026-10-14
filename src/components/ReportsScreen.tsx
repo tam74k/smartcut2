@@ -1144,7 +1144,7 @@ export function ReportsScreen({
       return tDateStr >= activeFrom && tDateStr <= activeTo;
     });
     const totalTips = filteredTips.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
-    const instantCashTips = filteredTips.filter(t => (t.payoutMethod === 'instant_cash' || (!t.payoutMethod && t.status === 'paid_out'))).reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+    const instantCashTips = filteredTips.filter(t => t.employeeId !== 'unspecified' && (t.payoutMethod === 'instant_cash' || (!t.payoutMethod && t.status === 'paid_out'))).reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
     const pendingTips = filteredTips.filter(t => t.status === 'pending_payout').reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
     const deferredPaidTips = filteredTips.filter(t => t.payoutMethod === 'pooled_deferred' && t.status === 'paid_out').reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
 
@@ -3973,8 +3973,12 @@ function ReportTable({
                     <td className="py-3 px-4 font-mono font-bold text-slate-700">{tip.invoiceId}</td>
                     <td className="py-3 px-4 font-bold text-slate-900">{tip.clientName || 'عميل نقدي'}</td>
                     <td className="py-3 px-4">
-                      <span className="bg-purple-50 text-purple-700 px-2.5 py-1 rounded-lg font-extrabold border border-purple-200 inline-flex items-center gap-1">
-                        👤 {tip.employeeName}
+                      <span className={`${
+                        tip.employeeId === 'unspecified' 
+                          ? 'bg-purple-100 text-purple-800 border-purple-300' 
+                          : 'bg-purple-50 text-purple-700 border-purple-200'
+                      } px-2.5 py-1 rounded-lg font-extrabold border inline-flex items-center gap-1`}>
+                        {tip.employeeId === 'unspecified' ? '✨' : '👤'} {tip.employeeName}
                       </span>
                     </td>
                     <td className="py-3 px-4 font-semibold text-slate-600">
@@ -3986,7 +3990,12 @@ function ReportTable({
                       +{Number(tip.amount || 0).toFixed(2)} <span className="text-[10px] font-bold text-slate-400">{settings.currency}</span>
                     </td>
                     <td className="py-3 px-4 text-center">
-                      {tip.status === 'paid_out' ? (
+                      {tip.employeeId === 'unspecified' ? (
+                        <span className="bg-purple-100 text-purple-800 border border-purple-300 text-[10px] font-black px-2.5 py-1 rounded-lg inline-flex items-center gap-1">
+                          <CheckCircle2 size={11} />
+                          <span>إيراد عام للصالون ✨</span>
+                        </span>
+                      ) : tip.status === 'paid_out' ? (
                         <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-black px-2.5 py-1 rounded-lg inline-flex items-center gap-1">
                           <CheckCircle2 size={11} />
                           <span>{tip.payoutMethod === 'instant_cash' ? 'صُرف فوراً كاش 🟢' : 'تم الصرف لاحقاً 🔵'}</span>

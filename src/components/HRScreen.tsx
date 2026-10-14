@@ -1325,6 +1325,109 @@ export function HRScreen({
       });
     });
 
+    // =========================================================================
+    // التوزيع العادل والذكي لصرف العمولات (Commission Payouts Allocation Engine)
+    // =========================================================================
+    // إذا تم صرف عمولة للموظف بتاريخ لاحق أو من زر "صرف عمولة" العام، يتم توزيعها
+    // آلياً على الأيام التي حقق فيها الموظف تلك العمولات (FIFO) لتظهر كمسددة
+    // وتنعكس بدقة في عمود العمولات المصروفة وتختفي أزرار الصرف من الأيام المسددة.
+    targetEmployees.forEach(emp => {
+      const empRows = rows.filter(r => r.employee.id === emp.id);
+      if (empRows.length === 0) return;
+
+      const empPayouts = (emp.financialRecords || []).filter(r => r.type === 'commission_payout');
+      if (empPayouts.length === 0) return;
+
+      const activeMonthStr = selectedMonth || (empRows[0]?.dateStr?.substring(0, 7) || '');
+
+      // تصفية سندات الصرف التي تخص هذا الشهر أو الفترة المعروضة
+      const relevantPayouts = empPayouts.filter(p => {
+        if ((p as any).targetMonth && activeMonthStr) return (p as any).targetMonth === activeMonthStr;
+        if ((p as any).targetDate) return empRows.some(r => r.dateStr === (p as any).targetDate);
+        if (p.date) {
+          const pDateStr = p.date.split('T')[0];
+          if (activeMonthStr && pDateStr.startsWith(activeMonthStr)) return true;
+          if (empRows.some(r => r.dateStr === pDateStr)) return true;
+        }
+        return false;
+      });
+
+      if (relevantPayouts.length === 0) return;
+
+      // تصفير commissionPaid لجميع أيام هذا الموظف لإعادة التوزيع بدقة
+      empRows.forEach(r => {
+        r.commissionPaid = 0;
+      });
+
+      // 1. تخصيص السندات التي تم ربطها بيوم محدد صراحة (Target Date)
+      let generalPool = 0;
+      relevantPayouts.forEach(p => {
+        const pAmt = Number(p.amount) || 0;
+        if (pAmt <= 0) return;
+
+        const tDate = (p as any).targetDate;
+        const matchedRow = tDate ? empRows.find(r => r.dateStr === tDate) : null;
+        if (matchedRow) {
+          matchedRow.commissionPaid += pAmt;
+        } else {
+          generalPool += pAmt;
+        }
+      });
+
+      // 2. توزيع المبالغ العامة (General Payouts) بالتسلسل الزمني (FIFO) على الأيام التي بها عمولة مستحقة
+      empRows.forEach(r => {
+        const totalComm = Number(r.commissionAmount || 0) + Number(r.dailyTargetCommission || 0);
+        const needed = Math.max(0, totalComm - r.commissionPaid);
+        if (needed > 0 && generalPool > 0) {
+          const alloc = Math.min(needed, generalPool);
+          r.commissionPaid += alloc;
+          generalPool -= alloc;
+        }
+      });
+
+      // 3. في حال وجود فائض مدفوع (سلفة عمولة مثلاً)، يوضع في يوم الصرف الفعلي
+      if (generalPool > 0) {
+        relevantPayouts.forEach(p => {
+          if (generalPool <= 0) return;
+          const pDate = p.date ? p.date.split('T')[0] : '';
+          const targetRow = empRows.find(r => r.dateStr === pDate && !(p as any).targetDate);
+          if (targetRow) {
+            const extra = Math.min(Number(p.amount) || 0, generalPool);
+            targetRow.commissionPaid += extra;
+            generalPool -= extra;
+          }
+        });
+      }
+
+      // 4. إعادة احتساب الصافي اليومي (netDaily) بناءً على العمولة المصروفة المعتمدة لكل يوم
+      const isWeeklyOffPaid = hrConfig.weeklyOffPaidType ? (hrConfig.weeklyOffPaidType === 'paid') : (hrConfig.isWeeklyOffPaid ?? true);
+      empRows.forEach(r => {
+        const totalComm = Number(r.commissionAmount || 0) + Number(r.dailyTargetCommission || 0);
+        const isTerminated = r.status === 'terminated';
+        let earnedDaily = r.dailyRate;
+        if (r.status === 'unpaid_leave' || r.status === 'terminated' || (r.status === 'weekly_off' && !isWeeklyOffPaid)) {
+          earnedDaily = 0;
+        }
+
+        if (r.status === 'absent') {
+          const baseAbsentNet = r.dailyRate - r.absenceDeduction;
+          r.netDaily = Math.min(0, baseAbsentNet - r.advances - r.specialPenalty - r.commissionPaid);
+        } else {
+          r.netDaily = isTerminated ? 0 : (
+            earnedDaily +
+            r.overtimeAmount +
+            r.bonuses +
+            totalComm -
+            r.delayDeduction -
+            (r.permissionDeduction || 0) -
+            r.specialPenalty -
+            r.advances -
+            r.absenceDeduction -
+            r.commissionPaid
+          );
+        }
+      });
+    });
 
     return rows;
   }, [activeEmployees, selectedEmpId, viewMode, dateRangeList, selectedMonth, overrides, invoices, hrConfig, effectiveFingerprintLogs]);
@@ -1733,20 +1836,25 @@ export function HRScreen({
   const [commEmpId, setCommEmpId] = useState('');
   const [commAmount, setCommAmount] = useState<number | ''>('');
   const [commDate, setCommDate] = useState(() => getEffectiveDateOnly(shiftData, activeBranchId || settings.branchId));
+  const [commTargetDate, setCommTargetDate] = useState('');
+  const [commTargetMonth, setCommTargetMonth] = useState('');
   const [commTreasuryId, setCommTreasuryId] = useState(settings.treasuries[0]?.id || '');
   const [commNote, setCommNote] = useState('صرف عمولة مستحقة');
   const [isSavingCommissionPayout, setIsSavingCommissionPayout] = useState(false);
 
-  const handleOpenCommissionModal = (targetEmpId?: string, defaultAmount?: number) => {
+  const handleOpenCommissionModal = (targetEmpId?: string, defaultAmount?: number, targetDate?: string) => {
     if (!canDisburseCommissions) {
       alert('عذراً، ليس لديك صلاحية صرف العمولات.');
       return;
     }
     const defaultEmpId = targetEmpId || (viewMode === 'single_employee' && selectedEmpId) || activeEmployees[0]?.id || '';
     setCommEmpId(defaultEmpId);
-    setCommDate(getEffectiveDateOnly(shiftData, activeBranchId || settings.branchId));
+    const effectiveDate = targetDate || getEffectiveDateOnly(shiftData, activeBranchId || settings.branchId);
+    setCommDate(effectiveDate);
+    setCommTargetDate(targetDate || '');
+    setCommTargetMonth(selectedMonth || effectiveDate.substring(0, 7));
     setCommTreasuryId(settings.treasuries[0]?.id || '');
-    setCommNote('صرف عمولة مستحقة');
+    setCommNote(targetDate ? `صرف عمولة مستحقة عن يوم ${targetDate}` : 'صرف عمولة مستحقة');
     setCommAmount(defaultAmount !== undefined && defaultAmount > 0 ? defaultAmount : '');
     setShowCommissionModal(true);
   };
@@ -1798,10 +1906,8 @@ export function HRScreen({
   const commStats = useMemo(() => {
     if (!selectedCommEmp) return { earnedCommissions: 0, paidCommissions: 0, unpaidCommissions: 0 };
     const empRows = timesheetRows.filter(r => r.employee.id === selectedCommEmp.id);
-    const earned = empRows.reduce((sum, r) => sum + r.commissionAmount, 0);
-    const paid = (selectedCommEmp.financialRecords || [])
-      .filter(r => r.type === 'commission_payout')
-      .reduce((sum, r) => sum + (r.amount || 0), 0);
+    const earned = empRows.reduce((sum, r) => sum + (r.commissionAmount || 0) + (r.dailyTargetCommission || 0), 0);
+    const paid = empRows.reduce((sum, r) => sum + (r.commissionPaid || 0), 0);
     const unpaid = Math.max(0, earned - paid);
     return { earnedCommissions: earned, paidCommissions: paid, unpaidCommissions: unpaid };
   }, [selectedCommEmp, timesheetRows]);
@@ -1879,6 +1985,8 @@ export function HRScreen({
         type: 'commission_payout',
         amount: amountVal,
         treasuryId: commTreasuryId,
+        targetDate: commTargetDate || undefined,
+        targetMonth: commTargetMonth || selectedMonth || commDate.substring(0, 7),
         note: commNote || `صرف عمولة للموظف (${targetEmp.name})`
       };
 
@@ -2682,6 +2790,16 @@ export function HRScreen({
 
     const paidCommissions = (targetEmp.financialRecords || [])
       .filter(r => r.type === 'commission_payout')
+      .filter(r => {
+        const rDate = (r.targetDate || r.date || '').split('T')[0].split(' ')[0];
+        if (rDate && rDate >= commStartDate && rDate <= commEndDate) return true;
+        if (r.targetMonth) {
+          const startMonth = commStartDate.substring(0, 7);
+          const endMonth = commEndDate.substring(0, 7);
+          if (r.targetMonth >= startMonth && r.targetMonth <= endMonth) return true;
+        }
+        return false;
+      })
       .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
 
     const unpaidCommissions = Math.max(0, totalEarnedCommission - paidCommissions);
@@ -3884,14 +4002,20 @@ export function HRScreen({
                             type="button"
                             onClick={() => handleOpenCommissionModal(
                               row.employee.id, 
-                              Math.max(0, Number(row.commissionAmount || 0) + Number(row.dailyTargetCommission || 0) - Number(row.commissionPaid || 0))
+                              Math.max(0, Number(row.commissionAmount || 0) + Number(row.dailyTargetCommission || 0) - Number(row.commissionPaid || 0)),
+                              row.dateStr
                             )}
                             className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-black bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white shadow-xs transition-all active:scale-95 cursor-pointer"
-                            title={`صرف عمولة ${row.employee.name} فوراً`}
+                            title={`صرف عمولة ${row.employee.name} فوراً عن يوم ${row.dateStr}`}
                           >
                             <Coins size={10} />
                             <span>صرف 💵</span>
                           </button>
+                        )}
+                        {(Number(row.commissionAmount || 0) + Number(row.dailyTargetCommission || 0)) > 0 && (Number(row.commissionPaid || 0) >= (Number(row.commissionAmount || 0) + Number(row.dailyTargetCommission || 0))) && (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            ✓ مسددة
+                          </span>
                         )}
                       </div>
                     </td>
@@ -5542,6 +5666,24 @@ export function HRScreen({
               </div>
 
               {/* Commission Stats Preview for this employee */}
+              {commTargetDate && (
+                <div className="bg-amber-100/70 border border-amber-300 text-amber-900 rounded-xl px-3 py-2 text-xs font-bold flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Calendar size={14} className="text-amber-700" />
+                    <span>مخصصة لعمولة يوم: <span className="font-mono text-amber-950 font-black">{commTargetDate}</span></span>
+                  </div>
+                  <button 
+                    type="button" 
+                    onClick={() => { 
+                      setCommTargetDate(''); 
+                      setCommNote('صرف عمولة مستحقة'); 
+                    }}
+                    className="text-[10px] text-amber-800 hover:text-amber-950 underline cursor-pointer"
+                  >
+                    إلغاء التخصيص ليوم محدد
+                  </button>
+                </div>
+              )}
               {selectedCommEmp && (
                 <div className="bg-amber-50/60 border border-amber-200/80 rounded-2xl p-3 grid grid-cols-3 gap-2 text-center text-xs">
                   <div className="bg-white/80 p-2 rounded-xl border border-amber-100">

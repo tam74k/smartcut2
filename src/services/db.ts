@@ -2467,8 +2467,8 @@ export const DB = {
     const { error } = await client.from('products').upsert({
       id: p.id, salon_id: validSalonId, branch_id: validBranchId,
       category_id: catId, name: p.name,
-      retail_price: p.retailPrice ?? p.sellPrice ?? 0,
-      sell_price: p.sellPrice ?? p.retailPrice ?? 0, cost_price: p.costPrice ?? 0,
+      retail_price: p.retailPrice ?? p.sellPrice ?? p.price ?? 0,
+      sell_price: p.sellPrice ?? p.retailPrice ?? p.price ?? 0, cost_price: p.costPrice ?? 0,
       min_stock_alert: p.minStockAlert ?? p.reorderLimit ?? 5,
       reorder_limit: p.reorderLimit ?? p.minStockAlert ?? 5, opening_stock: p.openingStock ?? 0,
       current_stock: p.currentStock ?? 0, commission: p.commission ?? 0,
@@ -3150,7 +3150,7 @@ export const DB = {
     try {
       const snap: any = {
         id: t.id, salon_id: validSalonId, branch_id: validBranchId,
-        invoice_id: t.invoiceId, client_name: t.clientName || null, employee_id: t.employeeId,
+        invoice_id: t.invoiceId, employee_id: t.employeeId,
         employee_name: t.employeeName, amount: t.amount ?? 0,
         payment_method: t.paymentMethod || 'card', date: t.date || new Date().toISOString(),
         status: t.status || 'pending_payout', paid_out_at: t.paidOutAt || null,
@@ -3247,15 +3247,30 @@ export const DB = {
         employee_name: resolvedEmployeeName,
         fingerprint_code: fpCode,
         timestamp: validTimestamp,
-        log_time: validTimestamp,
         type: type,
         device_ip: fl.deviceIp || fl.device_ip || null,
-        status: fl.status || 'synced',
-        notes: fl.notes || null,
-        source: fl.source || (fl.status === 'manual' ? 'manual' : 'device'),
-        processed_date: computedProcessedDate
+        status: fl.status || (fl.source === 'manual' ? 'manual' : 'synced'),
+        notes: fl.notes || null
       };
-      const { error } = await client.from('fingerprint_logs').upsert(snap, { onConflict: 'id' });
+      let { error } = await client.from('fingerprint_logs').upsert(snap, { onConflict: 'id' });
+      if (error && error.message && (error.message.includes('schema cache') || error.message.includes('column'))) {
+        console.warn('DB.saveFingerprintLog retrying with minimal fields due to schema notice:', error.message);
+        const minimalSnap: any = {
+          id: snap.id,
+          salon_id: snap.salon_id,
+          fingerprint_code: snap.fingerprint_code,
+          timestamp: snap.timestamp,
+          type: snap.type,
+          status: snap.status
+        };
+        if (snap.branch_id) minimalSnap.branch_id = snap.branch_id;
+        if (snap.employee_id) minimalSnap.employee_id = snap.employee_id;
+        if (snap.employee_name) minimalSnap.employee_name = snap.employee_name;
+        const retry = await client.from('fingerprint_logs').upsert(minimalSnap, { onConflict: 'id' });
+        if (!retry.error) {
+          error = null;
+        }
+      }
       if (error) { 
         console.error('DB.saveFingerprintLog error:', error.message); 
         throw error; 
@@ -3267,7 +3282,9 @@ export const DB = {
         employeeId: resolvedEmployeeId,
         employeeName: resolvedEmployeeName,
         processedDate: computedProcessedDate,
-        processed_date: computedProcessedDate
+        processed_date: computedProcessedDate,
+        logTime: validTimestamp,
+        timestamp: validTimestamp
       };
     } catch (e) { 
       console.error('DB.saveFingerprintLog exception:', e); 
@@ -3578,11 +3595,17 @@ export const DB = {
       if (!validSalonId) return false;
       const subId = record.id || ('SUB-' + Math.random().toString(36).substring(2, 9).toUpperCase());
       const nowIso = new Date().toISOString();
+      const validPlans = ['starter', 'growth', 'enterprise'];
+      let targetPlan = (record.planId || 'growth').toLowerCase();
+      if (!validPlans.includes(targetPlan)) {
+        targetPlan = 'growth';
+      }
+
       const snap = {
         id: subId,
         salon_id: validSalonId,
         tenant_id: validSalonId,
-        plan_id: record.planId || 'pro',
+        plan_id: targetPlan,
         status: record.status,
         start_date: record.startDate,
         end_date: record.endDate,
@@ -4384,7 +4407,8 @@ export function dbProductToApp(row: any): any {
     id: c.id || row.id || '',
     name: c.name || row.name || '',
     categoryId: c.categoryId || row.category_id || '',
-    sellPrice: Number(c.sellPrice ?? row.sell_price ?? 0),
+    sellPrice: Number(c.sellPrice ?? row.sell_price ?? row.retail_price ?? 0),
+    price: Number(c.sellPrice ?? row.sell_price ?? row.retail_price ?? 0),
     costPrice: Number(c.costPrice ?? row.cost_price ?? 0),
     reorderLimit: Number(c.reorderLimit ?? row.reorder_limit ?? 5),
     openingStock: Number(c.openingStock ?? row.opening_stock ?? 0),

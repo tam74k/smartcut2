@@ -751,7 +751,7 @@ export default function App() {
             ownerEmail: activeSalon.email,
             phone: activeSalon.phone,
             country: activeSalon.country,
-            plan: activeSalon.subscriptionPlan || 'pro',
+            plan: activeSalon.subscriptionPlan || 'growth',
             status: activeSalon.subscriptionStatus || 'trial',
             isActive: activeSalon.isActive !== false,
             startDate: activeSalon.subscriptionStartDate,
@@ -2631,7 +2631,8 @@ export default function App() {
 
     // 2.b. If tip was paid via non-cash method and branch mode is 'instant_cash', deduct tip immediately from Cash Drawer
     const tipMode = settings.tipPayoutMethod || 'instant_cash';
-    if (invoice.tipAmount && invoice.tipAmount > 0 && tipMode === 'instant_cash') {
+    const isUnspecifiedTip = !invoice.tipEmployeeId || invoice.tipEmployeeId === 'unspecified' || invoice.tipEmployeeName?.includes('غير محدد');
+    if (invoice.tipAmount && invoice.tipAmount > 0 && tipMode === 'instant_cash' && !isUnspecifiedTip) {
       const hasNonCashPayment = effectiveSplits.some(s => s.treasuryId !== 'cash' && !s.treasuryId.includes('cash') && s.treasuryId !== 'cashback');
       if (hasNonCashPayment) {
         const cashTreasuryId = settings.treasuries.find(t => t.id === 'cash' || t.name.includes('كاش') || t.name.includes('نقد'))?.id || 'cash';

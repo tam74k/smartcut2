@@ -198,6 +198,7 @@ export function TipsScreen({
             className="px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
           >
             <option value="all">جميع الموظفين ({employees.length})</option>
+            <option value="unspecified">✨ غير محدد (عامة للصالون)</option>
             {employees.map(e => (
               <option key={e.id} value={e.id}>{e.name}</option>
             ))}
@@ -246,8 +247,10 @@ export function TipsScreen({
                   <tr key={tip.id} className="hover:bg-slate-50/80 transition-colors">
                     <td className="p-3.5 text-slate-500 font-mono text-[11px]">{new Date(tip.date).toLocaleString('ar-EG')}</td>
                     <td className="p-3.5 font-bold text-slate-800 flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold text-xs">
-                        {tip.employeeName?.charAt(0) || 'م'}
+                      <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs ${
+                        tip.employeeId === 'unspecified' ? 'bg-purple-100 text-purple-700' : 'bg-emerald-50 text-emerald-700'
+                      }`}>
+                        {tip.employeeId === 'unspecified' ? '✨' : (tip.employeeName?.charAt(0) || 'م')}
                       </div>
                       <span>{tip.employeeName}</span>
                     </td>
@@ -263,7 +266,12 @@ export function TipsScreen({
                     </td>
 
                     <td className="p-3.5 text-center">
-                      {tip.status === 'paid_out' ? (
+                      {tip.employeeId === 'unspecified' ? (
+                        <span className="px-2.5 py-1 rounded-lg bg-purple-50 text-purple-700 font-bold text-[10px] border border-purple-200 inline-flex items-center gap-1">
+                          <CheckCircle2 size={12} />
+                          <span>إيراد عام للصالون</span>
+                        </span>
+                      ) : tip.status === 'paid_out' ? (
                         <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-bold text-[10px] border border-emerald-100 inline-flex items-center gap-1">
                           <CheckCircle2 size={12} />
                           <span>تم الصرف</span>
@@ -276,7 +284,11 @@ export function TipsScreen({
                       )}
                     </td>
                     <td className="p-3.5 text-left">
-                      {tip.status === 'pending_payout' ? (
+                      {tip.employeeId === 'unspecified' ? (
+                        <span className="text-[11px] text-purple-700 font-bold">
+                          ✨ عامة للصالون (لا تتطلب صرف)
+                        </span>
+                      ) : tip.status === 'pending_payout' ? (
                         <button
                           onClick={() => handleOpenPayout(tip)}
                           className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold transition-all shadow-xs flex items-center gap-1 active:scale-95"

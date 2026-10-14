@@ -425,6 +425,8 @@ export interface EmployeeFinancialRecord {
   note: string;
   payrollPeriod?: { startDate: string; endDate: string; month?: string };
   periodKey?: string;
+  targetDate?: string;
+  targetMonth?: string;
 }
 
 export interface EmployeeLeaveRecord {

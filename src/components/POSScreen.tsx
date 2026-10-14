@@ -1173,7 +1173,10 @@ export function POSScreen({
       splits = Object.entries(splitAmounts).filter(([_, amt]) => Number(amt) > 0).map(([tId, amt]) => ({ amount: Number(amt), treasuryId: tId }));
     }
 
-    const assignedTipEmployee = employees.find(e => e.id === tipEmployeeId) || employees.find(e => e.id === cart[0]?.employeeId) || employees[0];
+    const isUnspecifiedTip = tipEmployeeId === 'unspecified';
+    const assignedTipEmployee = isUnspecifiedTip
+      ? { id: 'unspecified', name: 'غير محدد (عامة للصالون)' }
+      : (employees.find(e => e.id === tipEmployeeId) || employees.find(e => e.id === cart[0]?.employeeId) || { id: 'unspecified', name: 'غير محدد (عامة للصالون)' });
     const tipPayoutMode = settings.tipPayoutMethod || 'instant_cash';
 
     const initialInv: Invoice = {
@@ -1200,8 +1203,8 @@ export function POSScreen({
       promoCode: appliedPromo ? appliedPromo.code : undefined,
       promoDiscount: promoDiscountAmount > 0 ? promoDiscountAmount : undefined,
       tipAmount: calculatedTip > 0 ? calculatedTip : undefined,
-      tipEmployeeId: calculatedTip > 0 ? assignedTipEmployee?.id : undefined,
-      tipEmployeeName: calculatedTip > 0 ? assignedTipEmployee?.name : undefined,
+      tipEmployeeId: calculatedTip > 0 ? (isUnspecifiedTip ? 'unspecified' : assignedTipEmployee?.id) : undefined,
+      tipEmployeeName: calculatedTip > 0 ? (isUnspecifiedTip ? 'غير محدد (عامة للصالون)' : assignedTipEmployee?.name) : undefined,
       status: 'completed',
 
       beforePhotoUrl: beforePhotoUrl || undefined,
@@ -1386,15 +1389,16 @@ export function POSScreen({
         branchId: (newInvoice as any)?.branchId,
         invoiceId: newInvoice.id,
         clientName: newInvoice.clientName,
-        employeeId: assignedTipEmployee.id,
-        employeeName: assignedTipEmployee.name,
+        employeeId: isUnspecifiedTip ? 'unspecified' : assignedTipEmployee.id,
+        employeeName: isUnspecifiedTip ? 'غير محدد (عامة للصالون)' : assignedTipEmployee.name,
         amount: calculatedTip,
         paymentMethod: tipPaymentMethodName,
         date: newInvoice.date,
-        status: tipPayoutMode === 'instant_cash' ? 'paid_out' : 'pending_payout',
-        payoutMethod: tipPayoutMode,
-        paidOutAt: tipPayoutMode === 'instant_cash' ? newInvoice.date : undefined,
-        paidOutTreasuryId: tipPayoutMode === 'instant_cash' ? 'cash' : undefined
+        status: isUnspecifiedTip ? 'paid_out' : (tipPayoutMode === 'instant_cash' ? 'paid_out' : 'pending_payout'),
+        payoutMethod: isUnspecifiedTip ? undefined : tipPayoutMode,
+        paidOutAt: isUnspecifiedTip ? newInvoice.date : (tipPayoutMode === 'instant_cash' ? newInvoice.date : undefined),
+        paidOutTreasuryId: isUnspecifiedTip ? undefined : (tipPayoutMode === 'instant_cash' ? 'cash' : undefined),
+        notes: isUnspecifiedTip ? 'إكرامية عامة للصالون (غير مخصصة لموظف)' : undefined
       };
       if (setTips) {
         setTips(prev => [...prev, newTip]);
@@ -1468,6 +1472,8 @@ export function POSScreen({
       setBeforePhotoUrl('');
       setAfterPhotoUrl('');
       setSplitAmounts({});
+      setReceivedAmount('');
+      setTipEmployeeId('');
       setAppliedPromo(null);
       setPromoDiscountAmount(0);
       setPromoError(null);
@@ -3136,7 +3142,12 @@ export function POSScreen({
                 alert('⚠️ عذراً، لا يمكن إصدار فواتير جديدة نظراً لانتهاء الفترة التجريبية للصالون. يرجى تجديد الاشتراك مع الإدارة.');
                 return;
               }
-              if (cart.length > 0) setShowPaymentModal(true);
+              if (cart.length > 0) {
+                if (!tipEmployeeId) {
+                  setTipEmployeeId(cart[0]?.employeeId || 'unspecified');
+                }
+                setShowPaymentModal(true);
+              }
             }} 
             className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-200 disabled:text-slate-400 text-white font-black py-2.5 px-3 rounded-xl transition-all shadow-md flex items-center justify-between cursor-pointer active:scale-[0.99]"
           >
@@ -3221,33 +3232,41 @@ export function POSScreen({
                     <div>
                       <label className="block text-[11px] font-bold text-purple-900 mb-1">الموظف المستحق للإكرامية *</label>
                       <select
-                        value={tipEmployeeId}
+                        value={tipEmployeeId || 'unspecified'}
                         onChange={e => setTipEmployeeId(e.target.value)}
                         className="w-full bg-white border border-purple-300 rounded-xl px-3 py-1.5 text-xs font-bold text-purple-950 outline-none focus:border-purple-600 shadow-2xs"
                       >
+                        <option value="unspecified">✨ غير محدد (إكرامية عامة للصالون)</option>
                         {employees.filter(e => e.isActive !== false).map(emp => (
                           <option key={emp.id} value={emp.id}>{emp.name}</option>
                         ))}
                       </select>
                     </div>
 
-                    <div className="text-[11px] font-semibold p-2.5 rounded-xl border flex items-center gap-1.5" style={{
-                      backgroundColor: (settings.tipPayoutMethod || 'instant_cash') === 'instant_cash' ? '#ecfdf5' : '#eef2ff',
-                      borderColor: (settings.tipPayoutMethod || 'instant_cash') === 'instant_cash' ? '#a7f3d0' : '#c7d2fe',
-                      color: (settings.tipPayoutMethod || 'instant_cash') === 'instant_cash' ? '#065f46' : '#3730a3'
-                    }}>
-                      {(settings.tipPayoutMethod || 'instant_cash') === 'instant_cash' ? (
-                        <>
-                          <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />
-                          <span>🟢 الصرف الفوري: يُخصم البقشيش فوراً نقداً من درج الكاش لتسليمه للموظف، وتُسجل الفيزا بكامل المبلغ ({receivedNum.toFixed(2)} {settings.currency}).</span>
-                        </>
-                      ) : (
-                        <>
-                          <Clock size={14} className="text-indigo-600 shrink-0" />
-                          <span>🟡 الصرف المؤجل: يُسجل البقشيش كرصيد مجمع للموظف ويُصرف لاحقاً من الخزينة المحددة.</span>
-                        </>
-                      )}
-                    </div>
+                    {(tipEmployeeId === 'unspecified' || !tipEmployeeId) ? (
+                      <div className="text-[11px] font-semibold p-2.5 rounded-xl border flex items-center gap-1.5 bg-purple-100/70 border-purple-300 text-purple-950">
+                        <Sparkles size={14} className="text-purple-700 shrink-0" />
+                        <span>✨ إكرامية عامة للصالون: لا تُخصص لأي موظف وتُسجل كإيراد عام للصالون (لن يتم خصم أي مبالغ من درج الكاش).</span>
+                      </div>
+                    ) : (
+                      <div className="text-[11px] font-semibold p-2.5 rounded-xl border flex items-center gap-1.5" style={{
+                        backgroundColor: (settings.tipPayoutMethod || 'instant_cash') === 'instant_cash' ? '#ecfdf5' : '#eef2ff',
+                        borderColor: (settings.tipPayoutMethod || 'instant_cash') === 'instant_cash' ? '#a7f3d0' : '#c7d2fe',
+                        color: (settings.tipPayoutMethod || 'instant_cash') === 'instant_cash' ? '#065f46' : '#3730a3'
+                      }}>
+                        {(settings.tipPayoutMethod || 'instant_cash') === 'instant_cash' ? (
+                          <>
+                            <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />
+                            <span>🟢 الصرف الفوري: يُخصم البقشيش فوراً نقداً من درج الكاش لتسليمه للموظف، وتُسجل الفيزا بكامل المبلغ ({receivedNum.toFixed(2)} {settings.currency}).</span>
+                          </>
+                        ) : (
+                          <>
+                            <Clock size={14} className="text-indigo-600 shrink-0" />
+                            <span>🟡 الصرف المؤجل: يُسجل البقشيش كرصيد مجمع للموظف ويُصرف لاحقاً من الخزينة المحددة.</span>
+                          </>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
