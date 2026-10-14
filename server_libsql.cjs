@@ -976,6 +976,7 @@ async function ensureDatabaseSchema() {
     // 27. Work Shifts
     `CREATE TABLE IF NOT EXISTS work_shifts (
       id TEXT PRIMARY KEY,
+      shift_code TEXT,
       salon_id TEXT,
       branch_id TEXT,
       shift_date TEXT,
@@ -983,11 +984,23 @@ async function ensureDatabaseSchema() {
       closed_at TEXT,
       opened_by_user_id TEXT,
       opened_by_user_name TEXT,
+      opened_by_name TEXT,
       opened_by_role TEXT,
+      closed_by_user_id TEXT,
+      closed_by_user_name TEXT,
+      closed_by_name TEXT,
+      closed_by_role TEXT,
       initial_cash REAL DEFAULT 0,
       expected_cash REAL DEFAULT 0,
       actual_cash REAL DEFAULT 0,
       cash_difference REAL DEFAULT 0,
+      total_sales REAL DEFAULT 0,
+      total_cash_sales REAL DEFAULT 0,
+      total_card_sales REAL DEFAULT 0,
+      total_expenses REAL DEFAULT 0,
+      transferred_to_treasury TEXT,
+      transferred_amount REAL DEFAULT 0,
+      total_advances REAL DEFAULT 0,
       status TEXT DEFAULT 'open',
       notes TEXT,
       created_at TEXT DEFAULT (datetime('now')),
@@ -1461,7 +1474,24 @@ async function ensureDatabaseSchema() {
     { table: 'services', column: 'commissionable_amount', type: 'REAL' },
     { table: 'services', column: 'is_target_exempt', type: 'INTEGER DEFAULT 0' },
     { table: 'employees', column: 'daily_target_method', type: "TEXT DEFAULT 'excess_only'" },
-    { table: 'employees', column: 'monthly_target_method', type: "TEXT DEFAULT 'deduct_salary'" }
+    { table: 'employees', column: 'monthly_target_method', type: "TEXT DEFAULT 'deduct_salary'" },
+    // work_shifts auto-columns
+    { table: 'work_shifts', column: 'shift_code', type: 'TEXT' },
+    { table: 'work_shifts', column: 'opened_by_name', type: 'TEXT' },
+    { table: 'work_shifts', column: 'closed_by_user_id', type: 'TEXT' },
+    { table: 'work_shifts', column: 'closed_by_user_name', type: 'TEXT' },
+    { table: 'work_shifts', column: 'closed_by_name', type: 'TEXT' },
+    { table: 'work_shifts', column: 'closed_by_role', type: 'TEXT' },
+    { table: 'work_shifts', column: 'transferred_to_treasury', type: 'TEXT' },
+    { table: 'work_shifts', column: 'transferred_amount', type: 'REAL DEFAULT 0' },
+    { table: 'work_shifts', column: 'total_advances', type: 'REAL DEFAULT 0' },
+    { table: 'work_shifts', column: 'total_sales', type: 'REAL DEFAULT 0' },
+    { table: 'work_shifts', column: 'total_cash_sales', type: 'REAL DEFAULT 0' },
+    { table: 'work_shifts', column: 'total_card_sales', type: 'REAL DEFAULT 0' },
+    { table: 'work_shifts', column: 'total_expenses', type: 'REAL DEFAULT 0' },
+    // invoices & transactions shift_code
+    { table: 'invoices', column: 'shift_code', type: 'TEXT' },
+    { table: 'transactions', column: 'shift_code', type: 'TEXT' }
   ];
 
   const tableColumnsCache = {};

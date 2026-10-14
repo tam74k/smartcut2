@@ -9,7 +9,8 @@ import {
   Calendar, Wallet, Receipt, Banknote, FileText,
   UsersRound, List, Menu, X, Printer, Package, Truck, 
   ShoppingCart, ClipboardList, Shield, User as UserIcon, Sparkles, BarChart3, Boxes, Bot,
-  AlertCircle, Smartphone, ShieldAlert, Tag, HeartHandshake, Briefcase, Fingerprint, Radio, RotateCcw
+  AlertCircle, Smartphone, ShieldAlert, ShieldCheck, Tag, HeartHandshake, Briefcase, Fingerprint, Radio,
+  Key, AlertTriangle, Clock, Lock, ChevronUp, ChevronDown
 } from 'lucide-react';
 import { POSScreen } from './components/POSScreen';
 import { SettingsScreen } from './components/SettingsScreen';
@@ -19,23 +20,17 @@ import { DashboardScreen } from './components/DashboardScreen';
 import { OwnerExecutivePortal } from './components/OwnerExecutivePortal';
 import { BookingsScreen } from './components/BookingsScreen';
 import { InvoicesScreen } from './components/InvoicesScreen';
-import { SalesReturnsScreen } from './components/SalesReturnsScreen';
 import { ClientsScreen } from './components/ClientsScreen';
 import { ComplaintsScreen } from './components/ComplaintsScreen';
 import { TreasuryScreen } from './components/TreasuryScreen';
 import { ExpensesScreen } from './components/ExpensesScreen';
-import { ClosingReportReceipt } from './components/ClosingReportReceipt';
 import { ReportsScreen } from './components/ReportsScreen';
-import { SuppliersScreen } from './components/SuppliersScreen';
-import { PurchasesScreen } from './components/PurchasesScreen';
 import { InventoryScreen } from './components/InventoryScreen';
 import { ServicesScreen } from './components/ServicesScreen';
 import { ProductsScreen } from './components/ProductsScreen';
 import { PermissionsScreen } from './components/PermissionsScreen';
 import { EmployeeAnalyticsScreen } from './components/EmployeeAnalyticsScreen';
 import { WarehouseScreen } from './components/WarehouseScreen';
-import { SaaSSubscriptionsScreen } from './components/SaaSSubscriptionsScreen';
-import { SaaSProgrammerPortal } from './components/SaaSProgrammerPortal';
 import { PartnersScreen } from './components/PartnersScreen';
 import { PromoCodesScreen } from './components/PromoCodesScreen';
 import { TipsScreen } from './components/TipsScreen';
@@ -46,19 +41,26 @@ import { BarberPortalScreen } from './components/BarberPortalScreen';
 import { ClientReservationPortal } from './components/ClientReservationPortal';
 import { KioskTabletScreen } from './components/KioskTabletScreen';
 import { QueueCallingScreen } from './components/QueueCallingScreen';
-import { SubscriptionPlansModal } from './components/SubscriptionPlansModal';
+import { ManagerAIChatScreen } from './components/ManagerAIChatScreen';
+import { LicenseModal, LicenseInfo } from './components/LicenseModal';
+import { ChangePasswordModal } from './components/ChangePasswordModal';
+import { UserAccountMenu } from './components/UserAccountMenu';
+import { UserProfileModal } from './components/UserProfileModal';
+import { TursoCloudSyncModal } from './components/TursoCloudSyncModal';
+import { InitialSalonSetupModal, DEFAULT_INITIAL_TREASURIES } from './components/InitialSalonSetupModal';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { SubscriptionBanner } from './components/SubscriptionBanner';
+import { ClosingReportReceipt } from './components/ClosingReportReceipt';
+import { handlePrintReceipt, directPrintHtml } from './utils/print';
 import { printQueueSlipDirect } from './utils/printQueueSlip';
-import { handlePrintReceipt } from './utils/print';
-import { UserMenuDropdown, getUserInitials } from './components/UserMenuDropdown';
 import { AuthService, ROLE_LABELS } from './services/auth';
 import { SupabaseService } from './services/supabase';
-import { DB, dbClientToApp, dbEmployeeToApp, dbServiceToApp, dbProductToApp, dbCategoryToApp, toCamel } from './services/db';
+import { RealtimeSync } from './services/realtimeSync';
+import { DB, dbClientToApp, dbEmployeeToApp, dbServiceToApp, dbProductToApp, dbBookingToApp, toCamel } from './services/db';
 import { SubscriptionService } from './services/subscriptionService';
 import { QueueService } from './services/queueService';
+import { completeBookingAndCreateHeldInvoice } from './services/bookingHeldInvoiceService';
 import { hasEmployeeFixedCommission } from './utils/commissionHelper';
-import { isMatchingTreasury, resolveMainTreasury } from './utils/treasury';
 import { 
   AppSettings, Transaction, Booking, Invoice, ServiceItem, Category, Employee, Product, AppUser, 
   SaaSSubscription, Branch, Partner, PartnerTransaction, PromoCode, PromoCodeUsage, TipRecord, 
@@ -68,10 +70,41 @@ import {
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
+  const [showUserProfileModal, setShowUserProfileModal] = useState(false);
+  const [showUserHeaderMenu, setShowUserHeaderMenu] = useState(false);
+  const [showUserSidebarMenu, setShowUserSidebarMenu] = useState(false);
   const [activeTab, setActiveTab] = useState('pos');
-  // القائمة الجانبية مخفية في الوضع الافتراضي
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [showSidebar, setShowSidebar] = useState(false);
+
+  const getUserInitials = (name?: string) => {
+    if (!name) return 'ما';
+    const parts = name.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).substring(0, 2);
+    }
+    return name.substring(0, 2);
+  };
+
+  const handleOpenSettingsFromUserMenu = () => {
+    setShowUserHeaderMenu(false);
+    setShowUserSidebarMenu(false);
+    if (
+      AuthService.canDo('manage_settings', currentUser) ||
+      currentUser?.role === 'owner' ||
+      currentUser?.role === 'admin' ||
+      currentUser?.role === 'programmer' ||
+      currentUser?.screens?.includes('settings') ||
+      currentUser?.screens?.includes('*')
+    ) {
+      setActiveTab('settings');
+    } else {
+      alert('⛔ عذراً، الوصول إلى الإعدادات يتطلب صلاحية إدارة الإعدادات.');
+    }
+  };
   const [isCloudConnected, setIsCloudConnected] = useState(false);
+  const [isTursoConnected, setIsTursoConnected] = useState(false);
+  const [showTursoModal, setShowTursoModal] = useState(false);
   const [isDbLoading, setIsDbLoading] = useState(false);
 
   // Dedicated Route for Standalone Barber & Technician Portal (/barber or /staff)
@@ -156,7 +189,18 @@ export default function App() {
   const [settings, setSettings] = useState<AppSettings>(() => {
     try {
       const saved = localStorage.getItem('smartcut_app_settings');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.treasuries && Array.isArray(parsed.treasuries)) {
+          const hasMain = parsed.treasuries.some((t: any) => t.isMain || t.id === 'main' || (t.name && t.name.includes('الرئيسية')));
+          if (!hasMain) {
+            parsed.treasuries = [{ id: 'main', name: 'الخزينة الرئيسية', isMain: true }, ...parsed.treasuries];
+          }
+        } else {
+          parsed.treasuries = DEFAULT_INITIAL_TREASURIES;
+        }
+        return parsed;
+      }
       const regSalons = SubscriptionService.getSalons();
       if (regSalons.length > 0) {
         const s = regSalons[0];
@@ -171,10 +215,10 @@ export default function App() {
           salonType: s.salonType || (s as any).salon_type || 'men',
           taxNumber: '',
           commercialReg: '',
-          vatEnabled: true,
-          vatRate: 15,
-          currency: s.currency || 'SAR',
-          country: s.country || 'المملكة العربية السعودية',
+          vatEnabled: false,
+          vatRate: 0,
+          currency: s.currency || 'EGP',
+          country: s.country || 'جمهورية مصر العربية',
           waInstantName: '',
           waApiKey: '',
           printerName: 'طابعة الكاشير',
@@ -190,13 +234,7 @@ export default function App() {
           bookingNotes: '',
           showDashboardAnalytics: true,
           showEmployeeAnalytics: true,
-          inactiveClientsTrackingEnabled: s.inactiveClientsTrackingEnabled ?? true,
-          inactiveClientsDays: Number(s.inactiveClientsDays) || 60,
-          treasuries: [
-            { id: 'main', name: 'الخزنة الرئيسية', isMain: true },
-            { id: 'cash', name: 'كاش (الدرج)', isMain: false },
-            { id: 'card', name: 'شبكة / فيزا', isMain: false },
-          ]
+          treasuries: DEFAULT_INITIAL_TREASURIES
         };
       }
     } catch (e) {}
@@ -208,10 +246,10 @@ export default function App() {
       salonName: '',
       taxNumber: '',
       commercialReg: '',
-      vatEnabled: true,
-      vatRate: 15,
-      currency: 'SAR',
-      country: 'المملكة العربية السعودية',
+      vatEnabled: false,
+      vatRate: 0,
+      currency: 'EGP',
+      country: 'جمهورية مصر العربية',
       waInstantName: '',
       waApiKey: '',
       printerName: 'طابعة الكاشير',
@@ -227,13 +265,7 @@ export default function App() {
       bookingNotes: '',
       showDashboardAnalytics: true,
       showEmployeeAnalytics: true,
-      inactiveClientsTrackingEnabled: true,
-      inactiveClientsDays: 60,
-      treasuries: [
-        { id: 'main', name: 'الخزنة الرئيسية', isMain: true },
-        { id: 'cash', name: 'كاش (الدرج)', isMain: false },
-        { id: 'card', name: 'شبكة / فيزا', isMain: false },
-      ]
+      treasuries: DEFAULT_INITIAL_TREASURIES
     };
   });
 
@@ -314,28 +346,17 @@ export default function App() {
   const [allSalons, setAllSalons] = useState<any[]>(() => SubscriptionService.getSalons());
 
   // Shift State scoped per active branch & persisted in localStorage + Supabase
-  const lastClosedShiftTimeRef = useRef<number>(0);
-  const lastClosedShiftRef = useRef<{ id?: string; date?: string; timestamp: number } | null>((() => {
-    try {
-      const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('smartcut_last_closed_shift') : null;
-      if (saved) return JSON.parse(saved);
-    } catch (e) {}
-    return null;
-  })());
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem('smartcut_last_closed_shift');
-      if (saved) lastClosedShiftRef.current = JSON.parse(saved);
-    } catch (e) {}
-  }, []);
-
   const [branchShifts, setBranchShifts] = useState<Record<string, { 
     isOpen: boolean, 
     date: string, 
     initialCash: number, 
     shiftId?: string,
+    shiftCode?: string,
     openedAt?: string,
+    openedByUserId?: string,
+    openedByUserName?: string,
+    openedByName?: string,
+    openedByRole?: string,
     lastClosedAt?: string
   }>>(() => {
     try {
@@ -344,39 +365,51 @@ export default function App() {
     } catch (e) {}
     return {};
   });
-  // Dynamic shiftData: checks active branch, then falls back to any active open shift in branchShifts (for cross-device robustness)
   const shiftData = useMemo(() => {
-    const direct = branchShifts[activeBranchId];
-    if (direct && direct.isOpen) return direct;
-    const anyOpen = Object.values(branchShifts).find((s: any) => s && s.isOpen && s.date);
+    // 1. Direct active branch shift
+    const current = branchShifts[activeBranchId];
+    if (current?.isOpen) return current;
+    // 2. Default / generic branch
+    const mainBranch = branchShifts['b-main'];
+    if (mainBranch?.isOpen) return mainBranch;
+    // 3. Any other open shift in the salon's branchShifts
+    const anyOpen = Object.values(branchShifts).find((s: any) => s?.isOpen);
     if (anyOpen) return anyOpen;
-    return direct || { isOpen: false, date: '', initialCash: 0 };
+    return current || { isOpen: false, date: '', initialCash: 0 };
   }, [branchShifts, activeBranchId]);
 
   const setShiftData = (updater: any) => {
     setBranchShifts(prev => {
-      const current = prev[activeBranchId] || Object.values(prev).find((s: any) => s?.isOpen) || { isOpen: false, date: '', initialCash: 0 };
+      const current = prev[activeBranchId] || prev['b-main'] || { isOpen: false, date: '', initialCash: 0 };
       const next = typeof updater === 'function' ? updater(current) : updater;
-      let updated = { ...prev, [activeBranchId]: next, ['b-main']: next };
-      if (next.shiftId) {
-        Object.keys(prev).forEach(bKey => {
-          if (prev[bKey]?.shiftId === next.shiftId) {
-            updated[bKey] = next;
+      let updated: Record<string, any>;
+      if (!next?.isOpen) {
+        // Closed shift: ensure ALL branch keys are closed
+        updated = { ...prev };
+        Object.keys(updated).forEach(k => {
+          if (updated[k]?.isOpen) {
+            updated[k] = {
+              isOpen: false,
+              date: '',
+              initialCash: 0,
+              shiftId: undefined,
+              shiftCode: undefined,
+              lastClosedAt: next?.lastClosedAt || new Date().toISOString()
+            };
           }
         });
-      }
-      if (!next.isOpen) {
-        Object.keys(updated).forEach(bKey => {
-          updated[bKey] = {
-            ...updated[bKey],
-            isOpen: false,
-            date: '',
-            initialCash: 0,
-            shiftId: undefined,
-            lastClosedAt: next.lastClosedAt || new Date().toISOString()
-          };
-        });
-        try { localStorage.removeItem('smartcut_active_work_shift'); } catch (e) {}
+        updated[activeBranchId] = next;
+        updated['b-main'] = next;
+      } else {
+        // Open shift: update active branch, b-main, and shift's specific branchId if available
+        updated = {
+          ...prev,
+          [activeBranchId]: next,
+          ['b-main']: next
+        };
+        if (next.branchId) {
+          updated[next.branchId] = next;
+        }
       }
       try { localStorage.setItem('smartcut_work_shifts_state', JSON.stringify(updated)); } catch (e) {}
       return updated;
@@ -384,25 +417,16 @@ export default function App() {
   };
 
   const applyActiveWorkShift = useCallback((activeShift: any, branchId: string) => {
-    // Session & Persistence Guard: If activeShift matches the shift closed in this session (by ID), REJECT IT!
-    if (activeShift && lastClosedShiftRef.current) {
-      const closed = lastClosedShiftRef.current;
-      const isSameId = closed.id && (activeShift.id === closed.id);
-      // If within 12 hours of closing this shift ID, reject resurrection completely
-      if (isSameId && (Date.now() - (closed.timestamp || 0) < 12 * 3600 * 1000)) {
-        activeShift = null;
-      }
-    }
-
-    // Cooldown guard: If the shift was closed locally within the last 45 seconds, reject any stale in-flight open shift from Supabase
-    if (Date.now() - lastClosedShiftTimeRef.current < 45000) {
+    // 1. إذا كان الاستدعاء خطأ أو لم يرجع بيانات صالحة (مثلاً عطل شبكة أو استثناء)، يُحظر تماماً تغيير حالة الوردية
+    if (!activeShift || activeShift.error) {
       return;
     }
 
-    if (activeShift && (activeShift.status === 'open' || !activeShift.closedAt)) {
+    // 2. الاعتماد على قاعدة البيانات: إذا كان جدول work_shifts يحتوي على وردية مفتوحة
+    if (activeShift.isOpen === true || activeShift.status === 'open' || (!activeShift.closedAt && !activeShift.isClosed && activeShift.shiftDate)) {
       setBranchShifts(prev => {
         const current = prev[branchId] || prev['b-main'];
-        const shiftCode = activeShift.shiftCode || (activeShift as any).shift_code;
+        const shiftCode = activeShift.shiftCode || activeShift.shift_code || '';
         if (
           current?.isOpen === true &&
           current?.date === activeShift.shiftDate &&
@@ -419,7 +443,10 @@ export default function App() {
           shiftId: activeShift.id,
           shiftCode: shiftCode,
           openedAt: activeShift.openedAt || (activeShift as any).opened_at || activeShift.createdAt || (activeShift as any).created_at,
-          openedByUserName: activeShift.openedByUserName || (activeShift as any).opened_by_user_name
+          openedByUserId: activeShift.openedByUserId || (activeShift as any).opened_by_user_id,
+          openedByUserName: activeShift.openedByUserName || (activeShift as any).opened_by_user_name || activeShift.openedByName,
+          openedByName: activeShift.openedByName || (activeShift as any).opened_by_name || activeShift.openedByUserName,
+          openedByRole: activeShift.openedByRole || (activeShift as any).opened_by_role || 'cashier'
         };
         const updated = {
           ...prev,
@@ -432,10 +459,33 @@ export default function App() {
         try { localStorage.setItem('smartcut_work_shifts_state', JSON.stringify(updated)); } catch (e) {}
         return updated;
       });
-    } else {
+      return;
+    }
+
+    // 3. منع التغيير التلقائي: يُحظر تماماً اعتبار الوردية مغلقة إلا بوجود سجل فعلي وقاطع يثبت الإغلاق داخل قاعدة البيانات
+    if (activeShift.hasDefinitiveProof && (activeShift.isClosed || activeShift.status === 'closed' || activeShift.noShifts)) {
       setBranchShifts(prev => {
+        const current = prev[branchId] || prev['b-main'];
+
+        // إذا كانت هناك وردية مفتوحة حالياً، نتحقق أن السجل القاطع للإغلاق يثبت إغلاقها هي بالتحديد
+        if (current?.isOpen) {
+          // إذا كان السجل في قاعدة البيانات يثبت إغلاق وردية أقدم من وقت فتح الوردية الحالية، فلا نغلقها
+          if (activeShift.closedAt && current.openedAt) {
+            const shiftOpenedTime = new Date(current.openedAt).getTime();
+            const shiftClosedTime = new Date(activeShift.closedAt).getTime();
+            if (!isNaN(shiftOpenedTime) && !isNaN(shiftClosedTime) && shiftClosedTime < shiftOpenedTime) {
+              return prev;
+            }
+          }
+          // إذا كان لدينا معرف وردية مفتوحة وسجل الإغلاق يحمل معرف مختلف بدون noShifts، لا نغلق
+          if (current.shiftId && activeShift.id && current.shiftId !== activeShift.id && !activeShift.noShifts) {
+            return prev;
+          }
+        }
+
         const hasOpen = Object.values(prev).some((s: any) => s?.isOpen);
         if (!hasOpen) return prev;
+
         const updated = { ...prev };
         Object.keys(updated).forEach(k => {
           if (updated[k]?.isOpen) {
@@ -444,7 +494,8 @@ export default function App() {
               date: '',
               initialCash: 0,
               shiftId: undefined,
-              lastClosedAt: new Date().toISOString()
+              shiftCode: undefined,
+              lastClosedAt: activeShift.closedAt || new Date().toISOString()
             };
           }
         });
@@ -456,9 +507,33 @@ export default function App() {
 
   const [showOpenModal, setShowOpenModal] = useState(false);
   const [showCloseModal, setShowCloseModal] = useState(false);
-  const [closeShiftActualCash, setCloseShiftActualCash] = useState<string>('');
-  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
-  const [openShiftForm, setOpenShiftForm] = useState({ date: new Date().toISOString().split('T')[0], initialCash: 0 });
+  const [licenseInfo, setLicenseInfo] = useState<LicenseInfo | null>(null);
+  const [showLicenseModal, setShowLicenseModal] = useState<boolean>(false);
+  const [showInitialSalonModal, setShowInitialSalonModal] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('smartcut_app_settings');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.salonName && parsed.salonName.trim()) return false;
+      }
+      const reg = SubscriptionService.getSalons();
+      if (reg.length > 0 && reg[0].name && reg[0].name.trim()) return false;
+    } catch (e) {}
+    return true;
+  });
+
+  const getLocalTodayDateString = () => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  };
+
+  const [openShiftForm, setOpenShiftForm] = useState({ date: getLocalTodayDateString(), initialCash: 0 });
+
+  useEffect(() => {
+    if (showOpenModal) {
+      setOpenShiftForm(prev => ({ ...prev, date: getLocalTodayDateString() }));
+    }
+  }, [showOpenModal]);
 
   // Global In-Memory Stores
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -480,27 +555,12 @@ export default function App() {
   // Extended Features Stores
   const [partners, setPartners] = useState<Partner[]>([]);
   const [partnerTransactions, setPartnerTransactions] = useState<PartnerTransaction[]>([]);
-  const [promoCodes, setPromoCodes] = useState<PromoCode[]>(() => {
-    try {
-      const saved = localStorage.getItem('smartcut_promo_codes');
-      return saved ? JSON.parse(saved) : [];
-    } catch { return []; }
-  });
-  const [promoCodeUsages, setPromoCodeUsages] = useState<PromoCodeUsage[]>(() => {
-    try {
-      const saved = localStorage.getItem('smartcut_promo_code_usages');
-      return saved ? JSON.parse(saved) : [];
-    } catch { return []; }
-  });
+  const [promoCodes, setPromoCodes] = useState<PromoCode[]>([]);
+  const [promoCodeUsages, setPromoCodeUsages] = useState<PromoCodeUsage[]>([]);
   const [tips, setTips] = useState<TipRecord[]>([]);
   const [custodies, setCustodies] = useState<EmployeeCustody[]>([]);
   const [fingerprintLogs, setFingerprintLogs] = useState<FingerprintLog[]>([]);
-  const [salesReturns, setSalesReturns] = useState<SalesReturn[]>(() => {
-    try {
-      const saved = localStorage.getItem('smartcut_sales_returns');
-      return saved ? JSON.parse(saved) : [];
-    } catch { return []; }
-  });
+  const [salesReturns, setSalesReturns] = useState<SalesReturn[]>([]);
 
   // Refs to prevent duplicate initialization and redundant fetches
   const hasInitializedRef = useRef<boolean>(false);
@@ -512,6 +572,7 @@ export default function App() {
     if (data.invoices) {
       setInvoices(data.invoices.map((inv: any) => ({
         ...inv,
+        date: inv.date || inv.created_at || inv.createdAt || new Date().toISOString(),
         vatAmount: inv.vat,
         cashbackUsed: inv.cashbackUsed ?? 0,
         paymentMethods: inv.paymentMethods || [],
@@ -526,33 +587,14 @@ export default function App() {
     }
     if (data.transactions) {
       setTransactions(data.transactions.map((t: any) => ({
-        ...t, expenseCategory: t.expenseCategory || '', createdBy: t.createdBy || '',
+        ...t,
+        date: t.date || t.created_at || t.createdAt || t.shift_date || t.shiftDate || new Date().toISOString(),
+        expenseCategory: t.expenseCategory || '', createdBy: t.createdBy || '',
         userId: t.userId || '', userName: t.userName || '', shiftDate: t.shiftDate || ''
       })));
     }
     if (data.bookings) {
-      setBookings(data.bookings.map((b: any) => ({
-        ...b,
-        clientName: b.clientName || b.client_name || 'عميل نقدي',
-        phone: b.phone || b.clientPhone || b.client_phone || '',
-        totalAmount: Number(b.totalAmount ?? b.total_amount ?? 0),
-        salonId: b.salonId || b.salon_id || undefined,
-        branchId: b.branchId || b.branch_id || undefined,
-        bookingCode: b.bookingCode || b.booking_code || undefined,
-        queueNumber: b.queueNumber || b.queue_number || undefined,
-        customerEmail: b.customerEmail || b.customer_email || '',
-        advancePayments: b.advancePayments || b.advance_payments || [],
-        notes: b.notes || undefined,
-        internalNotes: b.internalNotes || b.internal_notes || undefined,
-        discountType: b.discountType || b.discount_type || 'fixed',
-        discountValue: Number(b.discountValue ?? b.discount_value ?? 0),
-        createdAt: b.createdAt || b.created_at || undefined,
-        createdBy: b.createdBy || b.created_by || undefined,
-        createdByName: b.createdByName || b.created_by_name || b.createdBy || undefined,
-        updatedAt: b.updatedAt || b.updated_at || undefined,
-        updatedBy: b.updatedBy || b.updated_by || undefined,
-        updatedByName: b.updatedByName || b.updated_by_name || b.updatedBy || undefined
-      })));
+      setBookings(data.bookings.map(dbBookingToApp));
     }
     if (data.clients) {
       setClients(data.clients.map(dbClientToApp));
@@ -561,7 +603,7 @@ export default function App() {
       setProducts(data.products.map(dbProductToApp));
     }
     if (data.categories && Array.isArray(data.categories) && data.categories.length > 0) {
-      setCategories(data.categories.map(dbCategoryToApp));
+      setCategories(data.categories);
     }
     if (data.suppliers) setSuppliers(data.suppliers);
     if (data.purchaseInvoices) setPurchaseInvoices(data.purchaseInvoices);
@@ -575,15 +617,23 @@ export default function App() {
     if (data.tips) setTips(data.tips);
     if (data.custodies) setCustodies(data.custodies);
     if (data.fingerprintLogs) setFingerprintLogs(data.fingerprintLogs);
-    if (data.salesReturns && Array.isArray(data.salesReturns)) setSalesReturns(data.salesReturns);
+    if (data.employees && Array.isArray(data.employees)) {
+      setEmployees(data.employees.map(dbEmployeeToApp));
+    }
     if (data.settings) {
-      setSettings(prev => ({
-        ...prev,
-        ...data.settings,
-        treasuries: (Array.isArray(data.settings.treasuries) && data.settings.treasuries.length > 0) 
+      setSettings(prev => {
+        let treas = (Array.isArray(data.settings.treasuries) && data.settings.treasuries.length > 0) 
           ? data.settings.treasuries 
-          : prev.treasuries
-      }));
+          : (prev.treasuries || DEFAULT_INITIAL_TREASURIES);
+        if (!treas.some((t: any) => t.isMain || t.id === 'main' || (t.name && t.name.includes('الرئيسية')))) {
+          treas = [{ id: 'main', name: 'الخزينة الرئيسية', isMain: true }, ...treas];
+        }
+        return {
+          ...prev,
+          ...data.settings,
+          treasuries: treas
+        };
+      });
     }
   }, []);
 
@@ -592,22 +642,31 @@ export default function App() {
     if (hasInitializedRef.current) return;
     hasInitializedRef.current = true;
 
-    // تنظيف شامل لأي بيانات تجريبية سابقة من التخزين المحلي لضمان بدء النظام نظيفاً 100%
+    // تنظيف شامل وغير مشروط لأي بيانات تجريبية أو كاش محلي سابق لضمان أن قاعدة بيانات SQL Server هي المصدر الوحيد للحقيقة
     try {
-      const keysToCheck = [
+      const sess = localStorage.getItem('smartcut_session');
+      if (sess && (sess.includes('Dana') || sess.includes('Tamer') || sess.toLowerCase().includes('dana'))) {
+        localStorage.removeItem('smartcut_session');
+        localStorage.removeItem('smartcut_current_user');
+      }
+      const curUser = localStorage.getItem('smartcut_current_user');
+      if (curUser && (curUser.includes('Dana') || curUser.includes('Tamer') || curUser.toLowerCase().includes('dana'))) {
+        localStorage.removeItem('smartcut_current_user');
+      }
+
+      const entityKeys = [
         'smartcut_client_complaints', 'smartcut_clients', 'smartcut_invoices',
         'smartcut_transactions', 'smartcut_bookings', 'smartcut_employees',
         'smartcut_services', 'smartcut_products', 'smartcut_suppliers',
-        'smartcut_purchase_invoices', 'smartcut_partners', 'smartcut_promo_codes',
-        'smartcut_tips', 'smartcut_custodies'
+        'smartcut_purchase_invoices', 'smartcut_supplier_payments', 'smartcut_partners',
+        'smartcut_partner_transactions', 'smartcut_promo_codes', 'smartcut_promo_code_usages',
+        'smartcut_tips', 'smartcut_custodies', 'smartcut_inventory_counts', 'smartcut_item_movements',
+        'smartcut_fingerprint_logs', 'smartcut_held_invoices', 'smartcut_queue_tickets'
       ];
-      keysToCheck.forEach(key => {
-        const val = localStorage.getItem(key);
-        if (val && (
-          val.includes('CMP-101') || val.includes('INV-1001') || 
-          val.includes('TRX-001') || val.includes('B-101') || 
-          val.includes('عمر عبدالله') || val.includes('قص شعر كلاسيك')
-        )) {
+      entityKeys.forEach(key => localStorage.removeItem(key));
+      // حذف أي حقول مؤقتة أو تجريبية تم حفظها بالمتصفح سابقاً
+      Object.keys(localStorage).forEach(key => {
+        if (key.startsWith('smartcut_extra_') || key.startsWith('smartcut_demo_')) {
           localStorage.removeItem(key);
         }
       });
@@ -626,6 +685,9 @@ export default function App() {
             setActiveTab('barber_portal');
           } else if (user.role === 'kiosk' || (user.screens?.includes('kiosk') && !user.screens?.includes('*') && user.screens?.length === 1)) {
             setActiveTab('kiosk');
+          } else if (!AuthService.canAccess('pos', user)) {
+            const firstAllowed = menuItems.find(item => AuthService.canAccess(item.id, user))?.id || user.screens?.[0] || 'dashboard';
+            setActiveTab(firstAllowed);
           }
         }
 
@@ -666,16 +728,25 @@ export default function App() {
                 ...dbSettings,
                 salonId: sId,
                 salonCode: activeSalon.code || dbSettings.salonCode || '',
-                salonName: (dbSettings.salonName && dbSettings.salonName !== 'صالون سمارت كت') ? dbSettings.salonName : (activeSalon.name || dbSettings.salonName || 'الصالون'),
+                salonName: (dbSettings.salonName && dbSettings.salonName !== 'صالون سمارت كت') ? dbSettings.salonName : (activeSalon.name || dbSettings.salonName || ''),
                 salonType: dbSettings.salonType || (dbSettings as any)?.salon_type || activeSalon.salonType || (activeSalon as any)?.salon_type || 'men',
                 logoUrl: (dbSettings.logoUrl !== undefined && dbSettings.logoUrl !== null) ? dbSettings.logoUrl : (activeSalon.logoUrl || ''),
                 phone: activeSalon.phone || dbSettings.phone || '',
-                country: activeSalon.country || dbSettings.country || 'المملكة العربية السعودية',
-                currency: activeSalon.currency || dbSettings.currency || 'SAR',
-                treasuries: (Array.isArray(dbSettings.treasuries) && dbSettings.treasuries.length > 0) ? dbSettings.treasuries : (prev.treasuries || []),
+                country: activeSalon.country || dbSettings.country || 'جمهورية مصر العربية',
+                currency: activeSalon.currency || dbSettings.currency || 'EGP',
+                treasuries: (() => {
+                  let tList = (Array.isArray(dbSettings.treasuries) && dbSettings.treasuries.length > 0) ? dbSettings.treasuries : (prev.treasuries || DEFAULT_INITIAL_TREASURIES);
+                  if (!tList.some((t: any) => t.isMain || t.id === 'main' || (t.name && t.name.includes('الرئيسية')))) {
+                    tList = [{ id: 'main', name: 'الخزينة الرئيسية', isMain: true }, ...tList];
+                  }
+                  return tList;
+                })(),
                 expenseCategories: (Array.isArray(dbSettings.expenseCategories) && dbSettings.expenseCategories.length > 0) ? dbSettings.expenseCategories : (prev.expenseCategories || []),
               };
             });
+            if (activeSalon.name || dbSettings.salonName) {
+              setShowInitialSalonModal(false);
+            }
           }
 
           setSubscription({
@@ -699,12 +770,9 @@ export default function App() {
           if (dbBranches && dbBranches.length > 0) {
             SubscriptionService.saveBranches(dbBranches);
           }
-          const rawBranches = (dbBranches && dbBranches.length > 0) ? dbBranches : SubscriptionService.getBranches(sId);
-          const salonBranches = rawBranches.filter((b, idx, arr) => 
-            arr.findIndex(x => x.id === b.id || (x.code && b.code && x.code.toLowerCase() === b.code.toLowerCase())) === idx
-          );
+          const salonBranches = (dbBranches && dbBranches.length > 0) ? dbBranches : SubscriptionService.getBranches(sId);
           const finalBranches = salonBranches.length > 0 ? salonBranches : [
-            { id: 'b-main', salonId: sId, name: 'الفرع الرئيسي', code: 'BR-01', isMain: true, phone: activeSalon.phone, address: activeSalon.country, isActive: true, status: 'active' }
+            { id: 'b-main', salonId: sId, name: `الفرع الرئيسي (${activeSalon.name})`, code: 'B01', isMain: true, phone: activeSalon.phone, address: activeSalon.country, isActive: true, status: 'active' }
           ];
           setBranches(finalBranches);
 
@@ -712,8 +780,8 @@ export default function App() {
           setActiveBranchId(branchIdToUse);
 
           if (essentialData) {
-            const validCats = (essentialData.categories || []).map(dbCategoryToApp);
-            setCategories(validCats.length ? validCats : [{ id: 'all', name: 'الكل', isActive: true }]);
+            const validCats = essentialData.categories || [];
+            setCategories(validCats.length ? validCats : [{ id: 'all', name: 'الكل' }]);
             setServices(essentialData.services ? essentialData.services.map(dbServiceToApp) : []);
             setEmployees(essentialData.employees ? essentialData.employees.map(dbEmployeeToApp) : []);
             setClients(essentialData.clients ? essentialData.clients.map(dbClientToApp) : []);
@@ -721,14 +789,6 @@ export default function App() {
             if (essentialData.suppliers) setSuppliers(essentialData.suppliers);
             if (essentialData.purchaseInvoices) setPurchaseInvoices(essentialData.purchaseInvoices);
             if (essentialData.supplierPayments) setSupplierPayments(essentialData.supplierPayments);
-            if (essentialData.promoCodes && Array.isArray(essentialData.promoCodes)) {
-              setPromoCodes(essentialData.promoCodes);
-              try { localStorage.setItem('smartcut_promo_codes', JSON.stringify(essentialData.promoCodes)); } catch (e) {}
-            }
-            if (essentialData.promoCodeUsages && Array.isArray(essentialData.promoCodeUsages)) {
-              setPromoCodeUsages(essentialData.promoCodeUsages);
-              try { localStorage.setItem('smartcut_promo_code_usages', JSON.stringify(essentialData.promoCodeUsages)); } catch (e) {}
-            }
           }
 
           // Mark essential sections as loaded
@@ -740,40 +800,54 @@ export default function App() {
           DB.fetchTransactions(sId).then(dbTrxs => {
             if (dbTrxs && dbTrxs.length > 0) {
               setTransactions(dbTrxs.map((t: any) => ({
-                ...t, expenseCategory: t.expenseCategory || '', createdBy: t.createdBy || '',
+                ...t,
+                date: t.date || t.created_at || t.createdAt || t.shift_date || t.shiftDate || new Date().toISOString(),
+                expenseCategory: t.expenseCategory || '', createdBy: t.createdBy || '',
                 userId: t.userId || '', userName: t.userName || '', shiftDate: t.shiftDate || ''
               })));
+            } else {
+              setTransactions([]);
             }
-          }).catch(() => {});
+          }).catch(() => { setTransactions([]); });
 
           DB.fetchInvoices(sId).then(dbInvs => {
             if (dbInvs && dbInvs.length > 0) {
-              setInvoices(dbInvs.map((inv: any) => {
-                const totalNum = Number(inv.total ?? inv.totalAmount ?? inv.netAmount ?? inv.subtotal ?? 0);
-                const subtotalNum = Number(inv.subtotal ?? inv.total ?? totalNum);
-                return {
-                  ...inv,
-                  total: totalNum,
-                  subtotal: subtotalNum,
-                  paid: Number(inv.paid ?? totalNum),
-                  vatAmount: inv.vatAmount ?? inv.vat ?? 0,
-                  cashbackUsed: inv.cashbackUsed ?? 0,
-                  paymentMethods: inv.paymentMethods || [],
-                  isRemedyInvoice: inv.isRemedy || false,
-                  remedyReason: inv.remedyNotes || '',
-                  relatedComplaintId: inv.relatedComplaintId || '',
-                  originalInvoiceId: inv.originalInvoiceId || '',
-                  zatcaQr: inv.zatcaQr || '',
-                  zatcaHash: inv.zatcaHash || '',
-                  etaSubmissionUuid: inv.etaSubmissionUuid || '',
-                };
-              }));
+              setInvoices(dbInvs.map((inv: any) => ({
+                ...inv,
+                date: inv.date || inv.created_at || inv.createdAt || new Date().toISOString(),
+                vatAmount: inv.vat,
+                cashbackUsed: inv.cashbackUsed ?? 0,
+                paymentMethods: inv.paymentMethods || [],
+                isRemedyInvoice: inv.isRemedy || false,
+                remedyReason: inv.remedyNotes || '',
+                relatedComplaintId: inv.relatedComplaintId || '',
+                originalInvoiceId: inv.originalInvoiceId || '',
+                zatcaQr: inv.zatcaQr || '',
+                zatcaHash: inv.zatcaHash || '',
+                etaSubmissionUuid: inv.etaSubmissionUuid || '',
+              })));
+            } else {
+              setInvoices([]);
+            }
+          }).catch(() => { setInvoices([]); });
+
+          DB.fetchSalesReturns(sId).then(returns => {
+            if (returns && returns.length > 0) {
+              setSalesReturns(returns);
+            } else {
+              setSalesReturns([]);
+            }
+          }).catch(() => { setSalesReturns([]); });
+
+          DB.fetchPromoCodes(sId).then(pcs => {
+            if (pcs && pcs.length > 0) {
+              setPromoCodes(pcs);
             }
           }).catch(() => {});
 
-          DB.fetchSalesReturns(sId).then(dbReturns => {
-            if (dbReturns && dbReturns.length > 0) {
-              setSalesReturns(dbReturns);
+          DB.fetchPromoCodeUsages(sId).then(usages => {
+            if (usages && usages.length > 0) {
+              setPromoCodeUsages(usages);
             }
           }).catch(() => {});
 
@@ -781,6 +855,14 @@ export default function App() {
             loadedSectionsRef.current.add('owner_portal');
             DB.loadSectionData('owner_portal', sId).then(data => {
               applySectionData('owner_portal', data);
+            }).catch(() => {});
+          }
+
+          if (user?.role === 'barber' || isBarberRoute || user?.screens?.includes('barber_portal')) {
+            loadedSectionsRef.current.add('barber_portal');
+            loadedSectionsRef.current.add('bookings');
+            DB.loadSectionData('barber_portal', sId).then(data => {
+              applySectionData('barber_portal', data);
             }).catch(() => {});
           }
 
@@ -800,7 +882,415 @@ export default function App() {
     initializeApp();
   }, []);
 
-  // ── Smart HTTP Polling (15s interval, Visibility API aware, REST queries) ────
+  // ── Hardware License & Anti-Tamper System Initial Check & Real-time Stream ────
+  useEffect(() => {
+    const fetchLicenseInfo = async () => {
+      try {
+        const res = await fetch('/api/server-info');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.license) {
+            setLicenseInfo(data.license);
+            if (!data.license.isLicensed) {
+              localStorage.setItem('smartcut_license_readonly', 'true');
+              setShowLicenseModal(true);
+            } else if (data.license.isLicensed && data.license.status === 'active') {
+              localStorage.setItem('smartcut_license_readonly', 'false');
+              setShowLicenseModal(false);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('License info check error:', err);
+      }
+    };
+
+    fetchLicenseInfo();
+
+    let eventSource: EventSource | null = null;
+    try {
+      eventSource = new EventSource('/api/license/stream');
+      eventSource.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          if (payload.type === 'license_updated' && payload.license) {
+            setLicenseInfo(payload.license);
+            if (!payload.license.isLicensed) {
+              localStorage.setItem('smartcut_license_readonly', 'true');
+              setShowLicenseModal(true);
+            } else if (payload.license.isLicensed && payload.license.status === 'active') {
+              localStorage.setItem('smartcut_license_readonly', 'false');
+              setShowLicenseModal(false);
+            }
+          }
+        } catch {}
+      };
+    } catch {}
+
+    return () => {
+      if (eventSource) eventSource.close();
+    };
+  }, []);
+
+  // ── Real-Time Sync Subscriptions across LAN (Sub-50ms Instant Sync) ──────────
+  useEffect(() => {
+    const sId = settings.salonId;
+    const bId = activeBranchId;
+    if (!sId) return;
+
+    // 1. Sync Services immediately
+    const unsubServices = RealtimeSync.subscribe(['services'], async (event) => {
+      if (event?.action === 'delete') {
+        const delId = event.id || event.filters?.id || event.data?.id;
+        if (delId) setServices(prev => prev.filter(s => s.id !== delId));
+      }
+      try {
+        const updated = await DB.fetchServices(sId);
+        if (updated && Array.isArray(updated)) {
+          setServices(updated.map(dbServiceToApp));
+        }
+      } catch (err) {
+        console.warn('[Realtime] Services sync error:', err);
+      }
+    });
+
+    // 2. Sync Categories immediately
+    const unsubCategories = RealtimeSync.subscribe(['categories'], async (event) => {
+      if (event?.action === 'delete') {
+        const delId = event.id || event.filters?.id || event.data?.id;
+        if (delId) setCategories(prev => prev.filter(c => c.id !== delId));
+      }
+      try {
+        const updated = await DB.fetchCategories(sId);
+        if (updated && Array.isArray(updated) && updated.length > 0) {
+          setCategories(updated);
+        }
+      } catch (err) {
+        console.warn('[Realtime] Categories sync error:', err);
+      }
+    });
+
+    // 3. Sync Invoices & Transactions & Treasuries immediately
+    const unsubInvoices = RealtimeSync.subscribe(['invoices', 'transactions'], async (event) => {
+      if (event?.action === 'delete') {
+        const delId = event.id || event.filters?.id || event.data?.id;
+        if (delId) {
+          if (event.table === 'invoices') setInvoices(prev => prev.filter(i => i.id !== delId));
+          if (event.table === 'transactions') setTransactions(prev => prev.filter(t => t.id !== delId));
+        }
+      }
+      try {
+        const [dbInvs, dbTrxs] = await Promise.all([
+          DB.fetchAll<any>('invoices', undefined, sId),
+          DB.fetchAll<any>('transactions', undefined, sId)
+        ]);
+
+        if (dbInvs && Array.isArray(dbInvs)) {
+          setInvoices(dbInvs.map((inv: any) => ({
+            ...inv,
+            vatAmount: inv.vat,
+            cashbackUsed: inv.cashbackUsed ?? 0,
+            paymentMethods: inv.paymentMethods || [],
+            isRemedyInvoice: inv.isRemedy || false,
+            remedyReason: inv.remedyNotes || '',
+            relatedComplaintId: inv.relatedComplaintId || '',
+            originalInvoiceId: inv.originalInvoiceId || '',
+            zatcaQr: inv.zatcaQr || '',
+            zatcaHash: inv.zatcaHash || '',
+            etaSubmissionUuid: inv.etaSubmissionUuid || '',
+          })));
+        }
+
+        if (dbTrxs && Array.isArray(dbTrxs)) {
+          setTransactions(dbTrxs.map((t: any) => ({
+            ...t,
+            expenseCategory: t.expenseCategory || '',
+            createdBy: t.createdBy || '',
+            userId: t.userId || '',
+            userName: t.userName || '',
+            shiftDate: t.shiftDate || ''
+          })));
+        }
+      } catch (err) {
+        console.warn('[Realtime] Accounting sync error:', err);
+      }
+    });
+
+    // 4. Sync Shifts immediately
+    const unsubShifts = RealtimeSync.subscribe(['work_shifts'], async () => {
+      if (!bId) return;
+      try {
+        const activeShift = await DB.getActiveWorkShift(sId, bId);
+        applyActiveWorkShift(activeShift, bId);
+      } catch (err) {
+        console.warn('[Realtime] Shifts sync error:', err);
+      }
+    });
+
+    // 5. Sync Bookings immediately
+    const unsubBookings = RealtimeSync.subscribe(['bookings'], async (event) => {
+      if (event?.action === 'delete') {
+        const delId = event.id || event.filters?.id || event.data?.id;
+        if (delId) setBookings(prev => prev.filter(b => b.id !== delId));
+      }
+      try {
+        const dbBookings = await DB.fetchAll<any>('bookings', undefined, sId);
+        if (dbBookings && Array.isArray(dbBookings)) {
+          setBookings(dbBookings.map(dbBookingToApp));
+        }
+      } catch (err) {
+        console.warn('[Realtime] Bookings sync error:', err);
+      }
+    });
+
+    // 6. Sync Products immediately
+    const unsubProducts = RealtimeSync.subscribe(['products'], async (event) => {
+      if (event?.action === 'delete') {
+        const delId = event.id || event.filters?.id || event.data?.id;
+        if (delId) setProducts(prev => prev.filter(p => p.id !== delId));
+      }
+      try {
+        const dbProds = await DB.fetchProducts(sId);
+        if (dbProds && Array.isArray(dbProds)) {
+          setProducts(dbProds.map(dbProductToApp));
+        }
+      } catch (err) {
+        console.warn('[Realtime] Products sync error:', err);
+      }
+    });
+
+    // 7. Sync Employees immediately
+    const unsubEmployees = RealtimeSync.subscribe(['employees'], async (event) => {
+      if (event?.action === 'delete') {
+        const delId = event.id || event.filters?.id || event.data?.id;
+        if (delId) setEmployees(prev => prev.filter(e => e.id !== delId));
+      }
+      try {
+        const dbEmps = await DB.fetchEmployees(sId);
+        if (dbEmps && Array.isArray(dbEmps)) {
+          setEmployees(dbEmps.map(dbEmployeeToApp));
+        }
+      } catch (err) {
+        console.warn('[Realtime] Employees sync error:', err);
+      }
+    });
+
+    // 8. Sync Clients immediately
+    const unsubClients = RealtimeSync.subscribe(['clients'], async (event) => {
+      if (event?.action === 'delete') {
+        const delId = event.id || event.filters?.id || event.data?.id;
+        if (delId) setClients(prev => prev.filter(c => c.id !== delId));
+      }
+      try {
+        const dbClients = await DB.fetchAll<any>('clients', undefined, sId);
+        if (dbClients && Array.isArray(dbClients)) {
+          setClients(dbClients.map(dbClientToApp));
+        }
+      } catch (err) {
+        console.warn('[Realtime] Clients sync error:', err);
+      }
+    });
+
+    // 9. Sync Promo Codes and Usages immediately across LAN / devices
+    const unsubPromoCodes = RealtimeSync.subscribe(['promo_codes', 'promo_code_usages'], async (event) => {
+      if (event?.action === 'delete') {
+        const delId = event.id || event.filters?.id || event.data?.id;
+        if (delId) {
+          if (event.table === 'promo_codes') setPromoCodes(prev => prev.filter(p => p.id !== delId));
+          if (event.table === 'promo_code_usages') setPromoCodeUsages(prev => prev.filter(u => u.id !== delId));
+        }
+      }
+      try {
+        const [pcs, usages] = await Promise.all([
+          DB.fetchPromoCodes(sId),
+          DB.fetchPromoCodeUsages(sId)
+        ]);
+        if (pcs && Array.isArray(pcs)) setPromoCodes(pcs);
+        if (usages && Array.isArray(usages)) setPromoCodeUsages(usages);
+      } catch (err) {
+        console.warn('[Realtime] Promo codes sync error:', err);
+      }
+    });
+
+    // 10. Sync Partners & Partner Transactions immediately
+    const unsubPartners = RealtimeSync.subscribe(['partners', 'partner_transactions', 'partner_drawings'], async (event) => {
+      if (event?.action === 'delete') {
+        const delId = event.id || event.filters?.id || event.data?.id;
+        if (delId) {
+          if (event.table === 'partners') setPartners(prev => prev.filter(p => p.id !== delId));
+          if (event.table === 'partner_transactions') setPartnerTransactions(prev => prev.filter(pt => pt.id !== delId));
+        }
+      }
+      try {
+        const [dbParts, dbTrxs] = await Promise.all([
+          DB.fetchAll<any>('partners', undefined, sId),
+          DB.fetchAll<any>('partner_transactions', undefined, sId)
+        ]);
+        if (dbParts && Array.isArray(dbParts)) setPartners(dbParts);
+        if (dbTrxs && Array.isArray(dbTrxs)) setPartnerTransactions(dbTrxs);
+      } catch (err) {
+        console.warn('[Realtime] Partners sync error:', err);
+      }
+    });
+
+    // 11. Sync Suppliers, Purchase Invoices, and Supplier Payments immediately
+    const unsubPurchases = RealtimeSync.subscribe(['suppliers', 'purchase_invoices', 'supplier_payments'], async (event) => {
+      if (event?.action === 'delete') {
+        const delId = event.id || event.filters?.id || event.data?.id;
+        if (delId) {
+          if (event.table === 'suppliers') setSuppliers(prev => prev.filter(s => s.id !== delId));
+          if (event.table === 'purchase_invoices') setPurchaseInvoices(prev => prev.filter(p => p.id !== delId));
+          if (event.table === 'supplier_payments') setSupplierPayments(prev => prev.filter(sp => sp.id !== delId));
+        }
+      }
+      try {
+        const [dbSups, dbPurchases, dbPayments] = await Promise.all([
+          DB.fetchAll<any>('suppliers', undefined, sId),
+          DB.fetchAll<any>('purchase_invoices', undefined, sId),
+          DB.fetchAll<any>('supplier_payments', undefined, sId)
+        ]);
+        if (dbSups && Array.isArray(dbSups)) setSuppliers(dbSups);
+        if (dbPurchases && Array.isArray(dbPurchases)) setPurchaseInvoices(dbPurchases);
+        if (dbPayments && Array.isArray(dbPayments)) setSupplierPayments(dbPayments);
+      } catch (err) {
+        console.warn('[Realtime] Purchases sync error:', err);
+      }
+    });
+
+    // 12. Sync Inventory Counts & Item Movements immediately
+    const unsubInventory = RealtimeSync.subscribe(['inventory_counts', 'item_movements'], async (event) => {
+      if (event?.action === 'delete') {
+        const delId = event.id || event.filters?.id || event.data?.id;
+        if (delId) {
+          if (event.table === 'inventory_counts') setInventoryCounts(prev => prev.filter(c => c.id !== delId));
+          if (event.table === 'item_movements') setItemMovements(prev => prev.filter(m => m.id !== delId));
+        }
+      }
+      try {
+        const [dbCounts, dbMoves] = await Promise.all([
+          DB.fetchAll<any>('inventory_counts', undefined, sId),
+          DB.fetchAll<any>('item_movements', undefined, sId)
+        ]);
+        if (dbCounts && Array.isArray(dbCounts)) setInventoryCounts(dbCounts);
+        if (dbMoves && Array.isArray(dbMoves)) setItemMovements(dbMoves);
+      } catch (err) {
+        console.warn('[Realtime] Inventory sync error:', err);
+      }
+    });
+
+    // 13. Sync Tips, Custodies, and Fingerprint Logs immediately
+    const unsubTipsAndCustodies = RealtimeSync.subscribe(['tips', 'employee_custodies', 'fingerprint_logs'], async (event) => {
+      if (event?.action === 'delete') {
+        const delId = event.id || event.filters?.id || event.data?.id;
+        if (delId) {
+          if (event.table === 'tips') setTips(prev => prev.filter(t => t.id !== delId));
+          if (event.table === 'employee_custodies') setCustodies(prev => prev.filter(c => c.id !== delId));
+          if (event.table === 'fingerprint_logs') setFingerprintLogs(prev => prev.filter(f => f.id !== delId));
+        }
+      }
+      try {
+        const [dbTips, dbCustodies, dbLogs] = await Promise.all([
+          DB.fetchAll<any>('tips', undefined, sId),
+          DB.fetchAll<any>('employee_custodies', undefined, sId),
+          DB.fetchAll<any>('fingerprint_logs', undefined, sId)
+        ]);
+        if (dbTips && Array.isArray(dbTips)) setTips(dbTips);
+        if (dbCustodies && Array.isArray(dbCustodies)) setCustodies(dbCustodies);
+        if (dbLogs && Array.isArray(dbLogs)) setFingerprintLogs(dbLogs);
+      } catch (err) {
+        console.warn('[Realtime] Tips & Custodies sync error:', err);
+      }
+    });
+
+    // 15. Reactive Turso Cloud Sync Complete Listener (Phase 4.4 Distributed UX)
+    // When cloud sync finishes, automatically refetch online bookings, clients, invoices & all active entities
+    const unsubCloudSync = RealtimeSync.onCloudSyncComplete(async (payload) => {
+      console.log('⚡ [Cloud-Sync-Complete] Auto-refreshing bookings and distributed state:', payload);
+      setIsTursoConnected(true);
+      setIsCloudConnected(true);
+      try {
+        const [updatedBookings, updatedClients, updatedInvoices, updatedTrxs] = await Promise.all([
+          DB.fetchBookings(sId, bId),
+          DB.fetchClients(sId),
+          DB.fetchInvoices(sId, bId),
+          DB.fetchTransactions(sId, bId)
+        ]);
+
+        if (updatedBookings && Array.isArray(updatedBookings)) {
+          setBookings(updatedBookings.map(dbBookingToApp));
+        }
+        if (updatedClients && Array.isArray(updatedClients)) {
+          setClients(updatedClients.map(dbClientToApp));
+        }
+        if (updatedInvoices && Array.isArray(updatedInvoices)) {
+          setInvoices(updatedInvoices.map((inv: any) => ({
+            ...inv,
+            date: inv.date || inv.created_at || inv.createdAt || new Date().toISOString(),
+            vatAmount: inv.vat,
+            cashbackUsed: inv.cashbackUsed ?? 0,
+            paymentMethods: inv.paymentMethods || [],
+            isRemedyInvoice: inv.isRemedy || false,
+            remedyReason: inv.remedyNotes || '',
+            relatedComplaintId: inv.relatedComplaintId || '',
+            originalInvoiceId: inv.originalInvoiceId || '',
+            zatcaQr: inv.zatcaQr || '',
+            zatcaHash: inv.zatcaHash || '',
+            etaSubmissionUuid: inv.etaSubmissionUuid || '',
+          })));
+        }
+        if (updatedTrxs && Array.isArray(updatedTrxs)) {
+          setTransactions(updatedTrxs.map((t: any) => ({
+            ...t,
+            date: t.date || t.created_at || t.createdAt || t.shift_date || t.shiftDate || new Date().toISOString(),
+            expenseCategory: t.expenseCategory || '', createdBy: t.createdBy || '',
+            userId: t.userId || '', userName: t.userName || '', shiftDate: t.shiftDate || ''
+          })));
+        }
+      } catch (cloudErr) {
+        console.warn('⚠️ [Cloud-Sync] Refetch notice:', cloudErr);
+      }
+    });
+
+    // BroadcastChannel for instant local cross-tab / cross-window promo updates
+    let promoBc: BroadcastChannel | null = null;
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        promoBc = new BroadcastChannel(`smartcut_promos_${sId}`);
+        promoBc.onmessage = async (ev) => {
+          if (ev.data && (ev.data.type === 'PROMO_UPDATED' || ev.data.type === 'PROMO_USAGE_UPDATED')) {
+            const [pcs, usages] = await Promise.all([
+              DB.fetchPromoCodes(sId),
+              DB.fetchPromoCodeUsages(sId)
+            ]);
+            if (pcs && Array.isArray(pcs)) setPromoCodes(pcs);
+            if (usages && Array.isArray(usages)) setPromoCodeUsages(usages);
+          }
+        };
+      }
+    } catch (e) {}
+
+    return () => {
+      unsubServices();
+      unsubCategories();
+      unsubInvoices();
+      unsubShifts();
+      unsubBookings();
+      unsubProducts();
+      unsubEmployees();
+      unsubClients();
+      unsubPromoCodes();
+      unsubPartners();
+      unsubPurchases();
+      unsubInventory();
+      unsubTipsAndCustodies();
+      unsubCloudSync();
+      if (promoBc) {
+        promoBc.close();
+      }
+    };
+  }, [settings.salonId, activeBranchId]);
+
+  // ── Smart HTTP Polling (Fallback sync, Visibility API aware, REST queries) ────
   useEffect(() => {
     const sId = settings.salonId;
     const bId = activeBranchId;
@@ -826,10 +1316,10 @@ export default function App() {
           polledEmployees,
           polledProducts,
           polledCategories,
+          polledServices,
           polledPurchases,
           polledSupplierPayments,
-          polledSuppliers,
-          polledSalesReturns
+          polledSuppliers
         ] = await Promise.all([
           bId ? DB.getActiveWorkShift(sId, bId) : null,
           DB.fetchAll<any>('invoices', undefined, sId),
@@ -839,33 +1329,32 @@ export default function App() {
           DB.fetchEmployees(sId),
           DB.fetchProducts(sId),
           DB.fetchCategories(sId),
+          DB.fetchServices(sId),
           DB.fetchPurchaseInvoices(sId),
           DB.fetchSupplierPayments(sId),
-          DB.fetchSuppliers(sId),
-          DB.fetchSalesReturns(sId)
+          DB.fetchSuppliers(sId)
         ]);
 
         if (!isSubscribed) return;
 
+        // Sync Services
+        if (polledServices && Array.isArray(polledServices)) {
+          setServices(polledServices.map(dbServiceToApp));
+        }
+
         // Sync Employees
         if (polledEmployees && Array.isArray(polledEmployees) && polledEmployees.length > 0) {
-          setEmployees(polledEmployees);
+          setEmployees(polledEmployees.map(dbEmployeeToApp));
         }
 
         // Sync Products
         if (polledProducts && Array.isArray(polledProducts)) {
-          setProducts(prev => {
-            const polledMapped = polledProducts.map(dbProductToApp);
-            if (polledProducts.length === 0) return prev;
-            const polledIds = new Set(polledMapped.map(p => p.id));
-            const pendingLocal = prev.filter(p => !polledIds.has(p.id) && (!p.salonId || p.salonId === sId));
-            return [...polledMapped, ...pendingLocal];
-          });
+          setProducts(polledProducts.map(dbProductToApp));
         }
 
         // Sync Categories
         if (polledCategories && Array.isArray(polledCategories) && polledCategories.length > 0) {
-          setCategories(polledCategories.map(dbCategoryToApp));
+          setCategories(polledCategories);
         }
 
         // Sync Purchase Invoices
@@ -922,93 +1411,9 @@ export default function App() {
           })));
         }
 
-        // Sync Bookings with conflict-safe merge
+        // Sync Bookings
         if (polledBookings && Array.isArray(polledBookings)) {
-          const mappedPolled = polledBookings.map((b: any) => ({
-            ...b,
-            clientName: b.clientName || b.client_name || 'عميل نقدي',
-            phone: b.phone || b.clientPhone || b.client_phone || '',
-            totalAmount: Number(b.totalAmount ?? b.total_amount ?? 0),
-            salonId: b.salonId || b.salon_id || undefined,
-            branchId: b.branchId || b.branch_id || undefined,
-            bookingCode: b.bookingCode || b.booking_code || undefined,
-            queueNumber: b.queueNumber || b.queue_number || undefined,
-            customerEmail: b.customerEmail || b.customer_email || '',
-            advancePayments: b.advancePayments || b.advance_payments || [],
-            notes: b.notes || undefined,
-            internalNotes: b.internalNotes || b.internal_notes || undefined,
-            discountType: b.discountType || b.discount_type || 'fixed',
-            discountValue: Number(b.discountValue ?? b.discount_value ?? 0),
-            createdAt: b.createdAt || b.created_at || undefined,
-            createdBy: b.createdBy || b.created_by || undefined,
-            createdByName: b.createdByName || b.created_by_name || b.createdBy || undefined,
-            updatedAt: b.updatedAt || b.updated_at || undefined,
-            updatedBy: b.updatedBy || b.updated_by || undefined,
-            updatedByName: b.updatedByName || b.updated_by_name || b.updatedBy || undefined
-          }));
-
-          setBookings(prevLocal => {
-            if (!prevLocal || prevLocal.length === 0) return mappedPolled;
-            const polledMap = new Map(mappedPolled.map(b => [b.id, b]));
-            const now = Date.now();
-
-            // Merge: preserve local bookings that are newer or recently edited locally
-            const merged = mappedPolled.map(pb => {
-              const local = prevLocal.find(lb => lb.id === pb.id);
-              if (!local) return pb;
-
-              // 1. فحص حماية التعديل المحلي الأخير (نافذة أمان 45 ثانية تمنع التراجع التلقائي)
-              const localEditedAt = (local as any)._localEditedAt || 0;
-              const isRecentlyEdited = (now - localEditedAt) < 45000;
-              if (isRecentlyEdited) {
-                return local;
-              }
-
-              // 2. مقارنة الطوابع الزمنية للتحديث
-              const localTime = new Date(local.updatedAt || local.updated_at || local.createdAt || local.created_at || 0).getTime();
-              const polledTime = new Date(pb.updatedAt || pb.updated_at || pb.createdAt || pb.created_at || 0).getTime();
-
-              if (localTime > polledTime) {
-                return local;
-              }
-
-              // 3. التحقق الاحتياطي من التعديلات المعلقة
-              const hasLocalChanges = 
-                local.clientName !== pb.clientName ||
-                local.phone !== pb.phone ||
-                local.date !== pb.date ||
-                local.time !== pb.time ||
-                local.status !== pb.status ||
-                local.totalAmount !== pb.totalAmount ||
-                local.notes !== pb.notes ||
-                local.internalNotes !== pb.internalNotes ||
-                JSON.stringify(local.services || []) !== JSON.stringify(pb.services || []) ||
-                JSON.stringify(local.advancePayments || []) !== JSON.stringify(pb.advancePayments || []);
-
-              if (hasLocalChanges && localTime >= polledTime) {
-                return local;
-              }
-
-              return pb;
-            });
-
-            // الحفاظ على الحجوزات المنشأة محلياً ولم تظهر بعد في قائمة السيرفر
-            for (const lb of prevLocal) {
-              if (!polledMap.has(lb.id)) {
-                merged.unshift(lb);
-              }
-            }
-
-            try {
-              localStorage.setItem('smartcut_bookings', JSON.stringify(merged));
-            } catch (e) {}
-            return merged;
-          });
-        }
-
-        // Sync Sales Returns
-        if (polledSalesReturns && Array.isArray(polledSalesReturns)) {
-          setSalesReturns(polledSalesReturns);
+          setBookings(polledBookings.map(dbBookingToApp));
         }
       } catch (err) {
         console.warn('[Smart Polling] Background poll error:', err);
@@ -1020,8 +1425,8 @@ export default function App() {
     // Immediate poll execution on mount & branch/salon change
     executePoll();
 
-    // 3. Interval Configuration: Set the polling interval to 8 seconds for fast cross-device sync
-    const intervalId = setInterval(executePoll, 8000);
+    // 3. Interval Configuration: Fallback polling interval set to 20s (Instant sync handled via SSE)
+    const intervalId = setInterval(executePoll, 20000);
 
     // 5. Visibility API: Pause polling when hidden, immediately poll when tab becomes active
     const handleVisibilityChange = () => {
@@ -1088,7 +1493,7 @@ export default function App() {
     // Determine what tab section is needed
     let sectionToLoad = '';
     if (activeTab === 'invoices') sectionToLoad = 'invoices';
-    else if (activeTab === 'bookings') sectionToLoad = 'bookings';
+    else if (activeTab === 'bookings' || activeTab === 'barber_portal' || activeTab === 'barber') sectionToLoad = 'barber_portal';
     else if (activeTab === 'clients' || activeTab === 'complaints') sectionToLoad = 'clients';
     else if (activeTab === 'treasury' || activeTab === 'expenses') sectionToLoad = 'transactions';
     else if (activeTab === 'dashboard' || activeTab === 'reports' || activeTab === 'closing-receipt') sectionToLoad = 'reports';
@@ -1129,15 +1534,16 @@ export default function App() {
         DB.loadEssentialData(s.id)
       ]);
       
-      const rawBranches = (dbBranches && dbBranches.length > 0) ? dbBranches : SubscriptionService.getBranches(s.id);
-      const sBranches = rawBranches.filter((b, idx, arr) => 
-        arr.findIndex(x => x.id === b.id || (x.code && b.code && x.code.toLowerCase() === b.code.toLowerCase())) === idx
-      );
+      const sBranches = (dbBranches && dbBranches.length > 0) ? dbBranches : SubscriptionService.getBranches(s.id);
       const finalBranches = sBranches.length > 0 ? sBranches : [
-        { id: 'b-main', salonId: s.id, name: 'الفرع الرئيسي', code: 'BR-01', isMain: true, phone: s.phone, address: s.country, isActive: true, status: 'active' }
+        { id: 'b-main', salonId: s.id, name: `الفرع الرئيسي (${s.name})`, code: 'B01', isMain: true, phone: s.phone, address: s.country, isActive: true, status: 'active' }
       ];
       setBranches(finalBranches);
       setActiveBranchId(finalBranches[0].id);
+
+      DB.getActiveWorkShift(s.id, finalBranches[0].id).then(activeShift => {
+        applyActiveWorkShift(activeShift, finalBranches[0].id);
+      }).catch(() => {});
 
       const updatedSettings: AppSettings = {
         ...settings,
@@ -1178,8 +1584,8 @@ export default function App() {
       }
 
       if (essentialData) {
-        const validCats = (essentialData.categories || []).map(dbCategoryToApp);
-        setCategories(validCats.length ? validCats : [{ id: 'all', name: 'الكل', isActive: true }]);
+        const validCats = essentialData.categories || [];
+        setCategories(validCats.length ? validCats : [{ id: 'all', name: 'الكل' }]);
         setServices(essentialData.services ? essentialData.services.map(dbServiceToApp) : []);
         setEmployees(essentialData.employees ? essentialData.employees.map(dbEmployeeToApp) : []);
         setClients(essentialData.clients ? essentialData.clients.map(dbClientToApp) : []);
@@ -1192,11 +1598,6 @@ export default function App() {
       loadedSectionsRef.current.add('pos');
       loadedSectionsRef.current.add('services');
       loadedSectionsRef.current.add('products');
-
-      // Sync active work shift for switched salon
-      DB.getActiveWorkShift(s.id, finalBranches[0].id).then(activeShift => {
-        applyActiveWorkShift(activeShift, finalBranches[0].id);
-      }).catch(() => {});
 
       setIsCloudConnected(true);
     } catch (err) {
@@ -1214,7 +1615,7 @@ export default function App() {
     }
   };
 
-  const currentSalonId = currentUser?.salonId || settings.salonId || '';
+  const currentSalonId = settings.salonId || (branches[0]?.salonId) || currentUser?.salonId || '11111111-1111-4111-8111-111111111111';
 
 
   // 3. Autonomous Branch Isolation Filter & Helpers
@@ -1235,9 +1636,9 @@ export default function App() {
     return false;
   };
 
-  // Salon-Scoped Entities (Direct from Supabase — Guaranteed 100% visible across all screens)
+  // Salon-Scoped Entities (Direct from MSSQL / Supabase — Guaranteed 100% visible across all screens)
   const salonClients = useMemo(() => {
-    return clients.filter(c => !c.salonId || !currentSalonId || c.salonId === currentSalonId);
+    return clients.filter(c => !c.salonId || !currentSalonId || c.salonId === currentSalonId || (c as any).salon_id === currentSalonId);
   }, [clients, currentSalonId]);
 
   const salonCategories = useMemo(() => {
@@ -1257,39 +1658,39 @@ export default function App() {
   }, [products, currentSalonId]);
 
   const salonInvoices = useMemo(() => {
-    return invoices.filter(i => !i.salonId || !currentSalonId || i.salonId === currentSalonId);
+    return invoices.filter(i => !i.salonId || !currentSalonId || i.salonId === currentSalonId || (i as any).salon_id === currentSalonId);
   }, [invoices, currentSalonId]);
 
   const salonTransactions = useMemo(() => {
-    return transactions.filter(t => !(t as any).salonId || !currentSalonId || (t as any).salonId === currentSalonId);
+    return transactions.filter(t => !(t as any).salonId || !currentSalonId || (t as any).salonId === currentSalonId || (t as any).salon_id === currentSalonId);
   }, [transactions, currentSalonId]);
 
   const salonBookings = useMemo(() => {
-    return bookings.filter(b => !(b as any).salonId || !currentSalonId || (b as any).salonId === currentSalonId);
+    return bookings.filter(b => !(b as any).salonId || !currentSalonId || (b as any).salonId === currentSalonId || (b as any).salon_id === currentSalonId);
   }, [bookings, currentSalonId]);
 
   const salonSuppliers = useMemo(() => {
-    return suppliers.filter(s => !(s as any).salonId || !currentSalonId || (s as any).salonId === currentSalonId);
+    return suppliers.filter(s => !(s as any).salonId || !currentSalonId || (s as any).salonId === currentSalonId || (s as any).salon_id === currentSalonId);
   }, [suppliers, currentSalonId]);
 
   const salonPurchaseInvoices = useMemo(() => {
-    return purchaseInvoices.filter(p => !(p as any).salonId || !currentSalonId || (p as any).salonId === currentSalonId);
+    return purchaseInvoices.filter(p => !(p as any).salonId || !currentSalonId || (p as any).salonId === currentSalonId || (p as any).salon_id === currentSalonId);
   }, [purchaseInvoices, currentSalonId]);
 
   const salonSupplierPayments = useMemo(() => {
-    return supplierPayments.filter(sp => !(sp as any).salonId || !currentSalonId || (sp as any).salonId === currentSalonId);
+    return supplierPayments.filter(sp => !(sp as any).salonId || !currentSalonId || (sp as any).salonId === currentSalonId || (sp as any).salon_id === currentSalonId);
   }, [supplierPayments, currentSalonId]);
 
   const salonInventoryCounts = useMemo(() => {
-    return inventoryCounts.filter(ic => !(ic as any).salonId || !currentSalonId || (ic as any).salonId === currentSalonId);
+    return inventoryCounts.filter(ic => !(ic as any).salonId || !currentSalonId || (ic as any).salonId === currentSalonId || (ic as any).salon_id === currentSalonId);
   }, [inventoryCounts, currentSalonId]);
 
   const salonItemMovements = useMemo(() => {
-    return itemMovements.filter(im => !(im as any).salonId || !currentSalonId || (im as any).salonId === currentSalonId);
+    return itemMovements.filter(im => !(im as any).salonId || !currentSalonId || (im as any).salonId === currentSalonId || (im as any).salon_id === currentSalonId);
   }, [itemMovements, currentSalonId]);
 
   const salonSalesReturns = useMemo(() => {
-    return salesReturns.filter(r => !r.salonId || !currentSalonId || r.salonId === currentSalonId);
+    return salesReturns.filter(r => !(r as any).salonId || !currentSalonId || (r as any).salonId === currentSalonId || (r as any).salon_id === currentSalonId);
   }, [salesReturns, currentSalonId]);
 
   // Backward compatible alias
@@ -1307,60 +1708,10 @@ export default function App() {
   const branchInventoryCounts = salonInventoryCounts;
   const branchItemMovements = salonItemMovements;
   const branchSalesReturns = salonSalesReturns;
- 
-  const currentModalExpectedCash = useMemo(() => {
-    if (!shiftData.isOpen) return 0;
-    const curDate = shiftData.date;
-    const curShiftId = (shiftData as any)?.shiftId;
-    const definedTreasuries = (settings.treasuries && settings.treasuries.length > 0)
-      ? settings.treasuries
-      : [{ id: 'cash', name: 'كاش (الدرج)', isMain: false }];
-      
-    const shiftInvs = branchInvoices.filter(i => {
-      if (i.status === 'cancelled') return false;
-      if (i.shiftId && curShiftId) return i.shiftId === curShiftId;
-      return (i.shiftDate && curDate && i.shiftDate === curDate) || i.date.startsWith(curDate);
-    });
-    
-    const totalCashSales = shiftInvs.reduce((s, i) => {
-      const splits = i.paymentMethods && i.paymentMethods.length > 0
-        ? i.paymentMethods
-        : [{ amount: Number(i.total) || 0, treasuryId: i.paymentMethod || 'cash' }];
-      const cashSplit = splits.find((pm: any) => isMatchingTreasury(pm.treasuryId, 'cash', definedTreasuries))?.amount;
-      return s + (Number(cashSplit) || 0);
-    }, 0);
 
-    const shiftTrxs = branchTransactions.filter(t => {
-      const tShiftId = t.shiftId || (t as any).shift_id;
-      if (tShiftId && curShiftId) return tShiftId === curShiftId;
-      return (t.shiftDate && curDate && t.shiftDate === curDate) || t.date.startsWith(curDate);
-    });
-
-    const isStaffAdv = (t: any) => {
-      const isOut = t.type === 'out' || (t.type as string) === 'expense';
-      if (!isOut) return false;
-      const cat = (t.category || '').toLowerCase();
-      const expCat = ((t as any).expenseCategory || '').toLowerCase();
-      const desc = (t.description || '').toLowerCase();
-      return cat === 'staff_advance' || cat === 'hr_advance' || cat === 'advance' || cat.includes('سلف') || expCat.includes('سلف') || desc.includes('سلفة') || desc.includes('سلف');
-    };
-
-    const cashExpenses = shiftTrxs.filter(t => 
-      (t.type === 'out' || (t.type as string) === 'expense' || t.category === 'expense' || t.category === 'مصروفات' || t.category?.includes('مصروف')) &&
-      !isStaffAdv(t) &&
-      t.category !== 'transfer' &&
-      !t.description?.includes('تصفير') &&
-      !t.description?.includes('تحويل') &&
-      isMatchingTreasury(t.treasury || (t as any).treasuryId, 'cash', definedTreasuries)
-    ).reduce((s, t) => s + (Number(t.amount) || 0), 0);
-
-    const cashAdvances = shiftTrxs.filter(t => 
-      isStaffAdv(t) &&
-      isMatchingTreasury(t.treasury || (t as any).treasuryId, 'cash', definedTreasuries)
-    ).reduce((s, t) => s + (Number(t.amount) || 0), 0);
-
-    return Math.round(((Number(shiftData.initialCash) || 0) + totalCashSales - (cashExpenses + cashAdvances)) * 100) / 100;
-  }, [shiftData, branchInvoices, branchTransactions, settings.treasuries]);
+  const handleSetSalesReturns = (newReturns: SalesReturn[] | ((prev: SalesReturn[]) => SalesReturn[])) => {
+    setSalesReturns(newReturns);
+  };
 
   // ============================================================
   // Subscription & Read-Only Protection Rules
@@ -1375,15 +1726,54 @@ export default function App() {
     return subscription.endDate ? new Date(subscription.endDate) : new Date(Date.now() + 7 * 86400000);
   }, [subscription.endDate]);
 
-  const isBranchPending = activeBranch?.status === 'pending_activation' || activeBranch?.isActive === false;
-  const isSalonSuspended = subscription.isActive === false || subscription.status === 'suspended' || settings.isSalonActive === false;
-  const isSubscriptionBlocked = subscription.status === 'expired' || endDateTime.getTime() < nowMidnight.getTime() || isSalonSuspended || isBranchPending;
+  const isBranchPending = false;
+  const isSalonSuspended = false;
+
+  // ── Software License & Strict Read-Only Rules ───────────────────────────
+  const isSubscriptionBlocked = useMemo(() => {
+    if (!licenseInfo) return false;
+    return Boolean(
+      !licenseInfo.isLicensed ||
+      licenseInfo.status === 'expired' ||
+      licenseInfo.status === 'tampered' ||
+      (licenseInfo.daysLeft !== null && licenseInfo.daysLeft !== undefined && licenseInfo.daysLeft <= 0) ||
+      (licenseInfo.runsLeft !== null && licenseInfo.runsLeft !== undefined && licenseInfo.runsLeft <= 0)
+    );
+  }, [licenseInfo]);
+
+  const isExpiringSoon = useMemo(() => {
+    if (!licenseInfo || isSubscriptionBlocked) return false;
+    return Boolean(
+      licenseInfo.isLicensed &&
+      licenseInfo.status === 'active' &&
+      licenseInfo.daysLeft !== null &&
+      licenseInfo.daysLeft !== undefined &&
+      licenseInfo.daysLeft <= 5 &&
+      licenseInfo.daysLeft > 0
+    );
+  }, [licenseInfo, isSubscriptionBlocked]);
+
+  // Sync with localStorage for OfflineQueryBuilder and global guards
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('smartcut_license_readonly', isSubscriptionBlocked ? 'true' : 'false');
+    }
+  }, [isSubscriptionBlocked]);
+
+  // Listen to background mutation blocked events
+  useEffect(() => {
+    const handleBlocked = (e: any) => {
+      setShowLicenseModal(true);
+      alert('🔒 ' + (e.detail?.message || 'تم تحويل البرنامج إلى وضع القراءة فقط لانتهاء الترخيص. يُمنع تسجيل أو تعديل أي بيانات.'));
+    };
+    window.addEventListener('smartcut_license_blocked', handleBlocked);
+    return () => window.removeEventListener('smartcut_license_blocked', handleBlocked);
+  }, []);
 
   const checkReadOnlyAndWarn = () => {
-    if (isSubscriptionBlocked && currentUser?.role !== 'programmer') {
-      if (window.confirm('⛔ تم إيقاف تفعيل الصالون (أو الفرع): جميع الجداول والشاشات أصبحت للقراءة فقط (Read-Only) نظراً لانتهاء الاشتراك أو الفترة التجريبية.\n\nهل ترغب في فتح قائمة الباقات للاشتراك وتفعيل الحساب فوراً؟')) {
-        setShowSubscriptionModal(true);
-      }
+    if (isSubscriptionBlocked) {
+      alert('🔒 تم تحويل البرنامج إلى وضع القراءة فقط: انتهت صلاحية الترخيص.\nيُمنع نهائياً أي إضافة أو تعديل أو حفظ بيانات جديدة لحين تجديد الاشتراك والتفعيل.');
+      setShowLicenseModal(true);
       return true;
     }
     return false;
@@ -1393,7 +1783,7 @@ export default function App() {
   const handleSetEmployees = (updater: Employee[] | ((prev: Employee[]) => Employee[])) => {
     if (checkReadOnlyAndWarn()) return;
     setEmployees(prev => {
-      const currentSalonEmps = prev.filter(e => !e.salonId || e.salonId === currentSalonId);
+      const currentSalonEmps = prev.filter(e => !e.salonId || e.salonId === currentSalonId || (e as any).salon_id === currentSalonId);
       const nextSalonEmps = typeof updater === 'function' ? updater(currentSalonEmps) : updater;
       const tagged = nextSalonEmps.map(e => {
         // تصحيح أي مسير رواتب تم حفظه كسلفة بالخطأ
@@ -1411,7 +1801,7 @@ export default function App() {
           branchCode: (e as any).branchCode || activeBranch?.code || 'BR-01'
         };
       });
-      const otherEmps = prev.filter(e => e.salonId && e.salonId !== currentSalonId);
+      const otherEmps = prev.filter(e => e.salonId && e.salonId !== currentSalonId && (e as any).salon_id !== currentSalonId);
       const res = [...otherEmps, ...tagged];
       DB.saveEmployees(tagged);
       return res;
@@ -1421,7 +1811,7 @@ export default function App() {
   const handleSetServices = (updater: ServiceItem[] | ((prev: ServiceItem[]) => ServiceItem[])) => {
     if (checkReadOnlyAndWarn()) return;
     setServices(prev => {
-      const currentSalonServices = prev.filter(s => !s.salonId || s.salonId === currentSalonId);
+      const currentSalonServices = prev.filter(s => !s.salonId || s.salonId === currentSalonId || (s as any).salon_id === currentSalonId);
       const nextSalonServices = typeof updater === 'function' ? updater(currentSalonServices) : updater;
       const tagged = nextSalonServices.map(s => ({ 
         ...s, 
@@ -1429,43 +1819,25 @@ export default function App() {
         branchId: s.branchId || activeBranch?.id || activeBranchId,
         branchCode: (s as any).branchCode || activeBranch?.code || 'BR-01'
       }));
-      const other = prev.filter(s => s.salonId && s.salonId !== currentSalonId);
+      const other = prev.filter(s => s.salonId && s.salonId !== currentSalonId && (s as any).salon_id !== currentSalonId);
       const res = [...other, ...tagged];
       DB.saveServices(tagged);
       return res;
     });
   };
 
-  const handleRefreshServices = useCallback(async () => {
-    try {
-      const sId = currentSalonId || settings.salonId;
-      if (!sId) return;
-      const freshServices = await DB.fetchServices(sId);
-      if (Array.isArray(freshServices) && freshServices.length > 0) {
-        setServices(prev => {
-          const freshMapped = freshServices.map(dbServiceToApp);
-          const other = prev.filter(s => s.salonId && s.salonId !== sId);
-          return [...other, ...freshMapped];
-        });
-      }
-    } catch (err) {
-      console.warn('Silent refresh services error:', err);
-    }
-  }, [currentSalonId, settings.salonId]);
-
   const handleSetCategories = (updater: Category[] | ((prev: Category[]) => Category[])) => {
     if (checkReadOnlyAndWarn()) return;
     setCategories(prev => {
-      const currentSalonCats = prev.filter(c => !c.salonId || c.salonId === currentSalonId);
+      const currentSalonCats = prev.filter(c => !c.salonId || c.salonId === currentSalonId || (c as any).salon_id === currentSalonId);
       const nextSalonCats = typeof updater === 'function' ? updater(currentSalonCats) : updater;
       const tagged = nextSalonCats.map(c => ({ 
         ...c, 
-        isActive: c.isActive !== false,
         salonId: c.salonId || currentSalonId, 
         branchId: c.branchId || activeBranch?.id || activeBranchId,
         branchCode: (c as any).branchCode || activeBranch?.code || 'BR-01'
       }));
-      const other = prev.filter(c => c.salonId && c.salonId !== currentSalonId);
+      const other = prev.filter(c => c.salonId && c.salonId !== currentSalonId && (c as any).salon_id !== currentSalonId);
       const res = [...other, ...tagged];
       DB.saveCategories(tagged);
       return res;
@@ -1475,32 +1847,12 @@ export default function App() {
   const handleSetProducts = (updater: Product[] | ((prev: Product[]) => Product[])) => {
     if (checkReadOnlyAndWarn()) return;
     setProducts(prev => {
-      const currentSalonProds = prev.filter(p => !p.salonId || p.salonId === currentSalonId);
+      const currentSalonProds = prev.filter(p => !p.salonId || p.salonId === currentSalonId || (p as any).salon_id === currentSalonId);
       const next = typeof updater === 'function' ? updater(currentSalonProds) : updater;
-
-      // رصد وحذف أي منتج تم حذفه من قاعدة بيانات Supabase
-      const removed = currentSalonProds.filter(oldP => !next.some(newP => newP.id === oldP.id));
-      removed.forEach(p => DB.deleteProduct(p.id).catch(() => {}));
-
       const tagged = next.map(p => ({ ...p, salonId: p.salonId || currentSalonId, branchId: p.branchId || activeBranchId }));
-      const other = prev.filter(p => p.salonId && p.salonId !== currentSalonId);
+      const other = prev.filter(p => p.salonId && p.salonId !== currentSalonId && (p as any).salon_id !== currentSalonId);
       const res = [...other, ...tagged];
-
-      // حفظ المنتجات الجديدة أو المعدلة فقط لمنع تكرار وحجب الطلبات
-      const changed = tagged.filter(newP => {
-        const oldP = currentSalonProds.find(o => o.id === newP.id);
-        return !oldP || JSON.stringify(oldP) !== JSON.stringify(newP);
-      });
-      if (changed.length > 0) {
-        Promise.all(changed.map(p => DB.saveProduct(p, currentSalonId))).catch(err => {
-          console.warn('Error saving changed products to DB:', err);
-        });
-      }
-
-      try {
-        localStorage.setItem('smartcut_products', JSON.stringify(res));
-      } catch (e) {}
-
+      DB.saveProducts(tagged);
       return res;
     });
   };
@@ -1508,10 +1860,11 @@ export default function App() {
   const handleSetInvoices = (updater: Invoice[] | ((prev: Invoice[]) => Invoice[])) => {
     if (checkReadOnlyAndWarn()) return;
     setInvoices(prev => {
-      const currentSalonInvs = prev.filter(i => !i.salonId || i.salonId === currentSalonId);
+      const currentSalonInvs = prev.filter(i => !i.salonId || i.salonId === currentSalonId || (i as any).salon_id === currentSalonId);
       const next = typeof updater === 'function' ? updater(currentSalonInvs) : updater;
       const tagged = next.map(i => ({ ...i, salonId: i.salonId || currentSalonId, branchId: i.branchId || activeBranchId }));
-      const other = prev.filter(i => i.salonId && i.salonId !== currentSalonId);
+      const other = prev.filter(i => i.salonId && i.salonId !== currentSalonId && (i as any).salon_id !== currentSalonId);
+      tagged.forEach(inv => DB.saveInvoice(inv));
       return [...other, ...tagged];
     });
   };
@@ -1519,17 +1872,10 @@ export default function App() {
   const handleSetTransactions = (updater: Transaction[] | ((prev: Transaction[]) => Transaction[])) => {
     if (checkReadOnlyAndWarn()) return;
     setTransactions(prev => {
-      const currentSalonTrxs = prev.filter(t => !(t as any).salonId || (t as any).salonId === currentSalonId);
+      const currentSalonTrxs = prev.filter(t => !(t as any).salonId || (t as any).salonId === currentSalonId || (t as any).salon_id === currentSalonId);
       const next = typeof updater === 'function' ? updater(currentSalonTrxs) : updater;
-      const tagged = next.map(t => ({ 
-        ...t, 
-        salonId: (t as any).salonId || currentSalonId, 
-        branchId: (t as any).branchId || activeBranchId,
-        shiftId: (t as any).shiftId || (shiftData?.isOpen ? (shiftData as any).shiftId : undefined),
-        shiftCode: (t as any).shiftCode || (shiftData?.isOpen ? (shiftData as any).shiftCode : undefined),
-        shiftDate: (t as any).shiftDate || (shiftData?.isOpen ? shiftData.date : undefined)
-      } as any));
-      const other = prev.filter(t => (t as any).salonId && (t as any).salonId !== currentSalonId);
+      const tagged = next.map(t => ({ ...t, salonId: (t as any).salonId || currentSalonId, branchId: (t as any).branchId || activeBranchId } as any));
+      const other = prev.filter(t => (t as any).salonId && (t as any).salonId !== currentSalonId && (t as any).salon_id !== currentSalonId);
       const res = [...other, ...tagged];
       DB.saveTransactions(tagged);
       return res;
@@ -1539,91 +1885,28 @@ export default function App() {
   const handleSetBookings = (updater: Booking[] | ((prev: Booking[]) => Booking[])) => {
     if (checkReadOnlyAndWarn()) return;
     setBookings(prev => {
-      const currentSalonBookings = prev.filter(b => !(b as any).salonId || (b as any).salonId === currentSalonId);
+      const currentSalonBookings = prev.filter(b => !(b as any).salonId || (b as any).salonId === currentSalonId || (b as any).salon_id === currentSalonId);
       const next = typeof updater === 'function' ? updater(currentSalonBookings) : updater;
-      const nowIso = new Date().toISOString();
-      const nowEpoch = Date.now();
-      const prevMap = new Map(prev.map(p => [p.id, p]));
-
-      const tagged = next.map(b => {
-        const old = prevMap.get(b.id);
-        const isModified = !old || (
-          b.updatedAt !== old.updatedAt ||
-          b.clientName !== old.clientName ||
-          b.phone !== old.phone ||
-          b.date !== old.date ||
-          b.time !== old.time ||
-          b.status !== old.status ||
-          b.totalAmount !== old.totalAmount ||
-          b.notes !== old.notes ||
-          b.internalNotes !== old.internalNotes ||
-          JSON.stringify(b.services) !== JSON.stringify(old.services) ||
-          JSON.stringify(b.advancePayments) !== JSON.stringify(old.advancePayments)
-        );
-
-        const bDateStr = b.date ? String(b.date).split('T')[0].trim() : '';
-        let validCreatedAt = b.createdAt || (b as any).created_at;
-        const nowMs = Date.now();
-        const isFutureCreation = Boolean(validCreatedAt && new Date(validCreatedAt).getTime() > (nowMs + 86400000));
-        const isMatchesFutureAppt = Boolean(bDateStr && validCreatedAt && validCreatedAt.startsWith(bDateStr) && new Date(bDateStr).getTime() > nowMs);
-
-        if (isFutureCreation || isMatchesFutureAppt) {
-          const advs = b.advancePayments || [];
-          const validAdv = advs.find((a: any) => {
-            const d = a.paymentDate || (a as any).payment_date || a.date;
-            return d && new Date(d).getTime() <= (nowMs + 86400000);
-          });
-          if (validAdv) {
-            const d = validAdv.paymentDate || (validAdv as any).payment_date || validAdv.date;
-            validCreatedAt = d.includes('T') ? d : `${d}T12:00:00.000Z`;
-          } else if (b.shiftDate && new Date(b.shiftDate).getTime() <= (nowMs + 86400000)) {
-            validCreatedAt = `${b.shiftDate}T12:00:00.000Z`;
-          } else {
-            const todayStr = new Date().toISOString().split('T')[0];
-            validCreatedAt = `${todayStr}T12:00:00.000Z`;
-          }
-        }
-
-        return {
-          ...b,
-          createdAt: validCreatedAt || b.createdAt || nowIso,
-          created_at: validCreatedAt || (b as any).created_at || nowIso,
-          salonId: (b as any).salonId || currentSalonId,
-          branchId: (b as any).branchId || activeBranchId,
-          updatedAt: isModified ? (b.updatedAt || nowIso) : b.updatedAt,
-          updated_at: isModified ? (b.updated_at || nowIso) : b.updated_at,
-          _localEditedAt: isModified ? nowEpoch : b._localEditedAt
-        };
-      });
-
-      const other = prev.filter(b => (b as any).salonId && (b as any).salonId !== currentSalonId);
+      const tagged = next.map(b => ({ ...b, salonId: (b as any).salonId || currentSalonId, branchId: (b as any).branchId || activeBranchId }));
+      const other = prev.filter(b => (b as any).salonId && (b as any).salonId !== currentSalonId && (b as any).salon_id !== currentSalonId);
       const res = [...other, ...tagged];
-
-      try {
-        localStorage.setItem('smartcut_bookings', JSON.stringify(res));
-      } catch (e) {}
-
-      const changed = tagged.filter(b => {
+      
+      // Save only new or modified bookings to avoid SQLite locking storms & race conditions
+      const prevMap = new Map(prev.map(p => [p.id, p]));
+      const changedOrNew = tagged.filter(b => {
         const old = prevMap.get(b.id);
         if (!old) return true;
-        return (
-          b.updatedAt !== old.updatedAt ||
-          b.clientName !== old.clientName ||
-          b.phone !== old.phone ||
-          b.date !== old.date ||
-          b.time !== old.time ||
-          b.status !== old.status ||
-          b.totalAmount !== old.totalAmount ||
-          b.notes !== old.notes ||
-          b.internalNotes !== old.internalNotes ||
-          JSON.stringify(b.services) !== JSON.stringify(old.services) ||
-          JSON.stringify(b.advancePayments) !== JSON.stringify(old.advancePayments)
-        );
+        return old.updatedAt !== b.updatedAt || 
+               old.status !== b.status || 
+               old.totalAmount !== b.totalAmount || 
+               old.time !== b.time || 
+               old.date !== b.date || 
+               old.clientName !== b.clientName || 
+               old.phone !== b.phone ||
+               (old.advancePayments?.length !== b.advancePayments?.length) ||
+               (old.services?.length !== b.services?.length);
       });
-      changed.forEach(b => {
-        DB.saveBooking(b, b.salonId || currentSalonId).catch(err => console.error('DB.saveBooking in handleSetBookings error:', err));
-      });
-
+      changedOrNew.forEach(b => DB.saveBooking(b));
       return res;
     });
   };
@@ -1631,10 +1914,10 @@ export default function App() {
   const handleSetClients = (updater: Client[] | ((prev: Client[]) => Client[])) => {
     if (checkReadOnlyAndWarn()) return;
     setClients(prev => {
-      const currentSalonClients = prev.filter(c => !c.salonId || c.salonId === currentSalonId);
+      const currentSalonClients = prev.filter(c => !c.salonId || c.salonId === currentSalonId || (c as any).salon_id === currentSalonId);
       const next = typeof updater === 'function' ? updater(currentSalonClients) : updater;
       const tagged = next.map(c => ({ ...c, salonId: c.salonId || currentSalonId }));
-      const otherSalonClients = prev.filter(c => c.salonId && c.salonId !== currentSalonId);
+      const otherSalonClients = prev.filter(c => c.salonId && c.salonId !== currentSalonId && (c as any).salon_id !== currentSalonId);
       const res = [...otherSalonClients, ...tagged];
       tagged.forEach(c => DB.saveClient(c));
       return res;
@@ -1646,13 +1929,6 @@ export default function App() {
     setSuppliers(prev => {
       const currentSalonSuppliers = prev.filter((s: any) => !(s as any).salonId || (s as any).salonId === currentSalonId);
       const next = typeof updater === 'function' ? updater(currentSalonSuppliers) : updater;
-
-      // رصد وحذف أي مورد تم استبعاده من قاعدة بيانات Supabase
-      const removed = currentSalonSuppliers.filter((oldS: any) => !next.some((newS: any) => newS.id === oldS.id));
-      removed.forEach((s: any) => {
-        DB.deleteSupplier(s.id);
-      });
-
       const tagged = next.map((s: any) => ({ ...s, salonId: s.salonId || currentSalonId, branchId: s.branchId || activeBranchId }));
       const other = prev.filter((s: any) => (s as any).salonId && (s as any).salonId !== currentSalonId);
       const res = [...other, ...tagged];
@@ -1726,16 +2002,10 @@ export default function App() {
         DB.loadSectionData('warehouse', sId)
       ]);
       if (polledProducts && Array.isArray(polledProducts)) {
-        setProducts(prev => {
-          const polledMapped = polledProducts.map(dbProductToApp);
-          if (polledProducts.length === 0) return prev;
-          const polledIds = new Set(polledMapped.map(p => p.id));
-          const pendingLocal = prev.filter(p => !polledIds.has(p.id) && (!p.salonId || p.salonId === sId));
-          return [...polledMapped, ...pendingLocal];
-        });
+        setProducts(polledProducts.map(dbProductToApp));
       }
       if (polledCategories && Array.isArray(polledCategories) && polledCategories.length > 0) {
-        setCategories(polledCategories.map(dbCategoryToApp));
+        setCategories(polledCategories);
       }
       if (polledPurchases && Array.isArray(polledPurchases)) {
         setPurchaseInvoices(polledPurchases);
@@ -1790,21 +2060,31 @@ export default function App() {
   };
 
   const handleSetPromoCodes = (updater: any) => {
-    if (checkReadOnlyAndWarn()) return;
     setPromoCodes(prev => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
-      try { localStorage.setItem('smartcut_promo_codes', JSON.stringify(next)); } catch (e) {}
-      next.forEach((pc: any) => DB.savePromoCode(pc));
+      if (Array.isArray(next)) {
+        if (Array.isArray(prev)) {
+          const nextIds = new Set(next.map((n: any) => n.id));
+          prev.filter((p: any) => !nextIds.has(p.id)).forEach((p: any) => {
+            DB.deletePromoCode(p.id).catch(e => console.warn('Error deleting promo code:', e));
+          });
+        }
+        next.forEach((pc: any) => {
+          DB.savePromoCode(pc).catch(e => console.warn('Error saving promo code:', e));
+        });
+      }
       return next;
     });
   };
 
   const handleSetPromoCodeUsages = (updater: any) => {
-    if (checkReadOnlyAndWarn()) return;
     setPromoCodeUsages(prev => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
-      try { localStorage.setItem('smartcut_promo_code_usages', JSON.stringify(next)); } catch (e) {}
-      next.forEach((pu: any) => DB.savePromoCodeUsage(pu));
+      if (Array.isArray(next)) {
+        next.forEach((pu: any) => {
+          DB.savePromoCodeUsage(pu).catch(e => console.warn('Error saving promo code usage:', e));
+        });
+      }
       return next;
     });
   };
@@ -1833,22 +2113,6 @@ export default function App() {
       const next = typeof updater === 'function' ? updater(prev) : updater;
       next.forEach((fl: any) => DB.saveFingerprintLog(fl));
       return next;
-    });
-  };
-
-  const handleSetSalesReturns = (updater: SalesReturn[] | ((prev: SalesReturn[]) => SalesReturn[])) => {
-    if (checkReadOnlyAndWarn()) return;
-    setSalesReturns(prev => {
-      const currentSalonReturns = prev.filter(r => !r.salonId || r.salonId === currentSalonId);
-      const next = typeof updater === 'function' ? updater(currentSalonReturns) : updater;
-      const tagged = next.map(r => ({ ...r, salonId: r.salonId || currentSalonId, branchId: r.branchId || activeBranchId }));
-      const other = prev.filter(r => r.salonId && r.salonId !== currentSalonId);
-      const res = [...other, ...tagged];
-      try {
-        localStorage.setItem('smartcut_sales_returns', JSON.stringify(res));
-      } catch (e) {}
-      tagged.forEach(r => DB.saveSalesReturn(r, currentSalonId));
-      return res;
     });
   };
 
@@ -1896,57 +2160,52 @@ export default function App() {
 
   const handleOpenShift = async () => {
     if (checkReadOnlyAndWarn()) return;
-    if (shiftData.isOpen || Object.values(branchShifts).some((s: any) => s && s.isOpen)) {
-      alert('⚠️ لا يمكن فتح وردية جديدة: توجد وردية أخرى مفتوحة بالفعل لهذا الصالون! يرجى إغلاق الوردية الحالية أولاً.');
+    if (shiftData.isOpen) {
+      alert('⚠️ هناك وردية مفتوحة بالفعل لهذا الصالون!');
       return;
     }
-
-    // التحقق الصارم من قاعدة البيانات لمنع فتح أكثر من وردية لنفس الصالون عبر الأجهزة
-    try {
-      const activeDbShift = await DB.getActiveWorkShift(settings.salonId);
-      if (activeDbShift && (activeDbShift.status === 'open' || !activeDbShift.closedAt)) {
-        applyActiveWorkShift(activeDbShift, activeBranchId);
-        alert(`⚠️ لا يمكن فتح وردية جديدة: توجد وردية أخرى مفتوحة بالفعل لهذا الصالون في قاعدة البيانات (كود الوردية: ${activeDbShift.shiftCode || activeDbShift.id}). يرجى إغلاقها أولاً.`);
-        setShowOpenModal(false);
-        return;
-      }
-    } catch (e) {
-      console.warn('Error verifying active shift in DB:', e);
-    }
-
+    const shiftDateVal = openShiftForm.date?.trim() || getLocalTodayDateString();
     const activeBranch = branches.find(b => b.id === activeBranchId) || branches[0];
     const shiftId = 'SHIFT-' + Math.random().toString(36).substr(2, 9).toUpperCase();
     const nowIso = new Date().toISOString();
 
-    // توليد كود وردية تسلسلي وفريد لنفس اليوم (e.g. SH-20261010-01, SH-20261010-02)
-    const cleanDate = openShiftForm.date.replace(/-/g, '');
-    let seq = 1;
+    const cleanDate = shiftDateVal.replace(/-/g, '');
+    let nextSeq = 1;
     try {
       const existingShifts = await DB.fetchWorkShifts(settings.salonId, activeBranchId);
-      const sameDayShifts = existingShifts.filter((s: any) => s.shiftDate === openShiftForm.date);
-      seq = sameDayShifts.length + 1;
+      const sameDayShifts = existingShifts.filter((s: any) => (s.shiftDate === shiftDateVal) || (s.shift_date === shiftDateVal));
+      if (sameDayShifts.length > 0) {
+        let maxNum = 0;
+        sameDayShifts.forEach((s: any) => {
+          const code = s.shiftCode || s.shift_code || '';
+          const match = code.match(/SH-\d+-(\d+)/);
+          if (match) {
+            const num = parseInt(match[1], 10);
+            if (!isNaN(num) && num > maxNum) maxNum = num;
+          }
+        });
+        nextSeq = Math.max(maxNum + 1, sameDayShifts.length + 1);
+      }
     } catch (e) {
-      console.warn('Error fetching existing shifts for code sequence:', e);
+      console.warn('Could not fetch existing shifts for sequence:', e);
     }
-    const shiftSeq = seq.toString().padStart(2, '0');
-    const shiftCode = `SH-${cleanDate}-${shiftSeq}`;
+    const shiftCode = `SH-${cleanDate}-${String(nextSeq).padStart(2, '0')}`;
 
     if (openShiftForm.initialCash > 0) {
       const cashTreasury = settings.treasuries.find(t => t.id === 'cash') || settings.treasuries[0];
       const newTrx: Transaction = {
         id: 'TRX-CUSTODY-' + Math.random().toString(36).substr(2,9),
-        date: openShiftForm.date + 'T' + new Date().toTimeString().split(' ')[0],
+        date: shiftDateVal + 'T' + new Date().toTimeString().split(' ')[0],
         type: 'in',
         amount: openShiftForm.initialCash,
         category: 'عهدة افتتاحية',
-        description: `عهدة افتتاحية للوردية [${shiftCode}] (${currentUser?.name || 'الكاشير'}) - فرع ${activeBranch?.name || ''}`,
+        description: `عهدة افتتاحية للوردية (${shiftCode} - ${currentUser?.name || 'الكاشير'}) - فرع ${activeBranch?.name || ''}`,
         treasury: cashTreasury.id,
         createdBy: currentUser?.name || 'الكاشير',
         userId: currentUser?.id,
         userName: currentUser?.name || 'الكاشير',
-        shiftDate: openShiftForm.date,
-        shiftId,
-        shiftCode,
+        shiftDate: shiftDateVal,
+        shiftCode: shiftCode,
         branchId: activeBranchId,
         branchCode: activeBranch?.code
       };
@@ -1958,7 +2217,7 @@ export default function App() {
       shiftCode,
       salonId: settings.salonId,
       branchId: activeBranchId,
-      shiftDate: openShiftForm.date,
+      shiftDate: shiftDateVal,
       openedAt: nowIso,
       openedByUserId: currentUser?.id,
       openedByUserName: currentUser?.name || 'الكاشير',
@@ -1969,350 +2228,185 @@ export default function App() {
       createdAt: nowIso
     };
 
-    lastClosedShiftTimeRef.current = 0;
-    lastClosedShiftRef.current = null;
-    try {
-      localStorage.removeItem('smartcut_last_closed_shift');
-    } catch (e) {}
-    await DB.saveWorkShift(newWorkShift);
     setShiftData({ 
       isOpen: true, 
-      date: openShiftForm.date, 
+      date: shiftDateVal, 
       initialCash: openShiftForm.initialCash, 
       shiftId, 
-      shiftCode, 
-      openedAt: nowIso, 
+      shiftCode,
+      openedAt: nowIso,
       openedByUserId: currentUser?.id,
       openedByUserName: currentUser?.name || 'الكاشير',
       openedByName: currentUser?.name || 'الكاشير',
       openedByRole: currentUser?.role || 'cashier'
     });
     setShowOpenModal(false);
+    await DB.saveWorkShift(newWorkShift);
   };
 
   const handleConfirmCloseShift = async () => {
     if (checkReadOnlyAndWarn()) return;
-    try {
-      lastClosedShiftTimeRef.current = Date.now();
-      const activeBranch = branches.find(b => b.id === activeBranchId) || branches[0];
-      const definedTreasuries = (settings.treasuries && settings.treasuries.length > 0)
-        ? [...settings.treasuries]
-        : [
-            { id: 'main', name: 'الخزنة الرئيسية', isMain: true },
-            { id: 'cash', name: 'كاش (الدرج)', isMain: false },
-            { id: 'card', name: 'شبكة / فيزا', isMain: false }
-          ];
-      const mainTreasury = resolveMainTreasury(definedTreasuries);
-      if (!definedTreasuries.some(t => t.id === mainTreasury.id)) {
-        definedTreasuries.unshift(mainTreasury);
-      }
+    const activeBranch = branches.find(b => b.id === activeBranchId) || branches[0];
+    const currentShiftCode = (shiftData as any)?.shiftCode;
+    const definedTreasuries = (settings.treasuries && settings.treasuries.length > 0)
+      ? settings.treasuries
+      : [
+          { id: 'main', name: 'الخزنة الرئيسية', isMain: true },
+          { id: 'cash', name: 'كاش (الدرج)', isMain: false },
+          { id: 'card', name: 'شبكة / فيزا', isMain: false }
+        ];
+    const mainTreasury = definedTreasuries.find(t => t.isMain) || definedTreasuries.find(t => t.id === 'main') || definedTreasuries[0];
+    const newTransactions: Transaction[] = [];
+    const now = (shiftData?.isOpen && shiftData?.date) 
+      ? (shiftData.date + 'T' + new Date().toTimeString().split(' ')[0]) 
+      : new Date().toISOString();
 
-      const newTransactions: Transaction[] = [];
-      const currentShiftDate = (shiftData?.isOpen && shiftData?.date) 
-        ? shiftData.date 
-        : new Date().toISOString().split('T')[0];
-      const currentShiftId = (shiftData as any)?.shiftId || (shiftData as any)?.id || ('SHIFT-' + Math.random().toString(36).substr(2, 9).toUpperCase());
-      const currentShiftCode = (shiftData as any)?.shiftCode || '';
-      const now = currentShiftDate + 'T' + new Date().toTimeString().split(' ')[0];
+    definedTreasuries.forEach(t => {
+      if (t.id === mainTreasury.id) return;
 
-      // Operational collections filtered strictly by current shift to isolate multiple cashiers on the same day
-      const shiftInvoices = branchInvoices.filter(i => {
-        if (i.status === 'cancelled') return false;
-        if (i.shiftId && currentShiftId) {
-          return i.shiftId === currentShiftId;
-        }
-        return (i.shiftDate && i.shiftDate === currentShiftDate) || i.date.startsWith(currentShiftDate);
-      });
+      // 1. Transactions directly in this treasury
+      const tTrx = transactions.filter(trx => 
+        (trx.treasury === t.id || (trx as any).treasuryId === t.id) &&
+        (!trx.salonId || !settings.salonId || trx.salonId === settings.salonId)
+      );
 
-      const shiftTransactions = branchTransactions.filter(t => {
-        const tShiftId = t.shiftId || (t as any).shift_id;
-        if (tShiftId && currentShiftId) {
-          return tShiftId === currentShiftId;
-        }
-        return (t.shiftDate && t.shiftDate === currentShiftDate) || 
-               ((t as any).shift_date && (t as any).shift_date === currentShiftDate) || 
-               t.date.startsWith(currentShiftDate);
-      });
+      const invoiceIdsInTrx = new Set(
+        tTrx.filter(trx => trx.type === 'in' && ((trx as any).invoiceId || (trx as any).invoice_id))
+          .map(trx => (trx as any).invoiceId || (trx as any).invoice_id)
+      );
 
-      const isStaffAdvance = (t: any) => {
-        const isOut = t.type === 'out' || (t.type as string) === 'expense';
-        if (!isOut) return false;
-        const cat = (t.category || '').toLowerCase();
-        const expCat = ((t as any).expenseCategory || '').toLowerCase();
-        const desc = (t.description || '').toLowerCase();
-        return (
-          cat === 'staff_advance' ||
-          cat === 'hr_advance' ||
-          cat === 'advance' ||
-          cat.includes('سلف') ||
-          expCat.includes('سلف') ||
-          desc.includes('سلفة') ||
-          desc.includes('سلف')
-        );
-      };
-
-      const isAdvanceTrx = (trx: any) => {
-        if (trx.type !== 'in') return false;
-        const cat = trx.category || '';
-        if (cat === 'booking_advance' || cat === 'مقدم حجز' || cat === 'عربون حجز' || cat === 'عربون' || cat === 'مقدم') return true;
-        if (cat === 'advance' && !trx.description?.includes('سلف')) return true;
-        const desc = trx.description || '';
-        return desc.includes('عربون') || desc.includes('مقدم حجز') || desc.includes('دفعة مقدمة');
-      };
-
-      // Calculate and generate zeroing / transfer transactions for all sub-treasuries
-      definedTreasuries.forEach(t => {
-        if (t.id === mainTreasury.id) return;
-
-        // Transactions matching this treasury in the current shift
-        const tTrx = shiftTransactions.filter(trx => 
-          isMatchingTreasury(trx.treasury || (trx as any).treasuryId, t.id, definedTreasuries)
-        );
-
-        const invoiceIdsInTrx = new Set(
-          tTrx.filter(trx => trx.type === 'in' && ((trx as any).invoiceId || (trx as any).invoice_id))
-            .map(trx => (trx as any).invoiceId || (trx as any).invoice_id)
-        );
-
-        // Sales from invoices that don't have separate transaction rows
-        const unrecordedInvoiceSales = shiftInvoices.reduce((sum, inv) => {
-          if (invoiceIdsInTrx.has(inv.id)) return sum;
-          const methods = inv.paymentMethods && inv.paymentMethods.length > 0
-            ? inv.paymentMethods
-            : [{ amount: Number(inv.total) || 0, treasuryId: inv.paymentMethod || 'cash' }];
-          const matched = methods.filter((m: any) => isMatchingTreasury(m.treasuryId, t.id, definedTreasuries));
-          return sum + matched.reduce((s: number, m: any) => s + (Number(m.amount) || 0), 0);
-        }, 0);
-
-        const recordedSales = tTrx.filter(trx => trx.type === 'in' && (trx.category === 'sales' || trx.category === 'مبيعات')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-        const sales = unrecordedInvoiceSales + recordedSales;
-
-        // Booking advances collected during this shift for this treasury
-        const trxAdvances = tTrx.filter(isAdvanceTrx).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-        let unrecordedAdvSum = 0;
-        (branchBookings || []).forEach(b => {
-          if (b.status === 'cancelled') return;
-          const advances = (b.advancePayments || (b as any).advance_payments || []);
-          if (Array.isArray(advances)) {
-            advances.forEach((adv: any) => {
-              const advDate = adv.date ? adv.date.split('T')[0] : '';
-              if (advDate === currentShiftDate && Number(adv.amount) > 0) {
-                if (isMatchingTreasury(adv.treasuryId || adv.paymentMethod, t.id, definedTreasuries)) {
-                  const alreadyInTrx = tTrx.some(trx => 
-                    Number(trx.amount) === Number(adv.amount) && (
-                      trx.description?.includes(b.bookingCode || '') || 
-                      trx.description?.includes(b.id || '') || 
-                      trx.description?.includes(b.clientName || '')
-                    )
-                  );
-                  if (!alreadyInTrx) {
-                    unrecordedAdvSum += Number(adv.amount) || 0;
-                  }
-                }
-              }
-            });
-          }
-        });
-        const bookingAdvances = trxAdvances + unrecordedAdvSum;
-
-        const totalIncome = sales + bookingAdvances;
-
-        // Outflows for this treasury in this shift
-        const expenses = tTrx.filter(trx => 
-          (trx.type === 'out' || (trx as any).type === 'expense') && 
-          !isStaffAdvance(trx) && 
-          trx.category !== 'transfer' && 
-          !trx.description?.includes('تصفير') && 
-          !trx.description?.includes('تحويل')
-        ).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-
-        const advances = tTrx.filter(isStaffAdvance).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-        const transfersIn = tTrx.filter(trx => trx.type === 'in' && trx.category === 'transfer').reduce((s, x) => s + (Number(x.amount) || 0), 0);
-        const transfersOut = tTrx.filter(trx => trx.type === 'out' && trx.category === 'transfer').reduce((s, x) => s + (Number(x.amount) || 0), 0);
-        const deposits = tTrx.filter(trx => trx.type === 'in' && (trx.category === 'deposit' || trx.category === 'إيداع')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-
-        const recordedInitialCash = tTrx.filter(trx => trx.type === 'in' && (trx.category === 'عهدة افتتاحية' || trx.category === 'initial_cash')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-        const isCashDrawer = t.id === 'cash' || (!definedTreasuries.some(tr => tr.id === 'cash') && (t.id === 'main' || t.isMain));
-        const initialCashSum = recordedInitialCash > 0 ? recordedInitialCash : (isCashDrawer ? (Number(shiftData.initialCash) || 0) : 0);
-
-        const shiftNet = Math.round(((totalIncome + transfersIn + deposits + initialCashSum) - (expenses + advances + transfersOut)) * 100) / 100;
-
-        // Also check overall cumulative balance in transactions for this treasury to guarantee it is completely zeroed
-        const overallTrx = branchTransactions.filter(trx => isMatchingTreasury(trx.treasury || (trx as any).treasuryId, t.id, definedTreasuries));
-        const overallIn = overallTrx.filter(trx => trx.type === 'in').reduce((s, x) => s + (Number(x.amount) || 0), 0) + unrecordedInvoiceSales + unrecordedAdvSum;
-        const overallOut = overallTrx.filter(trx => trx.type === 'out' || (trx as any).type === 'expense').reduce((s, x) => s + (Number(x.amount) || 0), 0);
-        const overallBalance = Math.round((overallIn - overallOut) * 100) / 100;
-
-        const amountToTransfer = Math.max(0, shiftNet > 0 ? (overallBalance > 0 ? Math.max(shiftNet, overallBalance) : shiftNet) : overallBalance);
-
-        if (amountToTransfer > 0) {
-          newTransactions.push({
-            id: 'TRX-OUT-' + Math.random().toString(36).substr(2, 9),
-            salonId: settings.salonId,
-            date: now,
-            createdAt: new Date().toISOString(),
-            type: 'out',
-            amount: amountToTransfer,
-            category: 'transfer',
-            description: `تصفير خزينة (${t.name}) بالوردية [${currentShiftCode || currentShiftDate}] ونقل الرصيد (${amountToTransfer} ${settings.currency || 'ر.س'}) إلى (${mainTreasury.name}) - كاشير: ${currentUser?.name || 'الكاشير'}`,
-            treasury: t.id,
-            branchId: activeBranchId,
-            branchCode: activeBranch?.code,
-            createdBy: currentUser?.name || 'الكاشير',
-            userId: currentUser?.id,
-            userName: currentUser?.name || 'الكاشير',
-            shiftDate: currentShiftDate,
-            shiftId: currentShiftId,
-            shiftCode: currentShiftCode
-          });
-          newTransactions.push({
-            id: 'TRX-IN-' + Math.random().toString(36).substr(2, 9),
-            salonId: settings.salonId,
-            date: now,
-            createdAt: new Date().toISOString(),
-            type: 'in',
-            amount: amountToTransfer,
-            category: 'transfer',
-            description: `تحويل تصفير وردية [${currentShiftCode || currentShiftDate}] من (${t.name}) بمبلغ (${amountToTransfer} ${settings.currency || 'ر.س'}) إلى (${mainTreasury.name}) - كاشير: ${currentUser?.name || 'الكاشير'}`,
-            treasury: mainTreasury.id,
-            branchId: activeBranchId,
-            branchCode: activeBranch?.code,
-            createdBy: currentUser?.name || 'الكاشير',
-            userId: currentUser?.id,
-            userName: currentUser?.name || 'الكاشير',
-            shiftDate: currentShiftDate,
-            shiftId: currentShiftId,
-            shiftCode: currentShiftCode
-          });
-        }
-      });
-
-      if (newTransactions.length > 0) {
-        setTransactions(prev => [...prev, ...newTransactions]);
-        await DB.saveTransactions(newTransactions, settings.salonId);
-      }
-
-      // Shift closure statistics calculation
-      const totalSales = shiftInvoices.reduce((s, i) => s + (Number(i.total) || 0), 0);
-      const totalCashSales = shiftInvoices.reduce((s, i) => {
-        const splits = i.paymentMethods && i.paymentMethods.length > 0
-          ? i.paymentMethods
-          : [{ amount: Number(i.total) || 0, treasuryId: i.paymentMethod || 'cash' }];
-        const cashSplit = splits.find((pm: any) => isMatchingTreasury(pm.treasuryId, 'cash', definedTreasuries))?.amount;
-        return s + (Number(cashSplit) || 0);
+      // 2. Add sales from invoices that don't have separate transaction rows
+      const unrecordedInvoiceSales = branchInvoices.reduce((sum, inv) => {
+        if (inv.status === 'cancelled') return sum;
+        if (invoiceIdsInTrx.has(inv.id)) return sum;
+        const methods = inv.paymentMethods && inv.paymentMethods.length > 0
+          ? inv.paymentMethods
+          : [{ amount: Number(inv.total) || 0, treasuryId: inv.paymentMethod || 'cash' }];
+        const matched = methods.filter((m: any) => m.treasuryId === t.id);
+        return sum + matched.reduce((s: number, m: any) => s + (Number(m.amount) || 0), 0);
       }, 0);
-      const totalCardSales = Math.max(0, totalSales - totalCashSales);
 
-      const shiftExpenses = shiftTransactions.filter(t => 
-        (t.type === 'out' || (t.type as string) === 'expense' || t.category === 'expense' || t.category === 'مصروفات' || t.category?.includes('مصروف')) &&
-        !isStaffAdvance(t) &&
-        t.category !== 'transfer' &&
-        !t.description?.includes('تصفير') &&
-        !t.description?.includes('تحويل')
-      ).reduce((s, t) => s + (Number(t.amount) || 0), 0);
+      const totalIn = tTrx.filter(trx => trx.type === 'in').reduce((s, x) => s + (Number(x.amount) || 0), 0) + unrecordedInvoiceSales;
+      const totalOut = tTrx.filter(trx => trx.type === 'out').reduce((s, x) => s + (Number(x.amount) || 0), 0);
+      const net = Math.round((totalIn - totalOut) * 100) / 100;
 
-      const shiftAdvances = shiftTransactions.filter(t => isStaffAdvance(t)).reduce((s, t) => s + (Number(t.amount) || 0), 0);
+      if (net > 0) {
+        newTransactions.push({
+          id: 'TRX-OUT-' + Math.random().toString(36).substr(2,9),
+          salonId: settings.salonId,
+          date: now,
+          type: 'out',
+          amount: net,
+          category: 'transfer',
+          description: `تصفير خزينة (${t.name}) ونقل الرصيد بالكامل (${net} ر.س) إلى (${mainTreasury.name}) - وردية ${currentShiftCode || ''} - فرع ${activeBranch?.name || ''}`,
+          treasury: t.id,
+          branchId: activeBranchId,
+          branchCode: activeBranch?.code,
+          createdBy: currentUser?.name || 'الكاشير',
+          userId: currentUser?.id,
+          userName: currentUser?.name || 'الكاشير',
+          shiftDate: shiftData.date,
+          shiftCode: currentShiftCode
+        });
+        newTransactions.push({
+          id: 'TRX-IN-' + Math.random().toString(36).substr(2,9),
+          salonId: settings.salonId,
+          date: now,
+          type: 'in',
+          amount: net,
+          category: 'transfer',
+          description: `تحويل تصفير وردية من (${t.name}) بمبلغ (${net} ر.س) إلى (${mainTreasury.name}) - وردية ${currentShiftCode || ''} - فرع ${activeBranch?.name || ''}`,
+          treasury: mainTreasury.id,
+          branchId: activeBranchId,
+          branchCode: activeBranch?.code,
+          createdBy: currentUser?.name || 'الكاشير',
+          userId: currentUser?.id,
+          userName: currentUser?.name || 'الكاشير',
+          shiftDate: shiftData.date,
+          shiftCode: currentShiftCode
+        });
+      }
+    });
 
-      const cashExpenses = shiftTransactions.filter(t => 
-        (t.type === 'out' || (t.type as string) === 'expense' || t.category === 'expense' || t.category === 'مصروفات' || t.category?.includes('مصروف')) &&
-        !isStaffAdvance(t) &&
-        t.category !== 'transfer' &&
-        !t.description?.includes('تصفير') &&
-        !t.description?.includes('تحويل') &&
-        isMatchingTreasury(t.treasury || (t as any).treasuryId, 'cash', definedTreasuries)
-      ).reduce((s, t) => s + (Number(t.amount) || 0), 0);
-
-      const cashAdvances = shiftTransactions.filter(t => 
-        isStaffAdvance(t) &&
-        isMatchingTreasury(t.treasury || (t as any).treasuryId, 'cash', definedTreasuries)
-      ).reduce((s, t) => s + (Number(t.amount) || 0), 0);
-
-      const expectedCash = (Number(shiftData.initialCash) || 0) + totalCashSales - (cashExpenses + cashAdvances);
-      const actualCashNum = closeShiftActualCash !== '' && !isNaN(Number(closeShiftActualCash))
-        ? Number(closeShiftActualCash)
-        : expectedCash;
-      const cashDifference = Math.round((actualCashNum - expectedCash) * 100) / 100;
-
-      const totalTransferredToMain = newTransactions
-        .filter(t => t.type === 'in' && t.treasury === mainTreasury.id && t.category === 'transfer')
-        .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
-
-      const closedShift: Partial<WorkShift> & Record<string, any> = {
-        id: currentShiftId,
-        shiftCode: currentShiftCode,
-        salonId: settings.salonId,
-        branchId: activeBranchId,
-        shiftDate: currentShiftDate,
-        openedAt: (shiftData as any)?.openedAt || now,
-        openedByUserId: (shiftData as any)?.openedByUserId || currentUser?.id,
-        openedByUserName: (shiftData as any)?.openedByUserName || currentUser?.name || 'الكاشير',
-        openedByName: (shiftData as any)?.openedByName || (shiftData as any)?.openedByUserName || currentUser?.name || 'الكاشير',
-        openedByRole: (shiftData as any)?.openedByRole || currentUser?.role || 'cashier',
-        closedAt: now,
-        closedByUserId: currentUser?.id,
-        closedByUserName: currentUser?.name || 'الكاشير',
-        closedByName: currentUser?.name || 'الكاشير',
-        closedByRole: currentUser?.role || 'cashier',
-        initialCash: Number(shiftData.initialCash) || 0,
-        expectedCash,
-        actualCash: actualCashNum,
-        cashDifference,
-        totalSales,
-        totalCashSales,
-        totalCardSales,
-        totalExpenses: shiftExpenses,
-        totalAdvances: shiftAdvances,
-        transferredToTreasury: mainTreasury.name,
-        transferredAmount: totalTransferredToMain,
-        status: 'closed'
-      };
-
-      // Persist closed shift in DB & mark all open shifts for this salon as closed
-      await DB.saveWorkShift(closedShift);
-      await DB.closeAllActiveShifts(settings.salonId, activeBranchId, now, currentUser?.id, currentUser?.name);
-      
-      // تصفير عداد الأدوار للوردية القادمة ليبدأ من 1
-      QueueService.resetShiftQueue(settings.salonId, activeBranchId, currentShiftDate);
-
-      // Cleanly clear local shift state
-      setShiftData({ isOpen: false, date: '', initialCash: 0, lastClosedAt: now, shiftId: undefined, shiftCode: undefined });
-      try {
-        localStorage.removeItem('smartcut_active_work_shift');
-      } catch (e) {}
-
-      lastClosedShiftRef.current = {
-        id: currentShiftId,
-        date: currentShiftDate,
-        timestamp: Date.now()
-      };
-      try {
-        localStorage.setItem('smartcut_last_closed_shift', JSON.stringify(lastClosedShiftRef.current));
-      } catch (e) {}
-
-      // فتح نافذة طباعة تقرير الإغلاق فوراً ومع الإغلاق تلقائياً
-      handlePrintClosingShiftReport(settings.paperSize || '80mm');
-
-      setShowCloseModal(false);
-      setCloseShiftActualCash('');
-    } catch (err: any) {
-      console.error('handleConfirmCloseShift error:', err);
-      alert('حدث خطأ أثناء إغلاق الوردية: ' + (err.message || 'يرجى المحاولة مرة أخرى'));
+    if (newTransactions.length > 0) {
+      setTransactions(prev => [...prev, ...newTransactions]);
+      DB.saveTransactions(newTransactions, settings.salonId);
     }
+
+    // Persist shift closure in DB
+    const shiftInvoices = branchInvoices.filter(i => 
+      i.status !== 'cancelled' && 
+      (i.date.startsWith(shiftData.date) || (shiftData.date && (i as any).created_at?.startsWith(shiftData.date)))
+    );
+    const totalSales = shiftInvoices.reduce((s, i) => s + (Number(i.total) || 0), 0);
+    const totalCashSales = shiftInvoices.reduce((s, i) => {
+      const splits = i.paymentMethods && i.paymentMethods.length > 0
+        ? i.paymentMethods
+        : [{ amount: Number(i.total) || 0, treasuryId: i.paymentMethod || 'cash' }];
+      const cashSplit = splits.find((pm: any) => pm.treasuryId === 'cash' || pm.treasuryId?.includes('cash'))?.amount;
+      return s + (Number(cashSplit) || 0);
+    }, 0);
+    const totalCardSales = Math.max(0, totalSales - totalCashSales);
+
+    // Operational shift expenses (exclude internal transfers and zeroing)
+    const shiftExpenses = branchTransactions.filter(t => 
+      t.date.startsWith(shiftData.date) && 
+      (t.type === 'out' || t.category === 'expense') &&
+      t.category !== 'transfer' &&
+      !t.description?.includes('تصفير') &&
+      !t.description?.includes('تحويل')
+    ).reduce((s, t) => s + (Number(t.amount) || 0), 0);
+
+    const expectedCash = (Number(shiftData.initialCash) || 0) + totalCashSales - shiftExpenses;
+
+    const closedShift: Partial<WorkShift> = {
+      id: (shiftData as any).shiftId || ('SHIFT-' + Math.random().toString(36).substr(2, 9).toUpperCase()),
+      shiftCode: currentShiftCode || undefined,
+      salonId: settings.salonId,
+      branchId: activeBranchId,
+      shiftDate: shiftData.date,
+      openedAt: (shiftData as any).openedAt || undefined,
+      openedByUserId: (shiftData as any).openedByUserId || undefined,
+      openedByUserName: (shiftData as any).openedByUserName || undefined,
+      openedByName: (shiftData as any).openedByName || (shiftData as any).openedByUserName || undefined,
+      openedByRole: (shiftData as any).openedByRole || undefined,
+      closedAt: now,
+      closedByUserId: currentUser?.id,
+      closedByUserName: currentUser?.name || 'الكاشير',
+      closedByName: currentUser?.name || 'الكاشير',
+      closedByRole: currentUser?.role || 'cashier',
+      initialCash: Number(shiftData.initialCash) || 0,
+      expectedCash,
+      totalSales,
+      totalCashSales,
+      totalCardSales,
+      totalExpenses: shiftExpenses,
+      status: 'closed'
+    };
+    await DB.saveWorkShift(closedShift);
+    
+    // تصفير عداد الأدوار للوردية القادمة ليبدأ من 1
+    QueueService.resetShiftQueue(settings.salonId, activeBranchId, shiftData.date);
+
+    setShiftData({ 
+      isOpen: false, 
+      date: '', 
+      initialCash: 0, 
+      lastClosedAt: now,
+      shiftId: undefined,
+      shiftCode: undefined 
+    });
+    setShowCloseModal(false);
   };
 
-  // معالج طباعة تقرير إغلاق الوردية (حراري أو A4)
+  // طباعة تقرير إغلاق الوردية (حراري أو A4)
   const handlePrintClosingShiftReport = (paper: '80mm' | '58mm' | 'a4' = (settings.paperSize || '80mm')) => {
     try {
-      const el = document.getElementById('print-receipt') || document.querySelector('[id="print-receipt"]');
+      const el = document.getElementById('print-receipt') || document.querySelector('[id="print-receipt"]') || document.getElementById('shift-closing-report-receipt-container');
       if (el) {
-        handlePrintReceipt('print-receipt', paper === 'a4', paper);
+        handlePrintReceipt(el.id || 'print-receipt', paper === 'a4', paper);
       } else {
-        const modalContainer = document.getElementById('shift-closing-report-receipt-container');
-        if (modalContainer) {
-          handlePrintReceipt('shift-closing-report-receipt-container', paper === 'a4', paper);
-        } else {
-          window.print();
-        }
+        window.print();
       }
     } catch (err) {
       console.error('Error printing closing shift report:', err);
@@ -2322,10 +2416,7 @@ export default function App() {
 
 
   const handleCheckoutComplete = (invoice: Invoice, paymentSplits: { amount: number, treasuryId: string }[], bookingId?: string) => {
-    if (isSubscriptionBlocked) {
-      alert('⚠️ تعذر تنفيذ العملية: هذا الفرع أو حساب الصالون بانتظار التفعيل والاعتماد من قبل إدارة المنظومة (المبرمج). تم تجميد إدخال البيانات لحين التفعيل.');
-      return;
-    }
+    if (checkReadOnlyAndWarn()) return;
 
     // 1. Add invoice tagged with active branch and salon
     const invoiceWithBranch: Invoice = {
@@ -2377,57 +2468,65 @@ export default function App() {
             });
           }
         }
-      } else if (item.type === 'service' && item.itemId) {
+      } else if (item.type !== 'product') {
          // Service execution commission (عمولة التنفيذ)
-         const srv = services.find(s => s.id === item.itemId);
-         if (srv && (srv.employeeCommissionAmount || srv.employeeCommissionPercentage) && item.employeeId) {
-           const performerEmp = employees.find(e => e.id === item.employeeId);
+         const srv = services.find(s => s.id === item.itemId || s.id === item.id || s.name === item.serviceName);
+         const performerEmp = employees.find(e => (item.employeeId && e.id === item.employeeId) || (item.technicianName && e.name === item.technicianName));
+         const targetEmpId = item.employeeId || performerEmp?.id;
+         
+         let commAmount = Number(item.employeeCommission ?? item.commissionAmount ?? (item as any).commission ?? 0);
+         if (commAmount <= 0 && srv) {
+           const srvAmount = Number(srv.employeeCommissionAmount ?? srv.commissionAmount ?? 0);
+           const srvPct = Number(srv.employeeCommissionPercentage ?? srv.commissionRate ?? 0);
+           if (srvAmount > 0) {
+             commAmount = srvAmount * (item.quantity || 1);
+           } else if (srvPct > 0) {
+             commAmount = (srvPct / 100) * (item.price || 0) * (item.quantity || 1);
+           }
+         }
+
+         if (commAmount > 0 && targetEmpId) {
            const hasFixedComm = performerEmp && hasEmployeeFixedCommission(performerEmp);
            // إذا كان للموظف عمولة ثابتة، فلا تحسب عمولة تنفيذ الخدمات إلا في حال تحديد خيار احتساب العمولتين معاً
            const shouldAwardServiceCommission = !hasFixedComm || performerEmp?.allowDualCommission;
 
            if (shouldAwardServiceCommission) {
-             let commAmount = 0;
-             if (srv.employeeCommissionAmount) commAmount = srv.employeeCommissionAmount;
-             else if (srv.employeeCommissionPercentage) commAmount = (srv.employeeCommissionPercentage / 100) * item.price;
-             
-             if (commAmount > 0) {
-                newFinancialRecords.push({
-                  employeeId: item.employeeId,
-                  record: {
-                    id: 'FIN-' + Math.random().toString(36).substr(2, 9),
-                    date: invoice.date,
-                    type: 'commission',
-                    amount: commAmount * (item.quantity || 1),
-                    note: `عمولة تنفيذ خدمة: ${srv.name}`
-                  }
-                });
-             }
+             newFinancialRecords.push({
+               employeeId: targetEmpId,
+               record: {
+                 id: 'FIN-' + Math.random().toString(36).substr(2, 9),
+                 date: invoice.date,
+                 type: 'commission',
+                 amount: commAmount,
+                 note: `عمولة تنفيذ خدمة: ${item.serviceName || srv?.name || 'خدمة'}`
+               }
+             });
            }
          }
 
          // Service referral commission (عمولة فتح شغل / إحالة الخدمة)
-         if (srv && srv.referralCommissionAmount && item.referralEmployeeId) {
-           let refCommAmount = 0;
+         let refCommAmount = Number(item.referralCommissionAmount || 0);
+         if (refCommAmount <= 0 && srv && srv.referralCommissionAmount) {
            if (srv.referralCommissionType === 'fixed') {
-             refCommAmount = srv.referralCommissionAmount;
+             refCommAmount = srv.referralCommissionAmount * (item.quantity || 1);
            } else {
-             refCommAmount = (srv.referralCommissionAmount / 100) * item.price;
+             refCommAmount = (srv.referralCommissionAmount / 100) * (item.price || 0) * (item.quantity || 1);
            }
+         }
 
-           if (refCommAmount > 0) {
-             const isSelfReferral = item.referralEmployeeId === item.employeeId;
-             newFinancialRecords.push({
-               employeeId: item.referralEmployeeId,
-               record: {
-                 id: 'FIN-' + Math.random().toString(36).substr(2, 9),
-                 date: invoice.date,
-                 type: 'referral_commission',
-                 amount: refCommAmount * (item.quantity || 1),
-                 note: `عمولة فتح شغل (إحالة): ${srv.name}${isSelfReferral ? ' (إحالة وتنفيذ ذاتي)' : ''}`
-               }
-             });
-           }
+         const refEmpId = item.referralEmployeeId;
+         if (refCommAmount > 0 && refEmpId) {
+           const isSelfReferral = refEmpId === targetEmpId;
+           newFinancialRecords.push({
+             employeeId: refEmpId,
+             record: {
+               id: 'FIN-' + Math.random().toString(36).substr(2, 9),
+               date: invoice.date,
+               type: 'referral_commission',
+               amount: refCommAmount,
+               note: `عمولة فتح شغل (إحالة): ${item.serviceName || srv?.name || 'خدمة'}${isSelfReferral ? ' (إحالة وتنفيذ ذاتي)' : ''}`
+             }
+           });
          }
       }
     });
@@ -2501,10 +2600,10 @@ export default function App() {
     }
 
 
-    // 3. Complete booking if came from booking
+    // 3. Complete and mark booking as paid if came from booking
     if (bookingId) {
-      setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, status: 'completed' } : b));
-      DB.patch('bookings', bookingId, { status: 'completed' });
+      setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, status: 'completed', isPaid: true, invoiceId: invoice.id } : b));
+      DB.patch('bookings', bookingId, { status: 'completed', is_paid: true, invoice_id: invoice.id });
     }
 
     // 4. 🔄 حفظ فوري في Supabase لضمان بقاء وتوثيق البيانات
@@ -2516,194 +2615,39 @@ export default function App() {
     setActiveBookingForPOS(null);
   };
 
-  const handleProcessSalesReturn = (salesReturn: SalesReturn) => {
-    if (checkReadOnlyAndWarn()) return;
-    const activeBranch = branches.find(b => b.id === activeBranchId) || branches[0];
-    const returnWithSalon: SalesReturn = {
-      ...salesReturn,
-      salonId: settings.salonId,
-      branchId: salesReturn.branchId || activeBranchId,
-      branchCode: salesReturn.branchCode || activeBranch?.code
-    };
-
-    // 1. تحديث حالة المرتجعات والتخزين المحلي وقاعدة البيانات
-    setSalesReturns(prev => {
-      const updated = [returnWithSalon, ...prev.filter(r => r.id !== returnWithSalon.id)];
-      try {
-        localStorage.setItem('smartcut_sales_returns', JSON.stringify(updated));
-      } catch (e) {}
-      return updated;
-    });
-    DB.saveSalesReturn(returnWithSalon, settings.salonId);
-
-    // 2. قيد حركة الخزينة (سند صرف استرجاع نقدي)
-    if (returnWithSalon.totalRefund > 0) {
-      const refundTrx: Transaction = {
-        id: 'TRX-RET-' + Math.random().toString(36).substr(2, 9),
-        salonId: settings.salonId,
-        date: returnWithSalon.date,
-        type: 'out',
-        amount: Number(returnWithSalon.totalRefund),
-        category: 'مرتجع مبيعات',
-        description: returnWithSalon.isWithoutInvoice || returnWithSalon.originalInvoiceId === 'بدون فاتورة'
-          ? `مرتجع مبيعات عام بدون فاتورة - إشعار دائن ${returnWithSalon.id}${returnWithSalon.clientName ? ` (${returnWithSalon.clientName})` : ''}`
-          : `مرتجع مبيعات - إشعار دائن ${returnWithSalon.id} للفاتورة ${returnWithSalon.originalInvoiceId}${returnWithSalon.clientName ? ` (${returnWithSalon.clientName})` : ''}`,
-        treasury: returnWithSalon.treasuryId || returnWithSalon.refundMethod || 'cash',
-        branchId: activeBranchId,
-        branchCode: activeBranch?.code,
-        createdBy: currentUser?.name || 'الكاشير',
-        userId: currentUser?.id,
-        userName: currentUser?.name || 'الكاشير',
-        shiftDate: shiftData.date
-      };
-      setTransactions(prev => [...prev, refundTrx]);
-      DB.saveTransactions([refundTrx], settings.salonId).catch(err => console.error('DB.saveTransactions error:', err));
-    }
-
-    // 3. إعادة المنتجات للمخزون وتسجيل حركة وارد مخزني
-    if (returnWithSalon.restockProducts !== false) {
-      const returnedProducts = returnWithSalon.items.filter(item => item.type === 'product');
-      if (returnedProducts.length > 0) {
-        setProducts(prev => {
-          const updatedProds = prev.map(prod => {
-            const retItem = returnedProducts.find(ri => ri.itemId === prod.id);
-            if (retItem) {
-              const updated = {
-                ...prod,
-                currentStock: (Number(prod.currentStock) || 0) + Number(retItem.returnQuantity)
-              };
-              DB.saveProduct(updated);
-              return updated;
-            }
-            return prod;
-          });
-          return updatedProds;
-        });
-
-        const newMovements = returnedProducts.map(retItem => ({
-          id: 'MOV-' + Math.random().toString(36).substr(2, 9),
-          salonId: settings.salonId,
-          productId: retItem.itemId,
-          productName: retItem.name,
-          type: 'sale_return',
-          quantity: Number(retItem.returnQuantity),
-          previousStock: 0,
-          newStock: 0,
-          date: returnWithSalon.date,
-          referenceId: returnWithSalon.id,
-          notes: returnWithSalon.isWithoutInvoice || returnWithSalon.originalInvoiceId === 'بدون فاتورة'
-            ? `مرتجع أصناف عام بدون فاتورة - إشعار دائن ${returnWithSalon.id}`
-            : `مرتجع مبيعات - إشعار دائن ${returnWithSalon.id} للفاتورة ${returnWithSalon.originalInvoiceId}`,
-          branchId: activeBranchId
-        }));
-        setItemMovements(prev => [...prev, ...newMovements]);
-        newMovements.forEach(m => DB.saveItemMovement(m));
-      }
-    }
-
-    // 4. استرجاع وعكس عمولات الموظفين إن طُلب ذلك
-    if (returnWithSalon.reverseCommissions !== false) {
-      const commDeductions: { employeeId: string; record: any }[] = [];
-      returnWithSalon.items.forEach(item => {
-        if (item.technicianId) {
-          let commAmount = 0;
-          if (item.type === 'service') {
-            const srv = services.find(s => s.id === item.itemId);
-            const emp = employees.find(e => e.id === item.technicianId);
-            const isFixed = hasEmployeeFixedCommission(emp);
-            if (!isFixed && srv && srv.commissionAmount) {
-              if (srv.commissionType === 'fixed') {
-                commAmount = srv.commissionAmount;
-              } else {
-                commAmount = (srv.commissionAmount / 100) * item.price;
-              }
-            } else if (emp && emp.commissionPercentage) {
-              commAmount = (emp.commissionPercentage / 100) * item.price;
-            }
-          } else if (item.type === 'product') {
-            const prod = products.find(p => p.id === item.itemId);
-            if (prod && prod.commission) {
-              commAmount = (prod.commission / 100) * item.price;
-            }
-          }
-          if (commAmount > 0) {
-            commDeductions.push({
-              employeeId: item.technicianId,
-              record: {
-                id: 'FIN-REV-' + Math.random().toString(36).substr(2, 9),
-                date: returnWithSalon.date,
-                type: 'deduction',
-                amount: commAmount * (item.returnQuantity || 1),
-                note: `خصم عمولة بسبب مرتجع مبيعات: ${item.name} (فاتورة ${returnWithSalon.originalInvoiceId})`
-              }
-            });
-          }
-        }
-      });
-
-      if (commDeductions.length > 0) {
-        setEmployees(prev => {
-          return prev.map(emp => {
-            const myRecords = commDeductions.filter(r => r.employeeId === emp.id).map(r => r.record);
-            if (myRecords.length > 0) {
-              const updatedEmp = {
-                ...emp,
-                financialRecords: [...(emp.financialRecords || []), ...myRecords]
-              };
-              DB.saveEmployee(updatedEmp);
-              return updatedEmp;
-            }
-            return emp;
-          });
-        });
-      }
-    }
-
-    // 5. تحديث حالة الفاتورة الأصلية والمبلغ المرتجع
-    setInvoices(prev => {
-      const updated = prev.map(inv => {
-        if (inv.id === returnWithSalon.originalInvoiceId) {
-          const currentReturned = (Number(inv.returnedAmount) || 0) + Number(returnWithSalon.totalRefund);
-          const isFullyRefunded = currentReturned >= (Number(inv.total) - 0.01);
-          const updatedInv: Invoice = {
-            ...inv,
-            returnedAmount: currentReturned,
-            returnIds: [...(inv.returnIds || []), returnWithSalon.id],
-            status: isFullyRefunded ? 'refunded' : inv.status
-          };
-          DB.saveInvoice(updatedInv, settings.salonId);
-          return updatedInv;
-        }
-        return inv;
-      });
-      return updated;
-    });
-  };
-
-  const handleDeleteSalesReturn = (returnId: string) => {
-    if (checkReadOnlyAndWarn()) return;
-    setSalesReturns(prev => {
-      const updated = prev.filter(r => r.id !== returnId);
-      try {
-        localStorage.setItem('smartcut_sales_returns', JSON.stringify(updated));
-      } catch (e) {}
-      return updated;
-    });
-    DB.deleteSalesReturn(returnId);
-  };
-
 
   const renderScreen = () => {
+    if (currentUser && !AuthService.canAccess(activeTab, currentUser)) {
+      return (
+        <div className="flex flex-col items-center justify-center min-h-[60vh] p-8 text-center bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm m-6">
+          <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-2xl flex items-center justify-center mb-4">
+            <ShieldAlert className="w-8 h-8" />
+          </div>
+          <h2 className="text-2xl font-bold text-zinc-900 dark:text-white mb-2">عذراً، ليس لديك صلاحية للوصول</h2>
+          <p className="text-zinc-600 dark:text-zinc-400 max-w-md mb-6">
+            حسابك الحالي ({currentUser.name || currentUser.username}) لا يملك الصلاحيات الكافية لفتح هذه الشاشة. يرجى مراجعة إدارة النظام.
+          </p>
+          <button
+            onClick={() => {
+              const firstAllowed = menuItems.find(item => AuthService.canAccess(item.id, currentUser))?.id || 
+                (currentUser.role === 'barber' ? 'barber_portal' : (currentUser.role === 'kiosk' ? 'kiosk' : 'pos'));
+              setActiveTab(firstAllowed);
+            }}
+            className="px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-zinc-950 font-bold rounded-xl transition-all shadow-md cursor-pointer"
+          >
+            الرجوع إلى الشاشة المتاحة
+          </button>
+        </div>
+      );
+    }
+
     switch (activeTab) {
       case 'pos': return (
         <POSScreen 
           settings={settings} 
           activeBranchId={activeBranchId}
-          branches={branches}
           isShiftOpen={shiftData.isOpen} 
           shiftDate={shiftData.date} 
-          shiftId={(shiftData as any)?.shiftId}
-          shiftCode={(shiftData as any)?.shiftCode}
           initialBooking={activeBookingForPOS} 
           initialHeldInvoice={activeHeldInvoiceForPOS}
           onClearInitial={() => {
@@ -2719,17 +2663,17 @@ export default function App() {
           setEmployees={handleSetEmployees} 
           products={branchProducts}
           invoices={branchInvoices}
-          salesReturns={branchSalesReturns}
-          onProcessSalesReturn={handleProcessSalesReturn}
           isSubscriptionBlocked={isSubscriptionBlocked}
           promoCodes={promoCodes}
           setPromoCodes={handleSetPromoCodes}
           promoCodeUsages={promoCodeUsages}
           setPromoCodeUsages={handleSetPromoCodeUsages}
           tips={tips}
-          setTips={setTips}
+          setTips={handleSetTips}
           currentUser={currentUser}
-          onRefreshServices={handleRefreshServices}
+          transactions={branchTransactions}
+          shiftData={shiftData}
+          fingerprintLogs={fingerprintLogs}
         />
       );
       case 'services': return (
@@ -2785,6 +2729,8 @@ export default function App() {
           activeBranchId={activeBranchId}
           employees={branchEmployees} 
           setEmployees={handleSetEmployees} 
+          services={services}
+          products={branchProducts}
           transactions={branchTransactions} 
           setTransactions={handleSetTransactions} 
           shiftData={shiftData}
@@ -2797,8 +2743,8 @@ export default function App() {
           setFingerprintLogs={setFingerprintLogs}
           custodies={custodies}
           setCustodies={setCustodies}
-          services={branchServices}
-          products={branchProducts}
+          licenseInfo={licenseInfo}
+          onOpenLicenseModal={() => setShowLicenseModal(true)}
         />
       );
 
@@ -2821,8 +2767,7 @@ export default function App() {
           promoCodes={promoCodes}
           setPromoCodes={handleSetPromoCodes}
           promoCodeUsages={promoCodeUsages}
-          setPromoCodeUsages={handleSetPromoCodeUsages}
-          invoices={branchInvoices}
+          invoices={invoices}
           currentUser={currentUser}
         />
       );
@@ -2852,6 +2797,8 @@ export default function App() {
           settings={settings} 
           employees={branchEmployees} 
           setEmployees={handleSetEmployees} 
+          services={services}
+          products={branchProducts}
           invoices={branchInvoices}
           transactions={branchTransactions}
           bookings={branchBookings}
@@ -2873,7 +2820,11 @@ export default function App() {
           setBookings={handleSetBookings} 
           transactions={branchTransactions} 
           setTransactions={handleSetTransactions} 
-          onToPOS={(booking) => { setActiveBookingForPOS(booking); setActiveTab('pos'); }} 
+          onToPOS={(booking) => { 
+            setActiveHeldInvoiceForPOS(null);
+            setActiveBookingForPOS(booking); 
+            setActiveTab('pos'); 
+          }} 
           invoices={branchInvoices} 
           products={branchProducts} 
           purchaseInvoices={branchPurchaseInvoices} 
@@ -2881,6 +2832,8 @@ export default function App() {
           activeBranchId={activeBranchId}
           branches={branches}
           employees={branchEmployees}
+          currentUser={currentUser}
+          onNavigateScreen={(screen) => setActiveTab(screen)}
         />
       );
       case 'queue_calling': return (
@@ -2890,8 +2843,6 @@ export default function App() {
           activeBranchId={activeBranchId}
           employees={branchEmployees}
           clients={salonClients}
-          bookings={branchBookings}
-          services={branchServices}
           onNavigateScreen={(screenName) => setActiveTab(screenName)}
           onCompleteAndOpenPOS={(heldInvoice) => {
             setActiveHeldInvoiceForPOS(heldInvoice);
@@ -2899,15 +2850,66 @@ export default function App() {
           }}
         />
       );
-      case 'bookings': return (
-        <BookingsScreen 
-          settings={settings} 
-          setSettings={setSettings}
+      case 'bookings': {
+        if (!shiftData?.isOpen) {
+          return (
+            <div className="flex-1 flex flex-col items-center justify-center p-6 bg-slate-50 min-h-[75vh]">
+              <div className="bg-white border border-amber-200/80 rounded-3xl p-8 max-w-md w-full text-center shadow-lg animate-in fade-in zoom-in-95">
+                <div className="w-16 h-16 rounded-3xl bg-amber-500/10 text-amber-600 flex items-center justify-center mx-auto mb-4 border border-amber-200/50">
+                  <Lock size={32} />
+                </div>
+                <h2 className="text-lg font-black text-slate-800 mb-2">شاشة الحجوزات مقفلة</h2>
+                <span className="inline-block bg-amber-100 text-amber-800 text-xs font-black px-3 py-1 rounded-full border border-amber-300/60 mb-3">
+                  الوردية مغلقة حالياً 🔒
+                </span>
+                <p className="text-xs text-slate-600 leading-relaxed font-medium mb-4">
+                  لا يُسمح بفتح شاشة الحجوزات أو إجراء وحفظ أي حجوزات جديدة أثناء إغلاق الوردية.
+                </p>
+                <p className="text-[11px] text-slate-400 font-bold mb-6">
+                  يرجى فتح وردية عمل جديدة لتفعيل استقبال وجدولة المواعيد.
+                </p>
+                <div className="flex flex-col gap-2">
+                  <button
+                    onClick={() => setShowOpenModal(true)}
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-3 px-4 rounded-xl text-xs flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer"
+                  >
+                    <span>فتح وردية جديدة الآن</span>
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('dashboard')}
+                    className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 px-4 rounded-xl text-xs transition-colors cursor-pointer"
+                  >
+                    العودة للوحة التحكم
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        }
+        return (
+          <BookingsScreen 
+            settings={settings} 
+            setSettings={setSettings}
           bookings={branchBookings} 
           setBookings={handleSetBookings} 
-          onToPOS={(booking) => { setActiveBookingForPOS(booking); setActiveTab('pos'); }} 
+          onToPOS={(booking) => { 
+            setActiveHeldInvoiceForPOS(null);
+            setActiveBookingForPOS(booking); 
+            setActiveTab('pos'); 
+          }} 
+          onOpenHeldInvoice={(held) => { 
+            setActiveBookingForPOS(null);
+            setActiveHeldInvoiceForPOS(held); 
+            setActiveTab('pos'); 
+          }}
+          invoices={branchInvoices}
+          setInvoices={handleSetInvoices}
+          salesReturns={branchSalesReturns}
+          setSalesReturns={handleSetSalesReturns}
           services={branchServices} 
           products={branchProducts}
+          setProducts={handleSetProducts}
+          setItemMovements={handleSetItemMovements}
           employees={branchEmployees}
           clients={salonClients}
           setClients={handleSetClients}
@@ -2918,7 +2920,8 @@ export default function App() {
           setTransactions={handleSetTransactions}
           shiftData={shiftData}
         />
-      );
+        );
+      }
       case 'invoices': return (
         <InvoicesScreen 
           settings={settings} 
@@ -2934,29 +2937,8 @@ export default function App() {
           products={branchProducts}
           setProducts={handleSetProducts}
           setItemMovements={handleSetItemMovements}
-          employees={branchEmployees}
-          services={branchServices}
-          salesReturns={branchSalesReturns}
-          onProcessSalesReturn={handleProcessSalesReturn}
-          onNavigateToReturns={() => setActiveTab('sales_returns')}
-        />
-      );
-
-      case 'sales_returns': return (
-        <SalesReturnsScreen 
-          settings={settings}
           salesReturns={branchSalesReturns}
           setSalesReturns={handleSetSalesReturns}
-          invoices={branchInvoices}
-          onProcessSalesReturn={handleProcessSalesReturn}
-          onDeleteSalesReturn={handleDeleteSalesReturn}
-          activeBranchId={activeBranchId}
-          branches={branches}
-          currentUser={currentUser}
-          products={branchProducts}
-          employees={branchEmployees}
-          services={branchServices}
-          clients={salonClients}
         />
       );
 
@@ -2966,6 +2948,7 @@ export default function App() {
           clients={salonClients} 
           setClients={handleSetClients} 
           invoices={branchInvoices} 
+          currentUser={currentUser}
         />
       );
       case 'complaints': return (
@@ -3006,7 +2989,6 @@ export default function App() {
           branches={branches}
           currentUser={currentUser}
           invoices={branchInvoices}
-          bookings={branchBookings}
         />
       );
       
@@ -3051,6 +3033,7 @@ export default function App() {
           settings={settings} 
           transactions={branchTransactions} 
           invoices={branchInvoices} 
+          bookings={branchBookings}
           employees={branchEmployees} 
           services={branchServices} 
           products={branchProducts} 
@@ -3065,7 +3048,6 @@ export default function App() {
           currentUser={currentUser}
           setEmployees={handleSetEmployees}
           setTransactions={handleSetTransactions}
-          bookings={branchBookings}
           salesReturns={branchSalesReturns}
           clients={salonClients}
         />
@@ -3079,59 +3061,6 @@ export default function App() {
           currentUser={currentUser} 
         />
       );
-      case 'saas_subscriptions': 
-        if (currentUser?.role !== 'programmer') {
-          return (
-            <div className="p-12 text-center">
-              <div className="inline-flex items-center justify-center w-16 h-16 rounded-3xl bg-rose-100 text-rose-600 mb-4">
-                <ShieldAlert size={32} />
-              </div>
-              <h3 className="text-lg font-black text-slate-800 mb-2">وصول محظور • لوحة تحكم المطور والمبرمج فقط</h3>
-              <p className="text-xs text-slate-500 max-w-md mx-auto mb-6">
-                هذه اللوحة خاصة ومحمية لإدارة منظومة SaaS المركزية للمبرمج فقط ولا يمكن للمستخدمين العاديين أو مدراء الصالونات الوصول إليها.
-              </p>
-              <button
-                onClick={() => setActiveTab('dashboard')}
-                className="bg-slate-800 text-white px-5 py-2.5 rounded-xl text-xs font-bold hover:bg-slate-900"
-              >
-                العودة للوحة التحكم
-              </button>
-            </div>
-          );
-        }
-        return (
-          <SaaSProgrammerPortal 
-            onSwitchSalon={(s) => {
-              setSettings(prev => ({
-                ...prev,
-                salonId: s.id,
-                salonCode: s.code,
-                salonName: s.name,
-                country: s.country,
-                currency: s.currency,
-                phone: s.phone,
-                evolutionInstanceName: s.evolutionInstanceName
-              }));
-              setSubscription(prev => ({
-                ...prev,
-                salonId: s.id,
-                salonCode: s.code,
-                organizationName: s.name,
-                status: s.subscriptionStatus,
-                endDate: s.subscriptionEndDate
-              }));
-              const sBranches = SubscriptionService.getBranches(s.id);
-              setBranches(sBranches.length > 0 ? sBranches : [
-                { id: 'b-main', name: `الفرع الرئيسي (${s.name})`, code: 'B01', isMain: true, phone: s.phone, address: s.country, isActive: true, status: 'active' }
-              ]);
-              setActiveBranchId(sBranches[0]?.id || 'b-main');
-              setActiveTab('dashboard');
-            }}
-            onExitPortal={() => setActiveTab('dashboard')}
-            onLogout={handleLogout}
-          />
-
-        );
       case 'owner_portal': return (
         <OwnerExecutivePortal
           settings={settings}
@@ -3159,6 +3088,14 @@ export default function App() {
           fingerprintLogs={fingerprintLogs}
         />
       );
+      case 'ai_assistant':
+      case 'manager_ai_chat': return (
+        <ManagerAIChatScreen
+          settings={settings}
+          currentUser={currentUser}
+          onNavigateScreen={(screenName) => setActiveTab(screenName)}
+        />
+      );
       default: return <div className="p-6">قريباً...</div>;
     }
   };
@@ -3167,30 +3104,26 @@ export default function App() {
     ...(currentUser?.role === 'owner' ? [
       { id: 'owner_portal', icon: Smartphone, label: '📱 نبض المالك' }
     ] : []),
+    { id: 'pos', icon: Scissors, label: 'نقطة البيع (POS)' },
     { id: 'dashboard', icon: LayoutDashboard, label: 'لوحة التحكم' },
     { id: 'queue_calling', icon: Radio, label: '📢 المناداة وطابور الانتظار' },
     { id: 'bookings', icon: Calendar, label: 'الحجوزات' },
-    { id: 'pos', icon: Scissors, label: 'نقطة البيع (POS)' },
+    { id: 'expenses', icon: Banknote, label: 'المصروفات' },
+    { id: 'treasury', icon: Wallet, label: 'الخزائن والماليات' },
     { id: 'invoices', icon: Receipt, label: 'الفواتير' },
-    { id: 'sales_returns', icon: RotateCcw, label: 'مرتجع المبيعات' },
-    { id: 'promo_codes', icon: Tag, label: 'البرومو كود والكوبونات' },
-    { id: 'services', icon: List, label: 'الخدمات والتصنيفات' },
-    { id: 'warehouse', icon: Boxes, label: 'المخزن والمستودع' },
-
     { id: 'clients', icon: Users, label: 'العملاء' },
     { id: 'complaints', icon: AlertCircle, label: 'شكاوى العملاء' },
-    { id: 'employees', icon: UsersRound, label: 'شؤون العاملين' },
-    { id: 'treasury', icon: Wallet, label: 'الخزائن' },
-    { id: 'expenses', icon: Banknote, label: 'المصروفات' },
-    ...(currentUser?.role === 'owner' || currentUser?.role === 'admin' || currentUser?.role === 'programmer' ? [
-      { id: 'partners', icon: Briefcase, label: 'الشركاء والأرباح' }
-    ] : []),
+    { id: 'services', icon: List, label: 'الخدمات' },
+    { id: 'warehouse', icon: Boxes, label: 'المخزن والاصناف' },
+    { id: 'employees', icon: UsersRound, label: 'إدارة الموظفين' },
+    { id: 'hr', icon: Clock, label: 'شؤون العاملين وسجل الدوام' },
+    { id: 'partners', icon: Briefcase, label: 'الشركاء والمسحوبات' },
     { id: 'reports', icon: FileText, label: 'التقارير الشاملة' },
+    { id: 'tips', icon: HeartHandshake, label: 'البقشيش والإكراميات' },
+    { id: 'promo_codes', icon: Tag, label: 'البرومو كود والكوبونات' },
+    { id: 'manager_ai_chat', icon: Bot, label: '🤖 المساعد الذكي' },
     { id: 'permissions', icon: Shield, label: 'الصلاحيات والمستخدمين' },
-    ...(currentUser?.role === 'programmer' ? [
-      { id: 'saas_subscriptions', icon: Sparkles, label: '👑 إدارة اشتراكات SaaS' }
-    ] : []),
-    { id: 'settings', icon: Settings, label: 'الإعدادات' },
+    { id: 'settings', icon: Settings, label: 'اعدادات النظام' },
   ];
 
 
@@ -3222,12 +3155,9 @@ export default function App() {
         trialDays: salon.trialDays || 7
       });
       const dbBranches = await DB.fetchBranches(salon.id);
-      const rawBranches = (dbBranches && dbBranches.length > 0) ? dbBranches : (salon.id ? SubscriptionService.getBranches(salon.id) : []);
-      const salonBranches = rawBranches.filter((b, idx, arr) => 
-        arr.findIndex(x => x.id === b.id || (x.code && b.code && x.code.toLowerCase() === b.code.toLowerCase())) === idx
-      );
+      const salonBranches = (dbBranches && dbBranches.length > 0) ? dbBranches : (salon.id ? SubscriptionService.getBranches(salon.id) : []);
       setBranches(salonBranches.length > 0 ? salonBranches : [
-        { id: 'b-main', salonId: salon.id, name: 'الفرع الرئيسي', code: 'BR-01', isMain: true, phone: salon.phone, address: salon.country, isActive: true, status: 'active' }
+        { id: 'b-main', salonId: salon.id, name: `الفرع الرئيسي (${salon.name})`, code: 'B01', isMain: true, phone: salon.phone, address: salon.country, isActive: true, status: 'active' }
       ]);
       let branchIdToUse = 'b-main';
       if (u.branchId) {
@@ -3245,11 +3175,6 @@ export default function App() {
       }).catch(() => {});
     } else if (u.branchId) {
       setActiveBranchId(u.branchId);
-      if (salon?.id) {
-        DB.getActiveWorkShift(salon.id, u.branchId).then(activeShift => {
-          applyActiveWorkShift(activeShift, u.branchId);
-        }).catch(() => {});
-      }
     }
     // تنظيف أي بيانات مؤقتة أو أكواد كيوسك لصالونات أخرى من التخزين المحلي
     try {
@@ -3297,8 +3222,8 @@ export default function App() {
         localStorage.setItem('smartcut_active_salon_id', salon.id);
         const essentialData = await DB.loadEssentialData(salon.id);
         if (essentialData) {
-          const validCats = (essentialData.categories || []).map(dbCategoryToApp);
-          setCategories(validCats.length ? validCats : [{ id: 'all', name: 'الكل', isActive: true }]);
+          const validCats = essentialData.categories || [];
+          setCategories(validCats.length ? validCats : [{ id: 'all', name: 'الكل' }]);
           setServices(essentialData.services ? essentialData.services.map(dbServiceToApp) : []);
           setEmployees(essentialData.employees ? essentialData.employees.map(dbEmployeeToApp) : []);
           setClients(essentialData.clients ? essentialData.clients.map(dbClientToApp) : []);
@@ -3311,42 +3236,32 @@ export default function App() {
         loadedSectionsRef.current.add('pos');
         loadedSectionsRef.current.add('services');
         loadedSectionsRef.current.add('products');
-        if (u.role === 'barber') {
+        if (u.role === 'barber' || isBarberRoute || u.screens?.includes('barber_portal')) {
           DB.fetchBookings(salon.id).then(bList => {
             if (bList && bList.length > 0) {
-              setBookings(bList.map((b: any) => ({
-                ...b, phone: b.clientPhone || b.phone || '',
-                queueNumber: b.queueNumber || b.queue_number || undefined,
-                customerEmail: b.customerEmail || '', advancePayments: b.advancePayments || b.advance_payments || [],
-                notes: b.notes || undefined,
-                internalNotes: b.internalNotes || b.internal_notes || undefined,
-                discountType: b.discountType || b.discount_type || 'fixed',
-                discountValue: Number(b.discountValue ?? b.discount_value ?? 0)
-              })));
+              setBookings(bList.map(dbBookingToApp));
             }
           }).catch(() => {});
           DB.fetchInvoices(salon.id).then(dbInvs => {
             if (dbInvs && dbInvs.length > 0) {
-              setInvoices(dbInvs.map((inv: any) => {
-                const totalNum = Number(inv.total ?? inv.totalAmount ?? inv.netAmount ?? inv.subtotal ?? 0);
-                const subtotalNum = Number(inv.subtotal ?? inv.total ?? totalNum);
-                return {
-                  ...inv,
-                  total: totalNum,
-                  subtotal: subtotalNum,
-                  paid: Number(inv.paid ?? totalNum),
-                  vatAmount: inv.vatAmount ?? inv.vat ?? 0,
-                  cashbackUsed: inv.cashbackUsed ?? 0,
-                  paymentMethods: inv.paymentMethods || [],
-                  isRemedyInvoice: inv.isRemedy || false,
-                  remedyReason: inv.remedyNotes || '',
-                  relatedComplaintId: inv.relatedComplaintId || '',
-                  originalInvoiceId: inv.originalInvoiceId || '',
-                  zatcaQr: inv.zatcaQr || '',
-                  zatcaHash: inv.zatcaHash || '',
-                  etaSubmissionUuid: inv.etaSubmissionUuid || '',
-                };
-              }));
+              setInvoices(dbInvs.map((inv: any) => ({
+                ...inv,
+                vatAmount: inv.vat,
+                cashbackUsed: inv.cashbackUsed ?? 0,
+                paymentMethods: inv.paymentMethods || [],
+                isRemedyInvoice: inv.isRemedy || false,
+                remedyReason: inv.remedyNotes || '',
+                relatedComplaintId: inv.relatedComplaintId || '',
+                originalInvoiceId: inv.originalInvoiceId || '',
+                zatcaQr: inv.zatcaQr || '',
+                zatcaHash: inv.zatcaHash || '',
+                etaSubmissionUuid: inv.etaSubmissionUuid || '',
+              })));
+            }
+          }).catch(() => {});
+          DB.fetchSalesReturns(salon.id).then(returns => {
+            if (returns && returns.length > 0) {
+              setSalesReturns(returns);
             }
           }).catch(() => {});
         }
@@ -3364,7 +3279,8 @@ export default function App() {
     } else if (u.role === 'kiosk' || (u.screens?.includes('kiosk') && !u.screens?.includes('*') && u.screens?.length === 1)) {
       setActiveTab('kiosk');
     } else {
-      setActiveTab(u.screens?.includes('*') ? 'pos' : (u.screens?.[0] || 'pos'));
+      const defaultAllowed = AuthService.canAccess('pos', u) ? 'pos' : (menuItems.find(item => AuthService.canAccess(item.id, u))?.id || 'dashboard');
+      setActiveTab(defaultAllowed);
     }
   };
 
@@ -3394,8 +3310,16 @@ export default function App() {
         invoices={invoices}
         branches={branches}
         activeBranchId={activeBranchId}
-        onCompleteBooking={(bId) => {
+        onCompleteBooking={async (bId) => {
           handleSetBookings((prev: Booking[]) => prev.map(b => b.id === bId ? { ...b, status: 'completed' } : b));
+          const targetB = bookings.find(b => b.id === bId);
+          if (targetB) {
+            try {
+              await completeBookingAndCreateHeldInvoice(targetB, settings.salonId, activeBranchId, clients);
+            } catch (err) {
+              console.warn('Error completing booking from App:', err);
+            }
+          }
         }}
         onLogout={() => {
           AuthService.logout();
@@ -3480,46 +3404,21 @@ export default function App() {
           const adminUser = AuthService.quickLogin('admin');
           if (adminUser) {
             setCurrentUser(adminUser);
-            setActiveTab('saas_subscriptions');
+            setActiveTab('dashboard');
           }
         }}
       />
     );
   }
 
-  // 3. MASTER PROGRAMMER SAAS PORTAL
-  if (currentUser?.role === 'programmer' && activeTab === 'saas_subscriptions') {
-    return (
-      <SaaSProgrammerPortal 
-        onSwitchSalon={(s) => {
-          setSettings(prev => ({
-            ...prev,
-            salonId: s.id,
-            salonCode: s.code,
-            salonName: s.name,
-            country: s.country,
-            currency: s.currency,
-            phone: s.phone,
-            evolutionInstanceName: s.evolutionInstanceName
-          }));
-          setSubscription(prev => ({
-            ...prev,
-            salonId: s.id,
-            salonCode: s.code,
-            organizationName: s.name,
-            status: s.subscriptionStatus,
-            endDate: s.subscriptionEndDate
-          }));
-          setActiveTab('dashboard');
-        }}
-        onExitPortal={() => {
-          setActiveTab('dashboard');
-        }}
-        onLogout={handleLogout}
-      />
-    );
-  }
 
+  const handleTabNavigation = (tabId: string) => {
+    if (tabId === 'bookings' && !shiftData?.isOpen) {
+      alert('⚠️ الوردية مغلقة حالياً!\nلا يُسمح بفتح شاشة الحجوزات أو إجراء أي حجز إلا بعد فتح وردية عمل جديدة.');
+      return;
+    }
+    setActiveTab(tabId);
+  };
 
   const allowedMenuItems = menuItems.filter(item => AuthService.canAccess(item.id, currentUser));
 
@@ -3538,34 +3437,60 @@ export default function App() {
         allSalons={currentUser?.role === 'programmer' ? allSalons : []}
         onSelectSalon={currentUser?.role === 'programmer' ? handleSwitchSalon : undefined}
         onOpenPricingModal={() => setShowSubscriptionModal(true)}
+        licenseInfo={licenseInfo}
+        onOpenLicenseModal={() => setShowLicenseModal(true)}
+        isTursoConnected={isTursoConnected}
+        onOpenTursoModal={() => setShowTursoModal(true)}
       />
 
       <div className="flex flex-1 overflow-hidden relative">
-        {/* 2. DESKTOP SIDEBAR */}
-        {isSidebarOpen && (
-          <aside className="hidden lg:flex w-64 bg-white border-l border-slate-200 shadow-md flex-col z-20 shrink-0 animate-in slide-in-from-right duration-200">
-            <div className="p-4 flex items-center justify-between border-b border-slate-100">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-md shadow-emerald-500/20 shrink-0">
-                  <Scissors size={20} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h1 className="font-extrabold text-sm tracking-tight text-slate-900 leading-none truncate">
-                    {settings.salonName || 'SMART CUT'}
-                  </h1>
-                  <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider mt-1 flex items-center gap-1">
+        {/* 2. DESKTOP SIDEBAR (Hidden by default, toggled via button) */}
+        {showSidebar && (
+          <aside className="hidden lg:flex w-64 bg-white border-l border-slate-200 shadow-sm flex-col z-20 animate-in slide-in-from-right duration-200">
+            <div className="p-4 flex items-center gap-3 border-b border-slate-100">
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-md shadow-emerald-500/20">
+                <Scissors size={20} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h1 className="font-extrabold text-sm tracking-tight text-slate-900 leading-none truncate">
+                  {settings.salonName || 'SMART CUT'}
+                </h1>
+                <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                  <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider flex items-center gap-1">
                     <Sparkles size={10} />
                     <span>v2.0 PRO SaaS</span>
                   </p>
+                  {licenseInfo && (
+                    <button
+                      onClick={() => setShowLicenseModal(true)}
+                      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-black border transition-all cursor-pointer ${
+                        !licenseInfo.isLicensed || licenseInfo.status === 'expired'
+                          ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
+                          : licenseInfo.status === 'tampered'
+                          ? 'bg-rose-50 text-rose-700 border-rose-200'
+                          : licenseInfo.mode === 'lifetime'
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : (licenseInfo.daysLeft !== null && licenseInfo.daysLeft <= 5)
+                          ? 'bg-amber-50 text-amber-700 border-amber-200 animate-pulse'
+                          : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                      }`}
+                      title="حالة ترخيص البرنامج"
+                    >
+                      <span>
+                        {!licenseInfo.isLicensed || licenseInfo.status === 'expired'
+                          ? 'الترخيص منتهي ⛔'
+                          : licenseInfo.mode === 'lifetime'
+                          ? 'مرخص دائم 👑'
+                          : licenseInfo.daysLeft !== null
+                          ? `متبقي ${licenseInfo.daysLeft} يوم للتفعيل`
+                          : licenseInfo.runsLeft !== null
+                          ? `متبقي ${licenseInfo.runsLeft} تشغيل`
+                          : 'مرخص ✅'}
+                      </span>
+                    </button>
+                  )}
                 </div>
               </div>
-              <button 
-                onClick={() => setIsSidebarOpen(false)}
-                className="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                title="إغلاق القائمة"
-              >
-                <X size={18} />
-              </button>
             </div>
 
             {/* Navigation links */}
@@ -3576,8 +3501,8 @@ export default function App() {
                 return (
                   <button
                     key={item.id}
-                    onClick={() => setActiveTab(item.id)}
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 text-right cursor-pointer ${
+                    onClick={() => handleTabNavigation(item.id)}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 text-right ${
                       isActive 
                         ? 'bg-emerald-600 text-white font-extrabold shadow-md shadow-emerald-600/20 translate-x-1' 
                         : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 font-semibold'
@@ -3590,45 +3515,78 @@ export default function App() {
               })}
             </nav>
 
-            {/* User profile & Dropdown Menu */}
+            {/* User profile & Logout */}
             <div className="p-3 border-t border-slate-100 bg-slate-50/50">
-              <UserMenuDropdown
-                currentUser={currentUser}
-                setCurrentUser={setCurrentUser}
-                onLogout={handleLogout}
-                onOpenSettings={() => {
-                  if (AuthService.canAccess('settings', currentUser)) {
-                    setActiveTab('settings');
-                  } else {
-                    alert('ليس لديك صلاحية الوصول إلى شاشة الإعدادات.');
-                  }
-                }}
-                settings={settings}
-                activeBranch={activeBranch}
-                placement="sidebar"
-              >
-                <div className="flex items-center justify-between p-2 bg-white hover:bg-slate-50 rounded-xl border border-slate-200/80 shadow-xs transition-colors cursor-pointer w-full group">
-                  <div className="flex items-center gap-2 overflow-hidden">
-                    <div className="w-8 h-8 rounded-full bg-sky-100 text-sky-800 flex items-center justify-center font-black text-xs shrink-0 border border-sky-200 shadow-2xs group-hover:scale-105 transition-transform">
+              <div className="relative">
+                <div 
+                  onClick={() => setShowUserSidebarMenu(!showUserSidebarMenu)}
+                  className="flex items-center justify-between mb-2 p-2 bg-white rounded-xl border border-slate-200/80 shadow-xs hover:border-indigo-400 hover:bg-indigo-50/30 transition-all cursor-pointer group select-none"
+                  title="خيارات الحساب"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="w-8 h-8 rounded-full bg-sky-100 text-sky-800 border border-sky-200/80 group-hover:bg-indigo-600 group-hover:text-white transition-colors flex items-center justify-center font-black text-xs shrink-0 shadow-2xs">
                       {getUserInitials(currentUser.name)}
                     </div>
-                    <div className="truncate text-right">
-                      <p className="text-xs font-bold text-slate-800 leading-tight truncate group-hover:text-primary transition-colors">{currentUser.name}</p>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-slate-800 leading-tight truncate group-hover:text-indigo-600 transition-colors flex items-center gap-1">
+                        <span>{currentUser.name}</span>
+                      </p>
                       <p className="text-[10px] text-slate-400 font-medium">{ROLE_LABELS[currentUser.role] || currentUser.role}</p>
                     </div>
                   </div>
+                  <div className="w-6 h-6 rounded-lg bg-slate-100 group-hover:bg-indigo-100 text-slate-400 group-hover:text-indigo-600 flex items-center justify-center transition-colors shrink-0">
+                    <ChevronUp size={12} className={`transition-transform duration-200 ${showUserSidebarMenu ? 'rotate-180' : ''}`} />
+                  </div>
                 </div>
-              </UserMenuDropdown>
+
+                <UserAccountMenu
+                  isOpen={showUserSidebarMenu}
+                  onClose={() => setShowUserSidebarMenu(false)}
+                  currentUser={currentUser}
+                  onProfileClick={() => {
+                    setShowUserSidebarMenu(false);
+                    setShowUserProfileModal(true);
+                  }}
+                  onChangePasswordClick={() => {
+                    setShowUserSidebarMenu(false);
+                    setShowChangePasswordModal(true);
+                  }}
+                  onSettingsClick={handleOpenSettingsFromUserMenu}
+                  onLogoutClick={handleLogout}
+                  align="top-start"
+                />
+              </div>
+
+              <button 
+                onClick={handleLogout}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-red-600 hover:bg-red-50 text-xs font-bold transition-colors cursor-pointer"
+              >
+                <LogOut size={16} />
+                <span>تسجيل الخروج</span>
+              </button>
+
+              <div className="mt-2 pt-2 border-t border-slate-100 text-center text-[10px] text-slate-400 font-mono tracking-tight" dir="ltr">
+                <span>By Eng. Tamer Mostafa | </span>
+                <a
+                  href={`https://wa.me/201014889704?text=${encodeURIComponent('ارغب في الاستفسار عن برنامج Smart Cut V2')}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-emerald-600 hover:text-emerald-700 font-bold transition-colors hover:underline inline-flex items-center gap-1"
+                  title="تواصل عبر واتساب"
+                >
+                  +201014889704
+                </a>
+              </div>
             </div>
           </aside>
         )}
 
         {/* 3. MOBILE SIDEBAR DRAWER OVERLAY */}
-        {isSidebarOpen && (
+        {showSidebar && (
           <div className="lg:hidden fixed inset-0 z-50 flex">
             <div 
               className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm"
-              onClick={() => setIsSidebarOpen(false)}
+              onClick={() => setShowSidebar(false)}
             />
             <div className="relative w-72 max-w-[80vw] bg-white h-full shadow-2xl flex flex-col z-10 animate-in slide-in-from-right duration-300">
               <div className="p-4 flex items-center justify-between border-b border-slate-100">
@@ -3638,10 +3596,21 @@ export default function App() {
                   </div>
                   <div>
                     <h2 className="font-extrabold text-xs text-slate-900">{settings.salonName}</h2>
-                    <p className="text-[10px] text-emerald-600 font-bold">SMART CUT PRO</p>
+                    <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                      <p className="text-[10px] text-emerald-600 font-bold">SMART CUT PRO</p>
+                      {licenseInfo && (
+                        <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          {licenseInfo.daysLeft !== null
+                            ? `متبقي ${licenseInfo.daysLeft} يوم للتفعيل`
+                            : licenseInfo.mode === 'lifetime'
+                            ? 'مرخص دائم 👑'
+                            : 'مرخص'}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
-                <button onClick={() => setIsSidebarOpen(false)} className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-slate-100" title="إغلاق القائمة">
+                <button onClick={() => setShowSidebar(false)} className="p-1 rounded-lg text-slate-400 hover:bg-slate-100">
                   <X size={20} />
                 </button>
               </div>
@@ -3654,8 +3623,10 @@ export default function App() {
                     <button
                       key={item.id}
                       onClick={() => {
-                        setActiveTab(item.id);
-                        setIsSidebarOpen(false);
+                        handleTabNavigation(item.id);
+                        if (item.id !== 'bookings' || shiftData?.isOpen) {
+                          setShowSidebar(false);
+                        }
                       }}
                       className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-right text-xs font-bold transition-all ${
                         isActive ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-700 hover:bg-slate-100'
@@ -3671,11 +3642,24 @@ export default function App() {
               <div className="p-3 border-t border-slate-100 bg-slate-50">
                 <button 
                   onClick={handleLogout}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-red-50 text-red-600 text-xs font-bold hover:bg-red-100 transition-colors"
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-red-50 text-red-600 text-xs font-bold hover:bg-red-100 transition-colors cursor-pointer"
                 >
                   <LogOut size={16} />
                   <span>تسجيل الخروج</span>
                 </button>
+
+                <div className="mt-2 text-center text-[10px] text-slate-400 font-mono tracking-tight" dir="ltr">
+                  <span>By Eng. Tamer Mostafa | </span>
+                  <a
+                    href={`https://wa.me/201014889704?text=${encodeURIComponent('ارغب في الاستفسار عن برنامج Smart Cut V2')}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-emerald-600 hover:text-emerald-700 font-bold transition-colors hover:underline inline-flex items-center gap-1"
+                    title="تواصل عبر واتساب"
+                  >
+                    +201014889704
+                  </a>
+                </div>
               </div>
             </div>
           </div>
@@ -3686,22 +3670,16 @@ export default function App() {
           {/* Header Topbar */}
           <header className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-3 sm:px-6 shadow-xs z-10 shrink-0">
             <div className="flex items-center gap-3">
-              {/* Sidebar Menu / Close Toggle Button (turns from Menu to Close X when opened) */}
+              {/* Sidebar Toggle Button (Desktop & Mobile) */}
               <button
-                onClick={() => setIsSidebarOpen(prev => !prev)}
-                className={`p-2 rounded-xl transition-all duration-200 active:scale-95 cursor-pointer flex items-center justify-center border shadow-2xs ${
-                  isSidebarOpen 
-                    ? 'bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-100 hover:text-rose-700 ring-2 ring-rose-200/50' 
-                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100 hover:text-slate-900'
-                }`}
-                title={isSidebarOpen ? "إخفاء القائمة الجانبية" : "إظهار القائمة الجانبية"}
-                aria-label={isSidebarOpen ? "إخفاء القائمة الجانبية" : "إظهار القائمة الجانبية"}
+                onClick={() => setShowSidebar(prev => !prev)}
+                className="p-2 rounded-xl text-slate-700 bg-slate-50 hover:bg-slate-100 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer border border-slate-200 shadow-2xs"
+                title={showSidebar ? "إخفاء القائمة الجانبية" : "إظهار القائمة الجانبية"}
               >
-                {isSidebarOpen ? (
-                  <X size={20} className="stroke-[2.5]" />
-                ) : (
-                  <Menu size={20} className="stroke-[2.2]" />
-                )}
+                {showSidebar ? <X size={18} className="text-red-500" /> : <Menu size={18} />}
+                <span className="text-xs font-bold text-slate-700 hidden sm:inline">
+                  {showSidebar ? 'إخفاء القائمة' : 'القائمة'}
+                </span>
               </button>
 
               <h2 className="text-sm sm:text-base font-extrabold text-slate-800 flex items-center gap-2">
@@ -3710,25 +3688,37 @@ export default function App() {
             </div>
             
             <div className="flex items-center gap-2 sm:gap-3">
-              {/* Subscription / Plan Badge Button */}
+              {/* License Status Pill Button */}
               <button
-                onClick={() => setShowSubscriptionModal(true)}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-xl font-extrabold text-[11px] transition-all cursor-pointer shadow-xs active:scale-95 ${
-                  isSubscriptionBlocked
+                onClick={() => setShowLicenseModal(true)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-extrabold text-xs transition-all cursor-pointer shadow-xs active:scale-95 ${
+                  !licenseInfo || !licenseInfo.isLicensed || licenseInfo.status === 'expired'
+                    ? 'bg-rose-100 text-rose-800 border border-rose-300 hover:bg-rose-200 animate-pulse'
+                    : licenseInfo.status === 'tampered'
                     ? 'bg-rose-100 text-rose-800 border border-rose-300 hover:bg-rose-200'
-                    : subscription.status === 'trial'
-                    ? 'bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-200'
-                    : 'bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100'
+                    : (licenseInfo.daysLeft !== null && licenseInfo.daysLeft <= 5)
+                    ? 'bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-200 animate-pulse'
+                    : 'bg-emerald-100 text-emerald-900 border border-emerald-300 hover:bg-emerald-200 shadow-sm'
                 }`}
-                title="عرض وتجديد باقات الاشتراك"
+                title="حالة ترخيص وتفعيل البرنامج - انقر للتجديد أو إدخال كود التفعيل"
               >
-                <Sparkles size={13} className={isSubscriptionBlocked ? 'text-rose-600' : 'text-amber-600'} />
+                <ShieldCheck size={14} className={!licenseInfo || !licenseInfo.isLicensed || licenseInfo.status === 'expired' ? 'text-rose-600' : 'text-emerald-700'} />
                 <span>
-                  {isSubscriptionBlocked
-                    ? 'انتهى الاشتراك (تجديد ⚡)'
-                    : subscription.status === 'trial'
-                    ? 'فترة تجريبية (ترقية الباقة ✨)'
-                    : 'باقات الاشتراك 💳'}
+                  {!licenseInfo
+                    ? 'فحص الترخيص...'
+                    : licenseInfo.status === 'tampered'
+                    ? 'مراجعة الترخيص ⚠️'
+                    : !licenseInfo.isLicensed || licenseInfo.status === 'expired'
+                    ? 'مطلوب التفعيل 🔑'
+                    : licenseInfo.mode === 'lifetime'
+                    ? 'مفعل مدى الحياة 👑'
+                    : licenseInfo.mode === 'days'
+                    ? `مفعل لمدة ${licenseInfo.daysLeft} يوم ✅`
+                    : licenseInfo.mode === 'runs'
+                    ? `مفعل لـ ${licenseInfo.runsLeft} تشغيلة 🚀`
+                    : licenseInfo.mode === 'trial_auto'
+                    ? `مفعل تجريبياً (${licenseInfo.daysLeft} يوم) ⏳`
+                    : `مفعل (${licenseInfo.daysLeft || 0} يوم) ✅`}
                 </span>
               </button>
 
@@ -3737,27 +3727,12 @@ export default function App() {
                 shiftData.isOpen ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'
               }`}>
                 <span className={`w-2 h-2 rounded-full ${shiftData.isOpen ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`}></span>
-                <span>{shiftData.isOpen ? `الوردية مفتوحة (${shiftData.date})` : 'الوردية مغلقة'}</span>
+                <span>{shiftData.isOpen ? `الوردية مفتوحة (${(shiftData as any)?.shiftCode || shiftData.date})` : 'الوردية مغلقة'}</span>
               </div>
 
               {AuthService.canDo('manage_shifts', currentUser) && (
                 <button 
-                  onClick={async () => {
-                    if (shiftData.isOpen || Object.values(branchShifts).some((s: any) => s && s.isOpen)) {
-                      setShowCloseModal(true);
-                      return;
-                    }
-                    try {
-                      const activeDbShift = await DB.getActiveWorkShift(settings.salonId);
-                      if (activeDbShift && (activeDbShift.status === 'open' || !activeDbShift.closedAt)) {
-                        applyActiveWorkShift(activeDbShift, activeBranchId);
-                        alert(`⚠️ توجد وردية مفتوحة بالفعل لهذا الصالون (كود الوردية: ${activeDbShift.shiftCode || activeDbShift.id}). يرجى إغلاقها أولاً قبل فتح وردية جديدة.`);
-                        setShowCloseModal(true);
-                        return;
-                      }
-                    } catch (e) {}
-                    setShowOpenModal(true);
-                  }}
+                  onClick={() => shiftData.isOpen ? setShowCloseModal(true) : setShowOpenModal(true)}
                   className={`px-3 py-1.5 rounded-xl font-extrabold text-xs shadow-xs transition-all active:scale-95 cursor-pointer ${
                     shiftData.isOpen ? 'bg-slate-800 hover:bg-slate-900 text-white' : 'bg-emerald-600 hover:bg-emerald-700 text-white'
                   }`}
@@ -3768,62 +3743,117 @@ export default function App() {
 
               <div className="hidden sm:block w-px h-5 bg-slate-200 mx-1"></div>
 
-              {/* User Avatar & Dropdown */}
-              <UserMenuDropdown
-                currentUser={currentUser}
-                setCurrentUser={setCurrentUser}
-                onLogout={handleLogout}
-                onOpenSettings={() => {
-                  if (AuthService.canAccess('settings', currentUser)) {
-                    setActiveTab('settings');
-                  } else {
-                    alert('ليس لديك صلاحية الوصول إلى شاشة الإعدادات.');
-                  }
-                }}
-                settings={settings}
-                activeBranch={activeBranch}
-                placement="header"
-              >
-                <div className="flex items-center gap-2.5 p-1 hover:bg-slate-100/80 rounded-2xl transition-all cursor-pointer group select-none">
-                  <div className="w-9 h-9 rounded-full bg-sky-100 text-sky-800 flex items-center justify-center font-black text-xs sm:text-sm border-2 border-white shadow-xs group-hover:scale-105 transition-transform">
+              {/* User Avatar & Name */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowUserHeaderMenu(!showUserHeaderMenu)}
+                  className="flex items-center gap-2 p-1.5 -mr-1.5 rounded-xl hover:bg-slate-100/90 active:bg-slate-200/80 transition-all cursor-pointer group border border-transparent hover:border-slate-200 text-right select-none"
+                  title="خيارات الحساب"
+                >
+                  <div className="w-8 h-8 rounded-full bg-sky-100 text-sky-800 border border-sky-200/80 group-hover:bg-indigo-600 group-hover:text-white transition-colors flex items-center justify-center font-black text-xs shadow-2xs shrink-0">
                     {getUserInitials(currentUser.name)}
                   </div>
                   <div className="hidden md:block text-right">
-                    <p className="text-xs font-bold text-slate-800 leading-tight group-hover:text-primary transition-colors">{currentUser.name}</p>
+                    <p className="text-xs font-bold text-slate-800 leading-tight group-hover:text-indigo-600 transition-colors flex items-center gap-1">
+                      <span>{currentUser.name}</span>
+                      <ChevronDown size={11} className={`text-slate-400 group-hover:text-indigo-500 transition-transform duration-200 ${showUserHeaderMenu ? 'rotate-180' : ''}`} />
+                    </p>
                     <p className="text-[10px] text-slate-400 font-semibold">{ROLE_LABELS[currentUser.role] || currentUser.role}</p>
                   </div>
-                </div>
-              </UserMenuDropdown>
+                </button>
+
+                <UserAccountMenu
+                  isOpen={showUserHeaderMenu}
+                  onClose={() => setShowUserHeaderMenu(false)}
+                  currentUser={currentUser}
+                  onProfileClick={() => {
+                    setShowUserHeaderMenu(false);
+                    setShowUserProfileModal(true);
+                  }}
+                  onChangePasswordClick={() => {
+                    setShowUserHeaderMenu(false);
+                    setShowChangePasswordModal(true);
+                  }}
+                  onSettingsClick={handleOpenSettingsFromUserMenu}
+                  onLogoutClick={handleLogout}
+                  align="bottom-start"
+                />
+              </div>
             </div>
           </header>
 
           {/* Main Body */}
           <div className={`flex-1 flex flex-col bg-slate-100 relative ${activeTab === 'owner_portal' ? 'overflow-y-auto overflow-x-hidden' : 'overflow-hidden'}`}>
-            {isSubscriptionBlocked && (
-              <div className="bg-gradient-to-r from-rose-900 via-rose-800 to-rose-900 text-white px-4 py-2 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs font-bold border-b border-rose-950 z-30 shrink-0 shadow-md animate-in fade-in" dir="rtl">
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-white animate-ping"></span>
-                  <span>
-                    🔒 <strong>وضع القراءة فقط (Read-Only Mode):</strong> تم إيقاف تفعيل حساب الصالون (أو الفرع) نظراً لانتهاء الاشتراك. جميع الجداول والشاشات أصبحت للقراءة فقط ولا يُسمح بإجراء أي إضافة أو تعديل أو حفظ.
+            {/* Top License Warning & Read-Only Banners */}
+            {isSubscriptionBlocked ? (
+              /* Red Banner: Read-Only Mode & Expired License */
+              <div className="bg-gradient-to-r from-red-700 via-rose-800 to-red-700 text-white px-4 py-2.5 flex flex-col sm:flex-row items-center justify-between gap-2.5 text-xs font-bold border-b-2 border-red-950 z-30 shrink-0 shadow-lg animate-in fade-in" dir="rtl">
+                <div className="flex items-center gap-2.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-white animate-ping shrink-0"></span>
+                  <span className="leading-relaxed">
+                    🔒 <strong>تم تحويل البرنامج إلى وضع القراءة فقط:</strong> انتهت صلاحية الترخيص{licenseInfo?.mode === 'trial_auto' ? ' التجريبي' : ''}. يُمنع نهائياً تسجيل أي فواتير جديدة أو إجراء أي إضافة أو تعديل في كافة بيانات النظام لحين تجديد الاشتراك والتفعيل.
                   </span>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <button
-                    onClick={() => setShowSubscriptionModal(true)}
-                    className="bg-amber-400 hover:bg-amber-300 text-slate-950 px-3 py-1 rounded-xl text-xs font-black shadow-md transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 animate-pulse"
+                    onClick={() => setShowLicenseModal(true)}
+                    className="bg-amber-400 hover:bg-amber-300 text-slate-950 px-4 py-1.5 rounded-xl text-xs font-black shadow-md transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 animate-pulse"
                   >
-                    <Sparkles size={14} className="text-slate-900" />
-                    <span>تجديد / ترقية الباقة الآن 💳</span>
+                    <Key size={14} className="text-slate-900" />
+                    <span>تجديد / تفعيل الترخيص الآن 🔑</span>
                   </button>
-                  <span className="bg-white/20 text-white px-2.5 py-0.5 rounded-md text-[11px] font-black shrink-0">
-                    مغلق للتعديل ⛔
+                  <span className="bg-black/30 border border-white/20 text-white px-2.5 py-1 rounded-lg text-[11px] font-black shrink-0">
+                    وضع القراءة فقط ⛔
                   </span>
                 </div>
               </div>
-            )}
+            ) : isExpiringSoon ? (
+              /* Yellow Banner: Warning 5 days before expiration */
+              <div className="bg-gradient-to-r from-amber-400 via-amber-300 to-amber-400 text-amber-950 px-4 py-2 flex flex-col sm:flex-row items-center justify-between gap-2.5 text-xs font-bold border-b border-amber-500 z-30 shrink-0 shadow-sm animate-in fade-in" dir="rtl">
+                <div className="flex items-center gap-2.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-700 animate-pulse shrink-0"></span>
+                  <span>
+                    ⚠️ <strong>تنبيه هام:</strong> متبقي <strong>{licenseInfo?.daysLeft}</strong> {licenseInfo?.daysLeft === 1 ? 'يوم واحد' : licenseInfo?.daysLeft === 2 ? 'يومان' : 'أيام'} في الترخيص / الاشتراك. يرجى تجديد التفعيل لضمان استمرار عمل النظام دون انقطاع وتجنب تحوله لوضع القراءة فقط.
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => setShowLicenseModal(true)}
+                    className="bg-slate-900 hover:bg-slate-800 text-amber-300 px-3.5 py-1.5 rounded-xl text-xs font-black shadow-sm transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+                  >
+                    <Key size={13} className="text-amber-400" />
+                    <span>تجديد الاشتراك / إدخال كود التفعيل 🔑</span>
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
             {renderScreen()}
           </div>
 
+          {/* Application Global Footer */}
+          <footer className="h-7 bg-white/95 border-t border-slate-200 px-4 flex items-center justify-between text-[11px] text-slate-500 shrink-0 select-none z-10 print:hidden font-sans" dir="ltr">
+            <div className="flex items-center gap-1.5 font-mono text-slate-700">
+              <span className="font-bold text-slate-900">By Eng. Tamer Mostafa</span>
+              <span className="text-slate-400">|</span>
+              <a 
+                href={`https://wa.me/201014889704?text=${encodeURIComponent('ارغب في الاستفسار عن برنامج Smart Cut V2')}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-emerald-600 hover:text-emerald-700 font-bold transition-colors hover:underline inline-flex items-center gap-1"
+                dir="ltr"
+                title="تواصل عبر واتساب"
+              >
+                +201014889704
+              </a>
+            </div>
+            <div className="hidden sm:flex items-center gap-2 text-[10px] text-slate-400" dir="rtl">
+              <span>{settings.salonName || 'Smart Cut'}</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span>
+              <span>الإصدار V2.0</span>
+            </div>
+          </footer>
         </main>
       </div>
 
@@ -3831,7 +3861,7 @@ export default function App() {
       <MobileBottomNav
         activeTab={activeTab}
         setActiveTab={setActiveTab}
-        onOpenMobileMenu={() => setIsSidebarOpen(prev => !prev)}
+        onOpenMobileMenu={() => setShowMobileSidebar(true)}
         canAccess={screen => AuthService.canAccess(screen, currentUser)}
       />
 
@@ -3839,109 +3869,54 @@ export default function App() {
       {showCloseModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md my-8 overflow-hidden">
-            <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-              <div>
-                <h3 className="font-extrabold text-base text-slate-800">إغلاق الوردية الحالية (Z-Report)</h3>
-                <p className="text-[11px] text-slate-500 mt-0.5">مراجعة أرقام الوردية ومطابقة النقدية بالدرج قبل الإغلاق</p>
-              </div>
+            <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+              <h3 className="font-extrabold text-base text-slate-800">إغلاق الوردية الحالية (Z-Report)</h3>
+              <button onClick={() => setShowCloseModal(false)} className="text-slate-400 hover:text-red-500 font-bold">✕</button>
             </div>
             <div className="p-4 overflow-hidden flex justify-center bg-slate-100 max-h-[60vh] overflow-y-auto">
               <div id="shift-closing-report-receipt-container" className="bg-white shadow-sm p-4 w-full rounded-2xl">
                 <ClosingReportReceipt 
                   settings={settings}
-                  transactions={transactions.filter(t => {
-                    const tShiftId = t.shiftId || (t as any).shift_id;
-                    if (tShiftId && (shiftData as any)?.shiftId) {
-                      return tShiftId === (shiftData as any).shiftId;
-                    }
-                    return (t.shiftDate && shiftData.date && t.shiftDate === shiftData.date) || t.date.startsWith(shiftData.date);
-                  })}
-                  invoices={invoices.filter(i => {
-                    if (i.status === 'cancelled') return false;
-                    if (i.shiftId && (shiftData as any)?.shiftId) {
-                      return i.shiftId === (shiftData as any).shiftId;
-                    }
-                    return (i.shiftDate && shiftData.date && i.shiftDate === shiftData.date) || i.date.startsWith(shiftData.date);
-                  })}
-                  bookings={branchBookings}
+                  shiftCode={(shiftData as any)?.shiftCode}
+                  transactions={transactions.filter(t => (t.shiftDate && shiftData.date && t.shiftDate === shiftData.date) || t.date.startsWith(shiftData.date))}
+                  invoices={invoices.filter(i => (i.shiftDate && shiftData.date && i.shiftDate === shiftData.date) || i.date.startsWith(shiftData.date))}
                   dateLabel={shiftData.date}
                   initialCash={shiftData.initialCash}
                   userName={currentUser?.name || settings.ownerName || 'المسؤول'}
-                  shiftCode={(shiftData as any)?.shiftCode}
-                  openedByUserName={(shiftData as any)?.openedByUserName}
-                  openedAt={(shiftData as any)?.openedAt}
-                  closedByUserName={currentUser?.name || 'الكاشير'}
-                  closedAt={new Date().toISOString()}
-                  expectedCash={currentModalExpectedCash}
-                  actualCash={closeShiftActualCash !== '' && !isNaN(Number(closeShiftActualCash)) ? Number(closeShiftActualCash) : currentModalExpectedCash}
-                  cashDifference={(closeShiftActualCash !== '' && !isNaN(Number(closeShiftActualCash)) ? Number(closeShiftActualCash) : currentModalExpectedCash) - currentModalExpectedCash}
-                  mainTreasuryName={settings.treasuries?.find(t => t.id === 'main' || t.isMain)?.name || 'الخزينة الرئيسية'}
+                  employees={employees}
+                  fingerprintLogs={fingerprintLogs}
                 />
               </div>
             </div>
             
             <div className="p-4 bg-slate-50 border-t border-slate-100 flex flex-col gap-2.5">
-              {/* مدخل الكاش الفعلي المعدود في الدرج */}
-              <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-2xs space-y-2">
-                <div className="flex justify-between items-center text-xs">
-                  <span className="font-bold text-slate-600">الكاش المتوقع بالدرج:</span>
-                  <span className="font-mono font-black text-slate-800">{currentModalExpectedCash.toFixed(2)} {settings.currency}</span>
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                    الكاش الفعلي المعدود في الدرج (للتسليم للكاشير التالي):
-                  </label>
-                  <div className="relative">
-                    <input 
-                      type="number" 
-                      className="w-full border border-slate-300 rounded-xl pr-3 pl-12 py-2 font-black text-slate-900 outline-none focus:border-emerald-600 bg-slate-50 text-sm"
-                      value={closeShiftActualCash}
-                      onChange={e => setCloseShiftActualCash(e.target.value)}
-                      placeholder={currentModalExpectedCash.toFixed(2)}
-                    />
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold">{settings.currency}</span>
-                  </div>
-                </div>
-                {closeShiftActualCash !== '' && (
-                  <div className={`text-xs font-bold px-2 py-1 rounded flex justify-between ${
-                    Math.abs(Number(closeShiftActualCash) - currentModalExpectedCash) < 0.01
-                      ? 'bg-emerald-50 text-emerald-800'
-                      : Number(closeShiftActualCash) < currentModalExpectedCash
-                        ? 'bg-rose-50 text-rose-800'
-                        : 'bg-blue-50 text-blue-800'
-                  }`}>
-                    <span>الفارق:</span>
-                    <span className="font-mono" dir="ltr">
-                      {Math.abs(Number(closeShiftActualCash) - currentModalExpectedCash) < 0.01
-                        ? '0.00 (متطابق تماماً ✓)'
-                        : (Number(closeShiftActualCash) - currentModalExpectedCash) < 0
-                          ? `عجز: ${Math.abs(Number(closeShiftActualCash) - currentModalExpectedCash).toFixed(2)} -`
-                          : `زيادة: +${(Number(closeShiftActualCash) - currentModalExpectedCash).toFixed(2)}`}
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              {/* أزرار الإجراءات: زر تراجع وزر إغلاق فقط */}
-              <div className="flex items-center gap-3 pt-2">
+              <div className="flex items-center gap-2">
                 <button 
                   type="button"
-                  onClick={() => {
-                    setShowCloseModal(false);
-                    setCloseShiftActualCash('');
-                  }}
-                  className="flex-1 bg-white hover:bg-slate-100 text-slate-700 font-extrabold py-3 rounded-xl transition-all text-xs border border-slate-300 shadow-xs cursor-pointer active:scale-[0.99] text-center"
+                  onClick={() => handlePrintClosingShiftReport(settings.paperSize || '80mm')}
+                  className="flex-1 bg-slate-900 hover:bg-slate-800 text-white font-extrabold py-3 rounded-xl transition-all flex items-center justify-center gap-2 text-xs shadow active:scale-[0.99] cursor-pointer"
+                  title="طباعة إيصال التقرير لطابعة الإيصالات الحرارية (80mm / 58mm)"
                 >
-                  تراجع
+                  <Printer size={16} className="text-emerald-400" />
+                  <span>طباعة تقرير الوردية الحراري</span>
                 </button>
                 <button 
                   type="button"
-                  onClick={handleConfirmCloseShift}
-                  className="flex-1 bg-red-600 hover:bg-red-700 text-white font-extrabold py-3 rounded-xl transition-all text-xs shadow-md cursor-pointer active:scale-[0.99] text-center flex items-center justify-center gap-1.5"
+                  onClick={() => handlePrintClosingShiftReport('a4')}
+                  className="bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 font-extrabold py-3 px-3 rounded-xl transition-all flex items-center justify-center gap-1 text-xs shadow-xs active:scale-[0.99] cursor-pointer whitespace-nowrap"
+                  title="طباعة التقرير على ورق A4 عادي"
                 >
-                  إغلاق الوردية
+                  <FileText size={15} className="text-slate-500" />
+                  <span>A4</span>
                 </button>
               </div>
+              <button 
+                type="button"
+                onClick={handleConfirmCloseShift}
+                className="w-full bg-red-600 hover:bg-red-700 text-white font-extrabold py-3 rounded-xl transition-all text-xs shadow cursor-pointer active:scale-[0.99]"
+              >
+                تأكيد إغلاق الوردية وتصفير الخزائن
+              </button>
             </div>
           </div>
         </div>
@@ -3997,18 +3972,98 @@ export default function App() {
         </div>
       )}
 
-      {/* 7. SUBSCRIPTION & BILLING PRICING MODAL */}
-      <SubscriptionPlansModal
-        isOpen={showSubscriptionModal}
-        onClose={() => setShowSubscriptionModal(false)}
-        settings={settings}
-        currentSalon={allSalons.find((s: any) => s.id === currentSalonId) || { id: currentSalonId, name: settings.salonName }}
-        currentUser={currentUser}
-        onSubscriptionUpdated={() => {
-          setShowSubscriptionModal(false);
-          window.location.reload();
+      {/* 7. SOFTWARE LICENSE MODAL */}
+      <LicenseModal
+        isOpen={showLicenseModal}
+        licenseInfo={licenseInfo}
+        onClose={() => setShowLicenseModal(false)}
+        onActivated={(updated) => {
+          setLicenseInfo(updated);
+          localStorage.setItem('smartcut_license_readonly', 'false');
+          setShowLicenseModal(false);
         }}
       />
+
+      {/* 8. TURSO DISTRIBUTED CLOUD SYNC MODAL */}
+      <TursoCloudSyncModal
+        isOpen={showTursoModal}
+        onClose={() => setShowTursoModal(false)}
+        onSyncTriggered={() => {
+          setIsTursoConnected(true);
+          setIsCloudConnected(true);
+        }}
+      />
+
+      {/* 9. INITIAL SALON SETUP MODAL */}
+      <InitialSalonSetupModal
+        isOpen={showInitialSalonModal && !showLicenseModal}
+        onComplete={(newSettings, mainBranch) => {
+          setSettings(newSettings);
+          setBranches([mainBranch]);
+          setActiveBranchId(mainBranch.id);
+          setSubscription(prev => ({
+            ...prev,
+            id: newSettings.salonId,
+            salonId: newSettings.salonId,
+            salonCode: newSettings.salonCode || '',
+            organizationName: newSettings.salonName,
+            country: newSettings.country,
+            currency: newSettings.currency,
+            plan: 'trial',
+            status: 'trial',
+            isActive: true,
+            maxBranches: 1,
+            maxUsers: 5,
+            trialDays: 7
+          }));
+
+          if (!currentUser) {
+            const adminUser = AuthService.getUsers().find(u => u.username === 'admin') || {
+              id: 'admin_user',
+              name: 'مدير النظام',
+              username: 'admin',
+              role: 'owner',
+              active: true,
+              screens: ['*'],
+              actions: ['*'],
+              salonId: newSettings.salonId,
+              branchId: mainBranch.id
+            };
+            const updatedAdmin = { ...adminUser, salonId: newSettings.salonId, branchId: mainBranch.id };
+            AuthService.setSession(updatedAdmin);
+            setCurrentUser(updatedAdmin);
+          } else {
+            setCurrentUser(prev => prev ? ({ ...prev, salonId: newSettings.salonId, branchId: mainBranch.id }) : null);
+          }
+          setShowInitialSalonModal(false);
+        }}
+      />
+
+      {/* Change Password Modal */}
+      {currentUser && (
+        <ChangePasswordModal
+          isOpen={showChangePasswordModal}
+          onClose={() => setShowChangePasswordModal(false)}
+          currentUser={currentUser}
+          onSuccess={(updatedUser) => {
+            setCurrentUser(updatedUser);
+          }}
+        />
+      )}
+
+      {/* User Profile Modal */}
+      {currentUser && (
+        <UserProfileModal
+          isOpen={showUserProfileModal}
+          onClose={() => setShowUserProfileModal(false)}
+          currentUser={currentUser}
+          activeBranch={branches.find(b => b.id === (currentUser.branchId || activeBranchId)) || branches[0]}
+          onChangePasswordClick={() => {
+            setShowUserProfileModal(false);
+            setShowChangePasswordModal(true);
+          }}
+        />
+      )}
 
     </div>
   );

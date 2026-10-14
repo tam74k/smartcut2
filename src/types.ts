@@ -341,6 +341,7 @@ export interface ServiceItem {
 
 export interface WorkShift {
   id: string;
+  shiftCode?: string;
   salonId?: string;
   branchId?: string;
   shiftDate: string; // YYYY-MM-DD
@@ -348,9 +349,12 @@ export interface WorkShift {
   closedAt?: string; // ISO String
   openedByUserId?: string;
   openedByUserName?: string;
+  openedByName?: string;
   openedByRole?: string;
   closedByUserId?: string;
   closedByUserName?: string;
+  closedByName?: string;
+  closedByRole?: string;
   initialCash: number; // العهدة الافتتاحية
   expectedCash?: number; // الكاش المتوقع في الدرج عند الإغلاق
   actualCash?: number; // الكاش الفعلي المعدود في الدرج
@@ -359,6 +363,9 @@ export interface WorkShift {
   totalCashSales?: number;
   totalCardSales?: number;
   totalExpenses?: number;
+  transferredToTreasury?: string;
+  transferredAmount?: number;
+  totalAdvances?: number;
   status: 'open' | 'closed';
   notes?: string;
   createdAt?: string;
@@ -1137,6 +1144,9 @@ export interface Invoice {
   hasReturn?: boolean;
   returnedAmount?: number;
   returnIds?: string[];
+  shiftId?: string;
+  shiftCode?: string;
+  shiftDate?: string;
 }
 
 export interface ReturnInvoiceItem {
@@ -1420,8 +1430,10 @@ export interface Transaction {
   userName?: string;
   shiftDate?: string;
   shiftId?: string;
+  shiftCode?: string;
   bookingId?: string;
   branchId?: string;
+  branchCode?: string;
   salonId?: string;
   isVoided?: boolean;
   voidedAt?: string;

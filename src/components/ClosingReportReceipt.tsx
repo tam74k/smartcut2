@@ -1,205 +1,176 @@
 import React, { useMemo } from 'react';
-import { AppSettings, Transaction, Invoice, Treasury, Booking } from '../types';
-import { isMatchingTreasury, getTreasuryLabel } from '../utils/treasury';
+import { AppSettings, Transaction, Invoice, Treasury, Employee, FingerprintLog } from '../types';
+import { calculateFingerprintProcessedDate } from '../services/db';
+
+function extractDatesFromLabel(label: string): string[] {
+  const matches = label.match(/\d{4}-\d{2}-\d{2}/g);
+  if (!matches || matches.length === 0) return [new Date().toISOString().split('T')[0]];
+  if (matches.length === 1) return [matches[0]];
+  const dStart = new Date(matches[0]);
+  const dEnd = new Date(matches[1]);
+  const dates: string[] = [];
+  const curr = new Date(dStart);
+  while (curr <= dEnd && dates.length < 62) {
+    dates.push(curr.toISOString().split('T')[0]);
+    curr.setDate(curr.getDate() + 1);
+  }
+  return dates.length > 0 ? dates : [matches[0]];
+}
 
 export function ClosingReportReceipt({
   settings,
   transactions,
   invoices,
-  bookings = [],
   dateLabel,
   initialCash = 0,
   userName,
   shiftCode,
-  openedByUserName,
-  openedAt,
-  closedByUserName,
-  closedAt,
-  expectedCash,
-  actualCash,
-  cashDifference,
-  transferredAmount,
-  mainTreasuryName
+  fingerprintLogs = [],
+  employees = [],
+  attendanceSummary
 }: {
   settings: AppSettings,
   transactions: Transaction[],
   invoices: Invoice[],
-  bookings?: Booking[],
   dateLabel: string,
   initialCash?: number,
   userName?: string,
   shiftCode?: string,
-  openedByUserName?: string,
-  openedAt?: string,
-  closedByUserName?: string,
-  closedAt?: string,
-  expectedCash?: number,
-  actualCash?: number,
-  cashDifference?: number,
-  transferredAmount?: number,
-  mainTreasuryName?: string
+  fingerprintLogs?: FingerprintLog[],
+  employees?: Employee[],
+  attendanceSummary?: {
+    presentStaffCount: number;
+    totalWorkedMinutes: number;
+    totalDelayMinutes: number;
+    totalOvertimeMinutes: number;
+  }
 }) {
   const effectiveUserName = userName || settings.ownerName || 'المسؤول';
 
-  // Construct comprehensive treasuries list ensuring Cash / Main treasury and all utilized treasuries are included
-  const allTreasuries: Treasury[] = useMemo(() => {
-    let list: Treasury[] = (settings.treasuries && settings.treasuries.length > 0)
-      ? [...settings.treasuries]
-      : [
-          { id: 'main', name: 'الخزنة الرئيسية', isMain: true },
-          { id: 'cash', name: 'كاش (الدرج)', isMain: false },
-          { id: 'card', name: 'شبكة / فيزا', isMain: false }
-        ];
-
-    const hasMain = list.some(t => t.id === 'main' || t.isMain);
-    const hasCash = list.some(t => t.id === 'cash');
-
-    if (!hasMain) {
-      list.unshift({ id: 'main', name: 'الخزنة الرئيسية', isMain: true });
-    }
-    if (!hasCash) {
-      list.push({ id: 'cash', name: 'كاش (الدرج)', isMain: false });
+  // Attendance & Biometric Summary Calculation
+  const attendanceStats = useMemo(() => {
+    if (attendanceSummary) {
+      const wh = Math.floor(attendanceSummary.totalWorkedMinutes / 60);
+      const wm = attendanceSummary.totalWorkedMinutes % 60;
+      const oh = Math.floor(attendanceSummary.totalOvertimeMinutes / 60);
+      const om = attendanceSummary.totalOvertimeMinutes % 60;
+      return {
+        presentStaffCount: attendanceSummary.presentStaffCount,
+        totalWorkedMinutes: attendanceSummary.totalWorkedMinutes,
+        workedHoursStr: `${wh} ساعة ${wm > 0 ? `و ${wm} د` : ''}`,
+        totalDelayMinutes: attendanceSummary.totalDelayMinutes,
+        totalOvertimeMinutes: attendanceSummary.totalOvertimeMinutes,
+        overtimeHoursStr: `${oh} ساعة ${om > 0 ? `و ${om} د` : ''}`
+      };
     }
 
-    const knownIds = new Set(list.map(t => t.id));
-    transactions.forEach(t => {
-      const tId = t.treasury || (t as any).treasuryId;
-      if (tId && !knownIds.has(tId)) {
-        knownIds.add(tId);
-        list.push({ 
-          id: tId, 
-          name: tId === 'card' ? 'شبكة / مدى' : tId === 'bank_transfer' ? 'تحويل بنكي' : `خزينة (${tId})`,
-          isMain: false
-        });
-      }
-    });
+    let allEmployees: Employee[] = employees && employees.length > 0 ? employees : [];
+    if (allEmployees.length === 0) {
+      try {
+        const savedEmp = localStorage.getItem('smartcut_employees');
+        if (savedEmp) allEmployees = JSON.parse(savedEmp);
+      } catch {}
+    }
 
-    invoices.forEach(inv => {
-      const pms = (inv.paymentMethods && inv.paymentMethods.length > 0)
-        ? inv.paymentMethods
-        : [{ treasuryId: inv.treasuryId || inv.paymentMethod }];
-      pms.forEach((pm: any) => {
-        const pmId = pm.treasuryId;
-        if (pmId && pmId !== 'cashback' && pmId !== 'remedy_free' && !knownIds.has(pmId)) {
-          knownIds.add(pmId);
-          list.push({
-            id: pmId,
-            name: pmId === 'card' ? 'شبكة / مدى' : pmId === 'bank_transfer' ? 'تحويل بنكي' : `خزينة (${pmId})`,
-            isMain: false
-          });
-        }
-      });
-    });
+    let allLogs: FingerprintLog[] = fingerprintLogs && fingerprintLogs.length > 0 ? fingerprintLogs : [];
+    if (allLogs.length === 0) {
+      try {
+        const savedLogs = localStorage.getItem('smartcut_fingerprint_logs');
+        if (savedLogs) allLogs = JSON.parse(savedLogs);
+      } catch {}
+    }
 
-    return list;
-  }, [settings.treasuries, transactions, invoices]);
+    if (allEmployees.length === 0 || allLogs.length === 0) {
+      return null;
+    }
 
-  const hasCashTreasury = useMemo(() => allTreasuries.some(t => t.id === 'cash'), [allTreasuries]);
-  const hasMainTreasury = useMemo(() => allTreasuries.some(t => t.id === 'main' || t.isMain), [allTreasuries]);
+    const targetDates = extractDatesFromLabel(dateLabel);
+    const presentEmpIds = new Set<string>();
+    let totalWorkedMinutes = 0;
+    let totalDelayMinutes = 0;
+    let totalOvertimeMinutes = 0;
 
-  const isMatchingTreasuryLocal = (tId: string | undefined, targetId: string) => {
-    return isMatchingTreasury(tId, targetId, allTreasuries);
-  };
+    targetDates.forEach(dateStr => {
+      allEmployees.forEach(emp => {
+        const dayLogs = allLogs.filter(l => {
+          const isEmp = l.employeeId === emp.id || (emp.fingerprintCode && (l.fingerprintCode === emp.fingerprintCode || (l as any).fingerprint_code === emp.fingerprintCode));
+          if (!isEmp) return false;
+          const pDate = (l as any).processedDate || calculateFingerprintProcessedDate(l.timestamp, l.type);
+          return pDate === dateStr || (l.timestamp && l.timestamp.startsWith(dateStr));
+        }).sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
 
-  const getTreasuryLabelLocal = (tId: string | undefined) => {
-    return getTreasuryLabel(tId, allTreasuries);
-  };
+        if (dayLogs.length === 0) return;
 
-  // Helper to detect if a transaction represents a booking advance
-  const isAdvanceTrx = (t: Transaction) => {
-    if (t.type !== 'in') return false;
-    const cat = t.category || '';
-    if (cat === 'booking_advance' || cat === 'مقدم حجز' || cat === 'عربون حجز' || cat === 'عربون' || cat === 'مقدم') return true;
-    if (cat === 'advance' && !t.description?.includes('سلف')) return true;
-    const desc = t.description || '';
-    if (desc.includes('عربون') || desc.includes('مقدم حجز') || desc.includes('دفعة مقدمة')) return true;
-    return false;
-  };
+        presentEmpIds.add(emp.id);
 
-  const advanceTransactions = useMemo(() => {
-    return transactions.filter(isAdvanceTrx);
-  }, [transactions]);
+        const checkInLogs = dayLogs.filter(l => l.type === 'check_in');
+        const checkOutLogs = dayLogs.filter(l => l.type === 'check_out');
 
-  // Check if any booking advance on this date is not in advanceTransactions to prevent missing unrecorded advances
-  const unrecordedBookingAdvances = useMemo(() => {
-    if (!bookings || bookings.length === 0) return [];
-    const advances: { id: string; amount: number; treasuryId: string; clientName: string; bookingCode?: string }[] = [];
-    
-    bookings.forEach(b => {
-      (b.advancePayments || []).forEach(adv => {
-        const advDate = adv.date || '';
-        const matchesDate = dateLabel.includes(' - ')
-          ? (advDate >= dateLabel.split(' - ')[0] && advDate <= dateLabel.split(' - ')[1])
-          : (advDate.startsWith(dateLabel) || !advDate);
-          
-        if (matchesDate && Number(adv.amount) > 0) {
-          const alreadyInTrx = advanceTransactions.some(t => 
-            Number(t.amount) === Number(adv.amount) && (
-              t.description?.includes(b.bookingCode || '') || 
-              t.description?.includes(b.id || '') || 
-              t.description?.includes(b.clientName || '')
-            )
-          );
-          if (!alreadyInTrx) {
-            advances.push({
-              id: adv.id,
-              amount: Number(adv.amount),
-              treasuryId: adv.treasuryId || adv.paymentMethod || 'cash',
-              clientName: b.clientName,
-              bookingCode: b.bookingCode || b.id
-            });
+        const inLog = checkInLogs[0] || dayLogs[0];
+        const outLog = checkOutLogs[checkOutLogs.length - 1] || (dayLogs.length > 1 ? dayLogs[dayLogs.length - 1] : null);
+
+        const schedIn = (emp as any).shiftSchedule?.checkInTime || (emp as any).checkInTime || '09:00';
+        const schedOut = (emp as any).shiftSchedule?.checkOutTime || (emp as any).checkOutTime || '17:00';
+
+        const schedInParts = schedIn.split(':').map(Number);
+        const schedInMin = (schedInParts[0] || 9) * 60 + (schedInParts[1] || 0);
+
+        const schedOutParts = schedOut.split(':').map(Number);
+        let schedOutMin = (schedOutParts[0] || 17) * 60 + (schedOutParts[1] || 0);
+        if (schedOutMin <= schedInMin) schedOutMin += 1440;
+
+        let actualInMin = schedInMin;
+        if (inLog && inLog.timestamp) {
+          const t = inLog.timestamp.includes('T') ? inLog.timestamp.split('T')[1] : inLog.timestamp.split(' ')[1] || '';
+          if (t) {
+            const p = t.split(':').map(Number);
+            actualInMin = (p[0] || 0) * 60 + (p[1] || 0);
           }
         }
+
+        if (actualInMin > schedInMin + 15) {
+          totalDelayMinutes += (actualInMin - schedInMin);
+        }
+
+        if (outLog && outLog.timestamp && outLog !== inLog) {
+          const t = outLog.timestamp.includes('T') ? outLog.timestamp.split('T')[1] : outLog.timestamp.split(' ')[1] || '';
+          if (t) {
+            const p = t.split(':').map(Number);
+            let actualOutMin = (p[0] || 0) * 60 + (p[1] || 0);
+            if (actualOutMin <= actualInMin) actualOutMin += 1440;
+
+            const worked = Math.max(0, actualOutMin - actualInMin);
+            totalWorkedMinutes += worked;
+
+            if (actualOutMin > schedOutMin + 30) {
+              totalOvertimeMinutes += (actualOutMin - schedOutMin);
+            }
+          }
+        } else {
+          totalWorkedMinutes += 480;
+        }
       });
     });
-    return advances;
-  }, [bookings, dateLabel, advanceTransactions]);
 
-  // Combined list of collected advances
-  const collectedAdvancesList = useMemo(() => {
-    const list: { id: string; amount: number; treasuryId: string; label: string; desc?: string }[] = [];
-    advanceTransactions.forEach(t => {
-      const tId = t.treasury || (t as any).treasuryId || 'cash';
-      list.push({
-        id: t.id,
-        amount: Number(t.amount) || 0,
-        treasuryId: tId,
-        label: getTreasuryLabelLocal(tId),
-        desc: t.description
-      });
-    });
-    unrecordedBookingAdvances.forEach(adv => {
-      list.push({
-        id: adv.id,
-        amount: adv.amount,
-        treasuryId: adv.treasuryId,
-        label: getTreasuryLabelLocal(adv.treasuryId),
-        desc: `دفعة مقدمة لحجز #${adv.bookingCode} - ${adv.clientName}`
-      });
-    });
-    return list;
-  }, [advanceTransactions, unrecordedBookingAdvances, allTreasuries]);
+    if (presentEmpIds.size === 0) return null;
 
-  const totalAdvancesCount = collectedAdvancesList.length;
-  const totalAdvancesAmount = collectedAdvancesList.reduce((sum, item) => sum + item.amount, 0);
+    const wh = Math.floor(totalWorkedMinutes / 60);
+    const wm = totalWorkedMinutes % 60;
+    const oh = Math.floor(totalOvertimeMinutes / 60);
+    const om = totalOvertimeMinutes % 60;
 
-  // Group booking advances by payment method / treasury
-  const advancesByPaymentMethod = useMemo(() => {
-    const map: Record<string, { id: string; name: string; amount: number; count: number }> = {};
-    collectedAdvancesList.forEach(item => {
-      const key = item.label;
-      if (!map[key]) {
-        map[key] = { id: item.treasuryId, name: key, amount: 0, count: 0 };
-      }
-      map[key].amount += item.amount;
-      map[key].count += 1;
-    });
-    return Object.values(map);
-  }, [collectedAdvancesList]);
-
-  // Helper to categorize per treasury
+    return {
+      presentStaffCount: presentEmpIds.size,
+      totalWorkedMinutes,
+      workedHoursStr: `${wh} ساعة ${wm > 0 ? `و ${wm} د` : ''}`,
+      totalDelayMinutes,
+      totalOvertimeMinutes,
+      overtimeHoursStr: `${oh} ساعة ${om > 0 ? `و ${om} د` : ''}`
+    };
+  }, [dateLabel, employees, fingerprintLogs, attendanceSummary]);
+  // Helper to categorize
   const getStats = (treasuryId: string) => {
-    const tTrx = transactions.filter(t => isMatchingTreasuryLocal(t.treasury || (t as any).treasuryId, treasuryId));
+    const tTrx = transactions.filter(t => t.treasury === treasuryId || (t as any).treasuryId === treasuryId);
 
     // Track invoice IDs that already exist as transactions in tTrx to avoid double counting
     const invoiceIdsInTrx = new Set(
@@ -214,43 +185,21 @@ export function ClosingReportReceipt({
       const methods = inv.paymentMethods && inv.paymentMethods.length > 0
         ? inv.paymentMethods
         : [{ amount: Number(inv.total) || 0, treasuryId: inv.paymentMethod || 'cash' }];
-      const matched = methods.filter((pm: any) => isMatchingTreasuryLocal(pm.treasuryId, treasuryId));
+      const matched = methods.filter((pm: any) => pm.treasuryId === treasuryId);
       return sum + matched.reduce((s: number, m: any) => s + (Number(m.amount) || 0), 0);
     }, 0);
 
     const recordedSales = tTrx.filter(t => t.type === 'in' && (
       t.category === 'sales' || 
-      t.category === 'مبيعات'
+      t.category === 'booking_advance' || 
+      t.category === 'مبيعات' || 
+      t.category === 'مقدم حجز'
     )).reduce((s, x) => s + (Number(x.amount) || 0), 0);
 
-    const sales = invoiceSales + recordedSales;
-
-    // Booking advances for this treasury
-    const trxAdvances = tTrx.filter(isAdvanceTrx).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    const unrecordedAdvSum = unrecordedBookingAdvances
-      .filter(adv => isMatchingTreasuryLocal(adv.treasuryId, treasuryId))
-      .reduce((s, x) => s + x.amount, 0);
-    const bookingAdvances = trxAdvances + unrecordedAdvSum;
-
-    const income = sales + bookingAdvances;
-
+    const income = recordedSales + invoiceSales;
     const expenses = tTrx.filter(t => t.type === 'out' && (t.category === 'expense' || t.category === 'مصروفات')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
     const salaries = tTrx.filter(t => t.type === 'out' && (t.category === 'salary' || t.category === 'رواتب')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    const advances = tTrx.filter(t => {
-      if (t.type !== 'out' && (t.type as string) !== 'expense') return false;
-      const cat = (t.category || '').toLowerCase();
-      const desc = (t.description || '').toLowerCase();
-      const expCat = ((t as any).expenseCategory || '').toLowerCase();
-      return (
-        cat === 'hr_advance' ||
-        cat === 'staff_advance' ||
-        cat === 'advance' ||
-        cat.includes('سلف') ||
-        expCat.includes('سلف') ||
-        desc.includes('سلفة') ||
-        desc.includes('سلف')
-      );
-    }).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    const advances = tTrx.filter(t => t.type === 'out' && (t.category === 'hr_advance' || t.category === 'staff_advance' || t.category === 'advance' || t.category === 'سلف')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
     const purchases = tTrx.filter(t => t.type === 'out' && (t.category === 'purchase' || t.category === 'مشتريات')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
     const supplierPayments = tTrx.filter(t => t.type === 'out' && (t.category === 'supplier_payment' || t.category === 'supplier' || t.category === 'سداد مورد')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
     const commissions = tTrx.filter(t => t.type === 'out' && (t.category === 'commission' || t.category === 'عمولة')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
@@ -259,35 +208,16 @@ export function ClosingReportReceipt({
     const transfersOut = tTrx.filter(t => t.type === 'out' && t.category === 'transfer').reduce((s, x) => s + (Number(x.amount) || 0), 0);
     const withdrawals = tTrx.filter(t => t.type === 'out' && (t.category === 'withdrawal' || t.category === 'سحب')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
     const deposits = tTrx.filter(t => t.type === 'in' && (t.category === 'deposit' || t.category === 'إيداع')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    const recordedInitialCash = tTrx.filter(t => t.type === 'in' && (t.category === 'عهدة افتتاحية' || t.category === 'initial_cash')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    const isCashDrawer = treasuryId === 'cash' || (!hasCashTreasury && (treasuryId === 'main' || allTreasuries.find(t => t.id === treasuryId)?.isMain));
-    const initialCashSum = recordedInitialCash > 0 ? recordedInitialCash : (isCashDrawer ? (Number(initialCash) || 0) : 0);
+    const initialCashSum = tTrx.filter(t => t.type === 'in' && (t.category === 'عهدة افتتاحية' || t.category === 'initial_cash')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
 
     const net = (income + transfersIn + deposits + initialCashSum) - (expenses + salaries + advances + purchases + supplierPayments + commissions + transfersOut + withdrawals);
 
     return {
-      sales,
-      bookingAdvances,
-      income,
-      expenses,
-      salaries,
-      advances,
-      purchases,
-      supplierPayments,
-      commissions,
-      transfersIn,
-      transfersOut,
-      withdrawals,
-      deposits,
-      initialCashSum,
-      net
+      income, expenses, salaries, advances, purchases, supplierPayments, commissions, transfersIn, transfersOut, withdrawals, deposits, initialCashSum, net
     };
   };
 
-  const invoiceCount = invoices.length;
-  const totalInvoicesSales = invoices.reduce((sum, inv) => sum + (Number(inv.total) || 0), 0);
-  const totalCashbackUsed = invoices.reduce((sum, inv) => sum + (Number(inv.cashbackUsed) || 0), 0);
-  const grandTotalCollections = totalInvoicesSales + totalAdvancesAmount;
+  const invoiceCount = invoices.length; // Ensure invoices passed are already filtered for the date/period!
 
   return (
     <div className="w-[72mm] mx-auto bg-white text-black p-4 text-sm font-sans" id="print-receipt" style={{ direction: 'rtl' }}>
@@ -295,85 +225,76 @@ export function ClosingReportReceipt({
         {settings.logoUrl && (
           <img src={settings.logoUrl} alt="Logo" className="w-24 h-24 mx-auto mb-2 object-contain grayscale" />
         )}
-        <h2 className="text-xl font-bold mb-1">{settings.salonName || 'اسم الصالون'}</h2>
-        <h1 className="text-lg font-black border-y border-black py-1 my-1">تقرير إغلاق وتسليم الوردية (Z-Report)</h1>
+        <h2 className="text-xl font-bold mb-2">{settings.salonName || 'اسم الصالون'}</h2>
+        <h1 className="text-xl font-bold">تقرير إغلاق اليوم</h1>
         {shiftCode && (
-          <div className="my-1.5">
-            <span className="bg-slate-900 text-white font-mono font-bold text-xs px-2.5 py-1 rounded inline-block">
-              كود الوردية: {shiftCode}
-            </span>
-          </div>
+          <p className="text-xs font-bold font-mono text-black mt-0.5">كود الوردية: {shiftCode}</p>
         )}
-        <p className="text-xs mt-1 font-bold text-black">تاريخ: {dateLabel}</p>
-        {openedByUserName && (
-          <p className="text-xs text-black font-semibold">
-            فتح الوردية: {openedByUserName} {openedAt ? `(${new Date(openedAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })})` : ''}
-          </p>
-        )}
-        <p className="text-xs text-black font-semibold">
-          إغلاق الوردية: {closedByUserName || effectiveUserName} {closedAt ? `(${new Date(closedAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })})` : ''}
-        </p>
+        <p className="text-xs mt-1">تاريخ: {dateLabel}</p>
+        <p className="text-xs">المستخدم: {effectiveUserName}</p>
       </div>
 
       <div className="mb-4">
-        {/* إحصائيات الفواتير */}
-        <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold text-black">
+        <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold">
           <span>عدد الفواتير:</span>
-          <span className="font-mono">{invoiceCount}</span>
+          <span>{invoiceCount}</span>
         </div>
-        <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold text-black">
+        <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold">
           <span>إجمالي مبيعات الفواتير:</span>
-          <span className="font-mono">{totalInvoicesSales.toFixed(2)}</span>
+          <span>{invoices.reduce((sum, inv) => sum + inv.total, 0).toFixed(2)}</span>
         </div>
-
-        {/* إحصائيات مقدمات الحجوزات */}
-        <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold text-black">
-          <span>عدد مقدمات الحجوزات:</span>
-          <span className="font-mono">{totalAdvancesCount}</span>
-        </div>
-        <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold text-black">
-          <span>إجمالي مقدمات الحجوزات:</span>
-          <span className="font-mono">{totalAdvancesAmount.toFixed(2)}</span>
-        </div>
-
-        {/* توزيع مقدمات الحجوزات حسب طريقة الدفع */}
-        {advancesByPaymentMethod.length > 0 && (
-          <div className="my-2 p-2 bg-slate-50 border border-slate-300 rounded text-xs text-black">
-            <div className="font-extrabold text-black mb-1 border-b border-slate-200 pb-1 flex justify-between">
-              <span>توزيع المقدمات حسب طريقة الدفع:</span>
-              <span className="text-[10px] text-black font-bold">({totalAdvancesCount} حجز)</span>
-            </div>
-            {advancesByPaymentMethod.map((pm, idx) => (
-              <div key={idx} className="flex justify-between py-0.5 text-black font-medium">
-                <span>• {pm.name} ({pm.count}):</span>
-                <span className="font-mono font-bold">{pm.amount.toFixed(2)} {settings.currency}</span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* إجمالي المجاميع الكلية (المبيعات + مقدمات الحجوزات) */}
-        <div className="flex justify-between border-y-2 border-black py-1.5 my-2 font-black text-sm bg-slate-100 px-1">
-          <span>إجمالي المقبوضات (المجاميع):</span>
-          <span className="font-mono font-black">{grandTotalCollections.toFixed(2)} {settings.currency}</span>
-        </div>
-
-        {totalCashbackUsed > 0 && (
+        {invoices.reduce((sum, inv) => sum + (inv.cashbackUsed || 0), 0) > 0 && (
           <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold">
             <span>مسدد من الكاش باك:</span>
-            <span className="font-mono">{totalCashbackUsed.toFixed(2)}</span>
+            <span>{invoices.reduce((sum, inv) => sum + (inv.cashbackUsed || 0), 0).toFixed(2)}</span>
           </div>
         )}
+        <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold">
+          <span>المحصل الفعلي بالخزائن (كاش / شبكة):</span>
+          <span>{(invoices.reduce((sum, inv) => sum + inv.total, 0) - invoices.reduce((sum, inv) => sum + (inv.cashbackUsed || 0), 0)).toFixed(2)}</span>
+        </div>
         {initialCash > 0 && (
           <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold">
             <span>العهدة الافتتاحية:</span>
-            <span className="font-mono">{Number(initialCash).toFixed(2)}</span>
+            <span>{initialCash}</span>
           </div>
         )}
       </div>
 
-      {allTreasuries.map(treasury => {
+      {attendanceStats && (
+        <div className="mb-4 border-b border-black border-dashed pb-3">
+          <div className="font-bold text-center border-b border-black border-dashed pb-1 mb-2 bg-gray-100">
+            ملخص حضور وبصمة الوردية ⏱️
+          </div>
+          <div className="space-y-1 text-xs">
+            <div className="flex justify-between">
+              <span>الموظفون الحاضرون:</span>
+              <span className="font-bold">{attendanceStats.presentStaffCount} موظف</span>
+            </div>
+            <div className="flex justify-between">
+              <span>إجمالي ساعات العمل:</span>
+              <span className="font-mono font-bold">{attendanceStats.workedHoursStr}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>إجمالي دقائق التأخير:</span>
+              <span className={`font-mono font-bold ${attendanceStats.totalDelayMinutes > 0 ? 'text-red-700' : ''}`}>
+                {attendanceStats.totalDelayMinutes} دقيقة
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span>ساعات العمل الإضافي:</span>
+              <span className="font-mono font-bold text-emerald-700">{attendanceStats.overtimeHoursStr}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {(settings.treasuries || []).map(treasury => {
         const stats = getStats(treasury.id);
+        
+        // Skip rendering if treasury has absolutely no activity, to save space? 
+        // User asked "لكل طريقة دفع على حدى" - it's better to show it if there's any activity or it's the main one.
+        // Let's show all for completeness, or only those with non-zero net/income? Show all.
 
         return (
           <div key={treasury.id} className="mb-6">
@@ -381,45 +302,26 @@ export function ClosingReportReceipt({
             
             <div className="space-y-1 text-xs">
               {stats.initialCashSum > 0 && (
-                <div className="flex justify-between font-bold text-slate-800 bg-emerald-50 mb-1 px-1">
-                  <span>العهدة الافتتاحية:</span>
-                  <span className="font-mono">{stats.initialCashSum.toFixed(2)}</span>
-                </div>
+                <div className="flex justify-between font-bold text-slate-800 bg-emerald-50 mb-1 px-1"><span>العهدة الافتتاحية:</span><span>{stats.initialCashSum.toFixed(2)}</span></div>
               )}
-
-              {/* إجمالي الدخل وتفصيله بين مبيعات فواتير ومقدمات حجوزات */}
-              <div className="flex justify-between font-bold border-b border-slate-200 pb-0.5">
-                <span>إجمالي الدخل المحصل:</span>
-                <span className="font-mono">{stats.income.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between text-black pr-2">
-                <span>- مبيعات الفواتير:</span>
-                <span className="font-mono">{stats.sales.toFixed(2)}</span>
-              </div>
-              {stats.bookingAdvances > 0 && (
-                <div className="flex justify-between font-bold text-black pr-2 bg-emerald-50 py-0.5 rounded">
-                  <span>- مقدمات وعربون الحجوزات:</span>
-                  <span className="font-mono">{stats.bookingAdvances.toFixed(2)}</span>
-                </div>
-              )}
-
-              <div className="flex justify-between mt-1 text-black"><span>مبالغ الإضافة (بدون تحويل):</span><span className="font-mono">{stats.deposits.toFixed(2)}</span></div>
-              <div className="flex justify-between text-black"><span>مبالغ الإضافة بالتحويل:</span><span className="font-mono">{stats.transfersIn.toFixed(2)}</span></div>
+              <div className="flex justify-between"><span>إجمالي الدخل:</span><span>{stats.income.toFixed(2)}</span></div>
+              <div className="flex justify-between"><span>مبالغ الإضافة (بدون تحويل):</span><span>{stats.deposits.toFixed(2)}</span></div>
+              <div className="flex justify-between"><span>مبالغ الإضافة بالتحويل:</span><span>{stats.transfersIn.toFixed(2)}</span></div>
               
-              <div className="flex justify-between mt-1 text-black"><span>إجمالي المصروفات:</span><span className="font-mono">{stats.expenses.toFixed(2)}</span></div>
-              <div className="flex justify-between text-black"><span>إجمالي رواتب:</span><span className="font-mono">{stats.salaries.toFixed(2)}</span></div>
-              <div className="flex justify-between text-black"><span>إجمالي سلف:</span><span className="font-mono">{stats.advances.toFixed(2)}</span></div>
-              <div className="flex justify-between text-black"><span>إجمالي مشتروات:</span><span className="font-mono">{stats.purchases.toFixed(2)}</span></div>
-              <div className="flex justify-between text-black"><span>دفعات وسداد موردين:</span><span className="font-mono">{stats.supplierPayments.toFixed(2)}</span></div>
-              <div className="flex justify-between text-black"><span>نسب الموظفين (العمولات):</span><span className="font-mono">{stats.commissions.toFixed(2)}</span></div>
-              <div className="flex justify-between text-black"><span>مبالغ السحب (بدون تحويل):</span><span className="font-mono">{stats.withdrawals.toFixed(2)}</span></div>
-              <div className="flex justify-between text-black"><span>مبالغ السحب بالتحويل:</span><span className="font-mono">{stats.transfersOut.toFixed(2)}</span></div>
+              <div className="flex justify-between mt-1 text-gray-700"><span>إجمالي المصروفات:</span><span>{stats.expenses.toFixed(2)}</span></div>
+              <div className="flex justify-between text-gray-700"><span>إجمالي رواتب:</span><span>{stats.salaries.toFixed(2)}</span></div>
+              <div className="flex justify-between text-gray-700"><span>إجمالي سلف:</span><span>{stats.advances.toFixed(2)}</span></div>
+              <div className="flex justify-between text-gray-700"><span>إجمالي مشتروات:</span><span>{stats.purchases.toFixed(2)}</span></div>
+              <div className="flex justify-between text-gray-700"><span>دفعات وسداد موردين:</span><span>{stats.supplierPayments.toFixed(2)}</span></div>
+              <div className="flex justify-between text-gray-700"><span>نسب الموظفين (العمولات):</span><span>{stats.commissions.toFixed(2)}</span></div>
+              <div className="flex justify-between text-gray-700"><span>مبالغ السحب (بدون تحويل):</span><span>{stats.withdrawals.toFixed(2)}</span></div>
+              <div className="flex justify-between text-gray-700"><span>مبالغ السحب بالتحويل:</span><span>{stats.transfersOut.toFixed(2)}</span></div>
               
               <div className="flex justify-between font-bold border-t border-black border-dashed pt-1 mt-1 text-sm">
                 <span>الصافي:</span>
-                <span dir="ltr" className="font-mono">{stats.net.toFixed(2)}</span>
+                <span dir="ltr">{stats.net.toFixed(2)}</span>
               </div>
-              {!treasury.isMain && treasury.id !== 'main' && stats.net > 0 && (
+              {!treasury.isMain && stats.net > 0 && (
                 <div className="text-[10px] text-emerald-800 bg-emerald-50 rounded p-1 mt-1 text-center font-bold">
                   🔄 سيتم تصفير هذا الصافي ونقله تلقائياً إلى الخزينة الرئيسية
                 </div>
@@ -429,69 +331,6 @@ export function ClosingReportReceipt({
         );
       })}
 
-      {/* قسم مطابقة النقدية وتسليم العهدة للكاشير */}
-      {(expectedCash !== undefined || actualCash !== undefined) && (
-        <div className="my-4 p-3 bg-slate-50 border-2 border-black rounded-lg text-xs space-y-1.5">
-          <div className="font-black text-center border-b border-black pb-1 mb-1.5 text-sm">
-            💵 مطابقة النقدية (الكاش) وتسليم العهدة
-          </div>
-          {expectedCash !== undefined && (
-            <div className="flex justify-between font-bold">
-              <span>الكاش المتوقع بالدرج:</span>
-              <span className="font-mono">{expectedCash.toFixed(2)} {settings.currency}</span>
-            </div>
-          )}
-          {actualCash !== undefined && (
-            <div className="flex justify-between font-bold">
-              <span>الكاش الفعلي المعدود:</span>
-              <span className="font-mono">{actualCash.toFixed(2)} {settings.currency}</span>
-            </div>
-          )}
-          {cashDifference !== undefined && (
-            <div className={`flex justify-between font-black border-t border-dashed border-black pt-1 ${
-              Math.abs(cashDifference) < 0.01 
-                ? 'text-emerald-700' 
-                : cashDifference < 0 
-                  ? 'text-red-700' 
-                  : 'text-blue-700'
-            }`}>
-              <span>الفارق (العجز / الزيادة):</span>
-              <span className="font-mono dir-ltr" dir="ltr">
-                {Math.abs(cashDifference) < 0.01 
-                  ? '0.00 (متطابق تماماً ✓)' 
-                  : cashDifference < 0 
-                    ? `عجز: ${Math.abs(cashDifference).toFixed(2)} -` 
-                    : `زيادة: +${cashDifference.toFixed(2)}`}
-              </span>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* قسم تصفير الوردية والترحيل للخزينة الرئيسية */}
-      {transferredAmount !== undefined && transferredAmount > 0 && (
-        <div className="my-3 p-2.5 bg-emerald-50 border border-emerald-400 rounded-lg text-xs text-emerald-900 text-center font-bold">
-          <div>🔄 تم تصفير رصيد الوردية وترحيله بالكامل</div>
-          <div className="text-sm font-black font-mono mt-0.5">
-            {transferredAmount.toFixed(2)} {settings.currency} ⬅️ {mainTreasuryName || 'الخزينة الرئيسية'}
-          </div>
-        </div>
-      )}
-
-      {/* توقيعات التسليم والتسلم */}
-      <div className="grid grid-cols-2 gap-2 mt-5 pt-3 border-t border-black border-dashed text-[11px] text-center">
-        <div>
-          <p className="font-bold">مسلّم الوردية</p>
-          <p className="text-[10px] text-black font-semibold mt-0.5">({closedByUserName || effectiveUserName})</p>
-          <div className="h-7 border-b border-black mt-1"></div>
-        </div>
-        <div>
-          <p className="font-bold">مستلم الوردية</p>
-          <p className="text-[10px] text-black font-semibold mt-0.5">(الكاشير المستلم)</p>
-          <div className="h-7 border-b border-black mt-1"></div>
-        </div>
-      </div>
-
       <div className="text-center mt-6 text-xs border-t border-black pt-2">
         <p>تم استخراج التقرير من النظام</p>
         <p>{new Date().toLocaleString('ar-SA')}</p>
@@ -499,4 +338,3 @@ export function ClosingReportReceipt({
     </div>
   );
 }
-

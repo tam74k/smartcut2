@@ -213,6 +213,7 @@ export async function ensureCoreSchema(): Promise<void> {
       ensureColumn('services', 'is_priority', 'BOOLEAN'),
       ensureColumn('services', 'card_color', 'VARCHAR(50)'),
       ensureColumn('services', 'priority_order', 'INT'),
+      ensureColumn('work_shifts', 'shift_code', 'VARCHAR(100)'),
       ensureColumn('work_shifts', 'salon_id', 'UUID'),
       ensureColumn('work_shifts', 'branch_id', 'VARCHAR(100)'),
       ensureColumn('work_shifts', 'shift_date', 'VARCHAR(50)'),
@@ -220,12 +221,26 @@ export async function ensureCoreSchema(): Promise<void> {
       ensureColumn('work_shifts', 'closed_at', 'TIMESTAMPTZ'),
       ensureColumn('work_shifts', 'opened_by_user_id', 'VARCHAR(100)'),
       ensureColumn('work_shifts', 'opened_by_user_name', 'VARCHAR(255)'),
+      ensureColumn('work_shifts', 'opened_by_name', 'VARCHAR(255)'),
       ensureColumn('work_shifts', 'opened_by_role', 'VARCHAR(100)'),
+      ensureColumn('work_shifts', 'closed_by_user_id', 'VARCHAR(100)'),
+      ensureColumn('work_shifts', 'closed_by_user_name', 'VARCHAR(255)'),
+      ensureColumn('work_shifts', 'closed_by_name', 'VARCHAR(255)'),
+      ensureColumn('work_shifts', 'closed_by_role', 'VARCHAR(100)'),
       ensureColumn('work_shifts', 'initial_cash', 'NUMERIC(12,2)'),
       ensureColumn('work_shifts', 'expected_cash', 'NUMERIC(12,2)'),
       ensureColumn('work_shifts', 'actual_cash', 'NUMERIC(12,2)'),
       ensureColumn('work_shifts', 'cash_difference', 'NUMERIC(12,2)'),
+      ensureColumn('work_shifts', 'total_sales', 'NUMERIC(12,2)'),
+      ensureColumn('work_shifts', 'total_cash_sales', 'NUMERIC(12,2)'),
+      ensureColumn('work_shifts', 'total_card_sales', 'NUMERIC(12,2)'),
+      ensureColumn('work_shifts', 'total_expenses', 'NUMERIC(12,2)'),
+      ensureColumn('work_shifts', 'transferred_to_treasury', 'VARCHAR(100)'),
+      ensureColumn('work_shifts', 'transferred_amount', 'NUMERIC(12,2)'),
+      ensureColumn('work_shifts', 'total_advances', 'NUMERIC(12,2)'),
       ensureColumn('work_shifts', 'status', 'VARCHAR(50)'),
+      ensureColumn('invoices', 'shift_code', 'VARCHAR(100)'),
+      ensureColumn('transactions', 'shift_code', 'VARCHAR(100)'),
       ensureColumn('app_settings', 'overtime_settings', 'JSONB'),
       ensureColumn('app_settings', 'attendance_settings', 'JSONB'),
       ensureColumn('app_settings', 'commission_settings', 'JSONB'),
@@ -2549,7 +2564,41 @@ export const DB = {
       const validSalonId = toSalonUUID(sId);
       if (!validSalonId) return null;
 
-      // الاعتماد الكلي على السجلات المخزنة فعلياً في جدول work_shifts
+      // 1. استعلام فوري ومباشر عن أي وردية حالتها 'open' وغير مغلقة لهذا الصالون
+      const { data: openData, error: openError } = await client
+        .from('work_shifts')
+        .select('*')
+        .eq('salon_id', validSalonId)
+        .eq('status', 'open')
+        .order('opened_at', { ascending: false })
+        .limit(20);
+
+      const openShifts = (!openError && openData && Array.isArray(openData))
+        ? openData.filter((s: any) => s.status === 'open' && !s.closed_at)
+        : [];
+
+      if (openShifts.length > 0) {
+        const targetBranchId = branchId && branchId !== 'all' ? (toBranchUUID(branchId) || branchId) : null;
+        let matchedShift = openShifts[0];
+
+        // مطابقة على الفرع إذا تم تحديده
+        if (targetBranchId) {
+          const exactMatch = openShifts.find((s: any) => s.branch_id === targetBranchId);
+          if (exactMatch) matchedShift = exactMatch;
+        } else {
+          const genericMatch = openShifts.find((s: any) => !s.branch_id || s.branch_id === 'b-main' || s.branch_id === 'all');
+          if (genericMatch) matchedShift = genericMatch;
+        }
+
+        return {
+          ...toCamel(matchedShift),
+          isOpen: true,
+          status: 'open',
+          hasDefinitiveProof: true
+        };
+      }
+
+      // 2. إذا لم نجد أي وردية بحالة open، نجلب آخر 50 وردية لتأكيد حالة الإغلاق
       const { data, error } = await client
         .from('work_shifts')
         .select('*')
@@ -2567,39 +2616,18 @@ export const DB = {
         return { isOpen: false, isClosed: true, hasDefinitiveProof: true, noShifts: true };
       }
 
-      // البحث عن أي وردية مفتوحة فعلياً وغير مغلقة في قاعدة البيانات
-      const openShifts = data.filter((s: any) => 
-        (s.status === 'open' || !s.closed_at) && s.status !== 'closed'
-      );
-
-      if (openShifts.length > 0) {
-        const targetBranchId = branchId && branchId !== 'all' ? (toBranchUUID(branchId) || branchId) : null;
-        let matchedShift = openShifts[0];
-
-        // 1. مطابقة مباشرة على الفرع
-        if (targetBranchId) {
-          const exactMatch = openShifts.find((s: any) => s.branch_id === targetBranchId);
-          if (exactMatch) matchedShift = exactMatch;
-        } else {
-          // 2. فرع رئيسي أو عام
-          const genericMatch = openShifts.find((s: any) => !s.branch_id || s.branch_id === 'b-main' || s.branch_id === 'all');
-          if (genericMatch) matchedShift = genericMatch;
-        }
-
-        // تحديث معرف الفرع في قاعدة البيانات إذا كان الفرع المستهدف معروفاً ومختلفاً
-        if (targetBranchId && matchedShift.branch_id !== targetBranchId) {
-          client.from('work_shifts').update({ branch_id: targetBranchId }).eq('id', matchedShift.id).then(() => {}).catch(() => {});
-        }
-
+      // فحص أمان إضافي للورديات المفتوحة
+      const fallbackOpen = data.filter((s: any) => (s.status === 'open' || !s.closed_at) && s.status !== 'closed');
+      if (fallbackOpen.length > 0) {
         return {
-          ...toCamel(matchedShift),
+          ...toCamel(fallbackOpen[0]),
           isOpen: true,
           status: 'open',
           hasDefinitiveProof: true
         };
       }
 
-      // لا توجد أي وردية مفتوحة، وهناك سجل فعلي وقاطع يثبت الإغلاق داخل قاعدة البيانات
+      // لا توجد أي وردية مفتوحة، نرجع آخر وردية مغلقة
       const closedShifts = data.filter((s: any) => s.status === 'closed' || !!s.closed_at);
       if (closedShifts.length > 0) {
         const latestClosed = closedShifts[0];
@@ -2627,16 +2655,20 @@ export const DB = {
       const validBranchId = ws.branchId ? (toBranchUUID(ws.branchId) || ws.branchId) : null;
       const snap: any = {
         id: ws.id,
+        shift_code: ws.shiftCode || ws.shift_code || null,
         salon_id: validSalonId,
         branch_id: validBranchId,
         shift_date: ws.shiftDate,
         ...(ws.openedAt ? { opened_at: ws.openedAt } : (ws.status === 'open' ? { opened_at: new Date().toISOString() } : {})),
         closed_at: ws.closedAt || null,
-        opened_by_user_id: ws.openedByUserId || null,
-        opened_by_user_name: ws.openedByUserName || null,
-        opened_by_role: ws.openedByRole || null,
-        closed_by_user_id: ws.closedByUserId || null,
-        closed_by_user_name: ws.closedByUserName || null,
+        opened_by_user_id: ws.openedByUserId || ws.opened_by_user_id || null,
+        opened_by_user_name: ws.openedByUserName || ws.opened_by_user_name || ws.openedByName || ws.opened_by_name || null,
+        opened_by_name: ws.openedByName || ws.opened_by_name || ws.openedByUserName || ws.opened_by_user_name || null,
+        opened_by_role: ws.openedByRole || ws.opened_by_role || null,
+        closed_by_user_id: ws.closedByUserId || ws.closed_by_user_id || null,
+        closed_by_user_name: ws.closedByUserName || ws.closed_by_user_name || ws.closedByName || ws.closed_by_name || null,
+        closed_by_name: ws.closedByName || ws.closed_by_name || ws.closedByUserName || ws.closed_by_user_name || null,
+        closed_by_role: ws.closedByRole || ws.closed_by_role || null,
         initial_cash: Number(ws.initialCash) || 0,
         expected_cash: ws.expectedCash !== undefined ? Number(ws.expectedCash) : null,
         actual_cash: ws.actualCash !== undefined ? Number(ws.actualCash) : null,
@@ -2645,6 +2677,9 @@ export const DB = {
         total_cash_sales: ws.totalCashSales !== undefined ? Number(ws.totalCashSales) : null,
         total_card_sales: ws.totalCardSales !== undefined ? Number(ws.totalCardSales) : null,
         total_expenses: ws.totalExpenses !== undefined ? Number(ws.totalExpenses) : null,
+        transferred_to_treasury: ws.transferredToTreasury || ws.transferred_to_treasury || null,
+        transferred_amount: ws.transferredAmount !== undefined ? Number(ws.transferredAmount) : null,
+        total_advances: ws.totalAdvances !== undefined ? Number(ws.totalAdvances) : null,
         status: ws.status || (ws.closedAt ? 'closed' : 'open'),
         notes: ws.notes || null,
         created_at: ws.createdAt || new Date().toISOString()
