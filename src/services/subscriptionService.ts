@@ -244,7 +244,7 @@ export const SubscriptionService = {
       printerName: 'طابعة الكاشير',
       paperSize: '80mm',
       printAutomatically: false,
-      zatcaEnabled: true,
+      zatcaEnabled: !!(data.country && /السعودية|saudi/i.test(data.country)),
       receiptHeaderNote: `أهلاً بكم في ${data.salonName}`,
       receiptFooterNote: 'شكراً لزيارتكم ونسعد بخدمتكم دائماً',
       expenseCategories: ['إيجار', 'كهرباء ومياه', 'صيانة ومطبوعات', 'أدوات ومستهلكات', 'ضيافة ونظافة', 'أخرى'],
@@ -298,6 +298,27 @@ export const SubscriptionService = {
         paymentMethod: 'free_trial',
         notes: `فترة تجريبية تلقائية عند إنشاء الصالون (${trialDays} أيام)`
       });
+
+      // 5. Seed default categories into Supabase
+      const defaultCategories = (data.salonType === 'women') ? [
+        { id: generateUUID(), salonId, name: 'قص وتسريحات', icon: 'Scissors', type: 'service' },
+        { id: generateUUID(), salonId, name: 'صبغة وتلوين', icon: 'Sparkles', type: 'service' },
+        { id: generateUUID(), salonId, name: 'مكياج وعناية بالبشرة', icon: 'Heart', type: 'service' },
+        { id: generateUUID(), salonId, name: 'عناية بالأظافر', icon: 'Sparkles', type: 'service' }
+      ] : [
+        { id: generateUUID(), salonId, name: 'قص الشعر واللحية', icon: 'Scissors', type: 'service' },
+        { id: generateUUID(), salonId, name: 'عناية بالبشرة', icon: 'Sparkles', type: 'service' },
+        { id: generateUUID(), salonId, name: 'صبغات وبروتين', icon: 'Sparkles', type: 'service' },
+        { id: generateUUID(), salonId, name: 'خدمات VIP', icon: 'Crown', type: 'service' }
+      ];
+
+      for (const cat of defaultCategories) {
+        try {
+          await DB.saveCategory(cat, salonId);
+        } catch (catErr) {
+          console.warn('Could not seed default category:', catErr);
+        }
+      }
     } catch (cloudErr) {
       console.error('Failed to save new salon entities to cloud database:', cloudErr);
     }

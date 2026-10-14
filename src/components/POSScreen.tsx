@@ -21,7 +21,7 @@ import { RealtimeSync } from '../services/realtimeSync';
 import { isBarberEmployee, isReferralEligibleEmployee } from '../utils/employeeHelper';
 import { ClosingReportReceipt } from './ClosingReportReceipt';
 import { directPrintHtml, isMobileOrTablet, printHtmlToMainServer } from '../utils/print';
-import { InvoiceReceiptCard, executePrintInvoiceReceipt } from './InvoiceReceiptCard';
+import { InvoiceReceiptCard, executePrintInvoiceReceipt, isSaudiSalon } from './InvoiceReceiptCard';
 import { SalesReturnModal } from './SalesReturnModal';
 import { SalesReturnVoucherModal } from './SalesReturnVoucherModal';
 import { generateBarcodeSvgString } from '../utils/barcodeGenerator';
@@ -1277,17 +1277,20 @@ export function POSScreen({
       paymentMethods: splits
     };
 
-    // 🇸🇦 ZATCA Phase 1 & 2 QR Code Generation & Reporting
+    // 🇸🇦 ZATCA Phase 1 & 2 QR Code Generation & Reporting (ONLY for Saudi Arabia)
     let zatcaQr = '';
     let zatcaReportingStatus: Invoice['zatcaReportingStatus'] = 'not_submitted';
-    try {
-      zatcaQr = await ZatcaService.generateZatcaQR(initialInv, settings, settings.zatcaSettings);
-      if (settings.zatcaSettings?.enabled && settings.zatcaSettings.autoReportB2C) {
-        const zatcaRes = await ZatcaService.reportSimplifiedInvoice(initialInv, settings, settings.zatcaSettings);
-        zatcaReportingStatus = zatcaRes.reportingStatus;
+    const isSaudi = isSaudiSalon(settings, branches, activeBranchId);
+    if (isSaudi) {
+      try {
+        zatcaQr = await ZatcaService.generateZatcaQR(initialInv, settings, settings.zatcaSettings);
+        if (settings.zatcaSettings?.enabled && settings.zatcaSettings.autoReportB2C) {
+          const zatcaRes = await ZatcaService.reportSimplifiedInvoice(initialInv, settings, settings.zatcaSettings);
+          zatcaReportingStatus = zatcaRes.reportingStatus;
+        }
+      } catch (err) {
+        console.warn('ZATCA QR Generation warning:', err);
       }
-    } catch (err) {
-      console.warn('ZATCA QR Generation warning:', err);
     }
 
     // 🇪🇬 ETA Egypt e-Receipt Submission

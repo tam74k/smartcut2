@@ -172,13 +172,18 @@ export function LoginScreen({ onLoginSuccess, settings, onOpenSaaSAdmin }: Login
               printerName: 'طابعة الكاشير',
               paperSize: '80mm',
               printAutomatically: false,
-              zatcaEnabled: true,
+              zatcaEnabled: !!(salon.country && /السعودية|saudi/i.test(salon.country)),
               receiptHeaderNote: `أهلاً بكم في ${salon.name}`,
               receiptFooterNote: 'شكراً لزيارتكم ونسعد بخدمتكم دائماً',
               expenseCategories: ['إيجار', 'كهرباء ومياه', 'صيانة ومطبوعات', 'أدوات ومستهلكات', 'ضيافة ونظافة', 'أخرى'],
               bookingNotes: 'يرجى الحضور قبل الموعد بـ 10 دقائق',
               evolutionInstanceName: chosenBranch?.evolutionInstanceName || salon.evolutionInstanceName
             };
+            try {
+              await DB.saveSettings(salon.id, customSettings);
+            } catch (saveErr) {
+              console.warn('Auto-save settings error in login:', saveErr);
+            }
           }
         }
         onLoginSuccess(user, customSettings, chosenBranch);

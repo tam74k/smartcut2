@@ -146,21 +146,30 @@ export const LicenseModal: React.FC<LicenseModalProps> = ({
           console.warn('Could not fetch plans from DB in LicenseModal:', err);
         });
 
-      // قراءة أحدث بيانات الترخيص عند الفتح
-      setFetchingCode(true);
-      fetch('/api/server-info')
-        .then(res => res.json())
-        .then(data => {
-          if (data && data.license) {
-            setLocalLicense(data.license);
-          }
-        })
-        .catch(err => {
-          console.warn('Failed to fetch server info:', err);
-        })
-        .finally(() => {
-          setFetchingCode(false);
-        });
+      // قراءة أحدث بيانات الترخيص عند الفتح (في البيئة المحلية فقط)
+      const isLocalHost = typeof window !== 'undefined' && 
+        (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || Boolean(localStorage.getItem('smartcut_api_url')));
+      
+      if (isLocalHost) {
+        setFetchingCode(true);
+        fetch('/api/server-info')
+          .then(res => {
+            const cType = res.headers.get('content-type') || '';
+            if (res.ok && cType.includes('application/json')) {
+              return res.json();
+            }
+            return null;
+          })
+          .then(data => {
+            if (data && data.license) {
+              setLocalLicense(data.license);
+            }
+          })
+          .catch(() => {})
+          .finally(() => {
+            setFetchingCode(false);
+          });
+      }
     }
   }, [isOpen]);
 
@@ -251,13 +260,19 @@ export const LicenseModal: React.FC<LicenseModalProps> = ({
     setLoading(true);
     setErrorMsg('');
     setSuccessMsg('');
-
     try {
       const res = await fetch('/api/license/activate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ licenseKey: inputKey })
       });
+
+      const cType = res.headers.get('content-type') || '';
+      if (!cType.includes('application/json')) {
+        setErrorMsg('تعذر الاتصال بخادم التراخيص المحلي (الخدمة غير متوفرة أونلاين)');
+        setLoading(false);
+        return;
+      }
 
       const data = await res.json();
       if (!res.ok || !data.success) {

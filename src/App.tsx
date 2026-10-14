@@ -861,30 +861,37 @@ export default function App() {
     initializeApp();
   }, []);
 
-  // ── Hardware License & Anti-Tamper System Initial Check & Real-time Stream ────
+  // ── Hardware License & Anti-Tamper System Initial Check & Real-time Stream (Offline mode only) ────
   useEffect(() => {
     const isOnlineSaaS = Boolean(settings.salonId || isCloudConnected);
+    const isLocalHost = typeof window !== 'undefined' && 
+      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || Boolean(localStorage.getItem('smartcut_api_url')));
+
+    // In online SaaS mode or on public cloud domains (smartcut.besmartapps.com),
+    // subscriptions are managed strictly via Supabase / subscriptionService.
+    if (isOnlineSaaS || !isLocalHost) {
+      return;
+    }
 
     const fetchLicenseInfo = async () => {
       try {
         const res = await fetch('/api/server-info');
-        if (res.ok) {
+        const cType = res.headers.get('content-type') || '';
+        if (res.ok && cType.includes('application/json')) {
           const data = await res.json();
-          if (data.license) {
+          if (data && data.license) {
             setLicenseInfo(data.license);
-            if (!isOnlineSaaS) {
-              if (!data.license.isLicensed) {
-                localStorage.setItem('smartcut_license_readonly', 'true');
-                setShowLicenseModal(true);
-              } else if (data.license.isLicensed && data.license.status === 'active') {
-                localStorage.setItem('smartcut_license_readonly', 'false');
-                setShowLicenseModal(false);
-              }
+            if (!data.license.isLicensed) {
+              localStorage.setItem('smartcut_license_readonly', 'true');
+              setShowLicenseModal(true);
+            } else if (data.license.isLicensed && data.license.status === 'active') {
+              localStorage.setItem('smartcut_license_readonly', 'false');
+              setShowLicenseModal(false);
             }
           }
         }
       } catch (err) {
-        console.warn('License info check error:', err);
+        // Silently ignore if offline server info is unavailable
       }
     };
 
@@ -898,17 +905,21 @@ export default function App() {
           const payload = JSON.parse(event.data);
           if (payload.type === 'license_updated' && payload.license) {
             setLicenseInfo(payload.license);
-            if (!isOnlineSaaS) {
-              if (!payload.license.isLicensed) {
-                localStorage.setItem('smartcut_license_readonly', 'true');
-                setShowLicenseModal(true);
-              } else if (payload.license.isLicensed && payload.license.status === 'active') {
-                localStorage.setItem('smartcut_license_readonly', 'false');
-                setShowLicenseModal(false);
-              }
+            if (!payload.license.isLicensed) {
+              localStorage.setItem('smartcut_license_readonly', 'true');
+              setShowLicenseModal(true);
+            } else if (payload.license.isLicensed && payload.license.status === 'active') {
+              localStorage.setItem('smartcut_license_readonly', 'false');
+              setShowLicenseModal(false);
             }
           }
         } catch {}
+      };
+      eventSource.onerror = () => {
+        if (eventSource) {
+          eventSource.close();
+          eventSource = null;
+        }
       };
     } catch {}
 
@@ -3143,6 +3154,7 @@ export default function App() {
       case 'manager_ai_chat': return (
         <ManagerAIChatScreen
           settings={settings}
+          setSettings={setSettings}
           currentUser={currentUser}
           onNavigateScreen={(screenName) => setActiveTab(screenName)}
         />

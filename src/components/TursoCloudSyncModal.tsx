@@ -48,37 +48,51 @@ export function TursoCloudSyncModal({
   const [showToken, setShowToken] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'warning'; text: string } | null>(null);
 
-  const getBaseApiUrl = () => {
+  const getBaseApiUrl = (): string | null => {
     if (typeof window !== 'undefined') {
       const customUrl = localStorage.getItem('smartcut_api_url') || localStorage.getItem('smartcut_mssql_api_url');
       if (customUrl && customUrl.startsWith('http')) {
         return customUrl.replace(/\/+$/, '');
       }
-      return window.location.origin;
+      const host = window.location.hostname;
+      const isLocalHost = host === 'localhost' || host === '127.0.0.1' || /^192\.168\./.test(host) || /^10\./.test(host);
+      if (isLocalHost) {
+        return window.location.origin;
+      }
+      return null;
     }
     return 'http://localhost:3001';
   };
 
   const loadConfig = async () => {
+    const baseUrl = getBaseApiUrl();
+    if (!baseUrl) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
-      const res = await fetch(`${getBaseApiUrl()}/api/turso/config`);
-      const data = await res.json();
-      if (data.success && data.config) {
-        setConfig(prev => ({
-          ...prev,
-          ...data.config,
-          is_replica_mode: data.config.is_replica_mode ?? prev.is_replica_mode
-        }));
+      const res = await fetch(`${baseUrl}/api/turso/config`);
+      const cType = res.headers.get('content-type') || '';
+      if (res.ok && cType.includes('application/json')) {
+        const data = await res.json();
+        if (data && data.success && data.config) {
+          setConfig(prev => ({
+            ...prev,
+            ...data.config,
+            is_replica_mode: data.config.is_replica_mode ?? prev.is_replica_mode
+          }));
+        }
       }
     } catch (err: any) {
-      console.warn('Failed to load Turso config:', err.message);
+      // Silently ignore if offline sync server is not running
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
+    if (!isOpen) return;
     loadConfig();
 
     // Listen to cloud sync complete events
@@ -94,7 +108,7 @@ export function TursoCloudSyncModal({
     return () => {
       unsub();
     };
-  }, []);
+  }, [isOpen]);
 
   const handleSaveAndConnect = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();

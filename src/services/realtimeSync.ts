@@ -27,13 +27,20 @@ class RealtimeSyncManager {
     }
   }
 
-  private getSocketUrl(): string {
+  private getSocketUrl(): string | null {
     if (typeof window !== 'undefined') {
       const customUrl = localStorage.getItem('smartcut_api_url') || localStorage.getItem('smartcut_mssql_api_url');
       if (customUrl && customUrl.startsWith('http')) {
         return customUrl.replace(/\/+$/, '');
       }
-      return window.location.origin;
+      const host = window.location.hostname;
+      const isLocalHost = host === 'localhost' || host === '127.0.0.1' || /^192\.168\./.test(host) || /^10\./.test(host);
+      if (isLocalHost) {
+        return window.location.origin;
+      }
+      // On public cloud domains (like smartcut.besmartapps.com), there is no local socket.io server
+      // unless customUrl is explicitly set in localStorage. Avoid connecting to prevent errors.
+      return null;
     }
     return 'http://localhost:3001';
   }
@@ -43,15 +50,19 @@ class RealtimeSyncManager {
 
     try {
       const socketUrl = this.getSocketUrl();
+      if (!socketUrl) {
+        // Cloud production mode without dedicated socket server - real-time sync runs via Supabase
+        return;
+      }
       console.log(`🔌 [WebSockets] Connecting to real-time server at: ${socketUrl}`);
 
       this.socket = io(socketUrl, {
         transports: ['websocket', 'polling'],
         reconnection: true,
-        reconnectionAttempts: Infinity,
-        reconnectionDelay: 1000,
-        reconnectionDelayMax: 5000,
-        timeout: 20000
+        reconnectionAttempts: 5,
+        reconnectionDelay: 2000,
+        reconnectionDelayMax: 10000,
+        timeout: 10000
       });
 
       this.socket.on('connect', () => {
@@ -68,11 +79,10 @@ class RealtimeSyncManager {
 
       this.socket.on('disconnect', (reason) => {
         this.isConnected = false;
-        console.log(`⚠️ [WebSockets] Disconnected: ${reason}`);
       });
 
       this.socket.on('connect_error', (err) => {
-        console.warn(`⚠️ [WebSockets] Connection notice:`, err.message);
+        // Silent or debug only to avoid console noise
       });
 
       // Listen to universal database changes

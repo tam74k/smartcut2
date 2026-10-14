@@ -1281,7 +1281,48 @@ export const DB = {
       const validSalonId = toSalonUUID(salonId);
       const { data, error } = await client.from('app_settings').select('*').eq('salon_id', validSalonId).maybeSingle();
       if (error) { console.error('DB.fetchSettings:', error.message); return null; }
-      if (!data) return null;
+      
+      // Auto-heal: If salon exists in salons table but has no app_settings row yet, create it automatically!
+      if (!data) {
+        const { data: salonRow } = await client.from('salons').select('*').eq('id', validSalonId).maybeSingle();
+        if (salonRow) {
+          const { data: mainBranch } = await client.from('branches').select('id, code, phone, address').eq('salon_id', validSalonId).eq('is_main', true).maybeSingle();
+          const initialSet: any = {
+            salonId: salonRow.id,
+            salonCode: salonRow.code,
+            branchId: mainBranch?.id || null,
+            branchCode: mainBranch?.code || 'BR-01',
+            salonName: salonRow.name || 'الصالون',
+            salonType: salonRow.salon_type || 'men',
+            taxNumber: salonRow.tax_number || '300000000000003',
+            commercialReg: salonRow.commercial_reg || '1010000000',
+            vatEnabled: (salonRow.currency === 'SAR' || (salonRow.country && /السعودية|saudi/i.test(salonRow.country))),
+            vatRate: (salonRow.currency === 'SAR' || (salonRow.country && /السعودية|saudi/i.test(salonRow.country))) ? 15 : 0,
+            currency: salonRow.currency || 'SAR',
+            country: salonRow.country || 'المملكة العربية السعودية',
+            phone: salonRow.phone || mainBranch?.phone || '',
+            address: salonRow.address || mainBranch?.address || '',
+            logoUrl: salonRow.logo_url || null,
+            printerName: 'طابعة الكاشير',
+            paperSize: '80mm',
+            printAutomatically: false,
+            zatcaEnabled: !!(salonRow.country && /السعودية|saudi/i.test(salonRow.country)),
+            receiptHeaderNote: `أهلاً بكم في ${salonRow.name || 'صالونكم المميز'}`,
+            receiptFooterNote: 'شكراً لزيارتكم ونسعد بخدمتكم دائماً',
+            bookingNotes: 'يرجى الحضور قبل الموعد بـ 10 دقائق',
+            treasuries: [
+              { id: 'main', name: 'الخزينة الرئيسية', isMain: true },
+              { id: 'cash', name: 'كاش (الدرج)', isMain: false },
+              { id: 'card', name: 'شبكة / فيزا', isMain: false }
+            ],
+            expenseCategories: ['إيجار', 'كهرباء ومياه', 'صيانة ومطبوعات', 'أدوات ومستهلكات', 'ضيافة ونظافة', 'أخرى']
+          };
+          await this.saveSettings(validSalonId, initialSet);
+          return initialSet;
+        }
+        return null;
+      }
+
       const res = toCamel(data);
       if (data.vat_enabled !== undefined && data.vat_enabled !== null) {
         res.vatEnabled = toBool(data.vat_enabled);
@@ -1298,12 +1339,15 @@ export const DB = {
       if (data.show_employee_analytics !== undefined && data.show_employee_analytics !== null) {
         res.showEmployeeAnalytics = toBool(data.show_employee_analytics);
       }
-      if (data.deposit_refund_allowed_days !== undefined && data.deposit_refund_allowed_days !== null) {
-        res.depositRefundAllowedDays = Number(data.deposit_refund_allowed_days) || 0;
-        res.deposit_refund_allowed_days = res.depositRefundAllowedDays;
-      } else if (res.depositRefundAllowedDays !== undefined) {
-        res.deposit_refund_allowed_days = Number(res.depositRefundAllowedDays) || 0;
-      }
+
+      const bRules = typeof data.booking_rules === 'object' && data.booking_rules ? data.booking_rules : {};
+      const uiSet = typeof data.ui_settings === 'object' && data.ui_settings ? data.ui_settings : {};
+
+      res.depositRefundAllowedDays = bRules.depositRefundAllowedDays ?? uiSet.depositRefundAllowedDays ?? (Number(data.deposit_refund_allowed_days) || 0);
+      res.deposit_refund_allowed_days = res.depositRefundAllowedDays;
+      res.openrouterApiKey = uiSet.openrouterApiKey || null;
+      res.openrouterModel = uiSet.openrouterModel || null;
+
       return res;
     } catch (e) { return null; }
   },
@@ -1314,6 +1358,25 @@ export const DB = {
     try {
       const validSalonId = toSalonUUID(salonId);
       const validBranchId = toBranchUUID(settings.branchId);
+
+      const existingBRules = typeof settings.bookingRules === 'object' && settings.bookingRules ? settings.bookingRules : {};
+      const existingUiSettings = typeof settings.uiSettings === 'object' && settings.uiSettings ? settings.uiSettings : {};
+
+      const depositRefundDays = Number(settings.depositRefundAllowedDays ?? settings.deposit_refund_allowed_days ?? 0);
+
+      const bookingRulesMerged = {
+        ...existingBRules,
+        depositRefundAllowedDays: depositRefundDays
+      };
+
+      const uiSettingsMerged = {
+        ...existingUiSettings,
+        depositRefundAllowedDays: depositRefundDays,
+        openrouterApiKey: settings.openrouterApiKey || existingUiSettings.openrouterApiKey || null,
+        openrouterModel: settings.openrouterModel || existingUiSettings.openrouterModel || null
+      };
+
+      // Allowed columns strictly corresponding to public.app_settings in Supabase
       const snap: any = {
         salon_id: validSalonId,
         branch_id: validBranchId,
@@ -1328,7 +1391,6 @@ export const DB = {
         commercial_reg: settings.commercialReg || '1010000000',
         vat_enabled: settings.vatEnabled !== undefined ? toBool(settings.vatEnabled) : true,
         vat_rate: settings.vatRate ?? settings.vatPercentage ?? 15,
-        vat_percentage: settings.vatRate ?? settings.vatPercentage ?? 15,
         zatca_enabled: settings.zatcaEnabled ?? false,
         zatca_settings: settings.zatcaSettings || null,
         eta_egypt_settings: settings.etaEgyptSettings || null,
@@ -1337,7 +1399,6 @@ export const DB = {
         booking_notes: settings.bookingNotes || '',
         treasuries: settings.treasuries || [],
         expense_categories: settings.expenseCategories || [],
-        deposit_refund_allowed_days: Number(settings.depositRefundAllowedDays ?? settings.deposit_refund_allowed_days ?? 0),
         printer_name: settings.printerName || 'طابعة الكاشير',
         paper_size: settings.paperSize || '80mm',
         print_automatically: settings.printAutomatically ?? false,
@@ -1353,18 +1414,18 @@ export const DB = {
         supabase_anon_key: settings.supabaseAnonKey || null,
         supabase_enabled: settings.supabaseEnabled ?? false,
         hr_settings: settings.hrSettings || null,
-        booking_rules: settings.bookingRules || null,
+        booking_rules: bookingRulesMerged,
         vip_settings: settings.vipSettings || null,
         tier_settings: settings.tierSettings || null,
+        ui_settings: uiSettingsMerged,
         show_dashboard_analytics: settings.showDashboardAnalytics ?? true,
+        show_employee_analytics: settings.showEmployeeAnalytics ?? true,
         ai_provider: settings.aiProvider || 'builtin',
         ai_api_key: settings.aiApiKey || null,
         ai_model: settings.aiModel || null,
-        openrouter_api_key: settings.openrouterApiKey || null,
-        openrouter_model: settings.openrouterModel || null,
-        settings_json: JSON.stringify(settings),
         updated_at: new Date().toISOString()
       };
+
       // Check if existing record exists for this salon
       const { data: existing } = await client
         .from('app_settings')
@@ -1381,22 +1442,29 @@ export const DB = {
         const res = await client.from('app_settings').insert(snap);
         error = res.error;
       }
-      if (error) { console.error('DB.saveSettings error:', error.message); return false; }
+      if (error) { 
+        console.error('DB.saveSettings error:', error.message); 
+        return false; 
+      }
       
       // Keep salons table synchronized as well
-      if (settings.salonType || settings.salonName || settings.phone) {
-        const salonUpdate: any = { updated_at: new Date().toISOString() };
-        if (settings.salonType) salonUpdate.salon_type = settings.salonType;
-        if (settings.salonName) salonUpdate.name = settings.salonName;
-        if (settings.phone) salonUpdate.phone = settings.phone;
-        if (settings.address) salonUpdate.address = settings.address;
-        if (settings.taxNumber) salonUpdate.tax_number = settings.taxNumber;
-        if (settings.commercialReg) salonUpdate.commercial_reg = settings.commercialReg;
-        await client.from('salons').update(salonUpdate).eq('id', validSalonId);
-      }
+      const salonUpdate: any = { updated_at: new Date().toISOString() };
+      if (settings.salonType) salonUpdate.salon_type = settings.salonType;
+      if (settings.salonName) salonUpdate.name = settings.salonName;
+      if (settings.phone) salonUpdate.phone = settings.phone;
+      if (settings.address) salonUpdate.address = settings.address;
+      if (settings.taxNumber) salonUpdate.tax_number = settings.taxNumber;
+      if (settings.commercialReg) salonUpdate.commercial_reg = settings.commercialReg;
+      if (settings.country) salonUpdate.country = settings.country;
+      if (settings.currency) salonUpdate.currency = settings.currency;
+      if (settings.logoUrl !== undefined) salonUpdate.logo_url = settings.logoUrl;
+      await client.from('salons').update(salonUpdate).eq('id', validSalonId);
 
       return true;
-    } catch (e) { return false; }
+    } catch (e) { 
+      console.error('DB.saveSettings exception:', e);
+      return false; 
+    }
   },
 
   // ---- العملاء (Shared Across all Branches of the Same Salon) ----

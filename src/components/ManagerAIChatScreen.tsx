@@ -2,26 +2,30 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Bot, Send, Mic, MicOff, Sparkles, Database, Trash2, Settings, 
   AlertCircle, CheckCircle2, ChevronDown, ChevronUp, Copy, Check,
-  Code2, RefreshCw, Terminal, ArrowRight, Zap, ShieldCheck, HelpCircle
+  Code2, RefreshCw, Terminal, ArrowRight, Zap, ShieldCheck, HelpCircle,
+  Key, ExternalLink, X, Lock
 } from 'lucide-react';
 import { AppSettings, AppUser } from '../types';
 import { 
   ChatMessage, 
-  sendManagerAIMessage, 
-  getOpenRouterCredentials, 
-  DEFAULT_OPENROUTER_MODEL,
-  POPULAR_OPENROUTER_MODELS 
-} from '../services/openRouterService';
+  sendManagerGeminiMessage, 
+  getGeminiCredentials, 
+  saveGeminiCredentials,
+  DEFAULT_GEMINI_MODEL,
+  POPULAR_GEMINI_MODELS 
+} from '../services/geminiSqlService';
+import { DB } from '../services/db';
 
 interface ManagerAIChatScreenProps {
   settings: AppSettings;
+  setSettings?: (s: AppSettings) => void;
   currentUser?: AppUser | null;
   onNavigateScreen?: (screen: string) => void;
 }
 
 const SUGGESTED_QUERIES = [
-  { label: '📊 مبيعات اليوم', query: 'ما هو إجمالي المبيعات وعدد الفواتير الصادرة اليوم؟' },
-  { label: '💈 أعلى الحلاقين دخلاً', query: 'من هم أعلى 5 فنيين وحلاقين تحقيقاً للإيرادات هذا الشهر مع إجمالي مبالغ كل منهم؟' },
+  { label: '📊 مبيعات اليوم', query: 'ما هو إجمالي المبيعات وعدد الفواتير الصادرة اليوم في الصالون؟' },
+  { label: '💈 إيرادات الفنيين', query: 'من هم أعلى 5 فنيين وحلاقين تحقيقاً للإيرادات مع إجمالي مبالغ كل منهم؟' },
   { label: '💰 أرصدة الخزائن الحالية', query: 'كم الرصيد الحالي المتوفر في كل خزينة من خزائن الصالون؟' },
   { label: '⚠️ نواقص المخزون', query: 'ما هي المنتجات التي وصلت لحد إعادة الطلب أو التي كمياتها صفر أو منخفضة؟' },
   { label: '👑 كبار العملاء (VIP)', query: 'أعطني قائمة بأعلى 5 عملاء إنفاقاً وزيارات في الصالون مع أرقام هواتفهم وإجمالي إنفاقهم.' },
@@ -30,13 +34,24 @@ const SUGGESTED_QUERIES = [
 
 export function ManagerAIChatScreen({
   settings,
+  setSettings,
   currentUser,
   onNavigateScreen
 }: ManagerAIChatScreenProps) {
+  const credentials = getGeminiCredentials(settings);
+  const [geminiApiKey, setGeminiApiKey] = useState(credentials.apiKey);
+  const [geminiModel, setGeminiModel] = useState(credentials.model || DEFAULT_GEMINI_MODEL);
+  const [showConfigModal, setShowConfigModal] = useState(false);
+  const [showKeyText, setShowKeyText] = useState(false);
+  const [saveSuccessNotice, setSaveSuccessNotice] = useState(false);
+
+  const isKeyConfigured = Boolean(geminiApiKey && geminiApiKey.trim().length > 10);
+  const activeModel = geminiModel || DEFAULT_GEMINI_MODEL;
+
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     if (typeof window !== 'undefined') {
       try {
-        const saved = localStorage.getItem('smartcut_manager_ai_history');
+        const saved = localStorage.getItem('smartcut_manager_ai_history_gemini');
         if (saved) {
           const parsed = JSON.parse(saved);
           if (Array.isArray(parsed) && parsed.length > 0) return parsed;
@@ -48,7 +63,7 @@ export function ManagerAIChatScreen({
     return [
       {
         role: 'assistant',
-        content: `مرحباً بك يا مدير الصالون 💼👋\n\nأنا **مساعد الإدارة الذكي (Manager AI)**. أستطيع الإجابة على أي استفسار تحليلي أو مالي أو إداري حول صالونك من خلال فحص قاعدة البيانات المحلية مباشرة وبدقة متناهية وبدون أي تخمين.\n\nيمكنك السؤال كتابةً أو **بالصوت 🎙️** عن المبيعات، أداء الفنيين، المصروفات، الخزائن، المخزون، أو العملاء.`
+        content: `مرحباً بك يا مدير الصالون 💼👋\n\nأنا **مساعد الإدارة الذكي (Google Gemini & Supabase)**.\nأقوم بتحويل استفساراتك إلى استعلامات **SQL مباشرة** وتطبيقها حصراً على بيانات صالونك في **سوبابيز (Supabase)** مع عزل كامل وصارم 🔒 يمنع الوصول لأي بيانات صالونات أخرى نهائياً.\n\nيمكنك السؤال كتابةً أو **بالصوت 🎙️** عن المبيعات، أداء الفنيين، المصروفات، الخزائن، المخزون، أو كبار العملاء.`
       }
     ];
   });
@@ -64,17 +79,20 @@ export function ManagerAIChatScreen({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const recognitionRef = useRef<any>(null);
 
-  const credentials = getOpenRouterCredentials(settings);
-  const isKeyConfigured = Boolean(credentials.apiKey && credentials.apiKey.trim().length > 10);
-  const activeModel = credentials.model || DEFAULT_OPENROUTER_MODEL;
+  // Sync settings when changed externally
+  useEffect(() => {
+    const creds = getGeminiCredentials(settings);
+    if (creds.apiKey && creds.apiKey !== geminiApiKey) {
+      setGeminiApiKey(creds.apiKey);
+    }
+  }, [settings.aiApiKey]);
 
   // Persist history to localStorage
   useEffect(() => {
     if (typeof window !== 'undefined' && messages.length > 0) {
       try {
-        // Save at most the last 40 messages to avoid quota exhaustion
         const toSave = messages.slice(-40);
-        localStorage.setItem('smartcut_manager_ai_history', JSON.stringify(toSave));
+        localStorage.setItem('smartcut_manager_ai_history_gemini', JSON.stringify(toSave));
       } catch (e) {
         console.warn('Failed to save chat history:', e);
       }
@@ -109,7 +127,6 @@ export function ManagerAIChatScreen({
           }
           if (transcript) {
             setInputQuery(prev => {
-              // If previous text ended without space, add space
               const trimmed = prev.trim();
               return trimmed ? `${trimmed} ${transcript}` : transcript;
             });
@@ -140,9 +157,7 @@ export function ManagerAIChatScreen({
       if (recognitionRef.current) {
         try {
           recognitionRef.current.abort();
-        } catch (e) {
-          // ignore
-        }
+        } catch (e) {}
       }
     };
   }, []);
@@ -157,9 +172,7 @@ export function ManagerAIChatScreen({
     if (isListening) {
       try {
         recognitionRef.current.stop();
-      } catch (e) {
-        // ignore
-      }
+      } catch (e) {}
       setIsListening(false);
     } else {
       try {
@@ -172,21 +185,46 @@ export function ManagerAIChatScreen({
     }
   };
 
+  const handleSaveGeminiConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!geminiApiKey.trim()) {
+      alert('الرجاء إدخال مفتاح Google Gemini API Key');
+      return;
+    }
+
+    const cleanKey = geminiApiKey.trim();
+    saveGeminiCredentials(cleanKey, geminiModel);
+
+    const updatedSettings: AppSettings = {
+      ...settings,
+      aiApiKey: cleanKey,
+      aiProvider: 'gemini',
+      aiModel: geminiModel
+    };
+
+    if (setSettings) {
+      setSettings(updatedSettings);
+    }
+
+    try {
+      await DB.saveSettings(settings.salonId, updatedSettings);
+    } catch (saveErr) {
+      console.warn('Failed to save settings to Supabase:', saveErr);
+    }
+
+    setSaveSuccessNotice(true);
+    setTimeout(() => {
+      setSaveSuccessNotice(false);
+      setShowConfigModal(false);
+    }, 1200);
+  };
+
   const handleSendMessage = async (textToSend?: string) => {
     const text = (textToSend !== undefined ? textToSend : inputQuery).trim();
     if (!text || isLoading) return;
 
     if (!isKeyConfigured) {
-      setMessages(prev => [
-        ...prev,
-        { role: 'user', content: text },
-        { 
-          role: 'assistant', 
-          content: '⚠️ **تنبيه:** لم يتم ضبط مفتاح **OpenRouter API Key** بعد!\n\nيرجى التوجه إلى **شاشة الإعدادات** وإدخال المفتاح الخاص بك واختيار النموذج، ثم الضغط على **حفظ إعدادات OpenRouter محلياً** لتتمكن من استخدام المحادثة الذكية.',
-          error: true 
-        }
-      ]);
-      setInputQuery('');
+      setShowConfigModal(true);
       return;
     }
 
@@ -194,25 +232,29 @@ export function ManagerAIChatScreen({
     if (isListening && recognitionRef.current) {
       try {
         recognitionRef.current.stop();
-      } catch (e) {
-        // ignore
-      }
+      } catch (e) {}
       setIsListening(false);
     }
 
     const currentHistory = [...messages];
     const newMsg: ChatMessage = { role: 'user', content: text };
     
-    // Add user message immediately
     setMessages(prev => [...prev, newMsg]);
     setInputQuery('');
     setIsLoading(true);
 
     try {
-      const response = await sendManagerAIMessage({
+      const activeSettingsWithKey: AppSettings = {
+        ...settings,
+        aiApiKey: geminiApiKey,
+        aiProvider: 'gemini',
+        aiModel: geminiModel
+      };
+
+      const response = await sendManagerGeminiMessage({
         userMessage: text,
         conversationHistory: currentHistory,
-        settings
+        settings: activeSettingsWithKey
       });
 
       setMessages(response.updatedHistory);
@@ -221,14 +263,12 @@ export function ManagerAIChatScreen({
       const rawMessage = err?.message || 'حدث خطأ غير متوقع أثناء معالجة السؤال.';
       let friendlyError = rawMessage;
 
-      if (rawMessage.includes('No endpoints found') || rawMessage.includes('404')) {
-        friendlyError = `النموذج المحدد غير متاح حالياً على مزود OpenRouter.\nتم تحويل النظام تلقائياً للنموذج الموصى به (OpenAI GPT-4o Mini). يرجى إعادة إرسال رسالتك الآن.`;
-      } else if (rawMessage.includes('401') || rawMessage.includes('Unauthorized') || rawMessage.includes('Missing Authentication')) {
-        friendlyError = `مفتاح OpenRouter API Key غير مصرح له أو تم تغييره. يرجى مراجعة المفتاح وحفظه من شاشة الإعدادات.`;
-      } else if (rawMessage.includes('402') || rawMessage.includes('Payment Required') || rawMessage.includes('credit')) {
-        friendlyError = `رصيد مفتاح OpenRouter غير كافٍ. يرجى شحن الرصيد في حساب OpenRouter الخاص بك.`;
-      } else if (rawMessage.includes('Port 3001') || rawMessage.includes('Failed to fetch') || rawMessage.includes('ECONNREFUSED')) {
-        friendlyError = `تعذر الاتصال بخادم قاعدة البيانات المحلي (Port 3001).\nيرجى التأكد من أن ملف server_libsql.cjs يعمل بشكل صحيح في الخلفية.`;
+      if (rawMessage.includes('API_KEY_INVALID') || rawMessage.includes('403') || rawMessage.includes('invalid key')) {
+        friendlyError = `مفتاح Google Gemini API Key غير صالح أو منتهي الصلاحية. يرجى التأكد من المفتاح وضبطه عبر زر الإعدادات بالصالون.`;
+      } else if (rawMessage.includes('RESOURCE_EXHAUSTED') || rawMessage.includes('429')) {
+        friendlyError = `تم تجاوز معدل الطلبات المسموح به في حساب Gemini المجاني. يرجى الانتظار دقيقة والمحاولة مجدداً.`;
+      } else if (rawMessage.includes('خرق أمني')) {
+        friendlyError = rawMessage;
       }
 
       setMessages(prev => [
@@ -241,7 +281,6 @@ export function ManagerAIChatScreen({
       ]);
     } finally {
       setIsLoading(false);
-      // Auto focus textarea after sending
       setTimeout(() => {
         textareaRef.current?.focus();
       }, 100);
@@ -263,7 +302,7 @@ export function ManagerAIChatScreen({
       };
       setMessages([defaultMsg]);
       if (typeof window !== 'undefined') {
-        localStorage.removeItem('smartcut_manager_ai_history');
+        localStorage.removeItem('smartcut_manager_ai_history_gemini');
       }
     }
   };
@@ -279,23 +318,23 @@ export function ManagerAIChatScreen({
   return (
     <div className="flex flex-col h-[calc(100vh-5rem)] max-w-6xl mx-auto p-2 sm:p-4 gap-3">
       {/* Top Header Card */}
-      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 shadow-sm flex flex-wrap items-center justify-between gap-3">
+      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 shadow-xs flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-amber-500 to-amber-600 flex items-center justify-center text-zinc-950 shadow-md shadow-amber-500/20">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-indigo-600 via-primary to-teal-500 flex items-center justify-center text-white shadow-md shadow-indigo-600/20">
             <Bot className="w-7 h-7" />
           </div>
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-lg sm:text-xl font-bold text-zinc-900 dark:text-zinc-100">
-                محادثة المدير الذكية (Manager AI)
+                المساعد الذكي (Google Gemini & Supabase SQL)
               </h1>
-              <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700/50 flex items-center gap-1">
-                <Database className="w-3 h-3" />
-                libSQL محلي
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800 flex items-center gap-1 shadow-2xs">
+                <Lock className="w-3 h-3 text-emerald-600" />
+                معزول حصراً للصالون الحالي
               </span>
             </div>
             <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-              استعلام حي فوري وقراءة دقيقة لبيانات الصالون بدون أي احتمالية للتخمين
+              استعلام SQL فوري من الجداول السحابية مع منع الوصول لبيانات أي صالونات أخرى نهائياً 🔒
             </p>
           </div>
         </div>
@@ -304,44 +343,46 @@ export function ManagerAIChatScreen({
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 text-xs">
             <Zap className="w-3.5 h-3.5 text-amber-500" />
-            <span className="text-zinc-500 dark:text-zinc-400">النموذج:</span>
+            <span className="text-zinc-500 dark:text-zinc-400">المحرك:</span>
             <span className="font-mono font-medium text-zinc-800 dark:text-zinc-200 max-w-[150px] truncate" title={activeModel}>
-              {activeModel.split('/')[1] || activeModel}
+              {activeModel}
             </span>
           </div>
 
           {isKeyConfigured ? (
-            <div className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400 text-xs font-medium">
+            <button
+              onClick={() => setShowConfigModal(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400 text-xs font-medium hover:bg-emerald-100 transition cursor-pointer"
+              title="تعديل مفتاح Gemini"
+            >
               <ShieldCheck className="w-3.5 h-3.5" />
-              <span>المفتاح مفعل</span>
-            </div>
+              <span>Gemini مفعل</span>
+            </button>
           ) : (
             <button
-              onClick={() => onNavigateScreen && onNavigateScreen('settings')}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs font-medium hover:bg-rose-100 dark:hover:bg-rose-900/60 transition cursor-pointer"
+              onClick={() => setShowConfigModal(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs font-medium hover:bg-rose-100 dark:hover:bg-rose-900/60 transition cursor-pointer animate-pulse"
             >
-              <AlertCircle className="w-3.5 h-3.5 text-rose-500" />
-              <span>مفتاح OpenRouter مفقود (اضغط للضبط)</span>
+              <Key className="w-3.5 h-3.5 text-rose-500" />
+              <span>مفتاح Gemini API غير مضبوط (اضغط للضبط)</span>
             </button>
           )}
 
           <button
             onClick={handleClearHistory}
-            className="p-2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition"
+            className="p-2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition cursor-pointer"
             title="مسح المحادثة بالكامل"
           >
             <Trash2 className="w-4 h-4" />
           </button>
 
-          {onNavigateScreen && (
-            <button
-              onClick={() => onNavigateScreen('settings')}
-              className="p-2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition"
-              title="إعدادات الذكاء الاصطناعي"
-            >
-              <Settings className="w-4 h-4" />
-            </button>
-          )}
+          <button
+            onClick={() => setShowConfigModal(true)}
+            className="p-2 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition cursor-pointer"
+            title="إعدادات Google Gemini"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
         </div>
       </div>
 
@@ -379,7 +420,7 @@ export function ManagerAIChatScreen({
                     ? 'bg-zinc-800 dark:bg-zinc-700 text-amber-400'
                     : msg.error
                     ? 'bg-rose-600 text-white'
-                    : 'bg-amber-500 text-zinc-950'
+                    : 'bg-gradient-to-tr from-indigo-600 to-teal-500 text-white'
                 }`}
               >
                 {isUser ? (
@@ -390,18 +431,18 @@ export function ManagerAIChatScreen({
               </div>
 
               {/* Message Bubble Container */}
-              <div className={`flex flex-col max-w-[85%] sm:max-w-[75%] ${isUser ? 'items-end' : 'items-start'}`}>
+              <div className={`flex flex-col max-w-[85%] sm:max-w-[78%] ${isUser ? 'items-end' : 'items-start'}`}>
                 <div className="text-[11px] text-zinc-400 mb-1 px-1">
-                  {isUser ? (currentUser?.name || 'المدير') : 'المساعد الذكي (OpenRouter)'}
+                  {isUser ? (currentUser?.name || 'المدير') : 'المساعد الذكي (Gemini & Supabase)'}
                 </div>
 
                 <div
                   className={`rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
                     isUser
-                      ? 'bg-zinc-900 text-white dark:bg-amber-500 dark:text-zinc-950 rounded-tr-none shadow-sm'
+                      ? 'bg-indigo-600 text-white dark:bg-indigo-600 rounded-tr-none shadow-sm'
                       : msg.error
                       ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-900 dark:text-rose-200 border border-rose-200 dark:border-rose-800 rounded-tl-none'
-                      : 'bg-zinc-100 dark:bg-zinc-800/80 text-zinc-900 dark:text-zinc-100 border border-zinc-200/60 dark:border-zinc-700/60 rounded-tl-none shadow-sm'
+                      : 'bg-slate-50 dark:bg-zinc-800/80 text-zinc-900 dark:text-zinc-100 border border-slate-200 dark:border-zinc-700/60 rounded-tl-none shadow-sm'
                   }`}
                 >
                   {msg.content}
@@ -409,16 +450,16 @@ export function ManagerAIChatScreen({
 
                 {/* Collapsible Executed SQL Query Card */}
                 {msg.executedSql && (
-                  <div className="mt-2 w-full max-w-lg bg-zinc-50 dark:bg-zinc-950/60 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden shadow-xs">
+                  <div className="mt-2 w-full max-w-lg bg-zinc-50 dark:bg-zinc-950/60 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden shadow-2xs">
                     <button
                       onClick={() => setExpandedSqlIndex(isExpanded ? null : index)}
                       className="w-full flex items-center justify-between p-2.5 text-xs text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800/50 transition cursor-pointer"
                     >
                       <div className="flex items-center gap-1.5 font-medium">
-                        <Terminal className="w-3.5 h-3.5 text-amber-500" />
-                        <span>استعلام SQL المنفذ على قاعدة البيانات</span>
+                        <Terminal className="w-3.5 h-3.5 text-indigo-500" />
+                        <span>استعلام SQL المنفذ على جداول Supabase</span>
                         {msg.sqlResultCount !== undefined && (
-                          <span className="px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 text-[10px]">
+                          <span className="px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-950/60 text-indigo-800 dark:text-indigo-300 text-[10px]">
                             {msg.sqlResultCount} سجل
                           </span>
                         )}
@@ -433,7 +474,7 @@ export function ManagerAIChatScreen({
                         <div className="flex justify-between items-center mb-1 text-[11px] text-zinc-400">
                           <span className="flex items-center gap-1">
                             <Code2 className="w-3 h-3 text-emerald-400" />
-                            Read-Only SELECT Query
+                            PostgreSQL Read-Only (Restricted to Salon ID)
                           </span>
                           <button
                             onClick={() => copyToClipboard(msg.executedSql!, index)}
@@ -453,7 +494,7 @@ export function ManagerAIChatScreen({
                             )}
                           </button>
                         </div>
-                        <pre className="overflow-x-auto p-2 bg-zinc-950/80 rounded border border-zinc-800 text-amber-300 font-mono text-[11px] leading-relaxed">
+                        <pre className="overflow-x-auto p-2 bg-zinc-950/80 rounded border border-zinc-800 text-teal-300 font-mono text-[11px] leading-relaxed">
                           {msg.executedSql}
                         </pre>
                       </div>
@@ -468,14 +509,14 @@ export function ManagerAIChatScreen({
         {/* Loading Indicator */}
         {isLoading && (
           <div className="flex gap-3 items-start animate-fade-in">
-            <div className="w-9 h-9 rounded-xl bg-amber-500 text-zinc-950 flex items-center justify-center shrink-0 shadow-sm animate-pulse">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-teal-500 text-white flex items-center justify-center shrink-0 shadow-sm animate-pulse">
               <Bot className="w-5 h-5" />
             </div>
             <div className="flex flex-col items-start">
-              <div className="text-[11px] text-zinc-400 mb-1 px-1">المساعد الذكي</div>
-              <div className="bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl rounded-tl-none px-4 py-3 flex items-center gap-2 text-zinc-600 dark:text-zinc-300 text-xs shadow-sm">
-                <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-500" />
-                <span>جاري استعلام قاعدة البيانات libSQL وصياغة الإجابة...</span>
+              <div className="text-[11px] text-zinc-400 mb-1 px-1">المساعد الذكي (Gemini)</div>
+              <div className="bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-2xl rounded-tl-none px-4 py-3 flex items-center gap-2 text-zinc-600 dark:text-zinc-300 text-xs shadow-sm">
+                <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-600" />
+                <span>جاري تحويل السؤال لاستعلام SQL وتنفيذه على جداول Supabase...</span>
               </div>
             </div>
           </div>
@@ -487,7 +528,7 @@ export function ManagerAIChatScreen({
       {/* Suggested Query Chips */}
       <div className="flex items-center gap-2 overflow-x-auto py-1 px-0.5 scrollbar-thin">
         <span className="text-[11px] font-semibold text-zinc-400 dark:text-zinc-500 shrink-0 flex items-center gap-1">
-          <Sparkles className="w-3 h-3 text-amber-500" />
+          <Sparkles className="w-3 h-3 text-indigo-500" />
           أسئلة مقترحة:
         </span>
         {SUGGESTED_QUERIES.map((chip, i) => (
@@ -495,7 +536,7 @@ export function ManagerAIChatScreen({
             key={i}
             onClick={() => handleSendMessage(chip.query)}
             disabled={isLoading}
-            className="shrink-0 px-3 py-1.5 rounded-full text-xs bg-zinc-100 hover:bg-amber-100 dark:bg-zinc-800/80 dark:hover:bg-amber-950/50 text-zinc-700 dark:text-zinc-300 hover:text-amber-800 dark:hover:text-amber-300 border border-zinc-200 dark:border-zinc-700 hover:border-amber-300 transition-all cursor-pointer disabled:opacity-50"
+            className="shrink-0 px-3 py-1.5 rounded-full text-xs bg-slate-100 hover:bg-indigo-50 dark:bg-zinc-800/80 dark:hover:bg-indigo-950/50 text-slate-700 dark:text-zinc-300 hover:text-indigo-800 dark:hover:text-indigo-300 border border-slate-200 dark:border-zinc-700 hover:border-indigo-300 transition-all cursor-pointer disabled:opacity-50"
           >
             {chip.label}
           </button>
@@ -532,7 +573,7 @@ export function ManagerAIChatScreen({
             className={`p-3 rounded-xl transition-all duration-200 shrink-0 cursor-pointer ${
               isListening
                 ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/30 scale-105 animate-pulse'
-                : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 hover:text-amber-500'
+                : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 hover:text-indigo-600'
             }`}
           >
             {isListening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
@@ -560,7 +601,7 @@ export function ManagerAIChatScreen({
             className={`p-3 rounded-xl font-bold flex items-center justify-center transition-all duration-200 shrink-0 cursor-pointer ${
               !inputQuery.trim() || isLoading
                 ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 cursor-not-allowed opacity-60'
-                : 'bg-gradient-to-r from-amber-500 to-amber-600 text-zinc-950 hover:from-amber-600 hover:to-amber-700 shadow-md shadow-amber-500/20 active:scale-95'
+                : 'bg-gradient-to-r from-indigo-600 to-teal-500 text-white hover:from-indigo-700 hover:to-teal-600 shadow-md shadow-indigo-600/25 active:scale-95'
             }`}
             title="إرسال (Enter)"
           >
@@ -572,11 +613,121 @@ export function ManagerAIChatScreen({
         <div className="mt-2 pt-2 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between text-[11px] text-zinc-400">
           <div className="flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-            <span>استعلام SQL مباشر وآمن (Read-Only) مع تحكم دقيق بدرجة الحرارة 0.0</span>
+            <span>استعلام SQL آمن ومباشر على Supabase مقيد بـ salon_id فقط</span>
           </div>
           <span>اضغط Shift + Enter لسطر جديد</span>
         </div>
       </div>
+
+      {/* Google Gemini Config Modal */}
+      {showConfigModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 flex items-center justify-center">
+                  <Key size={20} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-zinc-900 dark:text-zinc-100">إعدادات Google Gemini AI</h3>
+                  <p className="text-[11px] text-zinc-500">ضبط مفتاح API لربط المساعد الذكي المالي</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowConfigModal(false)}
+                className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 p-1 rounded-lg"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveGeminiConfig} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                  Google Gemini API Key:
+                </label>
+                <div className="relative">
+                  <input
+                    type={showKeyText ? 'text' : 'password'}
+                    required
+                    value={geminiApiKey}
+                    onChange={e => setGeminiApiKey(e.target.value)}
+                    placeholder="AIzaSy..."
+                    className="w-full bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-xs font-mono font-bold text-zinc-800 dark:text-zinc-100 focus:border-indigo-600 outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowKeyText(!showKeyText)}
+                    className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] text-zinc-500 hover:text-zinc-800 bg-white dark:bg-zinc-700 px-1.5 py-0.5 rounded border border-zinc-200 dark:border-zinc-600"
+                  >
+                    {showKeyText ? 'إخفاء' : 'إظهار'}
+                  </button>
+                </div>
+                <div className="mt-1.5 flex items-center justify-between text-[11px]">
+                  <span className="text-zinc-500">احصل على مفتاح مجاني:</span>
+                  <a
+                    href="https://aistudio.google.com/app/apikey"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-semibold"
+                  >
+                    Google AI Studio
+                    <ExternalLink size={12} />
+                  </a>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                  نموذج الذكاء الاصطناعي (Model):
+                </label>
+                <select
+                  value={geminiModel}
+                  onChange={e => setGeminiModel(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-xs font-bold text-zinc-800 dark:text-zinc-100 focus:border-indigo-600 outline-none"
+                >
+                  {POPULAR_GEMINI_MODELS.map(m => (
+                    <option key={m.id} value={m.id}>{m.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 p-3 rounded-xl text-[11px] text-amber-800 dark:text-amber-200 space-y-1">
+                <div className="font-bold flex items-center gap-1">
+                  <ShieldCheck size={14} className="text-amber-600" />
+                  أمان وعزل متعدد الصالونات (Multi-Tenant):
+                </div>
+                <p>
+                  يتم ترجمة الأسئلة آلياً إلى استعلامات SQL مقيدة حصراً بمعرف الصالون الحالي (<code className="font-mono font-bold text-[10px]">{settings.salonId?.substring(0, 8)}...</code>). لا يمكن لأي استعلام قراءة أو كشف بيانات صالونات أخرى إطلاقاً.
+                </p>
+              </div>
+
+              {saveSuccessNotice && (
+                <div className="bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl p-2.5 text-xs font-bold flex items-center gap-2">
+                  <CheckCircle2 size={16} className="text-emerald-600" />
+                  تم حفظ مفتاح Gemini وتفعيل المساعد بنجاح!
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowConfigModal(false)}
+                  className="flex-1 py-2.5 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-600/20 active:scale-95 transition cursor-pointer"
+                >
+                  حفظ وتفعيل
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

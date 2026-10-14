@@ -17,20 +17,21 @@ interface InvoiceReceiptCardProps {
 
 /**
  * Check if the salon or branch is located in Saudi Arabia
+ * Strictly requires the country setting to be Saudi Arabia (does not rely on currency)
  */
 export const isSaudiSalon = (settings: AppSettings, branches?: Branch[], branchId?: string): boolean => {
   const branchObj = branches?.find(b => b.id === branchId);
-  const country = (branchObj?.country || settings.country || '').trim();
-  const currency = (branchObj?.currency || settings.currency || '').trim().toUpperCase();
+  const country = (branchObj?.country || settings?.country || '').trim();
 
-  // If currency is SAR, it is Saudi Arabia
-  if (currency === 'SAR') return true;
-  // If country name indicates Saudi Arabia
-  if (/السعودية|saudi|ksa|^sa$/i.test(country)) return true;
-  // If explicitly non-Saudi
-  if (/مصر|egypt|egp|إمارات|امارات|uae|aed|كويت|kuwait|kwd|عمان|oman|قطر|qatar|بحرين|bahrain|أردن|اردن|jordan/i.test(country)) return false;
+  if (!country) return false;
 
-  return false;
+  // Explicit non-Saudi check: Egypt, UAE, Kuwait, Oman, Qatar, Bahrain, Jordan, Iraq, Syria, Lebanon, Palestine, Yemen, Libya, Tunisia, Algeria, Morocco, Sudan, etc.
+  if (/مصر|egypt|إمارات|امارات|uae|كويت|kuwait|عمان|oman|قطر|qatar|بحرين|bahrain|أردن|اردن|jordan|عراق|iraq|سوريا|syria|لبنان|lebanon|فلسطين|palestine|يمن|yemen|ليبيا|libya|تونس|tunis|جزائر|algeria|مغرب|morocco|سودان|sudan|موريتانيا|mauritania|صومال|somalia|جيبوتي|djibouti|قمر|comoros|دولار|other|أخرى/i.test(country)) {
+    return false;
+  }
+
+  // Strictly check for Saudi Arabia
+  return /المملكة العربية السعودية|السعودية|Saudi Arabia|KSA|^sa$/i.test(country);
 };
 
 export const formatInvoiceDate = (dateRaw?: string): string => {
