@@ -307,14 +307,15 @@ export function EmployeeFullProfileView({
       overtimeMinutes: number;
     }> = [];
 
-    const start = new Date(startDate);
-    const end = new Date(endDate);
+    const [sY, sM, sD] = startDate.split('-').map(Number);
+    const [eY, eM, eD] = endDate.split('-').map(Number);
+    let curr = new Date(Date.UTC(sY, sM - 1, sD, 12, 0, 0));
+    const end = new Date(Date.UTC(eY, eM - 1, eD, 12, 0, 0));
     const todayStr = formatYmd(new Date());
 
     const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const arabicDays = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
 
-    let curr = new Date(start);
     let totalPresentDays = 0;
     let totalLateDays = 0;
     let totalAbsentDays = 0;
@@ -322,8 +323,11 @@ export function EmployeeFullProfileView({
     let totalOvertimeMinutes = 0;
 
     while (curr <= end) {
-      const dateStr = formatYmd(curr);
-      const dayIdx = curr.getDay();
+      const y = curr.getUTCFullYear();
+      const m = String(curr.getUTCMonth() + 1).padStart(2, '0');
+      const d = String(curr.getUTCDate()).padStart(2, '0');
+      const dateStr = `${y}-${m}-${d}`;
+      const dayIdx = curr.getUTCDay();
       const engDay = weekdays[dayIdx];
       const arDay = arabicDays[dayIdx];
       const isDayOff = employee.weeklyDaysOff?.includes(engDay) || false;
@@ -356,7 +360,7 @@ export function EmployeeFullProfileView({
 
       daysList.push({
         dateStr,
-        dayNumber: curr.getDate(),
+        dayNumber: curr.getUTCDate(),
         dayName: arDay,
         status,
         checkInTime: dayData?.checkIn ? new Date(dayData.checkIn).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }) : undefined,
@@ -365,7 +369,7 @@ export function EmployeeFullProfileView({
         overtimeMinutes: otMin
       });
 
-      curr.setDate(curr.getDate() + 1);
+      curr.setUTCDate(curr.getUTCDate() + 1);
     }
 
     const workingDaysCount = totalPresentDays + totalAbsentDays;

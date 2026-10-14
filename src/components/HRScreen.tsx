@@ -639,11 +639,21 @@ export function HRScreen({
     if (viewMode === 'single_day') {
       return [selectedSingleDay];
     }
+    if (!startDate || !endDate) return [];
     const dates: string[] = [];
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-      dates.push(d.toISOString().split('T')[0]);
+    const [sY, sM, sD] = startDate.split('-').map(Number);
+    const [eY, eM, eD] = endDate.split('-').map(Number);
+    if (!sY || !sM || !sD || !eY || !eM || !eD) return [];
+
+    let curr = new Date(Date.UTC(sY, sM - 1, sD, 12, 0, 0));
+    const end = new Date(Date.UTC(eY, eM - 1, eD, 12, 0, 0));
+
+    while (curr <= end) {
+      const y = curr.getUTCFullYear();
+      const m = String(curr.getUTCMonth() + 1).padStart(2, '0');
+      const d = String(curr.getUTCDate()).padStart(2, '0');
+      dates.push(`${y}-${m}-${d}`);
+      curr.setUTCDate(curr.getUTCDate() + 1);
     }
     return dates;
   }, [viewMode, startDate, endDate, selectedSingleDay]);

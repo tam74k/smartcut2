@@ -72,7 +72,7 @@ export function DashboardChartsSection({
 
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
-      const d = (t.shiftDate || (t as any).shift_date || t.date || '').split('T')[0];
+      const d = t.date.split('T')[0];
       return d >= startDate && d <= endDate;
     });
   }, [transactions, startDate, endDate]);
@@ -104,15 +104,22 @@ export function DashboardChartsSection({
 
     if (salesInterval === 'day') {
       // Build date list
-      const start = new Date(startDate);
-      const end = new Date(endDate);
-      const curr = new Date(start);
+      if (!startDate || !endDate) return [];
+      const [sY, sM, sD] = startDate.split('-').map(Number);
+      const [eY, eM, eD] = endDate.split('-').map(Number);
+      if (!sY || !sM || !sD || !eY || !eM || !eD) return [];
+
+      let curr = new Date(Date.UTC(sY, sM - 1, sD, 12, 0, 0));
+      const end = new Date(Date.UTC(eY, eM - 1, eD, 12, 0, 0));
       // Limit to 60 days max to prevent crowded charts
       let count = 0;
       while (curr <= end && count < 60) {
-        const dStr = curr.toISOString().split('T')[0];
+        const y = curr.getUTCFullYear();
+        const m = String(curr.getUTCMonth() + 1).padStart(2, '0');
+        const d = String(curr.getUTCDate()).padStart(2, '0');
+        const dStr = `${y}-${m}-${d}`;
         map.set(dStr, 0);
-        curr.setDate(curr.getDate() + 1);
+        curr.setUTCDate(curr.getUTCDate() + 1);
         count++;
       }
       filteredInvoices.forEach(inv => {
@@ -140,10 +147,9 @@ export function DashboardChartsSection({
   const expensesTimelineData = useMemo(() => {
     const map = new Map<string, number>();
     filteredTransactions
-      .filter(t => (t.type === 'out' || (t.type as string) === 'expense' || t.category === 'expense' || t.category === 'مصروفات' || t.category?.includes('مصروف')) && t.category !== 'transfer')
+      .filter(t => t.type === 'out')
       .forEach(t => {
-        const dStr = (t.shiftDate || (t as any).shift_date || t.date || '').split('T')[0];
-        const key = salesInterval === 'day' ? dStr : dStr.substring(0, 7);
+        const key = salesInterval === 'day' ? t.date.split('T')[0] : t.date.substring(0, 7);
         map.set(key, (map.get(key) || 0) + t.amount);
       });
 
@@ -180,7 +186,7 @@ export function DashboardChartsSection({
   const top10Expenses = useMemo(() => {
     const map = new Map<string, number>();
     filteredTransactions
-      .filter(t => (t.type === 'out' || (t.type as string) === 'expense' || t.category === 'expense' || t.category === 'مصروفات' || t.category?.includes('مصروف')) && t.category !== 'transfer')
+      .filter(t => t.type === 'out')
       .forEach(t => {
         const cat = t.expenseCategory || t.category || 'مصروف عام';
         map.set(cat, (map.get(cat) || 0) + t.amount);
