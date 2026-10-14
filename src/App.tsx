@@ -10,7 +10,7 @@ import {
   UsersRound, List, Menu, X, Printer, Package, Truck, 
   ShoppingCart, ClipboardList, Shield, User as UserIcon, Sparkles, BarChart3, Boxes, Bot,
   AlertCircle, Smartphone, ShieldAlert, ShieldCheck, Tag, HeartHandshake, Briefcase, Fingerprint, Radio,
-  Key, AlertTriangle, Clock, Lock, ChevronUp, ChevronDown
+  Key, AlertTriangle, Clock, Lock, ChevronUp, ChevronDown, Zap, MessageSquare
 } from 'lucide-react';
 import { POSScreen } from './components/POSScreen';
 import { SettingsScreen } from './components/SettingsScreen';
