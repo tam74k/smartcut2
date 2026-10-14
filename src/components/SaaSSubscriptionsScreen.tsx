@@ -105,12 +105,39 @@ export function SaaSSubscriptionsScreen({ onSwitchSalon }: SaaSSubscriptionsScre
         SubscriptionService.saveBranches(cloudBranches);
         setBranches(cloudBranches);
       }
+
+      // Fetch cloud subscription history from tenant_subscriptions table
+      const cloudSubs = await DB.fetchTenantSubscriptions();
+      if (cloudSubs && cloudSubs.length > 0) {
+        const mappedPayments: SubscriptionPaymentRecord[] = cloudSubs.map((cs: any) => {
+          const matchedSalon = (cloudSalons || salons).find((s: any) => s.id === cs.salonId || s.id === cs.tenantId);
+          return {
+            id: cs.id,
+            salonId: cs.salonId || cs.tenantId,
+            salonCode: matchedSalon?.code || 'SC',
+            salonName: matchedSalon?.name || 'صالون',
+            amount: Number(cs.paidAmount) || 0,
+            currency: cs.currency || matchedSalon?.currency || 'SAR',
+            durationMonths: cs.billingCycle === '12m' ? 12 : cs.billingCycle === '6m' ? 6 : cs.billingCycle === '3m' ? 3 : 1,
+            durationLabel: cs.billingCycle === 'trial' ? 'فترة تجريبية' : cs.billingCycle === '12m' ? 'سنة كاملة' : cs.billingCycle === '6m' ? '6 شهور' : cs.billingCycle === '3m' ? '3 شهور' : `${cs.billingCycle || 'شهر'}`,
+            paymentDate: cs.createdAt || cs.startDate,
+            periodStart: cs.startDate,
+            periodEnd: cs.endDate,
+            paymentMethod: cs.paymentMethod || 'cash',
+            referenceNumber: cs.notes || '',
+            notes: cs.notes || '',
+            recordedBy: 'لوحة التحكم',
+            createdAt: cs.createdAt
+          };
+        });
+        setPayments(mappedPayments);
+      }
     } catch (e) {
       console.error('Failed to fetch salons from cloud:', e);
     }
   };
 
-  // Check days remaining helper
+  // Check days remaining helper (4 days alert window as per requirements)
   const getSalonExpiryInfo = (s: SalonTenant) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -118,8 +145,8 @@ export function SaaSSubscriptionsScreen({ onSwitchSalon }: SaaSSubscriptionsScre
     end.setHours(0, 0, 0, 0);
     const diffMs = end.getTime() - today.getTime();
     const daysLeft = Math.ceil(diffMs / (1000 * 3600 * 24));
-    const isExpired = daysLeft < 0 || s.subscriptionStatus === 'expired' || !s.isActive;
-    const isExpiringSoon = daysLeft >= 0 && daysLeft <= 5 && s.isActive && s.subscriptionStatus !== 'expired';
+    const isExpired = daysLeft <= 0 || s.subscriptionStatus === 'expired' || !s.isActive;
+    const isExpiringSoon = daysLeft > 0 && daysLeft <= 4 && s.isActive && s.subscriptionStatus !== 'expired';
     const isExpiredTrial = (s.subscriptionStatus === 'trial' || (s.trialDays !== undefined && s.trialDays > 0)) && (isExpired || daysLeft <= 0);
     return { daysLeft, isExpired, isExpiringSoon, isExpiredTrial };
   };

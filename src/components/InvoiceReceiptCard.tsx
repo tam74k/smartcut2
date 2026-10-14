@@ -204,6 +204,20 @@ export const executePrintInvoiceReceipt = (elementId: string, invoiceId?: string
 </head>
 <body>
   ${printContent}
+  <script>
+    window.addEventListener('load', function() {
+      setTimeout(function() {
+        window.focus();
+        window.print();
+        setTimeout(function() { window.close(); }, 500);
+      }, 150);
+    });
+    setTimeout(function() {
+      window.focus();
+      window.print();
+      setTimeout(function() { window.close(); }, 500);
+    }, 450);
+  </script>
 </body>
 </html>`);
     printWindow.document.close();
@@ -212,11 +226,10 @@ export const executePrintInvoiceReceipt = (elementId: string, invoiceId?: string
       try {
         printWindow?.focus();
         printWindow?.print();
-        printWindow?.close();
       } catch (e) {
         console.warn('Print popup closed or failed:', e);
       }
-    }, 350);
+    }, 400);
     return;
   }
 
@@ -232,7 +245,7 @@ export const executePrintInvoiceReceipt = (elementId: string, invoiceId?: string
     if (document.body.contains(printEl)) {
       document.body.removeChild(printEl);
     }
-  }, 200);
+  }, 1500);
 };
 
 export const InvoiceReceiptCard: React.FC<InvoiceReceiptCardProps> = ({

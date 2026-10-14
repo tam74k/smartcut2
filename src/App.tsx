@@ -56,7 +56,7 @@ import { printQueueSlipDirect } from './utils/printQueueSlip';
 import { AuthService, ROLE_LABELS } from './services/auth';
 import { SupabaseService } from './services/supabase';
 import { RealtimeSync } from './services/realtimeSync';
-import { DB, dbClientToApp, dbEmployeeToApp, dbServiceToApp, dbProductToApp, dbBookingToApp, toCamel } from './services/db';
+import { DB, dbClientToApp, dbEmployeeToApp, dbServiceToApp, dbProductToApp, dbBookingToApp, dbInvoiceToApp, toCamel } from './services/db';
 import { SubscriptionService } from './services/subscriptionService';
 import { QueueService } from './services/queueService';
 import { completeBookingAndCreateHeldInvoice } from './services/bookingHeldInvoiceService';
@@ -426,7 +426,7 @@ export default function App() {
     if (activeShift.isOpen === true || activeShift.status === 'open' || (!activeShift.closedAt && !activeShift.isClosed && activeShift.shiftDate)) {
       setBranchShifts(prev => {
         const current = prev[branchId] || prev['b-main'];
-        const shiftCode = activeShift.shiftCode || activeShift.shift_code || '';
+        const shiftCode = activeShift.shiftCode || activeShift.shift_code || current?.shiftCode || `SH-${(activeShift.shiftDate || '').replace(/-/g, '')}-01`;
         if (
           current?.isOpen === true &&
           current?.date === activeShift.shiftDate &&
@@ -462,24 +462,24 @@ export default function App() {
       return;
     }
 
-    // 3. منع التغيير التلقائي: يُحظر تماماً اعتبار الوردية مغلقة إلا بوجود سجل فعلي وقاطع يثبت الإغلاق داخل قاعدة البيانات
-    if (activeShift.hasDefinitiveProof && (activeShift.isClosed || activeShift.status === 'closed' || activeShift.noShifts)) {
+    // 3. منع التغيير التلقائي: يُحظر تماماً اعتبار الوردية مغلقة إلا بوجود سجل فعلي وقاطع يثبت إغلاقها هي بالتحديد
+    if (activeShift.hasDefinitiveProof && (activeShift.isClosed || activeShift.status === 'closed')) {
       setBranchShifts(prev => {
         const current = prev[branchId] || prev['b-main'];
 
         // إذا كانت هناك وردية مفتوحة حالياً، نتحقق أن السجل القاطع للإغلاق يثبت إغلاقها هي بالتحديد
         if (current?.isOpen) {
+          // إذا كان لدينا معرف وردية مفتوحة وسجل الإغلاق يحمل معرف مختلف، لا نغلق الوردية المفتوحة محلياً
+          if (current.shiftId && activeShift.id && current.shiftId !== activeShift.id) {
+            return prev;
+          }
           // إذا كان السجل في قاعدة البيانات يثبت إغلاق وردية أقدم من وقت فتح الوردية الحالية، فلا نغلقها
           if (activeShift.closedAt && current.openedAt) {
             const shiftOpenedTime = new Date(current.openedAt).getTime();
             const shiftClosedTime = new Date(activeShift.closedAt).getTime();
-            if (!isNaN(shiftOpenedTime) && !isNaN(shiftClosedTime) && shiftClosedTime < shiftOpenedTime) {
+            if (!isNaN(shiftOpenedTime) && !isNaN(shiftClosedTime) && shiftClosedTime <= shiftOpenedTime) {
               return prev;
             }
-          }
-          // إذا كان لدينا معرف وردية مفتوحة وسجل الإغلاق يحمل معرف مختلف بدون noShifts، لا نغلق
-          if (current.shiftId && activeShift.id && current.shiftId !== activeShift.id && !activeShift.noShifts) {
-            return prev;
           }
         }
 
@@ -538,7 +538,14 @@ export default function App() {
   // Global In-Memory Stores
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>(() => {
+    try {
+      const cached = localStorage.getItem('smartcut_invoices_cache');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
   const [clients, setClients] = useState<Client[]>([]);
   const [services, setServices] = useState<ServiceItem[]>([]);
   const [categories, setCategories] = useState<Category[]>([{ id: 'all', name: 'الكل' }]);
@@ -570,20 +577,7 @@ export default function App() {
   const applySectionData = useCallback((section: string, data: any) => {
     if (!data) return;
     if (data.invoices) {
-      setInvoices(data.invoices.map((inv: any) => ({
-        ...inv,
-        date: inv.date || inv.created_at || inv.createdAt || new Date().toISOString(),
-        vatAmount: inv.vat,
-        cashbackUsed: inv.cashbackUsed ?? 0,
-        paymentMethods: inv.paymentMethods || [],
-        isRemedyInvoice: inv.isRemedy || false,
-        remedyReason: inv.remedyNotes || '',
-        relatedComplaintId: inv.relatedComplaintId || '',
-        originalInvoiceId: inv.originalInvoiceId || '',
-        zatcaQr: inv.zatcaQr || '',
-        zatcaHash: inv.zatcaHash || '',
-        etaSubmissionUuid: inv.etaSubmissionUuid || '',
-      })));
+      setInvoices(data.invoices.map(dbInvoiceToApp));
     }
     if (data.transactions) {
       setTransactions(data.transactions.map((t: any) => ({
@@ -812,24 +806,9 @@ export default function App() {
 
           DB.fetchInvoices(sId).then(dbInvs => {
             if (dbInvs && dbInvs.length > 0) {
-              setInvoices(dbInvs.map((inv: any) => ({
-                ...inv,
-                date: inv.date || inv.created_at || inv.createdAt || new Date().toISOString(),
-                vatAmount: inv.vat,
-                cashbackUsed: inv.cashbackUsed ?? 0,
-                paymentMethods: inv.paymentMethods || [],
-                isRemedyInvoice: inv.isRemedy || false,
-                remedyReason: inv.remedyNotes || '',
-                relatedComplaintId: inv.relatedComplaintId || '',
-                originalInvoiceId: inv.originalInvoiceId || '',
-                zatcaQr: inv.zatcaQr || '',
-                zatcaHash: inv.zatcaHash || '',
-                etaSubmissionUuid: inv.etaSubmissionUuid || '',
-              })));
-            } else {
-              setInvoices([]);
+              setInvoices(dbInvs.map(dbInvoiceToApp));
             }
-          }).catch(() => { setInvoices([]); });
+          }).catch(() => {});
 
           DB.fetchSalesReturns(sId).then(returns => {
             if (returns && returns.length > 0) {
@@ -884,6 +863,8 @@ export default function App() {
 
   // ── Hardware License & Anti-Tamper System Initial Check & Real-time Stream ────
   useEffect(() => {
+    const isOnlineSaaS = Boolean(settings.salonId || isCloudConnected);
+
     const fetchLicenseInfo = async () => {
       try {
         const res = await fetch('/api/server-info');
@@ -891,12 +872,14 @@ export default function App() {
           const data = await res.json();
           if (data.license) {
             setLicenseInfo(data.license);
-            if (!data.license.isLicensed) {
-              localStorage.setItem('smartcut_license_readonly', 'true');
-              setShowLicenseModal(true);
-            } else if (data.license.isLicensed && data.license.status === 'active') {
-              localStorage.setItem('smartcut_license_readonly', 'false');
-              setShowLicenseModal(false);
+            if (!isOnlineSaaS) {
+              if (!data.license.isLicensed) {
+                localStorage.setItem('smartcut_license_readonly', 'true');
+                setShowLicenseModal(true);
+              } else if (data.license.isLicensed && data.license.status === 'active') {
+                localStorage.setItem('smartcut_license_readonly', 'false');
+                setShowLicenseModal(false);
+              }
             }
           }
         }
@@ -915,12 +898,14 @@ export default function App() {
           const payload = JSON.parse(event.data);
           if (payload.type === 'license_updated' && payload.license) {
             setLicenseInfo(payload.license);
-            if (!payload.license.isLicensed) {
-              localStorage.setItem('smartcut_license_readonly', 'true');
-              setShowLicenseModal(true);
-            } else if (payload.license.isLicensed && payload.license.status === 'active') {
-              localStorage.setItem('smartcut_license_readonly', 'false');
-              setShowLicenseModal(false);
+            if (!isOnlineSaaS) {
+              if (!payload.license.isLicensed) {
+                localStorage.setItem('smartcut_license_readonly', 'true');
+                setShowLicenseModal(true);
+              } else if (payload.license.isLicensed && payload.license.status === 'active') {
+                localStorage.setItem('smartcut_license_readonly', 'false');
+                setShowLicenseModal(false);
+              }
             }
           }
         } catch {}
@@ -930,7 +915,7 @@ export default function App() {
     return () => {
       if (eventSource) eventSource.close();
     };
-  }, []);
+  }, [settings.salonId, isCloudConnected]);
 
   // ── Real-Time Sync Subscriptions across LAN (Sub-50ms Instant Sync) ──────────
   useEffect(() => {
@@ -986,19 +971,7 @@ export default function App() {
         ]);
 
         if (dbInvs && Array.isArray(dbInvs)) {
-          setInvoices(dbInvs.map((inv: any) => ({
-            ...inv,
-            vatAmount: inv.vat,
-            cashbackUsed: inv.cashbackUsed ?? 0,
-            paymentMethods: inv.paymentMethods || [],
-            isRemedyInvoice: inv.isRemedy || false,
-            remedyReason: inv.remedyNotes || '',
-            relatedComplaintId: inv.relatedComplaintId || '',
-            originalInvoiceId: inv.originalInvoiceId || '',
-            zatcaQr: inv.zatcaQr || '',
-            zatcaHash: inv.zatcaHash || '',
-            etaSubmissionUuid: inv.etaSubmissionUuid || '',
-          })));
+          setInvoices(dbInvs.map(dbInvoiceToApp));
         }
 
         if (dbTrxs && Array.isArray(dbTrxs)) {
@@ -1223,20 +1196,7 @@ export default function App() {
           setClients(updatedClients.map(dbClientToApp));
         }
         if (updatedInvoices && Array.isArray(updatedInvoices)) {
-          setInvoices(updatedInvoices.map((inv: any) => ({
-            ...inv,
-            date: inv.date || inv.created_at || inv.createdAt || new Date().toISOString(),
-            vatAmount: inv.vat,
-            cashbackUsed: inv.cashbackUsed ?? 0,
-            paymentMethods: inv.paymentMethods || [],
-            isRemedyInvoice: inv.isRemedy || false,
-            remedyReason: inv.remedyNotes || '',
-            relatedComplaintId: inv.relatedComplaintId || '',
-            originalInvoiceId: inv.originalInvoiceId || '',
-            zatcaQr: inv.zatcaQr || '',
-            zatcaHash: inv.zatcaHash || '',
-            etaSubmissionUuid: inv.etaSubmissionUuid || '',
-          })));
+          setInvoices(updatedInvoices.map(dbInvoiceToApp));
         }
         if (updatedTrxs && Array.isArray(updatedTrxs)) {
           setTransactions(updatedTrxs.map((t: any) => ({
@@ -1384,19 +1344,7 @@ export default function App() {
 
         // Sync Invoices
         if (polledInvoices && Array.isArray(polledInvoices)) {
-          setInvoices(polledInvoices.map((inv: any) => ({
-            ...inv,
-            vatAmount: inv.vat,
-            cashbackUsed: inv.cashbackUsed ?? 0,
-            paymentMethods: inv.paymentMethods || [],
-            isRemedyInvoice: inv.isRemedy || false,
-            remedyReason: inv.remedyNotes || '',
-            relatedComplaintId: inv.relatedComplaintId || '',
-            originalInvoiceId: inv.originalInvoiceId || '',
-            zatcaQr: inv.zatcaQr || '',
-            zatcaHash: inv.zatcaHash || '',
-            etaSubmissionUuid: inv.etaSubmissionUuid || '',
-          })));
+          setInvoices(polledInvoices.map(dbInvoiceToApp));
         }
 
         // Sync Transactions
@@ -1713,6 +1661,36 @@ export default function App() {
     setSalesReturns(newReturns);
   };
 
+  // Shift status and opener details helper
+  const shiftDisplayInfo = useMemo(() => {
+    if (!shiftData?.isOpen) return null;
+    const date = shiftData.date || (shiftData as any)?.shiftDate || (shiftData as any)?.shift_date || getLocalTodayDateString();
+    const code = (shiftData as any)?.shiftCode || (shiftData as any)?.shift_code || (`SH-${(date || '').replace(/-/g, '')}-01`);
+    
+    const userId = (shiftData as any)?.openedByUserId || (shiftData as any)?.opened_by_user_id;
+    let userName = (shiftData as any)?.openedByName || (shiftData as any)?.openedByUserName || (shiftData as any)?.opened_by_name || (shiftData as any)?.opened_by_user_name;
+    
+    if (!userName && userId) {
+      const fromAuth = AuthService.getUsers().find(u => u.id === userId);
+      if (fromAuth?.name) {
+        userName = fromAuth.name;
+      } else {
+        const fromEmp = employees.find(e => e.id === userId || (e as any).userId === userId);
+        if (fromEmp?.name) userName = fromEmp.name;
+      }
+    }
+    
+    if (!userName) {
+      userName = currentUser?.name || 'الكاشير';
+    }
+
+    return {
+      date,
+      code,
+      userName
+    };
+  }, [shiftData, currentUser, employees]);
+
   // ============================================================
   // Subscription & Read-Only Protection Rules
   // ============================================================
@@ -1729,8 +1707,45 @@ export default function App() {
   const isBranchPending = false;
   const isSalonSuspended = false;
 
+  // ── Online Subscription vs Offline Hardware License Rules ────────────────
+  const isOnlineSaaSMode = Boolean(settings.salonId || subscription.salonId || isCloudConnected);
+
+  const onlineSubscriptionDaysLeft = useMemo(() => {
+    const endStr = subscription.endDate || settings.subscriptionEndDate;
+    if (!endStr) return null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const end = new Date(endStr);
+    end.setHours(0, 0, 0, 0);
+    const diffMs = end.getTime() - today.getTime();
+    return Math.ceil(diffMs / (1000 * 3600 * 24));
+  }, [subscription.endDate, settings.subscriptionEndDate]);
+
+  const isOnlineSubscriptionExpired = useMemo(() => {
+    if (!isOnlineSaaSMode) return false;
+    const endStr = subscription.endDate || settings.subscriptionEndDate;
+    if (!endStr) return false;
+    const subStatus = subscription.status || settings.subscriptionStatus;
+    if (subscription.isActive === false || settings.isSalonActive === false) return true;
+    if (subStatus === 'expired' || subStatus === 'suspended') return true;
+    if (onlineSubscriptionDaysLeft !== null && onlineSubscriptionDaysLeft <= 0) return true;
+    return false;
+  }, [isOnlineSaaSMode, subscription, settings, onlineSubscriptionDaysLeft]);
+
+  const isOnlineExpiringSoon = useMemo(() => {
+    if (!isOnlineSaaSMode || isOnlineSubscriptionExpired) return false;
+    const subStatus = subscription.status || settings.subscriptionStatus;
+    if (subscription.isActive === false || settings.isSalonActive === false) return false;
+    if (subStatus === 'expired' || subStatus === 'suspended') return false;
+    // Exactly 4 days before expiration as requested by the user
+    return Boolean(onlineSubscriptionDaysLeft !== null && onlineSubscriptionDaysLeft <= 4 && onlineSubscriptionDaysLeft > 0);
+  }, [isOnlineSaaSMode, isOnlineSubscriptionExpired, subscription, settings, onlineSubscriptionDaysLeft]);
+
   // ── Software License & Strict Read-Only Rules ───────────────────────────
   const isSubscriptionBlocked = useMemo(() => {
+    if (isOnlineSaaSMode) {
+      return isOnlineSubscriptionExpired;
+    }
     if (!licenseInfo) return false;
     return Boolean(
       !licenseInfo.isLicensed ||
@@ -1739,19 +1754,23 @@ export default function App() {
       (licenseInfo.daysLeft !== null && licenseInfo.daysLeft !== undefined && licenseInfo.daysLeft <= 0) ||
       (licenseInfo.runsLeft !== null && licenseInfo.runsLeft !== undefined && licenseInfo.runsLeft <= 0)
     );
-  }, [licenseInfo]);
+  }, [isOnlineSaaSMode, isOnlineSubscriptionExpired, licenseInfo]);
 
   const isExpiringSoon = useMemo(() => {
-    if (!licenseInfo || isSubscriptionBlocked) return false;
+    if (isSubscriptionBlocked) return false;
+    if (isOnlineSaaSMode) {
+      return isOnlineExpiringSoon;
+    }
     return Boolean(
+      licenseInfo &&
       licenseInfo.isLicensed &&
       licenseInfo.status === 'active' &&
       licenseInfo.daysLeft !== null &&
       licenseInfo.daysLeft !== undefined &&
-      licenseInfo.daysLeft <= 5 &&
+      licenseInfo.daysLeft <= 4 &&
       licenseInfo.daysLeft > 0
     );
-  }, [licenseInfo, isSubscriptionBlocked]);
+  }, [isSubscriptionBlocked, isOnlineSaaSMode, isOnlineExpiringSoon, licenseInfo]);
 
   // Sync with localStorage for OfflineQueryBuilder and global guards
   useEffect(() => {
@@ -1763,17 +1782,23 @@ export default function App() {
   // Listen to background mutation blocked events
   useEffect(() => {
     const handleBlocked = (e: any) => {
-      setShowLicenseModal(true);
-      alert('🔒 ' + (e.detail?.message || 'تم تحويل البرنامج إلى وضع القراءة فقط لانتهاء الترخيص. يُمنع تسجيل أو تعديل أي بيانات.'));
+      if (!isOnlineSaaSMode) {
+        setShowLicenseModal(true);
+      }
+      alert('🔒 ' + (e.detail?.message || 'تم تحويل البرنامج إلى وضع القراءة فقط لانتهاء الترخيص / اشتراك الصالون. يُمنع تسجيل أو تعديل أي بيانات.'));
     };
     window.addEventListener('smartcut_license_blocked', handleBlocked);
     return () => window.removeEventListener('smartcut_license_blocked', handleBlocked);
-  }, []);
+  }, [isOnlineSaaSMode]);
 
   const checkReadOnlyAndWarn = () => {
     if (isSubscriptionBlocked) {
-      alert('🔒 تم تحويل البرنامج إلى وضع القراءة فقط: انتهت صلاحية الترخيص.\nيُمنع نهائياً أي إضافة أو تعديل أو حفظ بيانات جديدة لحين تجديد الاشتراك والتفعيل.');
-      setShowLicenseModal(true);
+      const salonName = subscription.organizationName || settings.salonName || 'الصالون';
+      const endDate = subscription.endDate || settings.subscriptionEndDate || '';
+      alert(`🔒 تم تحويل البرنامج إلى وضع القراءة فقط: انتهت صلاحية اشتراك صالون (${salonName}) بتاريخ ${endDate}.\nيُمنع نهائياً أي إضافة أو تعديل أو حفظ بيانات جديدة لحين تجديد الاشتراك والتفعيل.`);
+      if (!isOnlineSaaSMode) {
+        setShowLicenseModal(true);
+      }
       return true;
     }
     return false;
@@ -2160,10 +2185,24 @@ export default function App() {
 
   const handleOpenShift = async () => {
     if (checkReadOnlyAndWarn()) return;
-    if (shiftData.isOpen) {
-      alert('⚠️ هناك وردية مفتوحة بالفعل لهذا الصالون!');
+    if (shiftData.isOpen || Object.values(branchShifts).some((s: any) => s && s.isOpen)) {
+      alert('⚠️ لا يمكن فتح وردية جديدة: توجد وردية مفتوحة بالفعل لهذا الصالون! يرجى إغلاق الوردية الحالية أولاً.');
       return;
     }
+
+    // التحقق الصارم من قاعدة البيانات لمنع فتح أكثر من وردية لنفس الصالون عبر الأجهزة
+    try {
+      const activeDbShift = await DB.getActiveWorkShift(settings.salonId, activeBranchId);
+      if (activeDbShift && (activeDbShift.status === 'open' || !activeDbShift.closedAt)) {
+        applyActiveWorkShift(activeDbShift, activeBranchId);
+        alert(`⚠️ لا يمكن فتح وردية جديدة: توجد وردية أخرى مفتوحة بالفعل لهذا الصالون في قاعدة البيانات (كود الوردية: ${activeDbShift.shiftCode || activeDbShift.id}). يرجى إغلاقها أولاً.`);
+        setShowOpenModal(false);
+        return;
+      }
+    } catch (e) {
+      console.warn('Error checking active shift in DB:', e);
+    }
+
     const shiftDateVal = openShiftForm.date?.trim() || getLocalTodayDateString();
     const activeBranch = branches.find(b => b.id === activeBranchId) || branches[0];
     const shiftId = 'SHIFT-' + Math.random().toString(36).substr(2, 9).toUpperCase();
@@ -2231,9 +2270,10 @@ export default function App() {
     setShiftData({ 
       isOpen: true, 
       date: shiftDateVal, 
-      initialCash: openShiftForm.initialCash, 
+      initialCash: Number(openShiftForm.initialCash) || 0, 
       shiftId, 
       shiftCode,
+      branchId: activeBranchId,
       openedAt: nowIso,
       openedByUserId: currentUser?.id,
       openedByUserName: currentUser?.name || 'الكاشير',
@@ -2357,11 +2397,12 @@ export default function App() {
       !t.description?.includes('تحويل')
     ).reduce((s, t) => s + (Number(t.amount) || 0), 0);
 
-    const expectedCash = (Number(shiftData.initialCash) || 0) + totalCashSales - shiftExpenses;
+    const nowIso = new Date().toISOString();
+    const effectiveShiftCode = currentShiftCode || (shiftData as any)?.shiftCode || (`SH-${(shiftData.date || '').replace(/-/g, '')}-01`);
 
     const closedShift: Partial<WorkShift> = {
       id: (shiftData as any).shiftId || ('SHIFT-' + Math.random().toString(36).substr(2, 9).toUpperCase()),
-      shiftCode: currentShiftCode || undefined,
+      shiftCode: effectiveShiftCode,
       salonId: settings.salonId,
       branchId: activeBranchId,
       shiftDate: shiftData.date,
@@ -2370,7 +2411,7 @@ export default function App() {
       openedByUserName: (shiftData as any).openedByUserName || undefined,
       openedByName: (shiftData as any).openedByName || (shiftData as any).openedByUserName || undefined,
       openedByRole: (shiftData as any).openedByRole || undefined,
-      closedAt: now,
+      closedAt: nowIso,
       closedByUserId: currentUser?.id,
       closedByUserName: currentUser?.name || 'الكاشير',
       closedByName: currentUser?.name || 'الكاشير',
@@ -2388,11 +2429,14 @@ export default function App() {
     // تصفير عداد الأدوار للوردية القادمة ليبدأ من 1
     QueueService.resetShiftQueue(settings.salonId, activeBranchId, shiftData.date);
 
+    // فتح نافذة طباعة تقرير الإغلاق فوراً ومع الإغلاق تلقائياً
+    handlePrintClosingShiftReport(settings.paperSize || '80mm');
+
     setShiftData({ 
       isOpen: false, 
       date: '', 
       initialCash: 0, 
-      lastClosedAt: now,
+      lastClosedAt: nowIso,
       shiftId: undefined,
       shiftCode: undefined 
     });
@@ -2607,10 +2651,16 @@ export default function App() {
     }
 
     // 4. 🔄 حفظ فوري في Supabase لضمان بقاء وتوثيق البيانات
-    DB.saveInvoice(invoiceWithBranch, settings.salonId).catch(err => console.error('DB.saveInvoice error:', err));
-    if (newTrxs.length > 0) {
-      DB.saveTransactions(newTrxs, settings.salonId).catch(err => console.error('DB.saveTransactions error:', err));
-    }
+    (async () => {
+      try {
+        const saved = await DB.saveInvoice(invoiceWithBranch, settings.salonId);
+        if (saved && newTrxs.length > 0) {
+          await DB.saveTransactions(newTrxs, settings.salonId);
+        }
+      } catch (err) {
+        console.error('DB checkout persistence error:', err);
+      }
+    })();
 
     setActiveBookingForPOS(null);
   };
@@ -2645,6 +2695,7 @@ export default function App() {
       case 'pos': return (
         <POSScreen 
           settings={settings} 
+          branches={branches}
           activeBranchId={activeBranchId}
           isShiftOpen={shiftData.isOpen} 
           shiftDate={shiftData.date} 
@@ -3244,19 +3295,7 @@ export default function App() {
           }).catch(() => {});
           DB.fetchInvoices(salon.id).then(dbInvs => {
             if (dbInvs && dbInvs.length > 0) {
-              setInvoices(dbInvs.map((inv: any) => ({
-                ...inv,
-                vatAmount: inv.vat,
-                cashbackUsed: inv.cashbackUsed ?? 0,
-                paymentMethods: inv.paymentMethods || [],
-                isRemedyInvoice: inv.isRemedy || false,
-                remedyReason: inv.remedyNotes || '',
-                relatedComplaintId: inv.relatedComplaintId || '',
-                originalInvoiceId: inv.originalInvoiceId || '',
-                zatcaQr: inv.zatcaQr || '',
-                zatcaHash: inv.zatcaHash || '',
-                etaSubmissionUuid: inv.etaSubmissionUuid || '',
-              })));
+              setInvoices(dbInvs.map(dbInvoiceToApp));
             }
           }).catch(() => {});
           DB.fetchSalesReturns(salon.id).then(returns => {
@@ -3689,50 +3728,114 @@ export default function App() {
             
             <div className="flex items-center gap-2 sm:gap-3">
               {/* License Status Pill Button */}
-              <button
-                onClick={() => setShowLicenseModal(true)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-extrabold text-xs transition-all cursor-pointer shadow-xs active:scale-95 ${
-                  !licenseInfo || !licenseInfo.isLicensed || licenseInfo.status === 'expired'
-                    ? 'bg-rose-100 text-rose-800 border border-rose-300 hover:bg-rose-200 animate-pulse'
-                    : licenseInfo.status === 'tampered'
-                    ? 'bg-rose-100 text-rose-800 border border-rose-300 hover:bg-rose-200'
-                    : (licenseInfo.daysLeft !== null && licenseInfo.daysLeft <= 5)
-                    ? 'bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-200 animate-pulse'
-                    : 'bg-emerald-100 text-emerald-900 border border-emerald-300 hover:bg-emerald-200 shadow-sm'
-                }`}
-                title="حالة ترخيص وتفعيل البرنامج - انقر للتجديد أو إدخال كود التفعيل"
-              >
-                <ShieldCheck size={14} className={!licenseInfo || !licenseInfo.isLicensed || licenseInfo.status === 'expired' ? 'text-rose-600' : 'text-emerald-700'} />
-                <span>
-                  {!licenseInfo
-                    ? 'فحص الترخيص...'
-                    : licenseInfo.status === 'tampered'
-                    ? 'مراجعة الترخيص ⚠️'
-                    : !licenseInfo.isLicensed || licenseInfo.status === 'expired'
-                    ? 'مطلوب التفعيل 🔑'
-                    : licenseInfo.mode === 'lifetime'
-                    ? 'مفعل مدى الحياة 👑'
-                    : licenseInfo.mode === 'days'
-                    ? `مفعل لمدة ${licenseInfo.daysLeft} يوم ✅`
-                    : licenseInfo.mode === 'runs'
-                    ? `مفعل لـ ${licenseInfo.runsLeft} تشغيلة 🚀`
-                    : licenseInfo.mode === 'trial_auto'
-                    ? `مفعل تجريبياً (${licenseInfo.daysLeft} يوم) ⏳`
-                    : `مفعل (${licenseInfo.daysLeft || 0} يوم) ✅`}
-                </span>
-              </button>
+              {isOnlineSaaSMode ? (
+                <a
+                  href={`https://wa.me/201014889704?text=${encodeURIComponent(`السلام عليكم، استفسار بخصوص اشتراك صالون (${subscription.organizationName || settings.salonName}) كود: ${subscription.salonCode || settings.salonCode || ''}`)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-extrabold text-xs transition-all cursor-pointer shadow-xs active:scale-95 ${
+                    isSubscriptionBlocked
+                      ? 'bg-rose-100 text-rose-800 border border-rose-300 hover:bg-rose-200 animate-pulse'
+                      : isExpiringSoon
+                      ? 'bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-200 animate-pulse'
+                      : subscription.status === 'trial'
+                      ? 'bg-sky-100 text-sky-900 border border-sky-300 hover:bg-sky-200'
+                      : 'bg-emerald-100 text-emerald-900 border border-emerald-300 hover:bg-emerald-200 shadow-sm'
+                  }`}
+                  title="حالة اشتراك الصالون السحابي - انقر للتواصل وتجديد الاشتراك"
+                >
+                  <ShieldCheck size={14} className={isSubscriptionBlocked ? 'text-rose-600' : isExpiringSoon ? 'text-amber-700' : 'text-emerald-700'} />
+                  <span>
+                    {isSubscriptionBlocked
+                      ? 'الاشتراك منتهي (قراءة فقط) ⛔'
+                      : isExpiringSoon
+                      ? `متبقي ${onlineSubscriptionDaysLeft} ${onlineSubscriptionDaysLeft === 1 ? 'يوم' : 'أيام'} للتجديد ⏳`
+                      : subscription.status === 'trial'
+                      ? `تجريبي (${onlineSubscriptionDaysLeft !== null ? `${onlineSubscriptionDaysLeft} يوم` : 'نشط'}) ⏳`
+                      : `اشتراك نشط (${onlineSubscriptionDaysLeft !== null ? `${onlineSubscriptionDaysLeft} يوم` : 'مفعل'}) ✅`}
+                  </span>
+                </a>
+              ) : (
+                <button
+                  onClick={() => setShowLicenseModal(true)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-extrabold text-xs transition-all cursor-pointer shadow-xs active:scale-95 ${
+                    !licenseInfo || !licenseInfo.isLicensed || licenseInfo.status === 'expired'
+                      ? 'bg-rose-100 text-rose-800 border border-rose-300 hover:bg-rose-200 animate-pulse'
+                      : licenseInfo.status === 'tampered'
+                      ? 'bg-rose-100 text-rose-800 border border-rose-300 hover:bg-rose-200'
+                      : (licenseInfo.daysLeft !== null && licenseInfo.daysLeft <= 4)
+                      ? 'bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-200 animate-pulse'
+                      : 'bg-emerald-100 text-emerald-900 border border-emerald-300 hover:bg-emerald-200 shadow-sm'
+                  }`}
+                  title="حالة ترخيص وتفعيل البرنامج - انقر للتجديد أو إدخال كود التفعيل"
+                >
+                  <ShieldCheck size={14} className={!licenseInfo || !licenseInfo.isLicensed || licenseInfo.status === 'expired' ? 'text-rose-600' : 'text-emerald-700'} />
+                  <span>
+                    {!licenseInfo
+                      ? 'فحص الترخيص...'
+                      : licenseInfo.status === 'tampered'
+                      ? 'مراجعة الترخيص ⚠️'
+                      : !licenseInfo.isLicensed || licenseInfo.status === 'expired'
+                      ? 'مطلوب التفعيل 🔑'
+                      : licenseInfo.mode === 'lifetime'
+                      ? 'مفعل مدى الحياة 👑'
+                      : licenseInfo.mode === 'days'
+                      ? `مفعل لمدة ${licenseInfo.daysLeft} يوم ✅`
+                      : licenseInfo.mode === 'runs'
+                      ? `مفعل لـ ${licenseInfo.runsLeft} تشغيلة 🚀`
+                      : licenseInfo.mode === 'trial_auto'
+                      ? `مفعل تجريبياً (${licenseInfo.daysLeft} يوم) ⏳`
+                      : `مفعل (${licenseInfo.daysLeft || 0} يوم) ✅`}
+                  </span>
+                </button>
+              )}
 
               {/* Shift Status Pill */}
-              <div className={`hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-xl font-extrabold text-[11px] ${
-                shiftData.isOpen ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'
-              }`}>
-                <span className={`w-2 h-2 rounded-full ${shiftData.isOpen ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`}></span>
-                <span>{shiftData.isOpen ? `الوردية مفتوحة (${(shiftData as any)?.shiftCode || shiftData.date})` : 'الوردية مغلقة'}</span>
+              <div 
+                className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs transition-all shadow-2xs select-none ${
+                  shiftData.isOpen 
+                    ? 'bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100/70' 
+                    : 'bg-red-50 text-red-700 border border-red-200'
+                }`}
+                title={shiftDisplayInfo ? `تاريخ الوردية: ${shiftDisplayInfo.date}\nكود الوردية: ${shiftDisplayInfo.code}\nالمستخدم: ${shiftDisplayInfo.userName}` : 'الوردية مغلقة'}
+              >
+                <span className={`w-2 h-2 rounded-full shrink-0 ${shiftData.isOpen ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`}></span>
+                {shiftData.isOpen && shiftDisplayInfo ? (
+                  <div className="flex items-center gap-1.5 whitespace-nowrap">
+                    <span className="font-extrabold text-emerald-700">تاريخ الوردية:</span>
+                    <span className="font-mono font-black text-emerald-950 bg-white px-1.5 py-0.5 rounded border border-emerald-200 text-xs shadow-2xs">
+                      {shiftDisplayInfo.date}
+                    </span>
+                    <span className="font-mono font-black text-emerald-900 bg-emerald-100/90 px-1.5 py-0.5 rounded border border-emerald-300 text-[11px] tracking-wide" dir="ltr">
+                      ({shiftDisplayInfo.code})
+                    </span>
+                    <span className="text-emerald-300 font-normal">|</span>
+                    <span className="text-emerald-700 font-bold text-[11px]">المستخدم:</span>
+                    <span className="font-extrabold text-emerald-950 text-xs">{shiftDisplayInfo.userName}</span>
+                  </div>
+                ) : (
+                  <span className="font-extrabold text-[11px]">الوردية مغلقة</span>
+                )}
               </div>
 
               {AuthService.canDo('manage_shifts', currentUser) && (
                 <button 
-                  onClick={() => shiftData.isOpen ? setShowCloseModal(true) : setShowOpenModal(true)}
+                  onClick={async () => {
+                    if (shiftData.isOpen || Object.values(branchShifts).some((s: any) => s && s.isOpen)) {
+                      setShowCloseModal(true);
+                      return;
+                    }
+                    try {
+                      const activeDbShift = await DB.getActiveWorkShift(settings.salonId, activeBranchId);
+                      if (activeDbShift && (activeDbShift.status === 'open' || !activeDbShift.closedAt)) {
+                        applyActiveWorkShift(activeDbShift, activeBranchId);
+                        alert(`⚠️ توجد وردية مفتوحة بالفعل لهذا الصالون (كود الوردية: ${activeDbShift.shiftCode || activeDbShift.id}). يرجى إغلاقها أولاً قبل فتح وردية جديدة.`);
+                        setShowCloseModal(true);
+                        return;
+                      }
+                    } catch (e) {}
+                    setShowOpenModal(true);
+                  }}
                   className={`px-3 py-1.5 rounded-xl font-extrabold text-xs shadow-xs transition-all active:scale-95 cursor-pointer ${
                     shiftData.isOpen ? 'bg-slate-800 hover:bg-slate-900 text-white' : 'bg-emerald-600 hover:bg-emerald-700 text-white'
                   }`}
@@ -3787,44 +3890,68 @@ export default function App() {
           <div className={`flex-1 flex flex-col bg-slate-100 relative ${activeTab === 'owner_portal' ? 'overflow-y-auto overflow-x-hidden' : 'overflow-hidden'}`}>
             {/* Top License Warning & Read-Only Banners */}
             {isSubscriptionBlocked ? (
-              /* Red Banner: Read-Only Mode & Expired License */
+              /* Red Banner: Read-Only Mode & Expired Subscription */
               <div className="bg-gradient-to-r from-red-700 via-rose-800 to-red-700 text-white px-4 py-2.5 flex flex-col sm:flex-row items-center justify-between gap-2.5 text-xs font-bold border-b-2 border-red-950 z-30 shrink-0 shadow-lg animate-in fade-in" dir="rtl">
                 <div className="flex items-center gap-2.5">
                   <span className="w-2.5 h-2.5 rounded-full bg-white animate-ping shrink-0"></span>
                   <span className="leading-relaxed">
-                    🔒 <strong>تم تحويل البرنامج إلى وضع القراءة فقط:</strong> انتهت صلاحية الترخيص{licenseInfo?.mode === 'trial_auto' ? ' التجريبي' : ''}. يُمنع نهائياً تسجيل أي فواتير جديدة أو إجراء أي إضافة أو تعديل في كافة بيانات النظام لحين تجديد الاشتراك والتفعيل.
+                    🔒 <strong>تم تحويل البرنامج إلى وضع القراءة فقط:</strong> انتهت صلاحية اشتراك الصالون ({subscription.organizationName || settings.salonName}) بتاريخ {subscription.endDate || settings.subscriptionEndDate}. يُمنع نهائياً تسجيل أي فواتير جديدة أو إجراء أي إضافة أو تعديل في كافة بيانات النظام لحين تجديد الاشتراك.
                   </span>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    onClick={() => setShowLicenseModal(true)}
-                    className="bg-amber-400 hover:bg-amber-300 text-slate-950 px-4 py-1.5 rounded-xl text-xs font-black shadow-md transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 animate-pulse"
-                  >
-                    <Key size={14} className="text-slate-900" />
-                    <span>تجديد / تفعيل الترخيص الآن 🔑</span>
-                  </button>
+                  {isOnlineSaaSMode ? (
+                    <a
+                      href={`https://wa.me/201014889704?text=${encodeURIComponent(`السلام عليكم، ارغب في تجديد اشتراك صالون (${subscription.organizationName || settings.salonName}) كود: ${subscription.salonCode || settings.salonCode || ''}`)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="bg-amber-400 hover:bg-amber-300 text-slate-950 px-4 py-1.5 rounded-xl text-xs font-black shadow-md transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 animate-pulse"
+                    >
+                      <MessageSquare size={14} className="text-slate-900" />
+                      <span>تجديد الاشتراك الآن عبر واتساب 💬</span>
+                    </a>
+                  ) : (
+                    <button
+                      onClick={() => setShowLicenseModal(true)}
+                      className="bg-amber-400 hover:bg-amber-300 text-slate-950 px-4 py-1.5 rounded-xl text-xs font-black shadow-md transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 animate-pulse"
+                    >
+                      <Key size={14} className="text-slate-900" />
+                      <span>تجديد / تفعيل الترخيص الآن 🔑</span>
+                    </button>
+                  )}
                   <span className="bg-black/30 border border-white/20 text-white px-2.5 py-1 rounded-lg text-[11px] font-black shrink-0">
                     وضع القراءة فقط ⛔
                   </span>
                 </div>
               </div>
             ) : isExpiringSoon ? (
-              /* Yellow Banner: Warning 5 days before expiration */
+              /* Yellow Banner: Warning 4 days before expiration */
               <div className="bg-gradient-to-r from-amber-400 via-amber-300 to-amber-400 text-amber-950 px-4 py-2 flex flex-col sm:flex-row items-center justify-between gap-2.5 text-xs font-bold border-b border-amber-500 z-30 shrink-0 shadow-sm animate-in fade-in" dir="rtl">
                 <div className="flex items-center gap-2.5">
                   <span className="w-2.5 h-2.5 rounded-full bg-amber-700 animate-pulse shrink-0"></span>
                   <span>
-                    ⚠️ <strong>تنبيه هام:</strong> متبقي <strong>{licenseInfo?.daysLeft}</strong> {licenseInfo?.daysLeft === 1 ? 'يوم واحد' : licenseInfo?.daysLeft === 2 ? 'يومان' : 'أيام'} في الترخيص / الاشتراك. يرجى تجديد التفعيل لضمان استمرار عمل النظام دون انقطاع وتجنب تحوله لوضع القراءة فقط.
+                    ⚠️ <strong>تنبيه بقرب انتهاء الاشتراك:</strong> متبقي <strong>{isOnlineSaaSMode ? onlineSubscriptionDaysLeft : licenseInfo?.daysLeft}</strong> {(isOnlineSaaSMode ? onlineSubscriptionDaysLeft : licenseInfo?.daysLeft) === 1 ? 'يوم واحد' : (isOnlineSaaSMode ? onlineSubscriptionDaysLeft : licenseInfo?.daysLeft) === 2 ? 'يومان' : 'أيام'} على انتهاء صلاحية اشتراك الصالون (تاريخ الانتهاء: {subscription.endDate || settings.subscriptionEndDate}). يرجى سداد رسوم التجديد لضمان استمرار عمل النظام دون انقطاع وتجنب تحوله إلى وضع القراءة فقط.
                   </span>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    onClick={() => setShowLicenseModal(true)}
-                    className="bg-slate-900 hover:bg-slate-800 text-amber-300 px-3.5 py-1.5 rounded-xl text-xs font-black shadow-sm transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
-                  >
-                    <Key size={13} className="text-amber-400" />
-                    <span>تجديد الاشتراك / إدخال كود التفعيل 🔑</span>
-                  </button>
+                  {isOnlineSaaSMode ? (
+                    <a
+                      href={`https://wa.me/201014889704?text=${encodeURIComponent(`السلام عليكم، ارغب في تجديد اشتراك صالون (${subscription.organizationName || settings.salonName}) كود: ${subscription.salonCode || settings.salonCode || ''} قبل الانتهاء`)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="bg-slate-900 hover:bg-slate-800 text-amber-300 px-3.5 py-1.5 rounded-xl text-xs font-black shadow-sm transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+                    >
+                      <Zap size={13} className="text-amber-400" />
+                      <span>تجديد الاشتراك الآن ⚡</span>
+                    </a>
+                  ) : (
+                    <button
+                      onClick={() => setShowLicenseModal(true)}
+                      className="bg-slate-900 hover:bg-slate-800 text-amber-300 px-3.5 py-1.5 rounded-xl text-xs font-black shadow-sm transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+                    >
+                      <Key size={13} className="text-amber-400" />
+                      <span>تجديد الاشتراك / إدخال كود التفعيل 🔑</span>
+                    </button>
+                  )}
                 </div>
               </div>
             ) : null}
@@ -3869,9 +3996,11 @@ export default function App() {
       {showCloseModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md my-8 overflow-hidden">
-            <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-              <h3 className="font-extrabold text-base text-slate-800">إغلاق الوردية الحالية (Z-Report)</h3>
-              <button onClick={() => setShowCloseModal(false)} className="text-slate-400 hover:text-red-500 font-bold">✕</button>
+            <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+              <div>
+                <h3 className="font-extrabold text-base text-slate-800">إغلاق الوردية الحالية (Z-Report)</h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">مراجعة أرقام الوردية ومطابقة النقدية بالدرج قبل الإغلاق</p>
+              </div>
             </div>
             <div className="p-4 overflow-hidden flex justify-center bg-slate-100 max-h-[60vh] overflow-y-auto">
               <div id="shift-closing-report-receipt-container" className="bg-white shadow-sm p-4 w-full rounded-2xl">
@@ -3894,29 +4023,40 @@ export default function App() {
                 <button 
                   type="button"
                   onClick={() => handlePrintClosingShiftReport(settings.paperSize || '80mm')}
-                  className="flex-1 bg-slate-900 hover:bg-slate-800 text-white font-extrabold py-3 rounded-xl transition-all flex items-center justify-center gap-2 text-xs shadow active:scale-[0.99] cursor-pointer"
+                  className="flex-1 bg-slate-900 hover:bg-slate-800 text-white font-extrabold py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 text-xs shadow active:scale-[0.99] cursor-pointer"
                   title="طباعة إيصال التقرير لطابعة الإيصالات الحرارية (80mm / 58mm)"
                 >
-                  <Printer size={16} className="text-emerald-400" />
-                  <span>طباعة تقرير الوردية الحراري</span>
+                  <Printer size={15} className="text-emerald-400" />
+                  <span>معاينة / طباعة تقرير حراري</span>
                 </button>
                 <button 
                   type="button"
                   onClick={() => handlePrintClosingShiftReport('a4')}
-                  className="bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 font-extrabold py-3 px-3 rounded-xl transition-all flex items-center justify-center gap-1 text-xs shadow-xs active:scale-[0.99] cursor-pointer whitespace-nowrap"
+                  className="bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 font-extrabold py-2.5 px-3 rounded-xl transition-all flex items-center justify-center gap-1 text-xs shadow-xs active:scale-[0.99] cursor-pointer whitespace-nowrap"
                   title="طباعة التقرير على ورق A4 عادي"
                 >
-                  <FileText size={15} className="text-slate-500" />
+                  <FileText size={14} className="text-slate-500" />
                   <span>A4</span>
                 </button>
               </div>
-              <button 
-                type="button"
-                onClick={handleConfirmCloseShift}
-                className="w-full bg-red-600 hover:bg-red-700 text-white font-extrabold py-3 rounded-xl transition-all text-xs shadow cursor-pointer active:scale-[0.99]"
-              >
-                تأكيد إغلاق الوردية وتصفير الخزائن
-              </button>
+
+              {/* أزرار الإجراءات: زر تراجع وزر إغلاق فقط كما طلب المستخدم */}
+              <div className="flex items-center gap-3 pt-1">
+                <button 
+                  type="button"
+                  onClick={() => setShowCloseModal(false)}
+                  className="flex-1 bg-white hover:bg-slate-100 text-slate-700 font-extrabold py-3 rounded-xl transition-all text-xs border border-slate-300 shadow-xs cursor-pointer active:scale-[0.99] text-center"
+                >
+                  تراجع
+                </button>
+                <button 
+                  type="button"
+                  onClick={handleConfirmCloseShift}
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white font-extrabold py-3 rounded-xl transition-all text-xs shadow-md cursor-pointer active:scale-[0.99] text-center flex items-center justify-center gap-1.5"
+                >
+                  إغلاق الوردية
+                </button>
+              </div>
             </div>
           </div>
         </div>

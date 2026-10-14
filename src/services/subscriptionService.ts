@@ -282,6 +282,22 @@ export const SubscriptionService = {
         await new Promise(r => setTimeout(r, 300));
         await DB.saveUser(newAdminUser);
       }
+
+      // 4. Record new subscription / trial row in tenant_subscriptions
+      await DB.recordTenantSubscription({
+        salonId: salonId,
+        planId: newSalon.subscriptionPlan || 'pro',
+        status: newSalon.subscriptionStatus || 'trial',
+        startDate: startDate,
+        endDate: endDate,
+        totalBranches: 1,
+        totalEmployees: 10,
+        billingCycle: 'trial',
+        currency: countryMeta.currency,
+        paidAmount: 0,
+        paymentMethod: 'free_trial',
+        notes: `فترة تجريبية تلقائية عند إنشاء الصالون (${trialDays} أيام)`
+      });
     } catch (cloudErr) {
       console.error('Failed to save new salon entities to cloud database:', cloudErr);
     }
@@ -556,13 +572,38 @@ export const SubscriptionService = {
     const targetStatus = isTrial ? 'trial' : 'active';
     const effectivePlan = salon.subscriptionPlan || 'pro';
 
-    return this.updateSalon(salonId, {
+    const updated = this.updateSalon(salonId, {
       subscriptionEndDate: newEnd.toISOString().split('T')[0],
       subscriptionStatus: targetStatus,
       subscriptionPlan: effectivePlan,
       trialDays: isTrial ? ((Number(salon.trialDays) || 7) + additionalDays) : salon.trialDays,
       isActive: true
     });
+
+    const newEndStr = newEnd.toISOString().split('T')[0];
+    // Record in Supabase tenant_subscriptions
+    DB.recordTenantSubscription({
+      salonId: salonId,
+      planId: effectivePlan,
+      status: targetStatus,
+      startDate: baseDate.toISOString().split('T')[0],
+      endDate: newEndStr,
+      totalBranches: salon.maxBranches || 1,
+      totalEmployees: salon.maxUsers || 10,
+      billingCycle: `${additionalDays}d`,
+      currency: salon.currency || 'SAR',
+      paidAmount: 0,
+      paymentMethod: isTrial ? 'trial_extension' : 'extension',
+      notes: `تمديد الفترة بمقدار (${additionalDays} يوم) بواسطة المبرمج`
+    });
+
+    DB.saveSettings(salonId, {
+      subscriptionEndDate: newEndStr,
+      subscriptionStatus: targetStatus,
+      isSalonActive: true
+    });
+
+    return updated;
   },
 
   /**
@@ -654,14 +695,37 @@ export const SubscriptionService = {
 
     const endDateStr = newEndDate.toISOString().split('T')[0];
 
-    // Update salon
+    // Update salon in local storage and cloud salons table
     const updatedSalon = this.updateSalon(salonId, {
       subscriptionEndDate: endDateStr,
       subscriptionStatus: 'active',
       isActive: true
     });
 
-    // Record payment
+    // 1. Record in Supabase tenant_subscriptions table!
+    DB.recordTenantSubscription({
+      salonId: salon.id,
+      planId: salon.subscriptionPlan || 'pro',
+      status: 'active',
+      startDate: startDateStr,
+      endDate: endDateStr,
+      totalBranches: salon.maxBranches || 1,
+      totalEmployees: salon.maxUsers || 10,
+      billingCycle: options.customDays ? `${options.customDays}d` : `${options.durationMonths}m`,
+      currency: salon.currency || 'SAR',
+      paidAmount: options.amountPaid,
+      paymentMethod: options.paymentMethod,
+      notes: `تجديد اشتراك (${durationLabel}) - سند: ${options.referenceNumber || 'N/A'} - ${options.notes || ''}`
+    });
+
+    // 2. Sync app_settings in Supabase
+    DB.saveSettings(salon.id, {
+      subscriptionEndDate: endDateStr,
+      subscriptionStatus: 'active',
+      isSalonActive: true
+    });
+
+    // Record payment locally
     const paymentRecord: SubscriptionPaymentRecord = {
       id: 'PAY-' + Math.random().toString(36).substring(2, 9).toUpperCase(),
       salonId: salon.id,
@@ -706,21 +770,69 @@ export const SubscriptionService = {
     if (mode === 'trial') {
       const trialDays = options?.days || 7;
       newEnd = new Date(today.getTime() + trialDays * 24 * 3600 * 1000);
-      return this.updateSalon(salonId, {
+      const newEndStr = newEnd.toISOString().split('T')[0];
+      const res = this.updateSalon(salonId, {
         subscriptionStatus: 'trial',
         isActive: true,
         trialDays: trialDays,
-        subscriptionEndDate: newEnd.toISOString().split('T')[0]
+        subscriptionEndDate: newEndStr
       });
+
+      DB.recordTenantSubscription({
+        salonId: salonId,
+        planId: salon.subscriptionPlan || 'pro',
+        status: 'trial',
+        startDate: today.toISOString().split('T')[0],
+        endDate: newEndStr,
+        totalBranches: salon.maxBranches || 1,
+        totalEmployees: salon.maxUsers || 10,
+        billingCycle: 'trial',
+        currency: salon.currency || 'SAR',
+        paidAmount: 0,
+        paymentMethod: 'free_trial',
+        notes: `تفعيل فترة تجريبية (${trialDays} أيام) بواسطة المبرمج`
+      });
+
+      DB.saveSettings(salonId, {
+        subscriptionEndDate: newEndStr,
+        subscriptionStatus: 'trial',
+        isSalonActive: true
+      });
+
+      return res;
     } else {
       const months = options?.months || 1;
       newEnd = new Date(today);
       newEnd.setMonth(newEnd.getMonth() + months);
-      return this.updateSalon(salonId, {
+      const newEndStr = newEnd.toISOString().split('T')[0];
+      const res = this.updateSalon(salonId, {
         subscriptionStatus: 'active',
         isActive: true,
-        subscriptionEndDate: newEnd.toISOString().split('T')[0]
+        subscriptionEndDate: newEndStr
       });
+
+      DB.recordTenantSubscription({
+        salonId: salonId,
+        planId: salon.subscriptionPlan || 'pro',
+        status: 'active',
+        startDate: today.toISOString().split('T')[0],
+        endDate: newEndStr,
+        totalBranches: salon.maxBranches || 1,
+        totalEmployees: salon.maxUsers || 10,
+        billingCycle: `${months}m`,
+        currency: salon.currency || 'SAR',
+        paidAmount: 0,
+        paymentMethod: 'manual_activation',
+        notes: `تفعيل وتنشيط اشتراك رسمي (${months} شهور) بواسطة المبرمج`
+      });
+
+      DB.saveSettings(salonId, {
+        subscriptionEndDate: newEndStr,
+        subscriptionStatus: 'active',
+        isSalonActive: true
+      });
+
+      return res;
     }
   },
 

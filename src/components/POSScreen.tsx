@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { 
   AppSettings, CartItem, ServiceItem, Booking, Invoice, Client, Category, Employee,
-  getClientTier, getNextClientTier, calculateClientTotalSpend, ClientTierConfig, HeldInvoice, PromoCode, PromoCodeUsage, TipRecord, AdvancePayment, ClientPreferences, Transaction, FingerprintLog, SalesReturn 
+  getClientTier, getNextClientTier, calculateClientTotalSpend, ClientTierConfig, HeldInvoice, PromoCode, PromoCodeUsage, TipRecord, AdvancePayment, ClientPreferences, Transaction, FingerprintLog, SalesReturn, Branch 
 } from '../types';
 import { processImageFile, MAX_IMAGE_SIZE_KB, compressClientBeforeAfterPhoto } from '../utils/imageUpload';
 import { ComplaintsService } from '../services/complaintsService';
@@ -21,6 +21,7 @@ import { RealtimeSync } from '../services/realtimeSync';
 import { isBarberEmployee, isReferralEligibleEmployee } from '../utils/employeeHelper';
 import { ClosingReportReceipt } from './ClosingReportReceipt';
 import { directPrintHtml, isMobileOrTablet, printHtmlToMainServer } from '../utils/print';
+import { InvoiceReceiptCard, executePrintInvoiceReceipt } from './InvoiceReceiptCard';
 import { SalesReturnModal } from './SalesReturnModal';
 import { SalesReturnVoucherModal } from './SalesReturnVoucherModal';
 import { generateBarcodeSvgString } from '../utils/barcodeGenerator';
@@ -215,6 +216,7 @@ export function POSScreen({
   setTips,
   currentUser,
   activeBranchId,
+  branches = [],
   transactions = [],
   shiftData,
   fingerprintLogs = [],
@@ -226,6 +228,7 @@ export function POSScreen({
   setItemMovements,
 }: { 
   settings: AppSettings, 
+  branches?: Branch[],
   activeBranchId?: string,
   isShiftOpen: boolean,
   shiftDate: string,
@@ -266,6 +269,65 @@ export function POSScreen({
   const [posReturnModalInitialMode, setPosReturnModalInitialMode] = useState<'by_invoice' | 'general'>('by_invoice');
   const [posVoucherReturn, setPosVoucherReturn] = useState<SalesReturn | null>(null);
   const canMakeSalesReturn = AuthService.canDo('sales_return', currentUser);
+
+  const effectiveIsShiftOpen = Boolean(
+    isShiftOpen || 
+    shiftData?.isOpen || 
+    (() => {
+      try {
+        const raw = localStorage.getItem('smartcut_work_shifts_state');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (activeBranchId && parsed[activeBranchId]?.isOpen) return true;
+          if (parsed['b-main']?.isOpen) return true;
+          return Object.values(parsed).some((s: any) => s?.isOpen);
+        }
+      } catch (e) {}
+      return false;
+    })()
+  );
+
+  const effectiveShiftDate = (isShiftOpen && shiftDate) || (shiftData?.isOpen && shiftData?.date) || (() => {
+    try {
+      const raw = localStorage.getItem('smartcut_work_shifts_state');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (activeBranchId && parsed[activeBranchId]?.date) return parsed[activeBranchId].date;
+        if (parsed['b-main']?.date) return parsed['b-main'].date;
+        const anyS: any = Object.values(parsed).find((s: any) => s?.isOpen && s?.date);
+        if (anyS?.date) return anyS.date;
+      }
+    } catch (e) {}
+    return shiftDate || new Date().toISOString().split('T')[0];
+  })();
+
+  const effectiveShiftCode = (shiftData as any)?.shiftCode || (() => {
+    try {
+      const raw = localStorage.getItem('smartcut_work_shifts_state');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (activeBranchId && parsed[activeBranchId]?.shiftCode) return parsed[activeBranchId].shiftCode;
+        if (parsed['b-main']?.shiftCode) return parsed['b-main'].shiftCode;
+        const anyS: any = Object.values(parsed).find((s: any) => s?.isOpen && s?.shiftCode);
+        if (anyS?.shiftCode) return anyS.shiftCode;
+      }
+    } catch (e) {}
+    return undefined;
+  })();
+
+  const effectiveShiftId = (shiftData as any)?.shiftId || (() => {
+    try {
+      const raw = localStorage.getItem('smartcut_work_shifts_state');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (activeBranchId && parsed[activeBranchId]?.shiftId) return parsed[activeBranchId].shiftId;
+        if (parsed['b-main']?.shiftId) return parsed['b-main'].shiftId;
+        const anyS: any = Object.values(parsed).find((s: any) => s?.isOpen && s?.shiftId);
+        if (anyS?.shiftId) return anyS.shiftId;
+      }
+    } catch (e) {}
+    return undefined;
+  })();
 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -338,7 +400,7 @@ export function POSScreen({
 
   // Fast Shift Schedule Modal State
   const [showScheduleModal, setShowScheduleModal] = useState(false);
-  const [scheduleEffectiveDate, setScheduleEffectiveDate] = useState(isShiftOpen ? shiftDate : new Date().toISOString().split('T')[0]);
+  const [scheduleEffectiveDate, setScheduleEffectiveDate] = useState(effectiveIsShiftOpen ? effectiveShiftDate : new Date().toISOString().split('T')[0]);
   const [employeeSchedules, setEmployeeSchedules] = useState<Record<string, { checkIn: string, checkOut: string }>>({});
   const [bulkCheckIn, setBulkCheckIn] = useState('09:00');
   const [bulkCheckOut, setBulkCheckOut] = useState('18:00');
@@ -617,7 +679,7 @@ export function POSScreen({
       };
     });
     setEmployeeSchedules(initialMap);
-    setScheduleEffectiveDate(isShiftOpen ? shiftDate : new Date().toISOString().split('T')[0]);
+    setScheduleEffectiveDate(effectiveIsShiftOpen ? effectiveShiftDate : new Date().toISOString().split('T')[0]);
     setShowScheduleModal(true);
   };
 
@@ -1116,7 +1178,7 @@ export function POSScreen({
 
     const initialInv: Invoice = {
       id: 'INV-' + Math.random().toString(36).substr(2,9).toUpperCase(),
-      date: isShiftOpen ? (shiftDate + 'T' + new Date().toTimeString().split(' ')[0]) : new Date().toISOString(),
+      date: effectiveIsShiftOpen ? (effectiveShiftDate + 'T' + new Date().toTimeString().split(' ')[0]) : new Date().toISOString(),
       clientName: selectedClient ? selectedClient.name : (clientSearch || 'عميل نقدي'),
       clientId: selectedClient ? selectedClient.id : undefined,
       clientPhone: selectedClient ? selectedClient.phone : undefined,
@@ -1128,9 +1190,9 @@ export function POSScreen({
       discount: isRemedyInvoice ? subtotal : discountAmount,
       paymentMethod: splits[0]?.treasuryId || 'cash',
       treasuryId: splits[0]?.treasuryId || 'main',
-      shiftId: (shiftData as any)?.shiftId || undefined,
-      shiftCode: (shiftData as any)?.shiftCode || undefined,
-      shiftDate: isShiftOpen ? shiftDate : undefined,
+      shiftId: effectiveShiftId,
+      shiftCode: effectiveShiftCode,
+      shiftDate: effectiveIsShiftOpen ? effectiveShiftDate : undefined,
       advanceDeduction: advanceDeduction > 0 ? advanceDeduction : undefined,
       advancePayments: activeAdvancePayments.length > 0 ? activeAdvancePayments : undefined,
       bookingId: activeBookingId || initialBooking?.id || undefined,
@@ -1390,27 +1452,39 @@ export function POSScreen({
       }
       setActiveHeldInvoiceId(null);
       
+      // إعادة ضبط الكاشير وبدء فاتورة جديدة فوراً ونزول جميع الخدمات
+      setCart([]);
+      setSelectedClient(null);
+      setClientSearch('');
+      setDiscount({ type: 'fixed', value: 0 });
+      setAdvanceDeduction(0);
+      setActiveAdvancePayments([]);
+      setActiveBookingId(undefined);
+      setActiveQueueNumber(null);
+      setIsRemedyInvoice(false);
+      setBeforePhotoUrl('');
+      setAfterPhotoUrl('');
+      setSplitAmounts({});
+      setAppliedPromo(null);
+      setPromoDiscountAmount(0);
+      setPromoError(null);
+      setItemTypeFilter('service');
+      setSelectedCategory('all');
+      setSearchQuery('');
+      try { localStorage.removeItem('smartcut_pos_active_draft'); } catch {}
+      if (onClearInitial) onClearInitial();
+
       setCompletedInvoice(newInvoice);
       setShowPaymentModal(false);
 
-      // إعادة ضبط الكاشير وبدء فاتورة جديدة فوراً ونزول جميع الخدمات
-      resetToNewInvoice();
-
-      // استشعار نوع الجهاز: موبايل أو تابلت vs كمبيوتر رئيسي
-      if (isMobileOrTablet()) {
-        try {
-          const receiptHtml = buildReceiptHtml(newInvoice, settings);
-          printHtmlToMainServer(receiptHtml, settings.printerName);
-        } catch (e) {
-          console.error('[POS] Mobile remote print error:', e);
-        }
-        setShowReceiptModal(false);
-        setMobilePrintNotice(`✅ تم سداد الفاتورة #${newInvoice.id} بنجاح وإرسال أمر الطباعة صامتاً لطابعة الكاشير الرئيسية 🖨️`);
-        setTimeout(() => setMobilePrintNotice(null), 4000);
-      } else {
-        // على جهاز الكمبيوتر / البي سي: إعادة معاينة الفاتورة قبل الطباعة بعد السداد
-        setCompletedInvoice(newInvoice);
+      if (shouldPrint) {
         setShowReceiptModal(true);
+        // فتح أمر الطباعة فورياً ومباشرة
+        setTimeout(() => {
+          executePrintInvoiceReceipt('receipt-content', newInvoice.id);
+        }, 150);
+      } else {
+        setShowReceiptModal(false);
       }
     } catch (err: any) {
       console.error('Payment confirmation error:', err);
@@ -1420,46 +1494,22 @@ export function POSScreen({
     }
   };
 
-  // 1. إغلاق شاشة الفاتورة دون أي طباعة وبدء فاتورة جديدة فوراً
+  // إغلاق شاشة الفاتورة دون أي طباعة وبدء فاتورة جديدة فوراً
   const handleCloseReceiptModal = () => {
-    resetToNewInvoice();
+    setShowReceiptModal(false);
+    setCompletedInvoice(null);
   };
 
-  // 2. طباعة الفاتورة مباشرة بدون أي معاينة وبدء فاتورة جديدة فوراً مع نزول كافة الخدمات
-  const printReceiptDirect = async (overrideHtml?: string) => {
-    const printContent = overrideHtml || document.getElementById('receipt-content')?.outerHTML || (completedInvoice ? buildReceiptHtml(completedInvoice, settings) : '');
-    if (!printContent) return;
-
-    await directPrintHtml(printContent, settings.printerName);
-
-    // إغلاق الشاشة فوراً وتنزيل كافة الخدمات
-    resetToNewInvoice();
+  // طباعة الفاتورة مباشرة
+  const printReceiptDirect = () => {
+    if (!completedInvoice) return;
+    executePrintInvoiceReceipt('receipt-content', completedInvoice.id);
   };
 
-  // 3. معاينة الفاتورة قبل الطباعة مع خيارات وإعدادات الطباعة العادية للمتصفح
+  // معاينة الفاتورة قبل الطباعة
   const printReceiptPreview = () => {
-    const printContent = document.getElementById('receipt-content')?.outerHTML;
-    if (printContent) {
-      const printWindow = window.open('', '', 'width=800,height=650');
-      if (printWindow) {
-        printWindow.document.write('<!DOCTYPE html><html dir="rtl" lang="ar"><head><title>معاينة الفاتورة قبل الطباعة</title>');
-        printWindow.document.write('<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap" rel="stylesheet">');
-        printWindow.document.write('<style>');
-        printWindow.document.write('@page { size: 80mm auto; margin: 4mm; }');
-        printWindow.document.write('body { margin: 0; padding: 8px; display: flex; justify-content: center; background-color: #fff; direction: rtl; font-family: "Cairo", sans-serif; }');
-        printWindow.document.write('@media print { body { padding: 0; margin: 0; } @page { margin: 0; } }');
-        printWindow.document.write('</style>');
-        printWindow.document.write('</head><body>');
-        printWindow.document.write(printContent);
-        printWindow.document.write('</body></html>');
-        printWindow.document.close();
-        
-        printWindow.setTimeout(() => {
-          printWindow.focus();
-          printWindow.print();
-        }, 500);
-      }
-    }
+    if (!completedInvoice) return;
+    executePrintInvoiceReceipt('receipt-content', completedInvoice.id);
   };
 
   const handleClientSearch = () => {
@@ -2162,7 +2212,7 @@ export function POSScreen({
     setCart(cart.filter(c => c.cartId !== cartId));
   };
 
-  if (!isShiftOpen) {
+  if (!effectiveIsShiftOpen) {
     return (
       <div className="flex flex-col h-full w-full bg-slate-50 items-center justify-center p-6 text-center">
         <div className="bg-white p-10 rounded-3xl shadow-sm border border-slate-200 max-w-md w-full">
@@ -3352,7 +3402,7 @@ export function POSScreen({
                 </div>
                 <div>
                   <h3 className="font-extrabold text-sm text-slate-800">تقرير اليومية (الوردية الحالية)</h3>
-                  <p className="text-[10px] text-slate-400 font-bold">{shiftData?.date || shiftDate || new Date().toISOString().split('T')[0]}</p>
+                  <p className="text-[10px] text-slate-400 font-bold">{effectiveShiftDate}</p>
                 </div>
               </div>
               <button 
@@ -3368,9 +3418,10 @@ export function POSScreen({
               <div id="pos-daily-report-content" className="bg-white shadow-sm p-4 w-full rounded-2xl">
                 <ClosingReportReceipt 
                   settings={settings}
-                  transactions={(transactions || []).filter(t => t.date?.startsWith(shiftData?.date || shiftDate || ''))}
-                  invoices={(invoices || []).filter(i => i.date?.startsWith(shiftData?.date || shiftDate || ''))}
-                  dateLabel={shiftData?.date || shiftDate || new Date().toISOString().split('T')[0]}
+                  shiftCode={effectiveShiftCode}
+                  transactions={(transactions || []).filter(t => (t.shiftCode && effectiveShiftCode && t.shiftCode === effectiveShiftCode) || (t.shiftDate && effectiveShiftDate && t.shiftDate === effectiveShiftDate) || t.date?.startsWith(effectiveShiftDate || ''))}
+                  invoices={(invoices || []).filter(i => (i.shiftCode && effectiveShiftCode && i.shiftCode === effectiveShiftCode) || (i.shiftDate && effectiveShiftDate && i.shiftDate === effectiveShiftDate) || i.date?.startsWith(effectiveShiftDate || ''))}
+                  dateLabel={effectiveShiftDate || new Date().toISOString().split('T')[0]}
                   initialCash={shiftData?.initialCash || 0}
                   userName={currentUser?.name || settings.ownerName || 'المسؤول'}
                   employees={employees}
@@ -3669,172 +3720,58 @@ export function POSScreen({
         </div>
       )}
 
-      {/* Receipt / Invoice Print Modal (Desktop only) */}
-      {showReceiptModal && completedInvoice && !isMobileOrTablet() && (
+      {/* Receipt / Invoice Print Modal */}
+      {showReceiptModal && completedInvoice && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+          <div className="bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] w-full max-w-sm">
             <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-              <h3 className="font-bold text-lg text-slate-800">معاينة الفاتورة</h3>
-              <button onClick={handleCloseReceiptModal} className="text-slate-400 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-xl transition-colors cursor-pointer" title="إغلاق وبدء فاتورة جديدة (Esc)"><X size={20}/></button>
+              <div>
+                <h3 className="font-extrabold text-sm text-slate-800">فاتورة نقطة البيع</h3>
+                <p className="text-[11px] text-slate-500 font-mono mt-0.5">#{completedInvoice.id}</p>
+              </div>
+              <button 
+                onClick={handleCloseReceiptModal} 
+                className="text-slate-400 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-xl transition-colors cursor-pointer" 
+                title="إغلاق وبدء فاتورة جديدة (Esc)"
+              >
+                <X size={20}/>
+              </button>
             </div>
             
-            {/* Thermal Paper Preview Area */}
-            <div className="bg-slate-200 p-8 overflow-y-auto flex justify-center" style={{ fontFamily: '"Cairo", sans-serif' }}>
-              <div id="receipt-content" className="bg-white shadow-sm" style={{ width: '100%', maxWidth: '72mm', padding: '5mm', fontFamily: '"Cairo", sans-serif', color: '#000', margin: '0 auto', boxSizing: 'border-box' }}>
-                <div style={{ textAlign: 'center', marginBottom: '15px' }}>
-                  {settings.logoUrl && (
-                    <img src={settings.logoUrl} alt="Logo" style={{ maxWidth: '80px', maxHeight: '80px', margin: '0 auto 10px auto', display: 'block' }} />
-                  )}
-                  <h2 style={{ fontSize: '18px', fontWeight: 'bold', margin: '0 0 5px 0' }}>{settings.salonName || 'صالون العناية'}</h2>
-                  {completedInvoice.id && (
-                    <div 
-                      style={{ margin: '6px auto 10px auto', textAlign: 'center' }} 
-                      dangerouslySetInnerHTML={{ __html: generateBarcodeSvgString(completedInvoice.id, { height: 32, width: 1.3, fontSize: 10 }) }} 
-                    />
-                  )}
-                  <div style={{ borderBottom: '1px dashed #000', margin: '12px 0' }}></div>
-                  <p style={{ fontSize: '13px', margin: '0' }}>رقم الفاتورة: {completedInvoice.id}</p>
-                  <p style={{ fontSize: '13px', margin: '0' }}>التاريخ: {new Date(completedInvoice.date).toLocaleString('ar-SA')}</p>
-                  {completedInvoice.clientName && (
-                    <p style={{ fontSize: '13px', margin: '5px 0 0 0' }}>العميل: {completedInvoice.clientName}</p>
-                  )}
-                </div>
-                
-                <div style={{ borderBottom: '1px dashed #000', margin: '10px 0' }}></div>
-                
-                <table style={{ width: '100%', fontSize: '13px', textAlign: 'right', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid #000' }}>
-                      <th style={{ padding: '8px 0', width: '50%' }}>الصنف</th>
-                      <th style={{ padding: '8px 0', textAlign: 'center', width: '20%' }}>الكمية</th>
-                      <th style={{ padding: '8px 0', textAlign: 'left', width: '30%' }}>السعر</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {completedInvoice.items.map((item, idx) => (
-                      <tr key={idx} style={{ borderBottom: '1px dotted #ccc' }}>
-                        <td style={{ padding: '8px 0' }}>
-                          <div style={{ fontWeight: 'bold' }}>{item.serviceName}</div>
-                          <div style={{ fontSize: '11px', color: '#555' }}>بواسطة: {item.technicianName || '-'}</div>
-                        </td>
-                        <td style={{ padding: '8px 0', textAlign: 'center' }}>{item.quantity || 1}</td>
-                        <td style={{ padding: '8px 0', textAlign: 'left' }}>{item.price.toFixed(2)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                
-                <div style={{ borderBottom: '1px dashed #000', margin: '10px 0' }}></div>
-                
-                <div style={{ fontSize: '14px', lineHeight: '1.8' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span>المجموع:</span>
-                    <span>{completedInvoice.items.reduce((sum, item) => sum + (item.price * (item.quantity || 1)), 0).toFixed(2)}</span>
-                  </div>
-                  {completedInvoice.discount > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>الخصم:</span>
-                      <span>- {completedInvoice.discount.toFixed(2)}</span>
-                    </div>
-                  )}
-                  {settings.vatEnabled && (() => {
-                    const invoiceSubtotal = completedInvoice.items.reduce((sum, item) => sum + (item.price * (item.quantity || 1)), 0);
-                    const totalInclusive = Math.max(0, invoiceSubtotal - completedInvoice.discount);
-                    const baseTotal = totalInclusive / (1 + settings.vatRate / 100);
-                    const vatAmt = totalInclusive - baseTotal;
-                    return (
-                      <>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
-                          <span>المبلغ قبل الضريبة:</span>
-                          <span>{baseTotal.toFixed(2)}</span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
-                          <span>الضريبة ({settings.vatRate}%):</span>
-                          <span>{vatAmt.toFixed(2)} شامل</span>
-                        </div>
-                      </>
-                    );
-                  })()}
-                  {((completedInvoice.advanceDeduction || 0) > 0 || advanceDeduction > 0) && (() => {
-                    const advAmt = completedInvoice.advanceDeduction || advanceDeduction;
-                    const advList = completedInvoice.advancePayments || activeAdvancePayments;
-                    return (
-                      <div style={{ margin: '4px 0', padding: '4px 0', borderTop: '1px dotted #a7f3d0', borderBottom: '1px dotted #a7f3d0' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#059669', fontWeight: 'bold' }}>
-                          <span>المدفوع مقدماً (عربون الحجز):</span>
-                          <span>- {advAmt.toFixed(2)}</span>
-                        </div>
-                        {advList && advList.length > 0 && (
-                          <div style={{ fontSize: '10px', color: '#047857', marginTop: '2px' }}>
-                            {advList.map((adv, idx) => (
-                              <div key={adv.id || idx} style={{ display: 'flex', justifyContent: 'space-between', paddingLeft: '8px' }}>
-                                <span>• {adv.treasuryName || adv.paymentMethod || 'دفعة'} ({adv.date?.split('T')[0] || ''}):</span>
-                                <span>{adv.amount.toFixed(2)}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '15px', marginTop: '5px', paddingTop: '5px', borderTop: '1px solid #000' }}>
-                    <span>الصافي المدفوع اليوم:</span>
-                    <span>{completedInvoice.total.toFixed(2)} {settings.currency}</span>
-                  </div>
-                  {completedInvoice.paymentMethods && completedInvoice.paymentMethods.length > 0 && (
-                    <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed #ccc', fontSize: '12px' }}>
-                      <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>طرق الدفع:</div>
-                      {completedInvoice.paymentMethods.map((pm, idx) => (
-                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span>{pm.treasuryId === 'cashback' ? 'كاش باك' : (settings.treasuries.find(t => t.id === pm.treasuryId)?.name || 'غير محدد')}</span>
-                          <span>{pm.amount.toFixed(2)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                </div>
-
-                <div style={{ textAlign: 'center', marginTop: '25px', fontSize: '13px', fontWeight: 'bold' }}>
-                  <p style={{ margin: '0 0 10px 0' }}>شكراً لزيارتكم!</p>
-                  {settings.phone && <p style={{ fontSize: '12px', fontWeight: 'normal', margin: '2px 0' }}>جوال: {settings.phone}</p>}
-                  {settings.address && <p style={{ fontSize: '12px', fontWeight: 'normal', margin: '2px 0' }}>العنوان: {settings.address}</p>}
-                </div>
+            {/* Thermal Paper Preview Area using InvoiceReceiptCard */}
+            <div className="bg-slate-100 p-4 overflow-y-auto flex justify-center max-h-[65vh]">
+              <div id="receipt-content" className="bg-white shadow-sm p-2 w-full rounded-xl">
+                <InvoiceReceiptCard
+                  invoice={completedInvoice}
+                  settings={settings}
+                  branches={branches}
+                  activeBranchId={activeBranchId}
+                  currentUser={currentUser}
+                />
               </div>
             </div>
 
             <div className="p-4 bg-white border-t border-slate-100 flex items-center gap-3">
-              {/* 1. زر إغلاق: لإغلاق الشاشة دون أي طباعة */}
               <button 
                 type="button"
                 onClick={handleCloseReceiptModal}
-                className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95 text-sm"
-                title="إغلاق الشاشة دون طباعة"
+                className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95 text-xs"
+                title="إغلاق الشاشة وبدء فاتورة جديدة"
               >
-                <X size={18} />
+                <X size={16} />
                 <span>إغلاق</span>
               </button>
 
-              {/* 2. زر معاينة: لمعاينة الفاتورة قبل الطباعة مع خيارات وإعدادات الطباعة العادية */}
               <button 
                 type="button"
-                onClick={printReceiptPreview}
-                className="flex-1 py-3 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl shadow-sm transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95 text-sm"
-                title="معاينة الفاتورة قبل الطباعة مع خيارات الطباعة العادية"
+                onClick={() => {
+                  executePrintInvoiceReceipt('receipt-content', completedInvoice.id);
+                }}
+                className="flex-[1.4] py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl shadow-md shadow-emerald-600/25 transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95 text-xs"
+                title="طباعة الفاتورة على طابعة الإيصالات الحرارية"
               >
-                <Eye size={18} />
-                <span>معاينة</span>
-              </button>
-
-              {/* 3. زر طباعة: لطباعة الفاتورة مباشرة وفورياً بدون معاينة وبدون أي صناديق حوارية */}
-              <button 
-                type="button"
-                onClick={printReceiptDirect}
-                className="flex-[1.2] py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl shadow-md shadow-emerald-600/20 transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95 text-sm"
-                title="طباعة الفاتورة مباشرة بدون معاينة وبدون أي صناديق حوارية عبر الطابعة الافتراضية"
-              >
-                <Printer size={19} />
-                <span>طباعة</span>
+                <Printer size={18} />
+                <span>طباعة الفاتورة</span>
               </button>
             </div>
           </div>

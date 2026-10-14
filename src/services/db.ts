@@ -1604,61 +1604,119 @@ export const DB = {
   },
 
   // ---- الفواتير ----
-  async fetchInvoices(salonId?: string) { return DB.fetchAll<any>('invoices', undefined, salonId); },
+  async fetchInvoices(salonId?: string, branchId?: string) {
+    const validSalonId = salonId ? toSalonUUID(salonId) : undefined;
+    const filter = (branchId && branchId !== 'all') ? { branch_id: toBranchUUID(branchId) || branchId } : undefined;
+    const list = await DB.fetchAll<any>('invoices', filter, validSalonId);
+    if (list && list.length > 0) return list.map(dbInvoiceToApp);
+    try {
+      const cached = localStorage.getItem('smartcut_invoices_cache');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  },
   async saveInvoice(inv: any, salonId?: string) {
-    const client = sb(); if (!client || !inv) return null;
+    if (!inv) return null;
+    const client = sb();
     const validSalonId = toSalonUUID(salonId || inv.salonId || getSalonId());
     const validBranchId = toBranchUUID(inv.branchId);
+
+    // 1. Always cache in localStorage for instant offline & screen reactivity
     try {
+      const saved = localStorage.getItem('smartcut_invoices_cache');
+      const list = saved ? JSON.parse(saved) : [];
+      const filtered = list.filter((i: any) => i.id !== inv.id);
+      localStorage.setItem('smartcut_invoices_cache', JSON.stringify([inv, ...filtered].slice(0, 500)));
+    } catch (e) {
+      console.warn('LocalStorage saveInvoice warning:', e);
+    }
+
+    if (!client) return inv;
+
+    try {
+      const safeClientId = (inv.clientId && typeof inv.clientId === 'string' && inv.clientId.trim()) ? inv.clientId.trim() : null;
       const snap: any = {
-        id: inv.id, salon_id: validSalonId, branch_id: validBranchId,
+        id: inv.id,
+        salon_id: validSalonId,
+        branch_id: validBranchId,
         branch_code: inv.branchCode || null,
         invoice_number: inv.invoiceNumber || inv.invoice_number || inv.id || ('INV-' + Date.now()),
-        client_id: inv.clientId || null, client_name: inv.clientName, client_phone: inv.clientPhone || '',
-        employee_id: inv.employeeId || inv.items?.[0]?.employeeId || null,
-        employee_name: inv.employeeName || inv.items?.[0]?.employeeName || null,
+        client_id: safeClientId,
+        client_name: inv.clientName || inv.client_name || 'عميل نقدي',
+        client_phone: inv.clientPhone || inv.client_phone || '0000000000',
         cashier_id: inv.cashierId || null,
         cashier_name: inv.cashierName || null,
-        date: inv.date, subtotal: inv.subtotal ?? inv.total ?? 0, discount: inv.discount ?? 0,
+        date: inv.date || new Date().toISOString(),
+        subtotal: Number(inv.subtotal ?? inv.total ?? 0),
+        discount: Number(inv.discount ?? 0),
         discount_type: inv.discountType || 'fixed',
-        tax: inv.vatAmount ?? inv.tax ?? inv.vat ?? 0,
-        vat: inv.vatAmount ?? inv.vat ?? inv.tax ?? 0,
-        cashback_used: inv.cashbackUsed ?? 0,
-        total: inv.total ?? 0,
-        paid: inv.paid ?? inv.paidAmount ?? inv.total ?? 0,
-        paid_amount: inv.paidAmount ?? inv.paid ?? inv.total ?? 0,
-        remaining: inv.remaining ?? inv.remainingAmount ?? 0,
-        remaining_amount: inv.remainingAmount ?? inv.remaining ?? 0,
-        advance_deduction: inv.advanceDeduction ?? 0,
+        tax: Number(inv.vatAmount ?? inv.tax ?? inv.vat ?? 0),
+        vat: Number(inv.vatAmount ?? inv.vat ?? inv.tax ?? 0),
+        cashback_used: Number(inv.cashbackUsed ?? 0),
+        total: Number(inv.total ?? 0),
+        paid: Number(inv.paid ?? inv.paidAmount ?? inv.total ?? 0),
+        paid_amount: Number(inv.paidAmount ?? inv.paid ?? inv.total ?? 0),
+        remaining: Number(inv.remaining ?? inv.remainingAmount ?? 0),
+        remaining_amount: Number(inv.remainingAmount ?? inv.remaining ?? 0),
+        advance_deduction: Number(inv.advanceDeduction ?? 0),
         booking_id: inv.bookingId || null,
         payment_method: inv.paymentMethods?.[0]?.treasuryId || inv.paymentMethod || 'cash',
         treasury_id: inv.paymentMethods?.[0]?.treasuryId || inv.treasuryId || 'main',
         items: inv.items || [], 
         payment_methods: inv.paymentMethods || (inv.paymentMethod ? [{ amount: inv.total || 0, treasuryId: inv.paymentMethod }] : []),
         status: inv.status || 'completed',
-        is_cancelled: inv.status === 'cancelled', cancel_reason: null, cancelled_at: null,
-        is_remedy: inv.isRemedyInvoice || false, remedy_notes: inv.remedyReason || null,
+        is_cancelled: Boolean(inv.status === 'cancelled' || inv.isCancelled),
+        cancel_reason: inv.cancelReason || null,
+        cancelled_at: inv.cancelledAt || null,
+        is_remedy: Boolean(inv.isRemedyInvoice || inv.isRemedy || false),
+        remedy_notes: inv.remedyReason || inv.remedyNotes || null,
         related_complaint_id: inv.relatedComplaintId || null,
         original_invoice_id: inv.originalInvoiceId || null,
-        before_photo_url: inv.beforePhotoUrl || null, after_photo_url: inv.afterPhotoUrl || null,
-        zatca_qr: inv.zatcaQr || null, zatca_hash: inv.zatcaHash || null,
+        before_photo_url: inv.beforePhotoUrl || null,
+        after_photo_url: inv.afterPhotoUrl || null,
+        zatca_qr: inv.zatcaQr || null,
+        zatca_hash: inv.zatcaHash || null,
         zatca_reporting_status: inv.zatcaReportingStatus || 'not_submitted',
-        eta_submission_uuid: inv.etaSubmissionUuid || null, eta_status: inv.etaStatus || 'not_submitted',
+        eta_submission_uuid: inv.etaSubmissionUuid || null,
+        eta_status: inv.etaStatus || 'not_submitted',
         shift_id: inv.shiftId || null,
-        shift_date: inv.shiftDate || inv.date || null,
+        shift_date: inv.shiftDate || (inv.date ? inv.date.split('T')[0] : null),
+        shift_code: inv.shiftCode || null,
+        tips: Number(inv.tipAmount ?? inv.tips ?? 0),
         notes: inv.notes || inv.note || null,
         created_by: inv.createdBy || null
       };
+
       let { error } = await client.from('invoices').upsert(snap, { onConflict: 'id' });
-      if (error && error.code === '23503' && snap.client_id) {
-        console.warn('DB.saveInvoice FK warning on client_id, retrying with client_id = null:', error.message);
-        snap.client_id = null;
+      if (error && error.code === '23503') {
+        if (error.message?.includes('client_id') || error.details?.includes('clients')) {
+          console.warn('DB.saveInvoice FK warning on client_id, retrying with client_id = null:', error.message);
+          snap.client_id = null;
+        }
+        if (error.message?.includes('branch_id') || error.details?.includes('branches')) {
+          console.warn('DB.saveInvoice FK warning on branch_id, retrying with branch_id = null:', error.message);
+          snap.branch_id = null;
+        }
         const retry = await client.from('invoices').upsert(snap, { onConflict: 'id' });
         error = retry.error;
+        if (error && error.code === '23503') {
+          snap.client_id = null;
+          snap.branch_id = null;
+          const retry2 = await client.from('invoices').upsert(snap, { onConflict: 'id' });
+          error = retry2.error;
+        }
       }
-      if (error) { console.error('DB.saveInvoice error:', error.message); return null; }
+
+      if (error) { 
+        console.error('DB.saveInvoice error:', error.message); 
+        return null; 
+      }
       return inv;
-    } catch (e) { console.error('DB.saveInvoice exception:', e); return null; }
+    } catch (e) { 
+      console.error('DB.saveInvoice exception:', e); 
+      return null; 
+    }
   },
 
   // ---- مرتجعات المبيعات (Sales Returns) ----
@@ -1757,20 +1815,41 @@ export const DB = {
     const validBranchId = toBranchUUID((t as any).branchId);
     try {
       const snap: any = {
-        id: t.id, salon_id: validSalonId, branch_id: validBranchId,
+        id: t.id, 
+        salon_id: validSalonId, 
+        branch_id: validBranchId,
         branch_code: (t as any).branchCode || null,
-        date: t.date, type: t.type, amount: t.amount, category: t.category,
-        expense_category: t.expenseCategory || t.category || null, description: t.description,
+        date: t.date || new Date().toISOString(), 
+        type: t.type || 'in', 
+        amount: Number(t.amount || 0), 
+        category: t.category || 'sales',
+        expense_category: t.expenseCategory || t.category || null, 
+        description: t.description || '',
         treasury: t.treasury || t.treasuryId || 'الخزينة الرئيسية',
         treasury_id: t.treasuryId || t.treasury || 'main',
         payment_method: t.paymentMethod || 'cash',
         invoice_id: (t as any).invoiceId || (t as any).invoice_id || null,
         booking_id: (t as any).bookingId || (t as any).booking_id || null,
         shift_id: (t as any).shiftId || (t as any).shift_id || null,
-        created_by: t.createdBy || null, user_id: t.userId || null,
-        user_name: t.userName || null, shift_date: t.shiftDate || null
+        shift_code: (t as any).shiftCode || (t as any).shift_code || null,
+        shift_date: t.shiftDate || null,
+        created_by: t.createdBy || null, 
+        user_id: t.userId || null,
+        user_name: t.userName || null
       };
-      const { error } = await client.from('transactions').upsert(snap, { onConflict: 'id' });
+      let { error } = await client.from('transactions').upsert(snap, { onConflict: 'id' });
+      if (error && error.code === '23503') {
+        if (error.message?.includes('invoice_id') || error.details?.includes('invoices')) {
+          console.warn('DB.saveTransaction FK warning on invoice_id, retrying with invoice_id = null:', error.message);
+          snap.invoice_id = null;
+        }
+        if (error.message?.includes('branch_id') || error.details?.includes('branches')) {
+          console.warn('DB.saveTransaction FK warning on branch_id, retrying with branch_id = null:', error.message);
+          snap.branch_id = null;
+        }
+        const retry = await client.from('transactions').upsert(snap, { onConflict: 'id' });
+        error = retry.error;
+      }
       if (error) { console.error('DB.saveTransaction error:', error.message); return null; }
       return t;
     } catch (e) { console.error('DB.saveTransaction exception:', e); return null; }
@@ -2590,8 +2669,12 @@ export const DB = {
           if (genericMatch) matchedShift = genericMatch;
         }
 
+        const sDate = matchedShift.shift_date || new Date().toISOString().split('T')[0];
+        const sCode = matchedShift.shift_code || matchedShift.shiftCode || `SH-${sDate.replace(/-/g, '')}-01`;
+
         return {
           ...toCamel(matchedShift),
+          shiftCode: sCode,
           isOpen: true,
           status: 'open',
           hasDefinitiveProof: true
@@ -2619,8 +2702,12 @@ export const DB = {
       // فحص أمان إضافي للورديات المفتوحة
       const fallbackOpen = data.filter((s: any) => (s.status === 'open' || !s.closed_at) && s.status !== 'closed');
       if (fallbackOpen.length > 0) {
+        const m = fallbackOpen[0];
+        const sDate = m.shift_date || new Date().toISOString().split('T')[0];
+        const sCode = m.shift_code || m.shiftCode || `SH-${sDate.replace(/-/g, '')}-01`;
         return {
-          ...toCamel(fallbackOpen[0]),
+          ...toCamel(m),
+          shiftCode: sCode,
           isOpen: true,
           status: 'open',
           hasDefinitiveProof: true
@@ -2631,8 +2718,11 @@ export const DB = {
       const closedShifts = data.filter((s: any) => s.status === 'closed' || !!s.closed_at);
       if (closedShifts.length > 0) {
         const latestClosed = closedShifts[0];
+        const sDate = latestClosed.shift_date || new Date().toISOString().split('T')[0];
+        const sCode = latestClosed.shift_code || latestClosed.shiftCode || `SH-${sDate.replace(/-/g, '')}-01`;
         return {
           ...toCamel(latestClosed),
+          shiftCode: sCode,
           isOpen: false,
           isClosed: true,
           status: 'closed',
@@ -2653,14 +2743,20 @@ export const DB = {
     try {
       const validSalonId = toSalonUUID(ws.salonId || getSalonId());
       const validBranchId = ws.branchId ? (toBranchUUID(ws.branchId) || ws.branchId) : null;
+      let finalShiftCode = ws.shiftCode || ws.shift_code || null;
+      if (!finalShiftCode) {
+        const dStr = ws.shiftDate || ws.shift_date || new Date().toISOString().split('T')[0];
+        const cD = dStr.replace(/-/g, '');
+        finalShiftCode = `SH-${cD}-01`;
+      }
       const snap: any = {
         id: ws.id,
-        shift_code: ws.shiftCode || ws.shift_code || null,
+        shift_code: finalShiftCode,
         salon_id: validSalonId,
         branch_id: validBranchId,
-        shift_date: ws.shiftDate,
+        shift_date: ws.shiftDate || ws.shift_date || new Date().toISOString().split('T')[0],
         ...(ws.openedAt ? { opened_at: ws.openedAt } : (ws.status === 'open' ? { opened_at: new Date().toISOString() } : {})),
-        closed_at: ws.closedAt || null,
+        closed_at: ws.closedAt || ws.closed_at || null,
         opened_by_user_id: ws.openedByUserId || ws.opened_by_user_id || null,
         opened_by_user_name: ws.openedByUserName || ws.opened_by_user_name || ws.openedByName || ws.opened_by_name || null,
         opened_by_name: ws.openedByName || ws.opened_by_name || ws.openedByUserName || ws.opened_by_user_name || null,
@@ -2669,20 +2765,20 @@ export const DB = {
         closed_by_user_name: ws.closedByUserName || ws.closed_by_user_name || ws.closedByName || ws.closed_by_name || null,
         closed_by_name: ws.closedByName || ws.closed_by_name || ws.closedByUserName || ws.closed_by_user_name || null,
         closed_by_role: ws.closedByRole || ws.closed_by_role || null,
-        initial_cash: Number(ws.initialCash) || 0,
-        expected_cash: ws.expectedCash !== undefined ? Number(ws.expectedCash) : null,
-        actual_cash: ws.actualCash !== undefined ? Number(ws.actualCash) : null,
-        cash_difference: ws.cashDifference !== undefined ? Number(ws.cashDifference) : null,
-        total_sales: ws.totalSales !== undefined ? Number(ws.totalSales) : null,
-        total_cash_sales: ws.totalCashSales !== undefined ? Number(ws.totalCashSales) : null,
-        total_card_sales: ws.totalCardSales !== undefined ? Number(ws.totalCardSales) : null,
-        total_expenses: ws.totalExpenses !== undefined ? Number(ws.totalExpenses) : null,
+        initial_cash: Number(ws.initialCash ?? ws.initial_cash ?? 0) || 0,
+        expected_cash: ws.expectedCash !== undefined ? Number(ws.expectedCash) : (ws.expected_cash !== undefined ? Number(ws.expected_cash) : null),
+        actual_cash: ws.actualCash !== undefined ? Number(ws.actualCash) : (ws.actual_cash !== undefined ? Number(ws.actual_cash) : null),
+        cash_difference: ws.cashDifference !== undefined ? Number(ws.cashDifference) : (ws.cash_difference !== undefined ? Number(ws.cash_difference) : null),
+        total_sales: ws.totalSales !== undefined ? Number(ws.totalSales) : (ws.total_sales !== undefined ? Number(ws.total_sales) : null),
+        total_cash_sales: ws.totalCashSales !== undefined ? Number(ws.totalCashSales) : (ws.total_cash_sales !== undefined ? Number(ws.total_cash_sales) : null),
+        total_card_sales: ws.totalCardSales !== undefined ? Number(ws.totalCardSales) : (ws.total_card_sales !== undefined ? Number(ws.total_card_sales) : null),
+        total_expenses: ws.totalExpenses !== undefined ? Number(ws.totalExpenses) : (ws.total_expenses !== undefined ? Number(ws.total_expenses) : null),
         transferred_to_treasury: ws.transferredToTreasury || ws.transferred_to_treasury || null,
-        transferred_amount: ws.transferredAmount !== undefined ? Number(ws.transferredAmount) : null,
-        total_advances: ws.totalAdvances !== undefined ? Number(ws.totalAdvances) : null,
-        status: ws.status || (ws.closedAt ? 'closed' : 'open'),
+        transferred_amount: ws.transferredAmount !== undefined ? Number(ws.transferredAmount) : (ws.transferred_amount !== undefined ? Number(ws.transferred_amount) : null),
+        total_advances: ws.totalAdvances !== undefined ? Number(ws.totalAdvances) : (ws.total_advances !== undefined ? Number(ws.total_advances) : null),
+        status: ws.status || (ws.closedAt || ws.closed_at ? 'closed' : 'open'),
         notes: ws.notes || null,
-        created_at: ws.createdAt || new Date().toISOString()
+        created_at: ws.createdAt || ws.created_at || new Date().toISOString()
       };
       const { error } = await client.from('work_shifts').upsert(snap, { onConflict: 'id' });
       if (error) { console.error('DB.saveWorkShift error:', error.message); return false; }
@@ -3392,6 +3488,136 @@ export const DB = {
     }
   },
 
+  async recordTenantSubscription(record: {
+    id?: string;
+    salonId: string;
+    planId?: string;
+    status: 'active' | 'trial' | 'expired' | 'pending_payment' | 'suspended';
+    startDate: string;
+    endDate: string;
+    totalBranches?: number;
+    totalEmployees?: number;
+    billingCycle?: string;
+    currency?: string;
+    paidAmount?: number;
+    paymentMethod?: string;
+    notes?: string;
+  }): Promise<boolean> {
+    const client = sb();
+    if (!client) return false;
+    try {
+      const validSalonId = toSalonUUID(record.salonId);
+      if (!validSalonId) return false;
+      const subId = record.id || ('SUB-' + Math.random().toString(36).substring(2, 9).toUpperCase());
+      const nowIso = new Date().toISOString();
+      const snap = {
+        id: subId,
+        salon_id: validSalonId,
+        tenant_id: validSalonId,
+        plan_id: record.planId || 'pro',
+        status: record.status,
+        start_date: record.startDate,
+        end_date: record.endDate,
+        total_branches: record.totalBranches || 1,
+        total_employees: record.totalEmployees || 10,
+        billing_cycle: record.billingCycle || '1m',
+        currency: record.currency || 'SAR',
+        paid_amount: record.paidAmount !== undefined ? Number(record.paidAmount) : 0,
+        payment_method: record.paymentMethod || 'cash',
+        notes: record.notes || null,
+        created_at: nowIso,
+        updated_at: nowIso
+      };
+      const { error } = await client.from('tenant_subscriptions').insert(snap);
+      if (error) {
+        console.warn('DB.recordTenantSubscription error:', error.message);
+        return false;
+      }
+      return true;
+    } catch (e) {
+      console.warn('DB.recordTenantSubscription exception:', e);
+      return false;
+    }
+  },
+
+  async fetchTenantSubscriptions(salonId?: string): Promise<any[]> {
+    const client = sb();
+    if (!client) return [];
+    try {
+      let query = client.from('tenant_subscriptions').select('*').order('created_at', { ascending: false });
+      if (salonId) {
+        const validSalonId = toSalonUUID(salonId);
+        if (validSalonId) {
+          query = query.or(`salon_id.eq.${validSalonId},tenant_id.eq.${validSalonId}`);
+        }
+      }
+      const { data, error } = await query;
+      if (!error && data) {
+        return data.map(toCamel);
+      }
+    } catch (e) {}
+    return [];
+  },
+
+  async extendSalonTrialDB(salonId: string, days: number = 7, targetPlan?: string): Promise<any> {
+    const client = sb();
+    const validSalonId = toSalonUUID(salonId);
+    const salons = SubscriptionService.getSalons();
+    const salon = salons.find(s => s.id === salonId);
+
+    const currentEnd = new Date(salon?.subscriptionEndDate || Date.now());
+    const baseDate = currentEnd > new Date() ? currentEnd : new Date();
+    const newEnd = new Date(baseDate.getTime() + days * 24 * 3600 * 1000);
+    const newEndStr = newEnd.toISOString().split('T')[0];
+    const effectivePlan = targetPlan || salon?.subscriptionPlan || 'pro';
+    const trialDays = (Number(salon?.trialDays) || 7) + days;
+
+    const updates = {
+      subscription_status: 'trial',
+      subscription_plan: effectivePlan,
+      subscription_end_date: newEndStr,
+      trial_days: trialDays,
+      is_active: true,
+      updated_at: new Date().toISOString()
+    };
+
+    if (client && validSalonId) {
+      try {
+        await client.from('salons').update(updates).eq('id', validSalonId);
+        await this.recordTenantSubscription({
+          salonId: validSalonId,
+          planId: effectivePlan,
+          status: 'trial',
+          startDate: baseDate.toISOString().split('T')[0],
+          endDate: newEndStr,
+          totalBranches: salon?.maxBranches || 1,
+          totalEmployees: salon?.maxUsers || 10,
+          billingCycle: 'trial',
+          currency: salon?.currency || 'SAR',
+          paidAmount: 0,
+          paymentMethod: 'free_trial',
+          notes: `تمديد الفترة التجريبية بواسطة المبرمج (+${days} أيام) - الباقة: ${effectivePlan}`
+        });
+      } catch (e) {
+        console.warn('DB.extendSalonTrialDB error:', e);
+      }
+    }
+
+    await this.saveSettings(validSalonId || salonId, {
+      subscriptionStatus: 'trial',
+      subscriptionEndDate: newEndStr,
+      isSalonActive: true
+    });
+
+    return SubscriptionService.updateSalon(salonId, {
+      subscriptionStatus: 'trial',
+      subscriptionPlan: effectivePlan as any,
+      subscriptionEndDate: newEndStr,
+      trialDays,
+      isActive: true
+    });
+  },
+
   async calculateBranchProrationRPC(tenantId: string, additionalBranches: number, currency: string = 'EGP') {
     const client = sb();
     if (client) {
@@ -3564,15 +3790,18 @@ export const DB = {
     }
   },
 
-  async resetSalonToTrialDB(salonId: string, trialDays: number = 7, plan: string = 'starter'): Promise<any> {
+  async resetSalonToTrialDB(salonId: string, trialDays: number = 7, plan?: string): Promise<any> {
     const client = sb();
     const validSalonId = toSalonUUID(salonId);
+    const salons = SubscriptionService.getSalons();
+    const existingSalon = salons.find(s => s.id === salonId);
+    const targetPlan = plan || existingSalon?.subscriptionPlan || 'pro';
     const startDate = new Date().toISOString().split('T')[0];
     const endDate = new Date(Date.now() + trialDays * 86400000).toISOString().split('T')[0];
 
     const updates = {
       subscription_status: 'trial',
-      subscription_plan: plan,
+      subscription_plan: targetPlan,
       subscription_start_date: startDate,
       subscription_end_date: endDate,
       trial_days: trialDays,
@@ -3588,7 +3817,7 @@ export const DB = {
           id: subId,
           salon_id: validSalonId,
           tenant_id: validSalonId,
-          plan_id: plan,
+          plan_id: targetPlan,
           status: 'trial',
           start_date: startDate,
           end_date: endDate,
@@ -3598,7 +3827,7 @@ export const DB = {
           currency: 'SAR',
           paid_amount: 0,
           payment_method: 'free_trial',
-          notes: `إعادة إلى الفترة التجريبية بواسطة المبرمج (${trialDays} أيام)`
+          notes: `إعادة إلى الفترة التجريبية بواسطة المبرمج (${trialDays} أيام) - الباقة: ${targetPlan}`
         });
       } catch (e) {
         console.warn('DB update failed during reset to trial:', e);
@@ -4256,6 +4485,76 @@ export function dbCategoryToApp(row: any): any {
     icon: c.icon || row.icon || 'Scissors',
     type: (c.type || row.type || 'service') as 'service' | 'product',
     isActive: c.isActive !== false && row.is_active !== false,
+  };
+}
+
+// تحويل بيانات الفاتورة من قاعدة البيانات إلى كيان Invoice موحد ومكتمل في التطبيق
+export function dbInvoiceToApp(row: any): any {
+  if (!row) return {} as any;
+  let items = row.items || [];
+  if (typeof items === 'string') {
+    try { items = JSON.parse(items); } catch { items = []; }
+  }
+  if (!Array.isArray(items)) items = [];
+
+  let paymentMethods = row.paymentMethods || row.payment_methods || [];
+  if (typeof paymentMethods === 'string') {
+    try { paymentMethods = JSON.parse(paymentMethods); } catch { paymentMethods = []; }
+  }
+  if (!Array.isArray(paymentMethods)) paymentMethods = [];
+
+  return {
+    id: row.id,
+    salonId: row.salonId || row.salon_id,
+    branchId: row.branchId || row.branch_id,
+    branchCode: row.branchCode || row.branch_code,
+    invoiceNumber: row.invoiceNumber || row.invoice_number || row.id,
+    clientId: row.clientId || row.client_id || undefined,
+    clientName: row.clientName || row.client_name || 'عميل نقدي',
+    clientPhone: row.clientPhone || row.client_phone || '',
+    date: row.date || row.created_at || row.createdAt || new Date().toISOString(),
+    subtotal: Number(row.subtotal ?? row.total ?? 0),
+    discount: Number(row.discount ?? 0),
+    discountType: row.discountType || row.discount_type || 'fixed',
+    tax: Number(row.tax ?? row.vat ?? row.vatAmount ?? 0),
+    vatAmount: Number(row.vatAmount ?? row.vat ?? row.tax ?? 0),
+    cashbackUsed: Number(row.cashbackUsed ?? row.cashback_used ?? 0),
+    total: Number(row.total ?? 0),
+    paid: Number(row.paid ?? row.paidAmount ?? row.total ?? 0),
+    paidAmount: Number(row.paidAmount ?? row.paid ?? row.total ?? 0),
+    remaining: Number(row.remaining ?? row.remainingAmount ?? 0),
+    remainingAmount: Number(row.remainingAmount ?? row.remaining ?? 0),
+    advanceDeduction: Number(row.advanceDeduction ?? row.advance_deduction ?? 0),
+    paymentMethod: row.paymentMethod || row.payment_method || (paymentMethods[0]?.treasuryId) || 'cash',
+    treasuryId: row.treasuryId || row.treasury_id || (paymentMethods[0]?.treasuryId) || 'main',
+    paymentMethods,
+    items,
+    status: row.status || 'completed',
+    isCancelled: Boolean(row.isCancelled ?? row.is_cancelled),
+    cancelReason: row.cancelReason || row.cancel_reason || '',
+    cancelledAt: row.cancelledAt || row.cancelled_at || undefined,
+    isRemedyInvoice: Boolean(row.isRemedyInvoice ?? row.isRemedy ?? row.is_remedy),
+    remedyReason: row.remedyReason || row.remedyNotes || row.remedy_notes || '',
+    relatedComplaintId: row.relatedComplaintId || row.related_complaint_id || '',
+    originalInvoiceId: row.originalInvoiceId || row.original_invoice_id || '',
+    beforePhotoUrl: row.beforePhotoUrl || row.before_photo_url || undefined,
+    afterPhotoUrl: row.afterPhotoUrl || row.after_photo_url || undefined,
+    zatcaQr: row.zatcaQr || row.zatca_qr || '',
+    zatcaHash: row.zatcaHash || row.zatca_hash || '',
+    zatcaReportingStatus: row.zatcaReportingStatus || row.zatca_reporting_status || 'not_submitted',
+    zatcaWarning: row.zatcaWarning || row.zatca_warning || '',
+    etaSubmissionUuid: row.etaSubmissionUuid || row.eta_submission_uuid || '',
+    etaStatus: row.etaStatus || row.eta_status || 'not_submitted',
+    createdBy: row.createdBy || row.created_by || '',
+    cashierId: row.cashierId || row.cashier_id || undefined,
+    cashierName: row.cashierName || row.cashier_name || undefined,
+    notes: row.notes || '',
+    tipAmount: Number(row.tipAmount ?? row.tips ?? 0),
+    bookingId: row.bookingId || row.booking_id || undefined,
+    shiftId: row.shiftId || row.shift_id || undefined,
+    shiftDate: row.shiftDate || row.shift_date || undefined,
+    shiftCode: row.shiftCode || row.shift_code || undefined,
+    createdAt: row.createdAt || row.created_at || undefined,
   };
 }
 

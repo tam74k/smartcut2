@@ -521,6 +521,22 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
       isSalonActive: controlForm.isActive
     });
 
+    // Record in tenant_subscriptions table in Supabase
+    await DB.recordTenantSubscription({
+      salonId,
+      planId: controlForm.plan,
+      status: controlForm.status,
+      startDate: controlForm.startDate,
+      endDate: controlForm.endDate,
+      totalBranches: Number(controlForm.maxBranches) || 3,
+      totalEmployees: Number(controlForm.maxUsers) || 10,
+      billingCycle: controlForm.status === 'trial' ? 'trial' : 'custom',
+      currency: selectedControlSalon.currency || 'SAR',
+      paidAmount: 0,
+      paymentMethod: controlForm.status === 'trial' ? 'free_trial' : 'manual_control',
+      notes: `تحديث وتحكم مباشر في الاشتراك من لوحة المبرمج (${controlForm.status})`
+    });
+
     setSelectedControlSalon(null);
     alert(`✅ تم حفظ وتحديث بيانات اشتراك (${selectedControlSalon.name}) في السحابة بنجاح!`);
     loadData();
