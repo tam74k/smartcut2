@@ -485,6 +485,8 @@ async function ensureDatabaseSchema() {
       type TEXT DEFAULT 'service',
       employee_commission_percentage REAL DEFAULT 0,
       employee_commission_amount REAL DEFAULT 0,
+      commissionable_amount REAL DEFAULT 0,
+      is_target_exempt INTEGER DEFAULT 0,
       referral_commission_type TEXT DEFAULT 'percentage',
       referral_commission_amount REAL DEFAULT 0,
       cashback_percentage REAL DEFAULT 0,
@@ -532,7 +534,9 @@ async function ensureDatabaseSchema() {
       target REAL DEFAULT 5000,
       target_type TEXT DEFAULT 'monthly',
       daily_target_amount REAL DEFAULT 0,
+      daily_target_method TEXT DEFAULT 'excess_only',
       monthly_target_amount REAL DEFAULT 5000,
+      monthly_target_method TEXT DEFAULT 'deduct_salary',
       target_commission_rate REAL DEFAULT 0,
       check_in_time TEXT DEFAULT '09:00',
       check_out_time TEXT DEFAULT '18:00',
@@ -1453,7 +1457,11 @@ async function ensureDatabaseSchema() {
     { table: 'bookings', column: 'created_by_id', type: 'TEXT' },
     { table: 'bookings', column: 'updated_by', type: 'TEXT' },
     { table: 'bookings', column: 'updated_by_name', type: 'TEXT' },
-    { table: 'bookings', column: 'updated_by_id', type: 'TEXT' }
+    { table: 'bookings', column: 'updated_by_id', type: 'TEXT' },
+    { table: 'services', column: 'commissionable_amount', type: 'REAL' },
+    { table: 'services', column: 'is_target_exempt', type: 'INTEGER DEFAULT 0' },
+    { table: 'employees', column: 'daily_target_method', type: "TEXT DEFAULT 'excess_only'" },
+    { table: 'employees', column: 'monthly_target_method', type: "TEXT DEFAULT 'deduct_salary'" }
   ];
 
   const tableColumnsCache = {};

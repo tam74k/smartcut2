@@ -1,13 +1,14 @@
-import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   Search, Plus, Minus, Trash2, User, CreditCard, Banknote, Scissors, 
   Tag, X, Package, Clock, UserCog, Calendar, CheckCircle2, Image as ImageIcon,
   Wrench, ShieldAlert, Camera, Crown, Sparkles, PauseCircle, PlayCircle,
-  FilePlus2, Layers, Zap, AlertCircle, DollarSign, Coffee, Sliders, Save, AlertTriangle, RotateCcw, QrCode, Printer
+  FilePlus2, Layers, Zap, AlertCircle, DollarSign, Coffee, Sliders, Save, AlertTriangle, Loader2,
+  Printer, Eye, FileText, RotateCcw, Barcode
 } from 'lucide-react';
 import { 
   AppSettings, CartItem, ServiceItem, Booking, Invoice, Client, Category, Employee,
-  getClientTier, calculateClientTotalSpend, ClientTierConfig, HeldInvoice, PromoCode, PromoCodeUsage, TipRecord, AdvancePayment, ClientPreferences, SalesReturn 
+  getClientTier, getNextClientTier, calculateClientTotalSpend, ClientTierConfig, HeldInvoice, PromoCode, PromoCodeUsage, TipRecord, AdvancePayment, ClientPreferences, Transaction, FingerprintLog, SalesReturn 
 } from '../types';
 import { processImageFile, MAX_IMAGE_SIZE_KB, compressClientBeforeAfterPhoto } from '../utils/imageUpload';
 import { ComplaintsService } from '../services/complaintsService';
@@ -15,21 +16,28 @@ import { ZatcaService } from '../services/zatcaService';
 import { EtaEgyptService } from '../services/etaEgyptService';
 import { DB } from '../services/db';
 import { SupabaseService } from '../services/supabase';
+import { AuthService } from '../services/auth';
+import { RealtimeSync } from '../services/realtimeSync';
 import { isBarberEmployee, isReferralEligibleEmployee } from '../utils/employeeHelper';
+import { ClosingReportReceipt } from './ClosingReportReceipt';
+import { directPrintHtml, isMobileOrTablet, printHtmlToMainServer } from '../utils/print';
 import { SalesReturnModal } from './SalesReturnModal';
-import { generateCode39Svg } from '../utils/printQueueSlip';
-import { InvoiceReceiptCard, executePrintInvoiceReceipt, isSaudiSalon } from './InvoiceReceiptCard';
+import { SalesReturnVoucherModal } from './SalesReturnVoucherModal';
+import { generateBarcodeSvgString } from '../utils/barcodeGenerator';
 
-export const getCartItemPrice = (c: CartItem | any): number => {
+const getCartItemPrice = (c: CartItem | any): number => {
   if (!c) return 0;
   const p = c?.item?.displayPrice ?? c?.item?.price ?? c?.price ?? 0;
   const num = Number(p);
   return isNaN(num) ? 0 : num;
 };
 
-export const normalizeCartItem = (c: any): CartItem => {
+const normalizeCartItem = (c: any): CartItem => {
   const price = getCartItemPrice(c);
   const rawItem = c?.item || {};
+  const origPrice = Number(c?.originalPrice || rawItem?.originalPrice || (c?.discount ? price + Number(c.discount) : price));
+  const disc = Number(c?.discount || rawItem?.discount || 0);
+
   return {
     cartId: c?.cartId || Math.random().toString(36).substring(2, 9),
     quantity: Math.max(1, Number(c?.quantity) || 1),
@@ -37,6 +45,8 @@ export const normalizeCartItem = (c: any): CartItem => {
     referralEmployeeId: c?.referralEmployeeId || '',
     type: c?.type || rawItem?.type || (rawItem?._isProduct ? 'product' : 'service'),
     price,
+    discount: disc > 0 ? disc : undefined,
+    originalPrice: origPrice > price ? origPrice : undefined,
     item: {
       ...rawItem,
       id: rawItem?.id || c?.id || c?.serviceId || c?.productId || 'item',
@@ -44,21 +54,146 @@ export const normalizeCartItem = (c: any): CartItem => {
       price,
       displayPrice: price,
       type: rawItem?.type || c?.type || 'service',
-      originalPrice: rawItem?.originalPrice ?? c?.originalPrice,
-      lineDiscount: rawItem?.lineDiscount ?? c?.lineDiscount,
-      discountType: rawItem?.discountType ?? c?.discountType,
-      discountValue: rawItem?.discountValue ?? c?.discountValue,
-      hasDiscount: rawItem?.hasDiscount ?? c?.hasDiscount
+      originalPrice: origPrice > price ? origPrice : undefined,
+      discount: disc > 0 ? disc : undefined
     }
   };
 };
+
+const isLightColor = (hex?: string): boolean => {
+  if (!hex || !hex.startsWith('#')) return false;
+  const c = hex.substring(1);
+  const rgb = parseInt(c.length === 3 ? c.split('').map(x => x + x).join('') : c, 16);
+  if (isNaN(rgb)) return false;
+  const r = (rgb >> 16) & 0xff;
+  const g = (rgb >> 8) & 0xff;
+  const b = (rgb >> 0) & 0xff;
+  return (0.299 * r + 0.587 * g + 0.114 * b) > 165;
+};
+
+function buildReceiptHtml(completedInvoice: Invoice, settings: AppSettings): string {
+  const items = completedInvoice.items || [];
+  const invoiceSubtotal = items.reduce((sum, item) => sum + (Number(item.price || 0) * (Number(item.quantity) || 1)), 0);
+  const discountVal = Number(completedInvoice.discount) || 0;
+  const totalInclusive = Math.max(0, invoiceSubtotal - discountVal);
+  const vatRate = Number(settings.vatRate) || 15;
+  const baseTotal = totalInclusive / (1 + vatRate / 100);
+  const vatAmt = totalInclusive - baseTotal;
+  const advAmt = Number(completedInvoice.advanceDeduction) || 0;
+  const advList = completedInvoice.advancePayments || [];
+
+  return `
+    <div style="width: 100%; max-width: 72mm; padding: 5mm; font-family: 'Cairo', sans-serif; color: #000; margin: 0 auto; box-sizing: border-box; direction: rtl; text-align: right;">
+      <div style="text-align: center; margin-bottom: 15px;">
+        ${settings.logoUrl ? `<img src="${settings.logoUrl}" alt="Logo" style="max-width: 80px; max-height: 80px; margin: 0 auto 10px auto; display: block;" />` : ''}
+        <h2 style="font-size: 18px; font-weight: bold; margin: 0 0 5px 0;">${settings.salonName || 'صالون العناية'}</h2>
+        ${completedInvoice.id ? `
+          <div style="margin: 6px auto 10px auto; text-align: center;">
+            ${generateBarcodeSvgString(completedInvoice.id, { height: 32, width: 1.3, fontSize: 10 })}
+          </div>
+        ` : ''}
+        <div style="border-bottom: 1px dashed #000; margin: 12px 0;"></div>
+        <p style="font-size: 13px; margin: 0;">رقم الفاتورة: ${completedInvoice.id}</p>
+        <p style="font-size: 13px; margin: 0;">التاريخ: ${new Date(completedInvoice.date).toLocaleString('ar-SA')}</p>
+        ${completedInvoice.clientName ? `<p style="font-size: 13px; margin: 5px 0 0 0;">العميل: ${completedInvoice.clientName}</p>` : ''}
+      </div>
+      
+      <div style="border-bottom: 1px dashed #000; margin: 10px 0;"></div>
+      
+      <table style="width: 100%; font-size: 13px; text-align: right; border-collapse: collapse;">
+        <thead>
+          <tr style="border-bottom: 1px solid #000;">
+            <th style="padding: 8px 0; width: 50%;">الصنف</th>
+            <th style="padding: 8px 0; text-align: center; width: 20%;">الكمية</th>
+            <th style="padding: 8px 0; text-align: left; width: 30%;">السعر</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${items.map(item => `
+            <tr style="border-bottom: 1px dotted #ccc;">
+              <td style="padding: 8px 0;">
+                <div style="font-weight: bold;">${item.serviceName}</div>
+                ${(item as any).discount > 0 ? `<div style="font-size: 10px; color: #b91c1c; font-weight: bold;">(خصم: -${Number((item as any).discount).toFixed(2)})</div>` : ''}
+                <div style="font-size: 11px; color: #555;">بواسطة: ${item.technicianName || '-'}</div>
+              </td>
+              <td style="padding: 8px 0; text-align: center;">${item.quantity || 1}</td>
+              <td style="padding: 8px 0; text-align: left;">${Number(item.price).toFixed(2)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+      
+      <div style="border-bottom: 1px dashed #000; margin: 10px 0;"></div>
+      
+      <div style="font-size: 14px; line-height: 1.8;">
+        <div style="display: flex; justify-content: space-between;">
+          <span>المجموع:</span>
+          <span>${invoiceSubtotal.toFixed(2)}</span>
+        </div>
+        ${discountVal > 0 ? `
+          <div style="display: flex; justify-content: space-between;">
+            <span>الخصم:</span>
+            <span>- ${discountVal.toFixed(2)}</span>
+          </div>
+        ` : ''}
+        ${settings.vatEnabled ? `
+          <div style="display: flex; justify-content: space-between; font-size: 12px;">
+            <span>المبلغ قبل الضريبة:</span>
+            <span>${baseTotal.toFixed(2)}</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 12px;">
+            <span>الضريبة (${vatRate}%):</span>
+            <span>${vatAmt.toFixed(2)} شامل</span>
+          </div>
+        ` : ''}
+        ${advAmt > 0 ? `
+          <div style="margin: 4px 0; padding: 4px 0; border-top: 1px dotted #a7f3d0; border-bottom: 1px dotted #a7f3d0;">
+            <div style="display: flex; justify-content: space-between; color: #059669; font-weight: bold;">
+              <span>المدفوع مقدماً (عربون الحجز):</span>
+              <span>- ${advAmt.toFixed(2)}</span>
+            </div>
+            ${advList.length > 0 ? `
+              <div style="font-size: 10px; color: #047857; margin-top: 2px;">
+                ${advList.map(adv => `
+                  <div style="display: flex; justify-content: space-between; padding-left: 8px;">
+                    <span>• ${adv.treasuryName || adv.paymentMethod || 'دفعة'} (${adv.date?.split('T')[0] || ''}):</span>
+                    <span>${Number(adv.amount).toFixed(2)}</span>
+                  </div>
+                `).join('')}
+              </div>
+            ` : ''}
+          </div>
+        ` : ''}
+        <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 15px; margin-top: 5px; padding-top: 5px; border-top: 1px solid #000;">
+          <span>الصافي المدفوع اليوم:</span>
+          <span>${Number(completedInvoice.total).toFixed(2)} ${settings.currency}</span>
+        </div>
+        ${completedInvoice.paymentMethods && completedInvoice.paymentMethods.length > 0 ? `
+          <div style="margin-top: 10px; padding-top: 10px; border-top: 1px dashed #ccc; font-size: 12px;">
+            <div style="font-weight: bold; margin-bottom: 5px;">طرق الدفع:</div>
+            ${completedInvoice.paymentMethods.map(pm => `
+              <div style="display: flex; justify-content: space-between;">
+                <span>${pm.treasuryId === 'cashback' ? 'كاش باك' : (settings.treasuries?.find(t => t.id === pm.treasuryId)?.name || 'غير محدد')}</span>
+                <span>${Number(pm.amount).toFixed(2)}</span>
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+      </div>
+
+      <div style="text-align: center; margin-top: 25px; font-size: 13px; font-weight: bold;">
+        <p style="margin: 0 0 10px 0;">شكراً لزيارتكم!</p>
+        ${settings.phone ? `<p style="font-size: 12px; font-weight: normal; margin: 2px 0;">جوال: ${settings.phone}</p>` : ''}
+        ${settings.address ? `<p style="font-size: 12px; font-weight: normal; margin: 2px 0;">العنوان: ${settings.address}</p>` : ''}
+      </div>
+    </div>
+  `;
+}
 
 export function POSScreen({ 
   settings, 
   isShiftOpen, 
   shiftDate, 
-  shiftId,
-  shiftCode,
   initialBooking, 
   initialHeldInvoice,
   onClearInitial, 
@@ -80,18 +215,20 @@ export function POSScreen({
   setTips,
   currentUser,
   activeBranchId,
-  branches = [],
+  transactions = [],
+  shiftData,
+  fingerprintLogs = [],
+  setInvoices,
   salesReturns = [],
-  onProcessSalesReturn,
-  onRefreshServices
+  setSalesReturns,
+  setProducts,
+  setTransactions,
+  setItemMovements,
 }: { 
   settings: AppSettings, 
   activeBranchId?: string,
-  branches?: any[],
   isShiftOpen: boolean,
   shiftDate: string,
-  shiftId?: string,
-  shiftCode?: string,
   initialBooking?: Booking | null, 
   initialHeldInvoice?: HeldInvoice | null,
   onClearInitial?: () => void,
@@ -103,6 +240,7 @@ export function POSScreen({
   employees: Employee[], 
   products: any[],
   invoices?: Invoice[],
+  setInvoices?: (i: Invoice[]) => void,
   setEmployees?: (e: Employee[]) => void,
   isSubscriptionBlocked?: boolean,
   promoCodes?: PromoCode[],
@@ -112,11 +250,23 @@ export function POSScreen({
   tips?: TipRecord[],
   setTips?: (updater: TipRecord[] | ((prev: TipRecord[]) => TipRecord[])) => void,
   currentUser?: any,
+  transactions?: Transaction[],
+  shiftData?: { isOpen: boolean; date: string; initialCash?: number },
+  fingerprintLogs?: FingerprintLog[],
   salesReturns?: SalesReturn[],
-  onProcessSalesReturn?: (ret: SalesReturn) => void,
-  onRefreshServices?: () => Promise<void>
+  setSalesReturns?: (returns: SalesReturn[] | ((prev: SalesReturn[]) => SalesReturn[])) => void,
+  setProducts?: (p: any[] | ((prev: any[]) => any[])) => void,
+  setTransactions?: (t: any[] | ((prev: any[]) => any[])) => void,
+  setItemMovements?: (m: any[] | ((prev: any[]) => any[])) => void,
 }) {
-  const [showSalesReturnModal, setShowSalesReturnModal] = useState(false);
+  const [showPOSReturnInvoicePicker, setShowPOSReturnInvoicePicker] = useState(false);
+  const [posReturnSearch, setPosReturnSearch] = useState('');
+  const [posSelectedInvoiceForReturn, setPosSelectedInvoiceForReturn] = useState<Invoice | null>(null);
+  const [isPOSReturnModalOpen, setIsPOSReturnModalOpen] = useState(false);
+  const [posReturnModalInitialMode, setPosReturnModalInitialMode] = useState<'by_invoice' | 'general'>('by_invoice');
+  const [posVoucherReturn, setPosVoucherReturn] = useState<SalesReturn | null>(null);
+  const canMakeSalesReturn = AuthService.canDo('sales_return', currentUser);
+
   const [cart, setCart] = useState<CartItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -126,9 +276,17 @@ export function POSScreen({
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const searchContainerRef = useRef<HTMLDivElement>(null);
-  const servicesGridContainerRef = useRef<HTMLDivElement>(null);
   const [showAddClientModal, setShowAddClientModal] = useState(false);
+  const [showDailyReportModal, setShowDailyReportModal] = useState(false);
   const [newClientForm, setNewClientForm] = useState({ name: '', phone: '', referredByPhone: '', dobDay: '', dobMonth: '' });
+
+  // نافذة استعلام أسعار الخدمات (معاينة فقط دون إضافة للفاتورة)
+  const [showPriceCheckModal, setShowPriceCheckModal] = useState(false);
+  const [priceCheckSearch, setPriceCheckSearch] = useState('');
+  const [priceCheckCategory, setPriceCheckCategory] = useState('all');
+  const [priceCheckType, setPriceCheckType] = useState<'service' | 'product' | 'all'>('service');
+  const priceCheckInputRef = useRef<HTMLInputElement>(null);
+  const itemsGridRef = useRef<HTMLDivElement>(null);
 
   // نافذة تفضيلات العميل (الحلاقة والضيافة)
   const [showPreferencesModal, setShowPreferencesModal] = useState(false);
@@ -138,6 +296,64 @@ export function POSScreen({
     waterTemperature: 'cold'
   });
   const [savePrefSuccess, setSavePrefSuccess] = useState(false);
+
+  // Core Cart & Pricing State
+  const [discount, setDiscount] = useState<{type: 'percentage'|'fixed', value: number}>({ type: 'fixed', value: 0 });
+  const [advanceDeduction, setAdvanceDeduction] = useState(0);
+  const [activeAdvancePayments, setActiveAdvancePayments] = useState<AdvancePayment[]>([]);
+  const [activeBookingId, setActiveBookingId] = useState<string | undefined>(undefined);
+  const [activeQueueNumber, setActiveQueueNumber] = useState<number | null>(null);
+
+  // Promo Code State
+  const [promoCodeInput, setPromoCodeInput] = useState('');
+  const [appliedPromo, setAppliedPromo] = useState<PromoCode | null>(null);
+  const [promoDiscountAmount, setPromoDiscountAmount] = useState(0);
+  const [promoError, setPromoError] = useState<string | null>(null);
+
+  // In-cart custom price editing state
+  const [editingCartId, setEditingCartId] = useState<string | null>(null);
+  const [customPriceInput, setCustomPriceInput] = useState<number | ''>('');
+
+  // Tips and Received Amount in Payment Modal
+  const [receivedAmount, setReceivedAmount] = useState<number | ''>('');
+  const [tipEmployeeId, setTipEmployeeId] = useState<string>('');
+  const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
+
+  // Payment & Receipt Modals State
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentType, setPaymentType] = useState<'single' | 'split'>('single');
+  const [singleTreasury, setSingleTreasury] = useState(settings.treasuries.find(t => !t.isMain)?.id || settings.treasuries[0]?.id || '');
+  const [splitAmounts, setSplitAmounts] = useState<Record<string, number>>({});
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [completedInvoice, setCompletedInvoice] = useState<Invoice | null>(null);
+  const [mobilePrintNotice, setMobilePrintNotice] = useState<string | null>(null);
+
+  // Before & After Photos for Invoice (Max 500 KB)
+  const [beforePhotoUrl, setBeforePhotoUrl] = useState('');
+  const [afterPhotoUrl, setAfterPhotoUrl] = useState('');
+
+  // Remedy / Warranty Fix on Salon Expense (0.00 SAR)
+  const [isRemedyInvoice, setIsRemedyInvoice] = useState(false);
+  const [remedyReason, setRemedyReason] = useState('إصلاح مجاني بناءً على ضمان الصالون');
+
+  // Fast Shift Schedule Modal State
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [scheduleEffectiveDate, setScheduleEffectiveDate] = useState(isShiftOpen ? shiftDate : new Date().toISOString().split('T')[0]);
+  const [employeeSchedules, setEmployeeSchedules] = useState<Record<string, { checkIn: string, checkOut: string }>>({});
+  const [bulkCheckIn, setBulkCheckIn] = useState('09:00');
+  const [bulkCheckOut, setBulkCheckOut] = useState('18:00');
+
+  // Held / Suspended Invoices Management (نظام الفواتير المعلقة والمفتوحة)
+  const [heldInvoices, setHeldInvoices] = useState<HeldInvoice[]>(() => {
+    try {
+      const saved = localStorage.getItem('smartcut_held_invoices');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [showHeldInvoicesModal, setShowHeldInvoicesModal] = useState(false);
+  const [activeHeldInvoiceId, setActiveHeldInvoiceId] = useState<string | null>(null);
 
   const handleOpenPreferencesModal = () => {
     if (!selectedClient) return;
@@ -246,6 +462,38 @@ export function POSScreen({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // التركيز التلقائي وإغلاق نافذة استعلام الأسعار بزر Esc
+  useEffect(() => {
+    if (showPriceCheckModal) {
+      const timer = setTimeout(() => {
+        priceCheckInputRef.current?.focus();
+      }, 50);
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          setShowPriceCheckModal(false);
+        }
+      };
+      window.addEventListener('keydown', handleKeyDown);
+      return () => {
+        clearTimeout(timer);
+        window.removeEventListener('keydown', handleKeyDown);
+      };
+    }
+  }, [showPriceCheckModal]);
+
+  // إغلاق نافذة إيصال الفاتورة بزر Esc وبدء فاتورة جديدة فوراً
+  useEffect(() => {
+    if (showReceiptModal) {
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          handleCloseReceiptModal();
+        }
+      };
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+    }
+  }, [showReceiptModal]);
+
   const handleSelectClient = (client: Client) => {
     setSelectedClient(client);
     setClientSearch('');
@@ -254,32 +502,12 @@ export function POSScreen({
   };
 
   // Permissions
-  const canViewClientFinancials = !currentUser || currentUser.role === 'admin' || currentUser.role === 'owner' || currentUser.role === 'programmer' || currentUser.actions?.includes('view_client_financials') || currentUser.actions?.includes('*');
-  const canEditItemPrice = !currentUser || currentUser.role === 'admin' || currentUser.role === 'owner' || currentUser.role === 'programmer' || currentUser.actions?.includes('pos_custom_price') || currentUser.actions?.includes('*');
+  const canApplyDiscount = AuthService.canDo('pos_discount', currentUser);
+  const canEditItemPrice = AuthService.canDo('pos_custom_price', currentUser);
+  const canVoidCart = AuthService.canDo('pos_void', currentUser);
+  const canViewClientFinancials = AuthService.canDo('view_reports', currentUser) || currentUser?.role === 'admin' || currentUser?.role === 'owner' || currentUser?.role === 'supervisor' || currentUser?.role === 'programmer';
 
-  // Promo Code State
-  const [promoCodeInput, setPromoCodeInput] = useState('');
-  const [appliedPromo, setAppliedPromo] = useState<PromoCode | null>(null);
-  const [promoError, setPromoError] = useState<string | null>(null);
 
-  // In-cart custom price editing state
-  const [editingCartId, setEditingCartId] = useState<string | null>(null);
-  const [customPriceInput, setCustomPriceInput] = useState<number | ''>('');
-
-  // Tips and Received Amount in Payment Modal
-  const [receivedAmount, setReceivedAmount] = useState<number | ''>('');
-  const [tipEmployeeId, setTipEmployeeId] = useState<string>('');
-  
-  // Held / Suspended Invoices Management (نظام الفواتير المعلقة والمفتوحة)
-  const [heldInvoices, setHeldInvoices] = useState<HeldInvoice[]>(() => {
-    try {
-      const saved = localStorage.getItem('smartcut_held_invoices');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
-  const [showHeldInvoicesModal, setShowHeldInvoicesModal] = useState(false);
 
   useEffect(() => {
     try {
@@ -289,28 +517,74 @@ export function POSScreen({
     }
   }, [heldInvoices]);
 
-  // مزامنة لحظية للفواتير المعلقة مع السحابة (Supabase) للربط المباشر بين تابلت الكيوسك وشاشات الكاشير
+  // مزامنة لحظية للفواتير المعلقة مع السحابة وقاعدة البيانات عبر الشبكة المحلية (LAN SSE)
   useEffect(() => {
     let isMounted = true;
+    let lastKnownCount = -1;
+
+    const playHeldChime = () => {
+      try {
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioCtx) {
+          const ctx = new AudioCtx();
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+          osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.15); // A5
+          gain.gain.setValueAtTime(0.15, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start();
+          osc.stop(ctx.currentTime + 0.35);
+        }
+      } catch {}
+    };
+
     const fetchHeld = async () => {
       try {
         const cloudHeld = await DB.fetchHeldInvoices(settings.salonId);
         if (isMounted && Array.isArray(cloudHeld)) {
-          setHeldInvoices(prev => {
-            // دمج الفواتير السحابية والمحلية بدون تكرار، مع إعطاء الأولوية للسحابية
-            const cloudIds = new Set(cloudHeld.map(h => h.id));
-            const localOnly = prev.filter(h => !cloudIds.has(h.id));
-            return [...cloudHeld, ...localOnly];
-          });
+          setHeldInvoices(cloudHeld);
+          try {
+            localStorage.setItem('smartcut_held_invoices', JSON.stringify(cloudHeld));
+          } catch {}
+          if (lastKnownCount >= 0 && cloudHeld.length > lastKnownCount) {
+            playHeldChime();
+          }
+          lastKnownCount = cloudHeld.length;
         }
       } catch (err) {
-        console.warn('Cloud fetch held invoices error:', err);
+        console.warn('Held invoices sync error:', err);
       }
     };
 
     fetchHeld();
 
-    // استماع لحظي عبر BroadcastChannel بين التبويبات بدون WebSockets
+    // 1. استماع لحظي عبر WebSockets للشبكة المحلية (LAN) بين جميع الأجهزة المتصلة
+    const unsubHeld = RealtimeSync.subscribe(['held_invoices'], (event) => {
+      if (event.action === 'delete') {
+        const deletedId = event.id || event.filters?.id || event.data?.id;
+        const deletedIds: string[] = (event as any).ids || (deletedId ? [deletedId] : []);
+        if (deletedIds.length > 0) {
+          setHeldInvoices(prev => {
+            const next = prev.filter(h => !deletedIds.includes(h.id) && (!h.queueTicketId || !deletedIds.includes(h.queueTicketId)));
+            try {
+              localStorage.setItem('smartcut_held_invoices', JSON.stringify(next));
+            } catch {}
+            return next;
+          });
+        }
+        if (deletedId && (activeBookingId === deletedId || initialHeldInvoice?.id === deletedId || activeHeldInvoiceId === deletedId)) {
+          alert('⚠️ تنبيه: تم سداد أو إلغاء هذه الفاتورة المعلقة للتو من جهاز كاشير آخر لتفادي تكرار المحاسبة.');
+          clearBooking();
+        }
+      }
+      fetchHeld();
+    });
+
+    // 2. استماع لحظي عبر BroadcastChannel بين التبويبات لنفس المتصفح
     let bc: BroadcastChannel | null = null;
     if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
       bc = new BroadcastChannel(`smartcut_held_${settings.salonId || 'default'}`);
@@ -321,35 +595,18 @@ export function POSScreen({
       };
     }
 
-    // فحص دوري كل 3 ثوانٍ للتأكد من عدم فوات أي فاتورة جديدة
-    const interval = setInterval(fetchHeld, 3000);
+    // فحص دوري كل 5 ثوانٍ كشبكة أمان
+    const interval = setInterval(fetchHeld, 5000);
 
     return () => {
       isMounted = false;
+      unsubHeld();
       clearInterval(interval);
       if (bc) {
         try { bc.close(); } catch {}
       }
     };
-  }, [settings.salonId]);
-
-  // Before & After Photos for Invoice (Max 500 KB)
-  const [beforePhotoUrl, setBeforePhotoUrl] = useState('');
-  const [afterPhotoUrl, setAfterPhotoUrl] = useState('');
-  
-  // Remedy / Warranty Fix on Salon Expense (0.00 SAR)
-  const [isRemedyInvoice, setIsRemedyInvoice] = useState(false);
-  const [remedyReason, setRemedyReason] = useState('إصلاح مجاني بناءً على ضمان الصالون');
-  
-  // رقم الدور النشط في شاشة الكاشير (عند الفتح التلقائي من شاشة المناداة)
-  const [activeQueueNumber, setActiveQueueNumber] = useState<number | null>(null);
-  
-  // Fast Shift Schedule Modal State
-  const [showScheduleModal, setShowScheduleModal] = useState(false);
-  const [scheduleEffectiveDate, setScheduleEffectiveDate] = useState(isShiftOpen ? shiftDate : new Date().toISOString().split('T')[0]);
-  const [employeeSchedules, setEmployeeSchedules] = useState<Record<string, { checkIn: string, checkOut: string }>>({});
-  const [bulkCheckIn, setBulkCheckIn] = useState('09:00');
-  const [bulkCheckOut, setBulkCheckOut] = useState('18:00');
+  }, [settings.salonId, activeBookingId, initialHeldInvoice]);
 
   const handleOpenScheduleModal = () => {
     const initialMap: Record<string, { checkIn: string, checkOut: string }> = {};
@@ -407,10 +664,7 @@ export function POSScreen({
     alert(`✅ تم تحديث وتوثيق مواعيد دوام الموظفين بنجاح وسريانها من تاريخ ${scheduleEffectiveDate}`);
   };
 
-  const [discount, setDiscount] = useState<{type: 'percentage'|'fixed', value: number}>({ type: 'fixed', value: 0 });
-  const [advanceDeduction, setAdvanceDeduction] = useState(0);
-  const [activeAdvancePayments, setActiveAdvancePayments] = useState<AdvancePayment[]>([]);
-  const [activeBookingId, setActiveBookingId] = useState<string | undefined>(undefined);
+
 
   // ⏸️ تعليق الفاتورة الحالية يدوياً (Hold Current Bill)
   const handleHoldCurrentInvoice = () => {
@@ -418,8 +672,9 @@ export function POSScreen({
       alert('لا توجد عناصر في الفاتورة الحالية لتعليقها.');
       return;
     }
+    const heldId = activeHeldInvoiceId || ('HOLD-' + Math.random().toString(36).substr(2, 6).toUpperCase());
     const newHeld: HeldInvoice = {
-      id: 'HOLD-' + Math.random().toString(36).substr(2, 6).toUpperCase(),
+      id: heldId,
       salonId: settings.salonId,
       heldAt: new Date().toISOString(),
       timeStr: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
@@ -434,40 +689,13 @@ export function POSScreen({
       remedyReason,
       beforePhotoUrl,
       afterPhotoUrl,
-      queueNumber: activeQueueNumber || undefined
+      queueNumber: activeQueueNumber || undefined,
+      isOpen: false,
+      openedBy: undefined
     };
-    setHeldInvoices(prev => [newHeld, ...prev]);
+    setHeldInvoices(prev => [newHeld, ...prev.filter(h => h.id !== heldId)]);
     DB.saveHeldInvoice(newHeld).catch(e => console.warn('Failed to save held invoice:', e));
-    // تفريغ الفاتورة النشطة والعودة الفورية لعرض جميع الخدمات
-    resetToFreshInvoice(false);
-  };
-
-  // ⚡ إعادة ضبط شاشة نقطة البيع وعرض قائمة الخدمات بالكامل وفوراً وبأعلى سرعة (Instant Zero-Delay Reset)
-  const resetToFreshInvoice = useCallback((shouldHoldCurrentCart = false) => {
-    if (shouldHoldCurrentCart && cart.length > 0) {
-      const newHeld: HeldInvoice = {
-        id: 'HOLD-' + Math.random().toString(36).substr(2, 6).toUpperCase(),
-        salonId: settings.salonId,
-        heldAt: new Date().toISOString(),
-        timeStr: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
-        client: selectedClient,
-        clientSearch,
-        cart: cart.map(normalizeCartItem),
-        discount,
-        advanceDeduction: Number(advanceDeduction) || 0,
-        advancePayments: activeAdvancePayments,
-        bookingId: activeBookingId,
-        isRemedyInvoice,
-        remedyReason,
-        beforePhotoUrl,
-        afterPhotoUrl,
-        queueNumber: activeQueueNumber || undefined
-      };
-      setHeldInvoices(prev => [newHeld, ...prev]);
-      DB.saveHeldInvoice(newHeld).catch(e => console.warn('Failed to save held invoice:', e));
-    }
-
-    // 1. تفريغ السلة وبيانات العميل والخصومات
+    // تفريغ الفاتورة النشطة
     setCart([]);
     setSelectedClient(null);
     setClientSearch('');
@@ -477,59 +705,22 @@ export function POSScreen({
     setActiveBookingId(undefined);
     setActiveQueueNumber(null);
     setIsRemedyInvoice(false);
-    setRemedyReason('');
     setBeforePhotoUrl('');
     setAfterPhotoUrl('');
-    setAppliedPromo(null);
-    setPromoCodeInput('');
-    setPromoError(null);
-    setSplitAmounts({});
-    setEditingCartId(null);
-    setCustomPriceInput('');
-
-    // 2. ⚡ العرض الفوري الأقصى سرعة لجميع الخدمات: تصفير البحث والتصنيفات وتعيين نوع البند إلى خدمات
-    setItemTypeFilter('service');
-    setSelectedCategory('all');
-    setSearchQuery('');
-    setShowSuggestions(false);
-    setHighlightedIndex(-1);
-
-    // 3. إعادة التمرير لأعلى شبكة الخدمات فوراً
-    if (servicesGridContainerRef.current) {
-      try {
-        servicesGridContainerRef.current.scrollTop = 0;
-      } catch {}
-    }
-
-    // 4. حذف المسودة النشطة
+    setActiveHeldInvoiceId(null);
     try {
       localStorage.removeItem('smartcut_pos_active_draft');
     } catch {}
-
     if (onClearInitial) onClearInitial();
-
-    // 5. تحديث خفيف في الخلفية لضمان أحدث البيانات بدون تجميد الواجهة (Non-blocking background refresh)
-    if (onRefreshServices) {
-      onRefreshServices().catch(() => {});
-    }
-  }, [
-    cart, selectedClient, clientSearch, discount, advanceDeduction, 
-    activeAdvancePayments, activeBookingId, isRemedyInvoice, remedyReason, 
-    beforePhotoUrl, afterPhotoUrl, activeQueueNumber, settings.salonId, 
-    onClearInitial, onRefreshServices
-  ]);
-
-  // ➕ بدء فاتورة جديدة (New Invoice) مع تعليق الفاتورة السابقة إن وجدت
-  const handleNewInvoice = () => {
-    resetToFreshInvoice(true);
   };
 
-  // ▶ استكمال الفاتورة المعلقة (Resume Held Bill)
-  const handleResumeHeldInvoice = (held: HeldInvoice) => {
-    if (cart.length > 0) {
-      // تعليق الفاتورة الحالية أولاً
-      const activeAsHeld: HeldInvoice = {
-        id: 'HOLD-' + Math.random().toString(36).substr(2, 6).toUpperCase(),
+  // ⚡ إعادة ضبط شاشة نقطة البيع وبدء فاتورة جديدة فوراً مع تحميل جميع الخدمات دون أي تأخير
+  const resetToNewInvoice = (options?: { holdCurrentCart?: boolean }) => {
+    // 1. إذا طلب تعليق الفاتورة الحالية وكانت السلة تحتوي عناصر
+    if (options?.holdCurrentCart && cart.length > 0) {
+      const heldId = activeHeldInvoiceId || ('HOLD-' + Math.random().toString(36).substr(2, 6).toUpperCase());
+      const newHeld: HeldInvoice = {
+        id: heldId,
         salonId: settings.salonId,
         heldAt: new Date().toISOString(),
         timeStr: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
@@ -544,14 +735,101 @@ export function POSScreen({
         remedyReason,
         beforePhotoUrl,
         afterPhotoUrl,
-        queueNumber: activeQueueNumber || undefined
+        queueNumber: activeQueueNumber || undefined,
+        isOpen: false,
+        openedBy: undefined
       };
-      setHeldInvoices(prev => [activeAsHeld, ...prev.filter(h => h.id !== held.id)]);
-      DB.saveHeldInvoice(activeAsHeld).catch(e => console.warn('Failed to save held invoice:', e));
-    } else {
-      setHeldInvoices(prev => prev.filter(h => h.id !== held.id));
+      setHeldInvoices(prev => [newHeld, ...prev.filter(h => h.id !== heldId)]);
+      // حفظ في الخلفية دون تعطيل الواجهة أو إيقاف استجابتها
+      setTimeout(() => {
+        DB.saveHeldInvoice(newHeld).catch(e => console.warn('Failed to save held invoice:', e));
+      }, 0);
     }
-    DB.removeHeldInvoice(held.id).catch(e => console.warn('Failed to remove held invoice:', e));
+
+    // 2. تصفير فوري لجميع حقول الفاتورة والعميل والسلة
+    setCart([]);
+    setSelectedClient(null);
+    setClientSearch('');
+    setDiscount({ type: 'fixed', value: 0 });
+    setAdvanceDeduction(0);
+    setActiveAdvancePayments([]);
+    setActiveBookingId(undefined);
+    setActiveQueueNumber(null);
+    setIsRemedyInvoice(false);
+    setBeforePhotoUrl('');
+    setAfterPhotoUrl('');
+    setActiveHeldInvoiceId(null);
+    setSplitAmounts({});
+    setAppliedPromo(null);
+    setPromoDiscountAmount(0);
+    setPromoError(null);
+    setShowReceiptModal(false);
+    setCompletedInvoice(null);
+    setShowPaymentModal(false);
+
+    // 3. إعادة ضبط فلاتر الخدمات فوراً على (الخدمات + الكل + بدون بحث) لنزول كافة الخدمات لحظياً
+    setItemTypeFilter('service');
+    setSelectedCategory('all');
+    setSearchQuery('');
+
+    // 4. حذف المسودة المؤقتة فوراً
+    try {
+      localStorage.removeItem('smartcut_pos_active_draft');
+    } catch {}
+
+    if (onClearInitial) {
+      onClearInitial();
+    }
+
+    // 5. التمرير للأعلى فوراً في شبكة الخدمات
+    if (itemsGridRef.current) {
+      itemsGridRef.current.scrollTop = 0;
+    }
+  };
+
+  // ➕ بدء فاتورة جديدة (New Invoice) مع تعليق الفاتورة السابقة إن وجدت
+  const handleNewInvoice = () => {
+    resetToNewInvoice({ holdCurrentCart: true });
+  };
+
+  // ▶ استكمال الفاتورة المعلقة (Resume Held Bill)
+  const handleResumeHeldInvoice = (held: HeldInvoice) => {
+    if (cart.length > 0 && activeHeldInvoiceId !== held.id) {
+      // تعليق الفاتورة الحالية أولاً وحفظها في قاعدة البيانات
+      const curHeldId = activeHeldInvoiceId || ('HOLD-' + Math.random().toString(36).substr(2, 6).toUpperCase());
+      const activeAsHeld: HeldInvoice = {
+        id: curHeldId,
+        salonId: settings.salonId,
+        heldAt: new Date().toISOString(),
+        timeStr: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
+        client: selectedClient,
+        clientSearch,
+        cart: cart.map(normalizeCartItem),
+        discount,
+        advanceDeduction: Number(advanceDeduction) || 0,
+        advancePayments: activeAdvancePayments,
+        bookingId: activeBookingId,
+        isRemedyInvoice,
+        remedyReason,
+        beforePhotoUrl,
+        afterPhotoUrl,
+        queueNumber: activeQueueNumber || undefined,
+        isOpen: false,
+        openedBy: undefined
+      };
+      setHeldInvoices(prev => [activeAsHeld, ...prev.filter(h => h.id !== curHeldId && h.id !== held.id)]);
+      DB.saveHeldInvoice(activeAsHeld).catch(e => console.warn('Failed to save held invoice:', e));
+    }
+
+    // تعيين الفاتورة كنشطة دون حذفها من قاعدة البيانات
+    setActiveHeldInvoiceId(held.id);
+    const updatedHeld: HeldInvoice = {
+      ...held,
+      isOpen: true,
+      openedBy: currentUser?.name || 'الكاشير'
+    };
+    setHeldInvoices(prev => prev.map(h => h.id === held.id ? updatedHeld : h));
+    DB.saveHeldInvoice(updatedHeld).catch(e => console.warn('Failed to update held invoice status:', e));
 
     const normalizedCart = (held.cart || []).map(normalizeCartItem);
     setCart(normalizedCart);
@@ -572,7 +850,13 @@ export function POSScreen({
   // 🗑️ حذف / إلغاء فاتورة معلقة
   const handleDeleteHeldInvoice = (heldId: string) => {
     if (window.confirm('هل أنت متأكد من رغبتك في حذف / إلغاء هذه الفاتورة المعلقة؟')) {
-      setHeldInvoices(prev => prev.filter(h => h.id !== heldId));
+      setHeldInvoices(prev => {
+        const next = prev.filter(h => h.id !== heldId);
+        try {
+          localStorage.setItem('smartcut_held_invoices', JSON.stringify(next));
+        } catch {}
+        return next;
+      });
       DB.removeHeldInvoice(heldId).catch(e => console.warn('Failed to remove held invoice:', e));
     }
   };
@@ -588,12 +872,25 @@ export function POSScreen({
     return getClientTier(selectedClient, invoices, settings.tierSettings);
   }, [selectedClient, invoices, settings.tierSettings]);
 
-  // Automatically apply Tier discount when client is identified (only when no promo code is active)
+  const clientTierProgression = useMemo(() => {
+    if (!selectedClient || !clientTier) return null;
+    return getNextClientTier(clientTier, clientTotalSpend, settings.tierSettings);
+  }, [selectedClient, clientTier, clientTotalSpend, settings.tierSettings]);
+
+  // Automatically apply Tier discount when client is identified, or reset unearned discount
   useEffect(() => {
-    if (selectedClient && !appliedPromo) {
-      const tier = getClientTier(selectedClient, invoices, settings.tierSettings);
-      if (tier && tier.discountPercentage > 0) {
-        setDiscount({ type: 'percentage', value: tier.discountPercentage });
+    if (!appliedPromo) {
+      if (selectedClient) {
+        const tier = getClientTier(selectedClient, invoices, settings.tierSettings);
+        if (tier && tier.discountPercentage > 0) {
+          setDiscount({ type: 'percentage', value: tier.discountPercentage });
+        } else {
+          // Reset automatic percentage discount if current client's tier has 0% discount
+          setDiscount(prev => (prev.type === 'percentage' ? { type: 'fixed', value: 0 } : prev));
+        }
+      } else {
+        // Reset automatic percentage discount when client is cleared
+        setDiscount(prev => (prev.type === 'percentage' ? { type: 'fixed', value: 0 } : prev));
       }
     }
   }, [selectedClient, invoices, settings.tierSettings, appliedPromo]);
@@ -604,11 +901,9 @@ export function POSScreen({
     const clean = promoCodeInput.trim().toUpperCase();
     if (!clean) return;
 
-    // التحقق من تحديد العميل أولاً لضمان عدم تكرار استخدام الكود لنفس العميل
-    const clientPhone = (selectedClient?.phone || clientSearch || '').replace(/\D/g, '');
-    const clientName = (selectedClient?.name || clientSearch || '').trim();
-    if (!selectedClient && !clientPhone && !clientName) {
-      setPromoError('يرجى تحديد العميل أو إدخال رقم الهاتف أولاً للتحقق من الكود');
+    // يجب اختيار عميل قبل تطبيق كود الخصم للتحقق من الاستخدام المسبق
+    if (!selectedClient) {
+      setPromoError('يرجى اختيار العميل أولاً قبل تطبيق كود الخصم');
       return;
     }
 
@@ -638,72 +933,55 @@ export function POSScreen({
       return;
     }
 
-    // التحقق من استخدام هذا العميل للكود من قبل (سواء في سجل الاستخدامات أو في فواتير سابقة غير ملغاة)
-    const alreadyUsedInUsages = promoCodeUsages.some(u => {
-      if (u.code?.toUpperCase() !== clean && u.promoCodeId !== found.id) return false;
-      const uPhone = (u.clientPhone || '').replace(/\D/g, '');
-      if (clientPhone && uPhone && uPhone === clientPhone) return true;
-      if (clientName && u.clientName && u.clientName.trim().toLowerCase() === clientName.toLowerCase()) return true;
-      return false;
-    });
+    // التحقق من أن العميل لم يستخدم هذا الكود من قبل (بالـ clientId أولاً، ثم بالهاتف كاحتياط)
+    const alreadyUsedById = promoCodeUsages?.some(u =>
+      u.promoCodeId === found.id && u.clientId === selectedClient.id
+    );
+    const alreadyUsedByPhone = !alreadyUsedById && selectedClient.phone
+      ? promoCodeUsages?.some(u =>
+          u.code?.toUpperCase() === clean &&
+          u.clientPhone?.replace(/\D/g, '') === selectedClient.phone?.replace(/\D/g, '')
+        )
+      : false;
 
-    const alreadyUsedInInvoices = invoices.some(inv => {
-      if (inv.status === 'cancelled') return false;
-      if (inv.promoCode?.toUpperCase() !== clean) return false;
-      const invPhone = (inv.clientPhone || '').replace(/\D/g, '');
-      if (clientPhone && invPhone && invPhone === clientPhone) return true;
-      if (selectedClient?.id && inv.clientId === selectedClient.id) return true;
-      if (clientName && inv.clientName && inv.clientName.trim().toLowerCase() === clientName.toLowerCase()) return true;
-      return false;
-    });
-
-    if (alreadyUsedInUsages || alreadyUsedInInvoices) {
+    if (alreadyUsedById || alreadyUsedByPhone) {
       setPromoError('كود مستخدم من قبل');
       return;
     }
 
-    // عند تطبيق البرومو كود: إلغاء وتصفير الخصم اليدوي
-    setDiscount({ type: 'fixed', value: 0 });
+    // Calculate discount
+    let promoDisc = 0;
+    if (found.discountType === 'percentage') {
+      promoDisc = subtotal * (found.discountValue / 100);
+      if (found.maxDiscountAmount && promoDisc > found.maxDiscountAmount) {
+        promoDisc = found.maxDiscountAmount;
+      }
+    } else {
+      promoDisc = Math.min(subtotal, found.discountValue);
+    }
 
     setAppliedPromo(found);
+    setPromoDiscountAmount(promoDisc);
     setPromoCodeInput('');
+    // إلغاء أي خصم يدوي مسبق نهائياً عند استخدام برومو كود
+    setDiscount({ type: 'fixed', value: 0 });
   };
 
   const handleRemovePromo = () => {
     setAppliedPromo(null);
+    setPromoDiscountAmount(0);
     setPromoError(null);
-  };
-
-  // التحقق عند تغيير العميل في حال كان هناك كود برومو مطبق
-  useEffect(() => {
-    if (appliedPromo) {
-      const clientPhone = (selectedClient?.phone || clientSearch || '').replace(/\D/g, '');
-      const clientName = (selectedClient?.name || clientSearch || '').trim();
-      if (clientPhone || clientName) {
-        const clean = appliedPromo.code?.toUpperCase();
-        const alreadyUsed = promoCodeUsages.some(u => {
-          if (u.code?.toUpperCase() !== clean && u.promoCodeId !== appliedPromo.id) return false;
-          const uPhone = (u.clientPhone || '').replace(/\D/g, '');
-          if (clientPhone && uPhone && uPhone === clientPhone) return true;
-          if (clientName && u.clientName && u.clientName.trim().toLowerCase() === clientName.toLowerCase()) return true;
-          return false;
-        }) || invoices.some(inv => {
-          if (inv.status === 'cancelled') return false;
-          if (inv.promoCode?.toUpperCase() !== clean) return false;
-          const invPhone = (inv.clientPhone || '').replace(/\D/g, '');
-          if (clientPhone && invPhone && invPhone === clientPhone) return true;
-          if (selectedClient?.id && inv.clientId === selectedClient.id) return true;
-          if (clientName && inv.clientName && inv.clientName.trim().toLowerCase() === clientName.toLowerCase()) return true;
-          return false;
-        });
-
-        if (alreadyUsed) {
-          setAppliedPromo(null);
-          setPromoError('كود مستخدم من قبل');
-        }
+    if (selectedClient) {
+      const tier = getClientTier(selectedClient, invoices, settings.tierSettings);
+      if (tier && tier.discountPercentage > 0) {
+        setDiscount({ type: 'percentage', value: tier.discountPercentage });
+      } else {
+        setDiscount({ type: 'fixed', value: 0 });
       }
+    } else {
+      setDiscount({ type: 'fixed', value: 0 });
     }
-  }, [selectedClient, clientSearch]);
+  };
 
   // In-cart custom price update
   const handleSaveCustomPrice = (cartId: string) => {
@@ -729,41 +1007,16 @@ export function POSScreen({
     setEditingCartId(null);
   };
 
-  // Modals state
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [paymentType, setPaymentType] = useState<'single' | 'split'>('single');
-  const [singleTreasury, setSingleTreasury] = useState(settings.treasuries.find(t => !t.isMain)?.id || settings.treasuries[0]?.id || '');
-  const [splitAmounts, setSplitAmounts] = useState<Record<string, number>>({});
-  const [showReceiptModal, setShowReceiptModal] = useState(false);
-  const [completedInvoice, setCompletedInvoice] = useState<Invoice | null>(null);
 
-  const hasAnyLineDiscount = useMemo(() => {
-    return cart.some(c => Number(c.item?.discountValue || 0) > 0 || Number(c.item?.lineDiscount || 0) > 0);
-  }, [cart]);
 
-  const hasGeneralDiscount = useMemo(() => {
-    return Number(discount.value || 0) > 0;
-  }, [discount.value]);
+  const hasLineDiscounts = cart.some(c => (Number(c.discount || c.item?.discount) || 0) > 0);
+  const hasOverallDiscount = !hasLineDiscounts && (Number(discount.value) || 0) > 0;
 
-  const subtotal = cart.reduce((sum, c) => sum + (getCartItemPrice(c) * (c.quantity || 1)), 0);
-
-  // حساب خصم البرومو كود تلقائياً بناءً على إجمالي السلة
-  let promoDiscountAmount = 0;
-  if (appliedPromo) {
-    if (appliedPromo.discountType === 'percentage') {
-      promoDiscountAmount = subtotal * (appliedPromo.discountValue / 100);
-      if (appliedPromo.maxDiscountAmount && promoDiscountAmount > appliedPromo.maxDiscountAmount) {
-        promoDiscountAmount = appliedPromo.maxDiscountAmount;
-      }
-    } else {
-      promoDiscountAmount = Math.min(subtotal, appliedPromo.discountValue);
-    }
-  }
-
-  // عند استخدام البرومو كود أو وجود خصم على البنود أو في فاتورة الإصلاح، لا يطبق خصم شامل يدوي
-  const rawManualDiscount = discount.type === 'percentage' ? subtotal * ((Number(discount.value) || 0) / 100) : (Number(discount.value) || 0);
-  const manualDiscountAmount = (isRemedyInvoice || appliedPromo || hasAnyLineDiscount) ? 0 : rawManualDiscount;
-  const discountAmount = isRemedyInvoice ? subtotal : (appliedPromo ? promoDiscountAmount : manualDiscountAmount);
+  const subtotal = cart.reduce((sum, c) => sum + (getCartItemPrice(c) * (Number(c.quantity) || 1)), 0);
+  const manualDiscountAmount = (appliedPromo || hasLineDiscounts)
+    ? 0 
+    : (discount.type === 'percentage' ? subtotal * ((Number(discount.value) || 0) / 100) : (Number(discount.value) || 0));
+  const discountAmount = manualDiscountAmount + promoDiscountAmount;
   const totalInclusive = Math.max(0, subtotal - discountAmount);
   const baseTotal = settings.vatEnabled ? totalInclusive / (1 + settings.vatRate / 100) : totalInclusive;
   const vatAmount = settings.vatEnabled ? totalInclusive - baseTotal : 0;
@@ -815,15 +1068,30 @@ export function POSScreen({
     }
   };
 
-  const handleConfirmPayment = async () => {
+  const handleConfirmPayment = async (shouldPrint: boolean = false) => {
+    if (isSubmittingPayment) return;
     if (isSubscriptionBlocked) {
       alert('⛔ الحساب موقوف أو انتهت فترة الاشتراك. النظام يعمل الآن بوضع الاطلاع فقط (Read-Only) ولا يمكن إنشاء أو سداد فواتير جديدة.');
       return;
     }
 
-    let splits: { amount: number, treasuryId: string }[] = [];
-    const cashbackUsed = isRemedyInvoice ? 0 : (splitAmounts['cashback'] || 0);
-    const remainingTotal = finalTotal - cashbackUsed;
+    // فحص وقائي فوري لمنع سداد نفس الحجز أكثر من مرة
+    const targetBookingId = activeBookingId || initialBooking?.id;
+    if (targetBookingId) {
+      const alreadyPaid = invoices.some(inv => inv.bookingId === targetBookingId);
+      if (alreadyPaid) {
+        alert('⚠️ تنبيه: تم سداد هذا الحجز بالفعل عبر فاتورة أخرى لتفادي ازدواجية المحاسبة.');
+        setShowPaymentModal(false);
+        clearBooking();
+        return;
+      }
+    }
+
+    setIsSubmittingPayment(true);
+    try {
+      let splits: { amount: number, treasuryId: string }[] = [];
+      const cashbackUsed = isRemedyInvoice ? 0 : (splitAmounts['cashback'] || 0);
+      const remainingTotal = finalTotal - cashbackUsed;
     
     if (isRemedyInvoice) {
       splits = [{ amount: 0, treasuryId: 'remedy_free' }];
@@ -846,22 +1114,12 @@ export function POSScreen({
     const assignedTipEmployee = employees.find(e => e.id === tipEmployeeId) || employees.find(e => e.id === cart[0]?.employeeId) || employees[0];
     const tipPayoutMode = settings.tipPayoutMethod || 'instant_cash';
 
-    const currentCashierName = currentUser?.name || (currentUser as any)?.username || 'الكاشير';
-    const effectiveClientPhone = selectedClient?.phone || initialBooking?.phone || initialBooking?.clientPhone || (clientSearch && /^[0-9+ -]{7,}$/.test(clientSearch.trim()) ? clientSearch.trim() : undefined);
-
     const initialInv: Invoice = {
       id: 'INV-' + Math.random().toString(36).substr(2,9).toUpperCase(),
       date: isShiftOpen ? (shiftDate + 'T' + new Date().toTimeString().split(' ')[0]) : new Date().toISOString(),
-      shiftDate: isShiftOpen ? shiftDate : undefined,
-      shiftId: isShiftOpen ? shiftId : undefined,
-      shiftCode: isShiftOpen ? shiftCode : undefined,
       clientName: selectedClient ? selectedClient.name : (clientSearch || 'عميل نقدي'),
       clientId: selectedClient ? selectedClient.id : undefined,
-      clientPhone: effectiveClientPhone,
-      createdBy: currentUser?.id || currentUser?.username || currentUser?.name || undefined,
-      createdByName: currentCashierName,
-      created_by_name: currentCashierName,
-      cashierName: currentCashierName,
+      clientPhone: selectedClient ? selectedClient.phone : undefined,
       subtotal: subtotal,
       vatAmount: vatAmount,
       total: finalTotal, // net paid (0 if remedy)
@@ -905,41 +1163,66 @@ export function POSScreen({
           }
         }
 
-        const origPrice = c.item?.originalPrice ?? itemPrice;
-        const lineDisc = c.item?.lineDiscount ?? (origPrice > itemPrice ? origPrice - itemPrice : 0);
+        // حساب عمولة التنفيذ المباشرة للموظف (سواء خدمة أو منتج)
+        let execCommAmt = 0;
+        const qty = c.quantity || 1;
+        const isProduct = c.type === 'product' || c.item?.type === 'product' || Boolean(c.item?._isProduct);
+        if (isProduct) {
+          const matchedProd = products?.find((p: any) => p.id === c.item?.id || p.name === c.item?.name);
+          const prodComm = Number(c.item?.commission ?? matchedProd?.commission ?? 0);
+          if (prodComm > 0) {
+            execCommAmt = prodComm * qty;
+          }
+        } else {
+          const srvAmount = Number(c.item?.employeeCommissionAmount ?? matchedService?.employeeCommissionAmount ?? c.item?.commissionAmount ?? matchedService?.commissionAmount ?? 0);
+          const srvPct = Number(c.item?.employeeCommissionPercentage ?? matchedService?.employeeCommissionPercentage ?? c.item?.commissionRate ?? matchedService?.commissionRate ?? 0);
+          const rawCommBase = Number(c.item?.commissionableAmount ?? matchedService?.commissionableAmount ?? 0);
+          const commBase = rawCommBase > 0 ? rawCommBase : itemPrice;
+          if (srvAmount > 0) {
+            execCommAmt = srvAmount * qty;
+          } else if (srvPct > 0) {
+            execCommAmt = (srvPct / 100) * commBase * qty;
+          }
+        }
+
+        const commBaseVal = Number(c.item?.commissionableAmount ?? matchedService?.commissionableAmount ?? 0);
+        const isExempt = Boolean(c.item?.isTargetExempt ?? matchedService?.isTargetExempt);
 
         return {
           id: c.cartId,
           itemId: c.item?.id || c.cartId,
-          type: c.type,
+          type: c.type || (isProduct ? 'product' : 'service'),
           employeeId: c.employeeId,
           referralEmployeeId: c.referralEmployeeId || undefined,
           serviceName: c.item?.name || 'خدمة',
           technicianName: performer?.name || 'غير محدد',
           referralEmployeeName: referrer?.name || undefined,
           referralCommissionAmount: refCommAmt > 0 ? refCommAmt : undefined,
+          employeeCommission: execCommAmt > 0 ? execCommAmt : undefined,
+          commissionAmount: execCommAmt > 0 ? execCommAmt : undefined,
+          commission: execCommAmt > 0 ? execCommAmt : undefined,
+          commissionableAmount: commBaseVal > 0 ? commBaseVal : undefined,
+          isTargetExempt: isExempt || undefined,
           price: isRemedyInvoice ? 0 : itemPrice,
-          originalPrice: origPrice !== itemPrice ? origPrice : undefined,
-          discountAmount: lineDisc > 0 ? lineDisc : undefined,
-          quantity: c.quantity || 1
+          discount: Number(c.discount || c.item?.discount) || undefined,
+          originalPrice: Number(c.originalPrice || c.item?.originalPrice) || undefined,
+          quantity: qty
         };
       }),
       paymentMethods: splits
     };
 
-    // 🇸🇦 ZATCA Phase 1 & 2 QR Code Generation & Reporting (Saudi Arabia Only)
+    // 🇸🇦 ZATCA Phase 1 & 2 QR Code Generation & Reporting
     let zatcaQr = '';
     let zatcaReportingStatus: Invoice['zatcaReportingStatus'] = 'not_submitted';
-    if (isSaudiSalon(settings, branches, activeBranchId)) {
-      try {
-        zatcaQr = await ZatcaService.generateZatcaQR(initialInv, settings, settings.zatcaSettings);
-        if (settings.zatcaSettings?.enabled && settings.zatcaSettings.autoReportB2C) {
-          const zatcaRes = await ZatcaService.reportSimplifiedInvoice(initialInv, settings, settings.zatcaSettings);
-          zatcaReportingStatus = zatcaRes.reportingStatus;
-        }
-      } catch (err) {
-        console.warn('ZATCA QR Generation warning:', err);
+    try {
+      zatcaQr = await ZatcaService.generateZatcaQR(initialInv, settings, settings.zatcaSettings);
+      if (settings.zatcaSettings?.enabled && settings.zatcaSettings.autoReportB2C) {
+        const zatcaRes = await ZatcaService.reportSimplifiedInvoice(initialInv, settings, settings.zatcaSettings);
+        zatcaReportingStatus = zatcaRes.reportingStatus;
       }
+    } catch (err) {
+      console.warn('ZATCA QR Generation warning:', err);
     }
 
     // 🇪🇬 ETA Egypt e-Receipt Submission
@@ -964,7 +1247,7 @@ export function POSScreen({
     };
 
     if (selectedClient && !isRemedyInvoice) {
-      // 1. كاش باك العميل المباشر: الفاتورة التي يتم استخدام الكاش باك في سدادها أو تطبيق برومو كود عليها لا تحتسب ضمن الكاش باك
+      // 1. كاش باك العميل المباشر: لا يُحتسب كاش باك إذا تم استخدام كاش باك في السداد أو عند استخدام برومو كود
       let earnedCashback = 0;
       if (cashbackUsed === 0 && !appliedPromo) {
         cart.forEach(c => {
@@ -1051,55 +1334,129 @@ export function POSScreen({
       DB.saveTip(newTip);
     }
 
-    // حفظ استخدام البرومو كود وتحديث عدد استخداماته
-    if (appliedPromo) {
-      const newUsage: PromoCodeUsage = {
-        id: 'PCU-' + Math.random().toString(36).substring(2, 9).toUpperCase(),
-        salonId: settings.salonId,
-        promoCodeId: appliedPromo.id,
-        code: appliedPromo.code,
-        clientPhone: selectedClient?.phone || clientSearch?.replace(/\D/g, '') || '',
-        clientName: selectedClient?.name || clientSearch || undefined,
-        invoiceId: newInvoice.id,
-        discountApplied: promoDiscountAmount,
-        usedAt: new Date().toISOString()
-      };
-
-      if (setPromoCodeUsages) {
-        setPromoCodeUsages(prev => [...prev, newUsage]);
+      if (onCheckoutComplete) {
+        onCheckoutComplete(newInvoice, splits, activeBookingId || initialBooking?.id);
       }
-      DB.savePromoCodeUsage(newUsage);
 
-      const updatedPromo: PromoCode = {
-        ...appliedPromo,
-        usesCount: (appliedPromo.usesCount || 0) + 1
-      };
-      if (setPromoCodes) {
-        setPromoCodes(prev => prev.map(p => p.id === appliedPromo.id ? updatedPromo : p));
+      // حفظ استخدام البرومو كود للعميل المحدد منعاً من الاستخدام المتكرر
+      if (appliedPromo && selectedClient) {
+        const usage: any = {
+          id: DB.generateUUID(),
+          salonId: settings.salonId,
+          promoCodeId: appliedPromo.id,
+          code: appliedPromo.code,
+          clientId: selectedClient.id,
+          clientPhone: selectedClient.phone || '',
+          clientName: selectedClient.name || '',
+          invoiceId: newInvoice.id,
+          discountApplied: promoDiscountAmount,
+          usedAt: new Date().toISOString()
+        };
+        if (setPromoCodeUsages) {
+          setPromoCodeUsages((prev: any[]) => [...prev, usage]);
+        }
+        DB.savePromoCodeUsage(usage);
+
+        // تحديث عدد مرات استخدام الكود وحفظه مباشرة في قاعدة البيانات
+        const updatedPromo = {
+          ...appliedPromo,
+          usesCount: (appliedPromo.usesCount || 0) + 1
+        };
+        DB.savePromoCode(updatedPromo);
+        if (setPromoCodes) {
+          setPromoCodes((prev: PromoCode[]) => prev.map(p => p.id === updatedPromo.id ? updatedPromo : p));
+        }
       }
-      DB.savePromoCode(updatedPromo);
-    }
 
-    if (onCheckoutComplete) {
-      onCheckoutComplete(newInvoice, splits, activeBookingId || initialBooking?.id);
-    }
-    
-    setCompletedInvoice(newInvoice);
+      // إزالة الفاتورة المعلقة من السيرفر والمحلي فوراً بعد تمام السداد الفعلي فقط
+      if (activeHeldInvoiceId) {
+        DB.removeHeldInvoice(activeHeldInvoiceId).catch(() => {});
+        setHeldInvoices(prev => prev.filter(h => h.id !== activeHeldInvoiceId));
+      }
+      if (activeBookingId) {
+        DB.removeHeldInvoice(activeBookingId).catch(() => {});
+        DB.removeHeldInvoice('HOLD-B-' + activeBookingId).catch(() => {});
+        setHeldInvoices(prev => prev.filter(h => h.bookingId !== activeBookingId && h.id !== 'HOLD-B-' + activeBookingId));
+      }
+      if (initialBooking?.id) {
+        DB.removeHeldInvoice(initialBooking.id).catch(() => {});
+        DB.removeHeldInvoice('HOLD-B-' + initialBooking.id).catch(() => {});
+      }
+      if (initialHeldInvoice?.id) {
+        DB.removeHeldInvoice(initialHeldInvoice.id).catch(() => {});
+      }
+      setActiveHeldInvoiceId(null);
+      
+      setCompletedInvoice(newInvoice);
+      setShowPaymentModal(false);
 
-    setShowPaymentModal(false);
-    setShowReceiptModal(true);
-    
-    // reset cart and instant fresh reload of services
-    resetToFreshInvoice(false);
+      // إعادة ضبط الكاشير وبدء فاتورة جديدة فوراً ونزول جميع الخدمات
+      resetToNewInvoice();
 
-    if (settings.printAutomatically) {
-      setTimeout(printReceipt, 500);
+      // استشعار نوع الجهاز: موبايل أو تابلت vs كمبيوتر رئيسي
+      if (isMobileOrTablet()) {
+        try {
+          const receiptHtml = buildReceiptHtml(newInvoice, settings);
+          printHtmlToMainServer(receiptHtml, settings.printerName);
+        } catch (e) {
+          console.error('[POS] Mobile remote print error:', e);
+        }
+        setShowReceiptModal(false);
+        setMobilePrintNotice(`✅ تم سداد الفاتورة #${newInvoice.id} بنجاح وإرسال أمر الطباعة صامتاً لطابعة الكاشير الرئيسية 🖨️`);
+        setTimeout(() => setMobilePrintNotice(null), 4000);
+      } else {
+        // على جهاز الكمبيوتر / البي سي: إعادة معاينة الفاتورة قبل الطباعة بعد السداد
+        setCompletedInvoice(newInvoice);
+        setShowReceiptModal(true);
+      }
+    } catch (err: any) {
+      console.error('Payment confirmation error:', err);
+      alert('حدث خطأ أثناء تأكيد الدفع: ' + (err?.message || ''));
+    } finally {
+      setIsSubmittingPayment(false);
     }
   };
 
-  const printReceipt = () => {
-    if (!completedInvoice) return;
-    executePrintInvoiceReceipt('receipt-content', completedInvoice.id);
+  // 1. إغلاق شاشة الفاتورة دون أي طباعة وبدء فاتورة جديدة فوراً
+  const handleCloseReceiptModal = () => {
+    resetToNewInvoice();
+  };
+
+  // 2. طباعة الفاتورة مباشرة بدون أي معاينة وبدء فاتورة جديدة فوراً مع نزول كافة الخدمات
+  const printReceiptDirect = async (overrideHtml?: string) => {
+    const printContent = overrideHtml || document.getElementById('receipt-content')?.outerHTML || (completedInvoice ? buildReceiptHtml(completedInvoice, settings) : '');
+    if (!printContent) return;
+
+    await directPrintHtml(printContent, settings.printerName);
+
+    // إغلاق الشاشة فوراً وتنزيل كافة الخدمات
+    resetToNewInvoice();
+  };
+
+  // 3. معاينة الفاتورة قبل الطباعة مع خيارات وإعدادات الطباعة العادية للمتصفح
+  const printReceiptPreview = () => {
+    const printContent = document.getElementById('receipt-content')?.outerHTML;
+    if (printContent) {
+      const printWindow = window.open('', '', 'width=800,height=650');
+      if (printWindow) {
+        printWindow.document.write('<!DOCTYPE html><html dir="rtl" lang="ar"><head><title>معاينة الفاتورة قبل الطباعة</title>');
+        printWindow.document.write('<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap" rel="stylesheet">');
+        printWindow.document.write('<style>');
+        printWindow.document.write('@page { size: 80mm auto; margin: 4mm; }');
+        printWindow.document.write('body { margin: 0; padding: 8px; display: flex; justify-content: center; background-color: #fff; direction: rtl; font-family: "Cairo", sans-serif; }');
+        printWindow.document.write('@media print { body { padding: 0; margin: 0; } @page { margin: 0; } }');
+        printWindow.document.write('</style>');
+        printWindow.document.write('</head><body>');
+        printWindow.document.write(printContent);
+        printWindow.document.write('</body></html>');
+        printWindow.document.close();
+        
+        printWindow.setTimeout(() => {
+          printWindow.focus();
+          printWindow.print();
+        }, 500);
+      }
+    }
   };
 
   const handleClientSearch = () => {
@@ -1157,132 +1514,108 @@ export function POSScreen({
       setSelectedClient(client || null);
       setClientSearch(initialBooking.clientName);
       
-      // حساب مجموع خصومات بنود الخدمات إن وجدت
-      const totalServiceDiscounts = (initialBooking.services || []).reduce((sum, s) => {
-        const sQty = Math.max(1, Number(s.quantity) || 1);
-        const base = Number(s.price || 0) * sQty;
-        const val = Number(s.discountValue || 0);
-        if (val <= 0) return sum;
-        const lineDisc = s.discountType === 'percentage'
-          ? (base * Math.min(100, Math.max(0, val))) / 100
-          : Math.min(base, Math.max(0, val));
-        return sum + lineDisc;
-      }, 0);
-
-      const hasBookingGeneralDiscount = Number(initialBooking.discountValue || 0) > 0;
-
-      const cartItems: CartItem[] = (initialBooking.services || []).map(s => {
-        const isProductLine = s.type === 'product' || (!items.some(i => i.id === (s.serviceId || s.productId)) && products.some(p => p.id === (s.serviceId || s.productId)));
-        const foundProduct = isProductLine ? products.find(p => p.id === (s.productId || s.serviceId) || p.name === s.serviceName) : undefined;
-        const foundService = !isProductLine ? items.find(i => i.id === s.serviceId || i.name === s.serviceName) : undefined;
-
-        // احترام السعر المسجل في الحجز بدقة (سواء كان مخصصاً أو افتراضياً) وعدم العودة لسعر الخدمة الأساسي
-        const hasBookingPrice = s.price !== undefined && s.price !== null && !isNaN(Number(s.price));
-        const baseRawPrice = hasBookingPrice
-          ? Number(s.price)
-          : (isProductLine 
-              ? (foundProduct ? Number(foundProduct.sellPrice) : 0)
-              : (foundService ? Number(foundService.price) : 0));
-        const safePrice = isNaN(baseRawPrice) ? 0 : baseRawPrice;
-        const sQty = Math.max(1, Number(s.quantity) || 1);
-        
-        // حساب خصم سطر الخدمة أو المنتج المحدد
-        const sVal = Number(s.discountValue || 0);
-        let lineDiscount = 0;
-        if (sVal > 0) {
-          lineDiscount = s.discountType === 'percentage'
-            ? (safePrice * Math.min(100, Math.max(0, sVal))) / 100
-            : Math.min(safePrice, Math.max(0, sVal) / sQty);
+      // 1. Process services and discounts with mutual exclusivity for initialBooking
+      let rawBookingServices = initialBooking.services;
+      if (typeof rawBookingServices === 'string') {
+        try {
+          rawBookingServices = JSON.parse(rawBookingServices);
+        } catch {
+          rawBookingServices = [];
         }
+      }
+      if (!Array.isArray(rawBookingServices)) rawBookingServices = [];
 
-        // إذا كان هناك خصم على البنود، يطبق الخصم على السطر مباشرة
-        const effectivePrice = totalServiceDiscounts > 0 ? Math.max(0, safePrice - lineDiscount) : safePrice;
+      const lineDiscountsTotal = rawBookingServices.reduce((sum: number, s: any) => sum + (Number(s.discount) || 0), 0);
+      const hasLineDiscounts = lineDiscountsTotal > 0;
+      const rawBookingDiscVal = Number(initialBooking.discountValue) || 0;
+      const hasOverallDiscount = !hasLineDiscounts && rawBookingDiscVal > 0;
 
-        const cartItemData: any = isProductLine ? {
-          ...(foundProduct || {}),
-          id: foundProduct?.id || s.productId || s.serviceId,
-          name: s.serviceName || foundProduct?.name || 'منتج',
-          sellPrice: effectivePrice,
-          price: effectivePrice,
-          displayPrice: effectivePrice,
-          originalPrice: safePrice,
-          discountPrice: lineDiscount > 0 ? effectivePrice : undefined,
-          lineDiscount: lineDiscount > 0 ? lineDiscount : undefined,
-          discountType: s.discountType || 'fixed',
-          discountValue: sVal,
-          hasDiscount: lineDiscount > 0,
-          _isProduct: true,
-          type: 'product'
-        } : (foundService ? {
-          ...foundService,
-          name: s.serviceName || foundService.name,
-          price: effectivePrice,
-          displayPrice: effectivePrice,
-          originalPrice: safePrice,
-          discountPrice: lineDiscount > 0 ? effectivePrice : undefined,
-          lineDiscount: lineDiscount > 0 ? lineDiscount : undefined,
-          discountType: s.discountType || 'fixed',
-          discountValue: sVal,
-          hasDiscount: lineDiscount > 0,
-          type: 'service'
+      const cartItems: CartItem[] = rawBookingServices.map((s: any, idx: number) => {
+        const isProduct = s.type === 'product';
+        const foundProduct = isProduct ? products.find(p => p.id === (s.serviceId || s.productId)) : undefined;
+        const foundService = !isProduct ? items.find(i => i.id === s.serviceId) : undefined;
+        const foundItem = isProduct ? foundProduct : foundService;
+        const parsedPrice = Number(s.price) || (foundItem ? Number((foundItem as any).sellPrice ?? (foundItem as any).price) : 0);
+        const safeOrigPrice = isNaN(parsedPrice) ? 0 : parsedPrice;
+        
+        const qty = Math.max(1, Number(s.quantity) || 1);
+        // In case of line discounts, deduct directly from service/product unit price on the cart line
+        const lineDiscount = hasLineDiscounts ? (Number(s.discount) || 0) : 0;
+        const perUnitDiscount = lineDiscount > 0 ? lineDiscount / qty : 0;
+        const effectiveLinePrice = Math.max(0, safeOrigPrice - perUnitDiscount);
+
+        const cartItemObj: any = foundItem ? {
+          ...foundItem,
+          name: s.serviceName || s.productName || foundItem.name,
+          price: effectiveLinePrice,
+          displayPrice: effectiveLinePrice,
+          originalPrice: safeOrigPrice,
+          discount: lineDiscount > 0 ? lineDiscount : undefined,
+          type: isProduct ? 'product' : 'service'
         } : {
-          id: s.serviceId,
-          name: s.serviceName,
-          price: effectivePrice,
-          displayPrice: effectivePrice,
-          originalPrice: safePrice,
-          discountPrice: lineDiscount > 0 ? effectivePrice : undefined,
-          lineDiscount: lineDiscount > 0 ? lineDiscount : undefined,
-          discountType: s.discountType || 'fixed',
-          discountValue: sVal,
-          hasDiscount: lineDiscount > 0,
-          categoryId: 'services',
+          id: s.serviceId || s.productId || `item-${idx}`,
+          name: s.serviceName || s.productName || (isProduct ? 'منتج صالون' : 'خدمة صالون'),
+          price: effectiveLinePrice,
+          displayPrice: effectiveLinePrice,
+          categoryId: isProduct ? 'products' : 'services',
           isActive: true,
-          type: 'service'
-        });
-
+          type: isProduct ? 'product' : 'service',
+          originalPrice: safeOrigPrice,
+          discount: lineDiscount > 0 ? lineDiscount : undefined
+        };
+        
         return {
           cartId: Math.random().toString(36).substring(2, 9),
-          item: cartItemData,
-          quantity: sQty,
-          employeeId: s.technicianId && s.technicianId !== 'any' ? s.technicianId : '',
-          type: isProductLine ? 'product' : 'service',
-          price: effectivePrice
+          item: cartItemObj,
+          quantity: qty,
+          employeeId: s.technicianId && s.technicianId !== 'any' && s.technicianId !== '-' ? s.technicianId : '',
+          type: isProduct ? 'product' : 'service',
+          price: effectiveLinePrice,
+          discount: lineDiscount > 0 ? lineDiscount : undefined,
+          originalPrice: safeOrigPrice
         };
       });
       
       setCart(cartItems);
 
-      // تطبيق الخصم:
-      // 1. في حالة وجود خصم عام على إجمالي الحجز (وليس على الخدمات): يضاف في خانة الخصم أسفل الفاتورة في نقطة البيع
-      // 2. في حالة خصم على الخدمات: تم تطبيقه بالفعل على أسطر الخدمات في السلة أعلاه، ويكون خصم الفاتورة بالأسفل 0
-      if (totalServiceDiscounts === 0 && hasBookingGeneralDiscount) {
+      // In case of line discounts, discount is already on each service line -> bottom discount = 0
+      // In case of overall booking discount, service prices are original -> discount is in bottom discount section!
+      if (hasOverallDiscount) {
         setDiscount({
           type: initialBooking.discountType || 'fixed',
-          value: Number(initialBooking.discountValue)
+          value: rawBookingDiscVal
         });
       } else {
         setDiscount({ type: 'fixed', value: 0 });
       }
       
-      try {
-        localStorage.removeItem('smartcut_pos_active_draft');
-      } catch {}
-      
-      let safeAdvances: AdvancePayment[] = [];
-      const rawAdv = initialBooking.advancePayments || (initialBooking as any).advance_payments;
-      if (Array.isArray(rawAdv)) {
-        safeAdvances = rawAdv;
-      } else if (typeof rawAdv === 'string') {
+      let rawAdvances = initialBooking.advancePayments;
+      if (typeof rawAdvances === 'string') {
         try {
-          const parsed = JSON.parse(rawAdv);
-          if (Array.isArray(parsed)) safeAdvances = parsed;
-        } catch {}
+          rawAdvances = JSON.parse(rawAdvances);
+        } catch {
+          rawAdvances = [];
+        }
+      }
+      if (!Array.isArray(rawAdvances)) rawAdvances = [];
+
+      let advancesSum = rawAdvances.reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0);
+      if (advancesSum === 0 && (initialBooking as any).advancePayment) {
+        const legacyAdv = Number((initialBooking as any).advancePayment) || 0;
+        if (legacyAdv > 0) {
+          advancesSum = legacyAdv;
+          rawAdvances = [{
+            id: 'adv-' + initialBooking.id,
+            amount: legacyAdv,
+            treasuryId: (initialBooking as any).treasuryId || '',
+            treasuryName: (initialBooking as any).treasuryName || 'الخزينة',
+            date: initialBooking.date || new Date().toISOString().split('T')[0]
+          }];
+        }
       }
 
-      const advancesSum = safeAdvances.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
       setAdvanceDeduction(advancesSum);
-      setActiveAdvancePayments(safeAdvances);
+      setActiveAdvancePayments(rawAdvances);
       setActiveBookingId(initialBooking.id);
       if (initialBooking.queueNumber) {
         setActiveQueueNumber(initialBooking.queueNumber);
@@ -1328,10 +1661,19 @@ export function POSScreen({
         setActiveQueueNumber(initialHeldInvoice.queueNumber);
       }
 
-      // إزالة الفاتورة من قائمة المعلقة محلياً وسحابياً لأنها فُتحت مباشرة على شاشة الكاشير
-      setHeldInvoices(prev => prev.filter(h => h.id !== initialHeldInvoice.id && h.queueTicketId !== initialHeldInvoice.queueTicketId));
+      // الاحتفاظ بالفاتورة المعلقة كنشطة في الـ POS دون حذفها من قاعدة البيانات حتى يتم السداد الفعلي
+      setActiveHeldInvoiceId(initialHeldInvoice.id);
+      const updatedHeld: HeldInvoice = {
+        ...initialHeldInvoice,
+        isOpen: true,
+        openedBy: currentUser?.name || 'الكاشير'
+      };
+      setHeldInvoices(prev => {
+        const exists = prev.some(h => h.id === initialHeldInvoice.id);
+        return exists ? prev.map(h => h.id === initialHeldInvoice.id ? updatedHeld : h) : [updatedHeld, ...prev];
+      });
       if (initialHeldInvoice.id) {
-        DB.removeHeldInvoice(initialHeldInvoice.id).catch(e => console.warn('Failed to remove active held invoice:', e));
+        DB.saveHeldInvoice(updatedHeld).catch(() => {});
       }
 
       if (onClearInitial) onClearInitial();
@@ -1340,7 +1682,7 @@ export function POSScreen({
 
   // حفظ الفاتورة النشطة كمسودة محلية تلقائياً لضمان عدم فقدانها عند التنقل بين الشاشات
   useEffect(() => {
-    if (cart.length > 0 || activeBookingId || (selectedClient && selectedClient.name)) {
+    if (cart.length > 0 || activeBookingId || (selectedClient && selectedClient.name) || activeHeldInvoiceId) {
       const draft = {
         cart,
         selectedClient,
@@ -1349,6 +1691,7 @@ export function POSScreen({
         advanceDeduction: Number(advanceDeduction) || 0,
         activeAdvancePayments,
         activeBookingId,
+        activeHeldInvoiceId,
         isRemedyInvoice,
         remedyReason,
         beforePhotoUrl,
@@ -1365,7 +1708,7 @@ export function POSScreen({
         localStorage.removeItem('smartcut_pos_active_draft');
       } catch {}
     }
-  }, [cart, selectedClient, clientSearch, discount, advanceDeduction, activeAdvancePayments, activeBookingId, isRemedyInvoice, remedyReason, beforePhotoUrl, afterPhotoUrl, activeQueueNumber]);
+  }, [cart, selectedClient, clientSearch, discount, advanceDeduction, activeAdvancePayments, activeBookingId, activeHeldInvoiceId, isRemedyInvoice, remedyReason, beforePhotoUrl, afterPhotoUrl, activeQueueNumber]);
 
   // استعادة المسودة النشطة عند فتح شاشة الكاشير (إذا لم يتم تمرير حجز جديد أو فاتورة معلقة جديدة)
   useEffect(() => {
@@ -1383,6 +1726,7 @@ export function POSScreen({
             if (draft.advanceDeduction !== undefined) setAdvanceDeduction(Number(draft.advanceDeduction) || 0);
             if (draft.activeAdvancePayments) setActiveAdvancePayments(draft.activeAdvancePayments);
             if (draft.activeBookingId) setActiveBookingId(draft.activeBookingId);
+            if (draft.activeHeldInvoiceId) setActiveHeldInvoiceId(draft.activeHeldInvoiceId);
             if (draft.isRemedyInvoice) setIsRemedyInvoice(draft.isRemedyInvoice);
             if (draft.remedyReason) setRemedyReason(draft.remedyReason);
             if (draft.beforePhotoUrl) setBeforePhotoUrl(draft.beforePhotoUrl);
@@ -1397,117 +1741,51 @@ export function POSScreen({
   }, []);
 
   const clearBooking = () => {
-    resetToFreshInvoice(false);
+    setCart([]);
+    setClientSearch('');
+    setSelectedClient(null);
+    setAdvanceDeduction(0);
+    setActiveAdvancePayments([]);
+    setActiveBookingId(undefined);
+    setActiveQueueNumber(null);
+    setActiveHeldInvoiceId(null);
+    setIsRemedyInvoice(false);
+    setBeforePhotoUrl('');
+    setAfterPhotoUrl('');
+    try {
+      localStorage.removeItem('smartcut_pos_active_draft');
+    } catch {}
+    if (onClearInitial) onClearInitial();
   };
 
-  const normalizeText = (text: string) => {
-    return (text || '')
-      .toLowerCase()
-      .trim()
-      .replace(/[أإآ]/g, 'ا')
-      .replace(/ة/g, 'ه')
-      .replace(/ى/g, 'ي')
-      .replace(/\s+/g, ' ');
-  };
+  // تصنيفات التبويب النشط (خدمات أو منتجات) لضمان ظهور كافة تصنيفات الخدمات أو المنتجات التابعة
+  const activeCategories = useMemo(() => {
+    const relevantItems = itemTypeFilter === 'service' ? items : products;
+    // استخراج معرّفات وأسماء التصنيفات المستخدمة بالفعل في العناصر
+    const usedCategories = new Set(
+      relevantItems.map((it: any) => String(it.categoryId || it.category_id || it.category || '').trim().toLowerCase()).filter(Boolean)
+    );
 
-  // التصنيفات المتاحة للعرض للخدمات أو المنتجات في شاشة نقطة البيع
-  const availableCategories = useMemo(() => {
-    const isService = itemTypeFilter === 'service';
-    const activeList = isService 
-      ? (items || []).filter(i => i.isActive !== false) 
-      : (products || []).filter(p => 
-          (!p.productType || p.productType === 'retail' || (p as any).product_type === 'retail') && 
-          p.productType !== 'raw_material' && 
-          (p as any).product_type !== 'raw_material' && 
-          p.isActive !== false
-        );
+    const cleanCategories = (categories || []).filter(c => c && c.id !== 'all');
 
-    const result: { id: string; name: string }[] = [];
-    const seenKeys = new Set<string>();
-
-    // 1. فحص قائمة التصنيفات المسجلة بالنظام (categories)
-    (categories || []).forEach(cat => {
-      if (!cat || !cat.name || cat.id === 'all' || cat.isActive === false) return;
-      const catNorm = normalizeText(cat.name);
-
-      let isRelevant = false;
-      if (isService) {
-        if (cat.type === 'service') {
-          isRelevant = true;
-        } else if (!cat.type) {
-          const usedByService = activeList.some((s: any) => 
-            s.categoryId === cat.id || 
-            normalizeText(s.categoryId || '') === catNorm ||
-            normalizeText(s.category || '') === catNorm
-          );
-          const usedByProduct = (products || []).some((p: any) => 
-            p.categoryId === cat.id || 
-            normalizeText(p.categoryId || '') === catNorm ||
-            normalizeText(p.category || '') === catNorm ||
-            normalizeText(p.category_id || '') === catNorm
-          );
-          isRelevant = usedByService || !usedByProduct;
-        }
-      } else {
-        // المنتجات: قاعدة قطعية - تصنيفات الخدمات (type === 'service') ممنوع منعاً باتاً ظهورها ضمن تبويبات المنتجات
-        if (cat.type === 'service') {
-          isRelevant = false;
-        } else {
-          // يجب حصراً أن يحتوي التصنيف على منتج واحد على الأقل مصنف كـ "منتج للبيع" (Retail)
-          // التصنيفات التي تحتوي فقط على مواد خام (raw_material) أو تصنيفات المنتجات التي ليس بها سلع للبيع يتم استبعادها تماماً
-          const hasForSaleProduct = activeList.some((p: any) => {
-            const pCatId = (p.categoryId || (p as any).category_id || '').toString().trim();
-            const pCatName = ((p as any).category || '').toString().trim();
-            if (pCatId && pCatId === cat.id) return true;
-            if (pCatName && pCatName === cat.name) return true;
-            if (pCatId && (normalizeText(pCatId) === catNorm || normalizeText(pCatId) === normalizeText(cat.id))) return true;
-            if (pCatName && normalizeText(pCatName) === catNorm) return true;
-            if (pCatId) {
-              const knownCat = categories.find(c => c.id === pCatId);
-              if (knownCat && (knownCat.id === cat.id || normalizeText(knownCat.name) === catNorm)) return true;
-            }
-            return false;
-          });
-          isRelevant = hasForSaleProduct;
-        }
+    return cleanCategories.filter(cat => {
+      // 1. إذا كان نوع التصنيف محدد صراحة كخدمة أو منتج
+      if (cat.type) {
+        return cat.type === itemTypeFilter;
       }
-
-      if (isRelevant && !seenKeys.has(catNorm)) {
-        seenKeys.add(catNorm);
-        seenKeys.add(cat.id);
-        result.push({ id: cat.id, name: cat.name.trim() });
+      // 2. إذا لم يكن النوع محدداً، نتحقق مما إذا كان مستخدماً في عناصر التبويب الحالي
+      const idLower = String(cat.id || '').trim().toLowerCase();
+      const nameLower = String(cat.name || '').trim().toLowerCase();
+      if (usedCategories.has(idLower) || usedCategories.has(nameLower)) {
+        return true;
       }
+      // 3. افتراضياً للخدمات إذا لم يكن هناك نوع محدد
+      return itemTypeFilter === 'service';
     });
+  }, [categories, itemTypeFilter, items, products]);
 
-    // 2. اكتشاف أي تصنيفات أخرى مسجلة على الأصناف (الخدمات أو المنتجات) لضمان ظهور زر لكل تصنيف فعلي
-    activeList.forEach((it: any) => {
-      const rawCat = (it.categoryId || it.category_id || it.category || '').toString().trim();
-      if (!rawCat || rawCat === 'all') return;
-      const rawNorm = normalizeText(rawCat);
-
-      if (!seenKeys.has(rawNorm) && !seenKeys.has(rawCat)) {
-        const matchedKnown = categories.find(c => c.id === rawCat || normalizeText(c.name) === rawNorm);
-        // عند عرض المنتجات، يُمنع منعاً باتاً إضافة أي تصنيف خدمي
-        if (!isService && matchedKnown && matchedKnown.type === 'service') {
-          return;
-        }
-
-        const displayName = matchedKnown ? matchedKnown.name : rawCat;
-        const displayNorm = normalizeText(displayName);
-
-        if (!seenKeys.has(displayNorm)) {
-          seenKeys.add(displayNorm);
-          seenKeys.add(rawCat);
-          result.push({ id: matchedKnown ? matchedKnown.id : rawCat, name: displayName });
-        }
-      }
-    });
-
-    return result;
-  }, [categories, items, products, itemTypeFilter]);
-
-  // ⚡ قائمة الخدمات النشطة المجهزة فوراً بالذاكرة (Instant Zero-Delay Services Cache)
-  const allActiveServices = useMemo(() => {
+  // ⚡ قائمة الخدمات الافتراضية النشطة المجهزة مسبقاً في الذاكرة (Ultra Fast-Path Cache) لنزول الخدمات فوراً دون أي تأخير
+  const defaultActiveServices = useMemo(() => {
     const active = (items || []).filter(i => i.isActive !== false);
     return active.sort((a: any, b: any) => {
       const aPri = a.isPriority ? 1 : 0;
@@ -1532,130 +1810,186 @@ export function POSScreen({
     });
   }, [items]);
 
-  // ⚡ قائمة المنتجات النشطة المجهزة بالذاكرة
-  const allActiveProducts = useMemo(() => {
-    const prods = (products || []).filter(p => 
-      (!p.productType || p.productType === 'retail' || (p as any).product_type === 'retail') && 
-      p.productType !== 'raw_material' && 
-      (p as any).product_type !== 'raw_material' && 
-      p.isActive !== false
-    );
-    return prods.map(p => {
-      const originalPrice = Number(p.sellPrice) || 0;
-      return {
-        ...p,
-        _isProduct: true,
-        hasDiscount: false,
-        discountPrice: undefined,
-        originalPrice,
-        displayPrice: originalPrice
-      };
-    });
-  }, [products]);
-
   const filteredItems = useMemo(() => {
-    const isService = itemTypeFilter === 'service';
-    const baseList = isService ? allActiveServices : allActiveProducts;
+    const q = (searchQuery || '').trim().toLowerCase();
 
-    // ⚡ Fast-Path الفوري: عند بدء فاتورة جديدة أو عرض الكل وبدون بحث، إرجاع القائمة بالكامل في 0ms
-    if ((!selectedCategory || selectedCategory === 'all') && !searchQuery) {
-      return baseList;
+    // ⚡ مسار فائق السرعة (Ultra Fast Path): استرجاع الخدمات فوراً بدون إعادة فرز أو معالجة عند بدء فاتورة جديدة
+    if (itemTypeFilter === 'service' && (!selectedCategory || selectedCategory === 'all') && !q) {
+      return defaultActiveServices;
     }
 
-    let filtered = baseList;
+    let source = itemTypeFilter === 'service' 
+      ? items.filter(i => i.isActive !== false) 
+      : products.filter(p => (p as any).productType !== 'raw_material');
+    let filtered = source;
 
     if (selectedCategory && selectedCategory !== 'all') {
-      const selectedCat = categories.find(c => c.id === selectedCategory || normalizeText(c.name) === normalizeText(selectedCategory));
-      const targetId = selectedCategory;
-      const targetName = selectedCat ? selectedCat.name : selectedCategory;
-      const targetNorm = normalizeText(targetName);
-      const targetIdNorm = normalizeText(targetId);
+      const selectedCat = categories.find(c => c.id === selectedCategory || c.name === selectedCategory);
+      const targetId = (selectedCat?.id || selectedCategory).trim().toLowerCase();
+      const targetName = (selectedCat?.name || selectedCategory).trim().toLowerCase();
 
-      filtered = filtered.filter((i: any) => {
-        const itemCatId = (i.categoryId || i.category_id || '').toString().trim();
-        const itemCatName = (i.category || '').toString().trim();
+      filtered = filtered.filter(i => {
+        const itemCatId = String(i.categoryId || (i as any).category_id || '').trim().toLowerCase();
+        const itemCatName = String((i as any).category || (i as any).categoryName || '').trim().toLowerCase();
 
-        // 1. مطابقة مباشرة بالمعرف
-        if (itemCatId && (itemCatId === targetId || (selectedCat && itemCatId === selectedCat.id))) return true;
-
-        // 2. مطابقة بالاسم
-        if (itemCatName && (itemCatName === targetName || (selectedCat && itemCatName === selectedCat.name))) return true;
-        if (itemCatId && (itemCatId === targetName || (selectedCat && itemCatId === selectedCat.name))) return true;
-
-        // 3. مطابقة مرنة مع معالجة الحروف والهمزات والمسافات (normalizeText)
-        if (itemCatId && (normalizeText(itemCatId) === targetNorm || normalizeText(itemCatId) === targetIdNorm)) return true;
-        if (itemCatName && (normalizeText(itemCatName) === targetNorm || normalizeText(itemCatName) === targetIdNorm)) return true;
-
-        // 4. مطابقة إذا كان itemCatId معرفاً يشير لتصنيف في جدول categories يطابق الهدف
-        if (itemCatId) {
-          const catObj = categories.find(c => c.id === itemCatId);
-          if (catObj && (catObj.id === targetId || normalizeText(catObj.name) === targetNorm)) return true;
-        }
+        // 1. مطابقة بمعرف التصنيف
+        if (itemCatId && (itemCatId === targetId || itemCatId === targetName)) return true;
+        // 2. مطابقة باسم التصنيف
+        if (itemCatName && (itemCatName === targetName || itemCatName === targetId)) return true;
+        // 3. مطابقة إذا كانت الخدمة/المنتج مسجلة بمعرف كائن التصنيف
+        if (selectedCat && (itemCatId === selectedCat.id.toLowerCase() || itemCatId === selectedCat.name.toLowerCase())) return true;
 
         return false;
       });
     }
+    if (q) {
+      // تطبيع الأرقام (تحويل الأرقام العربية إلى إنجليزية إن وُجدت)
+      const normalizedQ = q.replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d).toString()).trim();
+      const numQuery = parseFloat(normalizedQ);
+      const isPureNumeric = !isNaN(numQuery) && /^\d+(\.\d+)?$/.test(normalizedQ);
 
-    if (searchQuery) {
-      const q = normalizeText(searchQuery);
-      const qLower = searchQuery.trim().toLowerCase();
+      filtered = filtered.filter(i => {
+        // 1. مطابقة الاسم
+        const matchesName = Boolean(i.name && i.name.toLowerCase().includes(q));
+        // 2. مطابقة الباركود
+        const matchesBarcode = Boolean(i.barcode && i.barcode.toLowerCase().includes(q));
+        
+        // 3. مطابقة سعر الخدمة أو المنتج إذا كتب المستخدم رقماً (مثل 1500)
+        let matchesPrice = false;
+        if (isPureNumeric) {
+          const itemPrice = Number(i.price);
+          const itemSellPrice = Number((i as any).sellPrice);
+          const itemDiscountPrice = Number(i.discountPrice);
 
-      // تحويل الأرقام المشرقية (٠١٢٣٤٥٦٧٨٩) إلى أرقام غربية
-      const toWesternDigits = (str: string) => {
-        return str.replace(/[٠-٩]/g, d => '0123456789'['٠١٢٣٤٥٦٧٨٩'.indexOf(d)]);
-      };
-
-      // التحقق مما إذا كان المدخل يمثل سعراً (رقم مجرد، أو متبوع/مسبوق بالعملة)
-      const parsePriceQuery = (raw: string, curr?: string): number | null => {
-        if (!raw) return null;
-        let cleaned = raw.trim();
-        if (curr && curr.trim()) {
-          cleaned = cleaned.replace(new RegExp(curr.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), ' ');
-        }
-        cleaned = cleaned.replace(/(ريال|ر\.س|ج\.م|جنيه|درهم|د\.إ|دينار|SAR|EGP|AED|KWD|USD|\$)/gi, ' ');
-        cleaned = cleaned.replace(/,/g, '').trim();
-        const western = toWesternDigits(cleaned);
-        if (/^\d+(\.\d+)?$/.test(western)) {
-          const num = parseFloat(western);
-          return isNaN(num) ? null : num;
-        }
-        return null;
-      };
-
-      const targetPrice = parsePriceQuery(searchQuery, settings?.currency);
-
-      if (targetPrice !== null) {
-        filtered = filtered.filter((i: any) => {
-          const itemDisplayPrice = Number(i.displayPrice !== undefined ? i.displayPrice : (i.price ?? i.sellPrice ?? 0));
-          const itemOrigPrice = Number(i.originalPrice !== undefined ? i.originalPrice : (i.price ?? i.sellPrice ?? 0));
-          const itemBasePrice = Number(i.price ?? 0);
-          const itemDiscountPrice = Number(i.discountPrice ?? 0);
-
-          // 1. مطابقة السعر بدقة (السعر الفعلي أو الأساسي أو التخفيض)
-          const matchesPrice = (
-            Math.abs(itemDisplayPrice - targetPrice) < 0.01 ||
-            Math.abs(itemOrigPrice - targetPrice) < 0.01 ||
-            Math.abs(itemBasePrice - targetPrice) < 0.01 ||
-            (itemDiscountPrice > 0 && Math.abs(itemDiscountPrice - targetPrice) < 0.01)
+          matchesPrice = (
+            (!isNaN(itemPrice) && itemPrice === numQuery) ||
+            (!isNaN(itemSellPrice) && itemSellPrice === numQuery) ||
+            (!isNaN(itemDiscountPrice) && itemDiscountPrice > 0 && itemDiscountPrice === numQuery)
           );
+        }
 
-          // 2. مطابقة الباركود بدقة (في حال مسح باركود رقمي بواسطة القارئ)
-          const matchesBarcode = !!(i.barcode && i.barcode.trim().toLowerCase() === qLower);
+        return matchesName || matchesBarcode || matchesPrice;
+      });
 
-          // 3. مطابقة الاسم المطابق تماماً للرقم
-          const matchesExactName = normalizeText(i.name) === q;
-
-          return matchesPrice || matchesBarcode || matchesExactName;
+      // إذا كان المستخدم في تبويب الخدمات وقام بالبحث/مسح باركود أو سعر يطابق منتجات، نظهر المنتجات المطابقة
+      if (itemTypeFilter === 'service') {
+        const matchingBarcodeOrPriceProducts = products.filter(p => {
+          if ((p as any).productType === 'raw_material') return false;
+          const pBarcodeMatch = Boolean(p.barcode && p.barcode.toLowerCase().includes(q));
+          let pPriceMatch = false;
+          if (isPureNumeric) {
+            const pSellPrice = Number(p.sellPrice);
+            pPriceMatch = !isNaN(pSellPrice) && pSellPrice === numQuery;
+          }
+          return pBarcodeMatch || pPriceMatch;
         });
-      } else {
-        filtered = filtered.filter(i => 
-          normalizeText(i.name).includes(q) || (i.barcode && i.barcode.toLowerCase().includes(qLower))
-        );
+        if (matchingBarcodeOrPriceProducts.length > 0) {
+          const existingIds = new Set(filtered.map(x => x.id));
+          const newProducts = matchingBarcodeOrPriceProducts.filter(p => !existingIds.has(p.id));
+          if (newProducts.length > 0) {
+            filtered = [...filtered, ...newProducts];
+          }
+        }
       }
     }
 
-    return filtered;
-  }, [itemTypeFilter, allActiveServices, allActiveProducts, selectedCategory, searchQuery, categories, settings?.currency]);
+    // ترتيب الخدمات بحيث تكون الخدمات ذات الأولوية (isPriority) في المقدمة دائماً
+    if (itemTypeFilter === 'service') {
+      filtered = [...filtered].sort((a: any, b: any) => {
+        const aPri = a.isPriority ? 1 : 0;
+        const bPri = b.isPriority ? 1 : 0;
+        if (aPri !== bPri) return bPri - aPri;
+        const aOrder = a.priorityOrder ?? 0;
+        const bOrder = b.priorityOrder ?? 0;
+        return aOrder - bOrder;
+      });
+    }
+
+    return filtered.map(i => {
+      const isProduct = (i as any)._isProduct !== undefined 
+        ? Boolean((i as any)._isProduct) 
+        : itemTypeFilter === 'product' || Boolean((i as any).sellPrice !== undefined && (i as any).price === undefined);
+      const originalPrice = isProduct ? (Number(i.sellPrice) || 0) : (Number(i.price) || 0);
+      const rawDiscount = Number(i.discountPrice);
+      const hasDiscount = !isProduct && !isNaN(rawDiscount) && rawDiscount > 0 && rawDiscount < originalPrice;
+      const effectivePrice = hasDiscount ? rawDiscount : originalPrice;
+
+      return {
+        ...i,
+        _isProduct: isProduct,
+        hasDiscount,
+        discountPrice: hasDiscount ? rawDiscount : undefined,
+        originalPrice: originalPrice,
+        displayPrice: effectivePrice
+      };
+    });
+  }, [selectedCategory, searchQuery, items, products, itemTypeFilter, categories]);
+
+  // تصفية الخدمات والمنتجات لنافذة استعلام الأسعار (معاينة وقراءة فقط دون إضافة للفاتورة)
+  const priceCheckFilteredItems = useMemo(() => {
+    const q = (priceCheckSearch || '').trim().toLowerCase();
+    let source: any[] = [];
+    if (priceCheckType === 'service' || priceCheckType === 'all') {
+      source.push(...(items || []).filter(i => i.isActive !== false).map(s => ({ ...s, _isProduct: false })));
+    }
+    if (priceCheckType === 'product' || priceCheckType === 'all') {
+      source.push(...(products || []).filter(p => (p as any).productType !== 'raw_material').map(p => ({ ...p, _isProduct: true })));
+    }
+
+    let filtered = source;
+
+    if (priceCheckCategory && priceCheckCategory !== 'all') {
+      const selectedCat = categories.find(c => c.id === priceCheckCategory || c.name === priceCheckCategory);
+      const targetId = (selectedCat?.id || priceCheckCategory).trim().toLowerCase();
+      const targetName = (selectedCat?.name || priceCheckCategory).trim().toLowerCase();
+
+      filtered = filtered.filter(i => {
+        const itemCatId = String(i.categoryId || (i as any).category_id || '').trim().toLowerCase();
+        const itemCatName = String((i as any).category || (i as any).categoryName || '').trim().toLowerCase();
+
+        if (itemCatId && (itemCatId === targetId || itemCatId === targetName)) return true;
+        if (itemCatName && (itemCatName === targetName || itemCatName === targetId)) return true;
+        if (selectedCat && (itemCatId === selectedCat.id.toLowerCase() || itemCatId === selectedCat.name.toLowerCase())) return true;
+        return false;
+      });
+    }
+
+    if (q) {
+      filtered = filtered.filter(i => 
+        (i.name && i.name.toLowerCase().includes(q)) || 
+        (i.barcode && i.barcode.toLowerCase().includes(q))
+      );
+    }
+
+    // ترتيب بحيث تكون الخدمات ذات الأولوية أولاً
+    filtered = [...filtered].sort((a: any, b: any) => {
+      const aPri = a.isPriority ? 1 : 0;
+      const bPri = b.isPriority ? 1 : 0;
+      if (aPri !== bPri) return bPri - aPri;
+      const aOrder = a.priorityOrder ?? 0;
+      const bOrder = b.priorityOrder ?? 0;
+      return aOrder - bOrder;
+    });
+
+    return filtered.map(i => {
+      const isProduct = Boolean(i._isProduct);
+      const originalPrice = isProduct ? (Number(i.sellPrice) || 0) : (Number(i.price) || 0);
+      const rawDiscount = Number(i.discountPrice);
+      const hasDiscount = !isProduct && !isNaN(rawDiscount) && rawDiscount > 0 && rawDiscount < originalPrice;
+      const effectivePrice = hasDiscount ? rawDiscount : originalPrice;
+      const catObj = categories.find(c => c.id === i.categoryId || c.name === i.categoryId);
+
+      return {
+        ...i,
+        _isProduct: isProduct,
+        categoryName: catObj?.name || (i as any).category || (i as any).categoryName || '',
+        hasDiscount,
+        discountPrice: hasDiscount ? rawDiscount : undefined,
+        originalPrice,
+        displayPrice: effectivePrice
+      };
+    });
+  }, [items, products, priceCheckSearch, priceCheckCategory, priceCheckType, categories]);
 
   // تصفية الفنيين المنفذين المسموح لهم بتنفيذ الخدمات (حلاق / كوافير فقط)
   const performerEmployees = useMemo(() => {
@@ -1672,19 +2006,14 @@ export function POSScreen({
       alert('⛔ الحساب موقوف أو انتهت فترة الاشتراك. النظام يعمل الآن بوضع الاطلاع فقط (Read-Only) ولا يمكن إضافة عناصر للسلة.');
       return;
     }
+    if (item.productType === 'raw_material' || (item._isProduct && products.find(p => p.id === item.id)?.productType === 'raw_material')) {
+      alert('⚠️ هذا الصنف مسجل كمادة خام داخلية وغير متاح للبيع المباشر في نقطة البيع.');
+      return;
+    }
     const finalPrice = item.displayPrice !== undefined ? item.displayPrice : (item.price ?? item.sellPrice ?? 0);
-    const origPrice = item.originalPrice !== undefined ? item.originalPrice : finalPrice;
     const newItem: CartItem = {
       cartId: Math.random().toString(36).substring(2, 9),
-      item: { 
-        ...item, 
-        originalPrice: origPrice,
-        displayPrice: finalPrice,
-        lineDiscount: 0,
-        discountValue: 0,
-        discountType: 'fixed',
-        hasDiscount: false
-      },
+      item: { ...item, displayPrice: finalPrice },
       quantity: 1,
       price: finalPrice,
       employeeId: '',
@@ -1694,115 +2023,124 @@ export function POSScreen({
     setCart([...cart, newItem]);
   };
 
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      const q = (searchQuery || '').trim().toLowerCase();
+      if (!q) return;
+
+      // 1. فحص باركود المنتج المباشر أولاً
+      const matchedProduct = products.find(p => p.barcode && p.barcode.trim().toLowerCase() === q);
+      if (matchedProduct) {
+        if (matchedProduct.productType === 'raw_material') {
+          alert('⚠️ هذا الصنف مسجل كمادة خام (استهلاك صالون) وغير متاح للبيع المباشر.');
+          return;
+        }
+        addToCart({
+          ...matchedProduct,
+          _isProduct: true,
+          displayPrice: matchedProduct.sellPrice || 0,
+          originalPrice: matchedProduct.sellPrice || 0
+        });
+        setSearchQuery('');
+        return;
+      }
+
+      // 2. فحص باركود الخدمة
+      const matchedService = items.find(s => s.barcode && s.barcode.trim().toLowerCase() === q);
+      if (matchedService) {
+        addToCart({
+          ...matchedService,
+          _isProduct: false,
+          displayPrice: matchedService.discountPrice || matchedService.price || 0,
+          originalPrice: matchedService.price || 0
+        });
+        setSearchQuery('');
+        return;
+      }
+
+      // 3. إذا كان هناك عنصر وحيد مطابق في قائمة البحث الحالية، إضافته فوراً
+      if (filteredItems.length === 1) {
+        addToCart(filteredItems[0]);
+        setSearchQuery('');
+      }
+    }
+  };
+
+
+  const setDirectQuantity = (cartId: string, val: string | number) => {
+    setCart(prev => prev.map(c => {
+      if (c.cartId === cartId) {
+        if (val === '') {
+          return { ...c, quantity: '' as any };
+        }
+        const parsed = parseInt(String(val), 10);
+        const newQty = isNaN(parsed) || parsed < 1 ? 1 : parsed;
+        return { ...c, quantity: newQty };
+      }
+      return c;
+    }));
+  };
+
   const updateQuantity = (cartId: string, delta: number) => {
     setCart(cart.map(c => {
       if (c.cartId === cartId) {
-        const newQ = Math.max(1, c.quantity + delta);
-        const rawOrig = c.item?.originalPrice ?? c.item?.sellPrice ?? c.item?.price ?? c.price ?? 0;
-        const origPrice = Number(rawOrig) || 0;
-        const type = c.item?.discountType || 'fixed';
-        const val = Number(c.item?.discountValue || 0);
-        let unitDiscount = 0;
-        if (val > 0 && origPrice > 0) {
-          if (type === 'percentage') {
-            unitDiscount = (origPrice * Math.min(100, val)) / 100;
-          } else {
-            unitDiscount = Math.min(origPrice, val / newQ);
-          }
-        }
-        const effectivePrice = Math.max(0, origPrice - unitDiscount);
-        return { 
-          ...c, 
-          quantity: newQ,
-          price: effectivePrice,
-          item: {
-            ...c.item,
-            originalPrice: origPrice,
-            price: effectivePrice,
-            displayPrice: effectivePrice,
-            lineDiscount: unitDiscount,
-            discountValue: val,
-            discountType: type,
-            hasDiscount: val > 0
-          }
-        };
+        const curQ = Number(c.quantity) || 1;
+        const newQ = Math.max(1, curQ + delta);
+        return { ...c, quantity: newQ };
       }
       return c;
     }));
   };
 
-  const setItemQuantity = (cartId: string, qty: number) => {
-    const newQ = isNaN(qty) || qty < 1 ? 1 : Math.floor(qty);
-    setCart(cart.map(c => {
-      if (c.cartId === cartId) {
-        const rawOrig = c.item?.originalPrice ?? c.item?.sellPrice ?? c.item?.price ?? c.price ?? 0;
-        const origPrice = Number(rawOrig) || 0;
-        const type = c.item?.discountType || 'fixed';
-        const val = Number(c.item?.discountValue || 0);
-        let unitDiscount = 0;
-        if (val > 0 && origPrice > 0) {
-          if (type === 'percentage') {
-            unitDiscount = (origPrice * Math.min(100, val)) / 100;
-          } else {
-            unitDiscount = Math.min(origPrice, val / newQ);
-          }
-        }
-        const effectivePrice = Math.max(0, origPrice - unitDiscount);
-        return { 
-          ...c, 
-          quantity: newQ,
-          price: effectivePrice,
-          item: {
-            ...c.item,
-            originalPrice: origPrice,
-            price: effectivePrice,
-            displayPrice: effectivePrice,
-            lineDiscount: unitDiscount,
-            discountValue: val,
-            discountType: type,
-            hasDiscount: val > 0
-          }
-        };
-      }
-      return c;
-    }));
-  };
-
-  const updateCartItemDiscount = (cartId: string, discountVal: number, discountType?: 'fixed' | 'percentage') => {
-    setCart(cart.map(c => {
+  const handleUpdateLineDiscount = (cartId: string, discValStr: string) => {
+    setCart(prev => prev.map(c => {
       if (c.cartId !== cartId) return c;
-      const rawOrig = c.item?.originalPrice ?? c.item?.sellPrice ?? c.item?.price ?? c.price ?? 0;
-      const origPrice = Number(rawOrig) || 0;
-      const type = discountType || c.item?.discountType || 'fixed';
-      const val = Math.max(0, Number(discountVal) || 0);
-      const qty = Math.max(1, Number(c.quantity) || 1);
 
-      let unitDiscount = 0;
-      if (val > 0 && origPrice > 0) {
-        if (type === 'percentage') {
-          unitDiscount = (origPrice * Math.min(100, val)) / 100;
-        } else {
-          unitDiscount = Math.min(origPrice, val / qty);
-        }
+      const qty = Math.max(1, Number(c.quantity) || 1);
+      const curPrice = getCartItemPrice(c);
+      const existingLineDisc = Number(c.discount || c.item?.discount) || 0;
+      const origPrice = Number(c.originalPrice || c.item?.originalPrice || (curPrice + (existingLineDisc > 0 ? existingLineDisc / qty : 0)));
+
+      if (discValStr === '') {
+        return {
+          ...c,
+          discount: undefined,
+          originalPrice: undefined,
+          price: origPrice,
+          item: {
+            ...c.item,
+            price: origPrice,
+            displayPrice: origPrice,
+            originalPrice: undefined,
+            discount: undefined
+          }
+        };
       }
 
-      const effectivePrice = Math.max(0, origPrice - unitDiscount);
+      const inputVal = parseFloat(discValStr);
+      const lineDisc = isNaN(inputVal) || inputVal < 0 ? 0 : Math.min(origPrice * qty, inputVal);
+      const perUnitDisc = lineDisc > 0 ? lineDisc / qty : 0;
+      const effectivePrice = Math.max(0, origPrice - perUnitDisc);
 
       return {
         ...c,
+        discount: lineDisc > 0 ? lineDisc : undefined,
+        originalPrice: lineDisc > 0 ? origPrice : undefined,
         price: effectivePrice,
         item: {
           ...c.item,
-          originalPrice: origPrice,
           price: effectivePrice,
           displayPrice: effectivePrice,
-          lineDiscount: unitDiscount,
-          discountValue: val,
-          discountType: type,
-          hasDiscount: val > 0
+          originalPrice: lineDisc > 0 ? origPrice : undefined,
+          discount: lineDisc > 0 ? lineDisc : undefined
         }
       };
     }));
+
+    // If a line discount was entered, clear overall invoice discount immediately
+    if (parseFloat(discValStr) > 0) {
+      setDiscount({ type: 'fixed', value: 0 });
+    }
   };
 
   const updateEmployee = (cartId: string, employeeId: string) => {
@@ -1814,129 +2152,12 @@ export function POSScreen({
   };
 
   const removeFromCart = (cartId: string) => {
+    if (!canVoidCart) {
+      alert('⛔ عذراً، حذف البنود من السلة أو إلغاء الفاتورة يتطلب صلاحية الإلغاء وحذف البنود.');
+      return;
+    }
     setCart(cart.filter(c => c.cartId !== cartId));
   };
-
-  const playBarcodeBeep = () => {
-    try {
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(1760, audioCtx.currentTime);
-      gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
-      osc.connect(gain);
-      gain.connect(audioCtx.destination);
-      osc.start();
-      osc.stop(audioCtx.currentTime + 0.1);
-    } catch {}
-  };
-
-  const handleBarcodeScan = (rawCode: string): boolean => {
-    if (isSubscriptionBlocked) return false;
-    const code = rawCode.trim().toLowerCase();
-    if (!code) return false;
-
-    // 1. Search products (retail)
-    const matchedProduct = products.find(p => 
-      (!p.productType || p.productType === 'retail') && 
-      p.isActive !== false &&
-      p.barcode && p.barcode.trim().toLowerCase() === code
-    );
-
-    if (matchedProduct) {
-      // Check if product already exists in cart, increment quantity
-      const existingItem = cart.find(c => c.type === 'product' && c.item.id === matchedProduct.id);
-      if (existingItem) {
-        updateQuantity(existingItem.cartId, 1);
-      } else {
-        addToCart({
-          ...matchedProduct,
-          _isProduct: true,
-          displayPrice: matchedProduct.sellPrice,
-          originalPrice: matchedProduct.sellPrice
-        });
-      }
-      playBarcodeBeep();
-      return true;
-    }
-
-    // 2. Search services (by barcode)
-    const matchedService = items.find(s => 
-      s.isActive !== false && 
-      s.barcode && s.barcode.trim().toLowerCase() === code
-    );
-
-    if (matchedService) {
-      const origPrice = Number(matchedService.price) || 0;
-      const rawDiscount = Number(matchedService.discountPrice);
-      const hasDiscount = !isNaN(rawDiscount) && rawDiscount > 0 && rawDiscount < origPrice;
-      const effectivePrice = hasDiscount ? rawDiscount : origPrice;
-
-      addToCart({
-        ...matchedService,
-        _isProduct: false,
-        displayPrice: effectivePrice,
-        originalPrice: origPrice
-      });
-      playBarcodeBeep();
-      return true;
-    }
-
-    // 3. Search invoices (by Invoice ID, e.g., scanning invoice barcode)
-    const matchedInvoice = (invoices || []).find(inv => (inv.id || '').toLowerCase() === code);
-    if (matchedInvoice) {
-      setCompletedInvoice(matchedInvoice);
-      setShowReceiptModal(true);
-      playBarcodeBeep();
-      return true;
-    }
-
-    return false;
-  };
-
-  // Global barcode scanner listener
-  useEffect(() => {
-    let barcodeBuffer = '';
-    let lastKeyTime = 0;
-
-    const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey || e.altKey || e.metaKey) return;
-
-      const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
-      const isInput = activeTag === 'input' || activeTag === 'textarea' || (document.activeElement as HTMLElement)?.isContentEditable;
-
-      // If activeElement is another input (client phone, notes, etc.), do not intercept unless it's pos-search-input
-      if (isInput && !(document.activeElement as HTMLElement)?.classList.contains('pos-search-input')) {
-        return;
-      }
-
-      const now = Date.now();
-      if (now - lastKeyTime > 120) {
-        barcodeBuffer = '';
-      }
-      lastKeyTime = now;
-
-      if (e.key === 'Enter') {
-        const trimmed = barcodeBuffer.trim();
-        if (trimmed.length >= 2) {
-          const handled = handleBarcodeScan(trimmed);
-          if (handled) {
-            e.preventDefault();
-            barcodeBuffer = '';
-            setSearchQuery('');
-          }
-        }
-        barcodeBuffer = '';
-      } else if (e.key.length === 1) {
-        barcodeBuffer += e.key;
-      }
-    };
-
-    window.addEventListener('keydown', handleGlobalKeyDown);
-    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [products, items, cart, invoices, isSubscriptionBlocked]);
 
   if (!isShiftOpen) {
     return (
@@ -1958,55 +2179,39 @@ export function POSScreen({
     <div className="flex flex-col lg:flex-row w-full bg-slate-50 overflow-y-auto lg:overflow-hidden lg:h-full">
       {/* Right Section: Items Grid */}
       <div className="order-2 lg:order-none flex-none lg:flex-1 flex flex-col p-4 lg:p-6 lg:overflow-hidden">
-        {/* Search & Filter */}
-        <div className="flex items-center gap-3 mb-3 lg:mb-6">
-          <div className="relative flex-1">
-            <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+        {/* Search & Action Bar */}
+        <div className="flex items-center gap-2.5 sm:gap-3 mb-3 lg:mb-6">
+          {/* خانة البحث بعرض مصغر */}
+          <div className="relative w-56 sm:w-72 lg:w-80 shrink-0">
+            <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
             <input 
               type="text"
-              placeholder="ابحث بالاسم، السعر (مثال: 1800)، أو امسح الباركود..."
-              className="pos-search-input w-full bg-white border border-slate-200 rounded-xl pr-10 pl-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-sm text-slate-700"
+              placeholder="ابحث بالاسم، السعر (مثال: 1500)، أو الباركود..."
+              className="w-full h-11 bg-white border border-slate-200 rounded-xl pr-9 pl-3 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-xs text-slate-700"
               value={searchQuery}
-              onChange={(e) => {
-                const val = e.target.value;
-                setSearchQuery(val);
-                const code = val.trim().toLowerCase();
-                if (code) {
-                  const isExactBarcode = products.some(p => (!p.productType || p.productType === 'retail') && p.isActive !== false && p.barcode && p.barcode.trim().toLowerCase() === code) ||
-                                        items.some(s => s.barcode && s.barcode.trim().toLowerCase() === code);
-                  if (isExactBarcode) {
-                    const handled = handleBarcodeScan(code);
-                    if (handled) {
-                      setSearchQuery('');
-                    }
-                  }
-                }
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  const code = searchQuery.trim().toLowerCase();
-                  if (!code) return;
-                  const handled = handleBarcodeScan(code);
-                  if (handled) {
-                    setSearchQuery('');
-                  } else if (filteredItems.length === 1) {
-                    addToCart(filteredItems[0]);
-                    playBarcodeBeep();
-                    setSearchQuery('');
-                  }
-                }
-              }}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={handleSearchKeyDown}
             />
           </div>
 
+          {/* زر تقرير اليومية بين البحث وتعديل مواعيد الدوام وبنفس الارتفاع */}
+          <button
+            onClick={() => setShowDailyReportModal(true)}
+            className="h-11 bg-white hover:bg-indigo-50/70 border border-slate-200 hover:border-indigo-200 text-slate-700 hover:text-indigo-900 px-3 sm:px-4 rounded-xl text-xs font-black flex items-center gap-2 shadow-xs transition-all cursor-pointer whitespace-nowrap active:scale-95"
+            title="عرض وطباعة تقرير اليومية للوردية الحالية"
+          >
+            <FileText size={16} className="text-indigo-600" />
+            <span>تقرير اليومية</span>
+          </button>
+
+          {/* زر تعديل مواعيد الدوام بنفس الارتفاع */}
           <button
             onClick={handleOpenScheduleModal}
-            className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 hover:text-slate-900 px-3 py-3 lg:px-4 rounded-xl text-xs font-bold flex items-center gap-2 shadow-xs transition-all cursor-pointer whitespace-nowrap"
+            className="h-11 bg-white hover:bg-amber-50/70 border border-slate-200 hover:border-amber-200 text-slate-700 hover:text-amber-900 px-3 sm:px-4 rounded-xl text-xs font-bold flex items-center gap-2 shadow-xs transition-all cursor-pointer whitespace-nowrap active:scale-95"
             title="تعديل مواعيد حضور وانصراف الموظفين"
           >
             <Clock size={16} className="text-amber-600" />
-            <span className="hidden lg:inline">تعديل مواعيد الدوام</span>
+            <span className="hidden sm:inline">تعديل مواعيد الدوام</span>
           </button>
         </div>
 
@@ -2027,94 +2232,127 @@ export function POSScreen({
           </button>
         </div>
 
-        {/* Categories */}
+        {/* Categories Bar */}
         <div className="flex items-center gap-2 overflow-x-auto pb-2 lg:pb-4 no-scrollbar">
-          {/* زر الكل - متاح دائماً للخدمات والمنتجات */}
+          {/* زر الكل (All) دائماً في البداية */}
           <button
             onClick={() => setSelectedCategory('all')}
-            className={`whitespace-nowrap px-6 py-2.5 rounded-full font-bold text-sm transition-all shadow-sm border ${
-              selectedCategory === 'all'
-                ? 'bg-primary border-primary text-white shadow-primary/20'
+            className={`whitespace-nowrap px-6 py-2.5 rounded-full font-bold text-sm transition-all shadow-sm border cursor-pointer ${
+              selectedCategory === 'all' 
+                ? 'bg-primary border-primary text-white shadow-primary/20' 
                 : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
             }`}
           >
             الكل
           </button>
 
-          {availableCategories.map(cat => {
-            const isSelected = selectedCategory === cat.id || 
-              (selectedCategory !== 'all' && normalizeText(selectedCategory) === normalizeText(cat.name));
-
-            return (
-              <button
-                key={cat.id}
-                onClick={() => setSelectedCategory(cat.id)}
-                className={`whitespace-nowrap px-6 py-2.5 rounded-full font-bold text-sm transition-all shadow-sm border ${
-                  isSelected 
-                    ? 'bg-primary border-primary text-white shadow-primary/20' 
-                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                {cat.name}
-              </button>
-            );
-          })}
+          {/* أزرار التصنيفات التابعة للتبويب النشط */}
+          {activeCategories.map(cat => (
+            <button
+              key={cat.id}
+              onClick={() => setSelectedCategory(cat.id)}
+              className={`whitespace-nowrap px-6 py-2.5 rounded-full font-bold text-sm transition-all shadow-sm border cursor-pointer ${
+                selectedCategory === cat.id 
+                  ? 'bg-primary border-primary text-white shadow-primary/20' 
+                  : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              {cat.name}
+            </button>
+          ))}
         </div>
 
         {/* Items Grid */}
-        <div ref={servicesGridContainerRef} className="lg:flex-1 lg:overflow-y-auto pr-2 custom-scrollbar">
+        <div ref={itemsGridRef} className="lg:flex-1 lg:overflow-y-auto pr-2 custom-scrollbar">
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 lg:gap-4 pb-4 lg:pb-0">
             {filteredItems.map(item => {
-              const isPriority = !item._isProduct && item.isPriority;
+              const isPriority = !item._isProduct && Boolean(item.isPriority);
               const customColor = item.cardColor || '#10b981';
+              const isLight = isLightColor(customColor);
 
               return (
                 <button 
                   key={item.id}
                   onClick={() => addToCart(item)}
-                  style={isPriority ? { borderColor: `${customColor}80` } : undefined}
-                  className={`relative rounded-2xl p-4 flex flex-col items-center justify-center text-center gap-2.5 transition-all active:scale-95 group cursor-pointer ${
+                  style={isPriority ? { backgroundColor: customColor, borderColor: customColor } : undefined}
+                  className={`relative rounded-2xl p-3.5 pt-6 flex flex-col items-center justify-center text-center gap-2 transition-all active:scale-95 group cursor-pointer overflow-hidden ${
                     isPriority 
-                      ? 'bg-gradient-to-b from-white via-white to-slate-50 border-2 shadow-md hover:shadow-lg hover:scale-[1.02]' 
+                      ? 'shadow-md hover:shadow-xl hover:scale-[1.02] border-2 ring-1 ring-black/10' 
                       : 'bg-white border border-slate-200/80 shadow-xs hover:shadow-md hover:border-primary/30'
                   }`}
                 >
                   {isPriority && (
                     <div 
-                      className="absolute -top-2.5 right-2 px-2 py-0.5 rounded-full text-[10px] font-black text-white flex items-center gap-0.5 shadow-xs"
-                      style={{ backgroundColor: customColor }}
+                      className="absolute top-1.5 right-1.5 px-2 py-0.5 rounded-full text-[10px] font-black flex items-center gap-1 shadow-xs border z-10"
+                      style={{
+                        backgroundColor: isLight ? 'rgba(0, 0, 0, 0.16)' : 'rgba(255, 255, 255, 0.22)',
+                        color: isLight ? '#0f172a' : '#ffffff',
+                        borderColor: isLight ? 'rgba(0, 0, 0, 0.25)' : 'rgba(255, 255, 255, 0.4)'
+                      }}
                     >
-                      <span>⭐</span>
+                      <span className={isLight ? 'text-amber-600' : 'text-amber-300'}>⭐</span>
                       <span>سريعة</span>
                     </div>
                   )}
 
                   <div 
-                    className="w-13 h-13 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110 shadow-2xs overflow-hidden"
-                    style={isPriority ? { backgroundColor: `${customColor}15`, color: customColor } : { backgroundColor: '#f1f5f9', color: '#0f766e' }}
+                    className="w-12 h-12 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110 shadow-2xs overflow-hidden shrink-0"
+                    style={isPriority ? { 
+                      backgroundColor: isLight ? 'rgba(0, 0, 0, 0.08)' : 'rgba(255, 255, 255, 0.2)', 
+                      color: isLight ? '#0f172a' : '#ffffff' 
+                    } : { 
+                      backgroundColor: '#f1f5f9', 
+                      color: '#0f766e' 
+                    }}
                   >
                     {item.imageUrl ? (
-                      <img src={item.imageUrl} alt={item.name} loading="lazy" decoding="async" className="w-full h-full object-cover rounded-2xl" />
+                      <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover rounded-2xl" />
                     ) : (
                       item._isProduct ? <Package size={22} /> : <Scissors size={22} />
                     )}
                   </div>
 
                   <div className="w-full">
-                    <h4 className="font-extrabold text-slate-800 text-xs mb-1 leading-tight line-clamp-2">{item.name}</h4>
+                    <h4 
+                      className="font-extrabold text-xs mb-1 leading-tight line-clamp-2"
+                      style={{ color: isPriority ? (isLight ? '#0f172a' : '#ffffff') : '#1e293b' }}
+                    >
+                      {item.name}
+                    </h4>
                     {item.barcode && (
-                      <div className="inline-flex items-center gap-0.5 font-mono text-[9px] text-slate-400 bg-slate-50 px-1 py-0.5 rounded border border-slate-100 mb-1 max-w-full truncate" title={`باركود: ${item.barcode}`}>
-                        <QrCode size={9} className="text-slate-400 shrink-0" />
-                        <span className="truncate">{item.barcode}</span>
+                      <div className="flex justify-center mb-1">
+                        <span 
+                          className="inline-flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded"
+                          style={{
+                            backgroundColor: isPriority ? (isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.2)') : '#f1f5f9',
+                            color: isPriority ? (isLight ? '#334155' : 'rgba(255,255,255,0.9)') : '#64748b'
+                          }}
+                        >
+                          <Barcode size={10} />
+                          <span>{item.barcode}</span>
+                        </span>
                       </div>
                     )}
                     {item.hasDiscount ? (
                       <div className="flex flex-col items-center">
-                        <p className="text-emerald-600 font-black text-xs font-mono">{item.discountPrice} {settings.currency}</p>
-                        <p className="text-slate-400 text-[10px] line-through font-mono">{item.originalPrice} {settings.currency}</p>
+                        <p 
+                          className="font-black text-xs font-mono"
+                          style={{ color: isPriority ? (isLight ? '#047857' : '#a7f3d0') : '#059669' }}
+                        >
+                          {item.discountPrice} {settings.currency}
+                        </p>
+                        <p 
+                          className="text-[10px] line-through font-mono"
+                          style={{ color: isPriority ? (isLight ? '#64748b' : 'rgba(255, 255, 255, 0.65)') : '#94a3b8' }}
+                        >
+                          {item.originalPrice} {settings.currency}
+                        </p>
                       </div>
                     ) : (
-                      <p className="font-extrabold text-xs font-mono" style={isPriority ? { color: customColor } : { color: '#0f766e' }}>
+                      <p 
+                        className="font-extrabold text-xs font-mono"
+                        style={{ color: isPriority ? (isLight ? '#0f172a' : '#ffffff') : '#0f766e' }}
+                      >
                         {item.originalPrice} {settings.currency}
                       </p>
                     )}
@@ -2122,20 +2360,6 @@ export function POSScreen({
                 </button>
               );
             })}
-
-            {filteredItems.length === 0 && (
-              <div className="col-span-full py-16 flex flex-col items-center justify-center text-center text-slate-400">
-                <Search size={40} className="mb-3 text-slate-300 stroke-[1.5]" />
-                <p className="text-base font-bold text-slate-600">لا توجد خدمات أو منتجات مطابقة</p>
-                {searchQuery ? (
-                  <p className="text-xs text-slate-400 mt-1.5">
-                    لم نجد نتائج مطابقة لـ &quot;<span className="font-semibold text-slate-600">{searchQuery}</span>&quot; سواء كاسم، باركود، أو سعر محدد.
-                  </p>
-                ) : (
-                  <p className="text-xs text-slate-400 mt-1">لا توجد عناصر مسجلة في هذا التصنيف حالياً.</p>
-                )}
-              </div>
-            )}
           </div>
         </div>
       </div>
@@ -2165,14 +2389,19 @@ export function POSScreen({
               <span>تعليق</span>
             </button>
 
-            <button
-              onClick={() => setShowSalesReturnModal(true)}
-              className="bg-rose-900/80 hover:bg-rose-800 text-rose-200 border border-rose-700/60 px-2.5 py-1.5 rounded-xl text-xs font-black flex items-center gap-1 transition-all active:scale-95 cursor-pointer"
-              title="استرجاع فاتورة سابقة أو عمل مرتجع مبيعات"
-            >
-              <RotateCcw size={14} />
-              <span>مرتجع</span>
-            </button>
+            {canMakeSalesReturn && (
+              <button
+                onClick={() => {
+                  setPosReturnSearch('');
+                  setShowPOSReturnInvoicePicker(true);
+                }}
+                className="bg-rose-950/70 hover:bg-rose-900 text-rose-300 border border-rose-800/80 px-2.5 py-1.5 rounded-xl text-xs font-black flex items-center gap-1 transition-all active:scale-95 cursor-pointer"
+                title="مرتجع مبيعات - تسجيل مرتجع لفاتورة وطباعة إشعار دائن"
+              >
+                <RotateCcw size={14} />
+                <span>مرتجع</span>
+              </button>
+            )}
           </div>
 
           {/* Held Invoices Button & Glowing Badge */}
@@ -2192,6 +2421,31 @@ export function POSScreen({
             </span>
           </button>
         </div>
+
+        {/* Active Held Invoice Banner */}
+        {activeHeldInvoiceId && (
+          <div className="px-3 py-2 bg-gradient-to-r from-amber-500/15 via-amber-400/10 to-amber-50 border-b border-amber-300 flex items-center justify-between gap-2 text-xs font-bold text-amber-950 shrink-0">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-ping shrink-0" />
+              <div className="truncate">
+                <span className="font-black text-amber-900">
+                  ⚡ فاتورة معلقة مفتوحة: 
+                </span>
+                <span className="mr-1 text-slate-800 font-semibold">
+                  {selectedClient?.name || clientSearch || 'عميل نقدي'}
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={handleHoldCurrentInvoice}
+              className="bg-amber-600 hover:bg-amber-700 text-white px-2.5 py-1 rounded-xl text-[11px] font-black cursor-pointer shadow-xs transition-all active:scale-95 shrink-0 flex items-center gap-1"
+              title="حفظ الفاتورة الحالية في الفواتير المعلقة وإفراغ شاشة الكاشير"
+            >
+              <PauseCircle size={13} />
+              <span>حفظ كمعلقة والرجوع</span>
+            </button>
+          </div>
+        )}
 
         {/* 2. Client Select Header */}
         <div className="p-3 border-b border-slate-100 bg-slate-50/80 shrink-0">
@@ -2256,7 +2510,7 @@ export function POSScreen({
                         {phoneSuggestions.map((client, idx) => {
                           const isHighlighted = idx === highlightedIndex;
                           const tier = getClientTier(client, invoices, settings.tierSettings);
-                          const cashbackVal = Number(client.cashback ?? client.loyaltyPoints ?? 0);
+                          const cashbackVal = client.cashback !== undefined ? client.cashback : (client.loyaltyPoints || 0);
 
                           return (
                             <button
@@ -2292,7 +2546,7 @@ export function POSScreen({
 
                               <div className="text-left shrink-0">
                                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-purple-50 text-purple-700 border border-purple-100 font-mono block">
-                                  كاش باك: {Number(cashbackVal || 0).toFixed(0)} {settings.currency}
+                                  كاش باك: {cashbackVal.toFixed(0)} {settings.currency}
                                 </span>
                               </div>
                             </button>
@@ -2347,6 +2601,11 @@ export function POSScreen({
                             {clientTier.discountPercentage > 0 && <span>({clientTier.discountPercentage}%)</span>}
                           </span>
                         )}
+                        {clientTierProgression && !clientTierProgression.isMaxTier && clientTierProgression.nextTier && (
+                          <span className="text-[8px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200/80 px-1.5 py-0.2 rounded-md truncate max-w-[180px]" title={`متبقي ${clientTierProgression.amountNeeded.toFixed(0)} ${settings.currency} للترقية إلى ${clientTierProgression.nextTier.name}`}>
+                            متبقي {clientTierProgression.amountNeeded.toFixed(0)} {settings.currency} ➔ {clientTierProgression.nextTier.name}
+                          </span>
+                        )}
                       </div>
                       <p className="text-[10px] font-mono font-bold text-slate-500" dir="ltr">{selectedClient.phone}</p>
 
@@ -2399,7 +2658,7 @@ export function POSScreen({
                   </button>
 
                   <span className="text-purple-700 shrink-0">
-                    كاش باك: <strong className="font-mono">{Number(selectedClient.cashback ?? selectedClient.loyaltyPoints ?? 0).toFixed(1)} {settings.currency}</strong>
+                    كاش باك: <strong className="font-mono">{(selectedClient.cashback !== undefined ? selectedClient.cashback : selectedClient.loyaltyPoints || 0).toFixed(1)} {settings.currency}</strong>
                   </span>
                 </div>
               </div>
@@ -2510,16 +2769,15 @@ export function POSScreen({
                               {getCartItemPrice(c)} {settings.currency}
                               {canEditItemPrice && <span className="text-[9px] text-slate-400 mr-1">✏️</span>}
                             </p>
-                            {/* خصم سطر الخدمة إن وجد */}
-                            {Boolean((c.item?.hasDiscount || c.item?.lineDiscount > 0) && c.item?.originalPrice && c.item.originalPrice > getCartItemPrice(c)) && (
-                              <div className="flex items-center gap-1">
-                                <span className="line-through text-slate-400 text-[10px] font-bold">
-                                  {Number(c.item.originalPrice).toFixed(2)}
-                                </span>
-                                <span className="bg-rose-50 text-rose-600 border border-rose-200 text-[9px] font-extrabold px-1.5 py-0.5 rounded">
-                                  خصم: -{(Number(c.item.originalPrice) - getCartItemPrice(c)).toFixed(2)} {c.item?.discountType === 'percentage' && c.item?.discountValue ? `(${c.item.discountValue}%)` : settings.currency}
-                                </span>
-                              </div>
+                            {((c.item?.originalPrice && c.item.originalPrice > getCartItemPrice(c)) || (Number(c.discount || c.item?.discount) > 0)) && (
+                              <span className="text-[10px] text-slate-400 line-through font-mono">
+                                {(c.item?.originalPrice || (getCartItemPrice(c) + Number(c.discount || c.item?.discount || 0))).toFixed(2)}
+                              </span>
+                            )}
+                            {(Number(c.discount || c.item?.discount) > 0 || (c.item?.originalPrice && c.item.originalPrice > getCartItemPrice(c))) && (
+                              <span className="text-[9px] bg-rose-50 text-rose-700 border border-rose-200 font-extrabold px-1.5 py-0.5 rounded-md">
+                                خصم: -{(Number(c.discount || c.item?.discount) || (c.item?.originalPrice - getCartItemPrice(c))).toFixed(2)} {settings.currency}
+                              </span>
                             )}
                             {c.quantity > 1 && (
                               <span className="text-[10px] text-slate-400 font-bold">
@@ -2533,64 +2791,33 @@ export function POSScreen({
 
                     <div className="flex items-center gap-2">
                       <div className="flex items-center bg-slate-100 border border-slate-200 rounded-lg p-0.5">
-                        <button type="button" onClick={() => updateQuantity(c.cartId, 1)} className="p-1 text-slate-700 hover:text-primary transition-colors cursor-pointer" title="زيادة الكمية"><Plus size={12} /></button>
+                        <button onClick={() => updateQuantity(c.cartId, 1)} className="p-1 text-slate-700 hover:text-primary transition-colors" title="زيادة الكمية"><Plus size={12} /></button>
                         <input
                           type="number"
                           min="1"
                           step="1"
-                          value={c.quantity}
-                          onChange={(e) => {
-                            const val = parseInt(e.target.value, 10);
-                            setItemQuantity(c.cartId, isNaN(val) ? 1 : val);
+                          value={c.quantity === '' ? '' : c.quantity}
+                          onChange={(e) => setDirectQuantity(c.cartId, e.target.value)}
+                          onBlur={() => {
+                            if (!c.quantity || Number(c.quantity) < 1) {
+                              setDirectQuantity(c.cartId, 1);
+                            }
                           }}
-                          className="w-12 text-center text-xs font-black font-mono bg-white border border-slate-200 rounded px-1 py-0.5 outline-none focus:border-primary focus:ring-1 focus:ring-indigo-200"
+                          className="w-12 text-center text-xs font-black font-mono bg-white border border-slate-200 rounded px-0.5 py-0.5 outline-none focus:border-primary text-slate-900"
                           title="الكمية (يمكن كتابة الرقم مباشرة كـ 100 أو غيره)"
                         />
-                        <button type="button" onClick={() => updateQuantity(c.cartId, -1)} className="p-1 text-slate-700 hover:text-red-500 transition-colors cursor-pointer" title="إنقاص الكمية"><Minus size={12} /></button>
+                        <button onClick={() => updateQuantity(c.cartId, -1)} className="p-1 text-slate-700 hover:text-red-500 transition-colors" title="إنقاص الكمية"><Minus size={12} /></button>
                       </div>
-                      <button type="button" onClick={() => removeFromCart(c.cartId)} className="text-slate-400 hover:text-red-500 p-1 transition-colors cursor-pointer" title="حذف من السلة">
-                        <Trash2 size={14} />
-                      </button>
+                      {canVoidCart ? (
+                        <button onClick={() => removeFromCart(c.cartId)} className="text-slate-400 hover:text-red-500 p-1 transition-colors" title="حذف البند من السلة">
+                          <Trash2 size={14} />
+                        </button>
+                      ) : (
+                        <span className="text-slate-300 p-1 cursor-not-allowed opacity-40" title="لا تملك صلاحية حذف البنود من السلة">
+                          <Trash2 size={14} />
+                        </span>
+                      )}
                     </div>
-                  </div>
-
-                  {/* خصم سطر الخدمة / المنتج */}
-                  <div className="flex items-center justify-between gap-1.5 pt-1.5 border-t border-slate-100">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] font-bold text-slate-500 whitespace-nowrap">
-                        {c.type === 'product' ? 'خصم المنتج:' : 'خصم الخدمة:'}
-                      </span>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.5"
-                        disabled={hasGeneralDiscount}
-                        value={c.item?.discountValue !== undefined && c.item?.discountValue !== 0 ? c.item.discountValue : ''}
-                        onChange={(e) => {
-                          const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
-                          updateCartItemDiscount(c.cartId, val);
-                        }}
-                        placeholder="0"
-                        className="w-14 bg-white border border-slate-200 rounded px-1.5 py-0.5 text-center text-xs font-mono font-bold outline-none focus:border-primary disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
-                      />
-                      <button
-                        type="button"
-                        disabled={hasGeneralDiscount}
-                        onClick={() => {
-                          const nextType = c.item?.discountType === 'percentage' ? 'fixed' : 'percentage';
-                          updateCartItemDiscount(c.cartId, c.item?.discountValue || 0, nextType);
-                        }}
-                        className="px-1.5 py-0.5 text-[10px] font-bold rounded border bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                        title="تبديل الخصم: نسبة مئوية أو مبلغ ثابت"
-                      >
-                        {c.item?.discountType === 'percentage' ? '%' : settings.currency}
-                      </button>
-                    </div>
-                    {Boolean(c.item?.hasDiscount || (c.item?.lineDiscount && c.item.lineDiscount > 0)) && (
-                      <div className="text-[10px] font-bold text-rose-600 font-mono">
-                        صافي الوحدة: {getCartItemPrice(c).toFixed(2)} {settings.currency}
-                      </div>
-                    )}
                   </div>
                   
                   {/* Performer & Referral (فتح شغل) Controls Row */}
@@ -2653,6 +2880,34 @@ export function POSScreen({
                       </div>
                     )}
                   </div>
+
+                  {/* 3. Service / Product Discount Row */}
+                  {(c.type === 'service' || c.type === 'product') && (
+                    <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-slate-100 text-xs">
+                      <label className="text-[10px] font-bold text-rose-700 flex items-center gap-1 shrink-0">
+                        <span>🏷️ خصم {c.type === 'product' ? 'المنتج' : 'الخدمة'}:</span>
+                        {hasOverallDiscount && (
+                          <span className="text-[9px] text-amber-700 bg-amber-100/90 font-bold px-1.5 py-0.5 rounded border border-amber-300">
+                            معطل (خصم شامل)
+                          </span>
+                        )}
+                      </label>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          disabled={hasOverallDiscount || !canApplyDiscount || !!appliedPromo || isRemedyInvoice}
+                          value={c.discount || ''}
+                          onChange={(e) => handleUpdateLineDiscount(c.cartId, e.target.value)}
+                          placeholder="0"
+                          className="w-16 border border-slate-200 rounded px-1.5 py-0.5 text-center text-xs font-mono font-bold outline-none focus:border-rose-400 disabled:bg-slate-100 disabled:opacity-60 disabled:cursor-not-allowed"
+                          title={hasOverallDiscount ? "معطل لوجود خصم شامل على الفاتورة" : (!canApplyDiscount ? "ليس لديك صلاحية لتعديل الخصم" : `خصم على إجمالي ${c.type === 'product' ? 'هذا المنتج' : 'هذه الخدمة'}`)}
+                        />
+                        <span className="text-[10px] text-slate-500 font-bold">{settings.currency}</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })
@@ -2700,31 +2955,36 @@ export function POSScreen({
               <span className="flex items-center gap-1">
                 <span>الخصم:</span>
                 {appliedPromo && (
-                  <span className="text-[9px] text-amber-700 bg-amber-50 px-1 py-0.5 rounded border border-amber-200 font-bold">
-                    غير متاح مع البرومو كود
+                  <span className="text-[10px] text-amber-700 bg-amber-100/90 font-bold px-1.5 py-0.5 rounded border border-amber-300">
+                    معطل (برومو كود)
+                  </span>
+                )}
+                {hasLineDiscounts && (
+                  <span className="text-[10px] text-amber-700 bg-amber-100/90 font-bold px-1.5 py-0.5 rounded border border-amber-300">
+                    معطل (خصم خدمات)
                   </span>
                 )}
               </span>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1" title={hasLineDiscounts ? "معطل لوجود خصم على مستوى الخدمات" : (appliedPromo ? "لا يُسمح بعمل خصم يدوي عند استخدام برومو كود" : (!canApplyDiscount ? "ليس لديك صلاحية لتعديل أو منح الخصم" : undefined))}>
                 <input 
                   type="number" 
-                  disabled={isRemedyInvoice || Boolean(appliedPromo) || hasAnyLineDiscount}
-                  value={isRemedyInvoice ? subtotal : (appliedPromo ? 0 : (hasAnyLineDiscount ? '' : (discount.value || '')))}
+                  disabled={isRemedyInvoice || !canApplyDiscount || !!appliedPromo || hasLineDiscounts}
+                  value={isRemedyInvoice ? subtotal : (appliedPromo || hasLineDiscounts ? 0 : (discount.value || ''))}
                   onChange={(e) => {
-                    if (appliedPromo || hasAnyLineDiscount) return;
+                    if (!canApplyDiscount || appliedPromo || hasLineDiscounts) return;
                     setDiscount({...discount, value: Number(e.target.value)});
                   }}
-                  className="w-12 border border-slate-200 rounded px-1 py-0.5 text-center text-xs outline-none focus:border-primary disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed font-mono font-bold"
+                  className="w-12 border border-slate-200 rounded px-1 py-0.5 text-center text-xs outline-none focus:border-primary disabled:bg-slate-100 disabled:opacity-60 disabled:cursor-not-allowed font-mono font-bold"
                   placeholder="0"
                 />
                 <select 
-                  disabled={isRemedyInvoice || Boolean(appliedPromo) || hasAnyLineDiscount}
+                  disabled={isRemedyInvoice || !canApplyDiscount || !!appliedPromo || hasLineDiscounts}
                   value={discount.type}
                   onChange={(e) => {
-                    if (appliedPromo || hasAnyLineDiscount) return;
+                    if (!canApplyDiscount || appliedPromo || hasLineDiscounts) return;
                     setDiscount({...discount, type: e.target.value as 'percentage'|'fixed'});
                   }}
-                  className="border border-slate-200 rounded px-0.5 text-[10px] outline-none cursor-pointer disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
+                  className="border border-slate-200 rounded px-0.5 text-[10px] outline-none cursor-pointer disabled:bg-slate-100 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   <option value="fixed">{settings.currency}</option>
                   <option value="percentage">%</option>
@@ -2768,19 +3028,24 @@ export function POSScreen({
                 </button>
               </div>
             ) : (
-              <div className="flex items-center justify-between text-xs font-bold text-purple-900 bg-purple-100/80 px-2 py-1 rounded-lg">
-                <span className="flex items-center gap-1">
-                  <Tag size={13} className="text-purple-700" />
-                  <span>تم تطبيق الكود: <strong>{appliedPromo.code}</strong> (-{Number(promoDiscountAmount || 0).toFixed(2)} {settings.currency})</span>
-                </span>
-                <button
-                  type="button"
-                  onClick={handleRemovePromo}
-                  className="text-purple-600 hover:text-red-600 p-0.5"
-                  title="إلغاء البرومو كود"
-                >
-                  ✕
-                </button>
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center justify-between text-xs font-bold text-purple-900 bg-purple-100/80 px-2 py-1 rounded-lg">
+                  <span className="flex items-center gap-1">
+                    <Tag size={13} className="text-purple-700" />
+                    <span>تم تطبيق الكود: <strong>{appliedPromo.code}</strong> (-{promoDiscountAmount.toFixed(2)} {settings.currency})</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleRemovePromo}
+                    className="text-purple-600 hover:text-red-600 p-0.5"
+                    title="إلغاء البرومو كود"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="text-[10px] text-purple-700 bg-purple-50 px-2 py-0.5 rounded font-bold">
+                  * تم إيقاف الخصم اليدوي ولا يُحتسب كاش باك على هذه الفاتورة.
+                </div>
               </div>
             )}
             {promoError && (
@@ -2795,7 +3060,7 @@ export function POSScreen({
           {!appliedPromo && clientTier && clientTier.discountPercentage > 0 && discount.value === clientTier.discountPercentage && discount.type === 'percentage' && !isRemedyInvoice && (
             <div className="text-[10px] font-black bg-amber-50 text-amber-900 px-2 py-0.5 rounded-lg border border-amber-300 flex items-center justify-between">
               <span>{clientTier.icon} خصم مستوى {clientTier.name}:</span>
-              <span className="font-mono">-{Number(manualDiscountAmount || 0).toFixed(2)} {settings.currency} ({clientTier.discountPercentage}%)</span>
+              <span className="font-mono">-{manualDiscountAmount.toFixed(2)} {settings.currency} ({clientTier.discountPercentage}%)</span>
             </div>
           )}
 
@@ -2934,7 +3199,9 @@ export function POSScreen({
 
 
               {(() => {
-                const maxCashback = selectedClient ? selectedClient.loyaltyPoints : 0;
+                const maxCashback = selectedClient 
+                  ? Number(selectedClient.cashback !== undefined ? selectedClient.cashback : selectedClient.loyaltyPoints || 0) 
+                  : 0;
                 
                 return (
                   <>
@@ -2959,6 +3226,12 @@ export function POSScreen({
                           }}
                           className="w-full bg-white border border-blue-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500"
                         />
+                        {settings.tierSettings?.allowTierDiscountWithCashback === false && discount.value > 0 && (
+                          <p className="text-[10px] text-amber-800 font-bold mt-1.5 flex items-center gap-1">
+                            <span>ℹ️</span>
+                            <span>سياسة الصالون: لا يُجمع بين خصم المستوى التلقائي ({discount.value}%) وسداد كامل الفاتورة بالكاش باك.</span>
+                          </p>
+                        )}
                       </div>
                     )}
                   </>
@@ -3023,72 +3296,542 @@ export function POSScreen({
               )}
             </div>
 
-            <div className="p-4 border-t border-slate-100 bg-slate-50">
+            <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center gap-3">
+              {/* زر سداد الفاتورة وإغلاق النافذة مباشرة بدون فتح شاشة المعاينة */}
               <button 
-                onClick={handleConfirmPayment}
-                className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3 rounded-xl transition-colors shadow-md shadow-emerald-500/20"
+                type="button"
+                disabled={isSubmittingPayment}
+                onClick={() => handleConfirmPayment(false)}
+                className="flex-1 bg-slate-200 hover:bg-slate-300 disabled:opacity-50 text-slate-800 font-extrabold py-3 px-3 rounded-xl transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer active:scale-95 text-xs"
+                title="سداد الفاتورة وإغلاق النافذة مباشرة بدون معاينة أو طباعة"
               >
-                تأكيد الدفع
+                {isSubmittingPayment ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : (
+                  <X size={16} />
+                )}
+                <span>سداد وإغلاق</span>
+              </button>
+
+              {/* زر سداد وطباعة الفاتورة مباشرة على الطابعة الافتراضية بدون صندوق محاورة أو شاشة معاينة */}
+              <button 
+                type="button"
+                disabled={isSubmittingPayment}
+                onClick={() => handleConfirmPayment(true)}
+                className="flex-[1.4] bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-black py-3 px-3 rounded-xl transition-all shadow-md shadow-emerald-600/25 flex items-center justify-center gap-2 cursor-pointer active:scale-95 text-xs"
+                title="سداد الفاتورة والطباعة مباشرة على الطابعة الافتراضية بدون صندوق محاورة وبدون شاشة معاينة"
+              >
+                {isSubmittingPayment ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    <span>جاري السداد والطباعة...</span>
+                  </>
+                ) : (
+                  <>
+                    <Printer size={17} />
+                    <span>سداد وطباعة الفاتورة 🖨️</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Receipt / Invoice Print Modal */}
-      {showReceiptModal && completedInvoice && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-[60] p-4 animate-in fade-in duration-150">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[92vh]" dir="rtl">
-            {/* Header */}
-            <div className="flex justify-between items-center p-4 px-5 border-b border-slate-100 bg-slate-50/70">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
-                  <Printer size={18} />
+      {/* تقرير اليومية (الوردية الحالية) للاطلاع أو الطباعة المباشرة فقط بدون إغلاق الوردية */}
+      {showDailyReportModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold">
+                  <FileText size={18} />
                 </div>
                 <div>
-                  <h3 className="text-sm font-black text-slate-900">معاينة إيصال الفاتورة</h3>
-                  <p className="text-[11px] text-slate-500 font-mono">
-                    {completedInvoice.id} • {completedInvoice.clientName || 'عميل نقدي'}
+                  <h3 className="font-extrabold text-sm text-slate-800">تقرير اليومية (الوردية الحالية)</h3>
+                  <p className="text-[10px] text-slate-400 font-bold">{shiftData?.date || shiftDate || new Date().toISOString().split('T')[0]}</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowDailyReportModal(false)} 
+                className="text-slate-400 hover:text-red-500 p-1.5 rounded-lg transition-colors cursor-pointer"
+                title="إغلاق النافذة"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-4 bg-slate-100 overflow-y-auto flex justify-center max-h-[65vh]">
+              <div id="pos-daily-report-content" className="bg-white shadow-sm p-4 w-full rounded-2xl">
+                <ClosingReportReceipt 
+                  settings={settings}
+                  transactions={(transactions || []).filter(t => t.date?.startsWith(shiftData?.date || shiftDate || ''))}
+                  invoices={(invoices || []).filter(i => i.date?.startsWith(shiftData?.date || shiftDate || ''))}
+                  dateLabel={shiftData?.date || shiftDate || new Date().toISOString().split('T')[0]}
+                  initialCash={shiftData?.initialCash || 0}
+                  userName={currentUser?.name || settings.ownerName || 'المسؤول'}
+                  employees={employees}
+                  fingerprintLogs={fingerprintLogs}
+                />
+              </div>
+            </div>
+
+            <div className="p-4 bg-white border-t border-slate-100 flex items-center gap-3">
+              <button 
+                type="button"
+                onClick={() => setShowDailyReportModal(false)}
+                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95 text-xs"
+              >
+                <X size={16} />
+                <span>إغلاق</span>
+              </button>
+
+              <button 
+                type="button"
+                onClick={async () => {
+                  const el = document.getElementById('pos-daily-report-content');
+                  if (el) {
+                    await directPrintHtml(el.innerHTML, settings.printerName);
+                  }
+                }}
+                className="flex-[1.5] py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl shadow-md shadow-emerald-600/20 transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95 text-xs"
+                title="طباعة تقرير اليومية مباشرة على الطابعة الافتراضية بدون صناديق حوارية"
+              >
+                <Printer size={16} />
+                <span>طباعة مباشرة 🖨️</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* نافذة استعلام أسعار الخدمات والمنتجات (معاينة سريعة فقط دون إضافة للفاتورة) */}
+      {showPriceCheckModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-200 border border-slate-100">
+            {/* رأس النافذة */}
+            <div className="p-4 sm:p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold shadow-xs shrink-0">
+                  <Tag size={20} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-black text-base sm:text-lg text-slate-800">استعلام أسعار الخدمات</h3>
+                    <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-black px-2 py-0.5 rounded-full shadow-2xs">
+                      معاينة فقط • لا تضاف للفاتورة
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    ابحث عن أي خدمة أو منتج لمعرفة السعر الفوري دون التأثير على سلة الفاتورة الحالية
                   </p>
                 </div>
               </div>
-              <button
+              <button 
                 type="button"
-                onClick={() => { setShowReceiptModal(false); setCompletedInvoice(null); resetToFreshInvoice(false); }}
-                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 cursor-pointer transition-colors"
+                onClick={() => setShowPriceCheckModal(false)} 
+                className="text-slate-400 hover:text-red-500 hover:bg-red-50 p-2 rounded-xl transition-colors cursor-pointer shrink-0"
+                title="إغلاق النافذة (Esc)"
               >
-                ✕
+                <X size={20} />
               </button>
             </div>
 
-            {/* Body: Thermal Paper Style */}
-            <div className="p-3 sm:p-5 bg-slate-100/90 overflow-y-auto flex justify-center">
-              <InvoiceReceiptCard
-                id="receipt-content"
-                invoice={completedInvoice}
-                settings={settings}
-                branches={branches}
-                activeBranchId={activeBranchId}
-                currentUser={currentUser}
-              />
+            {/* شريط البحث والتصنيفات */}
+            <div className="p-4 bg-slate-50/70 border-b border-slate-100 space-y-3">
+              {/* حقل البحث بالاسم أو الباركود */}
+              <div className="relative">
+                <Search className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                <input 
+                  ref={priceCheckInputRef}
+                  type="text"
+                  placeholder="ابحث باسم الخدمة أو الصنف أو امسح الباركود..."
+                  className="w-full h-11 bg-white border border-slate-200 rounded-xl pr-10 pl-10 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all shadow-xs text-slate-800 font-medium"
+                  value={priceCheckSearch}
+                  onChange={(e) => setPriceCheckSearch(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') e.preventDefault();
+                  }}
+                />
+                {priceCheckSearch && (
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      setPriceCheckSearch('');
+                      priceCheckInputRef.current?.focus();
+                    }}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 rounded-lg transition-colors cursor-pointer"
+                    title="مسح البحث"
+                  >
+                    <X size={16} />
+                  </button>
+                )}
+              </div>
+
+              {/* أزرار التبديل والتصنيفات */}
+              <div className="flex flex-col sm:flex-row gap-2.5 sm:items-center justify-between">
+                {/* تبديل النوع: خدمات / منتجات / الكل */}
+                <div className="inline-flex bg-slate-200/70 p-1 rounded-xl text-xs font-bold gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => { setPriceCheckType('service'); setPriceCheckCategory('all'); }}
+                    className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                      priceCheckType === 'service' 
+                        ? 'bg-white text-emerald-800 font-black shadow-xs' 
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <Scissors size={14} />
+                    <span>الخدمات</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setPriceCheckType('product'); setPriceCheckCategory('all'); }}
+                    className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                      priceCheckType === 'product' 
+                        ? 'bg-white text-emerald-800 font-black shadow-xs' 
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <Package size={14} />
+                    <span>المنتجات</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setPriceCheckType('all'); setPriceCheckCategory('all'); }}
+                    className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                      priceCheckType === 'all' 
+                        ? 'bg-white text-emerald-800 font-black shadow-xs' 
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <Layers size={14} />
+                    <span>الكل</span>
+                  </button>
+                </div>
+
+                {/* تصنيفات سريعة */}
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 no-scrollbar">
+                  <button
+                    type="button"
+                    onClick={() => setPriceCheckCategory('all')}
+                    className={`whitespace-nowrap px-3 py-1 rounded-lg text-xs font-bold transition-all border cursor-pointer ${
+                      priceCheckCategory === 'all'
+                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    الكل
+                  </button>
+                  {categories
+                    .filter(c => priceCheckType === 'all' || !c.type || c.type === priceCheckType)
+                    .map(c => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => setPriceCheckCategory(c.id)}
+                        className={`whitespace-nowrap px-3 py-1 rounded-lg text-xs font-bold transition-all border cursor-pointer ${
+                          priceCheckCategory === c.id
+                            ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                            : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        {c.name}
+                      </button>
+                    ))}
+                </div>
+              </div>
             </div>
 
-            {/* Modal Footer Buttons */}
-            <div className="p-4 bg-white border-t border-slate-100 flex gap-2.5">
-              <button
+            {/* قائمة نتائج الخدمات المعروضة للاستعلام */}
+            <div className="p-4 overflow-y-auto max-h-[50vh] bg-slate-50/40 custom-scrollbar">
+              {priceCheckFilteredItems.length === 0 ? (
+                <div className="py-12 flex flex-col items-center justify-center text-center">
+                  <div className="w-16 h-16 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mb-3">
+                    <Search size={28} />
+                  </div>
+                  <h4 className="font-extrabold text-slate-700 text-sm">لم يتم العثور على أي خدمات أو أصناف</h4>
+                  <p className="text-xs text-slate-400 mt-1 max-w-xs">
+                    تأكد من كتابة الاسم أو الباركود بشكل صحيح أو قم باختيار تصنيف آخر
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {priceCheckFilteredItems.map(item => (
+                    <div
+                      key={item.id}
+                      className="bg-white border border-slate-200 hover:border-emerald-300 rounded-2xl p-3.5 flex items-center justify-between gap-3 shadow-2xs transition-all"
+                    >
+                      {/* تفاصيل الخدمة / الصنف */}
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 shadow-2xs ${
+                          item._isProduct ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'
+                        }`}>
+                          {item.imageUrl ? (
+                            <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover rounded-xl" />
+                          ) : (
+                            item._isProduct ? <Package size={20} /> : <Scissors size={20} />
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <h4 className="font-black text-sm text-slate-800 truncate" title={item.name}>
+                            {item.name}
+                          </h4>
+                          <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                            {item.categoryName && (
+                              <span className="bg-slate-100 text-slate-600 text-[10px] font-bold px-1.5 py-0.2 rounded-md">
+                                {item.categoryName}
+                              </span>
+                            )}
+                            {item.durationMinutes ? (
+                              <span className="bg-blue-50 text-blue-700 border border-blue-100 text-[10px] font-medium px-1.5 py-0.2 rounded-md inline-flex items-center gap-1">
+                                <Clock size={10} />
+                                <span>{item.durationMinutes} د</span>
+                              </span>
+                            ) : null}
+                            {item.barcode && (
+                              <span className="bg-slate-50 text-slate-500 font-mono text-[10px] px-1.5 py-0.2 rounded-md border border-slate-200 inline-flex items-center gap-0.5">
+                                <Barcode size={10} />
+                                <span>{item.barcode}</span>
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* السعر البارز */}
+                      <div className="flex flex-col items-end shrink-0 pl-1">
+                        {item.hasDiscount ? (
+                          <>
+                            <div className="flex items-center gap-1">
+                              <span className="text-[10px] text-slate-400 line-through font-bold">
+                                {item.originalPrice} {settings.currency}
+                              </span>
+                              <span className="bg-red-50 text-red-600 text-[9px] font-black px-1 rounded">
+                                خصم
+                              </span>
+                            </div>
+                            <span className="text-base sm:text-lg font-black text-emerald-700 font-mono">
+                              {item.displayPrice} {settings.currency}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-base sm:text-lg font-black text-slate-900 font-mono">
+                            {item.displayPrice} {settings.currency}
+                          </span>
+                        )}
+                        <span className="text-[9px] font-bold text-slate-400 mt-0.5">
+                          معاينة فقط 👁️
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* شريط ذيل النافذة */}
+            <div className="p-3.5 sm:p-4 bg-white border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-xs text-slate-500">
+                <span className="font-bold text-slate-700">عدد النتائج:</span>
+                <span className="bg-slate-100 text-slate-800 font-mono font-bold px-2 py-0.5 rounded-md">
+                  {priceCheckFilteredItems.length}
+                </span>
+                <span className="hidden sm:inline text-slate-400">•</span>
+                <span className="text-[11px] text-slate-400 hidden sm:inline">
+                  🔒 نافذة استعلام سريعة للأسعار دون إدخال أي خدمة إلى سلة الفاتورة الحالية.
+                </span>
+              </div>
+
+              <button 
                 type="button"
-                onClick={() => { setShowReceiptModal(false); setCompletedInvoice(null); resetToFreshInvoice(false); }}
-                className="flex-1 py-2.5 px-4 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 cursor-pointer transition-colors"
+                onClick={() => setShowPriceCheckModal(false)}
+                className="w-full sm:w-auto px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95 text-xs"
               >
-                إغلاق وبدء فاتورة جديدة
+                <X size={16} />
+                <span>إغلاق (Esc)</span>
               </button>
-              <button
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mobile/Tablet Silent Print Success Notification Toast */}
+      {mobilePrintNotice && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 text-white px-5 py-3 rounded-2xl shadow-2xl border border-emerald-500/50 flex items-center gap-3 backdrop-blur-md transition-all animate-bounce">
+          <div className="w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center font-black text-sm shrink-0 shadow-md shadow-emerald-500/30">
+            ✓
+          </div>
+          <span className="text-xs sm:text-sm font-black">{mobilePrintNotice}</span>
+        </div>
+      )}
+
+      {/* Receipt / Invoice Print Modal (Desktop only) */}
+      {showReceiptModal && completedInvoice && !isMobileOrTablet() && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+              <h3 className="font-bold text-lg text-slate-800">معاينة الفاتورة</h3>
+              <button onClick={handleCloseReceiptModal} className="text-slate-400 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-xl transition-colors cursor-pointer" title="إغلاق وبدء فاتورة جديدة (Esc)"><X size={20}/></button>
+            </div>
+            
+            {/* Thermal Paper Preview Area */}
+            <div className="bg-slate-200 p-8 overflow-y-auto flex justify-center" style={{ fontFamily: '"Cairo", sans-serif' }}>
+              <div id="receipt-content" className="bg-white shadow-sm" style={{ width: '100%', maxWidth: '72mm', padding: '5mm', fontFamily: '"Cairo", sans-serif', color: '#000', margin: '0 auto', boxSizing: 'border-box' }}>
+                <div style={{ textAlign: 'center', marginBottom: '15px' }}>
+                  {settings.logoUrl && (
+                    <img src={settings.logoUrl} alt="Logo" style={{ maxWidth: '80px', maxHeight: '80px', margin: '0 auto 10px auto', display: 'block' }} />
+                  )}
+                  <h2 style={{ fontSize: '18px', fontWeight: 'bold', margin: '0 0 5px 0' }}>{settings.salonName || 'صالون العناية'}</h2>
+                  {completedInvoice.id && (
+                    <div 
+                      style={{ margin: '6px auto 10px auto', textAlign: 'center' }} 
+                      dangerouslySetInnerHTML={{ __html: generateBarcodeSvgString(completedInvoice.id, { height: 32, width: 1.3, fontSize: 10 }) }} 
+                    />
+                  )}
+                  <div style={{ borderBottom: '1px dashed #000', margin: '12px 0' }}></div>
+                  <p style={{ fontSize: '13px', margin: '0' }}>رقم الفاتورة: {completedInvoice.id}</p>
+                  <p style={{ fontSize: '13px', margin: '0' }}>التاريخ: {new Date(completedInvoice.date).toLocaleString('ar-SA')}</p>
+                  {completedInvoice.clientName && (
+                    <p style={{ fontSize: '13px', margin: '5px 0 0 0' }}>العميل: {completedInvoice.clientName}</p>
+                  )}
+                </div>
+                
+                <div style={{ borderBottom: '1px dashed #000', margin: '10px 0' }}></div>
+                
+                <table style={{ width: '100%', fontSize: '13px', textAlign: 'right', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid #000' }}>
+                      <th style={{ padding: '8px 0', width: '50%' }}>الصنف</th>
+                      <th style={{ padding: '8px 0', textAlign: 'center', width: '20%' }}>الكمية</th>
+                      <th style={{ padding: '8px 0', textAlign: 'left', width: '30%' }}>السعر</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {completedInvoice.items.map((item, idx) => (
+                      <tr key={idx} style={{ borderBottom: '1px dotted #ccc' }}>
+                        <td style={{ padding: '8px 0' }}>
+                          <div style={{ fontWeight: 'bold' }}>{item.serviceName}</div>
+                          <div style={{ fontSize: '11px', color: '#555' }}>بواسطة: {item.technicianName || '-'}</div>
+                        </td>
+                        <td style={{ padding: '8px 0', textAlign: 'center' }}>{item.quantity || 1}</td>
+                        <td style={{ padding: '8px 0', textAlign: 'left' }}>{item.price.toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                
+                <div style={{ borderBottom: '1px dashed #000', margin: '10px 0' }}></div>
+                
+                <div style={{ fontSize: '14px', lineHeight: '1.8' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>المجموع:</span>
+                    <span>{completedInvoice.items.reduce((sum, item) => sum + (item.price * (item.quantity || 1)), 0).toFixed(2)}</span>
+                  </div>
+                  {completedInvoice.discount > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>الخصم:</span>
+                      <span>- {completedInvoice.discount.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {settings.vatEnabled && (() => {
+                    const invoiceSubtotal = completedInvoice.items.reduce((sum, item) => sum + (item.price * (item.quantity || 1)), 0);
+                    const totalInclusive = Math.max(0, invoiceSubtotal - completedInvoice.discount);
+                    const baseTotal = totalInclusive / (1 + settings.vatRate / 100);
+                    const vatAmt = totalInclusive - baseTotal;
+                    return (
+                      <>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                          <span>المبلغ قبل الضريبة:</span>
+                          <span>{baseTotal.toFixed(2)}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                          <span>الضريبة ({settings.vatRate}%):</span>
+                          <span>{vatAmt.toFixed(2)} شامل</span>
+                        </div>
+                      </>
+                    );
+                  })()}
+                  {((completedInvoice.advanceDeduction || 0) > 0 || advanceDeduction > 0) && (() => {
+                    const advAmt = completedInvoice.advanceDeduction || advanceDeduction;
+                    const advList = completedInvoice.advancePayments || activeAdvancePayments;
+                    return (
+                      <div style={{ margin: '4px 0', padding: '4px 0', borderTop: '1px dotted #a7f3d0', borderBottom: '1px dotted #a7f3d0' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#059669', fontWeight: 'bold' }}>
+                          <span>المدفوع مقدماً (عربون الحجز):</span>
+                          <span>- {advAmt.toFixed(2)}</span>
+                        </div>
+                        {advList && advList.length > 0 && (
+                          <div style={{ fontSize: '10px', color: '#047857', marginTop: '2px' }}>
+                            {advList.map((adv, idx) => (
+                              <div key={adv.id || idx} style={{ display: 'flex', justifyContent: 'space-between', paddingLeft: '8px' }}>
+                                <span>• {adv.treasuryName || adv.paymentMethod || 'دفعة'} ({adv.date?.split('T')[0] || ''}):</span>
+                                <span>{adv.amount.toFixed(2)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '15px', marginTop: '5px', paddingTop: '5px', borderTop: '1px solid #000' }}>
+                    <span>الصافي المدفوع اليوم:</span>
+                    <span>{completedInvoice.total.toFixed(2)} {settings.currency}</span>
+                  </div>
+                  {completedInvoice.paymentMethods && completedInvoice.paymentMethods.length > 0 && (
+                    <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed #ccc', fontSize: '12px' }}>
+                      <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>طرق الدفع:</div>
+                      {completedInvoice.paymentMethods.map((pm, idx) => (
+                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span>{pm.treasuryId === 'cashback' ? 'كاش باك' : (settings.treasuries.find(t => t.id === pm.treasuryId)?.name || 'غير محدد')}</span>
+                          <span>{pm.amount.toFixed(2)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                </div>
+
+                <div style={{ textAlign: 'center', marginTop: '25px', fontSize: '13px', fontWeight: 'bold' }}>
+                  <p style={{ margin: '0 0 10px 0' }}>شكراً لزيارتكم!</p>
+                  {settings.phone && <p style={{ fontSize: '12px', fontWeight: 'normal', margin: '2px 0' }}>جوال: {settings.phone}</p>}
+                  {settings.address && <p style={{ fontSize: '12px', fontWeight: 'normal', margin: '2px 0' }}>العنوان: {settings.address}</p>}
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 bg-white border-t border-slate-100 flex items-center gap-3">
+              {/* 1. زر إغلاق: لإغلاق الشاشة دون أي طباعة */}
+              <button 
                 type="button"
-                onClick={printReceipt}
-                className="flex-1 py-2.5 px-4 rounded-xl text-xs font-black text-white bg-indigo-600 hover:bg-indigo-700 shadow-md cursor-pointer flex items-center justify-center gap-2 transition-all"
+                onClick={handleCloseReceiptModal}
+                className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95 text-sm"
+                title="إغلاق الشاشة دون طباعة"
               >
-                <Printer size={15} />
-                <span>طباعة الفاتورة الآن</span>
+                <X size={18} />
+                <span>إغلاق</span>
+              </button>
+
+              {/* 2. زر معاينة: لمعاينة الفاتورة قبل الطباعة مع خيارات وإعدادات الطباعة العادية */}
+              <button 
+                type="button"
+                onClick={printReceiptPreview}
+                className="flex-1 py-3 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl shadow-sm transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95 text-sm"
+                title="معاينة الفاتورة قبل الطباعة مع خيارات الطباعة العادية"
+              >
+                <Eye size={18} />
+                <span>معاينة</span>
+              </button>
+
+              {/* 3. زر طباعة: لطباعة الفاتورة مباشرة وفورياً بدون معاينة وبدون أي صناديق حوارية */}
+              <button 
+                type="button"
+                onClick={printReceiptDirect}
+                className="flex-[1.2] py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl shadow-md shadow-emerald-600/20 transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95 text-sm"
+                title="طباعة الفاتورة مباشرة بدون معاينة وبدون أي صناديق حوارية عبر الطابعة الافتراضية"
+              >
+                <Printer size={19} />
+                <span>طباعة</span>
               </button>
             </div>
           </div>
@@ -3431,10 +4174,15 @@ export function POSScreen({
                             #{idx + 1}
                           </div>
                           <div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
                               <h4 className="font-black text-xs text-slate-900">
                                 {held.client?.name || held.clientSearch || 'عميل نقدي'}
                               </h4>
+                              {held.bookingId && (
+                                <span className="text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                  <span>📅 حجز مكتمل</span>
+                                </span>
+                              )}
                               {held.queueNumber && (
                                 <span className="text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-full font-mono">
                                   🎟️ دور #{held.queueNumber}
@@ -3448,6 +4196,16 @@ export function POSScreen({
                                   ضمان/إصلاح
                                 </span>
                               )}
+                              {held.id === activeHeldInvoiceId ? (
+                                <span className="text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
+                                  <span>🟢 مفتوحة حالياً على الكاشير</span>
+                                </span>
+                              ) : (held.isOpen && held.openedBy ? (
+                                <span className="text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-full">
+                                  👤 مفتوحة بواسطة ({held.openedBy})
+                                </span>
+                              ) : null)}
                             </div>
                             <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1 font-mono">
                               <Clock size={11} />
@@ -3458,8 +4216,13 @@ export function POSScreen({
 
                         <div className="text-left">
                           <span className="text-sm font-black font-mono text-primary">
-                            {Number(heldTotal || 0).toFixed(2)} {settings.currency}
+                            {heldTotal.toFixed(2)} {settings.currency}
                           </span>
+                          {(Number(held.advanceDeduction) || 0) > 0 && (
+                            <p className="text-[10px] text-emerald-600 font-bold font-mono">
+                              عربون: -{Number(held.advanceDeduction).toFixed(2)}
+                            </p>
+                          )}
                           <p className="text-[10px] text-slate-400 font-semibold">{heldCart.length} أصناف / خدمات</p>
                         </div>
                       </div>
@@ -3487,11 +4250,21 @@ export function POSScreen({
                         </button>
 
                         <button
-                          onClick={() => handleResumeHeldInvoice(held)}
-                          className="px-4 py-1.5 rounded-xl text-xs font-black bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+                          onClick={() => {
+                            if (held.id === activeHeldInvoiceId) {
+                              setShowHeldInvoicesModal(false);
+                            } else {
+                              handleResumeHeldInvoice(held);
+                            }
+                          }}
+                          className={`px-4 py-1.5 rounded-xl text-xs font-black shadow-sm transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 ${
+                            held.id === activeHeldInvoiceId 
+                              ? 'bg-amber-600 hover:bg-amber-500 text-white' 
+                              : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                          }`}
                         >
                           <PlayCircle size={14} />
-                          <span>استكمال الفاتورة</span>
+                          <span>{held.id === activeHeldInvoiceId ? 'العودة للفاتورة الحالية' : 'استكمال الفاتورة'}</span>
                         </button>
                       </div>
                     </div>
@@ -3732,25 +4505,184 @@ export function POSScreen({
           </div>
         </div>
       )}
+      {/* مودال اختيار الفاتورة لعمل مرتجع في نقطة البيع */}
+      {showPOSReturnInvoicePicker && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-rose-50/50">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center">
+                  <RotateCcw size={18} />
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-800 text-sm">اختيار فاتورة لعمل مرتجع مبيعات</h3>
+                  <p className="text-slate-400 text-xs">ابحث عن الفاتورة برقمها أو اسم العميل أو رقم الجوال</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPOSReturnInvoicePicker(false);
+                    setPosSelectedInvoiceForReturn(null);
+                    setPosReturnModalInitialMode('general');
+                    setIsPOSReturnModalOpen(true);
+                  }}
+                  className="bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-xl text-xs font-black shadow-xs cursor-pointer transition-all active:scale-95 flex items-center gap-1.5"
+                >
+                  <Package size={14} />
+                  <span>مرتجع أصناف عام (بدون فاتورة) 📦</span>
+                </button>
+                <button 
+                  onClick={() => setShowPOSReturnInvoicePicker(false)}
+                  className="w-8 h-8 rounded-lg bg-white hover:bg-slate-100 text-slate-400 hover:text-slate-600 flex items-center justify-center border border-slate-200"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
 
-      {showSalesReturnModal && (
+            <div className="p-4 border-b border-slate-100 bg-slate-50">
+              <div className="relative">
+                <Search size={16} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={posReturnSearch}
+                  onChange={(e) => setPosReturnSearch(e.target.value)}
+                  placeholder="ابحث برقم الفاتورة، اسم العميل، جوال العميل..."
+                  className="w-full bg-white border border-slate-200 rounded-xl pr-10 pl-4 py-2.5 text-xs font-bold outline-none focus:border-rose-500 shadow-xs"
+                  autoFocus
+                />
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-2">
+              {invoices
+                .filter(inv => {
+                  if (inv.status === 'cancelled') return false;
+                  if (!posReturnSearch.trim()) return true;
+                  const q = posReturnSearch.toLowerCase().trim();
+                  return (
+                    inv.id.toLowerCase().includes(q) ||
+                    (inv.clientName && inv.clientName.toLowerCase().includes(q)) ||
+                    (inv.clientPhone && inv.clientPhone.includes(q))
+                  );
+                })
+                .slice(0, 30)
+                .map(inv => {
+                  return (
+                    <div
+                      key={inv.id}
+                      className="p-3 rounded-xl border border-slate-200 hover:border-rose-400 hover:bg-rose-50/20 transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-mono font-black text-xs text-slate-900 bg-slate-100 px-2 py-0.5 rounded-md">
+                            #{inv.id}
+                          </span>
+                          <span className="font-bold text-xs text-slate-800">
+                            {inv.clientName || 'عميل نقدي'}
+                          </span>
+                          {inv.clientPhone && (
+                            <span className="text-[11px] font-mono text-slate-400">
+                              ({inv.clientPhone})
+                            </span>
+                          )}
+                          {inv.hasReturn && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-200">
+                              <RotateCcw size={10} />
+                              مرتجع سابق: {Number(inv.returnedAmount || 0).toFixed(2)}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3 mt-1.5 text-[11px] text-slate-400 font-medium">
+                          <span>{new Date(inv.date).toLocaleDateString('ar-SA')}</span>
+                          <span>•</span>
+                          <span>{inv.items?.length || 0} أصناف/خدمات</span>
+                          <span>•</span>
+                          <span className="font-bold text-slate-700">
+                            الإجمالي: {Number(inv.total).toFixed(2)} {settings.currency}
+                          </span>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          setPosSelectedInvoiceForReturn(inv);
+                          setPosReturnModalInitialMode('by_invoice');
+                          setShowPOSReturnInvoicePicker(false);
+                          setIsPOSReturnModalOpen(true);
+                        }}
+                        className="px-4 py-2 rounded-xl text-xs font-black bg-rose-600 hover:bg-rose-700 text-white flex items-center gap-1.5 shadow-sm transition-all active:scale-95 cursor-pointer whitespace-nowrap self-end sm:self-center"
+                      >
+                        <RotateCcw size={14} />
+                        <span>تسجيل مرتجع ↵</span>
+                      </button>
+                    </div>
+                  );
+                })}
+
+              {invoices.filter(i => i.status !== 'cancelled').length === 0 && (
+                <div className="py-12 text-center text-slate-400 font-bold text-xs">
+                  لا توجد فواتير مؤهلة للمرتجع حالياً
+                </div>
+              )}
+            </div>
+
+            <div className="p-3 border-t border-slate-200 bg-slate-50 flex justify-end">
+              <button
+                onClick={() => setShowPOSReturnInvoicePicker(false)}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-white hover:bg-slate-100 text-slate-700 border border-slate-200"
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* مودال عمل المرتجع الفعلي */}
+      {isPOSReturnModalOpen && (
         <SalesReturnModal
-          isOpen={showSalesReturnModal}
-          onClose={() => setShowSalesReturnModal(false)}
-          onConfirm={(ret) => {
-            if (onProcessSalesReturn) {
-              onProcessSalesReturn(ret);
-            }
-            setShowSalesReturnModal(false);
+          isOpen={true}
+          onClose={() => {
+            setIsPOSReturnModalOpen(false);
+            setPosSelectedInvoiceForReturn(null);
           }}
+          invoice={posSelectedInvoiceForReturn}
+          initialMode={posReturnModalInitialMode}
           settings={settings}
-          invoices={invoices}
-          salesReturns={salesReturns}
-          currentUser={currentUser}
           products={products}
-          employees={employees}
-          services={items}
+          setProducts={setProducts}
+          setItemMovements={setItemMovements}
+          transactions={transactions}
+          setTransactions={setTransactions}
+          invoices={invoices}
+          setInvoices={setInvoices}
           clients={clients}
+          setClients={setClients}
+          currentUser={currentUser}
+          onReturnSuccess={(newReturn, updatedInvoice) => {
+            if (updatedInvoice && setInvoices) {
+              setInvoices(invoices.map(i => i.id === updatedInvoice.id ? updatedInvoice : i));
+            }
+            if (setSalesReturns) {
+              setSalesReturns(prev => [newReturn, ...prev.filter(r => r.id !== newReturn.id)]);
+            }
+            setIsPOSReturnModalOpen(false);
+            setPosSelectedInvoiceForReturn(null);
+            setPosVoucherReturn(newReturn);
+          }}
+        />
+      )}
+
+      {/* مودال طباعة إشعار دائن (سند مرتجع مبيعات) */}
+      {posVoucherReturn && (
+        <SalesReturnVoucherModal
+          isOpen={true}
+          onClose={() => setPosVoucherReturn(null)}
+          salesReturn={posVoucherReturn}
+          settings={settings}
         />
       )}
     </div>

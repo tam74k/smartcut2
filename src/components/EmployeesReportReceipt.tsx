@@ -57,8 +57,8 @@ export function EmployeesReportReceipt({
         const itemTotal = (Number(item.price) || 0) * qty;
         const effectivePrice = Math.max(0, itemTotal - (itemTotal * discountRatio));
 
-        const service = services.find(s => s.id === item.itemId || s.name === item.serviceName);
-        const product = products && products.find(p => p.id === item.itemId || p.name === item.serviceName);
+        const service = services.find(s => s.id === item.itemId || s.id === item.id || s.name === item.serviceName);
+        const product = products && products.find(p => p.id === item.itemId || p.id === item.id || p.name === item.serviceName);
 
         // 1. عمولة التنفيذ (فني التنفيذ)
         const performerEmp = employees.find(e => (item.employeeId && e.id === item.employeeId) || (item.technicianName && e.name === item.technicianName));
@@ -66,20 +66,26 @@ export function EmployeesReportReceipt({
         const performerEntry = getOrCreate(performerName);
 
         if (performerEntry) {
-          let execComm = 0;
-          if (item.type === 'product' || (!service && product)) {
-            if (product && product.commission > 0) {
-              execComm = product.commission * qty;
-            } else if (performerEmp) {
-              execComm = calculateEmployeeCommission(performerEmp, effectivePrice);
-            }
-          } else {
-            if (service && service.employeeCommissionAmount !== undefined && service.employeeCommissionAmount > 0) {
-              execComm = service.employeeCommissionAmount * qty;
-            } else if (service && service.employeeCommissionPercentage !== undefined && service.employeeCommissionPercentage > 0) {
-              execComm = effectivePrice * (service.employeeCommissionPercentage / 100);
-            } else if (performerEmp) {
-              execComm = calculateEmployeeCommission(performerEmp, effectivePrice);
+          let execComm = Number(item.employeeCommission ?? item.commissionAmount ?? (item as any).commission ?? 0);
+          if (execComm <= 0) {
+            if (item.type === 'product' || (!service && product)) {
+              if (product && product.commission > 0) {
+                execComm = product.commission * qty;
+              } else if (performerEmp) {
+                execComm = calculateEmployeeCommission(performerEmp, effectivePrice);
+              }
+            } else {
+              const srvAmount = Number(service?.employeeCommissionAmount ?? service?.commissionAmount ?? 0);
+              const srvPct = Number(service?.employeeCommissionPercentage ?? service?.commissionRate ?? 0);
+              const rawBase = Number(service?.commissionableAmount ?? (item as any).commissionableAmount ?? 0);
+              const commBase = rawBase > 0 ? (rawBase * qty) : effectivePrice;
+              if (srvAmount > 0) {
+                execComm = srvAmount * qty;
+              } else if (srvPct > 0) {
+                execComm = commBase * (srvPct / 100);
+              } else if (performerEmp) {
+                execComm = calculateEmployeeCommission(performerEmp, commBase);
+              }
             }
           }
 

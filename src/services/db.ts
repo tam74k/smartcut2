@@ -1,6 +1,7 @@
 import { SupabaseService } from './supabase';
 import { dataUrlToBlob } from '../utils/imageUpload';
 import { HeldInvoice } from '../types';
+import { sealUserRecord } from '../utils/securityCrypto';
 
 // ============================================================
 // 🗄️ SmartCut DB Service — طبقة البيانات الموحدة
@@ -38,25 +39,32 @@ export function toSalonUUID(id?: string | null): string {
     if (parsed?.salonId && UUID_REGEX.test(parsed.salonId)) return parsed.salonId;
     if (parsed?.salon_id && UUID_REGEX.test(parsed.salon_id)) return parsed.salon_id;
 
-    const storedSalons = localStorage.getItem('smartcut_saas_salons') || localStorage.getItem('smartcut_salons');
-    if (storedSalons) {
-      const salonsList = JSON.parse(storedSalons);
-      if (Array.isArray(salonsList) && salonsList.length > 0) {
-        if (id) {
-          const match = salonsList.find((sl: any) => sl.id === id || sl.code?.toLowerCase() === id.toLowerCase() || sl.salonCode?.toLowerCase() === id.toLowerCase() || sl.name === id);
+    if (id) {
+      const storedSalons = localStorage.getItem('smartcut_salons');
+      if (storedSalons) {
+        const salonsList = JSON.parse(storedSalons);
+        if (Array.isArray(salonsList) && salonsList.length > 0) {
+          const match = salonsList.find((sl: any) => sl.id === id || sl.code?.toLowerCase() === id.toLowerCase() || sl.salonCode?.toLowerCase() === id.toLowerCase());
           if (match && UUID_REGEX.test(match.id)) return match.id;
         }
-        if (!id && UUID_REGEX.test(salonsList[0].id)) return salonsList[0].id;
       }
     }
   } catch (e) {}
-  return (id && UUID_REGEX.test(id)) ? id : '';
+  return (id && UUID_REGEX.test(id)) ? id : '11111111-1111-4111-8111-111111111111';
 }
 
 export function toBranchUUID(id?: string | null): string | null {
   if (!id) return null;
   if (UUID_REGEX.test(id)) return id;
   return null;
+}
+
+export function toBool(val: any): boolean {
+  if (val === true || val === 1 || val === '1' || val === '1.0' || val === 'true' || val === 'TRUE') return true;
+  if (val === false || val === 0 || val === '0' || val === '0.0' || val === 'false' || val === 'FALSE' || val === null || val === undefined) return false;
+  const num = Number(val);
+  if (!isNaN(num)) return num > 0;
+  return false;
 }
 
 export function toDateOrNull(val: any): string | null {
@@ -118,16 +126,8 @@ function getSalonId(): string {
     if (parsed?.salonId && UUID_REGEX.test(parsed.salonId)) return parsed.salonId;
     if (parsed?.salon_id && UUID_REGEX.test(parsed.salon_id)) return parsed.salon_id;
 
-    const storedSalons = localStorage.getItem('smartcut_saas_salons') || localStorage.getItem('smartcut_salons');
-    if (storedSalons) {
-      const salonsList = JSON.parse(storedSalons);
-      if (Array.isArray(salonsList) && salonsList.length > 0 && UUID_REGEX.test(salonsList[0].id)) {
-        return salonsList[0].id;
-      }
-    }
-
-    return '';
-  } catch { return ''; }
+    return '11111111-1111-4111-8111-111111111111';
+  } catch { return '11111111-1111-4111-8111-111111111111'; }
 }
 
 // ============================================================
@@ -216,34 +216,16 @@ export async function ensureCoreSchema(): Promise<void> {
       ensureColumn('work_shifts', 'salon_id', 'UUID'),
       ensureColumn('work_shifts', 'branch_id', 'VARCHAR(100)'),
       ensureColumn('work_shifts', 'shift_date', 'VARCHAR(50)'),
-      ensureColumn('work_shifts', 'shift_code', 'VARCHAR(100)'),
       ensureColumn('work_shifts', 'opened_at', 'TIMESTAMPTZ'),
       ensureColumn('work_shifts', 'closed_at', 'TIMESTAMPTZ'),
       ensureColumn('work_shifts', 'opened_by_user_id', 'VARCHAR(100)'),
       ensureColumn('work_shifts', 'opened_by_user_name', 'VARCHAR(255)'),
-      ensureColumn('work_shifts', 'opened_by_name', 'VARCHAR(255)'),
       ensureColumn('work_shifts', 'opened_by_role', 'VARCHAR(100)'),
-      ensureColumn('work_shifts', 'closed_by_user_id', 'VARCHAR(100)'),
-      ensureColumn('work_shifts', 'closed_by_user_name', 'VARCHAR(255)'),
-      ensureColumn('work_shifts', 'closed_by_name', 'VARCHAR(255)'),
-      ensureColumn('work_shifts', 'closed_by_role', 'VARCHAR(100)'),
       ensureColumn('work_shifts', 'initial_cash', 'NUMERIC(12,2)'),
       ensureColumn('work_shifts', 'expected_cash', 'NUMERIC(12,2)'),
       ensureColumn('work_shifts', 'actual_cash', 'NUMERIC(12,2)'),
       ensureColumn('work_shifts', 'cash_difference', 'NUMERIC(12,2)'),
-      ensureColumn('work_shifts', 'total_sales', 'NUMERIC(12,2)'),
-      ensureColumn('work_shifts', 'total_cash_sales', 'NUMERIC(12,2)'),
-      ensureColumn('work_shifts', 'total_card_sales', 'NUMERIC(12,2)'),
-      ensureColumn('work_shifts', 'total_expenses', 'NUMERIC(12,2)'),
-      ensureColumn('work_shifts', 'total_advances', 'NUMERIC(12,2)'),
-      ensureColumn('work_shifts', 'transferred_to_treasury', 'VARCHAR(255)'),
-      ensureColumn('work_shifts', 'transferred_amount', 'NUMERIC(12,2)'),
       ensureColumn('work_shifts', 'status', 'VARCHAR(50)'),
-      ensureColumn('work_shifts', 'notes', 'TEXT'),
-      ensureColumn('invoices', 'shift_code', 'VARCHAR(100)'),
-      ensureColumn('invoices', 'shift_id', 'VARCHAR(100)'),
-      ensureColumn('invoices', 'shift_date', 'VARCHAR(50)'),
-      ensureColumn('transactions', 'shift_code', 'VARCHAR(100)'),
       ensureColumn('app_settings', 'overtime_settings', 'JSONB'),
       ensureColumn('app_settings', 'attendance_settings', 'JSONB'),
       ensureColumn('app_settings', 'commission_settings', 'JSONB'),
@@ -264,41 +246,97 @@ export async function ensureCoreSchema(): Promise<void> {
       ensureColumn('invoices', 'advance_deduction', 'NUMERIC(12,2)'),
       ensureColumn('invoices', 'booking_id', 'VARCHAR(100)'),
       ensureColumn('bookings', 'advance_payments', 'JSONB'),
+      ensureColumn('bookings', 'is_paid', 'BOOLEAN'),
+      ensureColumn('bookings', 'invoice_id', 'VARCHAR(100)'),
       ensureColumn('bookings', 'location', 'TEXT'),
-      ensureColumn('bookings', 'created_by', 'TEXT'),
-      ensureColumn('bookings', 'created_by_name', 'VARCHAR(255)'),
-      ensureColumn('bookings', 'updated_at', 'TIMESTAMPTZ'),
-      ensureColumn('bookings', 'updated_by', 'TEXT'),
-      ensureColumn('bookings', 'updated_by_name', 'VARCHAR(255)'),
       ensureColumn('client_portal_accounts', 'username', 'VARCHAR(100)'),
       ensureColumn('client_portal_accounts', 'salon_code', 'VARCHAR(50)'),
       ensureColumn('client_portal_accounts', 'linked_salon_codes', 'JSONB'),
-      ensureColumn('app_settings', 'inactive_clients_tracking_enabled', 'BOOLEAN'),
-      ensureColumn('app_settings', 'inactive_clients_days', 'INT'),
-      ensureColumn('app_settings', 'deposit_refund_allowed_days', 'INT DEFAULT 0'),
-      ensureColumn('transactions', 'booking_id', 'VARCHAR(100)'),
-      ensureColumn('transactions', 'shift_id', 'VARCHAR(100)'),
-      ensureColumn('bookings', 'is_refunded', 'BOOLEAN DEFAULT FALSE'),
-      ensureColumn('bookings', 'refund_amount', 'NUMERIC(12,2) DEFAULT 0'),
-      ensureColumn('bookings', 'refund_date', 'TIMESTAMPTZ'),
-      ensureColumn('bookings', 'refund_expense_id', 'VARCHAR(100)'),
-      ensureColumn('bookings', 'refund_treasury_id', 'VARCHAR(100)'),
-      ensureColumn('bookings', 'cancelled_at', 'TIMESTAMPTZ'),
-      ensureColumn('bookings', 'cancelled_by', 'TEXT'),
-      ensureColumn('bookings', 'cancelled_by_name', 'VARCHAR(255)'),
-      ensureColumn('bookings', 'refund_notes', 'TEXT'),
-      ensureColumn('products', 'barcode', 'VARCHAR(100)'),
-      ensureColumn('products', 'product_type', 'VARCHAR(50)'),
-      ensureColumn('products', 'supplier_id', 'VARCHAR(100)'),
-      ensureColumn('products', 'commission', 'NUMERIC(10,2)'),
-      ensureColumn('products', 'reorder_limit', 'NUMERIC(10,2)'),
-      ensureColumn('products', 'opening_stock', 'NUMERIC(10,2)'),
-      ensureColumn('products', 'current_stock', 'NUMERIC(10,2)'),
-      ensureColumn('products', 'cost_price', 'NUMERIC(10,2)'),
+      ensureColumn('clients', 'branch_id', 'VARCHAR(50)'),
+      ensureColumn('clients', 'dob', 'VARCHAR(50)'),
+      ensureColumn('clients', 'dob_day', 'INT'),
+      ensureColumn('clients', 'dob_month', 'INT'),
+      ensureColumn('clients', 'tier_level', 'VARCHAR(50)'),
+      ensureColumn('clients', 'vip_since', 'VARCHAR(50)'),
+      ensureColumn('clients', 'vip_notes', 'TEXT'),
+      ensureColumn('clients', 'referred_by_phone', 'VARCHAR(50)'),
+      ensureColumn('clients', 'has_used_referral_reward', 'BOOLEAN'),
+      ensureColumn('clients', 'referral_count', 'INT'),
+      ensureColumn('clients', 'referral_total_cashback_earned', 'NUMERIC(15,2)'),
+      ensureColumn('clients', 'blacklist_reason', 'TEXT'),
+      ensureColumn('clients', 'preferences', 'JSONB'),
+      ensureColumn('invoices', 'invoice_number', 'VARCHAR(100)'),
+      ensureColumn('invoices', 'paid_amount', 'NUMERIC(12,2)'),
+      ensureColumn('invoices', 'paid', 'NUMERIC(12,2)'),
+      ensureColumn('invoices', 'remaining_amount', 'NUMERIC(12,2)'),
+      ensureColumn('invoices', 'remaining', 'NUMERIC(12,2)'),
+      ensureColumn('invoices', 'vat', 'NUMERIC(12,2)'),
+      ensureColumn('invoices', 'tax', 'NUMERIC(12,2)'),
+      ensureColumn('bookings', 'total_price', 'NUMERIC(10,2)'),
+      ensureColumn('bookings', 'total_amount', 'NUMERIC(12,2)'),
+      ensureColumn('bookings', 'time', 'VARCHAR(50)'),
+      ensureColumn('bookings', 'start_time', 'VARCHAR(50)'),
+      ensureColumn('bookings', 'booking_code', 'VARCHAR(50)'),
+      ensureColumn('bookings', 'customer_email', 'VARCHAR(100)'),
+      ensureColumn('bookings', 'branch_code', 'VARCHAR(50)'),
+      ensureColumn('bookings', 'discount_type', 'VARCHAR(20)'),
+      ensureColumn('bookings', 'discount_value', 'NUMERIC(10,2)'),
+      ensureColumn('bookings', 'discount_amount', 'NUMERIC(10,2)'),
+      ensureColumn('bookings', 'created_by', 'VARCHAR(100)'),
+      ensureColumn('bookings', 'created_by_name', 'VARCHAR(100)'),
+      ensureColumn('bookings', 'created_by_id', 'VARCHAR(100)'),
+      ensureColumn('bookings', 'updated_at', 'TIMESTAMPTZ'),
+      ensureColumn('bookings', 'updated_by', 'VARCHAR(100)'),
+      ensureColumn('bookings', 'updated_by_name', 'VARCHAR(100)'),
+      ensureColumn('bookings', 'updated_by_id', 'VARCHAR(100)'),
+      ensureColumn('bookings', 'internal_notes', 'TEXT'),
+      ensureColumn('employees', 'basic_salary', 'NUMERIC(10,2)'),
+      ensureColumn('employees', 'base_salary', 'NUMERIC(10,2)'),
+      ensureColumn('employees', 'target', 'NUMERIC(12,2)'),
+      ensureColumn('employees', 'target_amount', 'NUMERIC(12,2)'),
+      ensureColumn('employees', 'check_in_time', 'VARCHAR(20)'),
+      ensureColumn('employees', 'check_out_time', 'VARCHAR(20)'),
+      ensureColumn('services', 'duration', 'INT'),
+      ensureColumn('services', 'duration_minutes', 'INT'),
+      ensureColumn('services', 'commission_rate', 'NUMERIC(5,2)'),
+      ensureColumn('services', 'commission_amount', 'NUMERIC(10,2)'),
+      ensureColumn('services', 'employee_commission_percentage', 'NUMERIC(5,2)'),
+      ensureColumn('services', 'employee_commission_amount', 'NUMERIC(10,2)'),
+      ensureColumn('services', 'commissionable_amount', 'NUMERIC(10,2)'),
+      ensureColumn('services', 'is_target_exempt', 'BOOLEAN'),
+      ensureColumn('employees', 'daily_target_method', 'VARCHAR(50)'),
+      ensureColumn('employees', 'monthly_target_method', 'VARCHAR(50)'),
+      ensureColumn('products', 'retail_price', 'NUMERIC(10,2)'),
       ensureColumn('products', 'sell_price', 'NUMERIC(10,2)'),
-      ensureColumn('products', 'branch_id', 'VARCHAR(100)'),
-      ensureColumn('products', 'is_active', 'BOOLEAN'),
-      ensureColumn('categories', 'is_active', 'BOOLEAN DEFAULT TRUE')
+      ensureColumn('products', 'min_stock_alert', 'NUMERIC(12,2)'),
+      ensureColumn('products', 'reorder_limit', 'INT'),
+      ensureColumn('transactions', 'treasury', 'VARCHAR(100)'),
+      ensureColumn('transactions', 'treasury_id', 'VARCHAR(50)'),
+      ensureColumn('transactions', 'payment_method', 'VARCHAR(50)'),
+      ensureColumn('transactions', 'expense_category', 'VARCHAR(100)'),
+      ensureColumn('transactions', 'branch_code', 'VARCHAR(50)'),
+      ensureColumn('transactions', 'user_id', 'VARCHAR(50)'),
+      ensureColumn('transactions', 'user_name', 'VARCHAR(255)'),
+      ensureColumn('transactions', 'shift_date', 'VARCHAR(50)'),
+      ensureColumn('held_invoices', 'notes', 'TEXT'),
+      ensureColumn('held_invoices', 'note', 'TEXT'),
+      ensureColumn('held_invoices', 'items', 'JSONB'),
+      ensureColumn('held_invoices', 'client_search', 'VARCHAR(255)'),
+      ensureColumn('held_invoices', 'discount_type', 'VARCHAR(50)'),
+      ensureColumn('held_invoices', 'discount_value', 'NUMERIC(12,2)'),
+      ensureColumn('held_invoices', 'advance_deduction', 'NUMERIC(12,2)'),
+      ensureColumn('held_invoices', 'advance_payments', 'JSONB'),
+      ensureColumn('held_invoices', 'is_open', 'BOOLEAN'),
+      ensureColumn('held_invoices', 'opened_by', 'VARCHAR(100)'),
+      ensureColumn('customer_complaints', 'subject', 'VARCHAR(255)'),
+      ensureColumn('customer_complaints', 'category', 'VARCHAR(100)'),
+      ensureColumn('customer_complaints', 'actions', 'JSONB'),
+      ensureColumn('customer_complaints', 'is_remedy_provided', 'BOOLEAN'),
+      ensureColumn('customer_complaints', 'remedy_invoice_id', 'VARCHAR(50)'),
+      ensureColumn('promo_codes', 'usage_limit', 'INT'),
+      ensureColumn('promo_codes', 'max_uses_total', 'INT'),
+      ensureColumn('promo_codes', 'used_count', 'INT'),
+      ensureColumn('promo_codes', 'uses_count', 'INT')
     ]);
   } catch { /* Silent fail */ }
 }
@@ -326,6 +364,62 @@ export const DB = {
   // فحص وإنشاء عمود يدوياً
   async ensureColumn(table: string, column: string, type: string = 'TEXT'): Promise<boolean> {
     return ensureColumn(table, column, type);
+  },
+
+  // --- وحدة النسخ الاحتياطي المتقدم (Advanced Backup Module API) ---
+  async fetchBackupSettings(): Promise<any> {
+    try {
+      const res = await fetch('/api/backup/settings');
+      if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+      return await res.json();
+    } catch (e: any) {
+      console.warn('DB.fetchBackupSettings error:', e.message);
+      return {
+        enabled: true,
+        days: ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"],
+        frequencyPreset: 'every_6_hours',
+        customTimes: ["02:00","14:00","23:00"],
+        lastBackupAt: null
+      };
+    }
+  },
+
+  async saveBackupSettings(settings: any): Promise<boolean> {
+    try {
+      const res = await fetch('/api/backup/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings)
+      });
+      return res.ok;
+    } catch (e: any) {
+      console.error('DB.saveBackupSettings error:', e.message);
+      return false;
+    }
+  },
+
+  async triggerBackupNow(backupDir?: string): Promise<{ success: boolean; message?: string; backup?: any; error?: string }> {
+    try {
+      const res = await fetch('/api/backup/run-now', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ backupDir })
+      });
+      return await res.json();
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  },
+
+  async fetchBackupList(): Promise<{ logs: any[]; files: any[] }> {
+    try {
+      const res = await fetch('/api/backup/list');
+      if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+      return await res.json();
+    } catch (e: any) {
+      console.warn('DB.fetchBackupList error:', e.message);
+      return { logs: [], files: [] };
+    }
   },
 
   // --- جلب سجلات جدول مع دعم التحديد المخصص للأعمدة والترقيم Pagination (.range) ----
@@ -388,17 +482,7 @@ export const DB = {
 
       const { data, error } = await q;
       if (error) {
-        if (error.code === 'PGRST205' || error.message?.includes('schema cache')) {
-          console.warn(`[Supabase Schema] الجدول '${table}' غير موجود بعد في قاعدة البيانات السحابية Supabase (ينبغي تشغيل استعلام الإنشاء SQL). الاعتماد مؤقتاً على التخزين المحلي.`);
-        } else {
-          console.error(`DB.fetchAll[${table}]:`, error.message);
-        }
-        if (table === 'bookings') {
-          try {
-            const cached = localStorage.getItem('smartcut_bookings');
-            if (cached) return JSON.parse(cached) as T[];
-          } catch {}
-        }
+        console.error(`DB.fetchAll[${table}]:`, error.message);
         return [];
       }
       if (!Array.isArray(data)) return [];
@@ -430,67 +514,9 @@ export const DB = {
             });
           } catch {}
         }
-        if (table === 'bookings' || camel?.advancePayments !== undefined || camel?.advance_payments !== undefined) {
-          let advs = camel.advancePayments || camel.advance_payments;
-          if (typeof advs === 'string') {
-            try { advs = JSON.parse(advs); } catch { advs = []; }
-          }
-          if (!Array.isArray(advs)) advs = [];
-          camel.advancePayments = advs;
-          if (typeof camel?.services === 'string') {
-            try { camel.services = JSON.parse(camel.services); } catch { camel.services = []; }
-          }
-          if (!Array.isArray(camel.services)) camel.services = [];
-
-          let cDate = camel.createdAt || camel.created_at;
-          const bDate = camel.date ? String(camel.date).split('T')[0].trim() : '';
-          const nowMs = Date.now();
-          const isFutureCreation = Boolean(cDate && new Date(cDate).getTime() > (nowMs + 86400000));
-          const isMatchesFutureAppt = Boolean(bDate && cDate && cDate.startsWith(bDate) && new Date(bDate).getTime() > nowMs);
-
-          if (isFutureCreation || isMatchesFutureAppt) {
-            // تصحيح تاريخ الإنشاء: يجب ألا يكون تاريخ الإنشاء في المستقبل أو مساوياً لموعد الحجز المستقبلي
-            const firstAdv = (advs || []).find((a: any) => {
-              const d = a.paymentDate || (a as any).payment_date || a.date;
-              return d && new Date(d).getTime() <= (nowMs + 86400000);
-            });
-            if (firstAdv) {
-              const d = firstAdv.paymentDate || (firstAdv as any).payment_date || firstAdv.date;
-              cDate = d.includes('T') ? d : `${d}T12:00:00.000Z`;
-            } else if (camel.shiftDate && new Date(camel.shiftDate).getTime() <= (nowMs + 86400000)) {
-              cDate = `${camel.shiftDate}T12:00:00.000Z`;
-            } else {
-              const todayStr = new Date().toISOString().split('T')[0];
-              cDate = `${todayStr}T12:00:00.000Z`;
-            }
-            try {
-              const client = sb();
-              if (client && camel.id) {
-                client.from('bookings').update({ created_at: cDate }).eq('id', camel.id).then();
-              }
-            } catch {}
-          }
-
-          camel.createdAt = cDate || new Date().toISOString();
-          camel.created_at = camel.createdAt;
-          camel.createdBy = camel.createdBy || camel.created_by;
-          camel.createdByName = camel.createdByName || camel.created_by_name || camel.createdBy;
-          camel.updatedAt = camel.updatedAt || camel.updated_at;
-          camel.updatedBy = camel.updatedBy || camel.updated_by;
-          camel.updatedByName = camel.updatedByName || camel.updated_by_name || camel.updatedBy;
-        }
         return camel;
       }) as T[];
-    } catch (e) {
-      console.error(`DB.fetchAll[${table}] exception:`, e);
-      if (table === 'bookings') {
-        try {
-          const cached = localStorage.getItem('smartcut_bookings');
-          if (cached) return JSON.parse(cached) as T[];
-        } catch {}
-      }
-      return [];
-    }
+    } catch (e) { console.error(`DB.fetchAll[${table}] exception:`, e); return []; }
   },
 
   // --- حفظ أو تحديث سجل مع المعالجة التلقائية للحقول غير الموجودة ---
@@ -590,22 +616,7 @@ export const DB = {
       while (attempts < 4) {
         attempts++;
         const { error } = await client.from(table).update(snakeUpdates).eq('id', id);
-        if (!error) {
-          if (table === 'bookings') {
-            try {
-              const stored = localStorage.getItem('smartcut_bookings');
-              if (stored) {
-                const list = JSON.parse(stored);
-                const idx = list.findIndex((item: any) => item.id === id);
-                if (idx >= 0) {
-                  list[idx] = { ...list[idx], ...updates };
-                  localStorage.setItem('smartcut_bookings', JSON.stringify(list));
-                }
-              }
-            } catch {}
-          }
-          return true;
-        }
+        if (!error) return true;
 
         const errMsg = error.message || '';
         const missingColMatch = errMsg.match(/Could not find the '([^']+)' column of '([^']+)'/i) 
@@ -786,6 +797,8 @@ export const DB = {
             camel.timeStr = new Date(camel.heldAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
           } catch {}
         }
+        camel.isOpen = camel.isOpen !== undefined ? camel.isOpen : !!camel.is_open;
+        camel.openedBy = camel.openedBy || camel.opened_by || undefined;
         return camel;
       });
     } catch (e) {
@@ -836,10 +849,13 @@ export const DB = {
         remedy_reason: held.remedyReason || null,
         before_photo_url: held.beforePhotoUrl || null,
         after_photo_url: held.afterPhotoUrl || null,
-        note: held.note || null,
+        note: held.note || (held as any).notes || null,
+        notes: held.note || (held as any).notes || null,
         held_at: held.heldAt || new Date().toISOString(),
         queue_number: held.queueNumber || null,
         queue_ticket_id: held.queueTicketId || null,
+        is_open: held.isOpen !== undefined ? !!held.isOpen : false,
+        opened_by: held.openedBy || null,
         total: normalizedCart.reduce((sum, c) => sum + ((Number(c?.item?.displayPrice ?? c?.price) || 0) * (c?.quantity || 1)), 0)
       };
 
@@ -965,11 +981,20 @@ export const DB = {
       if (error) { console.error('DB.fetchBranches:', error.message); return []; }
       return (data || []).map(row => {
         const c = toCamel(row);
-        const st = (typeof row.settings === 'object' && row.settings) ? row.settings : {};
+        let st: any = {};
+        if (typeof row.settings === 'object' && row.settings) {
+          st = row.settings;
+        } else if (typeof row.settings === 'string' && row.settings) {
+          try { st = JSON.parse(row.settings); } catch {}
+        }
         return {
           ...c,
           storageLimitMb: Number(c.storageLimitMb ?? st.storageLimitMb ?? 50),
-          usedStorageBytes: Number(c.usedStorageBytes ?? st.usedStorageBytes ?? 0)
+          usedStorageBytes: Number(c.usedStorageBytes ?? st.usedStorageBytes ?? 0),
+          isMain: toBool(c.isMain),
+          isActive: toBool(c.isActive),
+          vatEnabled: c.vatEnabled !== undefined ? toBool(c.vatEnabled) : true,
+          vatRate: Number(c.vatRate ?? 15)
         };
       });
     } catch (e) { return []; }
@@ -1046,67 +1071,66 @@ export const DB = {
     } catch (e) { console.error('DB.saveBranch exception:', e); return false; }
   },
 
+  async deleteBranch(branchId: string) {
+    const client = sb();
+    if (!client) return false;
+    try {
+      const { error } = await client.from('branches').delete().eq('id', branchId);
+      if (error) {
+        console.error('DB.deleteBranch error:', error.message);
+        return false;
+      }
+      return true;
+    } catch (e) {
+      console.error('DB.deleteBranch exception:', e);
+      return false;
+    }
+  },
+
   // ---- المستخدمون (Users) ----
   async fetchUsers(salonId?: string) {
     const client = sb();
     if (!client) return [];
     try {
-      const targetSalonId = salonId || getSalonId();
-      if (!targetSalonId) {
-        console.warn('DB.fetchUsers: No salonId provided or found; returning empty list for strict tenant isolation.');
-        return [];
-      }
-
-      const validUuid = toSalonUUID(targetSalonId);
       let q = client.from('users').select('*');
-      
-      if (validUuid && validUuid === targetSalonId) {
-        q = q.eq('salon_id', validUuid);
-      } else if (validUuid) {
-        q = q.or(`salon_id.eq.${validUuid},salon_code.eq.${targetSalonId}`);
-      } else {
-        q = q.eq('salon_code', targetSalonId);
+      if (salonId) {
+        q = q.eq('salon_id', toSalonUUID(salonId));
       }
-
       const { data, error } = await q.order('created_at', { ascending: true });
       if (error) { console.error('DB.fetchUsers:', error.message); return []; }
-      
-      const mapped = (data || []).map(dbUserToApp);
-      // عزل صارم ثنائي الطبقة في الذاكرة لضمان عدم تسرب أي مستخدم من صالون آخر
-      return mapped.filter(u => {
-        if (u.role === 'programmer' || u.username === 'programmer') return false;
-        if (validUuid && u.salonId === validUuid) return true;
-        if (u.salonId === targetSalonId) return true;
-        if (u.salonCode && u.salonCode === targetSalonId) return true;
-        return false;
-      });
+      return (data || []).map(dbUserToApp);
     } catch (e) { return []; }
   },
 
   async saveUser(u: any) {
     const client = sb();
-    if (!client) {
-      try {
-        const storedUsers = localStorage.getItem('smartcut_users');
-        const usersList = storedUsers ? JSON.parse(storedUsers) : [];
-        const cleanUsername = (u.username || '').trim().toLowerCase();
-        const existingIdx = usersList.findIndex((x: any) => x.id === u.id || (x.username && x.username.toLowerCase() === cleanUsername));
-        if (existingIdx >= 0) {
-          usersList[existingIdx] = { ...usersList[existingIdx], ...u, username: cleanUsername };
-        } else {
-          usersList.push({ ...u, username: cleanUsername });
-        }
-        localStorage.setItem('smartcut_users', JSON.stringify(usersList));
-      } catch {}
-      return false;
-    }
-
+    if (!client) return false;
     try {
       const validSalonId = toSalonUUID(u.salonId);
       const validBranchId = toBranchUUID(u.branchId);
       const cleanUsername = (u.username || '').trim().toLowerCase();
       const userUuid = u.id && u.id.includes('-') && u.id.length === 36 ? u.id : DB.generateUUID();
-      const pass = u.password || u.passwordHash || '123456';
+      
+      const normalizedRole = u.role === 'kiosk' ? 'custom' : (u.role || 'cashier');
+      const normalizedScreens = (u.role === 'admin' || u.role === 'owner' || u.role === 'programmer')
+        ? ['*']
+        : (Array.isArray(u.screens) ? u.screens.filter((s: string) => s !== '*') : []);
+      const normalizedActions = (u.role === 'admin' || u.role === 'owner' || u.role === 'programmer')
+        ? ['*']
+        : (Array.isArray(u.actions) ? u.actions.filter((a: string) => a !== '*') : []);
+
+      // Cryptographically seal user record to prevent external tampering
+      const sealed = sealUserRecord({
+        ...u,
+        id: userUuid,
+        salonId: validSalonId,
+        branchId: validBranchId,
+        username: cleanUsername,
+        role: normalizedRole,
+        screens: normalizedScreens,
+        actions: normalizedActions,
+        active: u.active !== false
+      });
 
       const snap: any = {
         id: userUuid,
@@ -1117,86 +1141,26 @@ export const DB = {
         username: cleanUsername,
         email: u.email || null,
         employee_id: u.employeeId || null,
-        password_hash: pass,
+        password_hash: sealed.passwordHash || sealed.password || '123456',
         name: u.name || cleanUsername,
-        role: u.role === 'kiosk' ? 'custom' : (u.role || 'owner'),
+        role: normalizedRole,
         custom_role_id: u.customRoleId || null,
         phone: u.phone || null,
         active: u.active !== false,
-        screens: Array.isArray(u.screens) ? u.screens : ['*'],
-        actions: Array.isArray(u.actions) ? u.actions : ['*'],
+        screens: normalizedScreens,
+        actions: normalizedActions,
+        permissions: normalizedActions,
         avatar: u.avatar || null,
+        security_hash: sealed.integritySignature,
+        integrity_signature: sealed.integritySignature,
         updated_at: new Date().toISOString()
       };
-
-      // Sync immediately with localStorage cache
-      try {
-        const storedUsers = localStorage.getItem('smartcut_users');
-        const usersList = storedUsers ? JSON.parse(storedUsers) : [];
-        const existingIdx = usersList.findIndex((x: any) => x.id === snap.id || (x.username && x.username.toLowerCase() === cleanUsername));
-        const appObj = dbUserToApp(snap);
-        if (existingIdx >= 0) {
-          usersList[existingIdx] = { ...usersList[existingIdx], ...appObj };
-        } else {
-          usersList.push(appObj);
-        }
-        localStorage.setItem('smartcut_users', JSON.stringify(usersList));
-      } catch {}
-
       let { error } = await client.from('users').upsert(snap, { onConflict: 'username' });
-
-      // Handle branch_id foreign key constraint error if branch doesn't exist yet
-      if (error && error.message && (error.message.includes('branch_id') || error.message.includes('branches'))) {
-        delete snap.branch_id;
-        const retry = await client.from('users').upsert(snap, { onConflict: 'username' });
-        error = retry.error;
-      }
-
-      // Handle employee_id foreign key or column error
       if (error && error.message && error.message.includes('employee_id')) {
         delete snap.employee_id;
         const retry = await client.from('users').upsert(snap, { onConflict: 'username' });
         error = retry.error;
       }
-
-      // Handle password_hash vs password column naming differences
-      if (error && error.message && error.message.includes('password_hash')) {
-        delete snap.password_hash;
-        snap.password = pass;
-        const retry = await client.from('users').upsert(snap, { onConflict: 'username' });
-        error = retry.error;
-      }
-
-      // If ON CONFLICT fails due to missing unique index or constraint mismatch, fallback to check-and-update/insert
-      if (error && error.message && (
-        error.message.includes('ON CONFLICT') || 
-        error.message.includes('conflict target') || 
-        error.message.includes('unique constraint') ||
-        error.message.includes('users_username_key')
-      )) {
-        const { data: existingUser } = await client.from('users').select('id').ilike('username', cleanUsername).maybeSingle();
-        if (existingUser?.id) {
-          snap.id = existingUser.id;
-          const retry = await client.from('users').update(snap).eq('id', existingUser.id);
-          error = retry.error;
-        } else {
-          const retry = await client.from('users').insert(snap);
-          error = retry.error;
-        }
-      }
-
-      // Handle any missing column error
-      if (error && error.message) {
-        const missingColMatch = error.message.match(/Could not find the '([^']+)' column of 'users'/i) 
-          || error.message.match(/column "([^"]+)" of relation "users" does not exist/i);
-        if (missingColMatch) {
-          const colName = missingColMatch[1];
-          delete snap[colName];
-          const retry = await client.from('users').upsert(snap, { onConflict: 'username' });
-          error = retry.error;
-        }
-      }
-
       if (error) { 
         console.error('DB.saveUser error:', error.message); 
         return false; 
@@ -1302,7 +1266,30 @@ export const DB = {
       const validSalonId = toSalonUUID(salonId);
       const { data, error } = await client.from('app_settings').select('*').eq('salon_id', validSalonId).maybeSingle();
       if (error) { console.error('DB.fetchSettings:', error.message); return null; }
-      return data ? toCamel(data) : null;
+      if (!data) return null;
+      const res = toCamel(data);
+      if (data.vat_enabled !== undefined && data.vat_enabled !== null) {
+        res.vatEnabled = toBool(data.vat_enabled);
+      }
+      if (data.zatca_enabled !== undefined && data.zatca_enabled !== null) {
+        res.zatcaEnabled = toBool(data.zatca_enabled);
+      }
+      if (data.print_automatically !== undefined && data.print_automatically !== null) {
+        res.printAutomatically = toBool(data.print_automatically);
+      }
+      if (data.show_dashboard_analytics !== undefined && data.show_dashboard_analytics !== null) {
+        res.showDashboardAnalytics = toBool(data.show_dashboard_analytics);
+      }
+      if (data.show_employee_analytics !== undefined && data.show_employee_analytics !== null) {
+        res.showEmployeeAnalytics = toBool(data.show_employee_analytics);
+      }
+      if (data.deposit_refund_allowed_days !== undefined && data.deposit_refund_allowed_days !== null) {
+        res.depositRefundAllowedDays = Number(data.deposit_refund_allowed_days) || 0;
+        res.deposit_refund_allowed_days = res.depositRefundAllowedDays;
+      } else if (res.depositRefundAllowedDays !== undefined) {
+        res.deposit_refund_allowed_days = Number(res.depositRefundAllowedDays) || 0;
+      }
+      return res;
     } catch (e) { return null; }
   },
 
@@ -1324,8 +1311,9 @@ export const DB = {
         country: settings.country || 'المملكة العربية السعودية',
         tax_number: settings.taxNumber || '300000000000003',
         commercial_reg: settings.commercialReg || '1010000000',
-        vat_enabled: settings.vatEnabled ?? true,
-        vat_rate: settings.vatRate ?? 15,
+        vat_enabled: settings.vatEnabled !== undefined ? toBool(settings.vatEnabled) : true,
+        vat_rate: settings.vatRate ?? settings.vatPercentage ?? 15,
+        vat_percentage: settings.vatRate ?? settings.vatPercentage ?? 15,
         zatca_enabled: settings.zatcaEnabled ?? false,
         zatca_settings: settings.zatcaSettings || null,
         eta_egypt_settings: settings.etaEgyptSettings || null,
@@ -1334,6 +1322,7 @@ export const DB = {
         booking_notes: settings.bookingNotes || '',
         treasuries: settings.treasuries || [],
         expense_categories: settings.expenseCategories || [],
+        deposit_refund_allowed_days: Number(settings.depositRefundAllowedDays ?? settings.deposit_refund_allowed_days ?? 0),
         printer_name: settings.printerName || 'طابعة الكاشير',
         paper_size: settings.paperSize || '80mm',
         print_automatically: settings.printAutomatically ?? false,
@@ -1353,13 +1342,12 @@ export const DB = {
         vip_settings: settings.vipSettings || null,
         tier_settings: settings.tierSettings || null,
         show_dashboard_analytics: settings.showDashboardAnalytics ?? true,
-        show_employee_analytics: settings.showEmployeeAnalytics ?? true,
         ai_provider: settings.aiProvider || 'builtin',
         ai_api_key: settings.aiApiKey || null,
         ai_model: settings.aiModel || null,
-        inactive_clients_tracking_enabled: settings.inactiveClientsTrackingEnabled ?? true,
-        inactive_clients_days: Number(settings.inactiveClientsDays) || 60,
-        deposit_refund_allowed_days: Number(settings.depositRefundAllowedDays ?? settings.deposit_refund_allowed_days ?? 0),
+        openrouter_api_key: settings.openrouterApiKey || null,
+        openrouter_model: settings.openrouterModel || null,
+        settings_json: JSON.stringify(settings),
         updated_at: new Date().toISOString()
       };
       // Check if existing record exists for this salon
@@ -1413,6 +1401,7 @@ export const DB = {
         phone: c.phone?.trim() || '',
         email: c.email?.trim() || null,
         dob: c.dob || null,
+        birth_date: toDateOrNull(c.dob || c.birthDate),
         dob_day: c.dobDay || null,
         dob_month: c.dobMonth || null,
         cashback_balance: Number(c.cashback ?? c.cashbackBalance ?? 0),
@@ -1450,6 +1439,10 @@ export const DB = {
       await this.saveClient(c, salonId);
     }
     return true;
+  },
+
+  async deleteClient(clientId: string): Promise<boolean> {
+    return DB.remove('clients', clientId);
   },
 
   // ---- حسابات بوابة حجز العملاء (Client Portal Accounts) ----
@@ -1602,21 +1595,25 @@ export const DB = {
     const validSalonId = toSalonUUID(salonId || inv.salonId || getSalonId());
     const validBranchId = toBranchUUID(inv.branchId);
     try {
-      let safeDate = inv.date;
-      if (typeof safeDate === 'string') {
-        const trimmed = safeDate.trim();
-        if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-          safeDate = `${trimmed}T12:00:00`;
-        }
-      }
       const snap: any = {
         id: inv.id, salon_id: validSalonId, branch_id: validBranchId,
         branch_code: inv.branchCode || null,
+        invoice_number: inv.invoiceNumber || inv.invoice_number || inv.id || ('INV-' + Date.now()),
         client_id: inv.clientId || null, client_name: inv.clientName, client_phone: inv.clientPhone || '',
-        date: safeDate, subtotal: inv.subtotal ?? inv.total ?? 0, discount: inv.discount ?? 0,
-        discount_type: inv.discountType || 'fixed', vat: inv.vatAmount ?? inv.vat ?? 0,
+        employee_id: inv.employeeId || inv.items?.[0]?.employeeId || null,
+        employee_name: inv.employeeName || inv.items?.[0]?.employeeName || null,
+        cashier_id: inv.cashierId || null,
+        cashier_name: inv.cashierName || null,
+        date: inv.date, subtotal: inv.subtotal ?? inv.total ?? 0, discount: inv.discount ?? 0,
+        discount_type: inv.discountType || 'fixed',
+        tax: inv.vatAmount ?? inv.tax ?? inv.vat ?? 0,
+        vat: inv.vatAmount ?? inv.vat ?? inv.tax ?? 0,
         cashback_used: inv.cashbackUsed ?? 0,
-        total: inv.total ?? 0, paid: inv.paid ?? inv.total ?? 0, remaining: inv.remaining ?? 0,
+        total: inv.total ?? 0,
+        paid: inv.paid ?? inv.paidAmount ?? inv.total ?? 0,
+        paid_amount: inv.paidAmount ?? inv.paid ?? inv.total ?? 0,
+        remaining: inv.remaining ?? inv.remainingAmount ?? 0,
+        remaining_amount: inv.remainingAmount ?? inv.remaining ?? 0,
         advance_deduction: inv.advanceDeduction ?? 0,
         booking_id: inv.bookingId || null,
         payment_method: inv.paymentMethods?.[0]?.treasuryId || inv.paymentMethod || 'cash',
@@ -1632,10 +1629,10 @@ export const DB = {
         zatca_qr: inv.zatcaQr || null, zatca_hash: inv.zatcaHash || null,
         zatca_reporting_status: inv.zatcaReportingStatus || 'not_submitted',
         eta_submission_uuid: inv.etaSubmissionUuid || null, eta_status: inv.etaStatus || 'not_submitted',
-        created_by: inv.createdBy || null,
-        shift_id: inv.shiftId || (inv as any).shift_id || null,
-        shift_code: inv.shiftCode || (inv as any).shift_code || null,
-        shift_date: inv.shiftDate ? String(inv.shiftDate).split('T')[0].trim() : ((inv as any).shift_date ? String((inv as any).shift_date).split('T')[0].trim() : null)
+        shift_id: inv.shiftId || null,
+        shift_date: inv.shiftDate || inv.date || null,
+        notes: inv.notes || inv.note || null,
+        created_by: inv.createdBy || null
       };
       let { error } = await client.from('invoices').upsert(snap, { onConflict: 'id' });
       if (error && error.code === '23503' && snap.client_id) {
@@ -1649,6 +1646,94 @@ export const DB = {
     } catch (e) { console.error('DB.saveInvoice exception:', e); return null; }
   },
 
+  // ---- مرتجعات المبيعات (Sales Returns) ----
+  async fetchSalesReturns(salonId?: string) {
+    const list = await DB.fetchAll<any>('sales_returns', undefined, salonId);
+    if (list && list.length > 0) return list;
+    try {
+      const cached = localStorage.getItem('smartcut_sales_returns');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  },
+  async saveSalesReturn(ret: any, salonId?: string) {
+    if (!ret) return null;
+    const validSalonId = toSalonUUID(salonId || ret.salonId || getSalonId());
+    const validBranchId = toBranchUUID(ret.branchId);
+
+    // 1. Always ensure cached in localStorage immediately for instant offline reactivity
+    try {
+      const saved = localStorage.getItem('smartcut_sales_returns');
+      const list = saved ? JSON.parse(saved) : [];
+      const filtered = list.filter((r: any) => r.id !== ret.id);
+      localStorage.setItem('smartcut_sales_returns', JSON.stringify([ret, ...filtered]));
+    } catch (e) {
+      console.warn('LocalStorage saveSalesReturn warning:', e);
+    }
+
+    // 2. Persist to DB / Supabase if connected
+    const client = sb();
+    if (client) {
+      try {
+        const snap: any = {
+          id: ret.id,
+          salon_id: validSalonId,
+          branch_id: validBranchId,
+          return_number: ret.returnNumber || ret.id,
+          original_invoice_id: ret.originalInvoiceId || null,
+          original_invoice_number: ret.originalInvoiceNumber || null,
+          is_general_return: ret.isGeneralReturn ? 1 : 0,
+          date: ret.date,
+          time: ret.time,
+          client_id: ret.clientId || null,
+          client_name: ret.clientName,
+          client_phone: ret.clientPhone || '',
+          total_refund_amount: ret.totalRefundAmount || 0,
+          refund_method: ret.refundMethod || 'cash',
+          treasury_id: ret.treasuryId || 'main',
+          treasury_name: ret.treasuryName || 'الخزينة الرئيسية',
+          reason: ret.reason || 'customer_request',
+          reason_text: ret.reasonText || null,
+          notes: ret.notes || null,
+          created_by_name: ret.createdByName || null,
+          created_by_id: ret.createdById || null,
+          status: ret.status || 'completed',
+          items: ret.items || [],
+          created_at: ret.createdAt || new Date().toISOString()
+        };
+        let { error } = await client.from('sales_returns').upsert(snap, { onConflict: 'id' });
+        if (error && error.code === '23503' && snap.client_id) {
+          snap.client_id = null;
+          const retry = await client.from('sales_returns').upsert(snap, { onConflict: 'id' });
+          error = retry.error;
+        }
+        if (error) {
+          console.warn('DB.saveSalesReturn upsert error (saved locally):', error.message);
+        }
+      } catch (e) {
+        console.warn('DB.saveSalesReturn exception (saved locally):', e);
+      }
+    }
+    return ret;
+  },
+  async deleteSalesReturn(returnId: string) {
+    try {
+      const saved = localStorage.getItem('smartcut_sales_returns');
+      if (saved) {
+        const list = JSON.parse(saved);
+        localStorage.setItem('smartcut_sales_returns', JSON.stringify(list.filter((r: any) => r.id !== returnId)));
+      }
+      const client = sb();
+      if (client) {
+        await client.from('sales_returns').delete().eq('id', returnId);
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  },
+
   // ---- المعاملات المالية ----
   async fetchTransactions(salonId?: string) { return DB.fetchAll<any>('transactions', undefined, salonId); },
   async saveTransaction(t: any, salonId?: string) {
@@ -1656,25 +1741,19 @@ export const DB = {
     const validSalonId = toSalonUUID(salonId || t.salonId || getSalonId());
     const validBranchId = toBranchUUID((t as any).branchId);
     try {
-      let safeDate = t.date;
-      if (typeof safeDate === 'string') {
-        const trimmed = safeDate.trim();
-        if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-          safeDate = `${trimmed}T12:00:00`;
-        }
-      }
-      const safeShiftDate = typeof t.shiftDate === 'string' ? t.shiftDate.split('T')[0].trim() : (t.shiftDate || null);
       const snap: any = {
         id: t.id, salon_id: validSalonId, branch_id: validBranchId,
         branch_code: (t as any).branchCode || null,
-        date: safeDate, type: t.type, amount: t.amount, category: t.category,
-        expense_category: t.expenseCategory || null, description: t.description,
-        treasury: t.treasury, invoice_id: (t as any).invoiceId || (t as any).invoice_id || null,
+        date: t.date, type: t.type, amount: t.amount, category: t.category,
+        expense_category: t.expenseCategory || t.category || null, description: t.description,
+        treasury: t.treasury || t.treasuryId || 'الخزينة الرئيسية',
+        treasury_id: t.treasuryId || t.treasury || 'main',
+        payment_method: t.paymentMethod || 'cash',
+        invoice_id: (t as any).invoiceId || (t as any).invoice_id || null,
         booking_id: (t as any).bookingId || (t as any).booking_id || null,
         shift_id: (t as any).shiftId || (t as any).shift_id || null,
         created_by: t.createdBy || null, user_id: t.userId || null,
-        user_name: t.userName || null, shift_date: safeShiftDate,
-        shift_code: (t as any).shiftCode || (t as any).shift_code || null
+        user_name: t.userName || null, shift_date: t.shiftDate || null
       };
       const { error } = await client.from('transactions').upsert(snap, { onConflict: 'id' });
       if (error) { console.error('DB.saveTransaction error:', error.message); return null; }
@@ -1691,199 +1770,78 @@ export const DB = {
   async saveBooking(b: any, salonId?: string) {
     const client = sb(); if (!client || !b) return null;
     const validSalonId = toSalonUUID(salonId || b.salonId || getSalonId());
-    const validBranchId = toBranchUUID((b as any).branchId);
+    const validBranchId = toBranchUUID((b as any).branchId) || (b as any).branchId || null;
     try {
       const allowedSources = ['pos', 'online', 'kiosk', 'app'];
       const safeSource = allowedSources.includes(b.source) ? b.source : 'pos';
-      // فرض نص محلي YYYY-MM-DD بحت لعمود DATE وتجريد أي توقيت أو منطقة زمنية
-      const safeDate = typeof b.date === 'string' ? b.date.split('T')[0].trim() : b.date;
-      const rawTime = b.time ? String(b.time).trim() : '10:00';
-      const safeTime = rawTime.length === 5 ? `${rawTime}:00` : (rawTime.length >= 8 ? rawTime.substring(0, 8) : `${rawTime.padStart(5, '0')}:00`);
-      const appointmentDateTime = `${safeDate}T${safeTime}`;
-
-      let cleanAdvances = b.advancePayments || b.advance_payments || [];
-      if (typeof cleanAdvances === 'string') {
-        try { cleanAdvances = JSON.parse(cleanAdvances); } catch { cleanAdvances = []; }
-      }
-      if (!Array.isArray(cleanAdvances)) cleanAdvances = [];
-
-      const rawClientId = b.clientId || b.client_id;
-      const safeClientId = (rawClientId && UUID_REGEX.test(rawClientId)) ? rawClientId : null;
-
-      const nowIso = new Date().toISOString();
-      let safeCreatedAt = b.createdAt || b.created_at;
-      const nowMs = Date.now();
-      const isFutureCreation = Boolean(safeCreatedAt && new Date(safeCreatedAt).getTime() > (nowMs + 86400000));
-      const isMatchesFutureAppt = Boolean(safeDate && safeCreatedAt && safeCreatedAt.startsWith(safeDate) && new Date(safeDate).getTime() > nowMs);
-
-      if (!safeCreatedAt || isFutureCreation || isMatchesFutureAppt) {
-        const firstAdv = cleanAdvances.find((a: any) => {
-          const d = a.paymentDate || (a as any).payment_date || a.date;
-          return d && new Date(d).getTime() <= (nowMs + 86400000);
-        });
-        if (firstAdv) {
-          const d = firstAdv.paymentDate || (firstAdv as any).payment_date || firstAdv.date;
-          safeCreatedAt = d.includes('T') ? d : `${d}T12:00:00.000Z`;
-        } else if (b.shiftDate && new Date(b.shiftDate).getTime() <= (nowMs + 86400000)) {
-          safeCreatedAt = `${b.shiftDate}T12:00:00.000Z`;
-        } else {
-          safeCreatedAt = nowIso;
-        }
-      }
+      const safePhone = b.phone || b.clientPhone || b.customerPhone || '0000000000';
+      const safeName = b.clientName || b.customerName || 'عميل حجز';
+      const firstSrv = (b.services && Array.isArray(b.services) && b.services[0]) ? b.services[0] : null;
+      const safeEmpId = b.employeeId || b.barberId || firstSrv?.technicianId || firstSrv?.employeeId || '00000000-0000-0000-0000-000000000000';
+      const safeEmpName = b.employeeName || b.barberName || firstSrv?.technicianName || firstSrv?.employeeName || 'موظف';
+      const safeSrvId = b.serviceId || firstSrv?.serviceId || firstSrv?.id || null;
 
       const snap: any = {
-        id: b.id,
-        salon_id: validSalonId || null,
-        branch_id: validBranchId || null,
+        id: b.id, 
+        salon_id: validSalonId, 
+        branch_id: validBranchId,
         branch_code: (b as any).branchCode || null,
-        client_id: safeClientId,
-        client_name: b.clientName || b.client_name || 'عميل نقدي',
-        client_phone: b.phone || b.clientPhone || b.client_phone || '0000000000',
-        customer_email: b.customerEmail || b.customer_email || null,
-        booking_code: b.bookingCode || b.booking_code || null,
-        source: safeSource,
+        client_id: b.clientId || b.customerId || null,
+        client_name: safeName,
+        customer_name: safeName,
+        client_phone: safePhone,
+        customer_phone: safePhone,
+        employee_id: safeEmpId,
+        employee_name: safeEmpName,
+        barber_id: b.barberId || safeEmpId,
+        service_id: safeSrvId,
+        customer_email: b.customerEmail || null, 
+        booking_code: b.bookingCode || null,
+        source: safeSource, 
         services: b.services || [],
-        total_amount: Number(b.totalAmount ?? b.total_amount ?? 0),
-        date: safeDate,
-        time: rawTime.length >= 5 ? rawTime.substring(0, 5) : rawTime,
+        total_price: b.totalPrice ?? b.totalAmount ?? 0,
+        total_amount: b.totalAmount ?? b.totalPrice ?? 0,
+        date: b.date,
+        start_time: b.startTime || b.time || '09:00',
+        time: b.time || b.startTime || '09:00',
         status: b.status || 'confirmed',
-        created_at: safeCreatedAt,
-        created_by: b.createdBy || b.created_by || null,
-        created_by_name: b.createdByName || b.created_by_name || null,
-        updated_at: b.updatedAt || b.updated_at || new Date().toISOString(),
-        updated_by: b.updatedBy || b.updated_by || null,
-        updated_by_name: b.updatedByName || b.updated_by_name || null,
-        queue_number: b.queueNumber || b.queue_number || null,
-        advance_payments: cleanAdvances,
+        queue_number: b.queueNumber || null,
+        advance_payments: b.advancePayments || [],
+        paid_deposit: b.paidDeposit !== undefined ? Number(b.paidDeposit) : (b.advancePayments && Array.isArray(b.advancePayments) ? b.advancePayments.reduce((s: number, p: any) => s + (Number(p.amount) || 0), 0) : 0),
+        is_deposit_refunded: Boolean(b.isDepositRefunded),
+        deposit_refunded_at: b.depositRefundedAt || null,
+        deposit_refunded_by: b.depositRefundedBy || null,
+        deposit_refund_amount: b.depositRefundAmount !== undefined ? Number(b.depositRefundAmount) : null,
+        refund_expense_id: b.refundExpenseId || null,
+        cancelled_at: b.cancelledAt || null,
+        cancelled_by: b.cancelledBy || null,
         notes: b.notes || null,
-        internal_notes: b.internalNotes || b.internal_notes || null,
+        internal_notes: b.internalNotes || null,
         location: b.location || null,
-        discount_type: b.discountType || b.discount_type || 'fixed',
-        discount_value: Number(b.discountValue ?? b.discount_value ?? 0),
-        is_refunded: b.isRefunded ?? b.is_refunded ?? false,
-        refund_amount: Number(b.refundAmount ?? b.refund_amount ?? 0),
-        refund_date: b.refundDate || b.refund_date || null,
-        refund_expense_id: b.refundExpenseId || b.refund_expense_id || null,
-        refund_treasury_id: b.refundTreasuryId || b.refund_treasury_id || null,
-        cancelled_at: b.cancelledAt || b.cancelled_at || null,
-        cancelled_by: b.cancelledBy || b.cancelled_by || null,
-        cancelled_by_name: b.cancelledByName || b.cancelled_by_name || null,
-        refund_notes: b.refundNotes || b.refund_notes || null
+        is_paid: b.isPaid !== undefined ? Boolean(b.isPaid) : false,
+        invoice_id: b.invoiceId || null,
+        discount_type: b.discountType || null,
+        discount_value: b.discountValue !== undefined ? Number(b.discountValue) : null,
+        discount_amount: b.discountAmount !== undefined ? Number(b.discountAmount) : null,
+        created_at: b.createdAt || undefined,
+        created_by: b.createdBy || b.createdByName || null,
+        created_by_name: b.createdBy || b.createdByName || null,
+        created_by_id: b.createdById || null,
+        updated_at: b.updatedAt || new Date().toISOString(),
+        updated_by: b.updatedBy || b.updatedByName || null,
+        updated_by_name: b.updatedBy || b.updatedByName || null,
+        updated_by_id: b.updatedById || null
       };
-
-      // الحفظ الفوري في التخزين المحلي لضمان ثبات التعديل وعدم التراجع عنه إطلاقاً
-      const localItem = { ...b, createdAt: safeCreatedAt, created_at: safeCreatedAt, _localEditedAt: Date.now() };
-      try {
-        const stored = localStorage.getItem('smartcut_bookings');
-        const list = stored ? JSON.parse(stored) : [];
-        const idx = list.findIndex((item: any) => item.id === b.id);
-        if (idx >= 0) {
-          list[idx] = { ...list[idx], ...localItem };
-        } else {
-          list.unshift(localItem);
-        }
-        localStorage.setItem('smartcut_bookings', JSON.stringify(list));
-      } catch (e) {}
-
-      let attempts = 0;
-      let lastError: any = null;
-
-      while (attempts < 5) {
-        attempts++;
-
-        // محاولة التحديث المباشر للسجل الحالي أولاً لمنع مشاكل القيود على السجلات الموجودة
-        const { data: updateData, error: updateError } = await client
-          .from('bookings')
-          .update(snap)
-          .eq('id', b.id)
-          .select('id');
-
-        if (!updateError && updateData && updateData.length > 0) {
-          return b; // تم تحديث الحجز بنجاح تام
-        }
-
-        // إذا لم يكن الحجز موجوداً مسبقاً في قاعدة البيانات، نقوم بعملية الـ upsert
-        let { error } = updateError ? { error: updateError } : await client.from('bookings').upsert(snap, { onConflict: 'id' });
-        if (!error) {
-          return b;
-        }
-
-        lastError = error;
-
-        // معالجة خطأ القيد الأجنبي (Foreign Key)
-        if (error.code === '23503' || error.message?.includes('foreign key')) {
-          if (snap.client_id && (error.message?.includes('client_id') || error.details?.includes('client_id'))) {
-            console.warn('DB.saveBooking foreign key warning on client_id, retrying with client_id = null');
-            snap.client_id = null;
-            continue;
-          }
-          if (snap.branch_id && (error.message?.includes('branch_id') || error.details?.includes('branch_id'))) {
-            console.warn('DB.saveBooking foreign key warning on branch_id, retrying with branch_id = null');
-            snap.branch_id = null;
-            continue;
-          }
-          if (snap.salon_id && (error.message?.includes('salon_id') || error.details?.includes('salon_id'))) {
-            console.warn('DB.saveBooking foreign key warning on salon_id, retrying with salon_id = null');
-            snap.salon_id = null;
-            continue;
-          }
-        }
-
-        // معالجة خطأ عدم وجود عمود في جدول bookings (PGRST204 أو 42703)
-        const errMsg = error.message || '';
-        const missingColMatch = errMsg.match(/Could not find the '([^']+)' column of '([^']+)'/i) 
-          || errMsg.match(/column "([^"]+)" of relation "([^"]+)" does not exist/i);
-        if (missingColMatch) {
-          const missingCol = missingColMatch[1];
-          delete snap[missingCol];
-          ensureColumn('bookings', missingCol, 'TEXT').catch(() => {});
-          continue;
-        }
-
-        if (errMsg.includes('internal_notes')) {
-          delete snap.internal_notes;
-          ensureColumn('bookings', 'internal_notes', 'TEXT').catch(() => {});
-          continue;
-        }
-        if (errMsg.includes('location')) {
-          delete snap.location;
-          ensureColumn('bookings', 'location', 'TEXT').catch(() => {});
-          continue;
-        }
-        if (errMsg.includes('discount_type') || errMsg.includes('discount_value')) {
-          delete snap.discount_type;
-          delete snap.discount_value;
-          continue;
-        }
-        if (errMsg.includes('created_by') || errMsg.includes('updated_by')) {
-          delete snap.created_by;
-          delete snap.created_by_name;
-          delete snap.updated_by;
-          delete snap.updated_by_name;
-          continue;
-        }
-
-        break;
-      }
-
-      if (lastError) {
-        console.error('DB.saveBooking error after attempts:', lastError.message);
-      }
+      const { error } = await client.from('bookings').upsert(snap, { onConflict: 'id' });
+      if (error) { console.error('DB.saveBooking error:', error.message); return null; }
       return b;
-    } catch (e) {
-      console.error('DB.saveBooking exception:', e);
-      return b;
-    }
+    } catch (e) { console.error('DB.saveBooking exception:', e); return null; }
   },
 
   // ---- الموظفون ----
   async fetchEmployees(salonId?: string) { 
     const list = await DB.fetchAll<any>('employees', undefined, salonId);
-    return (list || []).map(emp => ({
-      ...emp,
-      baseSalary: Number(emp.baseSalary ?? emp.base_salary ?? 0),
-      commissionModel: emp.commissionModel || (emp.commissionRate === 0 ? 'none' : 'fixed_rate')
-    }));
+    return (list || []).map(dbEmployeeToApp);
   },
   async saveEmployee(e: any, salonId?: string) {
     const client = sb(); if (!client || !e) return null;
@@ -1909,21 +1867,29 @@ export const DB = {
         has_online_account: e.hasOnlineAccount || false,
         user_id: e.userId || null, 
         role: e.role, 
-        base_salary: Number(e.baseSalary ?? 0),
+        phone: e.phone || '',
+        basic_salary: Number(e.basicSalary ?? e.baseSalary ?? 0) || 0,
+        base_salary: Number(e.baseSalary ?? e.basicSalary ?? 0) || 0,
         fingerprint_code: e.fingerprintCode || null, 
         commission_rate: e.commissionRate !== undefined && e.commissionRate !== null ? Number(e.commissionRate) : 0,
         commission_model: dbCommissionModel,
         commission_tiers: e.commissionTiers || [],
-        target: e.target ?? 5000, 
+        target: e.target ?? e.targetAmount ?? 5000, 
+        target_amount: e.targetAmount ?? e.target ?? 5000, 
         target_type: e.targetType || 'monthly',
+        daily_target_amount: Number(e.dailyTargetAmount ?? e.daily_target_amount ?? 0),
+        daily_target_method: e.dailyTargetMethod || 'excess_only',
+        monthly_target_amount: Number(e.monthlyTargetAmount ?? e.monthly_target_amount ?? e.target ?? 5000),
+        monthly_target_method: e.monthlyTargetMethod || 'deduct_salary',
+        target_commission_rate: Number(e.targetCommissionRate ?? e.target_commission_rate ?? 0),
         available_vacations: e.availableVacations ?? 21,
         salary_type: e.salaryType || 'salary',
         allow_dual_commission: e.allowDualCommission || false,
         check_in_time: e.checkInTime || '09:00', 
         check_out_time: e.checkOutTime || '18:00',
         weekly_days_off: e.weeklyDaysOff || ['Friday'],
-        is_active: e.isActive !== false, 
-        is_blacklisted: e.isBlacklisted || false,
+        is_active: e.isActive !== false ? 1 : 0, 
+        is_blacklisted: toBool(e.isBlacklisted) ? 1 : 0,
         blacklist_reason: e.blacklistReason || null,
         financial_records: e.financialRecords || [],
         leave_records: e.leaveRecords || [],
@@ -1939,53 +1905,8 @@ export const DB = {
     } catch (e2) { console.error('DB.saveEmployee exception:', e2); return null; }
   },
   async saveEmployees(list: any[], salonId?: string) { for (const e of list) await DB.saveEmployee(e, salonId); return true; },
-  async deleteEmployee(employeeId: string, salonId?: string): Promise<boolean> {
-    const client = sb(); if (!client || !employeeId) return false;
-    const validSalonId = toSalonUUID(salonId || getSalonId());
-    try {
-      // 1. Delete linked user account if exists
-      try {
-        const storedUsers = localStorage.getItem('smartcut_users');
-        const usersList: any[] = storedUsers ? JSON.parse(storedUsers) : [];
-        const linkedUser = usersList.find(u => u.employeeId === employeeId);
-        if (linkedUser?.id) {
-          await DB.deleteUser(linkedUser.id);
-          const remainingUsers = usersList.filter(u => u.employeeId !== employeeId);
-          localStorage.setItem('smartcut_users', JSON.stringify(remainingUsers));
-        }
-      } catch (err) {
-        console.warn('DB.deleteEmployee user cleanup error:', err);
-      }
-
-      // 2. Cascade delete transfers & custodies
-      try {
-        await client.from('employee_branch_transfers').delete().eq('employee_id', employeeId);
-      } catch {}
-      try {
-        await client.from('employee_custodies').delete().eq('employee_id', employeeId);
-      } catch {}
-
-      // 3. Delete employee record from Supabase
-      const { error } = await client.from('employees').delete().eq('id', employeeId);
-      if (error) {
-        console.error('DB.deleteEmployee error:', error.message);
-        return false;
-      }
-
-      // 4. Update localStorage cache
-      try {
-        const cached = localStorage.getItem('smartcut_cache_employees');
-        if (cached) {
-          const list: any[] = JSON.parse(cached);
-          localStorage.setItem('smartcut_cache_employees', JSON.stringify(list.filter(e => e.id !== employeeId)));
-        }
-      } catch {}
-
-      return true;
-    } catch (e) {
-      console.error('DB.deleteEmployee exception:', e);
-      return false;
-    }
+  async deleteEmployee(employeeId: string): Promise<boolean> {
+    return DB.remove('employees', employeeId);
   },
 
   // ---- الخدمات ----
@@ -2001,14 +1922,19 @@ export const DB = {
         name: s.name,
         price: s.price ?? 0, 
         discount_price: s.discountPrice ?? 0,
-        employee_commission_percentage: s.employeeCommissionPercentage ?? 0,
-        employee_commission_amount: s.employeeCommissionAmount ?? 0,
+        commission_rate: s.employeeCommissionPercentage ?? s.commissionRate ?? 0,
+        commission_amount: s.employeeCommissionAmount ?? s.commissionAmount ?? 0,
+        employee_commission_percentage: s.employeeCommissionPercentage ?? s.commissionRate ?? 0,
+        employee_commission_amount: s.employeeCommissionAmount ?? s.commissionAmount ?? 0,
+        commissionable_amount: s.commissionableAmount ?? (s as any).commissionable_amount ?? null,
+        is_target_exempt: s.isTargetExempt ? 1 : 0,
         referral_commission_type: s.referralCommissionType || 'percentage',
         referral_commission_amount: s.referralCommissionAmount ?? 0,
         cashback_percentage: s.cashbackPercentage ?? 0,
         client_referral_cashback_type: s.clientReferralCashbackType || 'percentage',
         client_referral_cashback_amount: s.clientReferralCashbackAmount ?? 0,
-        duration_minutes: s.durationMinutes ?? 30, 
+        duration: s.durationMinutes ?? s.duration ?? 30,
+        duration_minutes: s.durationMinutes ?? s.duration ?? 30, 
         barcode: s.barcode || null,
         image_url: s.imageUrl || s.image_url || null,
         is_priority: s.isPriority ?? s.is_priority ?? false,
@@ -2351,31 +2277,14 @@ export const DB = {
   },
 
   // ---- التصنيفات ----
-  async fetchCategories(salonId?: string) { 
-    const rows = await DB.fetchAll<any>('categories', undefined, salonId); 
-    return (rows || []).map(dbCategoryToApp);
-  },
+  async fetchCategories(salonId?: string) { return DB.fetchAll<any>('categories', undefined, salonId); },
   async saveCategory(c: any, salonId?: string) {
     const client = sb(); if (!client || !c) return null;
     const validSalonId = toSalonUUID(salonId || c.salonId || getSalonId());
-    const payload: any = { 
-      id: c.id, 
-      salon_id: validSalonId, 
-      name: c.name, 
-      icon: c.icon || 'Scissors', 
-      type: c.type || 'service',
-      is_active: c.isActive !== false
-    };
-
-    let { error } = await client.from('categories').upsert(payload, { onConflict: 'id' });
-
-    if (error && (error.code === '42703' || error.message?.includes('schema cache') || error.message?.includes('is_active') || error.message?.includes('column'))) {
-      ensureColumn('categories', 'is_active', 'BOOLEAN DEFAULT TRUE').catch(() => {});
-      delete payload.is_active;
-      const retry = await client.from('categories').upsert(payload, { onConflict: 'id' });
-      error = retry.error;
-    }
-
+    const { error } = await client.from('categories').upsert(
+      { id: c.id, salon_id: validSalonId, name: c.name, icon: c.icon || 'Scissors', type: c.type || 'service' },
+      { onConflict: 'id' }
+    );
     if (error) console.error('DB.saveCategory error:', error.message);
     return error ? null : c;
   },
@@ -2386,164 +2295,32 @@ export const DB = {
   async fetchProducts(salonId?: string) { return DB.fetchAll<any>('products', undefined, salonId); },
   async saveProduct(p: any, salonId?: string) {
     const client = sb(); if (!client || !p) return null;
-    const rawSalonId = salonId || p.salonId || getSalonId();
-    let validSalonId = toSalonUUID(rawSalonId);
-
-    // إذا لم يكن معرّف الصالون بصيغة UUID صالحة، نسترجع معرّف أول صالون مسجل في Supabase
-    if (!validSalonId) {
-      try {
-        const { data: firstSalon } = await client.from('salons').select('id').limit(1).maybeSingle();
-        if (firstSalon?.id) validSalonId = firstSalon.id;
-      } catch {}
-    }
-
+    const validSalonId = toSalonUUID(salonId || p.salonId || getSalonId());
     const validBranchId = toBranchUUID(p.branchId);
-
-    const payload: any = {
-      id: p.id,
-      salon_id: validSalonId || null,
-      branch_id: validBranchId || null,
-      category_id: p.categoryId || null,
-      name: p.name,
-      sell_price: Number(p.sellPrice ?? 0),
-      cost_price: Number(p.costPrice ?? 0),
-      reorder_limit: Number(p.reorderLimit ?? 5),
-      opening_stock: Number(p.openingStock ?? 0),
-      current_stock: Number(p.currentStock ?? 0),
-      commission: Number(p.commission ?? 0),
-      barcode: p.barcode || null,
-      is_active: p.isActive !== false,
-      product_type: p.productType || 'retail'
-    };
-
-    if (p.supplierId) {
-      payload.supplier_id = p.supplierId;
-    }
-
-    let lastError: any = null;
-
-    // حلقة الترميم الذاتي الشاملة ضد جميع قيود وأخطاء قاعدة البيانات
-    for (let attempt = 0; attempt < 10; attempt++) {
-      const res = await client.from('products').upsert(payload, { onConflict: 'id' });
-      if (!res.error) {
-        lastError = null;
-        break;
-      }
-
-      lastError = res.error;
-      const errMsg = lastError.message || '';
-      const errCode = (lastError as any).code || '';
-
-      // 1. معالجة غياب الأعمدة في قاعدة البيانات (PGRST204 أو 42703 أو schema cache)
-      if (errCode === '42703' || errMsg.includes('schema cache') || errMsg.includes('PGRST204') || errMsg.includes('column')) {
-        const match = errMsg.match(/column ["']?([a-zA-Z0-9_]+)["']?/i) || 
-                      errMsg.match(/Could not find the '([a-zA-Z0-9_]+)' column/i);
-        const colName = match ? match[1] : null;
-        if (colName && payload.hasOwnProperty(colName)) {
-          console.warn(`DB.saveProduct: column '${colName}' missing in Supabase products table, adapting schema and retrying...`);
-          const colType = (colName.includes('price') || colName.includes('stock') || colName.includes('limit') || colName.includes('commission')) 
-            ? 'NUMERIC(10,2)' 
-            : colName === 'is_active' ? 'BOOLEAN' : 'VARCHAR(100)';
-          ensureColumn('products', colName, colType).catch(() => {});
-          delete payload[colName];
-
-          // محاولة المطابقة مع أسماء الحقول البديلة في قواعد البيانات القديمة
-          if (colName === 'sell_price') {
-            payload.selling_price = Number(p.sellPrice ?? 0);
-          } else if (colName === 'selling_price') {
-            payload.price = Number(p.sellPrice ?? 0);
-          }
-
-          if (colName === 'current_stock') {
-            payload.stock_quantity = Number(p.currentStock ?? 0);
-          } else if (colName === 'stock_quantity') {
-            payload.stock = Number(p.currentStock ?? 0);
-          }
-
-          if (colName === 'reorder_limit') {
-            payload.min_quantity = Number(p.reorderLimit ?? 5);
-          }
-
-          if (colName === 'product_type') {
-            payload.type = p.productType || 'retail';
-          }
-
-          continue;
-        }
-      }
-
-      // 2. معالجة قيود المفاتيح الأجنبية (23503)
-      if (errCode === '23503' || errMsg.includes('foreign key') || errMsg.includes('violates foreign key')) {
-        console.warn('DB.saveProduct: foreign key violation, auto-healing relations and retrying...', errMsg);
-        if (payload.category_id && (errMsg.includes('category') || errMsg.includes('categories'))) {
-          payload.category_id = null;
-          continue;
-        }
-        if (payload.supplier_id && (errMsg.includes('supplier') || errMsg.includes('suppliers'))) {
-          delete payload.supplier_id;
-          continue;
-        }
-        if (payload.branch_id && (errMsg.includes('branch') || errMsg.includes('branches'))) {
-          payload.branch_id = null;
-          continue;
-        }
-        if (payload.salon_id && (errMsg.includes('salon') || errMsg.includes('salons'))) {
-          try {
-            const { data: firstSalon } = await client.from('salons').select('id').limit(1).maybeSingle();
-            if (firstSalon?.id && payload.salon_id !== firstSalon.id) {
-              payload.salon_id = firstSalon.id;
-              continue;
-            }
-          } catch {}
-          payload.salon_id = null;
-          continue;
-        }
-        // تصفير المفاتيح الخارجية كخيار أمان
-        payload.category_id = null;
-        delete payload.supplier_id;
-        payload.branch_id = null;
-        continue;
-      }
-
-      // 3. معالجة تكرار الباركود (23505)
-      if (errCode === '23505' || errMsg.includes('unique') || errMsg.includes('duplicate key')) {
-        console.warn('DB.saveProduct: unique violation (duplicate barcode), removing barcode and retrying...', errMsg);
-        delete payload.barcode;
-        continue;
-      }
-
-      // 4. معالجة قيد عدم القبول للقيمة الفارغة في salon_id (23502)
-      if ((errCode === '23502' || errMsg.includes('not-null')) && errMsg.includes('salon_id')) {
-        console.warn('DB.saveProduct: salon_id is required, resolving salon ID from database...');
-        try {
-          const { data: firstSalon } = await client.from('salons').select('id').limit(1).maybeSingle();
-          if (firstSalon?.id) {
-            payload.salon_id = firstSalon.id;
-            continue;
-          }
-        } catch {}
-      }
-
-      // توقف إذا كان الخطأ غير قابل للمعالجة
-      break;
-    }
-
-    if (lastError) { 
-      console.error('DB.saveProduct error after retry attempts:', lastError.message); 
-      return null; 
-    }
+    const catId = (p.categoryId && p.categoryId !== 'all') 
+      ? p.categoryId 
+      : (p.category_id && p.category_id !== 'all') 
+        ? p.category_id 
+        : null;
+    const { error } = await client.from('products').upsert({
+      id: p.id, salon_id: validSalonId, branch_id: validBranchId,
+      category_id: catId, name: p.name,
+      retail_price: p.retailPrice ?? p.sellPrice ?? 0,
+      sell_price: p.sellPrice ?? p.retailPrice ?? 0, cost_price: p.costPrice ?? 0,
+      min_stock_alert: p.minStockAlert ?? p.reorderLimit ?? 5,
+      reorder_limit: p.reorderLimit ?? p.minStockAlert ?? 5, opening_stock: p.openingStock ?? 0,
+      current_stock: p.currentStock ?? 0, commission: p.commission ?? 0,
+      barcode: p.barcode || null, is_active: p.isActive !== false,
+      product_type: p.productType || 'for_sale'
+    }, { onConflict: 'id' });
+    if (error) { console.error('DB.saveProduct error:', error.message); return null; }
     return p;
   },
+  async deleteProduct(id: string) { return DB.remove('products', id); },
   async saveProducts(list: any[], salonId?: string) { for (const p of list) await DB.saveProduct(p, salonId); return true; },
 
   // ---- الموردون ----
-  async fetchSuppliers(salonId?: string) { 
-    const list = await DB.fetchAll<any>('suppliers', undefined, salonId); 
-    return (list || []).map(s => ({
-      ...s,
-      currentBalance: Number(s.currentBalance ?? s.current_balance ?? 0)
-    }));
-  },
+  async fetchSuppliers(salonId?: string) { return DB.fetchAll<any>('suppliers', undefined, salonId); },
   async saveSupplier(s: any, salonId?: string) {
     const client = sb(); if (!client || !s) return null;
     const validSalonId = toSalonUUID(salonId || s.salonId || getSalonId());
@@ -2554,26 +2331,7 @@ export const DB = {
     if (error) { console.error('DB.saveSupplier error:', error.message); return null; }
     return s;
   },
-  async deleteSupplier(supplierId: string): Promise<boolean> {
-    const client = sb(); if (!client || !supplierId) return false;
-    try {
-      // 1. فك ارتباط فواتير الشراء المسجلة على هذا المورد
-      try {
-        await client.from('purchase_invoices').update({ supplier_id: null }).eq('supplier_id', supplierId);
-      } catch (e) {}
-      // 2. حذف سندات الصرف التابعة لهذا المورد لتفادي خطأ القيود المرتبطة
-      try {
-        await client.from('supplier_payments').delete().eq('supplier_id', supplierId);
-      } catch (e) {}
-      // 3. حذف المورد نهائياً من قاعدة بيانات Supabase
-      const { error } = await client.from('suppliers').delete().eq('id', supplierId);
-      if (error) { console.error('DB.deleteSupplier error:', error.message); return false; }
-      return true;
-    } catch (e) { console.error('DB.deleteSupplier exception:', e); return false; }
-  },
-  async deleteProduct(productId: string): Promise<boolean> {
-    return DB.remove('products', productId);
-  },
+  async deleteSupplier(id: string) { return DB.remove('suppliers', id); },
 
   // ---- فواتير الشراء ----
   async fetchPurchaseInvoices(salonId?: string) { return DB.fetchAll<any>('purchase_invoices', undefined, salonId); },
@@ -2606,6 +2364,7 @@ export const DB = {
     if (error) { console.error('DB.saveSupplierPayment error:', error.message); return null; }
     return sp;
   },
+  async deleteSupplierPayment(id: string) { return DB.remove('supplier_payments', id); },
 
   // ---- الجرد ----
   async fetchInventoryCounts(salonId?: string) { return DB.fetchAll<any>('inventory_counts', undefined, salonId); },
@@ -2649,6 +2408,7 @@ export const DB = {
       invoice_id: c.invoiceId || null, invoice_date: c.invoiceDate || null,
       invoice_total: c.invoiceTotal || null, employee_id: c.employeeId || null,
       employee_name: c.employeeName || null, category: c.category || 'service_quality',
+      subject: c.subject || c.category || 'شكوى عميل',
       description: c.description, before_photo_url: c.beforePhotoUrl || null,
       after_photo_url: c.afterPhotoUrl || null, status: c.status || 'open',
       priority: c.priority || 'medium', actions: c.actions || [],
@@ -2666,104 +2426,16 @@ export const DB = {
     const client = sb();
     if (!client) return false;
     try {
-      // 1. Delete all transactions linked to this invoice from PostgreSQL DB
+      // 1. Delete all transactions linked to this invoice from DB
       await client.from('transactions').delete().eq('invoice_id', invoiceId);
       await client.from('transactions').delete().ilike('description', `%${invoiceId}%`);
+      try { await client.from('tips').delete().eq('invoice_id', invoiceId); } catch (e) {}
+      try { await client.from('promo_code_usages').delete().eq('invoice_id', invoiceId); } catch (e) {}
       // 2. Delete the invoice itself from DB
       const { error } = await client.from('invoices').delete().eq('id', invoiceId);
       if (error) { console.error('DB.deleteInvoice error:', error.message); return false; }
       return true;
     } catch (e) { console.error('DB.deleteInvoice exception:', e); return false; }
-  },
-
-  // ---- مرتجعات المبيعات (Sales Returns) ----
-  async fetchSalesReturns(salonId?: string) {
-    try {
-      const fromDb = await DB.fetchAll<any>('sales_returns', undefined, salonId);
-      if (fromDb && Array.isArray(fromDb) && fromDb.length > 0) {
-        return fromDb.map(toCamel);
-      }
-    } catch (e) {}
-    try {
-      const local = localStorage.getItem('smartcut_sales_returns');
-      return local ? JSON.parse(local) : [];
-    } catch { return []; }
-  },
-
-  async saveSalesReturn(ret: any, salonId?: string) {
-    const client = sb();
-    const validSalonId = toSalonUUID(salonId || ret.salonId || getSalonId());
-    const validBranchId = toBranchUUID(ret.branchId);
-
-    // Always update localStorage
-    try {
-      const localRaw = localStorage.getItem('smartcut_sales_returns');
-      const list = localRaw ? JSON.parse(localRaw) : [];
-      const idx = list.findIndex((r: any) => r.id === ret.id);
-      if (idx >= 0) list[idx] = ret;
-      else list.unshift(ret);
-      localStorage.setItem('smartcut_sales_returns', JSON.stringify(list));
-    } catch (e) {}
-
-    if (!client || !ret) return ret;
-    try {
-      const snap: any = {
-        id: ret.id,
-        salon_id: validSalonId,
-        branch_id: validBranchId,
-        branch_code: ret.branchCode || null,
-        original_invoice_id: ret.originalInvoiceId,
-        original_invoice_date: ret.originalInvoiceDate || null,
-        date: ret.date || new Date().toISOString(),
-        client_id: ret.clientId || null,
-        client_name: ret.clientName,
-        client_phone: ret.clientPhone || '',
-        items: ret.items || [],
-        subtotal_refund: ret.subtotalRefund ?? ret.totalRefund ?? 0,
-        tax_refund: ret.taxRefund ?? 0,
-        total_refund: ret.totalRefund ?? 0,
-        refund_method: ret.refundMethod || 'cash',
-        treasury_id: ret.treasuryId || 'cash',
-        treasury_name: ret.treasuryName || null,
-        payment_splits: ret.paymentSplits || [],
-        reason: ret.reason || '',
-        return_type: ret.returnType || 'full',
-        created_by: ret.createdBy || null,
-        created_by_name: ret.createdByName || null,
-        notes: ret.notes || null,
-        status: ret.status || 'completed',
-        restock_products: ret.restockProducts !== false,
-        reverse_commissions: ret.reverseCommissions !== false,
-        is_without_invoice: ret.isWithoutInvoice === true
-      };
-      const { error } = await client.from('sales_returns').upsert(snap, { onConflict: 'id' });
-      if (error) {
-        console.warn('DB.saveSalesReturn Supabase note:', error.message);
-      }
-      return ret;
-    } catch (e) {
-      console.warn('DB.saveSalesReturn exception:', e);
-      return ret;
-    }
-  },
-
-  async deleteSalesReturn(returnId: string) {
-    try {
-      const localRaw = localStorage.getItem('smartcut_sales_returns');
-      if (localRaw) {
-        const list = JSON.parse(localRaw);
-        localStorage.setItem('smartcut_sales_returns', JSON.stringify(list.filter((r: any) => r.id !== returnId)));
-      }
-    } catch (e) {}
-
-    const client = sb();
-    if (!client) return true;
-    try {
-      await client.from('sales_returns').delete().eq('id', returnId);
-      return true;
-    } catch (e) {
-      return true;
-    }
   },
 
   // ---- حذف معاملة مالية من قاعدة البيانات ----
@@ -2787,66 +2459,63 @@ export const DB = {
     } catch (e) { return false; }
   },
 
-  // ---- حذف حجز نهائياً من قاعدة البيانات وتصفير أثره المالي تماماً (Financial Voiding) ----
+  // ---- حذف حجز نهائياً من قاعدة البيانات مع تصفير كامل أثره المالي (Cascade / Financial Voiding) ----
   async deleteBooking(bookingId: string, bookingCode?: string) {
     const client = sb();
-    if (!bookingId) return false;
+    if (!client || !bookingId) return false;
     try {
-      // 1. تحديث التخزين المحلي للحجوزات
+      // 1. حذف تذاكر الطابور والانتظار المرتبطة
       try {
-        const stored = localStorage.getItem('smartcut_bookings');
-        if (stored) {
-          const list = JSON.parse(stored);
-          localStorage.setItem('smartcut_bookings', JSON.stringify(list.filter((b: any) => b.id !== bookingId)));
+        await client.from('queue_tickets').delete().eq('booking_id', bookingId);
+        await client.from('queue_tickets').delete().eq('id', 'QT-B-' + bookingId);
+      } catch (e) {}
+      // 2. حذف الفواتير المعلقة المرتبطة
+      try {
+        await client.from('held_invoices').delete().or(`id.eq.HOLD-B-${bookingId},booking_id.eq.${bookingId}`);
+        await client.from('held_invoices').delete().eq('id', bookingId);
+      } catch (e) {}
+      // 3. تصفير وإلغاء جميع الحركات المالية المرتبطة بالحجز (عربونات ومسترجعات)
+      try {
+        await client.from('transactions').delete().eq('booking_id', bookingId);
+        await client.from('transactions').delete().ilike('description', `%${bookingId}%`);
+        if (bookingCode) {
+          await client.from('transactions').delete().ilike('description', `%${bookingCode}%`);
         }
       } catch (e) {}
-
-      // 2. تصفير وإلغاء أي حركات مالية مسجلة في التخزين المحلي (سندات القبض/المصروفات المسترجعة)
+      // 4. تحديث الكاش المحلي في localStorage إذا وجد
       try {
-        const storedTrx = localStorage.getItem('smartcut_transactions');
-        if (storedTrx) {
-          const tList = JSON.parse(storedTrx);
-          const filteredT = tList.filter((t: any) => {
-            const matchBookingId = t.bookingId === bookingId || t.booking_id === bookingId;
-            const matchDesc = t.description?.includes(bookingId) || (bookingCode && t.description?.includes(bookingCode));
-            const isAdvanceOrRefund = t.category === 'مقدم حجز' || t.category === 'booking_advance' || t.expenseCategory === 'مسترجع حجوزات' || t.expense_category === 'مسترجع حجوزات';
-            return !(matchBookingId || (matchDesc && isAdvanceOrRefund));
-          });
-          localStorage.setItem('smartcut_transactions', JSON.stringify(filteredT));
-        }
-      } catch (e) {}
-
-      if (client) {
-        // 3. محاولة استدعاء الدالة الذرية RPC إذا كانت متوفرة في قاعدة البيانات
-        try {
-          const { error: rpcErr } = await client.rpc('void_and_delete_booking', {
-            p_booking_id: bookingId,
-            p_booking_code: bookingCode || null
-          });
-          if (!rpcErr) return true;
-        } catch {}
-
-        // 4. حذف تذاكر الانتظار المرتبطة
-        try {
-          await client.from('queue_tickets').delete().eq('booking_id', bookingId);
-          await client.from('queue_tickets').delete().eq('id', 'QT-B-' + bookingId);
-        } catch (e) {}
-
-        // 5. تصفير الحركات المالية الخاصة بالعربون والمصروفات المسترجعة (Cascade Financial Voiding)
-        try {
-          await client.from('transactions').delete().eq('booking_id', bookingId);
-          await client.from('transactions').delete().ilike('description', `%${bookingId}%`);
-          if (bookingCode) {
-            await client.from('transactions').delete().ilike('description', `%${bookingCode}%`);
+        const storedTrxs = localStorage.getItem('smartcut_transactions');
+        if (storedTrxs) {
+          const list = JSON.parse(storedTrxs);
+          if (Array.isArray(list)) {
+            const filtered = list.filter((t: any) => 
+              t.bookingId !== bookingId && 
+              t.booking_id !== bookingId &&
+              !t.description?.includes(bookingId) &&
+              !(bookingCode && t.description?.includes(bookingCode))
+            );
+            localStorage.setItem('smartcut_transactions', JSON.stringify(filtered));
           }
-        } catch (e) {}
-
-        // 6. حذف الحجز نفسه من جدول الحجوزات
-        const { error } = await client.from('bookings').delete().eq('id', bookingId);
-        if (error) { console.error('DB.deleteBooking error:', error.message); return false; }
-      }
+        }
+      } catch (e) {}
+      // 5. حذف الحجز نفسه
+      const { error } = await client.from('bookings').delete().eq('id', bookingId);
+      if (error) { console.error('DB.deleteBooking error:', error.message); return false; }
       return true;
     } catch (e) { console.error('DB.deleteBooking exception:', e); return false; }
+  },
+
+  async deleteTransactionsByBookingId(bookingId: string, bookingCode?: string) {
+    const client = sb();
+    if (!client || !bookingId) return false;
+    try {
+      await client.from('transactions').delete().eq('booking_id', bookingId);
+      await client.from('transactions').delete().ilike('description', `%${bookingId}%`);
+      if (bookingCode) {
+        await client.from('transactions').delete().ilike('description', `%${bookingCode}%`);
+      }
+      return true;
+    } catch (e) { return false; }
   },
 
   // ---- الورديات ومتابعة العهدة (Work Shifts & Custody) ----
@@ -2858,7 +2527,6 @@ export const DB = {
       if (!sId) return [];
       const validSalonId = toSalonUUID(sId);
       if (!validSalonId) return [];
-
       let q = client.from('work_shifts').select('*').eq('salon_id', validSalonId);
       const { data, error } = await q.order('opened_at', { ascending: false });
       if (error) { console.error('DB.fetchWorkShifts:', error.message); return []; }
@@ -2881,124 +2549,73 @@ export const DB = {
       const validSalonId = toSalonUUID(sId);
       if (!validSalonId) return null;
 
-      // Query any open or unclosed shift for this salon
-      let q = client
+      // الاعتماد الكلي على السجلات المخزنة فعلياً في جدول work_shifts
+      const { data, error } = await client
         .from('work_shifts')
         .select('*')
         .eq('salon_id', validSalonId)
-        .or('status.eq.open,closed_at.is.null')
-        .order('opened_at', { ascending: false });
+        .order('opened_at', { ascending: false })
+        .limit(50);
 
-      const { data, error } = await q;
       if (error) {
-        console.error('DB.getActiveWorkShift:', error.message);
-        return null;
-      }
-      if (!data || data.length === 0) return null;
-
-      // Filter out any explicitly closed shifts
-      const openShifts = data.filter((s: any) => s.status !== 'closed' && !s.closed_at);
-      if (openShifts.length === 0) return null;
-
-      // Check if there is a recently closed shift that supersedes these open shifts
-      const { data: latestClosed } = await client
-        .from('work_shifts')
-        .select('id, shift_date, closed_at, opened_at')
-        .eq('salon_id', validSalonId)
-        .eq('status', 'closed')
-        .not('closed_at', 'is', null)
-        .order('closed_at', { ascending: false })
-        .limit(1);
-
-      let eligibleOpenShifts = openShifts;
-      if (latestClosed && latestClosed.length > 0) {
-        const lastClosed = latestClosed[0];
-        const lastClosedTime = new Date(lastClosed.closed_at).getTime();
-
-        eligibleOpenShifts = openShifts.filter((s: any) => {
-          const shiftOpenTime = s.opened_at ? new Date(s.opened_at).getTime() : 0;
-          // If shift was opened on or before the latest closure, or is from an older calendar day
-          if (shiftOpenTime && shiftOpenTime <= lastClosedTime) {
-            // Auto-heal stale zombie shift in DB by primary key
-            client.from('work_shifts').update({ status: 'closed', closed_at: lastClosed.closed_at }).eq('id', s.id).then(() => {}, () => {});
-            return false;
-          }
-          if (s.shift_date && lastClosed.shift_date && s.shift_date < lastClosed.shift_date) {
-            client.from('work_shifts').update({ status: 'closed', closed_at: lastClosed.closed_at }).eq('id', s.id).then(() => {}, () => {});
-            return false;
-          }
-          return true;
-        });
-
-        if (eligibleOpenShifts.length === 0) return null;
+        console.error('DB.getActiveWorkShift error:', error.message);
+        return { error: true, message: error.message };
       }
 
-      const targetBranchId = branchId && branchId !== 'all' ? (toBranchUUID(branchId) || branchId) : null;
-
-      // 1. Direct match on branch_id
-      if (targetBranchId) {
-        const exactMatch = eligibleOpenShifts.find((s: any) => s.branch_id === targetBranchId);
-        if (exactMatch) return toCamel(exactMatch);
+      if (!data || data.length === 0) {
+        // لا يوجد أي وردية سابقة مسجلة في قاعدة البيانات
+        return { isOpen: false, isClosed: true, hasDefinitiveProof: true, noShifts: true };
       }
 
-      // 2. Generic or default branch match
-      const genericMatch = eligibleOpenShifts.find((s: any) => !s.branch_id || s.branch_id === 'b-main' || s.branch_id === 'all');
-      if (genericMatch) return toCamel(genericMatch);
+      // البحث عن أي وردية مفتوحة فعلياً وغير مغلقة في قاعدة البيانات
+      const openShifts = data.filter((s: any) => 
+        (s.status === 'open' || !s.closed_at) && s.status !== 'closed'
+      );
 
-      // 3. Fallback: Return the latest open shift for the salon (guarantees cross-device sync)
-      const latestOpenShift = eligibleOpenShifts[0];
+      if (openShifts.length > 0) {
+        const targetBranchId = branchId && branchId !== 'all' ? (toBranchUUID(branchId) || branchId) : null;
+        let matchedShift = openShifts[0];
 
-      // Auto-heal branch_id in database if target branch is known and different
-      if (targetBranchId && latestOpenShift.branch_id !== targetBranchId) {
-        client.from('work_shifts').update({ branch_id: targetBranchId }).eq('id', latestOpenShift.id).then(() => {}, () => {});
-      }
+        // 1. مطابقة مباشرة على الفرع
+        if (targetBranchId) {
+          const exactMatch = openShifts.find((s: any) => s.branch_id === targetBranchId);
+          if (exactMatch) matchedShift = exactMatch;
+        } else {
+          // 2. فرع رئيسي أو عام
+          const genericMatch = openShifts.find((s: any) => !s.branch_id || s.branch_id === 'b-main' || s.branch_id === 'all');
+          if (genericMatch) matchedShift = genericMatch;
+        }
 
-      return toCamel(latestOpenShift);
-    } catch (e) {
-      console.error('DB.getActiveWorkShift exception:', e);
-      return null;
-    }
-  },
+        // تحديث معرف الفرع في قاعدة البيانات إذا كان الفرع المستهدف معروفاً ومختلفاً
+        if (targetBranchId && matchedShift.branch_id !== targetBranchId) {
+          client.from('work_shifts').update({ branch_id: targetBranchId }).eq('id', matchedShift.id).then(() => {}).catch(() => {});
+        }
 
-  async closeAllActiveShifts(salonId: string, branchId?: string, closedAt?: string, closedByUserId?: string, closedByUserName?: string): Promise<boolean> {
-    const client = sb();
-    if (!client) return false;
-    try {
-      const validSalonId = toSalonUUID(salonId || getSalonId());
-      if (!validSalonId) return false;
-      const closeTimestamp = closedAt || new Date().toISOString();
-
-      // 1. Fetch all open shifts by ID
-      const { data: openRows } = await client
-        .from('work_shifts')
-        .select('id')
-        .eq('salon_id', validSalonId)
-        .or('status.eq.open,closed_at.is.null');
-
-      if (openRows && openRows.length > 0) {
-        const openIds = openRows.map((r: any) => r.id);
-        const updatePayload: any = {
-          status: 'closed',
-          closed_at: closeTimestamp
+        return {
+          ...toCamel(matchedShift),
+          isOpen: true,
+          status: 'open',
+          hasDefinitiveProof: true
         };
-        if (closedByUserId) updatePayload.closed_by_user_id = closedByUserId;
-        if (closedByUserName) {
-          updatePayload.closed_by_user_name = closedByUserName;
-          updatePayload.closed_by_name = closedByUserName;
-        }
-        const { error } = await client
-          .from('work_shifts')
-          .update(updatePayload)
-          .in('id', openIds);
-        if (error) {
-          console.error('DB.closeAllActiveShifts error:', error.message);
-          return false;
-        }
       }
-      return true;
-    } catch (e) {
-      console.error('DB.closeAllActiveShifts exception:', e);
-      return false;
+
+      // لا توجد أي وردية مفتوحة، وهناك سجل فعلي وقاطع يثبت الإغلاق داخل قاعدة البيانات
+      const closedShifts = data.filter((s: any) => s.status === 'closed' || !!s.closed_at);
+      if (closedShifts.length > 0) {
+        const latestClosed = closedShifts[0];
+        return {
+          ...toCamel(latestClosed),
+          isOpen: false,
+          isClosed: true,
+          status: 'closed',
+          hasDefinitiveProof: true
+        };
+      }
+
+      return { isOpen: false, isClosed: true, hasDefinitiveProof: true };
+    } catch (e: any) {
+      console.error('DB.getActiveWorkShift exception:', e);
+      return { error: true, message: e?.message };
     }
   },
 
@@ -3008,56 +2625,18 @@ export const DB = {
     try {
       const validSalonId = toSalonUUID(ws.salonId || getSalonId());
       const validBranchId = ws.branchId ? (toBranchUUID(ws.branchId) || ws.branchId) : null;
-      const isClosed = ws.status === 'closed' || Boolean(ws.closedAt);
-
-      if (isClosed && validSalonId) {
-        const closeTimestamp = ws.closedAt || new Date().toISOString();
-        try {
-          // 1. Mark any and all open shifts for this salon as closed in Supabase to prevent stale shifts from lingering
-          const { data: openRows } = await client
-            .from('work_shifts')
-            .select('id')
-            .eq('salon_id', validSalonId)
-            .or('status.eq.open,closed_at.is.null');
-
-          if (openRows && openRows.length > 0) {
-            const openIds = openRows.map((r: any) => r.id);
-            const closePayload: any = {
-              status: 'closed',
-              closed_at: closeTimestamp,
-              closed_by_user_id: ws.closedByUserId || ws.closed_by_user_id || null,
-              closed_by_user_name: ws.closedByUserName || ws.closed_by_user_name || ws.closedByName || ws.closed_by_name || null,
-              closed_by_name: ws.closedByUserName || ws.closed_by_user_name || ws.closedByName || ws.closed_by_name || null
-            };
-            if (ws.closedByRole || ws.closed_by_role) {
-              closePayload.closed_by_role = ws.closedByRole || ws.closed_by_role;
-            }
-            await client
-              .from('work_shifts')
-              .update(closePayload)
-              .in('id', openIds);
-          }
-        } catch (closeErr) {
-          console.warn('DB.saveWorkShift bulk close warning:', closeErr);
-        }
-      }
-
       const snap: any = {
         id: ws.id,
         salon_id: validSalonId,
         branch_id: validBranchId,
         shift_date: ws.shiftDate,
-        shift_code: ws.shiftCode || null,
         ...(ws.openedAt ? { opened_at: ws.openedAt } : (ws.status === 'open' ? { opened_at: new Date().toISOString() } : {})),
-        closed_at: ws.closedAt || (isClosed ? (ws.closedAt || new Date().toISOString()) : null),
-        opened_by_user_id: ws.openedByUserId || ws.opened_by_user_id || null,
-        opened_by_user_name: ws.openedByUserName || ws.opened_by_user_name || ws.openedByName || ws.opened_by_name || null,
-        opened_by_name: ws.openedByUserName || ws.opened_by_user_name || ws.openedByName || ws.opened_by_name || null,
-        opened_by_role: ws.openedByRole || ws.opened_by_role || null,
-        closed_by_user_id: ws.closedByUserId || ws.closed_by_user_id || null,
-        closed_by_user_name: ws.closedByUserName || ws.closed_by_user_name || ws.closedByName || ws.closed_by_name || null,
-        closed_by_name: ws.closedByUserName || ws.closed_by_user_name || ws.closedByName || ws.closed_by_name || null,
-        closed_by_role: ws.closedByRole || ws.closed_by_role || null,
+        closed_at: ws.closedAt || null,
+        opened_by_user_id: ws.openedByUserId || null,
+        opened_by_user_name: ws.openedByUserName || null,
+        opened_by_role: ws.openedByRole || null,
+        closed_by_user_id: ws.closedByUserId || null,
+        closed_by_user_name: ws.closedByUserName || null,
         initial_cash: Number(ws.initialCash) || 0,
         expected_cash: ws.expectedCash !== undefined ? Number(ws.expectedCash) : null,
         actual_cash: ws.actualCash !== undefined ? Number(ws.actualCash) : null,
@@ -3066,36 +2645,11 @@ export const DB = {
         total_cash_sales: ws.totalCashSales !== undefined ? Number(ws.totalCashSales) : null,
         total_card_sales: ws.totalCardSales !== undefined ? Number(ws.totalCardSales) : null,
         total_expenses: ws.totalExpenses !== undefined ? Number(ws.totalExpenses) : null,
-        total_advances: ws.totalAdvances !== undefined ? Number(ws.totalAdvances) : null,
-        transferred_to_treasury: ws.transferredToTreasury || null,
-        transferred_amount: ws.transferredAmount !== undefined ? Number(ws.transferredAmount) : null,
-        status: ws.status || (isClosed ? 'closed' : 'open'),
+        status: ws.status || (ws.closedAt ? 'closed' : 'open'),
         notes: ws.notes || null,
         created_at: ws.createdAt || new Date().toISOString()
       };
-      let { error } = await client.from('work_shifts').upsert(snap, { onConflict: 'id' });
-
-      // الترميم الذاتي التلقائي لأي أعمدة مفقودة في جدول work_shifts
-      let missingColTries = 0;
-      while (error && missingColTries < 8 && ((error as any).code === '42703' || error.message.includes('column') || error.message.includes('PGRST204') || error.message.includes('schema cache'))) {
-        missingColTries++;
-        const match = error.message.match(/column ["']?([a-zA-Z0-9_]+)["']?/i) || 
-                      error.message.match(/Could not find the '([a-zA-Z0-9_]+)' column/i);
-        const colName = match ? match[1] : null;
-        if (colName && snap.hasOwnProperty(colName)) {
-          console.warn(`DB.saveWorkShift: column '${colName}' missing in Supabase work_shifts table, auto-healing and retrying...`);
-          const colType = (colName.includes('cash') || colName.includes('sales') || colName.includes('expenses') || colName.includes('advances') || colName.includes('amount') || colName.includes('difference'))
-            ? 'NUMERIC(12,2)'
-            : colName.includes('_at') ? 'TIMESTAMPTZ' : (colName === 'notes' ? 'TEXT' : 'VARCHAR(255)');
-          ensureColumn('work_shifts', colName, colType).catch(() => {});
-          delete snap[colName];
-          const retryRes = await client.from('work_shifts').upsert(snap, { onConflict: 'id' });
-          error = retryRes.error;
-        } else {
-          break;
-        }
-      }
-
+      const { error } = await client.from('work_shifts').upsert(snap, { onConflict: 'id' });
       if (error) { console.error('DB.saveWorkShift error:', error.message); return false; }
       return true;
     } catch (e) { console.error('DB.saveWorkShift exception:', e); return false; }
@@ -3311,43 +2865,46 @@ export const DB = {
   },
   async savePromoCode(pc: any) {
     const client = sb(); if (!client || !pc) return null;
-    let validSalonId = toSalonUUID(pc.salonId || getSalonId());
-    if (!validSalonId) {
-      try {
-        const { data: salons } = await client.from('salons').select('id').limit(1);
-        if (salons && salons.length > 0) validSalonId = salons[0].id;
-      } catch {}
-    }
-    if (!validSalonId) {
-      console.error('DB.savePromoCode error: No valid salon_id found to link promo code');
-      return null;
-    }
+    const validSalonId = toSalonUUID(pc.salonId || getSalonId());
     try {
       const snap: any = {
-        id: pc.id,
-        salon_id: validSalonId,
-        code: pc.code?.trim().toUpperCase(),
-        discount_type: pc.discountType || 'percentage',
-        discount_value: Number(pc.discountValue) || 0,
-        max_discount_amount: pc.maxDiscountAmount ? Number(pc.maxDiscountAmount) : null,
+        id: pc.id, salon_id: validSalonId, code: pc.code?.trim().toUpperCase(),
+        discount_type: pc.discountType || 'percentage', discount_value: pc.discountValue ?? 0,
+        max_discount_amount: pc.maxDiscountAmount || null,
         start_date: toDateOrNull(pc.startDate) || new Date().toISOString().split('T')[0],
         end_date: toDateOrNull(pc.endDate) || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
-        max_uses_total: pc.maxUsesTotal ? Number(pc.maxUsesTotal) : null,
-        usage_limit: pc.maxUsesTotal ? Number(pc.maxUsesTotal) : null,
-        uses_count: Number(pc.usesCount) || 0,
-        times_used: Number(pc.usesCount) || 0,
-        is_active: pc.isActive !== false,
-        notes: pc.notes || null,
-        created_by: pc.createdBy || null,
-        updated_at: new Date().toISOString()
+        max_uses_total: pc.maxUsesTotal || pc.usageLimit || null,
+        usage_limit: pc.usageLimit || pc.maxUsesTotal || null,
+        uses_count: pc.usesCount ?? pc.usedCount ?? 0,
+        used_count: pc.usedCount ?? pc.usesCount ?? 0,
+        is_active: pc.isActive !== false, notes: pc.notes || null,
+        created_by: pc.createdBy || null, updated_at: new Date().toISOString()
       };
       const { error } = await client.from('promo_codes').upsert(snap, { onConflict: 'id' });
-      if (error) { console.error('DB.savePromoCode error:', error.message); return null; }
+      if (error) { 
+        console.error('DB.savePromoCode error:', error.message); 
+        return null; 
+      }
+      try {
+        const bc = new BroadcastChannel(`smartcut_promos_${validSalonId}`);
+        bc.postMessage({ type: 'PROMO_SAVED', promoCodeId: pc.id });
+        bc.close();
+      } catch {}
       return pc;
-    } catch (e) { console.error('DB.savePromoCode exception:', e); return null; }
+    } catch (e) { 
+      console.error('DB.savePromoCode exception:', e); 
+      return null; 
+    }
   },
   async deletePromoCode(promoCodeId: string) {
-    return DB.remove('promo_codes', promoCodeId);
+    const validSalonId = toSalonUUID(getSalonId());
+    const res = await DB.remove('promo_codes', promoCodeId);
+    try {
+      const bc = new BroadcastChannel(`smartcut_promos_${validSalonId}`);
+      bc.postMessage({ type: 'PROMO_DELETED', promoCodeId });
+      bc.close();
+    } catch {}
+    return res;
   },
 
   // ---- استخدامات البرومو كود (Promo Code Usages) ----
@@ -3356,33 +2913,31 @@ export const DB = {
   },
   async savePromoCodeUsage(u: any) {
     const client = sb(); if (!client || !u) return null;
-    let validSalonId = toSalonUUID(u.salonId || getSalonId());
-    if (!validSalonId) {
-      try {
-        const { data: salons } = await client.from('salons').select('id').limit(1);
-        if (salons && salons.length > 0) validSalonId = salons[0].id;
-      } catch {}
-    }
-    if (!validSalonId) {
-      console.error('DB.savePromoCodeUsage error: No valid salon_id found');
-      return null;
-    }
+    const validSalonId = toSalonUUID(u.salonId || getSalonId());
     try {
       const snap: any = {
-        id: u.id,
-        salon_id: validSalonId,
-        promo_code_id: u.promoCodeId,
-        code: u.code,
-        client_phone: u.clientPhone,
-        client_name: u.clientName || null,
-        invoice_id: u.invoiceId || null,
-        discount_applied: Number(u.discountApplied) || 0,
+        id: u.id, salon_id: validSalonId, promo_code_id: u.promoCodeId,
+        code: u.code, client_id: u.clientId || null, client_phone: u.clientPhone, client_name: u.clientName || null,
+        invoice_id: u.invoiceId || null, 
+        discount_applied: u.discountApplied ?? 0,
+        discount_amount: u.discountApplied ?? 0,
         used_at: u.usedAt || new Date().toISOString()
       };
       const { error } = await client.from('promo_code_usages').upsert(snap, { onConflict: 'id' });
-      if (error) { console.error('DB.savePromoCodeUsage error:', error.message); return null; }
+      if (error) { 
+        console.error('DB.savePromoCodeUsage error:', error.message); 
+        return null; 
+      }
+      try {
+        const bc = new BroadcastChannel(`smartcut_promos_${validSalonId}`);
+        bc.postMessage({ type: 'USAGE_SAVED', usageId: u.id });
+        bc.close();
+      } catch {}
       return u;
-    } catch (e) { console.error('DB.savePromoCodeUsage exception:', e); return null; }
+    } catch (e) { 
+      console.error('DB.savePromoCodeUsage exception:', e); 
+      return null; 
+    }
   },
 
   // ---- البقشيش (Tips) ----
@@ -3435,27 +2990,86 @@ export const DB = {
 
   // ---- سجلات البصمة (Fingerprint Logs) ----
   async fetchFingerprintLogs(salonId?: string) {
-    return DB.fetchAll<any>('fingerprint_logs', undefined, salonId);
+    const list = await DB.fetchAll<any>('fingerprint_logs', undefined, salonId);
+    return (list || []).map(fl => {
+      const ts = fl.timestamp || fl.logTime || fl.log_time || fl.createdAt || fl.created_at;
+      const type = fl.type || 'check_in';
+      const processedDate = fl.processedDate || fl.processed_date || calculateFingerprintProcessedDate(ts, type);
+      return {
+        ...fl,
+        timestamp: ts,
+        logTime: fl.logTime || fl.log_time || ts,
+        type: type,
+        status: fl.status || (fl.source === 'manual' ? 'manual' : 'synced'),
+        fingerprintCode: fl.fingerprintCode || fl.fingerprint_code || '',
+        employeeId: fl.employeeId || fl.employee_id || '',
+        employeeName: fl.employeeName || fl.employee_name || '',
+        processedDate: processedDate,
+        processed_date: processedDate
+      };
+    });
   },
   async saveFingerprintLog(fl: any) {
     const client = sb(); if (!client || !fl) return null;
     const validSalonId = toSalonUUID(fl.salonId || getSalonId());
     const validBranchId = toBranchUUID(fl.branchId);
+    const validTimestamp = fl.timestamp || fl.logTime || fl.log_time || new Date().toISOString();
+    const type = fl.type || 'check_in';
+    const computedProcessedDate = fl.processedDate || fl.processed_date || calculateFingerprintProcessedDate(validTimestamp, type);
+    const fpCode = fl.fingerprintCode || fl.fingerprint_code || (fl.employeeId ? `FP-${fl.employeeId.slice(0, 4)}` : '101');
+    
+    let resolvedEmployeeId = fl.employeeId || fl.employee_id || null;
+    let resolvedEmployeeName = fl.employeeName || fl.employee_name || null;
+
+    // Auto-resolve employee by fingerprint_code if not supplied
+    if ((!resolvedEmployeeId || !resolvedEmployeeName) && fpCode) {
+      try {
+        const emps = await DB.fetchAll<any>('employees', undefined, validSalonId);
+        const matched = (emps || []).find(e => 
+          (e.fingerprintCode && String(e.fingerprintCode).trim() === String(fpCode).trim()) ||
+          (e.fingerprint_code && String(e.fingerprint_code).trim() === String(fpCode).trim()) ||
+          (e.id && String(e.id).trim() === String(fpCode).trim())
+        );
+        if (matched) {
+          if (!resolvedEmployeeId) resolvedEmployeeId = matched.id;
+          if (!resolvedEmployeeName) resolvedEmployeeName = matched.name;
+        }
+      } catch (err) {
+        console.warn('Error auto-resolving employee for fingerprint log:', err);
+      }
+    }
+
     try {
       const snap: any = {
-        id: fl.id, salon_id: validSalonId, branch_id: validBranchId,
-        employee_id: fl.employeeId || null, employee_name: fl.employeeName || null,
-        fingerprint_code: fl.fingerprintCode || (fl.employeeId ? `FP-${fl.employeeId.slice(0, 4)}` : '101'),
-        timestamp: fl.timestamp,
-        type: fl.type || 'check_in', device_ip: fl.deviceIp || null,
-        status: fl.status || 'synced', notes: fl.notes || null
+        id: fl.id || ('fp_' + Math.random().toString(36).substring(2, 9) + Date.now().toString(36)),
+        salon_id: validSalonId,
+        branch_id: validBranchId,
+        employee_id: resolvedEmployeeId,
+        employee_name: resolvedEmployeeName,
+        fingerprint_code: fpCode,
+        timestamp: validTimestamp,
+        log_time: validTimestamp,
+        type: type,
+        device_ip: fl.deviceIp || fl.device_ip || null,
+        status: fl.status || 'synced',
+        notes: fl.notes || null,
+        source: fl.source || (fl.status === 'manual' ? 'manual' : 'device'),
+        processed_date: computedProcessedDate
       };
       const { error } = await client.from('fingerprint_logs').upsert(snap, { onConflict: 'id' });
       if (error) { 
         console.error('DB.saveFingerprintLog error:', error.message); 
         throw error; 
       }
-      return fl;
+      return {
+        ...fl,
+        ...snap,
+        fingerprintCode: fpCode,
+        employeeId: resolvedEmployeeId,
+        employeeName: resolvedEmployeeName,
+        processedDate: computedProcessedDate,
+        processed_date: computedProcessedDate
+      };
     } catch (e) { 
       console.error('DB.saveFingerprintLog exception:', e); 
       throw e; 
@@ -3518,29 +3132,29 @@ export const DB = {
     return [
       {
         id: 'starter',
-        planNameAr: 'باقة البداية',
+        planNameAr: 'باقة البداية (1–5 موظفين)',
         planNameEn: 'Starter Plan',
-        descriptionAr: 'مثالية للصالونات الناشئة والصغيرة ذات الفريق المحدود',
-        minEmployees: 2,
+        descriptionAr: 'مثالية للصالونات الناشئة والصغيرة بفريق عمل حتى 5 موظفين',
+        minEmployees: 1,
         maxEmployees: 5,
-        priceEgp1m: 300,
-        priceEgp3m: 850,
-        priceEgp6m: 1600,
-        priceEgp12m: 3000,
+        priceEgp1m: 350,
+        priceEgp3m: 1000,
+        priceEgp6m: 1950,
+        priceEgp12m: 3500,
         priceUsd1m: 10,
         priceUsd3m: 28,
         priceUsd6m: 53,
         priceUsd12m: 100,
-        branchPriceEgp1m: 200,
-        branchPriceEgp3m: 570,
-        branchPriceEgp6m: 1070,
-        branchPriceEgp12m: 2000,
+        branchPriceEgp1m: 230,
+        branchPriceEgp3m: 670,
+        branchPriceEgp6m: 1300,
+        branchPriceEgp12m: 2300,
         branchPriceUsd1m: 7,
         branchPriceUsd3m: 19,
         branchPriceUsd6m: 35,
         branchPriceUsd12m: 67,
         features: [
-          'من 2 إلى 5 موظفين',
+          'من 1 إلى 5 موظفين',
           'نقطة بيع سريعة POS وفواتير غير محدودة',
           'إدارة الحجوزات والمواعيد والعملاء',
           'سندات المصروفات والخزائن النقدية',
@@ -3553,23 +3167,23 @@ export const DB = {
       },
       {
         id: 'growth',
-        planNameAr: 'باقة التوسع',
+        planNameAr: 'باقة التوسع (6–10 موظفين)',
         planNameEn: 'Growth Plan',
-        descriptionAr: 'الخيار الأكثر طلباً للصالونات المتنامية التي تحتاج ميزات احترافية متكاملة',
+        descriptionAr: 'الخيار الممتاز للصالونات المتوسطة والمتنامية حتى 10 موظفين',
         minEmployees: 6,
         maxEmployees: 10,
-        priceEgp1m: 500,
-        priceEgp3m: 1400,
-        priceEgp6m: 2600,
-        priceEgp12m: 4800,
+        priceEgp1m: 450,
+        priceEgp3m: 1250,
+        priceEgp6m: 2500,
+        priceEgp12m: 4500,
         priceUsd1m: 17,
         priceUsd3m: 47,
         priceUsd6m: 87,
         priceUsd12m: 160,
-        branchPriceEgp1m: 330,
-        branchPriceEgp3m: 930,
-        branchPriceEgp6m: 1730,
-        branchPriceEgp12m: 3200,
+        branchPriceEgp1m: 300,
+        branchPriceEgp3m: 830,
+        branchPriceEgp6m: 1670,
+        branchPriceEgp12m: 3000,
         branchPriceUsd1m: 11,
         branchPriceUsd3m: 31,
         branchPriceUsd6m: 58,
@@ -3588,23 +3202,23 @@ export const DB = {
       },
       {
         id: 'enterprise',
-        planNameAr: 'باقة الأعمال',
+        planNameAr: 'باقة الأعمال الكبرى (أكثر من 10 موظفين)',
         planNameEn: 'Enterprise Plan',
         descriptionAr: 'حل متكامل للمنشآت والمراكز الكبرى مع قدرات غير محدودة وتوسع كامل',
         minEmployees: 11,
         maxEmployees: 9999,
-        priceEgp1m: 800,
-        priceEgp3m: 2250,
-        priceEgp6m: 4200,
-        priceEgp12m: 7900,
+        priceEgp1m: 550,
+        priceEgp3m: 1550,
+        priceEgp6m: 3050,
+        priceEgp12m: 5500,
         priceUsd1m: 27,
         priceUsd3m: 75,
         priceUsd6m: 140,
         priceUsd12m: 264,
-        branchPriceEgp1m: 530,
-        branchPriceEgp3m: 1500,
-        branchPriceEgp6m: 2800,
-        branchPriceEgp12m: 5270,
+        branchPriceEgp1m: 370,
+        branchPriceEgp3m: 1030,
+        branchPriceEgp6m: 2030,
+        branchPriceEgp12m: 3670,
         branchPriceUsd1m: 18,
         branchPriceUsd3m: 50,
         branchPriceUsd6m: 93,
@@ -3622,6 +3236,57 @@ export const DB = {
         displayOrder: 3
       }
     ];
+  },
+
+  async saveSubscriptionPlan(plan: any): Promise<boolean> {
+    const client = sb();
+    if (!client) return false;
+    try {
+      const payload: any = {
+        id: plan.id,
+        plan_name_ar: plan.planNameAr || plan.plan_name_ar,
+        plan_name_en: plan.planNameEn || plan.plan_name_en,
+        description_ar: plan.descriptionAr || plan.description_ar,
+        min_employees: Number(plan.minEmployees ?? plan.min_employees ?? 1),
+        max_employees: Number(plan.maxEmployees ?? plan.max_employees ?? 9999),
+        price_egp_1m: Number(plan.priceEgp1m ?? plan.price_egp_1m ?? 0),
+        price_egp_3m: Number(plan.priceEgp3m ?? plan.price_egp_3m ?? 0),
+        price_egp_6m: Number(plan.priceEgp6m ?? plan.price_egp_6m ?? 0),
+        price_egp_12m: Number(plan.priceEgp12m ?? plan.price_egp_12m ?? 0),
+        price_usd_1m: Number(plan.priceUsd1m ?? plan.price_usd_1m ?? 0),
+        price_usd_3m: Number(plan.priceUsd3m ?? plan.price_usd_3m ?? 0),
+        price_usd_6m: Number(plan.priceUsd6m ?? plan.price_usd_6m ?? 0),
+        price_usd_12m: Number(plan.priceUsd12m ?? plan.price_usd_12m ?? 0),
+        branch_price_egp_1m: Number(plan.branchPriceEgp1m ?? plan.branch_price_egp_1m ?? 0),
+        branch_price_egp_3m: Number(plan.branchPriceEgp3m ?? plan.branch_price_egp_3m ?? 0),
+        branch_price_egp_6m: Number(plan.branchPriceEgp6m ?? plan.branch_price_egp_6m ?? 0),
+        branch_price_egp_12m: Number(plan.branchPriceEgp12m ?? plan.branch_price_egp_12m ?? 0),
+        branch_price_usd_1m: Number(plan.branchPriceUsd1m ?? plan.branch_price_usd_1m ?? 0),
+        branch_price_usd_3m: Number(plan.branchPriceUsd3m ?? plan.branch_price_usd_3m ?? 0),
+        branch_price_usd_6m: Number(plan.branchPriceUsd6m ?? plan.branch_price_usd_6m ?? 0),
+        branch_price_usd_12m: Number(plan.branchPriceUsd12m ?? plan.branch_price_usd_12m ?? 0),
+        features: typeof plan.features === 'string' ? plan.features : JSON.stringify(plan.features || []),
+        is_popular: plan.isPopular ? 1 : 0,
+        is_active: plan.isActive !== false ? 1 : 0,
+        display_order: Number(plan.displayOrder ?? plan.display_order ?? 0),
+        updated_at: new Date().toISOString()
+      };
+      const { error } = await client.from('subscription_plans').upsert(payload, { onConflict: 'id' });
+      return !error;
+    } catch (e) {
+      console.error('DB.saveSubscriptionPlan error:', e);
+      return false;
+    }
+  },
+
+  async saveSubscriptionPlans(plans: any[]): Promise<boolean> {
+    if (!Array.isArray(plans)) return false;
+    let ok = true;
+    for (const plan of plans) {
+      const res = await this.saveSubscriptionPlan(plan);
+      if (!res) ok = false;
+    }
+    return ok;
   },
 
   async fetchSubscriptionAddons(): Promise<any[]> {
@@ -3864,37 +3529,18 @@ export const DB = {
     }
   },
 
-  async resetSalonToTrialDB(salonId: string, trialDays: number = 7, plan?: string): Promise<any> {
+  async resetSalonToTrialDB(salonId: string, trialDays: number = 7, plan: string = 'starter'): Promise<any> {
     const client = sb();
     const validSalonId = toSalonUUID(salonId);
-    const subModule = await import('./subscriptionService');
-    const localSalon = subModule.SubscriptionService.getSalon(salonId);
-
-    let existingDbSalon: any = null;
-    if (client) {
-      try {
-        const { data } = await client.from('salons').select('*').eq('id', validSalonId).maybeSingle();
-        existingDbSalon = data;
-      } catch (e) {
-        console.warn('Could not fetch existing salon from db:', e);
-      }
-    }
-
-    const effectivePlan = plan || existingDbSalon?.subscription_plan || localSalon?.subscriptionPlan || 'pro';
-    const effectiveMaxBranches = existingDbSalon?.max_branches || localSalon?.maxBranches || 3;
-    const effectiveMaxUsers = existingDbSalon?.max_users || localSalon?.maxUsers || 10;
-
     const startDate = new Date().toISOString().split('T')[0];
     const endDate = new Date(Date.now() + trialDays * 86400000).toISOString().split('T')[0];
 
     const updates = {
       subscription_status: 'trial',
-      subscription_plan: effectivePlan,
+      subscription_plan: plan,
       subscription_start_date: startDate,
       subscription_end_date: endDate,
       trial_days: trialDays,
-      max_branches: effectiveMaxBranches,
-      max_users: effectiveMaxUsers,
       is_active: true,
       updated_at: new Date().toISOString()
     };
@@ -3907,17 +3553,17 @@ export const DB = {
           id: subId,
           salon_id: validSalonId,
           tenant_id: validSalonId,
-          plan_id: effectivePlan,
+          plan_id: plan,
           status: 'trial',
           start_date: startDate,
           end_date: endDate,
-          total_branches: effectiveMaxBranches,
-          total_employees: effectiveMaxUsers,
+          total_branches: 1,
+          total_employees: 5,
           billing_cycle: 'trial',
           currency: 'SAR',
           paid_amount: 0,
           payment_method: 'free_trial',
-          notes: `إعادة إلى الفترة التجريبية بواسطة المبرمج (${trialDays} أيام) - باقة ${effectivePlan}`
+          notes: `إعادة إلى الفترة التجريبية بواسطة المبرمج (${trialDays} أيام)`
         });
       } catch (e) {
         console.warn('DB update failed during reset to trial:', e);
@@ -3930,99 +3576,12 @@ export const DB = {
       isSalonActive: true
     });
 
-    return subModule.SubscriptionService.updateSalon(salonId, {
+    return SubscriptionService.updateSalon(salonId, {
       subscriptionStatus: 'trial',
-      subscriptionPlan: effectivePlan as any,
+      subscriptionPlan: plan as any,
       subscriptionStartDate: startDate,
       subscriptionEndDate: endDate,
       trialDays,
-      maxBranches: effectiveMaxBranches,
-      maxUsers: effectiveMaxUsers,
-      isActive: true
-    });
-  },
-
-  async extendSalonTrialDB(salonId: string, additionalDays: number = 7): Promise<any> {
-    const client = sb();
-    const validSalonId = toSalonUUID(salonId);
-    const subModule = await import('./subscriptionService');
-    const localSalon = subModule.SubscriptionService.getSalon(salonId);
-
-    let existingDbSalon: any = null;
-    if (client) {
-      try {
-        const { data } = await client.from('salons').select('*').eq('id', validSalonId).maybeSingle();
-        existingDbSalon = data;
-      } catch (e) {
-        console.warn('Could not fetch existing salon from db:', e);
-      }
-    }
-
-    const effectivePlan = existingDbSalon?.subscription_plan || localSalon?.subscriptionPlan || 'pro';
-    const effectiveMaxBranches = existingDbSalon?.max_branches || localSalon?.maxBranches || 3;
-    const effectiveMaxUsers = existingDbSalon?.max_users || localSalon?.maxUsers || 10;
-    const currentTrialDays = Number(existingDbSalon?.trial_days || localSalon?.trialDays || 7);
-    const newTrialDays = currentTrialDays + additionalDays;
-
-    const currentEndDateStr = existingDbSalon?.subscription_end_date || localSalon?.subscriptionEndDate;
-    let baseDate = new Date();
-    if (currentEndDateStr) {
-      const parsedEnd = new Date(currentEndDateStr);
-      if (!isNaN(parsedEnd.getTime()) && parsedEnd.getTime() > Date.now()) {
-        baseDate = parsedEnd;
-      }
-    }
-    const newEndDate = new Date(baseDate.getTime() + additionalDays * 86400000).toISOString().split('T')[0];
-
-    const updates = {
-      subscription_status: 'trial',
-      subscription_plan: effectivePlan,
-      subscription_end_date: newEndDate,
-      trial_days: newTrialDays,
-      max_branches: effectiveMaxBranches,
-      max_users: effectiveMaxUsers,
-      is_active: true,
-      updated_at: new Date().toISOString()
-    };
-
-    if (client) {
-      try {
-        await client.from('salons').update(updates).eq('id', validSalonId);
-        const subId = 'SUB-EXT-' + Math.random().toString(36).substring(2, 7).toUpperCase();
-        await client.from('tenant_subscriptions').insert({
-          id: subId,
-          salon_id: validSalonId,
-          tenant_id: validSalonId,
-          plan_id: effectivePlan,
-          status: 'trial',
-          start_date: existingDbSalon?.subscription_start_date || localSalon?.subscriptionStartDate || new Date().toISOString().split('T')[0],
-          end_date: newEndDate,
-          total_branches: effectiveMaxBranches,
-          total_employees: effectiveMaxUsers,
-          billing_cycle: 'trial',
-          currency: 'SAR',
-          paid_amount: 0,
-          payment_method: 'free_trial',
-          notes: `تمديد الفترة التجريبية بواسطة المبرمج (+${additionalDays} أيام) - الباقة: ${effectivePlan}`
-        });
-      } catch (e) {
-        console.warn('DB update failed during extend trial:', e);
-      }
-    }
-
-    await DB.saveSettings(validSalonId, {
-      subscriptionStatus: 'trial',
-      subscriptionEndDate: newEndDate,
-      isSalonActive: true
-    });
-
-    return subModule.SubscriptionService.updateSalon(salonId, {
-      subscriptionStatus: 'trial',
-      subscriptionPlan: effectivePlan as any,
-      subscriptionEndDate: newEndDate,
-      trialDays: newTrialDays,
-      maxBranches: effectiveMaxBranches,
-      maxUsers: effectiveMaxUsers,
       isActive: true
     });
   },
@@ -4057,8 +3616,7 @@ export const DB = {
       isSalonActive: false
     });
 
-    const subModule = await import('./subscriptionService');
-    return subModule.SubscriptionService.updateSalon(salonId, {
+    return SubscriptionService.updateSalon(salonId, {
       subscriptionStatus: 'expired',
       subscriptionEndDate: yesterday,
       isActive: false
@@ -4076,7 +3634,7 @@ export const DB = {
     console.log('⚡ [Fast Startup] تحميل البيانات الأساسية للصالون:', validSalonId);
     
     // Fetch ONLY essential catalog needed for POS & basic operations concurrently
-    const [categories, services, employees, clients, products, suppliers, purchaseInvoices, supplierPayments, promoCodes, promoCodeUsages] = await Promise.all([
+    const [categories, services, employees, clients, products, suppliers, purchaseInvoices, supplierPayments] = await Promise.all([
       DB.fetchAll<any>('categories', undefined, validSalonId),
       DB.fetchAll<any>('services', undefined, validSalonId),
       DB.fetchAll<any>('employees', undefined, validSalonId),
@@ -4086,8 +3644,6 @@ export const DB = {
       DB.fetchAll<any>('suppliers', undefined, validSalonId),
       DB.fetchAll<any>('purchase_invoices', undefined, validSalonId),
       DB.fetchAll<any>('supplier_payments', undefined, validSalonId),
-      DB.fetchAll<any>('promo_codes', undefined, validSalonId),
-      DB.fetchAll<any>('promo_code_usages', undefined, validSalonId)
     ]);
 
     return {
@@ -4098,9 +3654,7 @@ export const DB = {
       products,
       suppliers,
       purchaseInvoices,
-      supplierPayments,
-      promoCodes,
-      promoCodeUsages
+      supplierPayments
     };
   },
 
@@ -4126,6 +3680,13 @@ export const DB = {
         ]);
         return { transactions, custodies };
       }
+      case 'barber_portal': {
+        const [bookings, invoices] = await Promise.all([
+          DB.fetchAll<any>('bookings', undefined, validSalonId),
+          DB.fetchAll<any>('invoices', undefined, validSalonId)
+        ]);
+        return { bookings, invoices };
+      }
       case 'bookings': {
         const bookings = await DB.fetchAll<any>('bookings', undefined, validSalonId);
         return { bookings };
@@ -4149,12 +3710,13 @@ export const DB = {
       }
       case 'hr':
       case 'employees': {
-        const [fingerprintLogs, custodies, tips] = await Promise.all([
+        const [fingerprintLogs, custodies, tips, emps] = await Promise.all([
           DB.fetchAll<any>('fingerprint_logs', undefined, validSalonId),
           DB.fetchAll<any>('employee_custodies', undefined, validSalonId),
-          DB.fetchAll<any>('tips', undefined, validSalonId)
+          DB.fetchAll<any>('tips', undefined, validSalonId),
+          DB.fetchAll<any>('employees', undefined, validSalonId)
         ]);
-        return { fingerprintLogs, custodies, tips };
+        return { fingerprintLogs, custodies, tips, employees: emps ? emps.map(dbEmployeeToApp) : [] };
       }
       case 'warehouse':
       case 'suppliers':
@@ -4227,8 +3789,8 @@ export const DB = {
         };
       }
       case 'promotions':
-      case 'promo-codes':
-      case 'promo_codes': {
+      case 'promo_codes':
+      case 'promo-codes': {
         const [promoCodes, promoCodeUsages] = await Promise.all([
           DB.fetchAll<any>('promo_codes', undefined, validSalonId),
           DB.fetchAll<any>('promo_code_usages', undefined, validSalonId)
@@ -4301,70 +3863,96 @@ export const DB = {
   }
 };
 
-// تحويل بيانات العميل من snake_case قاعدة البيانات إلى كيان Client في التطبيق
+// تحويل بيانات العميل من snake_case أو camelCase قاعدة البيانات إلى كيان Client في التطبيق
 export function dbClientToApp(row: any) {
+  if (!row) return {} as any;
   return {
     id: row.id,
-    salonId: row.salonId,
+    salonId: row.salonId || row.salon_id,
+    branchId: row.branchId || row.branch_id,
     name: row.name,
     phone: row.phone,
     email: row.email || '',
     dob: row.dob || '',
-    loyaltyPoints: row.loyaltyPoints ?? 0,
-    cashback: row.cashbackBalance ?? 0,
-    tierLevel: row.tierLevel || 'standard',
-    isVip: row.isVip || false,
-    vipSince: row.vipSince || '',
-    vipNotes: row.vipNotes || '',
-    referredByPhone: row.referredByPhone || '',
-    hasUsedReferralReward: row.hasUsedReferralReward || false,
-    referralCount: row.referralCount ?? 0,
-    referralTotalCashbackEarned: row.referralTotalCashbackEarned ?? 0,
+    loyaltyPoints: Number(row.loyaltyPoints ?? row.loyalty_points ?? 0),
+    cashback: Number(row.cashbackBalance ?? row.cashback_balance ?? row.cashback ?? 0),
+    tierLevel: row.tierLevel || row.tier_level || 'standard',
+    isVip: toBool(row.isVip !== undefined ? row.isVip : row.is_vip),
+    vipSince: row.vipSince || row.vip_since || '',
+    vipNotes: row.vipNotes || row.vip_notes || '',
+    referredByPhone: row.referredByPhone || row.referred_by_phone || '',
+    hasUsedReferralReward: toBool(row.hasUsedReferralReward !== undefined ? row.hasUsedReferralReward : row.has_used_referral_reward),
+    referralCount: Number(row.referralCount ?? row.referral_count ?? 0),
+    referralTotalCashbackEarned: Number(row.referralTotalCashbackEarned ?? row.referral_total_cashback_earned ?? 0),
     notes: row.notes || '',
-    isBlacklisted: row.isBlacklisted || false,
-    blacklistReason: row.blacklistReason || '',
-    lastVisit: row.lastVisit || '',
+    isBlacklisted: toBool(row.isBlacklisted !== undefined ? row.isBlacklisted : row.is_blacklisted),
+    blacklistReason: row.blacklistReason || row.blacklist_reason || '',
+    lastVisit: row.lastVisit || row.last_visit || '',
     preferences: row.preferences || {},
-    createdAt: row.createdAt || ''
+    createdAt: row.createdAt || row.created_at || ''
   };
+}
+
+function parseJsonArray(val: any): any[] {
+  if (!val) return [];
+  if (Array.isArray(val)) return val;
+  if (typeof val === 'string' && val.trim().length > 0) {
+    try {
+      const parsed = JSON.parse(val);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
 }
 
 // تحويل بيانات الموظف من قاعدة البيانات إلى كيان Employee في التطبيق
 export function dbEmployeeToApp(row: any) {
+  if (!row) return {} as any;
+  const parsedWeeklyOff = parseJsonArray(row.weeklyDaysOff ?? row.weekly_days_off);
   return {
     id: row.id,
-    salonId: row.salonId,
-    branchId: row.branchId,
+    salonId: row.salonId || row.salon_id,
+    branchId: row.branchId || row.branch_id,
     name: row.name,
+    phone: row.phone || '',
     email: row.email || '',
-    avatarUrl: row.avatarUrl || '',
-    publicBio: row.publicBio || '',
-    hasOnlineAccount: row.hasOnlineAccount || false,
+    avatarUrl: row.avatarUrl || row.avatar_url || '',
+    publicBio: row.publicBio || row.public_bio || '',
+    hasOnlineAccount: toBool(row.hasOnlineAccount !== undefined ? row.hasOnlineAccount : row.has_online_account),
     username: row.username || '',
-    userId: row.userId || '',
-    role: row.role,
-    baseSalary: row.baseSalary ?? 0,
-    fingerprintCode: row.fingerprintCode || '',
-    commissionRate: row.commissionRate ?? 0,
-    commissionModel: row.commissionModel || 'fixed_rate',
-    commissionTiers: row.commissionTiers || [],
-    target: row.target ?? 5000,
-    targetType: row.targetType || 'monthly',
-    availableVacations: row.availableVacations ?? 21,
-    salaryType: row.salaryType || 'salary',
-    allowDualCommission: row.allowDualCommission || false,
-    checkInTime: row.checkInTime || '09:00',
-    checkOutTime: row.checkOutTime || '23:00',
-    weeklyDaysOff: row.weeklyDaysOff || ['Friday'],
-    isActive: row.isActive !== false,
-    isBlacklisted: row.isBlacklisted || false,
-    blacklistReason: row.blacklistReason || '',
-    financialRecords: row.financialRecords || [],
-    leaveRecords: row.leaveRecords || [],
-    salaryHistory: row.salaryHistory || [],
-    shiftScheduleHistory: row.shiftScheduleHistory || [],
-    permissionRecords: row.permissionRecords || [],
-    endOfService: row.endOfService || null
+    userId: row.userId || row.user_id || '',
+    role: row.role || 'حلاق / كوافير',
+    basicSalary: Number(row.basicSalary ?? row.basic_salary ?? row.baseSalary ?? row.base_salary ?? 0) || 0,
+    baseSalary: Number(row.baseSalary ?? row.base_salary ?? row.basicSalary ?? row.basic_salary ?? 0) || 0,
+    fingerprintCode: row.fingerprintCode || row.fingerprint_code || '',
+    commissionRate: Number(row.commissionRate ?? row.commission_rate ?? 0),
+    commissionModel: row.commissionModel || row.commission_model || (Number(row.commissionRate ?? row.commission_rate ?? 0) === 0 ? 'none' : 'fixed_rate'),
+    commissionTiers: parseJsonArray(row.commissionTiers ?? row.commission_tiers),
+    target: Number(row.target ?? row.target_amount ?? row.targetAmount ?? 5000),
+    targetAmount: Number(row.targetAmount ?? row.target_amount ?? row.target ?? 5000),
+    targetType: row.targetType || row.target_type || 'monthly',
+    dailyTargetAmount: Number(row.dailyTargetAmount ?? row.daily_target_amount ?? (row.target_type === 'daily' ? (row.target ?? row.target_amount ?? 300) : 0)),
+    dailyTargetMethod: (row.dailyTargetMethod || row.daily_target_method || 'excess_only') as 'excess_only' | 'full_amount',
+    monthlyTargetAmount: Number(row.monthlyTargetAmount ?? row.monthly_target_amount ?? (row.target_type !== 'daily' ? (row.target ?? row.target_amount ?? 5000) : 5000)),
+    monthlyTargetMethod: (row.monthlyTargetMethod || row.monthly_target_method || 'deduct_salary') as 'deduct_salary' | 'gross_sales',
+    targetCommissionRate: Number(row.targetCommissionRate ?? row.target_commission_rate ?? row.commissionRate ?? row.commission_rate ?? 0),
+    availableVacations: Number(row.availableVacations ?? row.available_vacations ?? 21),
+    salaryType: row.salaryType || row.salary_type || 'salary',
+    allowDualCommission: toBool(row.allowDualCommission !== undefined ? row.allowDualCommission : row.allow_dual_commission),
+    checkInTime: row.checkInTime || row.check_in_time || '09:00',
+    checkOutTime: row.checkOutTime || row.check_out_time || '23:00',
+    weeklyDaysOff: parsedWeeklyOff.length > 0 ? parsedWeeklyOff : ['Friday'],
+    isActive: row.isActive !== false && row.is_active !== false && row.is_active !== '0' && row.is_active !== 0,
+    isBlacklisted: toBool(row.isBlacklisted !== undefined ? row.isBlacklisted : row.is_blacklisted),
+    blacklistReason: row.blacklistReason || row.blacklist_reason || '',
+    financialRecords: parseJsonArray(row.financialRecords ?? row.financial_records),
+    leaveRecords: parseJsonArray(row.leaveRecords ?? row.leave_records),
+    salaryHistory: parseJsonArray(row.salaryHistory ?? row.salary_history),
+    shiftScheduleHistory: parseJsonArray(row.shiftScheduleHistory ?? row.shift_schedule_history),
+    permissionRecords: parseJsonArray(row.permissionRecords ?? row.permission_records),
+    endOfService: row.endOfService || row.end_of_service || null
   };
 }
 
@@ -4376,19 +3964,23 @@ export function dbServiceToApp(row: any) {
 
   return {
     id: row.id, 
-    salonId: row.salonId, 
-    branchId: row.branchId,
+    salonId: row.salonId || row.salon_id, 
+    branchId: row.branchId || row.branch_id,
     categoryId: row.categoryId || row.category_id || row.category || '',
     name: row.name, 
     price: price, 
     discountPrice: validDiscount,
-    employeeCommissionPercentage: row.employeeCommissionPercentage ?? 0,
-    employeeCommissionAmount: row.employeeCommissionAmount ?? 0,
-    referralCommissionType: row.referralCommissionType || 'percentage',
-    referralCommissionAmount: row.referralCommissionAmount ?? 0,
-    cashbackPercentage: row.cashbackPercentage ?? 0,
-    clientReferralCashbackType: row.clientReferralCashbackType || 'percentage',
-    clientReferralCashbackAmount: row.clientReferralCashbackAmount ?? 0,
+    employeeCommissionPercentage: Number(row.employeeCommissionPercentage ?? row.employee_commission_percentage ?? row.commissionRate ?? row.commission_rate ?? 0),
+    employeeCommissionAmount: Number(row.employeeCommissionAmount ?? row.employee_commission_amount ?? row.commissionAmount ?? row.commission_amount ?? 0),
+    commissionableAmount: (row.commissionableAmount !== undefined && row.commissionableAmount !== null && row.commissionableAmount !== '') 
+      ? Number(row.commissionableAmount) 
+      : ((row.commissionable_amount !== undefined && row.commissionable_amount !== null && row.commissionable_amount !== '') ? Number(row.commissionable_amount) : undefined),
+    isTargetExempt: Boolean(row.isTargetExempt ?? row.is_target_exempt),
+    referralCommissionType: row.referralCommissionType || row.referral_commission_type || 'percentage',
+    referralCommissionAmount: Number(row.referralCommissionAmount ?? row.referral_commission_amount ?? 0),
+    cashbackPercentage: Number(row.cashbackPercentage ?? row.cashback_percentage ?? 0),
+    clientReferralCashbackType: row.clientReferralCashbackType || row.client_referral_cashback_type || 'percentage',
+    clientReferralCashbackAmount: Number(row.clientReferralCashbackAmount ?? row.client_referral_cashback_amount ?? 0),
     durationMinutes: row.durationMinutes ?? 30, 
     barcode: row.barcode || '',
     imageUrl: row.imageUrl || row.image_url || '',
@@ -4404,6 +3996,30 @@ export function dbServiceToApp(row: any) {
 export function dbUserToApp(row: any): any {
   if (!row) return {} as any;
   const c = toCamel(row);
+  const role = (c.role === 'kiosk' || (Array.isArray(c.screens) && c.screens.includes('kiosk') && c.screens.length === 1)) ? 'kiosk' : (c.role || 'cashier');
+  
+  // Parse screens
+  let screens = c.screens;
+  if (typeof screens === 'string') {
+    try { screens = JSON.parse(screens); } catch { screens = null; }
+  }
+  if (!Array.isArray(screens)) {
+    screens = (role === 'programmer' || role === 'admin' || role === 'owner') ? ['*'] : null;
+  } else if (role !== 'programmer' && role !== 'admin' && role !== 'owner') {
+    screens = screens.filter((s: string) => s !== '*');
+  }
+
+  // Parse actions / permissions
+  let actions = c.actions || c.permissions;
+  if (typeof actions === 'string') {
+    try { actions = JSON.parse(actions); } catch { actions = null; }
+  }
+  if (!Array.isArray(actions)) {
+    actions = (role === 'programmer' || role === 'admin' || role === 'owner') ? ['*'] : null;
+  } else if (role !== 'programmer' && role !== 'admin' && role !== 'owner') {
+    actions = actions.filter((a: string) => a !== '*');
+  }
+
   return {
     ...c,
     id: c.id,
@@ -4416,13 +4032,15 @@ export function dbUserToApp(row: any): any {
     name: c.name || c.username || 'مستخدم',
     email: c.email || '',
     phone: c.phone || '',
-    role: (c.role === 'kiosk' || (Array.isArray(c.screens) && c.screens.includes('kiosk') && c.screens.length === 1)) ? 'kiosk' : (c.role || 'cashier'),
+    role,
     customRoleId: c.customRoleId,
     employeeId: c.employeeId || row.employee_id || '',
     active: c.active !== false,
-    screens: Array.isArray(c.screens) ? c.screens : ['*'],
-    actions: Array.isArray(c.actions) ? c.actions : ['*'],
-    avatar: c.avatar
+    screens,
+    actions,
+    avatar: c.avatar,
+    integritySignature: c.integritySignature || c.securityHash || row.security_hash || row.integrity_signature || '',
+    securityHash: c.securityHash || c.integritySignature || row.security_hash || row.integrity_signature || ''
   };
 }
 
@@ -4433,21 +4051,163 @@ export function dbProductToApp(row: any): any {
   return {
     id: c.id || row.id || '',
     name: c.name || row.name || '',
-    categoryId: c.categoryId || row.category_id || row.category || '',
-    sellPrice: Number(c.sellPrice ?? row.sell_price ?? row.selling_price ?? row.price ?? 0),
-    costPrice: Number(c.costPrice ?? row.cost_price ?? row.cost ?? 0),
-    reorderLimit: Number(c.reorderLimit ?? row.reorder_limit ?? row.min_quantity ?? 5),
+    categoryId: c.categoryId || row.category_id || '',
+    sellPrice: Number(c.sellPrice ?? row.sell_price ?? 0),
+    costPrice: Number(c.costPrice ?? row.cost_price ?? 0),
+    reorderLimit: Number(c.reorderLimit ?? row.reorder_limit ?? 5),
     openingStock: Number(c.openingStock ?? row.opening_stock ?? 0),
-    currentStock: Number(c.currentStock ?? row.current_stock ?? row.stock_quantity ?? row.stock ?? 0),
+    currentStock: Number(c.currentStock ?? row.current_stock ?? 0),
     commission: Number(c.commission ?? 0),
     barcode: c.barcode || row.barcode || '',
-    supplierId: c.supplierId || row.supplier_id || undefined,
-    supplierName: c.supplierName || row.supplier_name || undefined,
+    productType: (c.productType || row.product_type || 'for_sale') as 'for_sale' | 'raw_material',
     salonId: c.salonId || row.salon_id || undefined,
     branchId: c.branchId || row.branch_id || undefined,
-    isActive: c.isActive !== false && row.is_active !== false,
-    productType: (c.productType || row.product_type || row.type || 'retail') as 'retail' | 'raw_material'
+    isActive: c.isActive !== false && row.is_active !== false
   };
+}
+
+// تحويل بيانات الحجز من قاعدة البيانات إلى كيان Booking موحد ومكتمل في التطبيق
+export function dbBookingToApp(row: any): any {
+  if (!row) return {} as any;
+  const c = toCamel(row);
+
+  let services = c.services || row.services || [];
+  if (typeof services === 'string') {
+    try { services = JSON.parse(services); } catch { services = []; }
+  }
+  if (!Array.isArray(services)) services = [];
+  services = services.map((s: any) => ({
+    ...s,
+    quantity: Math.max(1, Number(s.quantity) || 1)
+  }));
+
+  let advancePayments = c.advancePayments || row.advance_payments || [];
+  if (typeof advancePayments === 'string') {
+    try { advancePayments = JSON.parse(advancePayments); } catch { advancePayments = []; }
+  }
+  if (!Array.isArray(advancePayments)) advancePayments = [];
+
+  // Date formatting: normalize "2026-09-22T00:00:00.000Z" -> "2026-09-22"
+  let date = c.date || row.date || '';
+  if (typeof date === 'string' && date.includes('T')) {
+    date = date.split('T')[0];
+  }
+
+  // Time formatting: fallback to start_time if time is empty
+  let time = c.time || row.time || '';
+  if (!time) {
+    const st = c.startTime || row.start_time;
+    if (typeof st === 'string' && st.includes('T')) {
+      time = st.split('T')[1]?.slice(0, 5) || '10:00';
+    } else if (typeof st === 'string') {
+      time = st.slice(0, 5);
+    } else {
+      time = '10:00';
+    }
+  }
+
+  return {
+    ...c,
+    id: c.id || row.id,
+    salonId: c.salonId || row.salon_id,
+    branchId: c.branchId || row.branch_id,
+    clientName: c.clientName || row.client_name || c.customerName || row.customer_name || 'عميل نقدي',
+    phone: c.phone || row.phone || c.clientPhone || row.client_phone || c.customerPhone || row.customer_phone || '',
+    customerId: c.customerId || c.clientId || row.client_id || undefined,
+    customerEmail: c.customerEmail || row.customer_email || '',
+    date,
+    time,
+    status: c.status || row.status || 'pending',
+    advancePayments,
+    services,
+    totalAmount: Number(c.totalAmount ?? row.total_amount ?? c.totalPrice ?? row.total_price ?? 0),
+    notes: c.notes || row.notes || '',
+    internalNotes: c.internalNotes || row.internal_notes || row.internalNotes || '',
+    source: c.source || row.source || 'pos',
+    bookingCode: c.bookingCode || row.booking_code || '',
+    queueNumber: c.queueNumber || row.queue_number || undefined,
+    location: c.location || row.location || '',
+    isPaid: Boolean(c.isPaid ?? row.is_paid),
+    invoiceId: c.invoiceId || row.invoice_id || undefined,
+    createdAt: c.createdAt || row.created_at || (row.created_at ? new Date(row.created_at).toISOString() : undefined),
+    createdBy: c.createdBy || row.created_by_name || row.created_by || c.createdByName || undefined,
+    createdById: c.createdById || row.created_by_id || undefined,
+    updatedAt: c.updatedAt || row.updated_at || (row.updated_at ? new Date(row.updated_at).toISOString() : undefined),
+    updatedBy: c.updatedBy || row.updated_by_name || row.updated_by || c.updatedByName || undefined,
+    updatedById: c.updatedById || row.updated_by_id || undefined,
+    discountType: c.discountType || row.discount_type || undefined,
+    discountValue: c.discountValue !== undefined ? Number(c.discountValue) : (row.discount_value !== null && row.discount_value !== undefined ? Number(row.discount_value) : undefined),
+    discountAmount: c.discountAmount !== undefined ? Number(c.discountAmount) : (row.discount_amount !== null && row.discount_amount !== undefined ? Number(row.discount_amount) : undefined),
+    paidDeposit: c.paidDeposit !== undefined ? Number(c.paidDeposit) : (row.paid_deposit !== null && row.paid_deposit !== undefined ? Number(row.paid_deposit) : (Array.isArray(advancePayments) ? advancePayments.reduce((s: number, p: any) => s + (Number(p.amount) || 0), 0) : 0)),
+    isDepositRefunded: Boolean(c.isDepositRefunded ?? row.is_deposit_refunded),
+    depositRefundedAt: c.depositRefundedAt || row.deposit_refunded_at || (row.deposit_refunded_at ? new Date(row.deposit_refunded_at).toISOString() : undefined),
+    depositRefundedBy: c.depositRefundedBy || row.deposit_refunded_by || undefined,
+    depositRefundAmount: c.depositRefundAmount !== undefined ? Number(c.depositRefundAmount) : (row.deposit_refund_amount !== null && row.deposit_refund_amount !== undefined ? Number(row.deposit_refund_amount) : undefined),
+    refundExpenseId: c.refundExpenseId || row.refund_expense_id || undefined,
+    cancelledAt: c.cancelledAt || row.cancelled_at || (row.cancelled_at ? new Date(row.cancelled_at).toISOString() : undefined),
+    cancelledBy: c.cancelledBy || row.cancelled_by || undefined
+  };
+}
+
+/**
+ * حساب تاريخ معالجة البصمة (Processed Date):
+ * إذا كان نوع الحركة انصراف (check_out) ووقت البصمة بين منتصف الليل (00:00) وحتى السادسة صباحاً (06:00)،
+ * يُعتبر تاريخ الانصراف تابعاً للوردية السابقة (تاريخ أمس / اليوم السابق).
+ * خلاف ذلك، يُعتبر تاريخ البصمة هو نفس تاريخ اليوم العادي.
+ */
+export function calculateFingerprintProcessedDate(timestampStr?: string, type?: string): string {
+  if (!timestampStr) return new Date().toISOString().split('T')[0];
+  const str = String(timestampStr).trim();
+  const normalizedType = String(type || '').toLowerCase().replace('-', '_');
+  const isCheckOut = normalizedType === 'check_out' || normalizedType === 'checkout';
+
+  // 1. Try timezone-agnostic Regex extraction
+  const match = str.match(/(\d{4})-(\d{2})-(\d{2})[T ](\d{1,2}):(\d{2})/);
+  if (match) {
+    const year = parseInt(match[1], 10);
+    const month = parseInt(match[2], 10);
+    const day = parseInt(match[3], 10);
+    const hour = parseInt(match[4], 10);
+    const minute = parseInt(match[5], 10);
+
+    const isNightCheckout = isCheckOut && (hour >= 0 && (hour < 6 || (hour === 6 && minute === 0)));
+    if (isNightCheckout) {
+      const d = new Date(Date.UTC(year, month - 1, day));
+      d.setUTCDate(d.getUTCDate() - 1);
+      const y = d.getUTCFullYear();
+      const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+      const dt = String(d.getUTCDate()).padStart(2, '0');
+      return `${y}-${m}-${dt}`;
+    }
+    return `${match[1]}-${match[2]}-${match[3]}`;
+  }
+
+  // 2. Fallback to JS Date
+  try {
+    const d = new Date(str);
+    if (!isNaN(d.getTime())) {
+      const hours = d.getHours();
+      const minutes = d.getMinutes();
+      const isNightCheckout = isCheckOut && (hours >= 0 && (hours < 6 || (hours === 6 && minutes === 0)));
+      if (isNightCheckout) {
+        d.setDate(d.getDate() - 1);
+      }
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const dt = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${dt}`;
+    }
+  } catch (e) {}
+
+  return str.split('T')[0].split(' ')[0] || new Date().toISOString().split('T')[0];
+}
+
+export function getFingerprintProcessedDate(log: any): string {
+  if (!log) return '';
+  if (log.processedDate) return log.processedDate;
+  if (log.processed_date) return log.processed_date;
+  const ts = log.timestamp || log.logTime || log.log_time;
+  return calculateFingerprintProcessedDate(ts, log.type);
 }
 
 export function dbCategoryToApp(row: any): any {
@@ -4463,5 +4223,4 @@ export function dbCategoryToApp(row: any): any {
     isActive: c.isActive !== false && row.is_active !== false,
   };
 }
-
 

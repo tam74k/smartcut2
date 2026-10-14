@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   AppSettings, Employee, Invoice, Transaction, Booking, ServiceItem, Product, 
   HRSettings, FingerprintLog, SalaryHistoryEntry, ShiftScheduleEntry, EmployeeFinancialRecord,
@@ -7,29 +7,25 @@ import {
 import { 
   Calendar, Clock, CheckCircle, AlertTriangle, Printer, User, Filter, 
   RotateCcw, Sparkles, Plus, CheckSquare, Square, FileText, Ban, ShieldAlert,
-  ChevronLeft, ChevronRight, Download, DollarSign, Award, ArrowUpRight, Check, X, Wallet,
+  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Download, DollarSign, Award, ArrowUpRight, Check, X, Wallet,
   Edit, Trash2, TrendingUp, TrendingDown, History, Percent, Coins, Palmtree, RefreshCw, DoorOpen, Timer,
-  ShieldCheck, Briefcase, FileSpreadsheet
+  ShieldCheck, Briefcase, Maximize2, Minimize2, FileSpreadsheet, Search
 } from 'lucide-react';
 
 import { ThermalSalarySlip, SalarySlipSummary } from './ThermalSalarySlip';
 import { printHtml } from '../utils/print';
 import { printThermalFinancialVoucher } from './ThermalFinancialVoucher';
 import { calculateEmployeeCommission, getCommissionModelLabel, calculateEmployeeTotalCommission } from '../utils/commissionHelper';
-import { DB } from '../services/db';
+import { calculateEmployeeTargetCommission } from '../utils/targetCalculationHelper';
+import { DB, calculateFingerprintProcessedDate, getFingerprintProcessedDate } from '../services/db';
 import { getActiveShiftDate, getEffectiveDateTime, getEffectiveDateOnly } from '../utils/shiftDate';
-import { FingerprintImportModal } from './FingerprintImportModal';
-import { EmployeeCommissionsDetailedSection } from './EmployeeCommissionsDetailedSection';
 import { AuthService } from '../services/auth';
+import { BiometricImportModal } from './BiometricImportModal';
 
-// Helper to reliably match date strings (YYYY-MM-DD)
-// Crucial: A single timestamp must belong to EXACTLY ONE calendar date and NEVER match multiple days
+// Helper to reliably match date strings (YYYY-MM-DD) across ISO strings, space-delimited timestamps, and local timezone
 const isSameDay = (ts?: string, targetDateStr?: string): boolean => {
   if (!ts || !targetDateStr) return false;
-  const rawDate = ts.includes('T') ? ts.split('T')[0] : ts.split(' ')[0];
-  if (rawDate && /^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
-    return rawDate === targetDateStr;
-  }
+  if (ts.startsWith(targetDateStr)) return true;
   try {
     const d = new Date(ts);
     if (isNaN(d.getTime())) return false;
@@ -69,10 +65,43 @@ const getNextDateStr = (dateStr: string): string => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
-const getPrevDateStr = (dateStr: string): string => {
-  const d = new Date(dateStr + 'T12:00:00');
-  d.setDate(d.getDate() - 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+export const formatInvoiceDateTime = (rawDate?: string): { dateStr: string; timeStr: string } => {
+  if (!rawDate) return { dateStr: '--', timeStr: '--' };
+  try {
+    const d = new Date(rawDate);
+    if (!isNaN(d.getTime())) {
+      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const hours = d.getHours();
+      const minutes = d.getMinutes();
+      const period = hours >= 12 ? 'م' : 'ص';
+      const hours12 = hours % 12 || 12;
+      const timeStr = `${hours12}:${String(minutes).padStart(2, '0')} ${period}`;
+      return { dateStr, timeStr };
+    }
+  } catch {
+    // fallback below
+  }
+  const parts = rawDate.split('T');
+  if (parts.length === 2) {
+    const dStr = parts[0];
+    const tParts = parts[1].split(':');
+    const h = Number(tParts[0]) || 0;
+    const m = Number(tParts[1]) || 0;
+    const p = h >= 12 ? 'م' : 'ص';
+    const h12 = h % 12 || 12;
+    return { dateStr: dStr, timeStr: `${h12}:${String(m).padStart(2, '0')} ${p}` };
+  }
+  const spaceParts = rawDate.split(' ');
+  if (spaceParts.length >= 2) {
+    const dStr = spaceParts[0];
+    const tParts = spaceParts[1].split(':');
+    const h = Number(tParts[0]) || 0;
+    const m = Number(tParts[1]) || 0;
+    const p = h >= 12 ? 'م' : 'ص';
+    const h12 = h % 12 || 12;
+    return { dateStr: dStr, timeStr: `${h12}:${String(m).padStart(2, '0')} ${p}` };
+  }
+  return { dateStr: rawDate, timeStr: '--' };
 };
 
 export interface DayTimesheetRow {
@@ -108,6 +137,11 @@ export interface DayTimesheetRow {
   bonuses: number;
   workRevenue: number;
   commissionAmount: number;
+  dailyTargetAmount?: number;
+  dailyTargetAchieved?: number;
+  dailyTargetCommission?: number;
+  targetAchievementPercentage?: number;
+  isDailyTargetAchieved?: boolean;
   openingCommission?: number;
   commissionPaid: number;
   isDelayForgiven: boolean;
@@ -166,6 +200,8 @@ export function HRScreen({
   settings, 
   employees, 
   setEmployees,
+  services = [],
+  products = [],
   invoices = [],
   transactions = [],
   setTransactions,
@@ -174,11 +210,14 @@ export function HRScreen({
   fingerprintLogs = [],
   setFingerprintLogs,
   shiftData,
-  activeBranchId
+  activeBranchId,
+  isEmbedded = false
 }: { 
   settings: AppSettings;
   employees: Employee[]; 
   setEmployees: (e: Employee[]) => void;
+  services?: ServiceItem[];
+  products?: Product[];
   invoices?: Invoice[];
   transactions?: Transaction[];
   setTransactions?: (t: Transaction[]) => void;
@@ -188,16 +227,19 @@ export function HRScreen({
   setFingerprintLogs?: React.Dispatch<React.SetStateAction<FingerprintLog[]>> | ((logs: FingerprintLog[] | ((prev: FingerprintLog[]) => FingerprintLog[])) => void);
   shiftData?: { isOpen: boolean; date: string; initialCash?: number };
   activeBranchId?: string;
+  isEmbedded?: boolean;
 }) {
-  const activeEmployees = employees.filter(e => !e.isBlacklisted);
+  const activeEmployees = useMemo(() => {
+    return employees.filter(e => !e.isBlacklisted);
+  }, [employees]);
   
   // View mode: 'single_employee' | 'single_day'
   const [viewMode, setViewMode] = useState<'single_employee' | 'single_day'>('single_employee');
-  const [selectedEmpId, setSelectedEmpId] = useState<string>(activeEmployees[0]?.id || '');
+  const [selectedEmpId, setSelectedEmpId] = useState<string>(() => activeEmployees[0]?.id || '');
 
   // Synchronize selectedEmpId whenever activeEmployees changes if currently unset or invalid
   useEffect(() => {
-    if ((!selectedEmpId || !activeEmployees.some(e => e.id === selectedEmpId)) && activeEmployees.length > 0) {
+    if (activeEmployees.length > 0 && (!selectedEmpId || !activeEmployees.some(e => e.id === selectedEmpId))) {
       setSelectedEmpId(activeEmployees[0].id);
     }
   }, [activeEmployees, selectedEmpId]);
@@ -240,6 +282,8 @@ export function HRScreen({
     return (fingerprintLogs && fingerprintLogs.length > 0) ? fingerprintLogs : localLogs;
   }, [fingerprintLogs, localLogs]);
   
+  const [showBiometricModal, setShowBiometricModal] = useState(false);
+
   // Date filters
   const now = new Date();
   const currentYearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -248,13 +292,57 @@ export function HRScreen({
   const [endDate, setEndDate] = useState(`${currentYearMonth}-${new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()}`);
   const [selectedSingleDay, setSelectedSingleDay] = useState(now.toISOString().split('T')[0]);
 
+  // Main HR sub-tab: 'timesheet' | 'commissions'
+  const [hrMainTab, setHrMainTab] = useState<'timesheet' | 'commissions'>('timesheet');
+
+  // Commissions Section State
+  const [commSelectedEmpId, setCommSelectedEmpId] = useState<string>(() => selectedEmpId || activeEmployees[0]?.id || '');
+  const [commStartDate, setCommStartDate] = useState(() => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    return `${y}-${m}-01`;
+  });
+  const [commEndDate, setCommEndDate] = useState(() => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = d.getMonth() + 1;
+    const lastDay = new Date(y, m, 0).getDate();
+    return `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+  });
+  const [commTypeFilter, setCommTypeFilter] = useState<'all' | 'execution' | 'referral'>('all');
+  const [commSearchQuery, setCommSearchQuery] = useState('');
+
+  // Keep commSelectedEmpId synchronized with active employees
+  useEffect(() => {
+    if (activeEmployees.length > 0 && (!commSelectedEmpId || !activeEmployees.some(e => e.id === commSelectedEmpId))) {
+      setCommSelectedEmpId(activeEmployees[0].id);
+    }
+  }, [activeEmployees, commSelectedEmpId]);
+
+  // Granular RBAC Permission checks for HR Operations
+  const canViewTimesheet = AuthService.canDo('hr_view_timesheet', currentUser);
+  const canManageAttendance = AuthService.canDo('hr_manage_attendance', currentUser);
+  const canDeleteAttendance = AuthService.canDo('hr_delete_attendance', currentUser);
+  const canManageAdvances = AuthService.canDo('hr_manage_advances', currentUser);
+  const canManageBonuses = AuthService.canDo('hr_manage_bonuses', currentUser);
+  const canManagePenalties = AuthService.canDo('hr_manage_penalties', currentUser);
+  const canManageLeaves = AuthService.canDo('hr_manage_leaves', currentUser);
+  const canManagePermissions = AuthService.canDo('hr_manage_permissions', currentUser);
+  const canForgiveDelays = AuthService.canDo('hr_approve_delays_overtime', currentUser) || AuthService.canDo('hr_forgive_delays', currentUser);
+  const canApproveOvertime = AuthService.canDo('hr_approve_delays_overtime', currentUser) || AuthService.canDo('hr_approve_overtime', currentUser);
+  const canSalaryIncrements = AuthService.canDo('hr_manage_salary_increments', currentUser) || AuthService.canDo('hr_salary_increments', currentUser);
+  const canDisburseSalaries = AuthService.canDo('hr_disburse_payroll', currentUser) || AuthService.canDo('hr_disburse_salaries', currentUser);
+  const canDisburseCommissions = AuthService.canDo('hr_manage_commissions', currentUser) || AuthService.canDo('hr_disburse_commissions', currentUser);
+  const canPrintSlips = AuthService.canDo('hr_print_slips', currentUser);
+  const canFingerprintSync = AuthService.canDo('hr_fingerprint_sync', currentUser);
+
   // Delay forgiveness & Overtime overrides local state (keyed by employeeId + date)
   const [overrides, setOverrides] = useState<{ [key: string]: { isDelayForgiven?: boolean; isOvertimeApproved?: boolean } }>({});
   
   // Print Modal State
   const [showSlipModal, setShowSlipModal] = useState(false);
   const [activeSlipSummary, setActiveSlipSummary] = useState<SalarySlipSummary | null>(null);
-  const [showCommissionsSummaryModal, setShowCommissionsSummaryModal] = useState(false);
 
   // Manual Attendance Modal
   const [showAttendanceModal, setShowAttendanceModal] = useState(false);
@@ -286,7 +374,6 @@ export function HRScreen({
   // Auto-Refresh & Manual Refresh State
   const [isRefreshingLogs, setIsRefreshingLogs] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState<string>('');
-  const [isFingerprintImportOpen, setIsFingerprintImportOpen] = useState(false);
 
   // Fetch / Sync fingerprint logs directly from Supabase with auto-refresh every 10s and visibility change
   const refreshFingerprintLogs = async (showLoadingState = false) => {
@@ -299,15 +386,26 @@ export function HRScreen({
       const logs = await DB.fetchFingerprintLogs(sId);
       if (logs && Array.isArray(logs)) {
         if (setFingerprintLogs) {
-          setFingerprintLogs(logs);
+          setFingerprintLogs(prev => {
+            if (JSON.stringify(prev) !== JSON.stringify(logs)) return logs;
+            return prev;
+          });
         }
-        setLocalLogs(logs);
+        setLocalLogs(prev => {
+          if (JSON.stringify(prev) !== JSON.stringify(logs)) return logs;
+          return prev;
+        });
       }
 
       // 2. Fetch fresh employees to update any changes (leaves, shifts, base salary)
       const freshEmployees = await DB.fetchEmployees(sId);
       if (freshEmployees && Array.isArray(freshEmployees) && freshEmployees.length > 0) {
-        setEmployees(freshEmployees);
+        setEmployees(prev => {
+          if (JSON.stringify(prev) !== JSON.stringify(freshEmployees)) {
+            return freshEmployees;
+          }
+          return prev;
+        });
       }
 
       const nowTime = new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -352,8 +450,8 @@ export function HRScreen({
 
   const handleApplySalaryIncrement = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!AuthService.canDo('hr_manage_salary_increments', currentUser)) {
-      alert('⛔ عذراً، لا تملك صلاحية إقرار أو تطبيق زيادات الرواتب (hr_manage_salary_increments).');
+    if (!canSalaryIncrements) {
+      alert('عذراً، ليس لديك صلاحية اعتماد زيادات الرواتب.');
       return;
     }
     const val = Number(incrementValue);
@@ -391,7 +489,7 @@ export function HRScreen({
         previousSalary: currentBase,
         newSalary: newBase,
         increaseAmount: increaseAmt,
-        increasePercentage: Number(increasePct.toFixed(2)),
+        increasePercentage: Number(Number(increasePct || 0).toFixed(2)),
         increaseType: incrementType,
         reason: incrementReason.trim() || 'زيادة راتب معتمدة',
         approvedBy: approvedBy.trim() || currentUser?.name || 'مدير النظام',
@@ -542,10 +640,10 @@ export function HRScreen({
       return [selectedSingleDay];
     }
     const dates: string[] = [];
-    let cur = startDate;
-    while (cur <= endDate) {
-      dates.push(cur);
-      cur = getNextDateStr(cur);
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      dates.push(d.toISOString().split('T')[0]);
     }
     return dates;
   }, [viewMode, startDate, endDate, selectedSingleDay]);
@@ -553,18 +651,15 @@ export function HRScreen({
   // Main Calculation Engine for Rows
   const timesheetRows: DayTimesheetRow[] = useMemo(() => {
     const rows: DayTimesheetRow[] = [];
+    const targetEmpId = selectedEmpId || activeEmployees[0]?.id || '';
     const targetEmployees = viewMode === 'single_employee' 
-      ? activeEmployees.filter(e => e.id === selectedEmpId)
+      ? activeEmployees.filter(e => e.id === targetEmpId)
       : activeEmployees;
 
     targetEmployees.forEach(emp => {
       const isCommissionOnly = emp.salaryType === 'commission_only';
       let accumulatedPermissionMinutes = 0;
       const maxMonthlyPermissionMinutes = (hrConfig.maxMonthlyPermissionHours ?? 2) * 60;
-
-      // Track consumed checkout logs (e.g. overnight checkouts on next-day morning)
-      // so they never bleed into or generate duplicate rows on the following day
-      const consumedLogIds = new Set<string>();
 
       // Sort dates chronologically to ensure accurate monthly permission accumulation
       const sortedDates = [...dateRangeList].sort((a, b) => a.localeCompare(b));
@@ -647,13 +742,41 @@ export function HRScreen({
         // 4. Invoices & Sales on this date
         const dayInvoices = invoices.filter(inv => inv.date?.startsWith(dateStr));
         let workRevenue = 0;
+        let invoiceExecutionCommission = 0;
+        let exemptExecutionCommission = 0; // عمولات الخدمات المعفاة من التارجت (تصرف فورياً دائماً)
         let invoiceReferralCommission = 0;
 
         dayInvoices.forEach(inv => {
           inv.items?.forEach(item => {
-            if (item.employeeId === emp.id) {
-              const itemTotal = (item.price || 0) * (item.quantity || 1);
+            const isPerformer = (item.employeeId && item.employeeId === emp.id) || (!item.employeeId && item.technicianName && item.technicianName === emp.name);
+            if (isPerformer) {
+              const qty = item.quantity || 1;
+              const itemTotal = (item.price || 0) * qty;
               workRevenue += itemTotal;
+
+              const srv = (services || []).find(s => s.id === item.itemId || s.id === item.id || s.name === item.serviceName);
+              const isExempt = Boolean(item.isTargetExempt ?? srv?.isTargetExempt);
+
+              let itemComm = Number(item.employeeCommission ?? item.commissionAmount ?? (item as any).commission ?? 0);
+              if (itemComm <= 0) {
+                if (srv) {
+                  const srvAmt = Number(srv.employeeCommissionAmount ?? srv.commissionAmount ?? 0);
+                  const srvPct = Number(srv.employeeCommissionPercentage ?? srv.commissionRate ?? 0);
+                  const rawBase = Number(srv.commissionableAmount ?? item.commissionableAmount ?? 0);
+                  const commBase = rawBase > 0 ? rawBase : (item.price || 0);
+                  if (srvAmt > 0) itemComm = srvAmt * qty;
+                  else if (srvPct > 0) itemComm = (srvPct / 100) * commBase * qty;
+                } else {
+                  const prod = (products || []).find((p: any) => p.id === item.itemId || p.id === item.id || p.name === item.serviceName);
+                  if (prod && prod.commission > 0) itemComm = prod.commission * qty;
+                }
+              }
+
+              if (isExempt) {
+                exemptExecutionCommission += itemComm;
+              } else {
+                invoiceExecutionCommission += itemComm;
+              }
             }
             if ((item.referralEmployeeId && item.referralEmployeeId === emp.id) || (!item.referralEmployeeId && item.referralEmployeeName && item.referralEmployeeName === emp.name)) {
               const qty = item.quantity || 1;
@@ -684,19 +807,38 @@ export function HRScreen({
           if (r.type === 'commission_payout') commissionPaid += (r.amount || 0);
         });
 
-        // Combine referral commissions (avoid double-counting if recorded in both invoice item & financial records)
         const totalReferralCommission = Math.max(invoiceReferralCommission, financialReferralCommissions);
-        
-        // حساب العمولات وفق قواعد النظام (العمولة الثابتة + عمولة الخدمات إذا كان الخيار مفعلاً)
-        const commResult = calculateEmployeeTotalCommission({
-          employee: emp,
-          totalWork: workRevenue,
-          serviceExecutionCommission: directCommissions,
-          referralCommission: totalReferralCommission
-        });
-        const totalDailyCommission = commResult.totalCommission;
+
+        // تحديد نظام التارجت للموظف
+        const empTargetType = emp.targetType || ((Number(emp.dailyTargetAmount) > 0) ? 'daily' : ((Number(emp.monthlyTargetAmount || emp.target) > 0) ? 'monthly' : 'none'));
+
+        let totalDailyCommission = 0;
+
+        if (empTargetType === 'monthly') {
+          // الموظف تارجته شهري:
+          // لا تظهر أي عمولات مستحقة للموظف إلا على الخدمات التي لا تخضع للتارجت فقط (معفاة) + عمولة الإحالة
+          totalDailyCommission = exemptExecutionCommission + totalReferralCommission;
+        } else if (empTargetType === 'daily') {
+          // الموظف تارجته يومي:
+          // عمولة الخدمات المعفاة الفورية + عمولة الإحالة (وعمولة التارجت اليومي تضاف في خانة التارجت اليومي أدناه)
+          totalDailyCommission = exemptExecutionCommission + totalReferralCommission;
+        } else {
+          // بدون تارجت: احتساب العمولات العادية لكامل الشغل
+          const totalExecutionCommission = Math.max(invoiceExecutionCommission + exemptExecutionCommission, directCommissions);
+          const commResult = calculateEmployeeTotalCommission({
+            employee: emp,
+            totalWork: workRevenue,
+            serviceExecutionCommission: totalExecutionCommission,
+            referralCommission: totalReferralCommission
+          });
+          totalDailyCommission = commResult.totalCommission;
+        }
+
+        const dailyRate = isTerminated ? 0 : baseDailyRate;
+        const absenceMultiplier = typeof hrConfig.absenceDeductionDays === 'number' ? hrConfig.absenceDeductionDays : 1;
 
         // Determine Status, Attendance, Delays, Overtime
+        // الحالة الافتراضية للموظف هي "غائب" واحتساب خصم الغياب آلياً بناءً على إعدادات النظام
         let status: DayTimesheetRow['status'] = 'absent';
         let statusLabel = 'غائب';
         let checkIn: string | null = null;
@@ -706,79 +848,77 @@ export function HRScreen({
         let delayDeduction = 0;
         let overtimeMinutes = 0;
         let overtimeAmount = 0;
-        let absenceDeduction = 0;
-        const dailyRate = isTerminated ? 0 : baseDailyRate;
-        let earnedDaily = dailyRate;
+        let absenceDeduction = dailyRate * absenceMultiplier;
 
-        // Check if an early-morning check_out belongs to previous day's shift
-        const isBelongingToPrevDay = (log: FingerprintLog): boolean => {
-          if (log.type !== 'check_out') return false;
-          if (consumedLogIds.has(log.id)) return true;
-          const time = extractTime(log.timestamp);
-          if (!time) return false;
-          const hour = Number(time.split(':')[0]);
-          if (hour >= 10) return false;
-          if (log.notes?.includes('انصراف بعد منتصف الليل') || log.notes?.includes('+1')) return true;
-          const prevDateStr = getPrevDateStr(dateStr);
-          const prevLogs = (effectiveFingerprintLogs || []).filter(pl => 
-            (pl.employeeId === emp.id || (emp.fingerprintCode && pl.fingerprintCode === emp.fingerprintCode)) &&
-            isSameDay(pl.timestamp, prevDateStr)
-          );
-          const hasPrevCheckIn = prevLogs.some(pl => pl.type === 'check_in');
-          const hasPrevDaytimeCheckOut = prevLogs.some(pl => {
-            if (pl.type !== 'check_out') return false;
-            const t = extractTime(pl.timestamp);
-            return t ? Number(t.split(':')[0]) >= 10 : false;
-          });
-          return hasPrevCheckIn && !hasPrevDaytimeCheckOut;
-        };
+        // Check actual fingerprint / attendance logs for this employee on dateStr using processed_date
+        const dayLogs = (effectiveFingerprintLogs || []).filter(l => {
+          const isEmp = (l.employeeId === emp.id || (emp.fingerprintCode && (l.fingerprintCode === emp.fingerprintCode || (l as any).fingerprint_code === emp.fingerprintCode)));
+          if (!isEmp) return false;
+          const pDate = getFingerprintProcessedDate(l);
+          return pDate === dateStr;
+        }).sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
 
-        // Check actual fingerprint / attendance logs for this employee on dateStr
-        // Exclude logs that belong to previous day or were already consumed by a previous shift
-        const dayLogs = (effectiveFingerprintLogs || []).filter(l => 
-          (l.employeeId === emp.id || (emp.fingerprintCode && l.fingerprintCode === emp.fingerprintCode)) &&
-          isSameDay(l.timestamp, dateStr) &&
-          !consumedLogIds.has(l.id) &&
-          !isBelongingToPrevDay(l)
-        ).sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
-
-        // Also check if there is an early-morning check_out on the NEXT day (belonging to overnight shift)
+        // Also check if there is an early-morning check_out on the NEXT day (belonging to overnight shift) as fallback
         const nextDateStr = getNextDateStr(dateStr);
-        const nextDayEarlyCheckOut = (effectiveFingerprintLogs || []).find(l => 
-          (l.employeeId === emp.id || (emp.fingerprintCode && l.fingerprintCode === emp.fingerprintCode)) &&
-          l.type === 'check_out' &&
-          !consumedLogIds.has(l.id) &&
-          isSameDay(l.timestamp, nextDateStr) &&
-          (() => {
+        const nextDayEarlyCheckOut = (effectiveFingerprintLogs || []).find(l => {
+          const isEmp = (l.employeeId === emp.id || (emp.fingerprintCode && (l.fingerprintCode === emp.fingerprintCode || (l as any).fingerprint_code === emp.fingerprintCode)));
+          if (!isEmp || l.type !== 'check_out') return false;
+          const pDate = getFingerprintProcessedDate(l);
+          if (pDate === dateStr) return true;
+          if (isSameDay(l.timestamp, nextDateStr)) {
             const time = extractTime(l.timestamp);
             if (!time) return false;
             const hour = Number(time.split(':')[0]);
-            return hour < 10; // Early morning hours (00:00 - 09:59)
-          })()
-        );
+            return hour <= 6;
+          }
+          return false;
+        });
 
         // Get check_in log and check_out log accurately
         const checkInLogs = dayLogs.filter(l => l.type === 'check_in');
-        const checkOutLogs = dayLogs.filter(l => l.type === 'check_out');
+        const rawCheckOutLogs = dayLogs.filter(l => l.type === 'check_out');
 
-        const checkInLog = checkInLogs[checkInLogs.length - 1] || (dayLogs.length > 0 && !checkOutLogs.includes(dayLogs[0]) ? dayLogs[0] : null);
-        let checkOutLog = checkOutLogs[checkOutLogs.length - 1] || (dayLogs.length > 1 && dayLogs[dayLogs.length - 1] !== checkInLog ? dayLogs[dayLogs.length - 1] : null);
+        const checkInLog = checkInLogs[checkInLogs.length - 1] || (dayLogs.length > 0 && !rawCheckOutLogs.includes(dayLogs[0]) ? dayLogs[0] : null);
 
-        // If no checkout found on same day, use the next day early checkout if available and there is an actual check-in
+        let checkOutLog = rawCheckOutLogs[rawCheckOutLogs.length - 1] || 
+          (dayLogs.length > 1 && dayLogs[dayLogs.length - 1] !== checkInLog && !rawCheckOutLogs.includes(dayLogs[dayLogs.length - 1]) ? dayLogs[dayLogs.length - 1] : null);
+
+        // If no checkout found in dayLogs, use the next day early checkout if available (from overnight shift)
         let isNextDayLog = false;
-        if (!checkOutLog && nextDayEarlyCheckOut && checkInLog) {
+        if (!checkOutLog && nextDayEarlyCheckOut) {
           checkOutLog = nextDayEarlyCheckOut;
-          isNextDayLog = true;
-          consumedLogIds.add(nextDayEarlyCheckOut.id);
         }
 
-        const hasManualOrDeviceLog = Boolean(checkInLog || (checkOutLog && !isBelongingToPrevDay(checkOutLog)));
+        if (checkOutLog) {
+          const isRawNextDay = isSameDay(checkOutLog.timestamp, nextDateStr) || (checkOutLog.timestamp && checkOutLog.timestamp.split('T')[0] === nextDateStr);
+          const outTime = extractTime(checkOutLog.timestamp);
+          const outHour = outTime ? Number(outTime.split(':')[0]) : 12;
+          const isMidnightOut = outHour >= 0 && outHour <= 6;
+          if (isRawNextDay || isMidnightOut) {
+            isNextDayLog = true;
+          }
+        }
+
+        // Critical safety check: A day cannot be marked as attended solely by an early-morning check_out
+        // that belongs to yesterday's shift. If there is no checkInLog and checkOutLog is early morning without explicit note:
+        if (!checkInLog && checkOutLog) {
+          const outTime = extractTime(checkOutLog.timestamp);
+          if (outTime) {
+            const outHour = Number(outTime.split(':')[0]);
+            const isExplicitToday = Boolean(checkOutLog.notes?.includes('(+1)') || checkOutLog.notes?.includes('بعد منتصف الليل'));
+            if (outHour < 10 && !isExplicitToday) {
+              checkOutLog = null;
+              isNextDayLog = false;
+            }
+          }
+        }
+
+        const hasManualOrDeviceLog = Boolean(checkInLog || checkOutLog);
         const todayIsoStr = new Date().toISOString().split('T')[0];
         const isTodayOrPast = dateStr <= todayIsoStr;
         const hasWork = workRevenue > 0;
 
         const isWeeklyOffPaid = hrConfig.weeklyOffPaidType ? (hrConfig.weeklyOffPaidType === 'paid') : (hrConfig.weeklyOffPaid !== false);
-        const absenceMultiplier = typeof hrConfig.absenceDeductionDays === 'number' ? hrConfig.absenceDeductionDays : 1;
 
         // Check for mid-shift exit without return (الحالة 6)
         const hasMidShiftPerm = dayPermissions.some(p => p.type === 'mid_shift');
@@ -1054,13 +1194,28 @@ export function HRScreen({
             workedHoursFormatted = '08:00:00';
           }
         } else {
-          // الافتراضي للحالة في التايم شيت هو "غائب" مع تطبيق خصم الغياب وفق القاعدة المحددة في الإعدادات
-          // لا نستخدم "دوام مجدول" ولا "غياب بدون عذر" طالما لم يتم تسجيل ذلك صراحة في البيانات من قبل المستخدمين
-          status = 'absent';
-          const isExplicitUnexcused = dayLogs.some(l => l.notes?.includes('بدون عذر') || l.notes?.includes('بدون إذن')) ||
-                                     (leave && (leave.note?.includes('بدون عذر') || leave.reason?.includes('بدون عذر')));
-          statusLabel = isExplicitUnexcused ? 'غياب بدون عذر' : 'غائب';
-          absenceDeduction = dailyRate * absenceMultiplier;
+          // فحص ما إذا تم إدخال وتحديد حالة صريحة من قبل المستخدمين
+          const hasExplicitScheduled = dayLogs.some(l => l.notes?.includes('دوام مجدول')) || 
+                                       (override as any).statusLabel === 'دوام مجدول' ||
+                                       dayPermissions.some(p => p.notes?.includes('دوام مجدول'));
+          const hasExplicitUnexcused = dayLogs.some(l => l.notes?.includes('غياب بدون عذر') || l.notes?.includes('غياب بدون إذن')) || 
+                                       (override as any).statusLabel === 'غياب بدون عذر' ||
+                                       (override as any).statusLabel === 'غياب بدون إذن';
+
+          if (hasExplicitScheduled) {
+            status = 'regular';
+            statusLabel = 'دوام مجدول';
+            absenceDeduction = 0;
+          } else if (hasExplicitUnexcused) {
+            status = 'absent';
+            statusLabel = 'غياب بدون عذر';
+            absenceDeduction = dailyRate * absenceMultiplier;
+          } else {
+            // الحالة الافتراضية الصارمة للموظف هي "غائب"، ويتم احتساب خصم الغياب آلياً بناءً على القاعدة والمعادلة المحددة مسبقاً في الإعدادات
+            status = 'absent';
+            statusLabel = 'غائب';
+            absenceDeduction = dailyRate * absenceMultiplier;
+          }
         }
 
         // Apply Delay Forgiveness
@@ -1076,15 +1231,29 @@ export function HRScreen({
         }
 
         // Net Daily Calculation
+        let earnedDaily = dailyRate;
         if (status === 'unpaid_leave' || status === 'terminated' || (status === 'weekly_off' && !isWeeklyOffPaid)) {
           earnedDaily = 0;
         }
+
+        // Calculate Daily Target & Commission dynamically per salon policy & employee settings
+        const dailyTargetCalc = calculateEmployeeTargetCommission({
+          employee: emp,
+          settings,
+          invoices,
+          dateRange: { start: dateStr, end: dateStr },
+          isDaily: true,
+          daysInMonth: rowMonthDays
+        });
+
+        const effectiveDailyTargetCommission = empTargetType === 'daily' ? dailyTargetCalc.commissionAmount : 0;
 
         let netDaily = isTerminated ? 0 : (
           earnedDaily + 
           overtimeAmount + 
           bonuses + 
-          totalDailyCommission - 
+          totalDailyCommission +
+          effectiveDailyTargetCommission - 
           delayDeduction - 
           permissionDeduction -
           specialPenalty - 
@@ -1098,7 +1267,7 @@ export function HRScreen({
           // Net must NEVER be positive: it is either 0 (if absence deduction is 1 day),
           // or negative (if absence deduction is >= 2 days, or if advances/penalties exist).
           const baseAbsentNet = dailyRate - absenceDeduction;
-          netDaily = Math.min(0, baseAbsentNet) + bonuses + totalDailyCommission - advances - specialPenalty - commissionPaid;
+          netDaily = Math.min(0, baseAbsentNet - advances - specialPenalty - commissionPaid);
         }
 
         rows.push({
@@ -1133,6 +1302,11 @@ export function HRScreen({
           bonuses,
           workRevenue,
           commissionAmount: totalDailyCommission,
+          dailyTargetAmount: empTargetType === 'daily' ? dailyTargetCalc.targetAmount : 0,
+          dailyTargetAchieved: empTargetType === 'daily' ? dailyTargetCalc.totalValidSales : 0,
+          dailyTargetCommission: effectiveDailyTargetCommission,
+          targetAchievementPercentage: empTargetType === 'daily' ? dailyTargetCalc.achievementPercentage : 0,
+          isDailyTargetAchieved: empTargetType === 'daily' ? dailyTargetCalc.isTargetAchieved : false,
           openingCommission: totalReferralCommission,
           commissionPaid,
           isDelayForgiven,
@@ -1161,6 +1335,7 @@ export function HRScreen({
       bonusesSum: acc.bonusesSum + row.bonuses,
       workRevenueSum: acc.workRevenueSum + row.workRevenue,
       commissionSum: acc.commissionSum + row.commissionAmount,
+      targetCommissionSum: acc.targetCommissionSum + (row.dailyTargetCommission || 0),
       commissionPaidSum: acc.commissionPaidSum + (row.commissionPaid || 0),
       administrativeWarningsCount: acc.administrativeWarningsCount + (row.administrativeAction === 'warning' ? 1 : 0),
       officialMissionsCount: acc.officialMissionsCount + (row.status === 'mission' ? 1 : 0),
@@ -1179,6 +1354,7 @@ export function HRScreen({
       bonusesSum: 0,
       workRevenueSum: 0,
       commissionSum: 0,
+      targetCommissionSum: 0,
       commissionPaidSum: 0,
       administrativeWarningsCount: 0,
       officialMissionsCount: 0,
@@ -1186,41 +1362,64 @@ export function HRScreen({
     });
   }, [timesheetRows]);
 
-  // Overall Timesheet Statistics for Top Stat Cards
-  const timesheetSummaryStats = useMemo(() => {
-    let workDaysCount = 0;
-    let attendanceCount = 0;
-    let absenceCount = 0;
+  // ملخص إحصائيات التايم شيت (المربعات الإحصائية العلوية)
+  const timesheetStats = useMemo(() => {
+    // 1. أيام العمل (Target work days: regular, absent, missions, leaves - excluding weekly off)
+    const workDaysCount = timesheetRows.filter(r => r.status !== 'weekly_off' && r.status !== 'terminated').length;
 
-    timesheetRows.forEach(row => {
-      // Days scheduled as working (non weekly off, non terminated)
-      if (row.status !== 'weekly_off' && row.status !== 'terminated') {
-        workDaysCount++;
-      }
-      // Actual presence (regular, official mission, or recorded check-in)
-      if (row.status === 'regular' || row.status === 'mission' || row.hasManualOrDeviceLog || (row.checkIn && row.checkIn !== '--:--')) {
-        attendanceCount++;
-      }
-      // Absent days
-      if (row.status === 'absent') {
-        absenceCount++;
-      }
-    });
+    // 2. حضور (Present: regular or mission)
+    const presentDaysCount = timesheetRows.filter(r => r.status === 'regular' || r.status === 'mission').length;
 
-    // Total other deductions (penalties, absence deduction, advances, permission deductions)
-    const otherDeductions = totals.specialPenaltySum + totals.absenceDeductionSum + totals.advancesSum + totals.permissionDeductionSum;
+    // 3. غياب (Absent)
+    const absentDaysCount = timesheetRows.filter(r => r.status === 'absent').length;
+
+    // 4. تأخيرات بالدقيقة (Total delay minutes)
+    const delayMinutes = totals.delayMinutesSum || 0;
+
+    // 5. خصم تأخير (Total delay deduction)
+    const delayDeduction = totals.delayDeductionSum || 0;
+
+    // 6. وقت إضافي (Overtime)
+    const overtimeAmount = totals.overtimeAmountSum || 0;
+    const overtimeMinutes = totals.overtimeMinutesSum || 0;
+
+    // 7. خصومات (Special penalties + Absence deductions + Permission deductions + Advances)
+    const totalDeductions = (totals.specialPenaltySum || 0) + 
+                            (totals.absenceDeductionSum || 0) + 
+                            (totals.permissionDeductionSum || 0) + 
+                            (totals.advancesSum || 0);
+
+    // 8. مكافآت (Total bonuses)
+    const bonuses = totals.bonusesSum || 0;
+
+    // 9. شغل الموظف (Total work revenue)
+    const workRevenue = totals.workRevenueSum || 0;
+
+    // 10. عمولات (Earned commission + Target commission)
+    const commissions = (totals.commissionSum || 0) + (totals.targetCommissionSum || 0);
+
+    // 11. صافي الراتب (Net salary sum)
+    const netSalary = totals.netSum || 0;
 
     return {
       workDaysCount,
-      attendanceCount,
-      absenceCount,
-      otherDeductions
+      presentDaysCount,
+      absentDaysCount,
+      delayMinutes,
+      delayDeduction,
+      overtimeAmount,
+      overtimeMinutes,
+      totalDeductions,
+      bonuses,
+      workRevenue,
+      commissions,
+      netSalary
     };
   }, [timesheetRows, totals]);
 
   const toggleDelayForgive = (rowKey: string, currentVal: boolean) => {
-    if (!AuthService.canDo('hr_approve_delays_overtime', currentUser)) {
-      alert('⛔ عذراً، لا تملك صلاحية العفو عن التأخيرات أو تعديل ساعات الأوفرتايم (hr_approve_delays_overtime).');
+    if (!canForgiveDelays) {
+      alert('عذراً، ليس لديك صلاحية مسامحة دقائق التأخير.');
       return;
     }
     setOverrides(prev => ({
@@ -1233,6 +1432,10 @@ export function HRScreen({
   };
 
   const handleOpenSalarySlip = (targetEmp?: Employee) => {
+    if (!canPrintSlips) {
+      alert('عذراً، ليس لديك صلاحية طباعة أو استعراض قسائم الرواتب.');
+      return;
+    }
     const emp = targetEmp || activeEmployees.find(e => e.id === selectedEmpId) || activeEmployees[0];
     if (!emp) return;
 
@@ -1247,6 +1450,18 @@ export function HRScreen({
     const earnedBaseSalary = empRows
       .filter(r => r.status === 'regular' || r.status === 'paid_leave' || r.status === 'absent' || (r.status === 'weekly_off' && isWeeklyOffPaid))
       .reduce((sum, r) => sum + r.dailyRate, 0);
+
+    const slipTargetCalc = calculateEmployeeTargetCommission({
+      employee: emp,
+      settings,
+      invoices,
+      dateRange: {
+        start: viewMode === 'single_day' ? selectedSingleDay : startDate,
+        end: viewMode === 'single_day' ? selectedSingleDay : endDate
+      },
+      isDaily: viewMode === 'single_day',
+      daysInMonth: getDaysInMonth(selectedMonth)
+    });
 
     const summary: SalarySlipSummary = {
       employee: emp,
@@ -1270,8 +1485,12 @@ export function HRScreen({
       advancesDeduction: empRows.reduce((sum, r) => sum + r.advances, 0),
       commissionsPaid: empRows.reduce((sum, r) => sum + (r.commissionPaid || 0), 0),
       bonusesAdded: empRows.reduce((sum, r) => sum + r.bonuses, 0),
+      targetBonus: slipTargetCalc.commissionAmount,
+      targetPolicyLabel: slipTargetCalc.policyLabel,
       specialPenalties: empRows.reduce((sum, r) => sum + r.specialPenalty, 0),
-      netPayable: empRows.reduce((sum, r) => sum + r.netDaily, 0)
+      netPayable: viewMode === 'single_day'
+        ? empRows.reduce((sum, r) => sum + r.netDaily, 0)
+        : (empRows.reduce((sum, r) => sum + r.netDaily, 0) + (slipTargetCalc.commissionAmount || 0))
     };
 
     setActiveSlipSummary(summary);
@@ -1279,6 +1498,10 @@ export function HRScreen({
   };
 
   const handlePrintSlip = () => {
+    if (!canPrintSlips) {
+      alert('عذراً، ليس لديك صلاحية طباعة قسائم الرواتب.');
+      return;
+    }
     const printContent = document.getElementById('print-salary-slip');
     if (printContent) {
       printHtml(printContent.innerHTML, `قسيمة_راتب_${activeSlipSummary?.employee.name}`);
@@ -1286,23 +1509,26 @@ export function HRScreen({
   };
 
   const handlePrintRowVoucher = (row: DayTimesheetRow, type: 'advance' | 'penalty' | 'bonus' | 'commission_payout', amount: number, customNote?: string) => {
-    if (type === 'advance' && !AuthService.canDo('hr_manage_advances', currentUser)) {
-      alert('⛔ عذراً، لا تملك صلاحية صرف أو طباعة سندات السلف (hr_manage_advances).');
+    if (!canPrintSlips) {
+      alert('عذراً، ليس لديك صلاحية طباعة السندات والإيصالات.');
       return;
     }
-    if (type === 'penalty' && !AuthService.canDo('hr_manage_penalties', currentUser)) {
-      alert('⛔ عذراً، لا تملك صلاحية تطبيق أو طباعة سندات الخصم والجزاءات (hr_manage_penalties).');
+    if (type === 'advance' && !canManageAdvances) {
+      alert('⛔ عذراً، طباعة سند السلفة يتطلب صلاحية إدارة وصرف السلف النقدية (hr_manage_advances).');
       return;
     }
-    if (type === 'bonus' && !AuthService.canDo('hr_manage_bonuses', currentUser)) {
-      alert('⛔ عذراً، لا تملك صلاحية صرف أو طباعة سندات المكافآت (hr_manage_bonuses).');
+    if (type === 'penalty' && !canManagePenalties) {
+      alert('⛔ عذراً، طباعة سند الجزاء يتطلب صلاحية إدارة الجزاءات والخصومات (hr_manage_penalties).');
       return;
     }
-    if (type === 'commission_payout' && !AuthService.canDo('hr_manage_commissions', currentUser)) {
-      alert('⛔ عذراً، لا تملك صلاحية تصفية أو طباعة سندات العمولات (hr_manage_commissions).');
+    if (type === 'bonus' && !canManageBonuses) {
+      alert('⛔ عذراً، طباعة سند المكافأة يتطلب صلاحية إدارة المكافآت والحوافز (hr_manage_bonuses).');
       return;
     }
-
+    if (type === 'commission_payout' && !canDisburseCommissions) {
+      alert('⛔ عذراً، طباعة سند صرف العمولة يتطلب صلاحية إدارة وصرف العمولات (hr_manage_commissions).');
+      return;
+    }
     printThermalFinancialVoucher(settings, {
       voucherType: type,
       voucherNumber: `${type === 'commission_payout' ? 'COMM' : type.toUpperCase()}-${Math.floor(100000 + Math.random() * 900000)}`,
@@ -1320,8 +1546,8 @@ export function HRScreen({
 
   const handleSaveAttendance = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!AuthService.canDo('hr_manage_attendance', currentUser)) {
-      alert('⛔ عذراً، لا تملك صلاحية تسجيل أو تعديل الحضور والانصراف والدوام اليدوي (hr_manage_attendance).');
+    if (!canManageAttendance) {
+      alert('عذراً، ليس لديك صلاحية تسجيل أو تعديل الحضور والانصراف.');
       return;
     }
     if (!attendanceForm.empId || !attendanceForm.date) {
@@ -1341,47 +1567,28 @@ export function HRScreen({
       const nextDateStr = getNextDateStr(dateStr);
       const inTimestamp = `${dateStr}T${attendanceForm.checkIn || '09:00'}:00`;
       
-      // If next day checkout toggle is active, record outTimestamp on the next date
+      // Save check-out timestamp strictly on the target dateStr so it belongs exclusively to this selected day
       let outTimestamp: string | undefined;
       if (attendanceForm.checkOut) {
-        const outDate = attendanceForm.isNextDayCheckout ? nextDateStr : dateStr;
-        outTimestamp = `${outDate}T${attendanceForm.checkOut}:00`;
+        outTimestamp = `${dateStr}T${attendanceForm.checkOut}:00`;
       }
 
-      // Existing logs for this employee and date
-      // Crucial: do NOT include an early-morning checkout on dateStr that belongs to the previous day's shift
-      const isBelongingToPrevDay = (l: FingerprintLog): boolean => {
-        if (l.type !== 'check_out') return false;
-        const time = extractTime(l.timestamp);
-        if (!time) return false;
-        const hour = Number(time.split(':')[0]);
-        if (hour >= 10) return false;
-        if (l.notes?.includes('انصراف بعد منتصف الليل') || l.notes?.includes('+1')) return true;
-        const prevDateStr = getPrevDateStr(dateStr);
-        const prevLogs = (effectiveFingerprintLogs || []).filter(pl => 
-          (pl.employeeId === targetEmp.id || (targetEmp.fingerprintCode && pl.fingerprintCode === targetEmp.fingerprintCode)) &&
-          isSameDay(pl.timestamp, prevDateStr)
-        );
-        return prevLogs.some(pl => pl.type === 'check_in');
-      };
-
+      // Existing logs for this employee on dateStr via processedDate or raw timestamp
       const sameDayLogs = (effectiveFingerprintLogs || []).filter(l => 
-        (l.employeeId === targetEmp.id || (targetEmp.fingerprintCode && l.fingerprintCode === targetEmp.fingerprintCode)) &&
-        isSameDay(l.timestamp, dateStr) &&
-        !isBelongingToPrevDay(l)
+        (l.employeeId === targetEmp.id || (targetEmp.fingerprintCode && (l.fingerprintCode === targetEmp.fingerprintCode || (l as any).fingerprint_code === targetEmp.fingerprintCode))) &&
+        (getFingerprintProcessedDate(l) === dateStr || isSameDay(l.timestamp, dateStr))
       );
 
-      // Also find any next-day early checkout log (00:00 - 09:59) for this employee
+      // Also find any legacy early-checkout log on nextDateStr (00:00 - 06:00) so it can be cleaned up
       const nextDayEarlyCheckOut = (effectiveFingerprintLogs || []).filter(l => 
-        (l.employeeId === targetEmp.id || (targetEmp.fingerprintCode && l.fingerprintCode === targetEmp.fingerprintCode)) &&
+        (l.employeeId === targetEmp.id || (targetEmp.fingerprintCode && (l.fingerprintCode === targetEmp.fingerprintCode || (l as any).fingerprint_code === targetEmp.fingerprintCode))) &&
         l.type === 'check_out' &&
-        isSameDay(l.timestamp, nextDateStr) &&
-        (() => {
+        (getFingerprintProcessedDate(l) === dateStr || (isSameDay(l.timestamp, nextDateStr) && (() => {
           const time = extractTime(l.timestamp);
           if (!time) return false;
           const hour = Number(time.split(':')[0]);
-          return hour < 10;
-        })()
+          return hour <= 6;
+        })()))
       );
 
       const existingLogs = [...sameDayLogs, ...nextDayEarlyCheckOut];
@@ -1389,7 +1596,7 @@ export function HRScreen({
       const generateId = () => (DB.generateUUID ? DB.generateUUID() : 'FP-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7));
 
       const checkInId = sameDayLogs.find(l => l.type === 'check_in')?.id || generateId();
-      const checkOutId = (attendanceForm.isNextDayCheckout ? nextDayEarlyCheckOut[0]?.id : sameDayLogs.find(l => l.type === 'check_out')?.id) || generateId();
+      const checkOutId = sameDayLogs.find(l => l.type === 'check_out')?.id || nextDayEarlyCheckOut[0]?.id || generateId();
 
       const inLog: FingerprintLog = {
         id: checkInId,
@@ -1401,14 +1608,22 @@ export function HRScreen({
         timestamp: inTimestamp,
         type: 'check_in',
         status: 'manual',
+        processedDate: dateStr,
+        processed_date: dateStr,
         notes: attendanceForm.notes || 'تسجيل يدوي / تعديل من TimeSheet'
       };
 
       const newLogsToSave: FingerprintLog[] = [inLog];
 
       if (outTimestamp) {
-        const outNote = (attendanceForm.notes ? `${attendanceForm.notes} ` : '') + 
-          (attendanceForm.isNextDayCheckout ? `[انصراف بعد منتصف الليل +1] [وردية: ${dateStr}]` : 'تسجيل يدوي / تعديل من TimeSheet');
+        const isOvernight = Boolean(
+          attendanceForm.isNextDayCheckout || 
+          (attendanceForm.checkIn && attendanceForm.checkOut && attendanceForm.checkOut <= attendanceForm.checkIn)
+        );
+        const actualOutTs = (isOvernight && !outTimestamp.startsWith(nextDateStr))
+          ? `${nextDateStr}T${attendanceForm.checkOut}:00`
+          : outTimestamp;
+
         const outLog: FingerprintLog = {
           id: checkOutId,
           salonId: targetEmp.salonId || settings.salonId,
@@ -1416,10 +1631,14 @@ export function HRScreen({
           employeeId: targetEmp.id,
           employeeName: targetEmp.name,
           fingerprintCode: targetEmp.fingerprintCode || 'FP-' + targetEmp.id.slice(0, 4),
-          timestamp: outTimestamp,
+          timestamp: actualOutTs,
           type: 'check_out',
           status: 'manual',
-          notes: outNote
+          processedDate: dateStr,
+          processed_date: dateStr,
+          notes: isOvernight 
+            ? `${attendanceForm.notes ? attendanceForm.notes.trim() + ' - ' : ''}انصراف بعد منتصف الليل (+1 يوم)`
+            : (attendanceForm.notes || 'تسجيل يدوي / تعديل من TimeSheet')
         };
         newLogsToSave.push(outLog);
       }
@@ -1458,41 +1677,28 @@ export function HRScreen({
   };
 
   const handleDeleteAttendance = async (empId: string, dateStr: string) => {
+    if (!canDeleteAttendance) {
+      alert('عذراً، ليس لديك صلاحية حذف تسجيلات الحضور والانصراف.');
+      return;
+    }
     if (!confirm('هل أنت متأكد من حذف تسجيل الحضور والانصراف لهذا اليوم وتعيينه كغياب؟')) return;
     const targetEmp = employees.find(e => e.id === empId);
     if (!targetEmp) return;
 
     const nextDateStr = getNextDateStr(dateStr);
-    const isBelongingToPrevDay = (l: FingerprintLog): boolean => {
-      if (l.type !== 'check_out') return false;
-      const time = extractTime(l.timestamp);
-      if (!time) return false;
-      const hour = Number(time.split(':')[0]);
-      if (hour >= 10) return false;
-      if (l.notes?.includes('انصراف بعد منتصف الليل') || l.notes?.includes('+1')) return true;
-      const prevDateStr = getPrevDateStr(dateStr);
-      const prevLogs = (effectiveFingerprintLogs || []).filter(pl => 
-        (pl.employeeId === targetEmp.id || (targetEmp.fingerprintCode && pl.fingerprintCode === targetEmp.fingerprintCode)) &&
-        isSameDay(pl.timestamp, prevDateStr)
-      );
-      return prevLogs.some(pl => pl.type === 'check_in');
-    };
-
     const sameDayLogs = (effectiveFingerprintLogs || []).filter(l => 
-      (l.employeeId === targetEmp.id || (targetEmp.fingerprintCode && l.fingerprintCode === targetEmp.fingerprintCode)) &&
-      isSameDay(l.timestamp, dateStr) &&
-      !isBelongingToPrevDay(l)
+      (l.employeeId === targetEmp.id || (targetEmp.fingerprintCode && (l.fingerprintCode === targetEmp.fingerprintCode || (l as any).fingerprint_code === targetEmp.fingerprintCode))) &&
+      (getFingerprintProcessedDate(l) === dateStr || isSameDay(l.timestamp, dateStr))
     );
     const nextDayEarlyCheckOut = (effectiveFingerprintLogs || []).filter(l => 
-      (l.employeeId === targetEmp.id || (targetEmp.fingerprintCode && l.fingerprintCode === targetEmp.fingerprintCode)) &&
+      (l.employeeId === targetEmp.id || (targetEmp.fingerprintCode && (l.fingerprintCode === targetEmp.fingerprintCode || (l as any).fingerprint_code === targetEmp.fingerprintCode))) &&
       l.type === 'check_out' &&
-      isSameDay(l.timestamp, nextDateStr) &&
-      (() => {
+      (getFingerprintProcessedDate(l) === dateStr || (isSameDay(l.timestamp, nextDateStr) && (() => {
         const time = extractTime(l.timestamp);
         if (!time) return false;
         const hour = Number(time.split(':')[0]);
-        return hour < 10;
-      })()
+        return hour <= 6;
+      })()))
     );
 
     const logsToDelete = [...sameDayLogs, ...nextDayEarlyCheckOut];
@@ -1521,9 +1727,9 @@ export function HRScreen({
   const [commNote, setCommNote] = useState('صرف عمولة مستحقة');
   const [isSavingCommissionPayout, setIsSavingCommissionPayout] = useState(false);
 
-  const handleOpenCommissionModal = (targetEmpId?: string) => {
-    if (!AuthService.canDo('hr_manage_commissions', currentUser)) {
-      alert('⛔ عذراً، لا تملك صلاحية تصفية أو صرف عمولات الموظفين (hr_manage_commissions).');
+  const handleOpenCommissionModal = (targetEmpId?: string, defaultAmount?: number) => {
+    if (!canDisburseCommissions) {
+      alert('عذراً، ليس لديك صلاحية صرف العمولات.');
       return;
     }
     const defaultEmpId = targetEmpId || (viewMode === 'single_employee' && selectedEmpId) || activeEmployees[0]?.id || '';
@@ -1531,9 +1737,49 @@ export function HRScreen({
     setCommDate(getEffectiveDateOnly(shiftData, activeBranchId || settings.branchId));
     setCommTreasuryId(settings.treasuries[0]?.id || '');
     setCommNote('صرف عمولة مستحقة');
-    setCommAmount('');
+    setCommAmount(defaultAmount !== undefined && defaultAmount > 0 ? defaultAmount : '');
     setShowCommissionModal(true);
   };
+
+  // حساب الأرصدة الحية والدقيقة لجميع الخزائن من المعاملات والفواتير
+  const treasuryBalances = useMemo(() => {
+    const balances: Record<string, number> = {};
+    const knownInvoiceIds = new Set(
+      transactions
+        .filter(t => t.type === 'in' && ((t as any).invoiceId || (t as any).invoice_id))
+        .map(t => (t as any).invoiceId || (t as any).invoice_id)
+    );
+
+    // 1. حساب صافي الحركات من المعاملات المسجلة
+    transactions.forEach(t => {
+      const tId = t.treasury || (t as any).treasuryId;
+      if (!tId) return;
+      if (balances[tId] === undefined) balances[tId] = 0;
+      if (t.type === 'in') balances[tId] += Number(t.amount) || 0;
+      else if (t.type === 'out') balances[tId] -= Number(t.amount) || 0;
+    });
+
+    // 2. إضافة إيرادات الفواتير المكتملة التي لم تسجل كمعاملات منفصلة
+    invoices.forEach(inv => {
+      if (inv.status === 'cancelled') return;
+      if (!knownInvoiceIds.has(inv.id)) {
+        const methods = (inv.paymentMethods && inv.paymentMethods.length > 0)
+          ? inv.paymentMethods
+          : [{ amount: Number(inv.total) || 0, treasuryId: (inv as any).treasuryId || (inv as any).paymentMethod || 'cash' }];
+
+        methods.forEach((split: any) => {
+          if (split.treasuryId === 'remedy_free' || split.treasuryId === 'cashback') return;
+          const amt = Number(split.amount) || 0;
+          if (amt <= 0) return;
+          const tId = split.treasuryId || 'cash';
+          if (balances[tId] === undefined) balances[tId] = 0;
+          balances[tId] += amt;
+        });
+      }
+    });
+
+    return balances;
+  }, [transactions, invoices]);
 
   const selectedCommEmp = useMemo(() => {
     return employees.find(e => e.id === commEmpId);
@@ -1552,8 +1798,8 @@ export function HRScreen({
 
   const handleDisburseCommission = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!AuthService.canDo('hr_manage_commissions', currentUser)) {
-      alert('⛔ عذراً، لا تملك صلاحية اعتماد وصرف عمولات الموظفين (hr_manage_commissions).');
+    if (!canDisburseCommissions) {
+      alert('عذراً، ليس لديك صلاحية صرف العمولات.');
       return;
     }
     if (!commEmpId) {
@@ -1573,6 +1819,15 @@ export function HRScreen({
     if (!commTreasuryId) {
       alert('الرجاء اختيار الخزينة المنصرف منها العمولة');
       return;
+    }
+
+    const currentTreasuryBal = treasuryBalances[commTreasuryId] ?? 0;
+    if (amountVal > currentTreasuryBal) {
+      const tName = settings.treasuries.find(t => t.id === commTreasuryId)?.name || 'الخزينة المحددة';
+      const proceed = window.confirm(
+        `تنبيه: رصيد خزينة (${tName}) الحالي هو (${Number(currentTreasuryBal || 0).toFixed(2)} ${settings.currency})، وهو أقل من مبلغ العمولة المطلوب صرفه (${Number(amountVal || 0).toFixed(2)} ${settings.currency}).\n\nهل ترغب في المتابعة والصرف؟`
+      );
+      if (!proceed) return;
     }
 
     setIsSavingCommissionPayout(true);
@@ -1644,7 +1899,7 @@ export function HRScreen({
 
       setShowCommissionModal(false);
       setCommAmount('');
-      alert(`✅ تم صرف وتوثيق العمولة للموظف (${targetEmp.name}) بقيمة ${amountVal.toFixed(2)} ${settings.currency} بنجاح وطباعة إيصال الصرف للتوقيع.`);
+      alert(`✅ تم صرف وتوثيق العمولة للموظف (${targetEmp.name}) بقيمة ${Number(amountVal || 0).toFixed(2)} ${settings.currency} بنجاح وطباعة إيصال الصرف للتوقيع.`);
     } catch (err: any) {
       console.error('Error in handleDisburseCommission:', err);
       alert('حدث خطأ أثناء صرف العمولة: ' + (err?.message || 'خطأ غير معروف'));
@@ -1664,8 +1919,8 @@ export function HRScreen({
   const [isSavingLeave, setIsSavingLeave] = useState(false);
 
   const handleOpenLeaveModal = (targetEmpId?: string) => {
-    if (!AuthService.canDo('hr_manage_leaves', currentUser)) {
-      alert('⛔ عذراً، لا تملك صلاحية تسجيل أو إدارة إجازات الموظفين (hr_manage_leaves).');
+    if (!canManageLeaves) {
+      alert('عذراً، ليس لديك صلاحية تسجيل الإجازات.');
       return;
     }
     const defaultEmpId = targetEmpId || (viewMode === 'single_employee' && selectedEmpId) || activeEmployees[0]?.id || '';
@@ -1692,8 +1947,8 @@ export function HRScreen({
 
   const handleSaveLeave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!AuthService.canDo('hr_manage_leaves', currentUser)) {
-      alert('⛔ عذراً، لا تملك صلاحية تسجيل أو اعتماد الإجازات (hr_manage_leaves).');
+    if (!canManageLeaves) {
+      alert('عذراً، ليس لديك صلاحية تسجيل الإجازات.');
       return;
     }
     if (!leaveEmpId) {
@@ -1743,7 +1998,7 @@ export function HRScreen({
       setShowLeaveModal(false);
 
       const totalValue = leaveType === 'paid' 
-        ? ((targetEmp.baseSalary || 0) / 30 * leaveDaysCount).toFixed(2)
+        ? ((Number(targetEmp?.baseSalary || 0)) / 30 * leaveDaysCount).toFixed(2)
         : '0.00';
 
       alert(`🏖️ تم تسجيل وتطبيق الإجازة بنجاح!\n• الموظف: ${targetEmp.name}\n• المدة: ${leaveDaysCount} يوم (من ${leaveStartDate} إلى ${leaveEndDate})\n• النوع: ${leaveType === 'paid' ? 'مدفوعة الأجر (يتم احتساب الراتب)' : 'بدون أجر (خصم اليومية دون جزاء غياب)'}\n• تم توزيعها تلقائياً على التايم شيت.`);
@@ -1756,8 +2011,8 @@ export function HRScreen({
   };
 
   const handleDeleteLeave = async (empId: string, leaveId: string) => {
-    if (!AuthService.canDo('hr_manage_leaves', currentUser)) {
-      alert('⛔ عذراً، لا تملك صلاحية حذف أو إلغاء الإجازات (hr_manage_leaves).');
+    if (!canManageLeaves) {
+      alert('عذراً، ليس لديك صلاحية إلغاء أو حذف الإجازات.');
       return;
     }
     if (!confirm('هل أنت متأكد من إلغاء وحذف هذه الإجازة؟ سيتم إعادة احتساب أيامها في التايم شيت كأيام عمل/غياب طبيعية.')) return;
@@ -1797,8 +2052,8 @@ export function HRScreen({
   const [isSavingPermission, setIsSavingPermission] = useState(false);
 
   const handleOpenPermissionModal = (targetEmpId?: string, targetDate?: string) => {
-    if (!AuthService.canDo('hr_manage_permissions', currentUser)) {
-      alert('⛔ عذراً، لا تملك صلاحية تسجيل أو اعتماد أذونات الاستئذان (hr_manage_permissions).');
+    if (!canManagePermissions) {
+      alert('عذراً، ليس لديك صلاحية تسجيل أذونات الاستئذان.');
       return;
     }
     const defaultEmpId = targetEmpId || (viewMode === 'single_employee' && selectedEmpId) || activeEmployees[0]?.id || '';
@@ -1843,8 +2098,8 @@ export function HRScreen({
 
   const handleSavePermission = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!AuthService.canDo('hr_manage_permissions', currentUser)) {
-      alert('⛔ عذراً، لا تملك صلاحية تسجيل أو اعتماد أذونات الاستئذان (hr_manage_permissions).');
+    if (!canManagePermissions) {
+      alert('عذراً، ليس لديك صلاحية تسجيل أذونات الاستئذان.');
       return;
     }
     if (!permEmpId) {
@@ -1891,7 +2146,7 @@ export function HRScreen({
       setEmployees(employees.map(e => e.id === targetEmp.id ? updatedEmp : e));
       setShowPermissionModal(false);
 
-      const durationHours = (permDurationMinutes / 60).toFixed(1);
+      const durationHours = (Number(permDurationMinutes || 0) / 60).toFixed(1);
       const typeLabel = permType === 'official_mission' ? '💼 مأمورية عمل رسمية خارجية' : (permType === 'shift_start' ? '🌅 إذن بداية الدوام' : '⏱️ إذن وسط الدوام');
       alert(`✅ تم اعتماد وتسجيل الإذن بنجاح!\n• الموظف: ${targetEmp.name}\n• النوع: ${typeLabel}\n• التاريخ: ${permDate}\n• الفترة: من ${permStartTime} إلى ${permEndTime} (${permDurationMinutes} دقيقة / ${durationHours} ساعة)\n• المعاملة: ${permType === 'official_mission' ? 'مأمورية مدفوعة بدون استهلاك رصيد' : (permIsExcused ? 'مستثنى ومقبول (معفى من الخصم)' : 'يخضع لحساب الرصيد والخصومات')}\n• تم التحديث الفوري في التايم شيت.`);
     } catch (err: any) {
@@ -1903,8 +2158,8 @@ export function HRScreen({
   };
 
   const handleDeletePermission = async (empId: string, permId: string) => {
-    if (!AuthService.canDo('hr_manage_permissions', currentUser)) {
-      alert('⛔ عذراً، لا تملك صلاحية حذف أذونات الاستئذان (hr_manage_permissions).');
+    if (!canManagePermissions) {
+      alert('عذراً، ليس لديك صلاحية إلغاء أو حذف أذونات الاستئذان.');
       return;
     }
     if (!confirm('هل أنت متأكد من حذف هذا الإذن؟ سيتم إلغاء أثره من التايم شيت فوراً.')) return;
@@ -1958,7 +2213,19 @@ export function HRScreen({
       const totalPermissionDeduction = empRows.reduce((sum, r) => sum + (r.permissionDeduction || 0), 0);
 
       const totalDeductions = totalAdvances + totalPenalties + totalDelaysDeduction + totalAbsenceDeduction + totalPermissionDeduction + totalCommissionsPaid;
-      const netPayable = Math.max(0, earnedBaseSalary + totalCommissions + totalBonuses + totalOvertimeAmount - totalDeductions);
+
+      // Monthly Target Calculation for payroll period
+      const monthlyTargetCalc = calculateEmployeeTargetCommission({
+        employee: emp,
+        settings,
+        invoices,
+        dateRange: { start: startDate, end: endDate },
+        isDaily: false,
+        daysInMonth: dateRangeList.length || 30
+      });
+      const targetBonus = monthlyTargetCalc.commissionAmount;
+
+      const netPayable = Math.max(0, earnedBaseSalary + totalCommissions + totalBonuses + totalOvertimeAmount + targetBonus - totalDeductions);
 
       const paidCheck = getEmployeeSalaryDisbursementRecord(emp, startDate, endDate, selectedMonth);
 
@@ -1970,6 +2237,8 @@ export function HRScreen({
         totalCommissions,
         totalCommissionsPaid,
         totalBonuses,
+        targetBonus,
+        targetPolicyLabel: monthlyTargetCalc.policyLabel,
         totalAdvances,
         totalPenalties,
         totalOvertimeAmount,
@@ -1982,8 +2251,8 @@ export function HRScreen({
   }, [activeEmployees, timesheetRows, hrConfig, startDate, endDate, selectedMonth, employees]);
 
   const handleOpenDisbursementModal = () => {
-    if (!AuthService.canDo('hr_disburse_payroll', currentUser)) {
-      alert('⛔ عذراً، لا تملك صلاحية صرف أو اعتماد مسير الرواتب الشهرية (hr_disburse_payroll).');
+    if (!canDisburseSalaries) {
+      alert('عذراً، ليس لديك صلاحية صرف مسير الرواتب.');
       return;
     }
     // تحديد الموظفين الذين لم يتم صرف رواتبهم بعد لهذا الشهر ولهم مبالغ مستحقة
@@ -1995,8 +2264,8 @@ export function HRScreen({
   };
 
   const handleReprintDisbursementVoucher = (item: (typeof payrollDisbursementData)[0]) => {
-    if (!AuthService.canDo('hr_disburse_payroll', currentUser)) {
-      alert('⛔ عذراً، لا تملك صلاحية إعادة طباعة سندات مسير الرواتب (hr_disburse_payroll).');
+    if (!canPrintSlips) {
+      alert('عذراً، ليس لديك صلاحية طباعة سندات الرواتب.');
       return;
     }
     const treasuryName = settings.treasuries.find(t => t.id === item.paidRecord?.treasuryId || t.id === disbursementTreasuryId)?.name || 'الخزنة';
@@ -2016,8 +2285,8 @@ export function HRScreen({
   };
 
   const handleDisburseSalaries = async (targetEmpIds: string[]) => {
-    if (!AuthService.canDo('hr_disburse_payroll', currentUser)) {
-      alert('⛔ عذراً، لا تملك صلاحية صرف أو اعتماد مسير الرواتب الشهرية (hr_disburse_payroll).');
+    if (!canDisburseSalaries) {
+      alert('عذراً، ليس لديك صلاحية صرف مسير الرواتب.');
       return;
     }
     if (!targetEmpIds || targetEmpIds.length === 0) {
@@ -2079,7 +2348,7 @@ export function HRScreen({
         employeeRole: item.emp.role,
         amount: item.netPayable,
         treasuryName: treasuryName,
-        note: `مسير رواتب معتمد عن شهر (${selectedMonth}) فترة (${startDate} إلى ${endDate}) | الراتب المستحق: ${item.earnedBaseSalary.toFixed(2)} + العمولات: ${item.totalCommissions.toFixed(2)} - المستقطعات والسلف: ${item.totalDeductions.toFixed(2)}`,
+        note: `مسير رواتب معتمد عن شهر (${selectedMonth}) فترة (${startDate} إلى ${endDate}) | الراتب المستحق: ${Number(item.earnedBaseSalary || 0).toFixed(2)} + العمولات: ${Number(item.totalCommissions || 0).toFixed(2)} - المستقطعات والسلف: ${Number(item.totalDeductions || 0).toFixed(2)}`,
         issuedBy: currentUser?.name || 'مدير النظام',
         payrollPeriod: `${startDate} إلى ${endDate}`
       });
@@ -2096,7 +2365,7 @@ export function HRScreen({
         type: 'salary', // نوع الراتب الرسمي لمنع تسجيله كسلفة
         amount: target.netPayable,
         treasuryId: disbursementTreasuryId,
-        note: `مسير رواتب: تم استلام صافي الراتب (${target.netPayable.toFixed(2)} ${settings.currency}) عن شهر (${selectedMonth}) فترة ${startDate} إلى ${endDate}`,
+        note: `مسير رواتب: تم استلام صافي الراتب (${Number(target.netPayable || 0).toFixed(2)} ${settings.currency}) عن شهر (${selectedMonth}) فترة ${startDate} إلى ${endDate}`,
         payrollPeriod: { startDate, endDate, month: selectedMonth },
         periodKey: `${selectedMonth}_${target.emp.id}`
       };
@@ -2125,14 +2394,552 @@ export function HRScreen({
     }
 
     setShowDisbursementModal(false);
-    alert(`✅ تم صرف وتوثيق رواتب (${targets.length}) موظف بنجاح بقيمة إجمالية ${targets.reduce((s, t) => s + t.netPayable, 0).toFixed(2)} ${settings.currency} وطباعة إيصالات الاستلام للتوقيع.`);
+    alert(`✅ تم صرف وتوثيق رواتب (${targets.length}) موظف بنجاح بقيمة إجمالية ${targets.reduce((s, t) => s + (Number(t.netPayable || 0)), 0).toFixed(2)} ${settings.currency} وطباعة إيصالات الاستلام للتوقيع.`);
+  };
+
+  if (currentUser && !canViewTimesheet) {
+    return (
+      <div className="w-full flex flex-col items-center justify-center p-12 text-center bg-white rounded-2xl border border-red-200 shadow-sm" dir="rtl">
+        <div className="w-16 h-16 bg-red-50 text-red-600 rounded-full flex items-center justify-center mb-4">
+          <ShieldAlert size={36} />
+        </div>
+        <h2 className="text-xl font-black text-slate-900 mb-2">غير مصرح لك بالوصول لشاشة سجل الدوام والرواتب</h2>
+        <p className="text-sm text-slate-500 max-w-md">ليس لديك صلاحية استعراض سجل الدوام والرواتب (hr_view_timesheet). يرجى مراجعة مدير النظام لمنحك الصلاحيات المطلوبة.</p>
+      </div>
+    );
+  }
+
+  // Table Horizontal & Drag-to-Scroll Refs and Helpers
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const [isMouseDown, setIsMouseDown] = useState(false);
+  const [startX, setStartX] = useState(0);
+  const [scrollLeftPos, setScrollLeftPos] = useState(0);
+  const [isFullscreenTable, setIsFullscreenTable] = useState(false);
+  const [isCompactDensity, setIsCompactDensity] = useState(false);
+
+  const scrollTable = (direction: 'left' | 'right' | 'start' | 'end') => {
+    if (!tableContainerRef.current) return;
+    const el = tableContainerRef.current;
+    if (direction === 'start') {
+      el.scrollTo({ left: 0, behavior: 'smooth' });
+    } else if (direction === 'end') {
+      el.scrollTo({ left: -el.scrollWidth, behavior: 'smooth' });
+    } else if (direction === 'left') {
+      el.scrollBy({ left: -380, behavior: 'smooth' });
+    } else if (direction === 'right') {
+      el.scrollBy({ left: 380, behavior: 'smooth' });
+    }
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    if ((e.target as HTMLElement).closest('button, input, select, a, textarea')) return;
+    if (!tableContainerRef.current) return;
+    setIsMouseDown(true);
+    setStartX(e.pageX - tableContainerRef.current.offsetLeft);
+    setScrollLeftPos(tableContainerRef.current.scrollLeft);
+  };
+
+  const handleMouseLeaveOrUp = () => {
+    setIsMouseDown(false);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isMouseDown || !tableContainerRef.current) return;
+    e.preventDefault();
+    const x = e.pageX - tableContainerRef.current.offsetLeft;
+    const walk = (x - startX) * 1.5;
+    tableContainerRef.current.scrollLeft = scrollLeftPos - walk;
+  };
+
+  // =========================================================================
+  // 💰 قسم ملخص وتفاصيل العمولات (Commissions Breakdown & Detailed Summary)
+  // =========================================================================
+  interface CommissionDetailRow {
+    rowId: string;
+    invoiceId: string;
+    rawDate: string;
+    dateStr: string;
+    timeStr: string;
+    clientName: string;
+    clientPhone?: string;
+    itemName: string;
+    itemType: 'service' | 'product';
+    commissionType: 'execution' | 'referral';
+    commissionTypeLabel: string;
+    quantity: number;
+    itemPrice: number;
+    itemTotal: number;
+    calculationRule: string;
+    earnedCommission: number;
+    invoiceStatus: string;
+    invoiceTotal: number;
+    technicianName: string;
+  }
+
+  const detailedCommissionsData = useMemo(() => {
+    const targetEmp = employees.find(e => e.id === commSelectedEmpId);
+    if (!targetEmp) {
+      return {
+        rows: [] as CommissionDetailRow[],
+        uniqueInvoicesCount: 0,
+        totalRevenue: 0,
+        totalEarnedCommission: 0,
+        executionCommissionSum: 0,
+        referralCommissionSum: 0,
+        executionCount: 0,
+        referralCount: 0,
+        paidCommissions: 0,
+        unpaidCommissions: 0,
+        employee: null
+      };
+    }
+
+    const rows: CommissionDetailRow[] = [];
+    const uniqueInvoiceIds = new Set<string>();
+    let totalRevenue = 0;
+    let executionCommissionSum = 0;
+    let referralCommissionSum = 0;
+    let executionCount = 0;
+    let referralCount = 0;
+
+    // Filter invoices: within date range, non-cancelled, and strictly paid only
+    const validInvoices = invoices.filter(inv => {
+      const isCancelled = inv.status === 'cancelled' || (inv as any).is_cancelled || (inv as any).isCancelled || inv.status === 'refunded';
+      if (isCancelled) return false;
+
+      const isPaid = inv.status === 'completed' || (inv.status !== 'unpaid' && (Number((inv as any).remaining) || 0) <= 0);
+      if (!isPaid) return false;
+
+      const rawDate = inv.date || (inv as any).created_at || (inv as any).createdAt || '';
+      const datePart = rawDate.split('T')[0].split(' ')[0];
+      if (!datePart) return false;
+      return datePart >= commStartDate && datePart <= commEndDate;
+    });
+
+    validInvoices.forEach(inv => {
+      const rawDate = inv.date || (inv as any).created_at || (inv as any).createdAt || '';
+      const { dateStr, timeStr } = formatInvoiceDateTime(rawDate);
+      const clientName = inv.clientName || 'عميل نقدي';
+      const clientPhone = inv.clientPhone || '';
+      const invTotal = Number(inv.total) || 0;
+
+      let invoiceHasMatches = false;
+
+      (inv.items || []).forEach((item, itemIdx) => {
+        const qty = Number(item.quantity) || 1;
+        const price = Number(item.price) || 0;
+        const itemTotal = price * qty;
+        const itemName = item.serviceName || (item as any).name || 'خدمة / منتج';
+        const itemType: 'service' | 'product' = item.type || ((products || []).some(p => p.id === item.itemId || p.id === item.id) ? 'product' : 'service');
+
+        // 1. Check Execution Commission (عمولة تنفيذ الخدمة أو بيع المنتج)
+        const isExecution = (item.employeeId && item.employeeId === targetEmp.id) || 
+                            (!item.employeeId && item.technicianName && item.technicianName === targetEmp.name);
+
+        if (isExecution) {
+          let execComm = Number(item.employeeCommission ?? item.commissionAmount ?? (item as any).commission ?? 0);
+          let calcRule = 'محددة بالسطر';
+
+          if (execComm <= 0) {
+            const srv = (services || []).find(s => s.id === item.itemId || s.id === item.id || s.name === item.serviceName);
+            if (srv) {
+              const srvAmt = Number(srv.employeeCommissionAmount ?? srv.commissionAmount ?? 0);
+              const srvPct = Number(srv.employeeCommissionPercentage ?? srv.commissionRate ?? 0);
+              const rawBase = Number(srv.commissionableAmount ?? item.commissionableAmount ?? 0);
+              const commBase = rawBase > 0 ? (rawBase * qty) : itemTotal;
+              if (srvAmt > 0) {
+                execComm = srvAmt * qty;
+                calcRule = `مبلغ خدمة (${srvAmt} ${settings.currency}/قطعة)`;
+              } else if (srvPct > 0) {
+                execComm = (srvPct / 100) * commBase;
+                calcRule = rawBase > 0
+                  ? `نسبة خدمة (${srvPct}%) على أساس (${commBase} ${settings.currency})`
+                  : `نسبة خدمة (${srvPct}%)`;
+              }
+            } else {
+              const prod = (products || []).find(p => p.id === item.itemId || p.id === item.id || p.name === item.serviceName);
+              if (prod && Number(prod.commission) > 0) {
+                execComm = Number(prod.commission) * qty;
+                calcRule = `عمولة منتج (${prod.commission} ${settings.currency})`;
+              }
+            }
+          }
+
+          if (execComm <= 0 && targetEmp.commissionRate && Number(targetEmp.commissionRate) > 0) {
+            const empRate = Number(targetEmp.commissionRate);
+            const rawBase = Number(item.commissionableAmount ?? 0);
+            const commBase = rawBase > 0 ? (rawBase * qty) : itemTotal;
+            execComm = (empRate / 100) * commBase;
+            calcRule = rawBase > 0
+              ? `نسبة الموظف الثابتة (${empRate}%) على أساس (${commBase} ${settings.currency})`
+              : `نسبة الموظف الثابتة (${empRate}%)`;
+          }
+
+          if (execComm > 0 || isExecution) {
+            invoiceHasMatches = true;
+            totalRevenue += itemTotal;
+            executionCommissionSum += execComm;
+            executionCount++;
+
+            rows.push({
+              rowId: `${inv.id}_exec_${item.id || itemIdx}`,
+              invoiceId: inv.id,
+              rawDate,
+              dateStr,
+              timeStr,
+              clientName,
+              clientPhone,
+              itemName,
+              itemType,
+              commissionType: 'execution',
+              commissionTypeLabel: 'تنفيذ خدمة / بيع',
+              quantity: qty,
+              itemPrice: price,
+              itemTotal,
+              calculationRule: calcRule,
+              earnedCommission: execComm,
+              invoiceStatus: 'مسددة',
+              invoiceTotal: invTotal,
+              technicianName: item.technicianName || targetEmp.name
+            });
+          }
+        }
+
+        // 2. Check Referral Commission (عمولة إحالة / فتح شغل)
+        const isReferral = (item.referralEmployeeId && item.referralEmployeeId === targetEmp.id) || 
+                           (!item.referralEmployeeId && item.referralEmployeeName && item.referralEmployeeName === targetEmp.name);
+
+        if (isReferral) {
+          let refComm = (item.referralCommissionAmount !== undefined && Number(item.referralCommissionAmount) > 0)
+            ? (Number(item.referralCommissionAmount) * qty)
+            : 0;
+          let calcRule = 'محددة بالسطر';
+
+          if (refComm <= 0) {
+            const srv = (services || []).find(s => s.id === item.itemId || s.id === item.id || s.name === item.serviceName);
+            if (srv && srv.referralCommissionAmount && Number(srv.referralCommissionAmount) > 0) {
+              const srvRefAmt = Number(srv.referralCommissionAmount);
+              if (srv.referralCommissionType === 'percentage') {
+                refComm = (srvRefAmt / 100) * itemTotal;
+                calcRule = `نسبة إحالة (${srvRefAmt}%)`;
+              } else {
+                refComm = srvRefAmt * qty;
+                calcRule = `مبلغ إحالة ثابت (${srvRefAmt} ${settings.currency})`;
+              }
+            }
+          }
+
+          if (refComm > 0 || isReferral) {
+            invoiceHasMatches = true;
+            referralCommissionSum += refComm;
+            referralCount++;
+
+            rows.push({
+              rowId: `${inv.id}_ref_${item.id || itemIdx}`,
+              invoiceId: inv.id,
+              rawDate,
+              dateStr,
+              timeStr,
+              clientName,
+              clientPhone,
+              itemName,
+              itemType,
+              commissionType: 'referral',
+              commissionTypeLabel: 'إحالة وفتح شغل',
+              quantity: qty,
+              itemPrice: price,
+              itemTotal,
+              calculationRule: calcRule,
+              earnedCommission: refComm,
+              invoiceStatus: 'مسددة',
+              invoiceTotal: invTotal,
+              technicianName: item.technicianName || 'فني آخر'
+            });
+          }
+        }
+      });
+
+      if (invoiceHasMatches) {
+        uniqueInvoiceIds.add(inv.id);
+      }
+    });
+
+    // Sort rows descending by date/time
+    rows.sort((a, b) => b.rawDate.localeCompare(a.rawDate));
+
+    const totalEarnedCommission = executionCommissionSum + referralCommissionSum;
+
+    const paidCommissions = (targetEmp.financialRecords || [])
+      .filter(r => r.type === 'commission_payout')
+      .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+
+    const unpaidCommissions = Math.max(0, totalEarnedCommission - paidCommissions);
+
+    return {
+      rows,
+      uniqueInvoicesCount: uniqueInvoiceIds.size,
+      totalRevenue,
+      totalEarnedCommission,
+      executionCommissionSum,
+      referralCommissionSum,
+      executionCount,
+      referralCount,
+      paidCommissions,
+      unpaidCommissions,
+      employee: targetEmp
+    };
+  }, [commSelectedEmpId, commStartDate, commEndDate, invoices, services, products, employees, settings.currency]);
+
+  // Filter commission rows based on commission type and search query
+  const filteredCommissionRows = useMemo(() => {
+    return detailedCommissionsData.rows.filter(row => {
+      if (commTypeFilter !== 'all' && row.commissionType !== commTypeFilter) return false;
+      if (commSearchQuery.trim()) {
+        const q = commSearchQuery.trim().toLowerCase();
+        const matchInv = row.invoiceId.toLowerCase().includes(q);
+        const matchClient = row.clientName.toLowerCase().includes(q);
+        const matchItem = row.itemName.toLowerCase().includes(q);
+        if (!matchInv && !matchClient && !matchItem) return false;
+      }
+      return true;
+    });
+  }, [detailedCommissionsData.rows, commTypeFilter, commSearchQuery]);
+
+  // Quick Date Range Preset Handler
+  const setQuickCommPeriod = (period: 'this_month' | 'last_month' | 'last_30_days' | 'today') => {
+    const today = new Date();
+    if (period === 'this_month') {
+      const y = today.getFullYear();
+      const m = today.getMonth() + 1;
+      const lastDay = new Date(y, m, 0).getDate();
+      setCommStartDate(`${y}-${String(m).padStart(2, '0')}-01`);
+      setCommEndDate(`${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`);
+    } else if (period === 'last_month') {
+      const prevMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const y = prevMonthDate.getFullYear();
+      const m = prevMonthDate.getMonth() + 1;
+      const lastDay = new Date(y, m, 0).getDate();
+      setCommStartDate(`${y}-${String(m).padStart(2, '0')}-01`);
+      setCommEndDate(`${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`);
+    } else if (period === 'last_30_days') {
+      const past30 = new Date(today);
+      past30.setDate(today.getDate() - 30);
+      const toDateStr = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      setCommStartDate(toDateStr(past30));
+      setCommEndDate(toDateStr(today));
+    } else if (period === 'today') {
+      const toDateStr = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const todayStr = toDateStr(today);
+      setCommStartDate(todayStr);
+      setCommEndDate(todayStr);
+    }
+  };
+
+  // Export to CSV with UTF-8 BOM
+  const handleExportCommissionsCSV = () => {
+    if (filteredCommissionRows.length === 0) {
+      alert('لا توجد بيانات لتصديرها');
+      return;
+    }
+    const empName = detailedCommissionsData.employee?.name || 'موظف';
+    const headers = ['مسلسل', 'رقم الفاتورة', 'التاريخ', 'الوقت', 'اسم العميل', 'الخدمة / البند', 'النوع', 'القيمة', 'قاعدة الاحتساب', 'العمولة المستحقة', 'حالة الفاتورة'];
+    const csvRows = [
+      headers.join(','),
+      ...filteredCommissionRows.map((r, i) => [
+        i + 1,
+        `"${r.invoiceId}"`,
+        `"${r.dateStr}"`,
+        `"${r.timeStr}"`,
+        `"${r.clientName.replace(/"/g, '""')}"`,
+        `"${r.itemName.replace(/"/g, '""')}"`,
+        `"${r.commissionTypeLabel}"`,
+        r.itemTotal.toFixed(2),
+        `"${r.calculationRule.replace(/"/g, '""')}"`,
+        r.earnedCommission.toFixed(2),
+        `"${r.invoiceStatus}"`
+      ].join(','))
+    ];
+
+    const blob = new Blob(['\uFEFF' + csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `عمولات_${empName}_${commStartDate}_إلى_${commEndDate}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Print Commissions Report
+  const handlePrintCommissionsReport = () => {
+    if (filteredCommissionRows.length === 0) {
+      alert('لا توجد بيانات لطباعتها');
+      return;
+    }
+    const emp = detailedCommissionsData.employee;
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert('الرجاء السماح بالنوافذ المنبثقة للطباعة');
+      return;
+    }
+
+    const rowsHtml = filteredCommissionRows.map((r, idx) => `
+      <tr style="border-bottom: 1px solid #e2e8f0; ${idx % 2 === 1 ? 'background-color: #f8fafc;' : ''}">
+        <td style="padding: 6px 8px; text-align: center;">${idx + 1}</td>
+        <td style="padding: 6px 8px; font-weight: bold; font-family: monospace;">#${r.invoiceId}</td>
+        <td style="padding: 6px 8px; text-align: center;">${r.dateStr}</td>
+        <td style="padding: 6px 8px; text-align: center;">${r.timeStr}</td>
+        <td style="padding: 6px 8px;">${r.clientName}</td>
+        <td style="padding: 6px 8px;">${r.itemName}</td>
+        <td style="padding: 6px 8px; text-align: center;">
+          <span style="display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; ${r.commissionType === 'execution' ? 'background: #e0f2fe; color: #0369a1;' : 'background: #fef3c7; color: #b45309;'}">
+            ${r.commissionTypeLabel}
+          </span>
+        </td>
+        <td style="padding: 6px 8px; font-family: monospace; text-align: left;">${r.itemTotal.toFixed(2)}</td>
+        <td style="padding: 6px 8px; font-size: 11px; color: #475569;">${r.calculationRule}</td>
+        <td style="padding: 6px 8px; font-family: monospace; font-weight: bold; color: #047857; text-align: left;">${r.earnedCommission.toFixed(2)} ${settings.currency}</td>
+      </tr>
+    `).join('');
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html dir="rtl" lang="ar">
+        <head>
+          <meta charset="utf-8">
+          <title>كشف عمولات الموظف - ${emp?.name || ''}</title>
+          <link rel="preconnect" href="https://fonts.googleapis.com">
+          <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+          <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+          <style>
+            * { font-family: 'Cairo', sans-serif !important; box-sizing: border-box; }
+            body { margin: 15mm; color: #1e293b; font-size: 12px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+            th { background: #0f172a; color: white; padding: 8px; font-size: 11px; text-align: right; }
+            .header-box { border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; }
+            .kpi-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 15px; }
+            .kpi-card { border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px 12px; background: #f8fafc; }
+            .kpi-card .val { font-size: 16px; font-weight: bold; margin-top: 4px; font-family: monospace; }
+            @media print {
+              body { margin: 10mm; }
+              @page { size: A4 landscape; margin: 10mm; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header-box">
+            <div>
+              <h2 style="margin: 0; font-size: 20px; font-weight: 900;">${settings.salonName || 'Smart Cut'}</h2>
+              <p style="margin: 4px 0 0 0; color: #64748b; font-size: 13px;">كشف عمولات الموظف المفصل (فواتير مسددة فقط)</p>
+            </div>
+            <div style="text-align: left;">
+              <p style="margin: 0; font-weight: bold; font-size: 14px;">الموظف: ${emp?.name || ''} (كود: ${emp?.fingerprintCode || emp?.id})</p>
+              <p style="margin: 4px 0 0 0; color: #64748b; font-size: 12px;">الفترة: من ${commStartDate} إلى ${commEndDate}</p>
+            </div>
+          </div>
+
+          <div class="kpi-cards">
+            <div class="kpi-card" style="border-right: 4px solid #f59e0b;">
+              <div style="color: #64748b; font-size: 11px;">إجمالي العمولات المستحقة</div>
+              <div class="val" style="color: #b45309;">${detailedCommissionsData.totalEarnedCommission.toFixed(2)} ${settings.currency}</div>
+            </div>
+            <div class="kpi-card" style="border-right: 4px solid #0284c7;">
+              <div style="color: #64748b; font-size: 11px;">عمولات التنفيذ (${detailedCommissionsData.executionCount})</div>
+              <div class="val" style="color: #0369a1;">${detailedCommissionsData.executionCommissionSum.toFixed(2)} ${settings.currency}</div>
+            </div>
+            <div class="kpi-card" style="border-right: 4px solid #8b5cf6;">
+              <div style="color: #64748b; font-size: 11px;">عمولات الإحالة (${detailedCommissionsData.referralCount})</div>
+              <div class="val" style="color: #6d28d9;">${detailedCommissionsData.referralCommissionSum.toFixed(2)} ${settings.currency}</div>
+            </div>
+            <div class="kpi-card" style="border-right: 4px solid #10b981;">
+              <div style="color: #64748b; font-size: 11px;">إجمالي مبيعات الموظف (${detailedCommissionsData.uniqueInvoicesCount} فاتورة)</div>
+              <div class="val" style="color: #047857;">${detailedCommissionsData.totalRevenue.toFixed(2)} ${settings.currency}</div>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 35px; text-align: center;">م</th>
+                <th>رقم الفاتورة</th>
+                <th style="text-align: center;">التاريخ</th>
+                <th style="text-align: center;">الوقت</th>
+                <th>اسم العميل</th>
+                <th>الخدمة / البند</th>
+                <th style="text-align: center;">نوع العمولة</th>
+                <th style="text-align: left;">القيمة</th>
+                <th>قاعدة الاحتساب</th>
+                <th style="text-align: left;">العمولة المستحقة</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+            </tbody>
+            <tfoot>
+              <tr style="background: #e2e8f0; font-weight: bold;">
+                <td colspan="7" style="padding: 8px; text-align: center;">الإجمالي العام (${filteredCommissionRows.length} بند)</td>
+                <td style="padding: 8px; font-family: monospace; text-align: left;">${detailedCommissionsData.totalRevenue.toFixed(2)}</td>
+                <td></td>
+                <td style="padding: 8px; font-family: monospace; color: #047857; font-size: 13px; text-align: left;">${detailedCommissionsData.totalEarnedCommission.toFixed(2)} ${settings.currency}</td>
+              </tr>
+            </tfoot>
+          </table>
+
+          <div style="margin-top: 25px; display: flex; justify-content: space-between; font-size: 11px; color: #64748b; border-top: 1px dashed #cbd5e1; padding-top: 10px;">
+            <div>طُبع بواسطة: ${currentUser?.name || 'مدير النظام'} في ${new Date().toLocaleString('ar-SA')}</div>
+            <div>Smart Cut Salon Management System</div>
+          </div>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    setTimeout(() => {
+      printWindow.print();
+    }, 500);
   };
 
   return (
-    <div className="w-full flex flex-col font-sans pb-10" dir="rtl">
+    <div className={`w-full font-sans ${isEmbedded ? 'flex flex-col pb-10' : 'w-full h-full min-h-0 flex-1 overflow-y-auto custom-scrollbar bg-slate-50 p-4 sm:p-6 flex flex-col'}`} dir="rtl">
       
-      {/* Top Main Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+      {/* Top HR Section Tabs (سجل الدوام والتايم شيت vs ملخص وتفاصيل العمولات) */}
+      <div className="flex items-center gap-2 p-1.5 bg-slate-200/80 rounded-2xl mb-5 w-fit border border-slate-300">
+        <button
+          type="button"
+          onClick={() => setHrMainTab('timesheet')}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-black text-xs transition-all cursor-pointer ${
+            hrMainTab === 'timesheet'
+              ? 'bg-slate-900 text-white shadow-md'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+        >
+          <Clock size={16} />
+          <span>سجل الدوام والتايم شيت والمسير</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setHrMainTab('commissions')}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-black text-xs transition-all cursor-pointer ${
+            hrMainTab === 'commissions'
+              ? 'bg-amber-600 text-white shadow-md shadow-amber-600/30'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+        >
+          <Coins size={16} />
+          <span>ملخص وتفاصيل العمولات المستحقة</span>
+          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+            hrMainTab === 'commissions' ? 'bg-amber-700 text-white' : 'bg-amber-100 text-amber-800'
+          }`}>
+            تفصيلي
+          </span>
+        </button>
+      </div>
+
+      {hrMainTab === 'timesheet' && (
+        <>
+          {/* Top Main Header */}
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
         <div>
           <div className="flex items-center gap-2.5">
             <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center font-black">
@@ -2154,28 +2961,32 @@ export function HRScreen({
 
         {/* Action Buttons Toolbar */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* Excel Fingerprint Import to Timesheet */}
-          <button
-            type="button"
-            onClick={() => setIsFingerprintImportOpen(true)}
-            className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
-            title="سحب حركات البصمة من ملف إكسل ورفعها للتايم شيت مباشرة"
-          >
-            <FileSpreadsheet size={14} className="text-emerald-600" />
-            <span>سحب بصمات من إكسل 📥</span>
-          </button>
+          {/* Excel Biometric Import */}
+          {canManageAttendance && (
+            <button
+              type="button"
+              onClick={() => setShowBiometricModal(true)}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+              title="سحب حركات البصمة والتايم شيت من ملف إكسل"
+            >
+              <FileSpreadsheet size={14} />
+              <span>سحب من إكسل 📥</span>
+            </button>
+          )}
 
           {/* Manual Refresh Button */}
-          <button
-            type="button"
-            onClick={() => refreshFingerprintLogs(true)}
-            disabled={isRefreshingLogs}
-            className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 shadow-2xs"
-            title="تحديث فوري للبصمات والبيانات من السحابة"
-          >
-            <RefreshCw size={14} className={isRefreshingLogs ? 'animate-spin text-indigo-600' : 'text-slate-600'} />
-            <span>{isRefreshingLogs ? 'جارٍ المزامنة...' : 'تحديث الآن 🔄'}</span>
-          </button>
+          {canFingerprintSync && (
+            <button
+              type="button"
+              onClick={() => refreshFingerprintLogs(true)}
+              disabled={isRefreshingLogs}
+              className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 shadow-2xs"
+              title="تحديث فوري للبصمات والبيانات"
+            >
+              <RefreshCw size={14} className={isRefreshingLogs ? 'animate-spin text-indigo-600' : 'text-slate-600'} />
+              <span>{isRefreshingLogs ? 'جارٍ المزامنة...' : 'تحديث الآن 🔄'}</span>
+            </button>
+          )}
           {/* View Mode Toggle */}
           <div className="bg-slate-100 p-1 rounded-xl flex gap-1 border border-slate-200">
             <button
@@ -2196,166 +3007,204 @@ export function HRScreen({
             </button>
           </div>
 
-          {/* 1. تسجيل / تعديل حضور ⏱️ */}
-          {AuthService.canDo('hr_manage_attendance', currentUser) && (
-            <button
-              onClick={() => {
-                setAttendanceForm({
-                  empId: selectedEmpId || activeEmployees[0]?.id || '',
-                  date: selectedSingleDay || now.toISOString().split('T')[0],
-                  checkIn: '09:00',
-                  checkOut: '18:00',
-                  isNextDayCheckout: false,
-                  status: 'regular',
-                  notes: ''
-                });
-                setShowAttendanceModal(true);
-              }}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
-              title="تسجيل أو تعديل حضور يدوي"
-            >
-              <Plus size={15} />
-              <span>تسجيل / تعديل حضور ⏱️</span>
-            </button>
-          )}
+          {/* 1. تسجيل / تعديل حضور */}
+          <button
+            disabled={!canManageAttendance}
+            onClick={() => {
+              if (!canManageAttendance) {
+                alert('⛔ عذراً، لا تملك صلاحية تسجيل وتعديل الحضور والانصراف (hr_manage_attendance)');
+                return;
+              }
+              setAttendanceForm({
+                empId: selectedEmpId || activeEmployees[0]?.id || '',
+                date: selectedSingleDay || now.toISOString().split('T')[0],
+                checkIn: '09:00',
+                checkOut: '18:00',
+                isNextDayCheckout: false,
+                status: 'regular',
+                notes: ''
+              });
+              setShowAttendanceModal(true);
+            }}
+            className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-all ${
+              canManageAttendance
+                ? 'bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer'
+                : 'bg-slate-200 text-slate-400 opacity-50 cursor-not-allowed'
+            }`}
+            title={canManageAttendance ? 'تسجيل أو تعديل حضور' : 'لا تملك صلاحية تسجيل وتعديل الحضور (hr_manage_attendance)'}
+          >
+            <Plus size={15} />
+            <span>تسجيل / تعديل حضور ⏱️</span>
+          </button>
 
-          {/* 2. تسجيل زيادة راتب 📈 */}
-          {AuthService.canDo('hr_manage_salary_increments', currentUser) && (
-            <button
-              onClick={() => {
-                setTargetEmpId(selectedEmpId || activeEmployees[0]?.id || '');
-                setSelectedEmpIdsForBulk(activeEmployees.map(e => e.id));
-                setIncrementValue(10);
-                setIncrementType('percentage');
-                setEffectiveDate(now.toISOString().split('T')[0]);
-                setIncrementReason('ترقية / علاوة سنوية');
-                setApprovedBy(currentUser?.name || 'مدير النظام');
-                setShowSalaryIncrementModal(true);
-              }}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
-              title="تسجيل زيادة راتب"
-            >
-              <TrendingUp size={15} />
-              <span>تسجيل زيادة راتب 📈</span>
-            </button>
-          )}
+          {/* 2. تسجيل زيادة راتب */}
+          <button
+            disabled={!canSalaryIncrements}
+            onClick={() => {
+              if (!canSalaryIncrements) {
+                alert('⛔ عذراً، لا تملك صلاحية إقرار وتطبيق زيادات الرواتب (hr_manage_salary_increments)');
+                return;
+              }
+              setTargetEmpId(selectedEmpId || activeEmployees[0]?.id || '');
+              setSelectedEmpIdsForBulk(activeEmployees.map(e => e.id));
+              setIncrementValue(10);
+              setIncrementType('percentage');
+              setEffectiveDate(now.toISOString().split('T')[0]);
+              setIncrementReason('ترقية / علاوة سنوية');
+              setApprovedBy(currentUser?.name || 'مدير النظام');
+              setShowSalaryIncrementModal(true);
+            }}
+            className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md transition-all ${
+              canSalaryIncrements
+                ? 'bg-purple-600 hover:bg-purple-700 text-white shadow-purple-600/20 cursor-pointer'
+                : 'bg-slate-200 text-slate-400 opacity-50 cursor-not-allowed'
+            }`}
+            title={canSalaryIncrements ? 'تسجيل زيادة راتب' : 'لا تملك صلاحية زيادات الرواتب (hr_manage_salary_increments)'}
+          >
+            <TrendingUp size={15} />
+            <span>تسجيل زيادة راتب 📈</span>
+          </button>
 
-          {/* 3. سجل الزيادات 📜 */}
-          {(AuthService.canDo('hr_manage_salary_increments', currentUser) || AuthService.canDo('manage_salaries', currentUser)) && (
-            <button
-              onClick={() => setShowSalaryHistoryModal(true)}
-              className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
-            >
-              <History size={15} className="text-indigo-600" />
-              <span>سجل الزيادات 📜</span>
-            </button>
-          )}
+          <button
+            onClick={() => setShowSalaryHistoryModal(true)}
+            className="bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <History size={15} className="text-indigo-600" />
+            <span>سجل الزيادات 📜</span>
+          </button>
 
-          {/* 4. تسجيل إجازة 🏖️ */}
-          {AuthService.canDo('hr_manage_leaves', currentUser) && (
-            <button
-              onClick={() => handleOpenLeaveModal()}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
-              title="تسجيل إجازة"
-            >
-              <Palmtree size={15} />
-              <span>تسجيل إجازة 🏖️</span>
-            </button>
-          )}
+          {/* 3. تسجيل إجازة */}
+          <button
+            disabled={!canManageLeaves}
+            onClick={() => {
+              if (!canManageLeaves) {
+                alert('⛔ عذراً، لا تملك صلاحية تسجيل واعتماد الإجازات (hr_manage_leaves)');
+                return;
+              }
+              handleOpenLeaveModal();
+            }}
+            className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md transition-all ${
+              canManageLeaves
+                ? 'bg-sky-600 hover:bg-sky-700 text-white shadow-sky-600/20 cursor-pointer'
+                : 'bg-slate-200 text-slate-400 opacity-50 cursor-not-allowed'
+            }`}
+            title={canManageLeaves ? 'تسجيل إجازة' : 'لا تملك صلاحية إدارة الإجازات (hr_manage_leaves)'}
+          >
+            <Palmtree size={15} />
+            <span>تسجيل إجازة 🏖️</span>
+          </button>
 
-          {/* 5. سجل الإجازات 📋 */}
-          {AuthService.canDo('hr_manage_leaves', currentUser) && (
-            <button
-              onClick={() => setShowLeavesListModal(true)}
-              className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-3 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
-            >
-              <Calendar size={15} className="text-indigo-600" />
-              <span>سجل الإجازات 📋</span>
-            </button>
-          )}
+          <button
+            onClick={() => setShowLeavesListModal(true)}
+            className="bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 px-3 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <Calendar size={15} className="text-sky-600" />
+            <span>سجل الإجازات 📋</span>
+          </button>
 
-          {/* 6. تسجيل استئذان ⏱️ */}
-          {AuthService.canDo('hr_manage_permissions', currentUser) && (
-            <button
-              onClick={() => handleOpenPermissionModal()}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
-              title="تسجيل استئذان"
-            >
-              <Timer size={15} />
-              <span>تسجيل استئذان ⏱️</span>
-            </button>
-          )}
+          {/* 4. تسجيل استئذان */}
+          <button
+            disabled={!canManagePermissions}
+            onClick={() => {
+              if (!canManagePermissions) {
+                alert('⛔ عذراً، لا تملك صلاحية تسجيل واعتماد أذونات الاستئذان (hr_manage_permissions)');
+                return;
+              }
+              handleOpenPermissionModal();
+            }}
+            className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md transition-all ${
+              canManagePermissions
+                ? 'bg-teal-600 hover:bg-teal-700 text-white shadow-teal-600/20 cursor-pointer'
+                : 'bg-slate-200 text-slate-400 opacity-50 cursor-not-allowed'
+            }`}
+            title={canManagePermissions ? 'تسجيل استئذان' : 'لا تملك صلاحية إدارة الاستئذانات (hr_manage_permissions)'}
+          >
+            <Timer size={15} />
+            <span>تسجيل استئذان ⏱️</span>
+          </button>
 
-          {/* 7. سجل الاستئذانات 🚪 */}
-          {AuthService.canDo('hr_manage_permissions', currentUser) && (
-            <button
-              onClick={() => setShowPermissionsListModal(true)}
-              className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-3 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
-            >
-              <DoorOpen size={15} className="text-indigo-600" />
-              <span>سجل الاستئذانات 🚪</span>
-            </button>
-          )}
+          <button
+            onClick={() => setShowPermissionsListModal(true)}
+            className="bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 px-3 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <DoorOpen size={15} className="text-teal-600" />
+            <span>سجل الاستئذانات 🚪</span>
+          </button>
 
-          {/* 8. تدقيق الاستقطاعات والمسير 📑 */}
-          {(AuthService.canDo('hr_disburse_payroll', currentUser) || AuthService.canDo('manage_salaries', currentUser)) && (
+          {/* 5. تدقيق الاستقطاعات والمسير */}
+          {canDisburseSalaries && (
             <button
               onClick={() => setShowPayrollAuditModal(true)}
-              className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md shadow-indigo-600/20 transition-all cursor-pointer"
               title="مراجعة وتدقيق الاستقطاعات وأرصدة الأذونات قبل اعتماد المسير"
             >
-              <ShieldCheck size={15} className="text-indigo-600" />
+              <ShieldCheck size={15} />
               <span>تدقيق الاستقطاعات والمسير 📑</span>
             </button>
           )}
 
-          {/* 9. ملخص العمولات التفصيلي */}
-          {AuthService.canDo('hr_manage_commissions', currentUser) && (
-            <button
-              type="button"
-              onClick={() => setShowCommissionsSummaryModal(true)}
-              className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
-              title="عرض ملخص تفصيلي لعمولات الموظف والفواتير المستحقة عنها"
-            >
-              <Coins size={15} className="text-indigo-600" />
-              <span>ملخص العمولات التفصيلي</span>
-            </button>
-          )}
+          {/* 6. صرف عمولة - زر بارز ومميز */}
+          <button
+            disabled={!canDisburseCommissions}
+            onClick={() => {
+              if (!canDisburseCommissions) {
+                alert('⛔ عذراً، لا تملك صلاحية اعتماد وصرف العمولات (hr_manage_commissions)');
+                return;
+              }
+              handleOpenCommissionModal();
+            }}
+            className={`px-4 py-2 rounded-xl text-xs font-black flex items-center gap-2 shadow-lg transition-all transform active:scale-95 ${
+              canDisburseCommissions
+                ? 'bg-gradient-to-r from-amber-500 via-amber-600 to-amber-700 hover:from-amber-600 hover:to-amber-800 text-white shadow-amber-500/30 ring-2 ring-amber-400/40 cursor-pointer'
+                : 'bg-slate-200 text-slate-400 opacity-50 cursor-not-allowed'
+            }`}
+            title={canDisburseCommissions ? 'صرف عمولة نقدية للموظف فوراً' : 'لا تملك صلاحية صرف العمولات (hr_manage_commissions)'}
+          >
+            <Coins size={16} className="text-amber-100" />
+            <span className="text-[13px] font-black">صرف عمولة 💵</span>
+          </button>
 
-          {/* 10. صرف عمولة 💵 */}
-          {AuthService.canDo('hr_manage_commissions', currentUser) && (
-            <button
-              onClick={() => handleOpenCommissionModal()}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
-              title="صرف عمولة"
-            >
-              <Coins size={15} />
-              <span>صرف عمولة 💵</span>
-            </button>
-          )}
+          {/* 7. صرف مسير الرواتب */}
+          <button
+            disabled={!canDisburseSalaries}
+            onClick={() => {
+              if (!canDisburseSalaries) {
+                alert('⛔ عذراً، لا تملك صلاحية فتح واعتماد وصرف مسير الرواتب (hr_disburse_payroll)');
+                return;
+              }
+              handleOpenDisbursementModal();
+            }}
+            className={`px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md transition-all ${
+              canDisburseSalaries
+                ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20 cursor-pointer'
+                : 'bg-slate-200 text-slate-400 opacity-50 cursor-not-allowed'
+            }`}
+            title={canDisburseSalaries ? 'صرف مسير الرواتب' : 'لا تملك صلاحية صرف مسير الرواتب (hr_disburse_payroll)'}
+          >
+            <DollarSign size={16} />
+            <span>صرف مسير الرواتب 💰</span>
+          </button>
 
-          {/* 11. صرف مسير الرواتب 💰 */}
-          {AuthService.canDo('hr_disburse_payroll', currentUser) && (
-            <button
-              onClick={handleOpenDisbursementModal}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
-              title="صرف مسير الرواتب 💰"
-            >
-              <DollarSign size={16} />
-              <span>صرف مسير الرواتب 💰</span>
-            </button>
-          )}
-
-          {/* 12. قسيمة الراتب (80mm) */}
-          {(AuthService.canDo('manage_salaries', currentUser) || AuthService.canDo('hr_disburse_payroll', currentUser)) && (
-            <button
-              onClick={() => handleOpenSalarySlip()}
-              className="bg-slate-900 hover:bg-slate-800 text-white px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
-            >
-              <Printer size={15} />
-              <span>قسيمة الراتب (80mm)</span>
-            </button>
-          )}
+          {/* 8. قسيمة الراتب */}
+          <button
+            disabled={!canPrintSlips}
+            onClick={() => {
+              if (!canPrintSlips) {
+                alert('⛔ عذراً، لا تملك صلاحية طباعة قسائم الرواتب (hr_print_slips)');
+                return;
+              }
+              handleOpenSalarySlip();
+            }}
+            className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-colors ${
+              canPrintSlips
+                ? 'bg-slate-900 hover:bg-slate-800 text-white cursor-pointer'
+                : 'bg-slate-200 text-slate-400 opacity-50 cursor-not-allowed'
+            }`}
+            title={canPrintSlips ? 'قسيمة الراتب' : 'لا تملك صلاحية طباعة قسيمة الراتب (hr_print_slips)'}
+          >
+            <Printer size={15} />
+            <span>قسيمة الراتب (80mm)</span>
+          </button>
         </div>
       </div>
 
@@ -2422,210 +3271,281 @@ export function HRScreen({
         )}
       </div>
 
-      {/* Top Statistical Summary Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-11 gap-2.5 mb-5">
+      {/* 📊 مربعات إحصائية علوية لمجاميع التايم شيت مرتبة بنفس ترتيب أعمدة الجدول */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-11 gap-2.5 mb-3.5">
         {/* 1. أيام العمل */}
-        <div className="bg-white border border-slate-200/90 rounded-2xl p-3 shadow-xs flex flex-col justify-between hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-bold text-slate-600">أيام العمل</span>
-            <div className="p-1 rounded-lg bg-slate-100 text-slate-600">
+        <div className="bg-white p-3 rounded-2xl border border-slate-200/90 shadow-2xs flex flex-col justify-between transition-all hover:border-slate-300">
+          <div className="flex items-center justify-between text-slate-500 mb-1.5">
+            <span className="text-[11px] font-bold">أيام العمل</span>
+            <div className="w-6 h-6 rounded-lg bg-slate-100 flex items-center justify-center text-slate-600">
               <Calendar size={13} />
             </div>
           </div>
-          <div>
-            <div className="text-base font-black text-slate-800 font-mono tracking-tight">
-              {timesheetSummaryStats.workDaysCount} <span className="text-[10px] font-bold text-slate-500">يوم</span>
-            </div>
-            <div className="text-[9px] font-semibold text-slate-400 truncate mt-0.5" title="إجمالي أيام العمل المقررة">
-              أيام الدوام المقررة
-            </div>
+          <div className="flex items-baseline gap-1">
+            <span className="text-base font-black font-mono text-slate-900">{timesheetStats.workDaysCount}</span>
+            <span className="text-[10px] font-bold text-slate-500">يوم</span>
           </div>
         </div>
 
         {/* 2. حضور */}
-        <div className="bg-emerald-50/40 border border-emerald-200/80 rounded-2xl p-3 shadow-xs flex flex-col justify-between hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-bold text-emerald-800">حضور</span>
-            <div className="p-1 rounded-lg bg-emerald-100 text-emerald-700">
+        <div className="bg-emerald-50/50 p-3 rounded-2xl border border-emerald-200/80 shadow-2xs flex flex-col justify-between transition-all hover:border-emerald-300">
+          <div className="flex items-center justify-between text-emerald-800 mb-1.5">
+            <span className="text-[11px] font-bold">حضور</span>
+            <div className="w-6 h-6 rounded-lg bg-emerald-100/80 flex items-center justify-center text-emerald-700">
               <CheckCircle size={13} />
             </div>
           </div>
-          <div>
-            <div className="text-base font-black text-emerald-700 font-mono tracking-tight">
-              {timesheetSummaryStats.attendanceCount} <span className="text-[10px] font-bold text-emerald-600">يوم</span>
-            </div>
-            <div className="text-[9px] font-semibold text-emerald-600/80 truncate mt-0.5">
-              {timesheetSummaryStats.workDaysCount > 0 ? Math.round((timesheetSummaryStats.attendanceCount / timesheetSummaryStats.workDaysCount) * 100) : 0}% نسبة الحضور
-            </div>
+          <div className="flex items-baseline gap-1">
+            <span className="text-base font-black font-mono text-emerald-700">{timesheetStats.presentDaysCount}</span>
+            <span className="text-[10px] font-bold text-emerald-600">يوم</span>
           </div>
         </div>
 
         {/* 3. غياب */}
-        <div className="bg-rose-50/40 border border-rose-200/80 rounded-2xl p-3 shadow-xs flex flex-col justify-between hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-bold text-rose-800">غياب</span>
-            <div className="p-1 rounded-lg bg-rose-100 text-rose-700">
+        <div className="bg-rose-50/50 p-3 rounded-2xl border border-rose-200/80 shadow-2xs flex flex-col justify-between transition-all hover:border-rose-300">
+          <div className="flex items-center justify-between text-rose-800 mb-1.5">
+            <span className="text-[11px] font-bold">غياب</span>
+            <div className="w-6 h-6 rounded-lg bg-rose-100/80 flex items-center justify-center text-rose-700">
               <AlertTriangle size={13} />
             </div>
           </div>
-          <div>
-            <div className="text-base font-black text-rose-700 font-mono tracking-tight">
-              {timesheetSummaryStats.absenceCount} <span className="text-[10px] font-bold text-rose-600">يوم</span>
-            </div>
-            <div className="text-[9px] font-semibold text-rose-500 truncate mt-0.5" title={`خصم غياب: ${totals.absenceDeductionSum.toFixed(2)} ${settings.currency}`}>
-              خصم: {totals.absenceDeductionSum.toFixed(2)} {settings.currency}
-            </div>
+          <div className="flex items-baseline gap-1">
+            <span className="text-base font-black font-mono text-rose-700">{timesheetStats.absentDaysCount}</span>
+            <span className="text-[10px] font-bold text-rose-600">يوم</span>
           </div>
         </div>
 
         {/* 4. تأخيرات بالدقيقة */}
-        <div className="bg-amber-50/40 border border-amber-200/80 rounded-2xl p-3 shadow-xs flex flex-col justify-between hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-bold text-amber-800">تأخيرات بالدقيقة</span>
-            <div className="p-1 rounded-lg bg-amber-100 text-amber-700">
-              <Timer size={13} />
+        <div className="bg-amber-50/50 p-3 rounded-2xl border border-amber-200/80 shadow-2xs flex flex-col justify-between transition-all hover:border-amber-300">
+          <div className="flex items-center justify-between text-amber-800 mb-1.5">
+            <span className="text-[11px] font-bold">تأخيرات بالدقيقة</span>
+            <div className="w-6 h-6 rounded-lg bg-amber-100/80 flex items-center justify-center text-amber-700">
+              <Clock size={13} />
             </div>
           </div>
-          <div>
-            <div className="text-base font-black text-amber-700 font-mono tracking-tight">
-              {totals.delayMinutesSum} <span className="text-[10px] font-bold text-amber-600">دقيقة</span>
-            </div>
-            <div className="text-[9px] font-semibold text-amber-600/80 truncate mt-0.5">
-              {totals.delayMinutesSum > 0 ? `${Math.floor(totals.delayMinutesSum / 60)} س ${totals.delayMinutesSum % 60} د` : 'لا يوجد تأخير'}
-            </div>
+          <div className="flex items-baseline gap-1">
+            <span className="text-base font-black font-mono text-amber-800">{timesheetStats.delayMinutes}</span>
+            <span className="text-[10px] font-bold text-amber-600">د</span>
           </div>
         </div>
 
         {/* 5. خصم تأخير */}
-        <div className="bg-orange-50/40 border border-orange-200/80 rounded-2xl p-3 shadow-xs flex flex-col justify-between hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-bold text-orange-800">خصم تأخير</span>
-            <div className="p-1 rounded-lg bg-orange-100 text-orange-700">
+        <div className="bg-rose-50/40 p-3 rounded-2xl border border-rose-200/80 shadow-2xs flex flex-col justify-between transition-all hover:border-rose-300">
+          <div className="flex items-center justify-between text-rose-800 mb-1.5">
+            <span className="text-[11px] font-bold">خصم تأخير</span>
+            <div className="w-6 h-6 rounded-lg bg-rose-100/80 flex items-center justify-center text-rose-700">
               <TrendingDown size={13} />
             </div>
           </div>
-          <div>
-            <div className="text-base font-black text-orange-700 font-mono tracking-tight">
-              {totals.delayDeductionSum.toFixed(2)}
-            </div>
-            <div className="text-[9px] font-semibold text-orange-600/80 truncate mt-0.5">
-              {settings.currency}
-            </div>
+          <div className="flex items-baseline gap-1">
+            <span className="text-base font-black font-mono text-rose-700">{timesheetStats.delayDeduction.toFixed(2)}</span>
+            <span className="text-[10px] font-bold text-rose-600">{settings.currency}</span>
           </div>
         </div>
 
         {/* 6. وقت إضافي */}
-        <div className="bg-blue-50/40 border border-blue-200/80 rounded-2xl p-3 shadow-xs flex flex-col justify-between hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-bold text-blue-800">وقت إضافي</span>
-            <div className="p-1 rounded-lg bg-blue-100 text-blue-700">
-              <Sparkles size={13} />
+        <div className="bg-blue-50/50 p-3 rounded-2xl border border-blue-200/80 shadow-2xs flex flex-col justify-between transition-all hover:border-blue-300">
+          <div className="flex items-center justify-between text-blue-800 mb-1.5">
+            <span className="text-[11px] font-bold">وقت إضافي</span>
+            <div className="w-6 h-6 rounded-lg bg-blue-100/80 flex items-center justify-center text-blue-700">
+              <Timer size={13} />
             </div>
           </div>
-          <div>
-            <div className="text-base font-black text-blue-700 font-mono tracking-tight">
-              {totals.overtimeAmountSum.toFixed(2)}
+          <div className="flex items-baseline justify-between gap-1">
+            <div className="flex items-baseline gap-1">
+              <span className="text-base font-black font-mono text-blue-700">{timesheetStats.overtimeAmount.toFixed(2)}</span>
+              <span className="text-[10px] font-bold text-blue-600">{settings.currency}</span>
             </div>
-            <div className="text-[9px] font-semibold text-blue-600/80 truncate mt-0.5" title={`${totals.overtimeMinutesSum} دقيقة أوفرتايم`}>
-              {totals.overtimeMinutesSum} د ({settings.currency})
-            </div>
+            {timesheetStats.overtimeMinutes > 0 && (
+              <span className="text-[10px] font-mono text-blue-500 font-bold">({timesheetStats.overtimeMinutes} د)</span>
+            )}
           </div>
         </div>
 
         {/* 7. خصومات */}
-        <div className="bg-rose-50/40 border border-rose-200/80 rounded-2xl p-3 shadow-xs flex flex-col justify-between hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-bold text-rose-800">خصومات</span>
-            <div className="p-1 rounded-lg bg-rose-100 text-rose-700">
+        <div className="bg-orange-50/50 p-3 rounded-2xl border border-orange-200/80 shadow-2xs flex flex-col justify-between transition-all hover:border-orange-300">
+          <div className="flex items-center justify-between text-orange-800 mb-1.5">
+            <span className="text-[11px] font-bold">خصومات</span>
+            <div className="w-6 h-6 rounded-lg bg-orange-100/80 flex items-center justify-center text-orange-700">
               <ShieldAlert size={13} />
             </div>
           </div>
-          <div>
-            <div className="text-base font-black text-rose-700 font-mono tracking-tight">
-              {timesheetSummaryStats.otherDeductions.toFixed(2)}
-            </div>
-            <div className="text-[9px] font-semibold text-rose-500 truncate mt-0.5" title="سلف + جزاءات + غياب + أذونات">
-              {settings.currency} (سلف/جزاءات)
-            </div>
+          <div className="flex items-baseline gap-1">
+            <span className="text-base font-black font-mono text-orange-700">{timesheetStats.totalDeductions.toFixed(2)}</span>
+            <span className="text-[10px] font-bold text-orange-600">{settings.currency}</span>
           </div>
         </div>
 
         {/* 8. مكافآت */}
-        <div className="bg-purple-50/40 border border-purple-200/80 rounded-2xl p-3 shadow-xs flex flex-col justify-between hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-bold text-purple-800">مكافآت</span>
-            <div className="p-1 rounded-lg bg-purple-100 text-purple-700">
+        <div className="bg-purple-50/50 p-3 rounded-2xl border border-purple-200/80 shadow-2xs flex flex-col justify-between transition-all hover:border-purple-300">
+          <div className="flex items-center justify-between text-purple-800 mb-1.5">
+            <span className="text-[11px] font-bold">مكافآت</span>
+            <div className="w-6 h-6 rounded-lg bg-purple-100/80 flex items-center justify-center text-purple-700">
               <Award size={13} />
             </div>
           </div>
-          <div>
-            <div className="text-base font-black text-purple-700 font-mono tracking-tight">
-              {totals.bonusesSum.toFixed(2)}
-            </div>
-            <div className="text-[9px] font-semibold text-purple-600/80 truncate mt-0.5">
-              {settings.currency} (حوافز)
-            </div>
+          <div className="flex items-baseline gap-1">
+            <span className="text-base font-black font-mono text-purple-700">{timesheetStats.bonuses.toFixed(2)}</span>
+            <span className="text-[10px] font-bold text-purple-600">{settings.currency}</span>
           </div>
         </div>
 
         {/* 9. شغل الموظف */}
-        <div className="bg-teal-50/40 border border-teal-200/80 rounded-2xl p-3 shadow-xs flex flex-col justify-between hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-bold text-teal-800">شغل الموظف</span>
-            <div className="p-1 rounded-lg bg-teal-100 text-teal-700">
+        <div className="bg-teal-50/50 p-3 rounded-2xl border border-teal-200/80 shadow-2xs flex flex-col justify-between transition-all hover:border-teal-300">
+          <div className="flex items-center justify-between text-teal-800 mb-1.5">
+            <span className="text-[11px] font-bold">شغل الموظف</span>
+            <div className="w-6 h-6 rounded-lg bg-teal-100/80 flex items-center justify-center text-teal-700">
               <Briefcase size={13} />
             </div>
           </div>
-          <div>
-            <div className="text-base font-black text-teal-700 font-mono tracking-tight">
-              {totals.workRevenueSum.toFixed(2)}
-            </div>
-            <div className="text-[9px] font-semibold text-teal-600/80 truncate mt-0.5" title="إجمالي مبيعات وخدمات الموظف">
-              {settings.currency} (إنتاجية)
-            </div>
+          <div className="flex items-baseline gap-1">
+            <span className="text-base font-black font-mono text-teal-800">{timesheetStats.workRevenue.toFixed(2)}</span>
+            <span className="text-[10px] font-bold text-teal-600">{settings.currency}</span>
           </div>
         </div>
 
         {/* 10. عمولات */}
-        <div className="bg-emerald-50/40 border border-emerald-200/80 rounded-2xl p-3 shadow-xs flex flex-col justify-between hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-bold text-emerald-800">عمولات</span>
-            <div className="p-1 rounded-lg bg-emerald-100 text-emerald-700">
-              <Percent size={13} />
+        <div className="bg-indigo-50/50 p-3 rounded-2xl border border-indigo-200/80 shadow-2xs flex flex-col justify-between transition-all hover:border-indigo-300">
+          <div className="flex items-center justify-between text-indigo-800 mb-1.5">
+            <span className="text-[11px] font-bold">عمولات</span>
+            <div className="w-6 h-6 rounded-lg bg-indigo-100/80 flex items-center justify-center text-indigo-700">
+              <Coins size={13} />
             </div>
           </div>
-          <div>
-            <div className="text-base font-black text-emerald-700 font-mono tracking-tight">
-              {totals.commissionSum.toFixed(2)}
-            </div>
-            <div className="text-[9px] font-semibold text-emerald-600/80 truncate mt-0.5" title={totals.commissionPaidSum > 0 ? `صُرف: ${totals.commissionPaidSum.toFixed(2)}` : undefined}>
-              {totals.commissionPaidSum > 0 ? `صُرف: ${totals.commissionPaidSum.toFixed(2)}` : settings.currency}
-            </div>
+          <div className="flex items-baseline gap-1">
+            <span className="text-base font-black font-mono text-indigo-700">{timesheetStats.commissions.toFixed(2)}</span>
+            <span className="text-[10px] font-bold text-indigo-600">{settings.currency}</span>
           </div>
         </div>
 
         {/* 11. صافي الراتب */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3 shadow-md flex flex-col justify-between text-white hover:bg-slate-800 transition-colors">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-bold text-slate-300">صافي الراتب</span>
-            <div className="p-1 rounded-lg bg-slate-800 text-emerald-400">
+        <div className="bg-emerald-100/80 p-3 rounded-2xl border-2 border-emerald-400/90 shadow-xs flex flex-col justify-between transition-all hover:border-emerald-500">
+          <div className="flex items-center justify-between text-emerald-950 mb-1.5">
+            <span className="text-[11px] font-black">صافي الراتب</span>
+            <div className="w-6 h-6 rounded-lg bg-emerald-500 text-white flex items-center justify-center shadow-2xs">
               <Wallet size={13} />
             </div>
           </div>
-          <div>
-            <div className="text-base font-black text-emerald-400 font-mono tracking-tight">
-              {totals.netSum.toFixed(2)}
-            </div>
-            <div className="text-[9px] font-semibold text-slate-400 truncate mt-0.5">
-              {settings.currency} (الصافي)
-            </div>
+          <div className="flex items-baseline gap-1">
+            <span className="text-base font-black font-mono text-emerald-950">{timesheetStats.netSalary.toFixed(2)}</span>
+            <span className="text-[10px] font-black text-emerald-800">{settings.currency}</span>
           </div>
         </div>
       </div>
 
-      {/* Main Timesheet Table (Full Vertical Expansion till End) */}
-      <div className="w-full bg-white rounded-2xl border border-slate-200 shadow-sm overflow-x-auto mb-8">
-        <table className="w-full text-center text-xs border-collapse whitespace-nowrap">
+      {/* Horizontal Scroll Controller Toolbar for the Table */}
+      <div className="bg-white px-4 py-2.5 rounded-2xl border border-slate-200 shadow-2xs mb-3 flex flex-wrap items-center justify-between gap-3 select-none">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+            <span>📊 شريط تحكم وتصفح الجدول (أفقياً):</span>
+          </span>
+          <span className="text-[11px] text-slate-500 hidden sm:inline">
+            (يمكنك التمرير بالأزرار، أو السحب بالماوس يميناً ويساراً، أو الضغط على Shift مع عجلة الماوس)
+          </span>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1.5">
+          {/* Density Mode: Compact to fit entire month in one screen */}
+          <button
+            type="button"
+            onClick={() => setIsCompactDensity(!isCompactDensity)}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 border ${
+              isCompactDensity 
+                ? 'bg-amber-100 border-amber-300 text-amber-950 font-black shadow-xs' 
+                : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-800'
+            }`}
+            title="تبديل حجم الصفوف ليظهر الشهر بالكامل في الشاشة دون تمرير كثير"
+          >
+            <span>{isCompactDensity ? '↕ عرض عادي واسع' : '☰ إظهار الشهر بالكامل (عرض مكثف)'}</span>
+          </button>
+
+          {/* Fullscreen Table Mode */}
+          <button
+            type="button"
+            onClick={() => setIsFullscreenTable(!isFullscreenTable)}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 border ${
+              isFullscreenTable
+                ? 'bg-indigo-600 text-white border-indigo-700 shadow-md font-black'
+                : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-800'
+            }`}
+            title="توسيع أو تصغير نافذة الجدول لملء الشاشة بالكامل"
+          >
+            {isFullscreenTable ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            <span>{isFullscreenTable ? 'استعادة الحجم' : 'ملء الشاشة ⤢'}</span>
+          </button>
+
+          <div className="h-5 w-px bg-slate-200 mx-1 hidden sm:block"></div>
+
+          <button
+            type="button"
+            onClick={() => scrollTable('start')}
+            className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all flex items-center gap-1 cursor-pointer active:scale-95"
+            title="انتقال إلى أول الجدول (بيانات الموظف والتاريخ)"
+          >
+            <ChevronsRight size={15} />
+            <span>البداية</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => scrollTable('right')}
+            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl transition-all flex items-center gap-1 cursor-pointer active:scale-95"
+            title="تمرير لليمين (نحو الحضور والإنصراف)"
+          >
+            <ChevronRight size={16} />
+            <span>يمين</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => scrollTable('left')}
+            className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-xl transition-all flex items-center gap-1 cursor-pointer active:scale-95"
+            title="تمرير لليسار (نحو العمولات والخصومات والصافي)"
+          >
+            <span>يسار</span>
+            <ChevronLeft size={16} />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => scrollTable('end')}
+            className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black rounded-xl transition-all flex items-center gap-1 cursor-pointer active:scale-95 shadow-xs"
+            title="انتقال إلى نهاية الجدول (الصافي ومسامحة التأخير)"
+          >
+            <span>الصافي والعمليات</span>
+            <ChevronsLeft size={15} />
+          </button>
+        </div>
+      </div>
+
+      {/* Main Timesheet Table (Full Vertical & Horizontal Scroll) */}
+      <div 
+        ref={tableContainerRef}
+        onMouseDown={handleMouseDown}
+        onMouseLeave={handleMouseLeaveOrUp}
+        onMouseUp={handleMouseLeaveOrUp}
+        onMouseMove={handleMouseMove}
+        className={`w-full bg-white rounded-2xl border border-slate-200 shadow-sm overflow-auto custom-scrollbar mb-8 relative select-none touch-pan-x transition-all duration-200 ${
+          isFullscreenTable
+            ? 'fixed inset-3 z-50 shadow-2xl p-4 flex flex-col bg-white overflow-auto border-2 border-indigo-500'
+            : isCompactDensity
+              ? 'min-h-[750px] max-h-[88vh]'
+              : 'min-h-[850px] max-h-[92vh]'
+        }`}
+        style={{ cursor: isMouseDown ? 'grabbing' : 'default' }}
+      >
+        {isFullscreenTable && (
+          <div className="flex justify-between items-center mb-3 pb-2 border-b border-slate-100">
+            <h3 className="font-black text-sm text-slate-800">سجل الدوام والتايم شيت (وضع ملء الشاشة لعرض كامل أيام الشهر)</h3>
+            <button
+              onClick={() => setIsFullscreenTable(false)}
+              className="px-3 py-1 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 cursor-pointer"
+            >
+              ✕ إغلاق ملء الشاشة
+            </button>
+          </div>
+        )}
+        <table className={`w-full text-center border-collapse whitespace-nowrap min-w-[1600px] transition-all ${isCompactDensity ? 'text-[11px] [&_td]:!py-1 [&_th]:!py-1.5' : 'text-xs [&_td]:py-2 [&_th]:py-2.5'}`}>
             {/* Header */}
             <thead className="bg-slate-900 text-white font-black sticky top-0 z-10 text-[11px]">
               <tr>
@@ -2651,6 +3571,7 @@ export function HRScreen({
                 <th className="p-2.5 border-l border-slate-800">مكافأة</th>
                 <th className="p-2.5 border-l border-slate-800">شغل الموظف</th>
                 <th className="p-2.5 border-l border-slate-800">نسبة الموظف</th>
+                <th className="p-2.5 border-l border-slate-800 bg-indigo-950/40 text-indigo-200 font-black">عمولة التارجت</th>
                 <th className="p-2.5 border-l border-slate-800 bg-amber-950/40 text-amber-200 font-black">عمولات مصروفة</th>
                 <th className="p-2.5 border-l border-slate-800 bg-slate-950 font-black">الصافي</th>
                 <th className="p-2.5">مسامحة تأخير</th>
@@ -2659,7 +3580,17 @@ export function HRScreen({
 
             {/* Body */}
             <tbody className="divide-y divide-slate-200">
-              {timesheetRows.map((row, idx) => {
+              {timesheetRows.length === 0 ? (
+                <tr>
+                  <td colSpan={26} className="p-8 text-center text-slate-400 font-bold bg-slate-50/50">
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <Clock size={24} className="text-slate-300" />
+                      <span>لا توجد سجلات دوام مطابقة للفترة المحددة أو لم يتم اختيار موظف نشط</span>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                timesheetRows.map((row, idx) => {
                 const key = `${row.employee.id}_${row.dateStr}`;
                 const isOff = row.status === 'weekly_off';
                 const isAbsent = row.status === 'absent';
@@ -2695,7 +3626,7 @@ export function HRScreen({
 
                     {/* 4. Daily rate */}
                     <td className="p-2 border-l border-slate-200 font-mono font-bold text-slate-800">
-                      {row.dailyRate > 0 ? row.dailyRate.toFixed(2) : '-'}
+                      {Number(row.dailyRate || 0) > 0 ? Number(row.dailyRate || 0).toFixed(2) : '-'}
                     </td>
 
                     {/* 5. Check-In */}
@@ -2713,8 +3644,8 @@ export function HRScreen({
                           type="button"
                           onClick={() => {
                             const cleanIn = row.checkIn ? row.checkIn.substring(0, 5) : '09:00';
-                            const cleanOut = row.checkOut ? row.checkOut.replace(' (+1)', '').substring(0, 5) : '';
-                            const isOvernight = Boolean(row.checkOut?.includes('(+1)')) || (Boolean(cleanIn && cleanOut) && cleanOut <= cleanIn);
+                            const cleanOut = row.checkOut ? row.checkOut.replace(' (+1)', '').substring(0, 5) : '18:00';
+                            const isOvernight = Boolean(row.checkOut?.includes('(+1)')) || (Boolean(row.checkOut) && cleanOut <= cleanIn);
                             setAttendanceForm({
                               empId: row.employee.id,
                               date: row.dateStr,
@@ -2750,28 +3681,30 @@ export function HRScreen({
                         ) : (
                           <span className="text-slate-400 font-mono">--:--:--</span>
                         )}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const cleanIn = row.checkIn ? row.checkIn.substring(0, 5) : '09:00';
-                            const cleanOut = row.checkOut ? row.checkOut.replace(' (+1)', '').substring(0, 5) : '';
-                            const isOvernight = Boolean(row.checkOut?.includes('(+1)')) || (Boolean(cleanIn && cleanOut) && cleanOut <= cleanIn);
-                            setAttendanceForm({
-                              empId: row.employee.id,
-                              date: row.dateStr,
-                              checkIn: cleanIn,
-                              checkOut: cleanOut,
-                              isNextDayCheckout: isOvernight,
-                              status: row.status === 'absent' ? 'absent' : 'regular',
-                              notes: ''
-                            });
-                            setShowAttendanceModal(true);
-                          }}
-                          className="hover:text-indigo-600 transition-colors p-0.5 rounded hover:bg-slate-200 text-slate-400 cursor-pointer"
-                          title="تعديل وقت الحضور والانصراف لهذا الموظف"
-                        >
-                          <Edit size={12} />
-                        </button>
+                        {canManageAttendance && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const cleanIn = row.checkIn ? row.checkIn.substring(0, 5) : '09:00';
+                              const cleanOut = row.checkOut ? row.checkOut.replace(' (+1)', '').substring(0, 5) : '18:00';
+                              const isOvernight = Boolean(row.checkOut?.includes('(+1)')) || (Boolean(row.checkOut) && cleanOut <= cleanIn);
+                              setAttendanceForm({
+                                empId: row.employee.id,
+                                date: row.dateStr,
+                                checkIn: cleanIn,
+                                checkOut: cleanOut,
+                                isNextDayCheckout: isOvernight,
+                                status: row.status === 'absent' ? 'absent' : 'regular',
+                                notes: ''
+                              });
+                              setShowAttendanceModal(true);
+                            }}
+                            className="hover:text-indigo-600 transition-colors p-0.5 rounded hover:bg-slate-200 text-slate-400 cursor-pointer"
+                            title="تعديل وقت الحضور والانصراف لهذا الموظف"
+                          >
+                            <Edit size={12} />
+                          </button>
+                        )}
                       </div>
                     </td>
 
@@ -2779,16 +3712,43 @@ export function HRScreen({
                     {/* 7. Status */}
                     <td className="p-2 border-l border-slate-200">
                       <div className="flex flex-col items-center gap-0.5">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-black ${
-                          isTerminated ? 'bg-slate-400 text-white' :
-                          isMission ? 'bg-purple-100 text-purple-800 border border-purple-200' :
-                          isOff ? 'bg-emerald-100 text-emerald-800' :
-                          isAbsent ? 'bg-rose-100 text-rose-800' :
-                          isLeave ? 'bg-blue-100 text-blue-800' :
-                          'bg-slate-100 text-slate-700'
-                        }`}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!canManageAttendance) return;
+                            const cleanIn = row.checkIn ? row.checkIn.substring(0, 5) : '09:00';
+                            const cleanOut = row.checkOut ? row.checkOut.replace(' (+1)', '').substring(0, 5) : '18:00';
+                            const isOvernight = Boolean(row.checkOut?.includes('(+1)')) || (Boolean(row.checkOut) && cleanOut <= cleanIn);
+                            setAttendanceForm({
+                              empId: row.employee.id,
+                              date: row.dateStr,
+                              checkIn: cleanIn,
+                              checkOut: cleanOut,
+                              isNextDayCheckout: isOvernight,
+                              status: row.status === 'absent' ? 'regular' : row.status,
+                              notes: ''
+                            });
+                            setShowAttendanceModal(true);
+                          }}
+                          className={`px-2 py-0.5 rounded text-[10px] font-black transition-all ${
+                            canManageAttendance ? 'cursor-pointer' : 'cursor-default'
+                          } ${
+                            isTerminated ? 'bg-slate-400 text-white' :
+                            isMission ? 'bg-purple-100 text-purple-800 border border-purple-200' :
+                            isOff ? 'bg-emerald-100 text-emerald-800' :
+                            isAbsent ? 'bg-rose-100 text-rose-800 hover:bg-rose-200' :
+                            isLeave ? 'bg-blue-100 text-blue-800' :
+                            row.statusLabel === 'دوام مجدول' ? 'bg-sky-100 text-sky-800 border border-sky-300 hover:bg-sky-200 shadow-2xs' :
+                            'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                          }`}
+                          title={
+                            row.statusLabel === 'دوام مجدول'
+                              ? 'دوام مجدول: تم تحديده صراحة من قِبل المستخدمين.'
+                              : canManageAttendance ? `الحالة: ${row.statusLabel} - اضغط للتعديل` : `الحالة: ${row.statusLabel}`
+                          }
+                        >
                           {row.statusLabel}
-                        </span>
+                        </button>
                         {row.administrativeAction === 'warning' && (
                           <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 border border-amber-300 text-[9px] font-black" title={row.administrativeNotes}>
                             ⚠️ إنذار إداري
@@ -2818,7 +3778,7 @@ export function HRScreen({
 
                     {/* 9.2 Permission Deduction */}
                     <td className="p-2 border-l border-slate-200 font-mono font-bold text-rose-600">
-                      {row.permissionDeduction > 0 ? row.permissionDeduction.toFixed(2) : '-'}
+                      {Number(row.permissionDeduction || 0) > 0 ? Number(row.permissionDeduction || 0).toFixed(2) : '-'}
                     </td>
 
                     {/* 10. Worked Hours */}
@@ -2835,7 +3795,7 @@ export function HRScreen({
 
                     {/* 12. Delay Deduction */}
                     <td className="p-2 border-l border-slate-200 font-mono font-bold text-rose-600">
-                      {row.delayDeduction > 0 ? row.delayDeduction.toFixed(2) : '-'}
+                      {Number(row.delayDeduction || 0) > 0 ? Number(row.delayDeduction || 0).toFixed(2) : '-'}
                     </td>
 
                     {/* 13. Overtime Minutes */}
@@ -2847,12 +3807,12 @@ export function HRScreen({
 
                     {/* 14. Overtime Amount */}
                     <td className="p-2 border-l border-slate-200 font-mono font-bold text-blue-600">
-                      {row.overtimeAmount > 0 ? row.overtimeAmount.toFixed(2) : '-'}
+                      {Number(row.overtimeAmount || 0) > 0 ? Number(row.overtimeAmount || 0).toFixed(2) : '-'}
                     </td>
 
                     {/* 15. Special Penalty */}
                     <td className="p-2 border-l border-slate-200 font-mono text-rose-600 font-bold">
-                      {row.specialPenalty > 0 ? (
+                      {Number(row.specialPenalty || 0) > 0 ? (
                         <button
                           type="button"
                           onClick={() => handlePrintRowVoucher(row, 'penalty', row.specialPenalty)}
@@ -2860,19 +3820,19 @@ export function HRScreen({
                           title="طباعة إيصال خصم 80mm"
                         >
                           <Printer size={11} className="opacity-60" />
-                          <span>{row.specialPenalty.toFixed(2)}</span>
+                          <span>{Number(row.specialPenalty || 0).toFixed(2)}</span>
                         </button>
                       ) : '-'}
                     </td>
 
                     {/* 16. Absence Deduction */}
                     <td className="p-2 border-l border-slate-200 font-mono text-rose-600 font-bold">
-                      {row.absenceDeduction > 0 ? row.absenceDeduction.toFixed(2) : '-'}
+                      {Number(row.absenceDeduction || 0) > 0 ? Number(row.absenceDeduction || 0).toFixed(2) : '-'}
                     </td>
 
                     {/* 17. Advances */}
                     <td className="p-2 border-l border-slate-200 font-mono text-amber-700 font-bold">
-                      {row.advances > 0 ? (
+                      {Number(row.advances || 0) > 0 ? (
                         <button
                           type="button"
                           onClick={() => handlePrintRowVoucher(row, 'advance', row.advances)}
@@ -2880,14 +3840,14 @@ export function HRScreen({
                           title="طباعة إيصال سلفة 80mm"
                         >
                           <Printer size={11} className="opacity-60" />
-                          <span>{row.advances.toFixed(2)}</span>
+                          <span>{Number(row.advances || 0).toFixed(2)}</span>
                         </button>
                       ) : '-'}
                     </td>
 
                     {/* 18. Bonuses */}
                     <td className="p-2 border-l border-slate-200 font-mono text-emerald-700 font-bold">
-                      {row.bonuses > 0 ? (
+                      {Number(row.bonuses || 0) > 0 ? (
                         <button
                           type="button"
                           onClick={() => handlePrintRowVoucher(row, 'bonus', row.bonuses)}
@@ -2895,24 +3855,52 @@ export function HRScreen({
                           title="طباعة إيصال مكافأة 80mm"
                         >
                           <Printer size={11} className="opacity-60" />
-                          <span>{row.bonuses.toFixed(2)}</span>
+                          <span>{Number(row.bonuses || 0).toFixed(2)}</span>
                         </button>
                       ) : '-'}
                     </td>
 
                     {/* 19. Employee Work Revenue */}
                     <td className="p-2 border-l border-slate-200 font-mono font-bold text-slate-800">
-                      {row.workRevenue > 0 ? row.workRevenue.toFixed(0) : '-'}
+                      {Number(row.workRevenue || 0) > 0 ? Number(row.workRevenue || 0).toFixed(0) : '-'}
                     </td>
 
                     {/* 20. Employee Commission */}
                     <td className="p-2 border-l border-slate-200 font-mono font-bold text-emerald-600">
-                      {row.commissionAmount > 0 ? row.commissionAmount.toFixed(2) : '0'}
+                      <div className="flex flex-col items-center gap-1">
+                        <span>{Number(row.commissionAmount || 0) > 0 ? Number(row.commissionAmount || 0).toFixed(2) : '0'}</span>
+                        {canDisburseCommissions && (Number(row.commissionAmount || 0) + Number(row.dailyTargetCommission || 0) - Number(row.commissionPaid || 0)) > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenCommissionModal(
+                              row.employee.id, 
+                              Math.max(0, Number(row.commissionAmount || 0) + Number(row.dailyTargetCommission || 0) - Number(row.commissionPaid || 0))
+                            )}
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-black bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white shadow-xs transition-all active:scale-95 cursor-pointer"
+                            title={`صرف عمولة ${row.employee.name} فوراً`}
+                          >
+                            <Coins size={10} />
+                            <span>صرف 💵</span>
+                          </button>
+                        )}
+                      </div>
+                    </td>
+
+                    {/* 20.05. Target Commission */}
+                    <td className="p-2 border-l border-slate-200 font-mono font-bold bg-indigo-50/40">
+                      {row.dailyTargetCommission && Number(row.dailyTargetCommission || 0) > 0 ? (
+                        <div className="flex flex-col items-center">
+                          <span className="text-indigo-700 font-black">{Number(row.dailyTargetCommission || 0).toFixed(2)}</span>
+                          <span className="text-[9px] text-indigo-500 font-medium">({row.targetAchievementPercentage}%)</span>
+                        </div>
+                      ) : (
+                        <span className="text-slate-400">-</span>
+                      )}
                     </td>
 
                     {/* 20.1 Paid Commissions */}
                     <td className="p-2 border-l border-slate-200 font-mono text-rose-600 font-bold bg-amber-50/30">
-                      {row.commissionPaid > 0 ? (
+                      {Number(row.commissionPaid || 0) > 0 ? (
                         <button
                           type="button"
                           onClick={() => handlePrintRowVoucher(row, 'commission_payout', row.commissionPaid, 'سند صرف عمولة مسجلة بالتايم شيت')}
@@ -2920,7 +3908,7 @@ export function HRScreen({
                           title="طباعة إيصال صرف عمولة 80mm"
                         >
                           <Printer size={11} className="opacity-60" />
-                          <span>{row.commissionPaid.toFixed(2)}</span>
+                          <span>{Number(row.commissionPaid || 0).toFixed(2)}</span>
                         </button>
                       ) : '-'}
                     </td>
@@ -2929,7 +3917,7 @@ export function HRScreen({
                     <td className={`p-2 border-l border-slate-200 font-mono font-black text-xs ${
                       row.netDaily < 0 ? 'text-rose-600 bg-rose-50' : 'text-slate-900 bg-slate-50'
                     }`}>
-                      {row.netDaily.toFixed(2)}
+                      {Number(row.netDaily || 0).toFixed(2)}
                     </td>
 
                     {/* 22. Forgive Delay Checkbox */}
@@ -2937,8 +3925,15 @@ export function HRScreen({
                       <button
                         type="button"
                         onClick={() => toggleDelayForgive(key, row.isDelayForgiven)}
-                        className="text-slate-500 hover:text-emerald-600 transition-colors cursor-pointer"
-                        title={row.isDelayForgiven ? 'تمت المسامحة (إلغاء الخصم)' : 'تفعيل المسامحة عن التأخير'}
+                        disabled={!canForgiveDelays}
+                        className={`text-slate-500 hover:text-emerald-600 transition-colors ${
+                          canForgiveDelays ? 'cursor-pointer' : 'cursor-not-allowed opacity-40'
+                        }`}
+                        title={
+                          !canForgiveDelays
+                            ? 'ليس لديك صلاحية المسامحة عن التأخير'
+                            : row.isDelayForgiven ? 'تمت المسامحة (إلغاء الخصم)' : 'تفعيل المسامحة عن التأخير'
+                        }
                       >
                         {row.isDelayForgiven ? (
                           <CheckSquare size={16} className="text-emerald-600 mx-auto" />
@@ -2949,7 +3944,8 @@ export function HRScreen({
                     </td>
                   </tr>
                 );
-              })}
+              })
+            )}
             </tbody>
 
             {/* Footer Summary Row (Exact as in reference image) */}
@@ -2958,34 +3954,528 @@ export function HRScreen({
                 <td colSpan={3} className="p-2.5 text-center bg-slate-300 font-black border-l border-slate-400">
                   المجموع الكلي ({timesheetRows.length} سجل)
                 </td>
-                <td className="p-2.5 font-mono border-l border-slate-400">{totals.dailyRateSum.toFixed(2)}</td>
+                <td className="p-2.5 font-mono border-l border-slate-400">{Number(totals.dailyRateSum || 0).toFixed(2)}</td>
                 <td colSpan={5} className="p-2.5 text-center text-slate-500 border-l border-slate-400">--</td>
                 <td className="p-2.5 font-mono text-slate-700 border-l border-slate-400">{totals.permissionMinutesSum > 0 ? `${totals.permissionMinutesSum} د` : '--'}</td>
-                <td className="p-2.5 font-mono text-rose-700 border-l border-slate-400">{totals.permissionDeductionSum > 0 ? totals.permissionDeductionSum.toFixed(2) : '--'}</td>
+                <td className="p-2.5 font-mono text-rose-700 border-l border-slate-400">{Number(totals.permissionDeductionSum || 0) > 0 ? Number(totals.permissionDeductionSum || 0).toFixed(2) : '--'}</td>
                 <td className="p-2.5 text-center text-slate-500 border-l border-slate-400">--</td>
                 <td className="p-2.5 font-mono text-rose-700 border-l border-slate-400">{totals.delayMinutesSum} د</td>
-                <td className="p-2.5 font-mono text-rose-700 border-l border-slate-400">{totals.delayDeductionSum.toFixed(2)}</td>
+                <td className="p-2.5 font-mono text-rose-700 border-l border-slate-400">{Number(totals.delayDeductionSum || 0).toFixed(2)}</td>
                 <td className="p-2.5 font-mono text-blue-700 border-l border-slate-400">{totals.overtimeMinutesSum} د</td>
-                <td className="p-2.5 font-mono text-blue-700 border-l border-slate-400">{totals.overtimeAmountSum.toFixed(2)}</td>
-                <td className="p-2.5 font-mono text-rose-700 border-l border-slate-400">{totals.specialPenaltySum.toFixed(2)}</td>
-                <td className="p-2.5 font-mono text-rose-700 border-l border-slate-400">{totals.absenceDeductionSum.toFixed(2)}</td>
-                <td className="p-2.5 font-mono text-amber-800 border-l border-slate-400">{totals.advancesSum.toFixed(2)}</td>
-                <td className="p-2.5 font-mono text-emerald-800 border-l border-slate-400">{totals.bonusesSum.toFixed(2)}</td>
-                <td className="p-2.5 font-mono text-slate-900 border-l border-slate-400">{totals.workRevenueSum.toFixed(2)}</td>
-                <td className="p-2.5 font-mono text-emerald-800 border-l border-slate-400">{totals.commissionSum.toFixed(2)}</td>
+                <td className="p-2.5 font-mono text-blue-700 border-l border-slate-400">{Number(totals.overtimeAmountSum || 0).toFixed(2)}</td>
+                <td className="p-2.5 font-mono text-rose-700 border-l border-slate-400">{Number(totals.specialPenaltySum || 0).toFixed(2)}</td>
+                <td className="p-2.5 font-mono text-rose-700 border-l border-slate-400">{Number(totals.absenceDeductionSum || 0).toFixed(2)}</td>
+                <td className="p-2.5 font-mono text-amber-800 border-l border-slate-400">{Number(totals.advancesSum || 0).toFixed(2)}</td>
+                <td className="p-2.5 font-mono text-emerald-800 border-l border-slate-400">{Number(totals.bonusesSum || 0).toFixed(2)}</td>
+                <td className="p-2.5 font-mono text-slate-900 border-l border-slate-400">{Number(totals.workRevenueSum || 0).toFixed(2)}</td>
+                <td className="p-2.5 font-mono text-emerald-800 border-l border-slate-400">{Number(totals.commissionSum || 0).toFixed(2)}</td>
+                <td className="p-2.5 font-mono text-indigo-800 border-l border-slate-400 bg-indigo-100/60 font-bold">
+                  {Number(totals.targetCommissionSum || 0) > 0 ? Number(totals.targetCommissionSum || 0).toFixed(2) : '--'}
+                </td>
                 <td className="p-2.5 font-mono text-rose-700 border-l border-slate-400 bg-amber-100/60 font-bold">
-                  {totals.commissionPaidSum > 0 ? totals.commissionPaidSum.toFixed(2) : '--'}
+                  {Number(totals.commissionPaidSum || 0) > 0 ? Number(totals.commissionPaidSum || 0).toFixed(2) : '--'}
                 </td>
                 <td className="p-2.5 font-mono text-emerald-900 bg-emerald-200 text-sm font-black border-l border-slate-400">
-                  {totals.netSum.toFixed(2)} {settings.currency}
+                  {Number(totals.netSum || 0).toFixed(2)} {settings.currency}
                 </td>
                 <td className="p-2.5 text-center text-slate-400">--</td>
               </tr>
             </tfoot>
           </table>
         </div>
+        </>
+      )}
 
-        {/* Salary Slip Modal (80mm preview and print) */}
+      {/* ========================================================================= */}
+      {/* 💰 COMMISSIONS DETAILED SECTION (قسم ملخص وتفاصيل العمولات المستحقة) */}
+      {/* ========================================================================= */}
+      {hrMainTab === 'commissions' && (
+        <div className="space-y-6">
+          {/* Header Card */}
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+            <div>
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-amber-600 text-white flex items-center justify-center font-black shadow-md shadow-amber-600/20">
+                  <Coins size={22} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-xl font-black text-slate-900">ملخص وتفاصيل العمولات المستحقة (Commissions Breakdown)</h2>
+                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold">
+                      فواتير مسددة وغير ملغية فقط
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    كشف تفصيلي بجميع فواتير المبيعات المنفذة والمحالة (فتح شغل) المسددة للموظف خلال الفترة المحددة
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex flex-wrap items-center gap-2">
+              {canDisburseCommissions && (
+                <button
+                  type="button"
+                  onClick={() => handleOpenCommissionModal(commSelectedEmpId)}
+                  className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md shadow-amber-600/20 transition-all cursor-pointer"
+                  title="صرف وتسجيل دفعة عمولة رسمية للموظف"
+                >
+                  <Coins size={15} />
+                  <span>صرف عمولة 💵</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={handlePrintCommissionsReport}
+                className="bg-slate-900 hover:bg-slate-800 text-white px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+                title="طباعة تقرير كشف العمولات"
+              >
+                <Printer size={15} />
+                <span>طباعة الكشف 🖨️</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleExportCommissionsCSV}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+                title="تصدير كشف إكسل (CSV)"
+              >
+                <FileSpreadsheet size={15} />
+                <span>تصدير Excel 📥</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Filters Bar */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 items-end">
+              {/* Employee Selection */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1">
+                  <User size={14} className="text-amber-600" />
+                  <span>اختر الموظف:</span>
+                </label>
+                <select
+                  value={commSelectedEmpId}
+                  onChange={e => setCommSelectedEmpId(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-amber-600 focus:bg-white outline-none cursor-pointer"
+                >
+                  {activeEmployees.map(emp => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.name} {emp.role ? `(${emp.role})` : ''} - كود: {emp.fingerprintCode || emp.id}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Start Date */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1">
+                  <Calendar size={14} className="text-indigo-600" />
+                  <span>من تاريخ:</span>
+                </label>
+                <input
+                  type="date"
+                  value={commStartDate}
+                  onChange={e => setCommStartDate(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 focus:border-indigo-600 focus:bg-white outline-none"
+                />
+              </div>
+
+              {/* End Date */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1">
+                  <Calendar size={14} className="text-indigo-600" />
+                  <span>إلى تاريخ:</span>
+                </label>
+                <input
+                  type="date"
+                  value={commEndDate}
+                  onChange={e => setCommEndDate(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 focus:border-indigo-600 focus:bg-white outline-none"
+                />
+              </div>
+
+              {/* Quick Period Buttons */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  فترات سريعة:
+                </label>
+                <div className="grid grid-cols-4 gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setQuickCommPeriod('this_month')}
+                    className="px-2 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold rounded-lg transition-colors cursor-pointer text-center"
+                    title="الشهر الحالي كاملاً"
+                  >
+                    الشهر
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQuickCommPeriod('last_month')}
+                    className="px-2 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold rounded-lg transition-colors cursor-pointer text-center"
+                    title="الشهر السابق كاملاً"
+                  >
+                    السابق
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQuickCommPeriod('last_30_days')}
+                    className="px-2 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold rounded-lg transition-colors cursor-pointer text-center"
+                    title="آخر 30 يوماً"
+                  >
+                    30 يوم
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQuickCommPeriod('today')}
+                    className="px-2 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold rounded-lg transition-colors cursor-pointer text-center"
+                    title="اليوم فقط"
+                  >
+                    اليوم
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Sub-bar: Employee Badge, Type Filter, and Search */}
+            <div className="pt-3 border-t border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+              {/* Selected Employee Commission Badge */}
+              {detailedCommissionsData.employee && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-bold text-slate-600">نظام العمولة المعتمد:</span>
+                  <span className="px-2.5 py-1 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-black flex items-center gap-1.5">
+                    <Award size={14} className="text-amber-600" />
+                    <span>{getCommissionModelLabel(detailedCommissionsData.employee)}</span>
+                  </span>
+                  {detailedCommissionsData.employee.role && (
+                    <span className="px-2.5 py-1 rounded-xl bg-slate-100 text-slate-700 text-xs font-bold">
+                      {detailedCommissionsData.employee.role}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Commission Type Filter & Search Bar */}
+              <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                {/* Type Filter Buttons */}
+                <div className="bg-slate-100 p-1 rounded-xl flex gap-1 border border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => setCommTypeFilter('all')}
+                    className={`px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                      commTypeFilter === 'all' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    الكل ({detailedCommissionsData.rows.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCommTypeFilter('execution')}
+                    className={`px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                      commTypeFilter === 'execution' ? 'bg-white text-sky-800 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    تنفيذ ({detailedCommissionsData.executionCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCommTypeFilter('referral')}
+                    className={`px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                      commTypeFilter === 'referral' ? 'bg-white text-purple-800 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    إحالة ({detailedCommissionsData.referralCount})
+                  </button>
+                </div>
+
+                {/* Search Box */}
+                <div className="relative flex-1 md:w-56">
+                  <Search size={14} className="absolute right-3 top-2.5 text-slate-400" />
+                  <input
+                    type="text"
+                    value={commSearchQuery}
+                    onChange={e => setCommSearchQuery(e.target.value)}
+                    placeholder="بحث برقم الفاتورة أو العميل..."
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-8 pl-3 py-1.5 text-xs font-bold text-slate-800 focus:border-amber-600 focus:bg-white outline-none"
+                  />
+                  {commSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setCommSearchQuery('')}
+                      className="absolute left-2.5 top-2 text-slate-400 hover:text-slate-600 text-xs"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* KPI Summary Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            {/* Card 1: Total Earned Commission */}
+            <div className="bg-white p-4 rounded-2xl border-2 border-amber-300 shadow-xs relative overflow-hidden">
+              <div className="flex items-center justify-between text-amber-700 mb-1">
+                <span className="text-[11px] font-bold">إجمالي العمولات المستحقة</span>
+                <Coins size={16} />
+              </div>
+              <div className="text-xl font-black font-mono text-amber-950">
+                {detailedCommissionsData.totalEarnedCommission.toFixed(2)}
+                <span className="text-[10px] font-normal text-slate-500 mr-1">{settings.currency}</span>
+              </div>
+              <div className="text-[10px] font-bold text-amber-700 mt-1">
+                {detailedCommissionsData.rows.length} بند عمولة بالفواتير
+              </div>
+            </div>
+
+            {/* Card 2: Execution Commission */}
+            <div className="bg-white p-4 rounded-2xl border border-sky-200 shadow-xs">
+              <div className="flex items-center justify-between text-sky-700 mb-1">
+                <span className="text-[11px] font-bold">عمولات التنفيذ</span>
+                <Briefcase size={16} />
+              </div>
+              <div className="text-xl font-black font-mono text-sky-950">
+                {detailedCommissionsData.executionCommissionSum.toFixed(2)}
+                <span className="text-[10px] font-normal text-slate-500 mr-1">{settings.currency}</span>
+              </div>
+              <div className="text-[10px] font-bold text-sky-700 mt-1">
+                {detailedCommissionsData.executionCount} خدمة/منتج تم تنفيذه
+              </div>
+            </div>
+
+            {/* Card 3: Referral Commission */}
+            <div className="bg-white p-4 rounded-2xl border border-purple-200 shadow-xs">
+              <div className="flex items-center justify-between text-purple-700 mb-1">
+                <span className="text-[11px] font-bold">عمولات الإحالة وفتح الشغل</span>
+                <Award size={16} />
+              </div>
+              <div className="text-xl font-black font-mono text-purple-950">
+                {detailedCommissionsData.referralCommissionSum.toFixed(2)}
+                <span className="text-[10px] font-normal text-slate-500 mr-1">{settings.currency}</span>
+              </div>
+              <div className="text-[10px] font-bold text-purple-700 mt-1">
+                {detailedCommissionsData.referralCount} إحالة وفتح شغل
+              </div>
+            </div>
+
+            {/* Card 4: Total Revenue */}
+            <div className="bg-white p-4 rounded-2xl border border-emerald-200 shadow-xs">
+              <div className="flex items-center justify-between text-emerald-700 mb-1">
+                <span className="text-[11px] font-bold">إجمالي مبيعات وخدمات الموظف</span>
+                <DollarSign size={16} />
+              </div>
+              <div className="text-xl font-black font-mono text-emerald-950">
+                {detailedCommissionsData.totalRevenue.toFixed(2)}
+                <span className="text-[10px] font-normal text-slate-500 mr-1">{settings.currency}</span>
+              </div>
+              <div className="text-[10px] font-bold text-emerald-700 mt-1">
+                {detailedCommissionsData.uniqueInvoicesCount} فاتورة مسددة
+              </div>
+            </div>
+
+            {/* Card 5: Paid Commissions */}
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+              <div className="flex items-center justify-between text-slate-600 mb-1">
+                <span className="text-[11px] font-bold">العمولات المنصرفة</span>
+                <Wallet size={16} />
+              </div>
+              <div className="text-xl font-black font-mono text-slate-900">
+                {detailedCommissionsData.paidCommissions.toFixed(2)}
+                <span className="text-[10px] font-normal text-slate-500 mr-1">{settings.currency}</span>
+              </div>
+              <div className="text-[10px] font-bold text-slate-500 mt-1">
+                مسجلة بسندات الصرف
+              </div>
+            </div>
+
+            {/* Card 6: Remaining Unpaid Commissions */}
+            <div className={`bg-white p-4 rounded-2xl border shadow-xs ${
+              detailedCommissionsData.unpaidCommissions > 0 ? 'border-rose-300 bg-rose-50/20' : 'border-emerald-300 bg-emerald-50/20'
+            }`}>
+              <div className={`flex items-center justify-between mb-1 ${
+                detailedCommissionsData.unpaidCommissions > 0 ? 'text-rose-700' : 'text-emerald-700'
+              }`}>
+                <span className="text-[11px] font-bold">المتبقي للصرف</span>
+                <CheckCircle size={16} />
+              </div>
+              <div className={`text-xl font-black font-mono ${
+                detailedCommissionsData.unpaidCommissions > 0 ? 'text-rose-700' : 'text-emerald-700'
+              }`}>
+                {detailedCommissionsData.unpaidCommissions.toFixed(2)}
+                <span className="text-[10px] font-normal text-slate-500 mr-1">{settings.currency}</span>
+              </div>
+              <div className={`text-[10px] font-bold mt-1 ${
+                detailedCommissionsData.unpaidCommissions > 0 ? 'text-rose-600' : 'text-emerald-600'
+              }`}>
+                {detailedCommissionsData.unpaidCommissions > 0 ? 'مستحق للصرف ⏳' : 'تمت التسوية بالكامل ✅'}
+              </div>
+            </div>
+          </div>
+
+          {/* Detailed Invoices Table */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+            <div className="px-5 py-3.5 border-b border-slate-100 flex justify-between items-center bg-slate-50/70">
+              <div className="flex items-center gap-2">
+                <FileText size={16} className="text-slate-700" />
+                <h3 className="font-black text-sm text-slate-900">
+                  سجل الفواتير وبنود العمولات المستحقة
+                </h3>
+                <span className="px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 text-xs font-bold">
+                  {filteredCommissionRows.length} بند
+                </span>
+              </div>
+              <span className="text-xs text-slate-500">
+                الفترة من <strong className="text-slate-700 font-mono">{commStartDate}</strong> إلى <strong className="text-slate-700 font-mono">{commEndDate}</strong>
+              </span>
+            </div>
+
+            <div className="overflow-x-auto max-h-[600px] custom-scrollbar">
+              <table className="w-full text-right text-xs">
+                <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 sticky top-0 z-10">
+                  <tr>
+                    <th className="p-3 text-center w-12 border-l border-slate-200">#</th>
+                    <th className="p-3 border-l border-slate-200">رقم الفاتورة</th>
+                    <th className="p-3 text-center border-l border-slate-200">التاريخ</th>
+                    <th className="p-3 text-center border-l border-slate-200">الوقت</th>
+                    <th className="p-3 border-l border-slate-200">اسم العميل</th>
+                    <th className="p-3 border-l border-slate-200">الخدمة / البند</th>
+                    <th className="p-3 text-center border-l border-slate-200">نوع الاستحقاق</th>
+                    <th className="p-3 text-left border-l border-slate-200">قيمة الخدمة</th>
+                    <th className="p-3 border-l border-slate-200">قاعدة الاحتساب</th>
+                    <th className="p-3 text-left border-l border-slate-200">العمولة المستحقة</th>
+                    <th className="p-3 text-center">حالة الفاتورة</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredCommissionRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={11} className="py-12 text-center text-slate-400">
+                        <div className="flex flex-col items-center justify-center gap-2">
+                          <Coins size={36} className="text-slate-300" />
+                          <p className="font-bold text-sm text-slate-600">لا توجد فواتير مسددة مستحق عليها عمولات لهذا الموظف خلال الفترة المحددة</p>
+                          <p className="text-xs text-slate-400">تأكد من اختيار الموظف الصحيح ومطابقة التواريخ، أو جرب تغيير نوع الفلترة.</p>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredCommissionRows.map((row, idx) => (
+                      <tr 
+                        key={row.rowId} 
+                        className={`hover:bg-amber-50/40 transition-colors ${idx % 2 === 1 ? 'bg-slate-50/30' : ''}`}
+                      >
+                        <td className="p-3 text-center font-mono text-slate-400 border-l border-slate-100 font-bold">
+                          {idx + 1}
+                        </td>
+                        <td className="p-3 font-mono font-bold text-slate-900 border-l border-slate-100">
+                          #{row.invoiceId}
+                        </td>
+                        <td className="p-3 text-center font-mono text-slate-700 border-l border-slate-100">
+                          {row.dateStr}
+                        </td>
+                        <td className="p-3 text-center font-mono text-slate-700 border-l border-slate-100">
+                          <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-800 text-[11px] font-bold">
+                            {row.timeStr}
+                          </span>
+                        </td>
+                        <td className="p-3 font-bold text-slate-900 border-l border-slate-100">
+                          <div className="flex items-center gap-1.5">
+                            <User size={13} className="text-slate-400" />
+                            <span>{row.clientName}</span>
+                          </div>
+                          {row.clientPhone && (
+                            <span className="text-[10px] font-mono text-slate-400 block mr-5">
+                              {row.clientPhone}
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-3 font-bold text-slate-800 border-l border-slate-100">
+                          <div className="flex items-center gap-1.5">
+                            <span className={`w-1.5 h-1.5 rounded-full ${row.itemType === 'service' ? 'bg-indigo-500' : 'bg-emerald-500'}`}></span>
+                            <span>{row.itemName}</span>
+                            {row.quantity > 1 && (
+                              <span className="text-[10px] px-1.5 py-0.2 rounded-md bg-slate-200 text-slate-700 font-mono">
+                                ×{row.quantity}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="p-3 text-center border-l border-slate-100">
+                          {row.commissionType === 'execution' ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-sky-50 border border-sky-200 text-sky-800 text-[11px] font-bold">
+                              <Briefcase size={12} className="text-sky-600" />
+                              <span>تنفيذ خدمة</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-bold">
+                              <Award size={12} className="text-amber-600" />
+                              <span>إحالة وفتح شغل</span>
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-3 text-left font-mono font-bold text-slate-800 border-l border-slate-100">
+                          {row.itemTotal.toFixed(2)}
+                          <span className="text-[10px] text-slate-400 mr-0.5">{settings.currency}</span>
+                        </td>
+                        <td className="p-3 text-slate-600 text-[11px] border-l border-slate-100">
+                          {row.calculationRule}
+                        </td>
+                        <td className="p-3 text-left font-mono font-black text-emerald-700 text-xs border-l border-slate-100 bg-emerald-50/20">
+                          {row.earnedCommission.toFixed(2)}
+                          <span className="text-[10px] text-emerald-600 mr-0.5">{settings.currency}</span>
+                        </td>
+                        <td className="p-3 text-center">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] font-black">
+                            <Check size={12} />
+                            <span>مسددة</span>
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+
+                {/* Table Footer */}
+                {filteredCommissionRows.length > 0 && (
+                  <tfoot className="bg-slate-100 font-black text-slate-900 border-t-2 border-slate-300 sticky bottom-0 text-xs">
+                    <tr>
+                      <td colSpan={7} className="p-3 text-center bg-slate-200 border-l border-slate-300 font-black">
+                        الإجمالي العام المستحق ({filteredCommissionRows.length} بند في {detailedCommissionsData.uniqueInvoicesCount} فاتورة مسددة)
+                      </td>
+                      <td className="p-3 text-left font-mono font-black border-l border-slate-300 text-slate-900">
+                        {detailedCommissionsData.totalRevenue.toFixed(2)} {settings.currency}
+                      </td>
+                      <td className="p-3 border-l border-slate-300">--</td>
+                      <td className="p-3 text-left font-mono font-black text-emerald-800 border-l border-slate-300 text-sm bg-emerald-100/70">
+                        {detailedCommissionsData.totalEarnedCommission.toFixed(2)} {settings.currency}
+                      </td>
+                      <td className="p-3 text-center text-emerald-700 font-black">
+                        مسددة ✅
+                      </td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+
+            {/* Note in Footer */}
+            <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 text-[11px] text-slate-500 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+              <div className="flex items-center gap-1.5">
+                <ShieldCheck size={14} className="text-emerald-600" />
+                <span>يحتسب هذا الكشف الفواتير المسددة بالكامل والغير ملغية فقط وفقاً للقواعد المالية المعتمدة في النظام.</span>
+              </div>
+              <div className="font-mono text-slate-400">
+                Smart Cut HR & Commission Engine
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Salary Slip Modal (80mm preview and print) */}
       {showSlipModal && activeSlipSummary && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full p-5 space-y-4 max-h-[90vh] overflow-y-auto">
@@ -3063,11 +4553,14 @@ export function HRScreen({
                   onChange={e => setDisbursementTreasuryId(e.target.value)}
                   className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-emerald-600 outline-none"
                 >
-                  {settings.treasuries.map(t => (
-                    <option key={t.id} value={t.id}>
-                      {t.name} (رصيد: {((t as any).balance ?? 0).toFixed(2)} {settings.currency})
-                    </option>
-                  ))}
+                  {settings.treasuries.map(t => {
+                    const bal = treasuryBalances[t.id] ?? 0;
+                    return (
+                      <option key={t.id} value={t.id}>
+                        {t.name} (رصيد: {Number(bal || 0).toFixed(2)} {settings.currency})
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
 
@@ -3185,22 +4678,22 @@ export function HRScreen({
                             {item.presentDaysCount} يوم
                           </td>
                           <td className="p-3 font-mono font-bold text-slate-800">
-                            {item.earnedBaseSalary.toFixed(2)}
+                            {Number(item.earnedBaseSalary || 0).toFixed(2)}
                           </td>
                           <td className="p-3 font-mono font-bold text-emerald-700">
-                            +{item.totalCommissions.toFixed(2)}
+                            +{Number(item.totalCommissions || 0).toFixed(2)}
                           </td>
                           <td className="p-3 font-mono font-bold text-blue-700">
-                            +{item.totalBonuses.toFixed(2)}
+                            +{Number(item.totalBonuses || 0).toFixed(2)}
                           </td>
                           <td className="p-3 font-mono font-bold text-rose-700">
-                            -{item.totalDeductions.toFixed(2)}
+                            -{Number(item.totalDeductions || 0).toFixed(2)}
                           </td>
                           <td className="p-3 font-mono">
                             {item.isAlreadyPaid ? (
                               <div>
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-black text-xs border border-emerald-300">
-                                  <span>تم الصرف: {item.paidRecord?.amount?.toFixed(2) ?? item.netPayable.toFixed(2)} {settings.currency}</span>
+                                  <span>تم الصرف: {item.paidRecord?.amount !== undefined ? Number(item.paidRecord.amount || 0).toFixed(2) : Number(item.netPayable || 0).toFixed(2)} {settings.currency}</span>
                                 </span>
                                 <div className="text-[10px] text-slate-500 mt-0.5 font-sans">
                                   بتاريخ: {item.paidRecord?.date || '-'}
@@ -3208,7 +4701,7 @@ export function HRScreen({
                               </div>
                             ) : (
                               <span className="font-black text-emerald-800 text-sm">
-                                {item.netPayable.toFixed(2)} {settings.currency}
+                                {Number(item.netPayable || 0).toFixed(2)} {settings.currency}
                               </span>
                             )}
                           </td>
@@ -3255,7 +4748,7 @@ export function HRScreen({
                   <strong className="text-emerald-700 font-mono font-black text-base">
                     {payrollDisbursementData
                       .filter(d => selectedDisbursementEmpIds.includes(d.emp.id))
-                      .reduce((sum, d) => sum + d.netPayable, 0)
+                      .reduce((sum, d) => sum + (Number(d.netPayable || 0)), 0)
                       .toFixed(2)} {settings.currency}
                   </strong>
                 </div>
@@ -3357,12 +4850,8 @@ export function HRScreen({
                       value={attendanceForm.checkIn}
                       onChange={e => {
                         const newIn = e.target.value;
-                        const isOvernight = Boolean(newIn && attendanceForm.checkOut && attendanceForm.checkOut <= newIn);
-                        setAttendanceForm({ 
-                          ...attendanceForm, 
-                          checkIn: newIn, 
-                          isNextDayCheckout: attendanceForm.checkOut ? isOvernight : false 
-                        });
+                        const willBeOvernight = attendanceForm.checkOut && newIn ? attendanceForm.checkOut <= newIn : attendanceForm.isNextDayCheckout;
+                        setAttendanceForm({ ...attendanceForm, checkIn: newIn, isNextDayCheckout: willBeOvernight });
                       }}
                       required
                       className="w-full bg-white border border-indigo-200 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-800 focus:border-indigo-600 outline-none shadow-2xs text-center"
@@ -3391,11 +4880,12 @@ export function HRScreen({
                       value={attendanceForm.checkOut || ''}
                       onChange={e => {
                         const newOut = e.target.value;
-                        const isOvernight = Boolean(newOut && attendanceForm.checkIn && newOut <= attendanceForm.checkIn);
+                        // Auto-toggle isNextDayCheckout if checkOut is earlier than or equal to checkIn (e.g. In 13:00, Out 02:00)
+                        const autoOvernight = Boolean(newOut && attendanceForm.checkIn && newOut <= attendanceForm.checkIn);
                         setAttendanceForm({ 
                           ...attendanceForm, 
-                          checkOut: newOut, 
-                          isNextDayCheckout: newOut ? isOvernight : false 
+                          checkOut: newOut,
+                          isNextDayCheckout: autoOvernight ? true : attendanceForm.isNextDayCheckout 
                         });
                       }}
                       placeholder="--:--"
@@ -3421,8 +4911,8 @@ export function HRScreen({
 
                     {/* Calculated Live Working Hours Preview */}
                     {(() => {
-                      const inParts = attendanceForm.checkIn.split(':').map(Number);
-                      const outParts = attendanceForm.checkOut.split(':').map(Number);
+                      const inParts = (attendanceForm.checkIn || '00:00').split(':').map(Number);
+                      const outParts = (attendanceForm.checkOut || '00:00').split(':').map(Number);
                       const inMin = (inParts[0] || 0) * 60 + (inParts[1] || 0);
                       let outMin = (outParts[0] || 0) * 60 + (outParts[1] || 0);
                       if (attendanceForm.isNextDayCheckout || outMin <= inMin) {
@@ -3486,6 +4976,20 @@ export function HRScreen({
                 >
                   حضور فقط بدون انصراف
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setAttendanceForm({ ...attendanceForm, checkIn: '09:00', checkOut: '18:00', isNextDayCheckout: false, notes: 'دوام مجدول' })}
+                  className="text-[10px] font-bold bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-300 px-2 py-1 rounded-lg cursor-pointer transition-colors"
+                >
+                  📅 تعيين كـ "دوام مجدول" (تحديد صريح)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAttendanceForm({ ...attendanceForm, checkIn: '', checkOut: '', isNextDayCheckout: false, notes: 'غياب بدون عذر' })}
+                  className="text-[10px] font-bold bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-300 px-2 py-1 rounded-lg cursor-pointer transition-colors"
+                >
+                  ⚠️ تعيين كـ "غياب بدون عذر" (تحديد صريح)
+                </button>
               </div>
 
               {/* Notes */}
@@ -3504,15 +5008,17 @@ export function HRScreen({
 
               {/* Actions */}
               <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => handleDeleteAttendance(attendanceForm.empId, attendanceForm.date)}
-                  className="text-rose-600 hover:bg-rose-50 border border-rose-200 text-xs font-bold px-3 py-2 rounded-xl flex items-center gap-1 transition-colors cursor-pointer"
-                  title="حذف البصمات المسجلة لهذا اليوم واعتباره غياب"
-                >
-                  <Trash2 size={14} />
-                  <span>حذف وقت اليوم (تعيين غياب) 🗑️</span>
-                </button>
+                {canDeleteAttendance ? (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteAttendance(attendanceForm.empId, attendanceForm.date)}
+                    className="text-rose-600 hover:bg-rose-50 border border-rose-200 text-xs font-bold px-3 py-2 rounded-xl flex items-center gap-1 transition-colors cursor-pointer"
+                    title="حذف البصمات المسجلة لهذا اليوم واعتباره غياب"
+                  >
+                    <Trash2 size={14} />
+                    <span>حذف وقت اليوم (تعيين غياب) 🗑️</span>
+                  </button>
+                ) : <div />}
 
                 <div className="flex gap-2">
                   <button
@@ -3758,20 +5264,20 @@ export function HRScreen({
                   <div className="bg-gradient-to-r from-purple-50 to-indigo-50 p-3.5 rounded-2xl border border-purple-200 text-xs space-y-2">
                     <div className="font-black text-purple-950 flex items-center justify-between border-b border-purple-200/60 pb-1.5">
                       <span>المعاينة قبل التطبيق للموظف ({emp?.name || '-'}):</span>
-                      <span className="text-purple-700 font-mono">+{incAmt.toFixed(2)} {settings.currency}</span>
+                      <span className="text-purple-700 font-mono">+{Number(incAmt || 0).toFixed(2)} {settings.currency}</span>
                     </div>
                     <div className="grid grid-cols-3 gap-2 text-center">
                       <div className="bg-white p-2 rounded-xl border border-purple-100">
                         <span className="text-slate-500 block text-[10px]">الراتب الحالي</span>
-                        <span className="font-mono font-bold text-slate-800">{currentBase.toFixed(2)}</span>
+                        <span className="font-mono font-bold text-slate-800">{Number(currentBase || 0).toFixed(2)}</span>
                       </div>
                       <div className="bg-white p-2 rounded-xl border border-purple-100">
                         <span className="text-purple-600 block text-[10px]">مقدار الزيادة</span>
-                        <span className="font-mono font-black text-purple-700">+{incAmt.toFixed(2)}</span>
+                        <span className="font-mono font-black text-purple-700">+{Number(incAmt || 0).toFixed(2)}</span>
                       </div>
                       <div className="bg-emerald-50 p-2 rounded-xl border border-emerald-200">
                         <span className="text-emerald-700 block text-[10px] font-bold">الراتب الجديد</span>
-                        <span className="font-mono font-black text-emerald-800 text-sm">{newBase.toFixed(2)} {settings.currency}</span>
+                        <span className="font-mono font-black text-emerald-800 text-sm">{Number(newBase || 0).toFixed(2)} {settings.currency}</span>
                       </div>
                     </div>
                   </div>
@@ -3903,7 +5409,7 @@ export function HRScreen({
                 <div className="space-y-3">
                   <div className="flex items-center justify-between text-xs font-bold text-slate-600 px-1">
                     <span>عدد حركات الزيادة المسجلة: <strong className="text-slate-900">{allHistoryEntries.length}</strong></span>
-                    <span>مجموع مبالغ الزيادات: <strong className="text-emerald-700 font-mono">+{totalIncAmount.toFixed(2)} {settings.currency}</strong></span>
+                    <span>مجموع مبالغ الزيادات: <strong className="text-emerald-700 font-mono">+{Number(totalIncAmount || 0).toFixed(2)} {settings.currency}</strong></span>
                   </div>
 
                   <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
@@ -3923,8 +5429,10 @@ export function HRScreen({
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                           {allHistoryEntries.map((item, idx) => {
-                            const diff = item.newSalary - item.previousSalary;
-                            const pct = item.previousSalary > 0 ? ((diff / item.previousSalary) * 100).toFixed(1) : '100';
+                            const prevSal = Number(item.previousSalary || 0);
+                            const newSal = Number(item.newSalary || 0);
+                            const diff = newSal - prevSal;
+                            const pct = prevSal > 0 ? ((diff / prevSal) * 100).toFixed(1) : '100';
 
                             return (
                               <tr key={item.key} className="hover:bg-slate-50 transition-colors">
@@ -3936,13 +5444,13 @@ export function HRScreen({
                                   <span>{item.employeeName}</span>
                                 </td>
                                 <td className="p-3 font-mono font-bold text-slate-700">{item.date}</td>
-                                <td className="p-3 font-mono text-slate-500">{item.previousSalary?.toFixed(2)} {settings.currency}</td>
+                                <td className="p-3 font-mono text-slate-500">{prevSal.toFixed(2)} {settings.currency}</td>
                                 <td className="p-3 font-mono font-black text-purple-700">
                                   +{diff.toFixed(2)} {settings.currency}
                                   <span className="text-[10px] text-purple-500 font-semibold mr-1">({pct}%)</span>
                                 </td>
                                 <td className="p-3 font-mono font-black text-emerald-700 text-sm">
-                                  {item.newSalary?.toFixed(2)} <span className="text-[10px] text-slate-400 font-normal">{settings.currency}</span>
+                                  {newSal.toFixed(2)} <span className="text-[10px] text-slate-400 font-normal">{settings.currency}</span>
                                 </td>
                                 <td className="p-3 text-slate-600">{item.reason || '-'}</td>
                                 <td className="p-3 font-bold text-slate-700">
@@ -4028,15 +5536,15 @@ export function HRScreen({
                 <div className="bg-amber-50/60 border border-amber-200/80 rounded-2xl p-3 grid grid-cols-3 gap-2 text-center text-xs">
                   <div className="bg-white/80 p-2 rounded-xl border border-amber-100">
                     <p className="text-[10px] text-slate-500 font-bold">إجمالي المستحق</p>
-                    <p className="font-mono font-black text-slate-800 mt-0.5">{commStats.earnedCommissions.toFixed(2)}</p>
+                    <p className="font-mono font-black text-slate-800 mt-0.5">{Number(commStats.earnedCommissions || 0).toFixed(2)}</p>
                   </div>
                   <div className="bg-white/80 p-2 rounded-xl border border-amber-100">
                     <p className="text-[10px] text-slate-500 font-bold">المصروف سابقاً</p>
-                    <p className="font-mono font-black text-rose-600 mt-0.5">{commStats.paidCommissions.toFixed(2)}</p>
+                    <p className="font-mono font-black text-rose-600 mt-0.5">{Number(commStats.paidCommissions || 0).toFixed(2)}</p>
                   </div>
                   <div className="bg-white/80 p-2 rounded-xl border border-amber-100">
                     <p className="text-[10px] text-slate-500 font-bold">المتبقي للصرف</p>
-                    <p className="font-mono font-black text-emerald-700 mt-0.5">{commStats.unpaidCommissions.toFixed(2)}</p>
+                    <p className="font-mono font-black text-emerald-700 mt-0.5">{Number(commStats.unpaidCommissions || 0).toFixed(2)}</p>
                   </div>
                 </div>
               )}
@@ -4045,13 +5553,13 @@ export function HRScreen({
               <div>
                 <div className="flex justify-between items-center mb-1">
                   <label className="text-xs font-bold text-slate-700">المبلغ المراد صرفه ({settings.currency}) *</label>
-                  {commStats.unpaidCommissions > 0 && (
+                  {Number(commStats.unpaidCommissions || 0) > 0 && (
                     <button
                       type="button"
                       onClick={() => setCommAmount(commStats.unpaidCommissions)}
                       className="text-[10px] font-bold text-amber-700 hover:text-amber-800 underline cursor-pointer"
                     >
-                      صرف كامل المتبقي ({commStats.unpaidCommissions.toFixed(2)})
+                      صرف كامل المتبقي ({Number(commStats.unpaidCommissions || 0).toFixed(2)})
                     </button>
                   )}
                 </div>
@@ -4088,12 +5596,23 @@ export function HRScreen({
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-amber-600"
                     required
                   >
-                    {settings.treasuries.map(t => (
-                      <option key={t.id} value={t.id}>
-                        {t.name} (رصيد: {((t as any).balance ?? 0).toFixed(2)})
-                      </option>
-                    ))}
+                    {settings.treasuries.map(t => {
+                      const bal = treasuryBalances[t.id] ?? 0;
+                      return (
+                        <option key={t.id} value={t.id}>
+                          {t.name} (رصيد: {Number(bal || 0).toFixed(2)} {settings.currency})
+                        </option>
+                      );
+                    })}
                   </select>
+                  {commTreasuryId && (
+                    <div className="mt-1 flex items-center justify-between text-[11px]">
+                      <span className="text-slate-500">الرصيد المتاح في الخزينة:</span>
+                      <span className={`font-mono font-black ${(treasuryBalances[commTreasuryId] ?? 0) > 0 ? 'text-emerald-700' : (treasuryBalances[commTreasuryId] ?? 0) < 0 ? 'text-rose-600' : 'text-slate-600'}`}>
+                        {Number(treasuryBalances[commTreasuryId] || 0).toFixed(2)} {settings.currency}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -4247,14 +5766,14 @@ export function HRScreen({
                   <div className="flex justify-between items-center text-slate-600">
                     <span>أجر اليوم للموظف:</span>
                     <span className="font-mono font-bold text-slate-900">
-                      {((selectedLeaveEmp.baseSalary || 0) / 30).toFixed(2)} {settings.currency}
+                      {((Number(selectedLeaveEmp.baseSalary || 0)) / 30).toFixed(2)} {settings.currency}
                     </span>
                   </div>
                   <div className="flex justify-between items-center text-slate-600">
                     <span>الأثر المالي المتوقع في التايم شيت:</span>
                     <span className={`font-mono font-bold ${leaveType === 'paid' ? 'text-emerald-700' : 'text-amber-700'}`}>
                       {leaveType === 'paid' 
-                        ? `+${(((selectedLeaveEmp.baseSalary || 0) / 30) * leaveDaysCount).toFixed(2)} ${settings.currency} (مدفوع)`
+                        ? `+${(((Number(selectedLeaveEmp.baseSalary || 0)) / 30) * leaveDaysCount).toFixed(2)} ${settings.currency} (مدفوع)`
                         : `0.00 ${settings.currency} (غير مدفوع مع إعفاء من جزاء الغياب)`
                       }
                     </span>
@@ -4391,16 +5910,18 @@ export function HRScreen({
                         )}
                       </div>
 
-                      <div className="flex items-center gap-2 self-end sm:self-center">
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteLeave(emp.id, leave.id)}
-                          className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 border border-rose-200 rounded-xl px-3 py-1.5 text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
-                        >
-                          <Trash2 size={13} />
-                          <span>إلغاء الإجازة</span>
-                        </button>
-                      </div>
+                      {canManageLeaves && (
+                        <div className="flex items-center gap-2 self-end sm:self-center">
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteLeave(emp.id, leave.id)}
+                            className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 border border-rose-200 rounded-xl px-3 py-1.5 text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                          >
+                            <Trash2 size={13} />
+                            <span>إلغاء الإجازة</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   );
                 });
@@ -4484,7 +6005,7 @@ export function HRScreen({
                   <span className={`font-mono font-black px-2.5 py-1 rounded-xl border text-xs ${
                     permEmpRemainingBalance > 0 ? 'bg-white text-indigo-700 border-indigo-200' : 'bg-rose-100 text-rose-700 border-rose-300'
                   }`}>
-                    {permEmpRemainingBalance} دقيقة ({(permEmpRemainingBalance / 60).toFixed(1)} ساعة)
+                    {permEmpRemainingBalance} دقيقة ({(Number(permEmpRemainingBalance || 0) / 60).toFixed(1)} ساعة)
                   </span>
                 </div>
               )}
@@ -4591,7 +6112,7 @@ export function HRScreen({
                     <span className="text-xs font-bold text-teal-950">مدة الإذن المحسوبة:</span>
                   </div>
                   <span className="text-sm font-black font-mono text-teal-700 bg-white px-3 py-1 rounded-xl border border-teal-100 shadow-2xs">
-                    {permDurationMinutes} دقيقة ({(permDurationMinutes / 60).toFixed(1)} ساعة)
+                    {permDurationMinutes} دقيقة ({(Number(permDurationMinutes || 0) / 60).toFixed(1)} ساعة)
                   </span>
                 </div>
 
@@ -4769,16 +6290,18 @@ export function HRScreen({
                       )}
                     </div>
 
-                    <div className="flex items-center gap-2 self-end sm:self-center">
-                      <button
-                        type="button"
-                        onClick={() => handleDeletePermission(emp.id, perm.id)}
-                        className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 border border-rose-200 rounded-xl px-3 py-1.5 text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
-                      >
-                        <Trash2 size={13} />
-                        <span>حذف الإذن</span>
-                      </button>
-                    </div>
+                    {canManagePermissions && (
+                      <div className="flex items-center gap-2 self-end sm:self-center">
+                        <button
+                          type="button"
+                          onClick={() => handleDeletePermission(emp.id, perm.id)}
+                          className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 border border-rose-200 rounded-xl px-3 py-1.5 text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                        >
+                          <Trash2 size={13} />
+                          <span>حذف الإذن</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ));
               })()}
@@ -4837,35 +6360,35 @@ export function HRScreen({
               <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200">
                 <p className="text-[11px] font-bold text-slate-500">ساعات الأذونات</p>
                 <p className="text-base font-black text-teal-700 font-mono mt-0.5">
-                  {(totals.permissionMinutesSum / 60).toFixed(1)} س ({totals.permissionMinutesSum} د)
+                  {(Number(totals.permissionMinutesSum || 0) / 60).toFixed(1)} س ({totals.permissionMinutesSum} د)
                 </p>
               </div>
 
               <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200">
                 <p className="text-[11px] font-bold text-slate-500">خصم الأذونات (بدون رصيد)</p>
                 <p className="text-base font-black text-rose-600 font-mono mt-0.5">
-                  {totals.permissionDeductionSum.toFixed(2)} {settings.currency}
+                  {Number(totals.permissionDeductionSum || 0).toFixed(2)} {settings.currency}
                 </p>
               </div>
 
               <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200">
                 <p className="text-[11px] font-bold text-slate-500">خصم التأخيرات</p>
                 <p className="text-base font-black text-rose-600 font-mono mt-0.5">
-                  {totals.delayDeductionSum.toFixed(2)} {settings.currency}
+                  {Number(totals.delayDeductionSum || 0).toFixed(2)} {settings.currency}
                 </p>
               </div>
 
               <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200">
                 <p className="text-[11px] font-bold text-slate-500">خصم الغياب</p>
                 <p className="text-base font-black text-rose-700 font-mono mt-0.5">
-                  {totals.absenceDeductionSum.toFixed(2)} {settings.currency}
+                  {Number(totals.absenceDeductionSum || 0).toFixed(2)} {settings.currency}
                 </p>
               </div>
 
               <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200">
                 <p className="text-[11px] font-bold text-slate-500">صافي المسير المستحق</p>
                 <p className="text-base font-black text-emerald-700 font-mono mt-0.5">
-                  {totals.netSum.toFixed(2)} {settings.currency}
+                  {Number(totals.netSum || 0).toFixed(2)} {settings.currency}
                 </p>
               </div>
             </div>
@@ -4911,14 +6434,14 @@ export function HRScreen({
                         <td className="p-2 border-l border-slate-200 font-mono text-teal-700">
                           {permMins} د
                         </td>
-                        <td className={`p-2 border-l border-slate-200 font-mono font-bold ${permDed > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
-                          {permDed > 0 ? `-${permDed.toFixed(2)}` : '-'}
+                        <td className={`p-2 border-l border-slate-200 font-mono font-bold ${Number(permDed || 0) > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
+                          {Number(permDed || 0) > 0 ? `-${Number(permDed || 0).toFixed(2)}` : '-'}
                         </td>
-                        <td className={`p-2 border-l border-slate-200 font-mono font-bold ${delayDed > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
-                          {delayDed > 0 ? `-${delayDed.toFixed(2)}` : '-'}
+                        <td className={`p-2 border-l border-slate-200 font-mono font-bold ${Number(delayDed || 0) > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
+                          {Number(delayDed || 0) > 0 ? `-${Number(delayDed || 0).toFixed(2)}` : '-'}
                         </td>
-                        <td className={`p-2 border-l border-slate-200 font-mono font-bold ${absenceDed > 0 ? 'text-rose-700' : 'text-slate-400'}`}>
-                          {absenceDed > 0 ? `-${absenceDed.toFixed(2)}` : '-'}
+                        <td className={`p-2 border-l border-slate-200 font-mono font-bold ${Number(absenceDed || 0) > 0 ? 'text-rose-700' : 'text-slate-400'}`}>
+                          {Number(absenceDed || 0) > 0 ? `-${Number(absenceDed || 0).toFixed(2)}` : '-'}
                         </td>
                         <td className="p-2 border-l border-slate-200">
                           {warningsCount > 0 ? (
@@ -4930,7 +6453,7 @@ export function HRScreen({
                           )}
                         </td>
                         <td className="p-2 font-mono font-black text-indigo-700 bg-indigo-50/40">
-                          {netEmp.toFixed(2)} {settings.currency}
+                          {Number(netEmp || 0).toFixed(2)} {settings.currency}
                         </td>
                       </tr>
                     );
@@ -4964,41 +6487,26 @@ export function HRScreen({
         </div>
       )}
 
-      {/* Fingerprint Excel Import Modal */}
-      <FingerprintImportModal
-        isOpen={isFingerprintImportOpen}
-        onClose={() => setIsFingerprintImportOpen(false)}
+      {/* مودال استيراد البصمة والتايم شيت من إكسل */}
+      <BiometricImportModal
+        isOpen={showBiometricModal}
+        onClose={() => setShowBiometricModal(false)}
         settings={settings}
-        employees={employees}
-        existingLogs={effectiveFingerprintLogs}
-        activeBranchId={activeBranchId}
-        onImportComplete={(newLogs) => {
-          if (newLogs.length > 0) {
-            setLocalLogs(prev => [...newLogs, ...prev]);
-            if (setFingerprintLogs) {
-              setFingerprintLogs(prev => [...newLogs, ...prev]);
-            }
-            refreshFingerprintLogs();
+        fingerprintLogs={effectiveFingerprintLogs}
+        setFingerprintLogs={(newLogsOrFn) => {
+          if (typeof newLogsOrFn === 'function') {
+            setLocalLogs(prev => {
+              const updated = newLogsOrFn(prev);
+              if (setFingerprintLogs) setFingerprintLogs(updated);
+              return updated;
+            });
+          } else {
+            setLocalLogs(newLogsOrFn);
+            if (setFingerprintLogs) setFingerprintLogs(newLogsOrFn);
           }
         }}
+        employees={employees}
       />
-
-      {/* COMMISSIONS DETAILED SUMMARY MODAL */}
-      {showCommissionsSummaryModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-5">
-          <div className="bg-white rounded-3xl shadow-2xl max-w-6xl w-full max-h-[92vh] overflow-y-auto p-4 sm:p-6 space-y-4 animate-in fade-in zoom-in duration-150">
-            <EmployeeCommissionsDetailedSection
-              settings={settings}
-              employees={employees}
-              invoices={invoices}
-              currentUser={currentUser}
-              initialEmployeeId={selectedEmpId}
-              isModal
-              onCloseModal={() => setShowCommissionsSummaryModal(false)}
-            />
-          </div>
-        </div>
-      )}
 
     </div>
   );

@@ -5,6 +5,7 @@ import {
   DollarSign, BarChart3, Download, Sparkles, UserCheck, Zap, ArrowUpRight, Layers
 } from 'lucide-react';
 import { exportToExcel } from '../utils/exportExcel';
+import { AuthService } from '../services/auth';
 import { calculateEmployeeCommission, getCommissionModelLabel, calculateEmployeeTotalCommission } from '../utils/commissionHelper';
 
 export function EmployeeAnalyticsScreen({
@@ -12,13 +13,15 @@ export function EmployeeAnalyticsScreen({
   employees,
   invoices,
   bookings,
-  transactions
+  transactions,
+  services = []
 }: {
   settings: AppSettings;
   employees: Employee[];
   invoices: Invoice[];
   bookings: Booking[];
   transactions: Transaction[];
+  services?: any[];
 }) {
   const [timePreset, setTimePreset] = useState<'today' | 'week' | 'month' | 'year' | 'all' | 'custom'>('month');
   const [customFrom, setCustomFrom] = useState(() => {
@@ -101,10 +104,21 @@ export function EmployeeAnalyticsScreen({
             revenue += effectivePrice;
             serviceCount += qty;
 
-            // In-line execution commission if explicitly specified on item
-            const itemExecComm = (item as any).employeeCommission || (item as any).commissionAmount || (item as any).commission || 0;
+            // In-line execution commission if explicitly specified on item or service
+            let itemExecComm = Number((item as any).employeeCommission ?? (item as any).commissionAmount ?? (item as any).commission ?? 0);
+            if (itemExecComm <= 0 && services && services.length > 0) {
+              const srv = services.find((s: any) => s.id === item.itemId || s.id === item.id || s.name === item.serviceName);
+              if (srv) {
+                const srvAmt = Number(srv.employeeCommissionAmount ?? srv.commissionAmount ?? 0);
+                const srvPct = Number(srv.employeeCommissionPercentage ?? srv.commissionRate ?? 0);
+                const rawBase = Number(srv.commissionableAmount ?? (item as any).commissionableAmount ?? 0);
+                const commBase = rawBase > 0 ? (rawBase * qty) : effectivePrice;
+                if (srvAmt > 0) itemExecComm = srvAmt * qty;
+                else if (srvPct > 0) itemExecComm = commBase * (srvPct / 100);
+              }
+            }
             if (itemExecComm > 0) {
-              invoiceExecutionCommission += Number(itemExecComm) * qty;
+              invoiceExecutionCommission += itemExecComm;
             }
           }
 
@@ -268,7 +282,13 @@ export function EmployeeAnalyticsScreen({
               ]);
               exportToExcel(`تحليلات_أداء_الموظفين_${new Date().toISOString().split('T')[0]}`, 'أداء الموظفين', headers, rows);
             }}
-            className="bg-slate-900 hover:bg-slate-800 text-white px-3.5 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 shadow-2xs cursor-pointer"
+            disabled={!AuthService.canDo('export_excel')}
+            className={`px-3.5 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 shadow-2xs transition-colors ${
+              AuthService.canDo('export_excel')
+                ? 'bg-slate-900 hover:bg-slate-800 text-white cursor-pointer'
+                : 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-60'
+            }`}
+            title={AuthService.canDo('export_excel') ? 'تصدير مؤشرات أداء الموظفين إلى Excel' : 'لا تملك صلاحية التصدير إلى Excel'}
           >
             <Download size={14} />
             <span>تصدير Excel</span>

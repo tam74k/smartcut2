@@ -3,14 +3,14 @@ import {
   AppSettings, Employee, EmployeeFinancialRecord, EmployeeLeaveRecord, 
   Transaction, Invoice, Booking, SalaryHistoryEntry, EmployeePermissionRecord, 
   EndOfServiceRecord, HRSettings, CommissionTier, TipRecord, FingerprintLog, EmployeeCustody,
-  AppUser, ShiftScheduleEntry, EMPLOYEE_ROLES
+  AppUser, ShiftScheduleEntry, EMPLOYEE_ROLES, ServiceItem, Product
 } from '../types';
 import { 
   Plus, Edit2, Trash2, Save, UserCog, Search, Banknote, CalendarMinus, 
   Gift, DollarSign, XCircle, CheckCircle, Clock, ShieldAlert, TrendingUp, 
   BarChart3, Settings, ShieldCheck, History, Award, Calendar, FileText, 
   AlertTriangle, Check, X, Printer, UserX, UserCheck, Sparkles, Sliders, Layers,
-  Camera, Image as ImageIcon, HeartHandshake, Fingerprint, Package, CheckCircle2, Coins
+  Camera, Image as ImageIcon, HeartHandshake, Fingerprint, Package, CheckCircle2, Eye
 } from 'lucide-react';
 import { processImageFile, MAX_IMAGE_SIZE_KB, compressEmployeeAvatar } from '../utils/imageUpload';
 import { HRScreen } from './HRScreen';
@@ -18,17 +18,19 @@ import { EmployeeAnalyticsScreen } from './EmployeeAnalyticsScreen';
 import { TipsScreen } from './TipsScreen';
 import { FingerprintLogsScreen } from './FingerprintLogsScreen';
 import { EmployeeCustodyModal } from './EmployeeCustodyModal';
+import { EmployeeFullProfileView } from './EmployeeFullProfileView';
 import { printThermalFinancialVoucher, FinancialVoucherData } from './ThermalFinancialVoucher';
 import { getCommissionModelLabel, calculateEmployeeCommission } from '../utils/commissionHelper';
 import { DB } from '../services/db';
 import { AuthService } from '../services/auth';
-import { EmployeeCommissionsDetailedSection } from './EmployeeCommissionsDetailedSection';
 
 export function EmployeesScreen({ 
   settings, 
   setSettings,
   employees, 
   setEmployees, 
+  services = [],
+  products = [],
   transactions = [], 
   setTransactions,
   shiftData,
@@ -42,14 +44,16 @@ export function EmployeesScreen({
   custodies = [],
   setCustodies,
   activeBranchId,
-  services = [],
-  products = []
+  licenseInfo,
+  onOpenLicenseModal
 }: { 
   settings: AppSettings;
   setSettings?: (s: AppSettings) => void;
   activeBranchId?: string;
   employees: Employee[]; 
   setEmployees: (e: Employee[]) => void;
+  services?: ServiceItem[];
+  products?: Product[];
   transactions?: Transaction[];
   setTransactions?: (t: Transaction[]) => void;
   shiftData?: { isOpen: boolean; date: string; initialCash: number };
@@ -62,16 +66,44 @@ export function EmployeesScreen({
   setFingerprintLogs?: (updater: FingerprintLog[] | ((prev: FingerprintLog[]) => FingerprintLog[])) => void;
   custodies?: EmployeeCustody[];
   setCustodies?: (updater: EmployeeCustody[] | ((prev: EmployeeCustody[]) => EmployeeCustody[])) => void;
-  services?: ServiceItem[];
-  products?: any[];
+  licenseInfo?: any;
+  onOpenLicenseModal?: () => void;
 }) {
   // Main Active Sub-Tab
   const [activeSubTab, setActiveSubTab] = useState<
-    'list' | 'timesheet' | 'commissions_summary' | 'tips' | 'fingerprint_logs' | 'salary_history' | 'shift_schedule_history' | 'end_of_service' | 'permissions' | 'hr_settings' | 'analytics'
+    'list' | 'timesheet' | 'tips' | 'fingerprint_logs' | 'salary_history' | 'shift_schedule_history' | 'end_of_service' | 'permissions' | 'hr_settings' | 'analytics'
   >('list');
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
+
+  const selectedEmployee = useMemo(() => {
+    return employees.find(e => e.id === selectedEmployeeId) || null;
+  }, [employees, selectedEmployeeId]);
+
+  // RBAC Granular Permissions
+  const canAddEmployee = AuthService.canDo('manage_employees_add', currentUser);
+  const canEditEmployee = AuthService.canDo('manage_employees_edit', currentUser);
+  const canDeleteEmployee = AuthService.canDo('manage_employees_delete', currentUser);
+  const canManageAdvances = AuthService.canDo('hr_manage_advances', currentUser);
+  const canManageBonuses = AuthService.canDo('hr_manage_bonuses', currentUser);
+  const canManagePenalties = AuthService.canDo('hr_manage_penalties', currentUser);
+  const canManageLeaves = AuthService.canDo('hr_manage_leaves', currentUser);
+  const canManagePermissions = AuthService.canDo('hr_manage_permissions', currentUser);
+  const canSalaryIncrements = AuthService.canDo('hr_salary_increments', currentUser);
+  const canManageEndOfService = AuthService.canDo('manage_end_of_service', currentUser);
+  const canManageCustodies = AuthService.canDo('manage_custodies', currentUser);
+  const canAccessHR = AuthService.canAccess('hr', currentUser) || AuthService.canDo('hr_view_timesheet', currentUser);
+
+  // سقف وترخيص باقة الموظفين (Employee License Tier Quota)
+  const maxAllowedEmployees = (typeof licenseInfo?.maxEmployees === 'number' && licenseInfo.maxEmployees > 0)
+    ? licenseInfo.maxEmployees
+    : null;
+  const currentActiveEmployeesCount = useMemo(() => {
+    return employees.filter(e => e.isActive !== false && !e.isBlacklisted).length;
+  }, [employees]);
+  const isEmployeeQuotaReached = maxAllowedEmployees !== null && currentActiveEmployeesCount >= maxAllowedEmployees;
   
   // Default Employee Form Data
   const defaultFormData: Partial<Employee> = {
@@ -86,8 +118,13 @@ export function EmployeesScreen({
       { id: 't2', fromAmount: 5000, toAmount: 10000, percentage: 10 },
       { id: 't3', fromAmount: 10000, toAmount: 0, percentage: 15 }
     ],
-    target: 5000,
-    targetType: 'monthly',
+    target: 0,
+    dailyTargetAmount: 0,
+    dailyTargetMethod: 'excess_only',
+    monthlyTargetAmount: 0,
+    monthlyTargetMethod: 'deduct_salary',
+    targetCommissionRate: 0,
+    targetType: 'none',
     availableVacations: 21,
     salaryType: 'salary',
     allowDualCommission: false,
@@ -227,19 +264,18 @@ export function EmployeesScreen({
   });
 
   const handleOpenQuickAction = (type: 'advance' | 'bonus' | 'penalty', defaultEmpId?: string) => {
-    if (type === 'advance' && !AuthService.canDo('hr_manage_advances', currentUser)) {
-      alert('⛔ عذراً، لا تملك صلاحية صرف السلف النقدية للموظفين (hr_manage_advances).');
+    if (type === 'advance' && !canManageAdvances) {
+      alert('عفواً، ليس لديك صلاحية تسجيل السلف.');
       return;
     }
-    if (type === 'bonus' && !AuthService.canDo('hr_manage_bonuses', currentUser)) {
-      alert('⛔ عذراً، لا تملك صلاحية تسجيل أو صرف المكافآت للموظفين (hr_manage_bonuses).');
+    if (type === 'bonus' && !canManageBonuses) {
+      alert('عفواً، ليس لديك صلاحية تسجيل المكافآت.');
       return;
     }
-    if (type === 'penalty' && !AuthService.canDo('hr_manage_penalties', currentUser)) {
-      alert('⛔ عذراً، لا تملك صلاحية تطبيق الخصومات أو الجزاءات على الموظفين (hr_manage_penalties).');
+    if (type === 'penalty' && !canManagePenalties) {
+      alert('عفواً، ليس لديك صلاحية تسجيل الخصومات والجزاءات.');
       return;
     }
-
     setQuickActionForm({
       type,
       empId: defaultEmpId || employees[0]?.id || '',
@@ -256,19 +292,6 @@ export function EmployeesScreen({
   const handleExecuteQuickAction = () => {
     if (!quickActionForm.empId) {
       alert('الرجاء اختيار الموظف أولاً');
-      return;
-    }
-
-    if (quickActionForm.type === 'advance' && !AuthService.canDo('hr_manage_advances', currentUser)) {
-      alert('⛔ عذراً، لا تملك صلاحية صرف السلف النقدية للموظفين.');
-      return;
-    }
-    if (quickActionForm.type === 'bonus' && !AuthService.canDo('hr_manage_bonuses', currentUser)) {
-      alert('⛔ عذراً، لا تملك صلاحية تسجيل أو صرف المكافآت للموظفين.');
-      return;
-    }
-    if (quickActionForm.type === 'penalty' && !AuthService.canDo('hr_manage_penalties', currentUser)) {
-      alert('⛔ عذراً، لا تملك صلاحية تطبيق الخصومات أو الجزاءات على الموظفين.');
       return;
     }
 
@@ -291,17 +314,10 @@ export function EmployeesScreen({
       const treasuryName = settings.treasuries.find(t => t.id === quickActionForm.treasuryId)?.name || 'الخزنة الرئيسية';
 
       const branchCodeToUse = settings.branches?.find(b => b.id === activeBranchId)?.code || (emp as any).branchCode || 'BR-01';
-      const nowIso = new Date().toISOString();
-      const isShiftMatch = Boolean(shiftData?.isOpen && shiftData.date === quickActionForm.date);
-      const effectiveShiftDate = isShiftMatch ? shiftData.date : quickActionForm.date;
-      const effectiveShiftId = isShiftMatch ? (shiftData as any)?.shiftId : undefined;
-
       const trx: Transaction = {
         id: 'TRX-ADV-' + Math.random().toString(36).substring(2, 9),
         date: quickActionForm.date + 'T' + new Date().toTimeString().split(' ')[0],
-        createdAt: nowIso,
-        shiftDate: effectiveShiftDate,
-        shiftId: effectiveShiftId,
+        shiftDate: shiftData?.isOpen ? shiftData.date : undefined,
         type: 'out',
         amount: quickActionForm.amount,
         category: 'hr_advance',
@@ -319,9 +335,6 @@ export function EmployeesScreen({
       const record: EmployeeFinancialRecord = {
         id: 'FIN-' + Math.random().toString(36).substring(2, 9),
         date: quickActionForm.date,
-        createdAt: nowIso,
-        shiftDate: effectiveShiftDate,
-        shiftId: effectiveShiftId,
         type: 'advance',
         amount: quickActionForm.amount,
         treasuryId: quickActionForm.treasuryId,
@@ -457,6 +470,10 @@ export function EmployeesScreen({
   ];
 
   const handleEdit = (emp: Employee) => {
+    if (!canEditEmployee) {
+      alert('عفواً، ليس لديك صلاحية تعديل بيانات الموظفين.');
+      return;
+    }
     setEditingId(emp.id);
     const usersList = AuthService.getUsers();
     const linkedUser = usersList.find(u => u.employeeId === emp.id || (emp.userId && u.id === emp.userId));
@@ -469,6 +486,12 @@ export function EmployeesScreen({
       ...emp,
       commissionRate: emp.commissionRate ?? 0,
       commissionModel: emp.commissionModel || (emp.commissionRate === 0 ? 'none' : 'fixed_rate'),
+      dailyTargetAmount: emp.dailyTargetAmount ?? 0,
+      dailyTargetMethod: emp.dailyTargetMethod || 'excess_only',
+      monthlyTargetAmount: emp.monthlyTargetAmount ?? (emp.target ?? 0),
+      monthlyTargetMethod: emp.monthlyTargetMethod || 'deduct_salary',
+      targetCommissionRate: emp.targetCommissionRate ?? 0,
+      targetType: emp.targetType || ((Number(emp.dailyTargetAmount) > 0) ? 'daily' : ((Number(emp.monthlyTargetAmount || emp.target) > 0) ? 'monthly' : 'none')),
       email: emp.email || '',
       avatarUrl: emp.avatarUrl || '',
       hasOnlineAccount: emp.hasOnlineAccount || Boolean(linkedUser),
@@ -482,57 +505,46 @@ export function EmployeesScreen({
     });
   };
 
-  const handleDelete = async (id: string, empName?: string) => {
-    const targetEmp = employees.find(e => e.id === id);
-    const displayName = empName || targetEmp?.name || 'هذا الموظف';
+  const handlePermanentDelete = async (id: string, name?: string) => {
+    if (!canDeleteEmployee) {
+      alert('عفواً، ليس لديك صلاحية حذف الموظفين نهائياً.');
+      return;
+    }
+    const empName = name || employees.find(e => e.id === id)?.name || 'الموظف';
+    if (window.confirm(`⚠️ تأكيد الحذف النهائي:\nهل أنت متأكد تماماً من حذف الموظف "${empName}" نهائياً من النظام وقاعدة البيانات؟\nلن يمكن التراجع عن هذه الخطوة وسيتم حذف ملف الموظف بالكامل.`)) {
+      try {
+        await DB.deleteEmployee(id);
+        setEmployees(employees.filter(e => e.id !== id));
+        if (selectedEmployeeId === id) {
+          setSelectedEmployeeId(null);
+        }
+      } catch (err) {
+        console.error('Error deleting employee:', err);
+        alert('حدث خطأ أثناء حذف الموظف من قاعدة البيانات');
+      }
+    }
+  };
+  const handleDelete = handlePermanentDelete;
 
-    if (!confirm(`تحذير نهائي:\nهل أنت متأكد من حذف بيانات الموظف (${displayName}) نهائياً من النظام وقاعدة البيانات؟\nلن يمكن التراجع عن هذا الإجراء.`)) {
+  const handleSaveEmployee = async () => {
+    if (editingId && !canEditEmployee) {
+      alert('عفواً، ليس لديك صلاحية تعديل بيانات الموظفين.');
+      return;
+    }
+    if (!editingId && !canAddEmployee) {
+      alert('عفواً، ليس لديك صلاحية إضافة موظف جديد.');
       return;
     }
 
-    try {
-      // 1. Remove from local state
-      const updatedList = employees.filter(e => e.id !== id);
-      setEmployees(updatedList);
-
-      // 2. Reset editing form if this employee was being edited
-      if (editingId === id) {
-        setEditingId(null);
-        setFormData(defaultFormData);
-        setOnlineUsername('');
-        setOnlineUserPassword('123456');
-        setUsernameStatus('idle');
-      }
-
-      // 3. Remove linked online user account if exists
-      try {
-        const storedUsers = localStorage.getItem('smartcut_users');
-        if (storedUsers) {
-          const usersList: AppUser[] = JSON.parse(storedUsers);
-          const linkedUser = usersList.find(u => u.employeeId === id || (targetEmp?.userId && u.id === targetEmp.userId));
-          if (linkedUser) {
-            await DB.deleteUser(linkedUser.id);
-            const remainingUsers = usersList.filter(u => u.id !== linkedUser.id && u.employeeId !== id);
-            localStorage.setItem('smartcut_users', JSON.stringify(remainingUsers));
-          }
-        }
-      } catch (err) {
-        console.warn('Error removing linked online user:', err);
-      }
-
-      // 4. Delete permanently from Supabase & Cloud DB
-      await DB.deleteEmployee(id, settings.salonId);
-
-      alert(`✅ تم حذف بيانات الموظف (${displayName}) نهائياً بنجاح!`);
-    } catch (error) {
-      console.error('Error deleting employee:', error);
-      alert('حدث خطأ أثناء محاولة حذف الموظف، يرجى المحاولة مرة أخرى.');
-    }
-  };
-
-  const handleSaveEmployee = async () => {
     if (!formData.name || !formData.role) {
       alert('الرجاء إدخال اسم الموظف والمسمى الوظيفي');
+      return;
+    }
+
+    // فحص سقف الموظفين المسموح به في خطة الترخيص
+    if (!editingId && maxAllowedEmployees !== null && currentActiveEmployeesCount >= maxAllowedEmployees) {
+      alert(`⚠️ لقد وصلت للحد الأقصى لعدد الموظفين المسموح به في خطة ترخيصك الحالية (${maxAllowedEmployees} موظفين).\n\nلإضافة موظفين جدد يرجى ترقية باقة الترخيص والتواصل مع إدارة النظام.`);
+      if (onOpenLicenseModal) onOpenLicenseModal();
       return;
     }
 
@@ -645,7 +657,7 @@ export function EmployeesScreen({
           checkOutTime: formData.checkOutTime || '18:00',
           weeklyDaysOff: formData.weeklyDaysOff || existingEmp.weeklyDaysOff || ['Friday'],
           reason: 'تعديل من شاشة بيانات الموظف',
-          updatedBy: currentUser?.name || 'مدير النظام'
+          updatedBy: (currentUser?.name && !currentUser.name.includes('Dana')) ? currentUser.name : 'مدير النظام'
         };
         updatedHistory = [...updatedHistory, shiftEntry];
       }
@@ -664,10 +676,13 @@ export function EmployeesScreen({
       const newEmp: Employee = {
         ...formData,
         id: employeeId,
-        salonId: (formData as any).salonId || settings?.salonId,
+        salonId: (formData as any).salonId || settings?.salonId || '11111111-1111-4111-8111-111111111111',
         username: formData.hasOnlineAccount ? cleanUsername : undefined,
         userId: formData.hasOnlineAccount ? userUuid : undefined,
         fingerprintCode: formData.fingerprintCode || String(employees.length + 1),
+        isActive: true,
+        isBlacklisted: false,
+        blacklistReason: undefined,
         financialRecords: [],
         leaveRecords: [],
         salaryHistory: [{
@@ -676,7 +691,7 @@ export function EmployeesScreen({
           previousSalary: 0,
           newSalary: formData.baseSalary || 0,
           reason: 'تعيين أولي',
-          approvedBy: currentUser?.name || 'مدير النظام'
+          approvedBy: (currentUser?.name && !currentUser.name.includes('Dana')) ? currentUser.name : 'مدير النظام'
         }],
         shiftScheduleHistory: [{
           id: 'SCH-1',
@@ -687,7 +702,7 @@ export function EmployeesScreen({
           checkOutTime: formData.checkOutTime || '18:00',
           weeklyDaysOff: formData.weeklyDaysOff || ['Friday'],
           reason: 'مواعيد الدوام عند التعيين الأولي',
-          updatedBy: currentUser?.name || 'مدير النظام'
+          updatedBy: (currentUser?.name && !currentUser.name.includes('Dana')) ? currentUser.name : 'مدير النظام'
         }],
         permissionRecords: []
       } as Employee;
@@ -714,36 +729,32 @@ export function EmployeesScreen({
     empId: string, 
     type: 'advance' | 'penalty' | 'bonus' | 'leave' | 'salary_increase' | 'shift_schedule' | 'permission' | 'end_of_service'
   ) => {
-    if (type === 'advance' && !AuthService.canDo('hr_manage_advances', currentUser)) {
-      alert('⛔ عذراً، لا تملك صلاحية صرف السلف النقدية للموظفين (hr_manage_advances).');
+    if (type === 'advance' && !canManageAdvances) {
+      alert('عفواً، ليس لديك صلاحية تسجيل السلف.');
       return;
     }
-    if (type === 'penalty' && !AuthService.canDo('hr_manage_penalties', currentUser)) {
-      alert('⛔ عذراً، لا تملك صلاحية تطبيق الخصومات أو الجزاءات على الموظفين (hr_manage_penalties).');
+    if (type === 'penalty' && !canManagePenalties) {
+      alert('عفواً، ليس لديك صلاحية تسجيل الخصومات والجزاءات.');
       return;
     }
-    if (type === 'bonus' && !AuthService.canDo('hr_manage_bonuses', currentUser)) {
-      alert('⛔ عذراً، لا تملك صلاحية تسجيل أو صرف المكافآت للموظفين (hr_manage_bonuses).');
+    if (type === 'bonus' && !canManageBonuses) {
+      alert('عفواً، ليس لديك صلاحية تسجيل المكافآت.');
       return;
     }
-    if (type === 'salary_increase' && !AuthService.canDo('hr_manage_salary_increments', currentUser)) {
-      alert('⛔ عذراً، لا تملك صلاحية تسجيل أو إقرار زيادات الرواتب (hr_manage_salary_increments).');
+    if (type === 'leave' && !canManageLeaves) {
+      alert('عفواً، ليس لديك صلاحية تسجيل الإجازات.');
       return;
     }
-    if (type === 'shift_schedule' && !AuthService.canDo('hr_manage_attendance', currentUser)) {
-      alert('⛔ عذراً، لا تملك صلاحية تعديل مواعيد العمل والورديات (hr_manage_attendance).');
+    if (type === 'permission' && !canManagePermissions) {
+      alert('عفواً، ليس لديك صلاحية تسجيل الاستئذانات.');
       return;
     }
-    if (type === 'leave' && !AuthService.canDo('hr_manage_leaves', currentUser)) {
-      alert('⛔ عذراً، لا تملك صلاحية تسجيل الإجازات (hr_manage_leaves).');
+    if (type === 'salary_increase' && !canSalaryIncrements) {
+      alert('عفواً، ليس لديك صلاحية تسجيل زيادات الرواتب.');
       return;
     }
-    if (type === 'permission' && !AuthService.canDo('hr_manage_permissions', currentUser)) {
-      alert('⛔ عذراً، لا تملك صلاحية تسجيل الاستئذانات (hr_manage_permissions).');
-      return;
-    }
-    if (type === 'end_of_service' && !AuthService.canDo('manage_employees', currentUser)) {
-      alert('⛔ عذراً، لا تملك صلاحية إنهاء خدمة الموظفين (manage_employees).');
+    if (type === 'end_of_service' && !canManageEndOfService) {
+      alert('عفواً، ليس لديك صلاحية إجراءات إنهاء الخدمة والبلاك ليست.');
       return;
     }
 
@@ -792,17 +803,10 @@ export function EmployeesScreen({
         const treasuryName = settings.treasuries.find(t => t.id === advanceForm.treasuryId)?.name || 'الخزنة الرئيسية';
 
         const branchCodeToUse = settings.branches?.find(b => b.id === activeBranchId)?.code || (emp as any).branchCode || 'BR-01';
-        const nowIso = new Date().toISOString();
-        const isShiftMatch = Boolean(shiftData?.isOpen && shiftData.date === advanceForm.date);
-        const effectiveShiftDate = isShiftMatch ? shiftData.date : advanceForm.date;
-        const effectiveShiftId = isShiftMatch ? (shiftData as any)?.shiftId : undefined;
-
         const trx: Transaction = {
           id: 'TRX-ADV-' + Math.random().toString(36).substring(2, 9),
           date: advanceForm.date + 'T' + new Date().toTimeString().split(' ')[0],
-          createdAt: nowIso,
-          shiftDate: effectiveShiftDate,
-          shiftId: effectiveShiftId,
+          shiftDate: shiftData?.isOpen ? shiftData.date : undefined,
           type: 'out',
           amount: advanceForm.amount,
           category: 'hr_advance',
@@ -820,9 +824,6 @@ export function EmployeesScreen({
         const record: EmployeeFinancialRecord = {
           id: 'FIN-' + Math.random().toString(36).substring(2, 9),
           date: advanceForm.date,
-          createdAt: nowIso,
-          shiftDate: effectiveShiftDate,
-          shiftId: effectiveShiftId,
           type: 'advance',
           amount: advanceForm.amount,
           treasuryId: advanceForm.treasuryId,
@@ -995,15 +996,27 @@ export function EmployeesScreen({
     }
   };
 
-  const handleUnbanBlacklist = (empId: string) => {
-    if (confirm('هل أنت متأكد من فك الحظر وإلغاء إدراج هذا الموظف في القائمة السوداء؟')) {
-      setEmployees(employees.map(e => e.id === empId ? { ...e, isBlacklisted: false, blacklistReason: undefined } : e));
+  const handleUnbanBlacklist = async (empId: string) => {
+    const emp = employees.find(e => e.id === empId);
+    const empName = emp?.name || 'الموظف';
+    if (confirm(`هل أنت متأكد من فك الحظر وإلغاء إدراج الموظف "${empName}" من القائمة السوداء؟`)) {
+      const updated = employees.map(e => e.id === empId ? { ...e, isBlacklisted: false, blacklistReason: undefined } : e);
+      setEmployees(updated);
+      try { localStorage.setItem('smartcut_employees', JSON.stringify(updated)); } catch (e) {}
+      const target = updated.find(e => e.id === empId);
+      if (target) await DB.saveEmployee(target);
+      alert(`✅ تم فك الحظر وإلغاء إدراج "${empName}" من القائمة السوداء بنجاح!`);
     }
   };
 
-  const handleCancelTermination = (empId: string) => {
+  const handleCancelTermination = async (empId: string) => {
     if (confirm('هل أنت متأكد من إلغاء إنهاء الخدمة وإعادة الموظف للعمل؟')) {
-      setEmployees(employees.map(e => e.id === empId ? { ...e, endOfService: undefined, isActive: true } : e));
+      const updated = employees.map(e => e.id === empId ? { ...e, endOfService: undefined, isActive: true } : e);
+      setEmployees(updated);
+      try { localStorage.setItem('smartcut_employees', JSON.stringify(updated)); } catch (e) {}
+      const target = updated.find(e => e.id === empId);
+      if (target) await DB.saveEmployee(target);
+      alert('✅ تم إلغاء إنهاء الخدمة وإعادة الموظف للعمل بنجاح!');
     }
   };
 
@@ -1013,7 +1026,7 @@ export function EmployeesScreen({
   );
 
   return (
-    <div className="p-6 max-w-7xl mx-auto w-full h-full overflow-y-auto bg-slate-50 font-sans" dir="rtl">
+    <div className={`p-4 sm:p-6 mx-auto w-full h-full min-h-0 overflow-y-auto custom-scrollbar bg-slate-50 font-sans ${activeSubTab === 'timesheet' || activeSubTab === 'analytics' ? 'max-w-[99%]' : 'max-w-7xl'}`} dir="rtl">
       
       {/* Top Main Navigation Hub Header */}
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
@@ -1031,36 +1044,63 @@ export function EmployeesScreen({
           </div>
           {/* Quick Action Buttons */}
           <div className="flex flex-wrap items-center gap-2 mt-3 sm:mt-0">
-            {AuthService.canDo('hr_manage_advances', currentUser) && (
-              <button
-                onClick={() => handleOpenQuickAction('advance')}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
-                title="صرف سلفة سريعة"
-              >
-                <Banknote size={15} />
-                <span>+ سلفة سريعة</span>
-              </button>
-            )}
-            {AuthService.canDo('hr_manage_bonuses', currentUser) && (
-              <button
-                onClick={() => handleOpenQuickAction('bonus')}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
-                title="تسجيل مكافأة سريعة"
-              >
-                <Gift size={15} />
-                <span>+ مكافأة سريعة</span>
-              </button>
-            )}
-            {AuthService.canDo('hr_manage_penalties', currentUser) && (
-              <button
-                onClick={() => handleOpenQuickAction('penalty')}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
-                title="تسجيل خصم أو جزاء"
-              >
-                <DollarSign size={15} />
-                <span>+ خصم سريع</span>
-              </button>
-            )}
+            <button
+              disabled={!canManageAdvances}
+              onClick={() => {
+                if (!canManageAdvances) {
+                  alert('⛔ عذراً، لا تملك صلاحية صرف وإدارة السلف النقدية (hr_manage_advances)');
+                  return;
+                }
+                handleOpenQuickAction('advance');
+              }}
+              className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-all ${
+                canManageAdvances
+                  ? 'bg-amber-500 hover:bg-amber-600 text-white cursor-pointer'
+                  : 'bg-slate-200 text-slate-400 opacity-50 cursor-not-allowed'
+              }`}
+              title={canManageAdvances ? 'صرف سلفة سريعة' : 'ليس لديك صلاحية صرف السلف (hr_manage_advances)'}
+            >
+              <Banknote size={15} />
+              <span>+ سلفة سريعة</span>
+            </button>
+            <button
+              disabled={!canManageBonuses}
+              onClick={() => {
+                if (!canManageBonuses) {
+                  alert('⛔ عذراً، لا تملك صلاحية تسجيل وصرف المكافآت والحوافز (hr_manage_bonuses)');
+                  return;
+                }
+                handleOpenQuickAction('bonus');
+              }}
+              className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-all ${
+                canManageBonuses
+                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer'
+                  : 'bg-slate-200 text-slate-400 opacity-50 cursor-not-allowed'
+              }`}
+              title={canManageBonuses ? 'تسجيل مكافأة سريعة' : 'ليس لديك صلاحية المكافآت (hr_manage_bonuses)'}
+            >
+              <Gift size={15} />
+              <span>+ مكافأة سريعة</span>
+            </button>
+            <button
+              disabled={!canManagePenalties}
+              onClick={() => {
+                if (!canManagePenalties) {
+                  alert('⛔ عذراً، لا تملك صلاحية تسجيل وتطبيق الخصومات والجزاءات (hr_manage_penalties)');
+                  return;
+                }
+                handleOpenQuickAction('penalty');
+              }}
+              className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-all ${
+                canManagePenalties
+                  ? 'bg-rose-600 hover:bg-rose-700 text-white cursor-pointer'
+                  : 'bg-slate-200 text-slate-400 opacity-50 cursor-not-allowed'
+              }`}
+              title={canManagePenalties ? 'تسجيل خصم سريع' : 'ليس لديك صلاحية الجزاءات (hr_manage_penalties)'}
+            >
+              <DollarSign size={15} />
+              <span>+ خصم سريع</span>
+            </button>
           </div>
         </div>
 
@@ -1076,95 +1116,101 @@ export function EmployeesScreen({
             <span>بيانات الموظفين</span>
           </button>
 
-          <button
-            onClick={() => setActiveSubTab('timesheet')}
-            className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
-              activeSubTab === 'timesheet' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Clock size={15} />
-            <span>التايم شيت وسجل الدوام</span>
-          </button>
+          {canAccessHR && (
+            <button
+              onClick={() => setActiveSubTab('timesheet')}
+              className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
+                activeSubTab === 'timesheet' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Clock size={15} />
+              <span>التايم شيت وسجل الدوام</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => setActiveSubTab('commissions_summary')}
-            className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
-              activeSubTab === 'commissions_summary' ? 'bg-white text-amber-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Coins size={15} className="text-amber-600" />
-            <span>ملخص العمولات التفصيلي</span>
-          </button>
+          {(canAccessHR || canSalaryIncrements) && (
+            <button
+              onClick={() => setActiveSubTab('salary_history')}
+              className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
+                activeSubTab === 'salary_history' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <History size={15} />
+              <span>سجل الرواتب</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => setActiveSubTab('salary_history')}
-            className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
-              activeSubTab === 'salary_history' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <History size={15} />
-            <span>سجل الرواتب</span>
-          </button>
+          {(canAccessHR || canEditEmployee) && (
+            <button
+              onClick={() => setActiveSubTab('shift_schedule_history')}
+              className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
+                activeSubTab === 'shift_schedule_history' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Calendar size={15} />
+              <span>سجل مواعيد الدوام</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => setActiveSubTab('shift_schedule_history')}
-            className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
-              activeSubTab === 'shift_schedule_history' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Calendar size={15} />
-            <span>سجل مواعيد الدوام</span>
-          </button>
+          {canManageEndOfService && (
+            <button
+              onClick={() => setActiveSubTab('end_of_service')}
+              className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
+                activeSubTab === 'end_of_service' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <ShieldAlert size={15} />
+              <span>إنهاء الخدمة والبلاك ليست</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => setActiveSubTab('end_of_service')}
-            className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
-              activeSubTab === 'end_of_service' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <ShieldAlert size={15} />
-            <span>إنهاء الخدمة والبلاك ليست</span>
-          </button>
+          {(canAccessHR || canManagePermissions) && (
+            <button
+              onClick={() => setActiveSubTab('permissions')}
+              className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
+                activeSubTab === 'permissions' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <CalendarMinus size={15} />
+              <span>أذونات الاستئذان</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => setActiveSubTab('permissions')}
-            className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
-              activeSubTab === 'permissions' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <CalendarMinus size={15} />
-            <span>أذونات الاستئذان</span>
-          </button>
+          {(AuthService.canAccess('settings', currentUser) || AuthService.canDo('manage_settings', currentUser)) && (
+            <button
+              onClick={() => setActiveSubTab('hr_settings')}
+              className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
+                activeSubTab === 'hr_settings' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Sliders size={15} />
+              <span>إعدادات الدوام والأوفرتايم</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => setActiveSubTab('hr_settings')}
-            className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
-              activeSubTab === 'hr_settings' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Sliders size={15} />
-            <span>إعدادات الدوام والأوفرتايم</span>
-          </button>
+          {(AuthService.canAccess('tips', currentUser) || AuthService.canDo('manage_tips', currentUser)) && (
+            <button
+              onClick={() => setActiveSubTab('tips')}
+              className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
+                activeSubTab === 'tips' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <HeartHandshake size={15} />
+              <span>البقشيش والإكراميات</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => setActiveSubTab('tips')}
-            className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
-              activeSubTab === 'tips' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <HeartHandshake size={15} />
-            <span>البقشيش والإكراميات</span>
-          </button>
-
-          <button
-            onClick={() => setActiveSubTab('fingerprint_logs')}
-            className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
-              activeSubTab === 'fingerprint_logs' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Fingerprint size={15} />
-            <span>سجلات البصمة وأجهزة الدوام</span>
-          </button>
+          {(AuthService.canAccess('fingerprint_logs', currentUser) || AuthService.canDo('hr_fingerprint_sync', currentUser)) && (
+            <button
+              onClick={() => setActiveSubTab('fingerprint_logs')}
+              className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
+                activeSubTab === 'fingerprint_logs' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Fingerprint size={15} />
+              <span>سجلات البصمة وأجهزة الدوام</span>
+            </button>
+          )}
 
           <button
             onClick={() => setActiveSubTab('analytics')}
@@ -1181,26 +1227,74 @@ export function EmployeesScreen({
 
       {/* SUB-TAB 1: STAFF DIRECTORY & CRUD */}
       {activeSubTab === 'list' && (
-        <div className="space-y-6">
+        selectedEmployee ? (
+          <EmployeeFullProfileView
+            employee={selectedEmployee}
+            settings={settings}
+            invoices={invoices}
+            transactions={transactions}
+            fingerprintLogs={fingerprintLogs}
+            onBack={() => setSelectedEmployeeId(null)}
+            onOpenActionModal={(empId, action) => handleOpenActionModal(empId, action)}
+            onEditEmployee={(emp) => {
+              setSelectedEmployeeId(null);
+              handleEdit(emp);
+            }}
+            onUnbanBlacklist={handleUnbanBlacklist}
+          />
+        ) : (
+          <div className="space-y-6">
           {/* Add / Edit Form Card */}
+          {(editingId ? canEditEmployee : canAddEmployee) && (
           <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs">
-            <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100 flex-wrap gap-2">
-              <h3 className="text-base font-black text-slate-800 flex items-center gap-2">
-                <Sparkles size={18} className="text-indigo-600" />
-                <span>{editingId ? `تعديل بيانات موظف: ${formData.name || ''}` : 'إضافة موظف جديد إلى الكادر'}</span>
-              </h3>
-              {editingId && AuthService.canDo('manage_employees', currentUser) && (
-                <button
-                  type="button"
-                  onClick={() => handleDelete(editingId, formData.name)}
-                  className="px-3.5 py-1.5 bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white border border-rose-200 hover:border-rose-600 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
-                  title="حذف هذا الموظف نهائياً من قاعدة البيانات"
-                >
-                  <Trash2 size={14} />
-                  <span>حذف الموظف نهائياً</span>
-                </button>
-              )}
-            </div>
+            <h3 className="text-base font-black text-slate-800 mb-4 pb-3 border-b border-slate-100 flex items-center gap-2">
+              <Sparkles size={18} className="text-indigo-600" />
+              <span>{editingId ? 'تعديل بيانات موظف' : 'إضافة موظف جديد إلى الكادر'}</span>
+            </h3>
+
+            {/* Employee Tier Status Banner */}
+            {maxAllowedEmployees !== null && (
+              <div className={`mb-5 p-3.5 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs ${
+                isEmployeeQuotaReached
+                  ? 'bg-rose-50/90 border-rose-200 text-rose-900'
+                  : 'bg-indigo-50/80 border-indigo-200 text-indigo-900'
+              }`}>
+                <div className="flex items-center gap-2.5">
+                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-sm shrink-0 ${
+                    isEmployeeQuotaReached ? 'bg-rose-500 text-white' : 'bg-indigo-600 text-white'
+                  }`}>
+                    👥
+                  </div>
+                  <div>
+                    <div className="font-black text-[13px] flex items-center gap-2">
+                      <span>باقة الموظفين الحالية: {maxAllowedEmployees} موظفين حد أقصى</span>
+                      {isEmployeeQuotaReached ? (
+                        <span className="bg-rose-600 text-white text-[10px] px-2 py-0.5 rounded-full font-bold">
+                          تم استنفاد السعة المتاحة بالكامل
+                        </span>
+                      ) : (
+                        <span className="bg-emerald-600 text-white text-[10px] px-2 py-0.5 rounded-full font-bold">
+                          متبقي {maxAllowedEmployees - currentActiveEmployeesCount} مقاعد
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] opacity-80 mt-0.5">
+                      الموظفون النشطون حالياً: {currentActiveEmployeesCount} من أصل {maxAllowedEmployees} موظف مسموح بهم
+                    </p>
+                  </div>
+                </div>
+
+                {onOpenLicenseModal && (
+                  <button
+                    type="button"
+                    onClick={onOpenLicenseModal}
+                    className="px-3.5 py-1.5 bg-white hover:bg-slate-50 border border-slate-300 text-indigo-700 rounded-xl text-xs font-black shadow-xs cursor-pointer transition-all hover:scale-102 self-end sm:self-auto"
+                  >
+                    ترقية باقة الموظفين ⚡
+                  </button>
+                )}
+              </div>
+            )}
 
             <div className="flex flex-col md:flex-row gap-6 items-start mb-6 pb-6 border-b border-slate-100">
               {/* Employee Avatar Upload Box */}
@@ -1483,8 +1577,141 @@ export function EmployeesScreen({
                 </div>
               )}
 
+              {/* Target & Performance Commission Section */}
+              <div className="col-span-1 sm:col-span-2 md:col-span-4 bg-gradient-to-r from-indigo-50/70 to-purple-50/40 p-4 rounded-2xl border border-indigo-100/80 space-y-3">
+                <div className="flex items-center justify-between border-b border-indigo-100/70 pb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-black text-xs">
+                      🎯
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black text-indigo-950">نظام ومستهدفات التارجت وعمولة الأداء</h4>
+                      <p className="text-[10px] text-slate-500">اختر دورة التارجت للموظف (يومي / شهري / بدون تارجت) وطريقة احتساب العمولة المعتمدة</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      نظام التارجت للموظف:
+                    </label>
+                    <select
+                      value={formData.targetType || 'none'}
+                      onChange={e => setFormData({ ...formData, targetType: e.target.value as any })}
+                      className="w-full bg-white border border-indigo-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none text-slate-800"
+                    >
+                      <option value="none">بدون تارجت (عمولات عادية فورية فقط)</option>
+                      <option value="daily">📅 تارجت يومي (يحسب بالتايم شيت اليومي)</option>
+                      <option value="monthly">🗓️ تارجت شهري (يحسب شهرياً بتقرير التارجت والرواتب)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      نسبة عمولة التارجت (%):
+                    </label>
+                    <input 
+                      type="number" 
+                      min="0"
+                      max="100"
+                      step="any"
+                      value={formData.targetCommissionRate ?? 0} 
+                      onChange={e => setFormData({ ...formData, targetCommissionRate: Math.max(0, Math.min(100, parseFloat(e.target.value) || 0)) })}
+                      placeholder="0%"
+                      className="w-full bg-white border border-indigo-200 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:border-indigo-600 outline-none text-indigo-700"
+                    />
+                    <span className="text-[10px] text-slate-400">تمنح عند تحقيق أو تجاوز مبلغ التارجت</span>
+                  </div>
+                </div>
+
+                {/* تفاصيل التارجت اليومي */}
+                {formData.targetType === 'daily' && (
+                  <div className="p-3 bg-white/90 rounded-xl border border-indigo-200/80 space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                          مبلغ التارجت اليومي المستهدف ({settings.currency}):
+                        </label>
+                        <input 
+                          type="number" 
+                          min="0"
+                          step="any"
+                          value={formData.dailyTargetAmount ?? 0} 
+                          onChange={e => {
+                            const val = Math.max(0, parseFloat(e.target.value) || 0);
+                            setFormData({ ...formData, dailyTargetAmount: val, target: val });
+                          }}
+                          placeholder="0.00"
+                          className="w-full bg-white border border-indigo-300 rounded-xl px-3 py-2 text-xs font-mono font-bold outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                          طريقة احتساب التارجت اليومي:
+                        </label>
+                        <select
+                          value={formData.dailyTargetMethod || 'excess_only'}
+                          onChange={e => setFormData({ ...formData, dailyTargetMethod: e.target.value as any })}
+                          className="w-full bg-white border border-indigo-300 rounded-xl px-3 py-2 text-xs font-bold outline-none"
+                        >
+                          <option value="excess_only">1. على ما فوق التارجت فقط (النسبة على المبلغ الزائد)</option>
+                          <option value="full_amount">2. على كامل المبلغ طالما تجاوز التارجت</option>
+                        </select>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-slate-500">
+                      💡 في التارجت اليومي، يحسب التارجت يومياً بالتايم شيت بناءً على الخدمات الخاضعة للتارجت + تضاف عمولة الخدمات المعفاة من التارجت مباشرة.
+                    </p>
+                  </div>
+                )}
+
+                {/* تفاصيل التارجت الشهري */}
+                {formData.targetType === 'monthly' && (
+                  <div className="p-3 bg-white/90 rounded-xl border border-indigo-200/80 space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                          مبلغ التارجت الشهري المستهدف ({settings.currency}):
+                        </label>
+                        <input 
+                          type="number" 
+                          min="0"
+                          step="any"
+                          value={formData.monthlyTargetAmount ?? 0} 
+                          onChange={e => {
+                            const val = Math.max(0, parseFloat(e.target.value) || 0);
+                            setFormData({ ...formData, monthlyTargetAmount: val, target: val });
+                          }}
+                          placeholder="0.00"
+                          className="w-full bg-white border border-indigo-300 rounded-xl px-3 py-2 text-xs font-mono font-bold outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                          طريقة احتساب التارجت الشهري:
+                        </label>
+                        <select
+                          value={formData.monthlyTargetMethod || 'deduct_salary'}
+                          onChange={e => setFormData({ ...formData, monthlyTargetMethod: e.target.value as any })}
+                          className="w-full bg-white border border-indigo-300 rounded-xl px-3 py-2 text-xs font-bold outline-none"
+                        >
+                          <option value="deduct_salary">1. خصم الراتب من الشغل (النسبة على ما فوق التارجت)</option>
+                          <option value="gross_sales">2. على إجمالي الشغل مباشرة (بدون خصم المرتب)</option>
+                        </select>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-indigo-800 font-bold bg-indigo-50 p-2 rounded-lg border border-indigo-200">
+                      ℹ️ في التارجت الشهري: لا يظهر بالتايم شيت اليومي أي عمولات إلا على الخدمات المعفاة من التارجت فقط، بينما يظهر استحقاق التارجت في تقرير التارجت ومسير الرواتب الشهري.
+                    </p>
+                  </div>
+                )}
+              </div>
+
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">البريد الإلكتروني (للربط السحابي ومستخدمي Supabase)</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">البريد الإلكتروني (اختياري)</label>
                 <input 
                   type="email" 
                   value={formData.email || ''} 
@@ -1611,23 +1838,12 @@ export function EmployeesScreen({
                 </span>
               </label>
 
-              <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
-                {editingId && AuthService.canDo('manage_employees', currentUser) && (
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(editingId, formData.name)}
-                    className="px-4 py-2.5 bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white border border-rose-200 hover:border-rose-600 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
-                    title="حذف الموظف نهائياً من قاعدة البيانات"
-                  >
-                    <Trash2 size={15} />
-                    <span>حذف الموظف نهائياً</span>
-                  </button>
-                )}
+              <div className="flex gap-2 w-full sm:w-auto">
                 {editingId && (
                   <button
                     type="button"
                     onClick={() => { setEditingId(null); setFormData(defaultFormData); setOnlineUsername(''); setOnlineUserPassword('123456'); setUsernameStatus('idle'); }}
-                    className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold"
                   >
                     إلغاء
                   </button>
@@ -1635,197 +1851,322 @@ export function EmployeesScreen({
                 <button
                   type="button"
                   onClick={handleSaveEmployee}
-                  className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black shadow-md shadow-indigo-600/20 flex items-center justify-center gap-1.5 cursor-pointer"
+                  className={`px-6 py-2.5 text-white rounded-xl text-xs font-black shadow-md flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    !editingId && isEmployeeQuotaReached
+                      ? 'bg-amber-600 hover:bg-amber-700 shadow-amber-600/20'
+                      : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/20'
+                  }`}
                 >
                   <Save size={15} />
-                  <span>{editingId ? 'حفظ التعديلات' : 'إضافة الموظف'}</span>
+                  <span>
+                    {editingId
+                      ? 'حفظ التعديلات'
+                      : isEmployeeQuotaReached
+                      ? 'ترقية الباقة لإضافة موظف'
+                      : 'إضافة الموظف'}
+                  </span>
                 </button>
               </div>
             </div>
           </div>
+          )}
 
-          {/* Employees Directory Table */}
-          <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
-            <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-              <h3 className="font-black text-slate-800 text-sm">قائمة موظفي الصالون ({filteredEmployees.length})</h3>
-              <div className="relative">
+          {/* Employees Directory Cards Grid */}
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden p-5">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-4 mb-5 border-b border-slate-100">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="font-black text-slate-800 text-sm">قائمة موظفي الصالون ({filteredEmployees.length})</h3>
+                {maxAllowedEmployees !== null ? (
+                  <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-extrabold border ${
+                    isEmployeeQuotaReached
+                      ? 'bg-rose-50 text-rose-700 border-rose-200'
+                      : 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                  }`}>
+                    باقة {maxAllowedEmployees} موظفين ({currentActiveEmployeesCount}/{maxAllowedEmployees})
+                  </span>
+                ) : (
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    باقة موظفين غير محدودة ∞
+                  </span>
+                )}
+              </div>
+              <div className="relative w-full sm:w-64">
                 <input 
                   type="text"
                   placeholder="بحث عن موظف..."
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
-                  className="pr-9 pl-4 py-1.5 bg-white border border-slate-200 rounded-xl text-xs outline-none focus:border-indigo-600 w-56"
+                  className="w-full pr-9 pl-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:border-indigo-600 focus:bg-white transition-all font-bold"
                 />
-                <Search size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
               </div>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-right text-xs">
-                <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
-                  <tr>
-                    <th className="p-3">كود البصمة</th>
-                    <th className="p-3">الموظف</th>
-                    <th className="p-3">المسمى الوظيفي</th>
-                    <th className="p-3">نوع الراتب</th>
-                    <th className="p-3">الراتب الأساسي</th>
-                    <th className="p-3">نسبة العمولة</th>
-                    <th className="p-3">مواعيد الدوام</th>
-                    <th className="p-3">حساب الدخول أونلاين</th>
-                    <th className="p-3">الحالة</th>
-                    <th className="p-3 text-center">إجراءات سريعة</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filteredEmployees.map(emp => (
-                    <tr key={emp.id} className="hover:bg-slate-50/60 transition-colors">
-                      <td className="p-3 font-mono font-bold text-indigo-700">#{emp.fingerprintCode || '13'}</td>
-                      <td className="p-3">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-9 h-9 rounded-xl bg-slate-100 border border-slate-200 overflow-hidden shrink-0 flex items-center justify-center font-bold text-indigo-700">
-                            {emp.avatarUrl ? (
-                              <img src={emp.avatarUrl} alt={emp.name} className="w-full h-full object-cover" />
-                            ) : (
-                              <span>{emp.name.charAt(0)}</span>
-                            )}
-                          </div>
-                          <div>
-                            <div className="font-bold text-slate-900">{emp.name}</div>
-                            {emp.email && <div className="text-[10px] text-slate-400 font-mono">{emp.email}</div>}
-                          </div>
+            {filteredEmployees.length === 0 ? (
+              <div className="p-12 text-center text-slate-400 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
+                <UserX size={40} className="mx-auto mb-2 text-slate-300" />
+                <p className="font-bold text-xs">لا يوجد موظفون مطابقون لبحثك</p>
+                {searchQuery && (
+                  <button 
+                    onClick={() => setSearchQuery('')}
+                    className="mt-2 text-xs text-indigo-600 font-bold hover:underline"
+                  >
+                    مسح البحث
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {filteredEmployees.map(emp => (
+                  <div
+                    key={emp.id}
+                    onClick={() => setSelectedEmployeeId(emp.id)}
+                    className="group bg-white rounded-2xl border border-slate-200 hover:border-indigo-400 hover:shadow-lg transition-all duration-200 p-4.5 flex flex-col justify-between cursor-pointer relative overflow-hidden"
+                  >
+                    {/* Top Header: Fingerprint & Status */}
+                    <div className="flex items-center justify-between gap-2 mb-3">
+                      <span className="font-mono text-[11px] font-black text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-lg border border-indigo-100/60">
+                        #{emp.fingerprintCode || '—'}
+                      </span>
+                      <div>
+                        {emp.isBlacklisted ? (
+                          <span className="bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-black px-2 py-0.5 rounded-full">
+                            محظور (Blacklist)
+                          </span>
+                        ) : emp.endOfService ? (
+                          <span className="bg-slate-100 text-slate-600 border border-slate-200 text-[10px] font-black px-2 py-0.5 rounded-full">
+                            منتهي الخدمة
+                          </span>
+                        ) : (
+                          <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-black px-2 py-0.5 rounded-full flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                            <span>نشط</span>
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Employee Profile Core */}
+                    <div className="flex items-center gap-3 mb-3.5">
+                      <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-50 to-slate-100 border border-slate-200 group-hover:border-indigo-400 overflow-hidden shrink-0 flex items-center justify-center font-black text-indigo-700 text-lg shadow-inner transition-colors">
+                        {emp.avatarUrl ? (
+                          <img src={emp.avatarUrl} alt={emp.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <span>{emp.name.charAt(0)}</span>
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="font-black text-slate-900 text-sm truncate group-hover:text-indigo-600 transition-colors">
+                          {emp.name}
                         </div>
-                      </td>
-                      <td className="p-3 text-slate-600 font-semibold">{emp.role}</td>
-                      <td className="p-3">
-                        <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[10px] font-bold">
-                          {emp.salaryType === 'commission_only' ? 'بالعمولة فقط' : emp.salaryType === 'salary_plus_commission' ? 'راتب + عمولة' : 'راتب ثابت'}
+                        <div className="text-[11px] font-bold text-slate-500 truncate mt-0.5">
+                          {emp.role}
+                        </div>
+                        {emp.email && (
+                          <div className="text-[10px] text-slate-400 font-mono truncate">
+                            {emp.email}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Details Rows */}
+                    <div className="bg-slate-50/80 rounded-xl p-2.5 space-y-1.5 text-[11px] mb-3 border border-slate-100">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500 font-bold">الراتب الأساسي:</span>
+                        <span className="font-mono font-black text-slate-800">
+                          {emp.salaryType === 'commission_only' ? (
+                            <span className="text-amber-700 text-[10px] font-bold">بالعمولة فقط</span>
+                          ) : (
+                            `${(emp.baseSalary || 0).toLocaleString()} ${settings.currency}`
+                          )}
                         </span>
-                      </td>
-                      <td className="p-3 font-mono font-bold">
-                        {emp.salaryType === 'commission_only' ? '0.00' : `${Number(emp.baseSalary || 0).toFixed(2)} ${settings.currency}`}
-                      </td>
-                      <td className="p-3 font-bold text-emerald-700">
-                        <span className="bg-emerald-50 text-emerald-800 px-2 py-0.5 rounded text-[10px] border border-emerald-200">
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500 font-bold">نظام العمولة:</span>
+                        <span className="font-bold text-emerald-700 text-[10px] bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200/60 truncate max-w-[130px]">
                           {getCommissionModelLabel(emp)}
                         </span>
-                      </td>
-                      <td className="p-3 font-mono text-slate-500">{emp.checkInTime || '09:00'} - {emp.checkOutTime || '18:00'}</td>
-                      <td className="p-3">
-                        {emp.hasOnlineAccount ? (
-                          <div className="flex flex-col gap-0.5">
-                            <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded text-[10px] font-black flex items-center gap-1 w-fit">
-                              <span>🌐 مفعل</span>
-                            </span>
-                            {(emp.username || (emp as any).username) && (
-                              <span className="text-[10px] font-mono font-bold text-slate-500" dir="ltr">
-                                @{emp.username || (emp as any).username}
-                              </span>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-slate-400 text-[10px]">غير مفعل</span>
-                        )}
-                      </td>
-                      <td className="p-3">
-                        {emp.isBlacklisted ? (
-                          <span className="bg-rose-100 text-rose-800 px-2 py-0.5 rounded text-[10px] font-black">محظور (Blacklist)</span>
-                        ) : emp.endOfService ? (
-                          <span className="bg-slate-200 text-slate-700 px-2 py-0.5 rounded text-[10px] font-black">منتهي الخدمة</span>
-                        ) : (
-                          <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded text-[10px] font-black">نشط 🟢</span>
-                        )}
-                      </td>
-                      <td className="p-3">
-                        <div className="flex items-center justify-center gap-1">
-                          {AuthService.canDo('hr_manage_advances', currentUser) && (
-                            <button
-                              onClick={() => handleOpenActionModal(emp.id, 'advance')}
-                              className="p-1.5 bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 rounded-lg transition-colors cursor-pointer"
-                              title="تسجيل سلفة"
-                            >
-                              <Banknote size={14} />
-                            </button>
-                          )}
-                          {AuthService.canDo('hr_manage_penalties', currentUser) && (
-                            <button
-                              onClick={() => handleOpenActionModal(emp.id, 'penalty')}
-                              className="p-1.5 bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 rounded-lg transition-colors cursor-pointer"
-                              title="تسجيل خصم/جزاء"
-                            >
-                              <DollarSign size={14} />
-                            </button>
-                          )}
-                          {AuthService.canDo('hr_manage_bonuses', currentUser) && (
-                            <button
-                              onClick={() => handleOpenActionModal(emp.id, 'bonus')}
-                              className="p-1.5 bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 rounded-lg transition-colors cursor-pointer"
-                              title="تسجيل مكافأة"
-                            >
-                              <Gift size={14} />
-                            </button>
-                          )}
-                          {AuthService.canDo('hr_manage_salary_increments', currentUser) && (
-                            <button
-                              onClick={() => handleOpenActionModal(emp.id, 'salary_increase')}
-                              className="p-1.5 bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 rounded-lg transition-colors cursor-pointer"
-                              title="تسجيل زيادة راتب"
-                            >
-                              <TrendingUp size={14} />
-                            </button>
-                          )}
-                          {AuthService.canDo('hr_manage_attendance', currentUser) && (
-                            <button
-                              onClick={() => handleOpenActionModal(emp.id, 'shift_schedule')}
-                              className="p-1.5 bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 rounded-lg transition-colors cursor-pointer"
-                              title="تعديل مواعيد العمل وتاريخ السريان"
-                            >
-                              <Clock size={14} />
-                            </button>
-                          )}
-                          {AuthService.canDo('manage_employees', currentUser) && (
-                            <button
-                              onClick={() => handleOpenActionModal(emp.id, 'end_of_service')}
-                              className="p-1.5 bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"
-                              title="إنهاء خدمة / بلاك ليست"
-                            >
-                              <UserX size={14} />
-                            </button>
-                          )}
-                          {AuthService.canDo('manage_employees', currentUser) && (
-                            <button
-                              onClick={() => handleEdit(emp)}
-                              className="p-1.5 bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 rounded-lg transition-colors cursor-pointer"
-                              title="تعديل الموظف"
-                            >
-                              <Edit2 size={14} />
-                            </button>
-                          )}
-                          {AuthService.canDo('manage_employees', currentUser) && (
-                            <button
-                              onClick={() => handleDelete(emp.id, emp.name)}
-                              className="p-1.5 bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"
-                              title="حذف الموظف نهائياً"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          )}
-                          {!AuthService.canDo('hr_manage_advances', currentUser) &&
-                           !AuthService.canDo('hr_manage_penalties', currentUser) &&
-                           !AuthService.canDo('hr_manage_bonuses', currentUser) &&
-                           !AuthService.canDo('hr_manage_salary_increments', currentUser) &&
-                           !AuthService.canDo('hr_manage_attendance', currentUser) &&
-                           !AuthService.canDo('manage_employees', currentUser) && (
-                            <span className="text-[10px] text-slate-400 font-bold">--</span>
-                          )}
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500 font-bold">مواعيد الدوام:</span>
+                        <span className="font-mono text-slate-600 text-[10px]">
+                          {emp.checkInTime || '09:00'} - {emp.checkOutTime || '18:00'}
+                        </span>
+                      </div>
+
+                      {emp.hasOnlineAccount && (
+                        <div className="flex items-center justify-between pt-1 border-t border-slate-200/50">
+                          <span className="text-indigo-600 font-bold flex items-center gap-1 text-[10px]">
+                            <span>🌐 حساب أونلاين</span>
+                          </span>
+                          <span className="text-[10px] font-mono font-bold text-slate-500 truncate" dir="ltr">
+                            @{emp.username || (emp as any).username || 'مفعل'}
+                          </span>
                         </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                      )}
+                    </div>
+
+                    {/* View Details Click Action Hint Button */}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedEmployeeId(emp.id)}
+                      className="w-full py-1.5 mb-2 bg-indigo-50/70 group-hover:bg-indigo-600 text-indigo-700 group-hover:text-white rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 shadow-2xs"
+                    >
+                      <Eye size={13} />
+                      <span>عرض السجل والملف الشامل</span>
+                    </button>
+
+                    {emp.isBlacklisted && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleUnbanBlacklist(emp.id);
+                        }}
+                        className="w-full py-1.5 mb-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer animate-pulse"
+                        title="إلغاء الحظر وفك الموظف من القائمة السوداء"
+                      >
+                        <ShieldCheck size={14} />
+                        <span>إلغاء الحظر (فك البلاك ليست) 🔓</span>
+                      </button>
+                    )}
+
+                    {/* Action Buttons Bar */}
+                    <div 
+                      onClick={e => e.stopPropagation()} 
+                      className="pt-2 border-t border-slate-100 flex items-center justify-between gap-1"
+                    >
+                      <button
+                        type="button"
+                        disabled={!canManageAdvances}
+                        onClick={() => {
+                          if (!canManageAdvances) {
+                            alert('⛔ عذراً، لا تملك صلاحية صرف وإدارة السلف النقدية (hr_manage_advances)');
+                            return;
+                          }
+                          handleOpenActionModal(emp.id, 'advance');
+                        }}
+                        className={`p-1.5 rounded-lg transition-colors ${
+                          canManageAdvances
+                            ? 'bg-amber-50 hover:bg-amber-100 text-amber-700 cursor-pointer'
+                            : 'bg-slate-100 text-slate-300 opacity-50 cursor-not-allowed'
+                        }`}
+                        title={canManageAdvances ? 'تسجيل سلفة' : 'لا تملك صلاحية السلف (hr_manage_advances)'}
+                      >
+                        <Banknote size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!canManagePenalties}
+                        onClick={() => {
+                          if (!canManagePenalties) {
+                            alert('⛔ عذراً، لا تملك صلاحية تسجيل الجزاءات والخصومات (hr_manage_penalties)');
+                            return;
+                          }
+                          handleOpenActionModal(emp.id, 'penalty');
+                        }}
+                        className={`p-1.5 rounded-lg transition-colors ${
+                          canManagePenalties
+                            ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 cursor-pointer'
+                            : 'bg-slate-100 text-slate-300 opacity-50 cursor-not-allowed'
+                        }`}
+                        title={canManagePenalties ? 'تسجيل خصم/جزاء' : 'لا تملك صلاحية الجزاءات (hr_manage_penalties)'}
+                      >
+                        <DollarSign size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!canManageBonuses}
+                        onClick={() => {
+                          if (!canManageBonuses) {
+                            alert('⛔ عذراً، لا تملك صلاحية تسجيل المكافآت والحوافز (hr_manage_bonuses)');
+                            return;
+                          }
+                          handleOpenActionModal(emp.id, 'bonus');
+                        }}
+                        className={`p-1.5 rounded-lg transition-colors ${
+                          canManageBonuses
+                            ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 cursor-pointer'
+                            : 'bg-slate-100 text-slate-300 opacity-50 cursor-not-allowed'
+                        }`}
+                        title={canManageBonuses ? 'تسجيل مكافأة' : 'لا تملك صلاحية المكافآت (hr_manage_bonuses)'}
+                      >
+                        <Gift size={13} />
+                      </button>
+                      {canSalaryIncrements && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenActionModal(emp.id, 'salary_increase')}
+                          className="p-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg transition-colors cursor-pointer"
+                          title="تسجيل زيادة راتب"
+                        >
+                          <TrendingUp size={13} />
+                        </button>
+                      )}
+                      {(canAccessHR || canEditEmployee) && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenActionModal(emp.id, 'shift_schedule')}
+                          className="p-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg transition-colors cursor-pointer"
+                          title="تعديل مواعيد العمل"
+                        >
+                          <Clock size={13} />
+                        </button>
+                      )}
+                      {emp.isBlacklisted ? (
+                        canManageEndOfService && (
+                          <button
+                            type="button"
+                            onClick={() => handleUnbanBlacklist(emp.id)}
+                            className="p-1.5 bg-emerald-50 hover:bg-emerald-600 text-emerald-700 hover:text-white rounded-lg transition-colors cursor-pointer"
+                            title="إلغاء الحظر وفك البلاك ليست 🔓"
+                          >
+                            <ShieldCheck size={13} />
+                          </button>
+                        )
+                      ) : (
+                        canManageEndOfService && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenActionModal(emp.id, 'end_of_service')}
+                            className="p-1.5 bg-slate-100 hover:bg-rose-100 text-slate-700 hover:text-rose-700 rounded-lg transition-colors cursor-pointer"
+                            title="إنهاء خدمة / بلاك ليست"
+                          >
+                            <UserX size={13} />
+                          </button>
+                        )
+                      )}
+                      {canEditEmployee && (
+                        <button
+                          type="button"
+                          onClick={() => handleEdit(emp)}
+                          className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors cursor-pointer"
+                          title="تعديل الموظف"
+                        >
+                          <Edit2 size={13} />
+                        </button>
+                      )}
+                      {canDeleteEmployee && (
+                        <button
+                          type="button"
+                          onClick={() => handlePermanentDelete(emp.id, emp.name)}
+                          className="p-1.5 bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white rounded-lg transition-colors cursor-pointer"
+                          title="حذف نهائي للموظف من النظام"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
+        )
       )}
 
       {/* SUB-TAB 2: TIMESHEET & PAYROLL (Full 22 Columns layout) */}
@@ -1834,6 +2175,8 @@ export function EmployeesScreen({
           settings={settings}
           employees={employees}
           setEmployees={setEmployees}
+          services={services}
+          products={products}
           invoices={invoices}
           transactions={transactions}
           setTransactions={setTransactions}
@@ -1841,18 +2184,7 @@ export function EmployeesScreen({
           currentUser={currentUser}
           fingerprintLogs={fingerprintLogs}
           setFingerprintLogs={setFingerprintLogs}
-        />
-      )}
-
-      {/* SUB-TAB: COMMISSIONS DETAILED SUMMARY (ملخص العمولات التفصيلي) */}
-      {activeSubTab === 'commissions_summary' && (
-        <EmployeeCommissionsDetailedSection
-          settings={settings}
-          employees={employees}
-          invoices={invoices}
-          services={services}
-          products={products}
-          currentUser={currentUser}
+          isEmbedded={true}
         />
       )}
 
@@ -1922,10 +2254,10 @@ export function EmployeesScreen({
                     <tr key={`${emp.id}-${idx}`} className="hover:bg-slate-50">
                       <td className="p-3 font-bold text-slate-900">{emp.name}</td>
                       <td className="p-3 font-mono text-slate-600">{sh.date}</td>
-                      <td className="p-3 font-mono text-slate-500">{sh.previousSalary?.toFixed(2)} {settings.currency}</td>
-                      <td className="p-3 font-mono font-bold text-emerald-700">{sh.newSalary?.toFixed(2)} {settings.currency}</td>
+                      <td className="p-3 font-mono text-slate-500">{Number(sh.previousSalary || 0).toFixed(2)} {settings.currency}</td>
+                      <td className="p-3 font-mono font-bold text-emerald-700">{Number(sh.newSalary || 0).toFixed(2)} {settings.currency}</td>
                       <td className="p-3 font-mono font-bold text-indigo-600">
-                        +{(sh.newSalary - sh.previousSalary).toFixed(2)} {settings.currency}
+                        +{(Number(sh.newSalary || 0) - Number(sh.previousSalary || 0)).toFixed(2)} {settings.currency}
                       </td>
                       <td className="p-3 text-slate-600">{sh.reason || '-'}</td>
                       <td className="p-3 font-bold text-slate-700">{sh.approvedBy || 'مدير النظام'}</td>
@@ -2277,6 +2609,7 @@ export function EmployeesScreen({
           invoices={invoices}
           bookings={bookings}
           transactions={transactions}
+          services={services}
         />
       )}
 
@@ -2450,8 +2783,8 @@ export function EmployeesScreen({
               const e = new Date(leaveForm.endDate);
               const daysCount = Math.max(1, Math.round((e.getTime() - s.getTime()) / (1000 * 3600 * 24)) + 1);
               const targetEmp = employees.find(emp => emp.id === activeEmpId);
-              const dailyRate = (targetEmp?.baseSalary || 0) / 30;
-              const paidTotalValue = (dailyRate * daysCount).toFixed(2);
+              const dailyRate = (Number(targetEmp?.baseSalary || 0)) / 30;
+              const paidTotalValue = (Number(dailyRate || 0) * daysCount).toFixed(2);
 
               return (
                 <div className="space-y-3">
@@ -2499,7 +2832,7 @@ export function EmployeesScreen({
                     <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5 text-xs">
                       <div className="flex justify-between items-center text-slate-600">
                         <span>أجر اليوم للموظف:</span>
-                        <span className="font-mono font-bold text-slate-800">{dailyRate.toFixed(2)} {settings.currency}</span>
+                        <span className="font-mono font-bold text-slate-800">{Number(dailyRate || 0).toFixed(2)} {settings.currency}</span>
                       </div>
                       <div className="flex justify-between items-center text-slate-600">
                         <span>الأثر المالي في التايم شيت:</span>

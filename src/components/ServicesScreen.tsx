@@ -66,73 +66,34 @@ export function ServicesScreen({
     name: '', price: 0, categoryId: '', isActive: true, type: 'service', isPriority: false, cardColor: '#10b981', imageUrl: ''
   });
 
-  // Category Form State & Filters
+  // Category Form State
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
-  const [categoryFormData, setCategoryFormData] = useState<Partial<Category>>({ name: '', isActive: true, type: 'service' });
-  const [categoryStatusFilter, setCategoryStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
-  const [categorySearchQuery, setCategorySearchQuery] = useState('');
-  const [categoryTypeFilter, setCategoryTypeFilter] = useState<'all' | 'service' | 'product'>('all');
+  const [categoryFormData, setCategoryFormData] = useState<Partial<Category>>({ name: '' });
 
   // Get valid service categories (excluding the global 'all' filter tab)
   const validServiceCategories = useMemo(() => {
     return categories.filter(c => c.id !== 'all' && (!c.type || c.type === 'service'));
   }, [categories]);
 
-  const { totalCatsCount, activeCatsCount, inactiveCatsCount } = useMemo(() => {
-    const list = categories.filter(c => c.id !== 'all');
-    let act = 0;
-    let inact = 0;
-    list.forEach(c => {
-      if (c.isActive !== false) act++;
-      else inact++;
-    });
-    return {
-      totalCatsCount: list.length,
-      activeCatsCount: act,
-      inactiveCatsCount: inact
-    };
-  }, [categories]);
-
-  const filteredCategories = useMemo(() => {
-    return categories.filter(c => {
-      if (c.id === 'all') return false;
-
-      // فلتر الحالة: نشط / غير نشط
-      if (categoryStatusFilter === 'active' && c.isActive === false) return false;
-      if (categoryStatusFilter === 'inactive' && c.isActive !== false) return false;
-
-      // فلتر نوع التصنيف: خدمات / منتجات
-      if (categoryTypeFilter === 'service' && c.type && c.type !== 'service') return false;
-      if (categoryTypeFilter === 'product' && c.type !== 'product') return false;
-
-      // بحث بالاسم
-      if (categorySearchQuery.trim()) {
-        const q = categorySearchQuery.trim().toLowerCase();
-        if (!c.name.toLowerCase().includes(q)) return false;
-      }
-
-      return true;
-    });
-  }, [categories, categoryStatusFilter, categoryTypeFilter, categorySearchQuery]);
-
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(20);
-
-  // Reset to page 1 on filter or search changes
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchQuery, selectedCategoryFilter]);
-
+  // Filtered Services based on search and category
   const filteredServices = useMemo(() => {
     return services.filter(service => {
-      const matchesSearch = !searchQuery || service.name.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesSearch = service.name.toLowerCase().includes(searchQuery.toLowerCase());
       if (!matchesSearch) return false;
       if (selectedCategoryFilter === 'all') return true;
       const catObj = categories.find(c => c.id === selectedCategoryFilter);
       return service.categoryId === selectedCategoryFilter || (catObj && service.categoryId === catObj.name);
     });
   }, [services, searchQuery, selectedCategoryFilter, categories]);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(20);
+
+  // إعادة ضبط الصفحة إلى 1 عند تغيير البحث أو التصنيف
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedCategoryFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filteredServices.length / itemsPerPage));
   const safePage = Math.min(currentPage, totalPages);
@@ -166,7 +127,7 @@ export function ServicesScreen({
       <div className={`p-3 bg-slate-50/80 flex flex-wrap items-center justify-between gap-3 text-xs font-bold text-slate-600 ${
         position === 'top' ? 'border-b border-slate-200' : 'border-t border-slate-200'
       }`}>
-        {/* Info & Items per page */}
+        {/* معلومات الصفوف واختيار عدد العناصر */}
         <div className="flex flex-wrap items-center gap-2">
           <span>عرض</span>
           <span className="text-slate-900 font-black">{startItem} - {endItem}</span>
@@ -195,7 +156,7 @@ export function ServicesScreen({
           </div>
         </div>
 
-        {/* Navigation Buttons */}
+        {/* أزرار التنقل */}
         <div className="flex items-center gap-1">
           <button
             onClick={() => setCurrentPage(1)}
@@ -215,14 +176,11 @@ export function ServicesScreen({
             <span className="hidden sm:inline">السابق</span>
           </button>
 
-          {/* Page numbers */}
           <div className="flex items-center gap-1 mx-1">
             {getPageNumbers().map((p, idx) => {
               if (p === '...') {
                 return (
-                  <span key={`ellipsis-${idx}`} className="px-1 text-slate-400 font-bold">
-                    ...
-                  </span>
+                  <span key={`ellipsis-${idx}`} className="px-1 text-slate-400 font-bold">...</span>
                 );
               }
               const isCurrent = p === safePage;
@@ -289,6 +247,8 @@ export function ServicesScreen({
       type: 'service',
       durationMinutes: 30,
       cashbackPercentage: 0,
+      commissionableAmount: undefined,
+      isTargetExempt: false,
       imageUrl: '',
       isPriority: false,
       cardColor: '#10b981'
@@ -509,6 +469,8 @@ export function ServicesScreen({
         cardColor: serviceFormData.cardColor || '#10b981',
         priorityOrder: serviceFormData.priorityOrder ?? 0,
         price: Number(serviceFormData.price) || 0,
+        commissionableAmount: (serviceFormData.commissionableAmount !== undefined && serviceFormData.commissionableAmount !== null && Number(serviceFormData.commissionableAmount) > 0) ? Number(serviceFormData.commissionableAmount) : undefined,
+        isTargetExempt: Boolean(serviceFormData.isTargetExempt),
         isActive: serviceFormData.isActive !== false,
         type: 'service'
       };
@@ -529,60 +491,22 @@ export function ServicesScreen({
     }
   };
 
-  const handleOpenEditCategory = (cat: Category) => {
-    setEditingCategory(cat);
-    setCategoryFormData({
-      name: cat.name,
-      type: cat.type || 'service',
-      isActive: cat.isActive !== false
-    });
-    setShowCategoryModal(true);
-  };
-
-  const handleOpenAddCategory = () => {
-    setEditingCategory(null);
-    setCategoryFormData({
-      name: '',
-      type: 'service',
-      isActive: true
-    });
-    setShowCategoryModal(true);
-  };
-
-  const handleToggleCategoryStatus = async (cat: Category) => {
-    const newStatus = cat.isActive === false;
-    const updatedCat: Category = { ...cat, isActive: newStatus, salonId: settings?.salonId };
-    setCategories(categories.map(c => c.id === cat.id ? updatedCat : c));
-    await DB.saveCategory(updatedCat, settings?.salonId);
-  };
-
   const handleSaveCategory = async () => {
-    if (!categoryFormData.name?.trim()) {
+    if (!categoryFormData.name) {
       alert('الرجاء إدخال اسم التصنيف.');
       return;
     }
 
     const targetSalonId = settings?.salonId;
-    const trimmedName = categoryFormData.name.trim();
-    const isActiveVal = categoryFormData.isActive !== false;
-    const typeVal = categoryFormData.type || 'service';
-
     if (editingCategory) {
-      const updatedCat: Category = { 
-        ...editingCategory, 
-        name: trimmedName,
-        type: typeVal,
-        isActive: isActiveVal,
-        salonId: targetSalonId 
-      };
+      const updatedCat: Category = { ...editingCategory, ...categoryFormData, salonId: targetSalonId } as Category;
       setCategories(categories.map(c => c.id === editingCategory.id ? updatedCat : c));
       await DB.saveCategory(updatedCat, targetSalonId);
     } else {
       const newCategory: Category = {
+        name: categoryFormData.name,
         id: 'C-' + Math.random().toString(36).substr(2, 9),
-        name: trimmedName,
-        type: typeVal,
-        isActive: isActiveVal,
+        type: 'service',
         salonId: targetSalonId
       };
       setCategories([...categories, newCategory]);
@@ -613,8 +537,8 @@ export function ServicesScreen({
   };
 
   return (
-    <div className="p-3 sm:p-6 lg:p-8 w-full h-full flex flex-col bg-slate-50 overflow-y-auto">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+    <div className="p-8 w-full h-full flex flex-col bg-slate-50">
+      <div className="flex justify-between items-center mb-6">
         <div>
           <h2 className="text-2xl font-bold text-slate-800">إدارة الخدمات</h2>
           <p className="text-slate-500 text-sm mt-1">الخدمات، المنتجات، والتصنيفات ونسبة الكاش باك</p>
@@ -638,16 +562,16 @@ export function ServicesScreen({
       <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
         {activeTab === 'services' && (
           <>
-            <div className="p-4 border-b border-slate-100 flex flex-wrap justify-between items-center gap-3 bg-slate-50/50">
+            <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
               <h3 className="font-bold text-slate-700">قائمة الخدمات</h3>
-              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              <div className="flex items-center gap-3">
                 <div className="relative">
                   <input
                     type="text"
                     placeholder="بحث عن خدمة..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-48 sm:w-64 pr-10 pl-4 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-primary"
+                    className="w-64 pr-10 pl-4 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-primary"
                   />
                   <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                 </div>
@@ -704,37 +628,36 @@ export function ServicesScreen({
               })}
             </div>
 
-            {/* Top Pagination Bar */}
             {renderPagination('top')}
 
             <div className="overflow-x-auto flex-1 p-4">
-              <table className="w-full text-right text-sm min-w-[1100px]">
+              <table className="w-full text-right text-sm">
                 <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
                   <tr>
-                    <th className="px-4 py-3 whitespace-nowrap">الاسم</th>
-                    <th className="px-4 py-3 whitespace-nowrap">التصنيف</th>
-                    <th className="px-4 py-3 whitespace-nowrap">السعر الشامل</th>
-                    {settings.vatEnabled && <th className="px-4 py-3 text-slate-500 whitespace-nowrap">بدون ضريبة</th>}
-                    {settings.vatEnabled && <th className="px-4 py-3 text-slate-500 whitespace-nowrap">قيمة الضريبة</th>}
-                    <th className="px-4 py-3 whitespace-nowrap">سعر الخصم</th>
-                    <th className="px-4 py-3 text-center whitespace-nowrap">كاش باك الخدمة</th>
-                    <th className="px-4 py-3 text-center whitespace-nowrap">إحالة العميل (كاش باك)</th>
-                    <th className="px-4 py-3 text-center whitespace-nowrap">عمولات الموظف</th>
-                    <th className="px-4 py-3 text-center whitespace-nowrap">الحالة</th>
-                    <th className="px-4 py-3 text-center whitespace-nowrap">إجراءات</th>
+                    <th className="px-4 py-3">الاسم</th>
+                    <th className="px-4 py-3">التصنيف</th>
+                    <th className="px-4 py-3">السعر الشامل</th>
+                    {settings.vatEnabled && <th className="px-4 py-3 text-slate-500">بدون ضريبة</th>}
+                    {settings.vatEnabled && <th className="px-4 py-3 text-slate-500">قيمة الضريبة</th>}
+                    <th className="px-4 py-3">سعر الخصم</th>
+                    <th className="px-4 py-3 text-center">كاش باك الخدمة</th>
+                    <th className="px-4 py-3 text-center">إحالة العميل (كاش باك)</th>
+                    <th className="px-4 py-3 text-center">عمولات الموظف</th>
+                    <th className="px-4 py-3 text-center">الحالة</th>
+                    <th className="px-4 py-3 text-center">إجراءات</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {paginatedServices.length === 0 ? (
+                  {filteredServices.length === 0 ? (
                     <tr>
-                      <td colSpan={settings.vatEnabled ? 11 : 9} className="p-8 text-center text-slate-400 font-bold">
-                        لا توجد خدمات مسجلة تطابق البحث والتصفية
+                      <td colSpan={settings.vatEnabled ? 11 : 9} className="p-8 text-center text-slate-400">
+                        لا توجد خدمات مطابقة للبحث أو التصنيف
                       </td>
                     </tr>
                   ) : (
                     paginatedServices.map(service => (
                     <tr key={service.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-4 py-3 font-bold text-slate-800 whitespace-nowrap">
+                      <td className="px-4 py-3 font-bold text-slate-800">
                         <div className="flex items-center gap-3">
                           {service.imageUrl ? (
                             <img 
@@ -756,7 +679,7 @@ export function ServicesScreen({
                                 <span className="w-2.5 h-2.5 rounded-full shrink-0 shadow-2xs" style={{ backgroundColor: service.cardColor }} />
                               )}
                               <span className="font-extrabold">{service.name}</span>
-                              {service.isPriority && (
+                              {Boolean(service.isPriority) && (
                                 <span className="text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300 px-1.5 py-0.5 rounded-md flex items-center gap-0.5 shadow-2xs">
                                   <span>⭐</span>
                                   <span>أولوية POS</span>
@@ -769,25 +692,25 @@ export function ServicesScreen({
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-4 whitespace-nowrap">
+                      <td className="px-4 py-4">
                         <span className="bg-indigo-50 text-indigo-700 font-bold px-2.5 py-1 rounded-lg text-xs border border-indigo-100 inline-block">
                           {categories.find(c => c.id === service.categoryId || c.name === service.categoryId)?.name || service.categoryId || 'خدمات عامة'}
                         </span>
                       </td>
-                      <td className="px-4 py-4 font-bold whitespace-nowrap">{service.price}</td>
+                      <td className="px-4 py-4 font-bold">{service.price}</td>
                       {settings.vatEnabled && (
                         <>
-                          <td className="px-4 py-4 text-slate-500 whitespace-nowrap">{calculateVatDetails(service.price).base.toFixed(2)}</td>
-                          <td className="px-4 py-4 text-slate-500 whitespace-nowrap">{calculateVatDetails(service.price).tax.toFixed(2)}</td>
+                          <td className="px-4 py-4 text-slate-500">{calculateVatDetails(service.price).base.toFixed(2)}</td>
+                          <td className="px-4 py-4 text-slate-500">{calculateVatDetails(service.price).tax.toFixed(2)}</td>
                         </>
                       )}
-                      <td className="px-4 py-4 font-bold text-emerald-600 whitespace-nowrap">
+                      <td className="px-4 py-4 font-bold text-emerald-600">
                         {service.discountPrice ? service.discountPrice : '-'}
                       </td>
-                      <td className="px-4 py-4 text-center font-bold text-blue-600 whitespace-nowrap">
+                      <td className="px-4 py-4 text-center font-bold text-blue-600">
                         {service.cashbackPercentage ? `${service.cashbackPercentage}%` : '-'}
                       </td>
-                      <td className="px-4 py-4 text-center text-xs whitespace-nowrap">
+                      <td className="px-4 py-4 text-center text-xs">
                         {service.clientReferralCashbackAmount ? (
                           <span className="font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-200">
                             {service.clientReferralCashbackType === 'fixed' ? `${service.clientReferralCashbackAmount} ${settings.currency}` : `${service.clientReferralCashbackAmount}%`}
@@ -796,10 +719,20 @@ export function ServicesScreen({
                           <span className="text-slate-400">-</span>
                         )}
                       </td>
-                      <td className="px-4 py-4 text-center text-xs text-slate-700 whitespace-nowrap">
+                      <td className="px-4 py-4 text-center text-xs text-slate-700">
                         <div>
                           <span className="font-semibold">تنفيذ: </span>
                           {service.employeeCommissionPercentage ? `${service.employeeCommissionPercentage}%` : service.employeeCommissionAmount ? `${service.employeeCommissionAmount} ${settings.currency}` : '-'}
+                          {service.commissionableAmount ? (
+                            <span className="block text-[10px] text-indigo-700 font-bold bg-indigo-50 rounded px-1.5 py-0.5 mt-0.5 border border-indigo-200">
+                              على أساس: {service.commissionableAmount} {settings.currency}
+                            </span>
+                          ) : null}
+                          {service.isTargetExempt ? (
+                            <span className="block text-[10px] text-amber-800 font-bold bg-amber-50 rounded px-1.5 py-0.5 mt-0.5 border border-amber-200" title="تصرف عمولتها فوراً ولا تحسب ضمن التارجت">
+                              ⚡ عمولة فورية (معفاة من التارجت)
+                            </span>
+                          ) : null}
                         </div>
                         {service.referralCommissionAmount ? (
                           <div className="text-[11px] text-amber-700 font-bold mt-0.5">
@@ -807,7 +740,7 @@ export function ServicesScreen({
                           </div>
                         ) : null}
                       </td>
-                      <td className="px-4 py-4 text-center whitespace-nowrap">
+                      <td className="px-4 py-4 text-center">
                         <button
                           onClick={() => {
                             setServices(services.map(s => s.id === service.id ? { ...s, isActive: !s.isActive } : s));
@@ -817,7 +750,7 @@ export function ServicesScreen({
                           {service.isActive ? 'مفعل' : 'معطل'}
                         </button>
                       </td>
-                      <td className="px-4 py-4 whitespace-nowrap">
+                      <td className="px-4 py-4">
                         <div className="flex items-center justify-center gap-2">
                           <button 
                             onClick={() => handleOpenEditService(service)}
@@ -836,198 +769,62 @@ export function ServicesScreen({
                     </tr>
                   ))
                 )}
-              </tbody>
-            </table>
-          </div>
-
-            {/* Bottom Pagination Bar */}
+                </tbody>
+              </table>
+            </div>
             {renderPagination('bottom')}
           </>
         )}
 
         {activeTab === 'categories' && (
           <>
-            {/* Categories Header & Filter Bar */}
-            <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex flex-col md:flex-row md:items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-3">
-                <h3 className="font-bold text-slate-800 text-base flex items-center gap-2">
-                  <span>قائمة التصنيفات</span>
-                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">
-                    {totalCatsCount}
-                  </span>
-                </h3>
-
-                {/* Status Filter Segmented Control (نشط - غير نشط) */}
-                <div className="inline-flex items-center bg-slate-200/70 p-1 rounded-xl gap-1">
-                  <button
-                    type="button"
-                    onClick={() => setCategoryStatusFilter('all')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                      categoryStatusFilter === 'all'
-                        ? 'bg-white text-slate-900 shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    الكل ({totalCatsCount})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCategoryStatusFilter('active')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                      categoryStatusFilter === 'active'
-                        ? 'bg-emerald-600 text-white shadow-xs'
-                        : 'text-slate-600 hover:text-emerald-700'
-                    }`}
-                  >
-                    <span className={`w-2 h-2 rounded-full ${categoryStatusFilter === 'active' ? 'bg-emerald-200' : 'bg-emerald-500'}`}></span>
-                    <span>نشط ({activeCatsCount})</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCategoryStatusFilter('inactive')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                      categoryStatusFilter === 'inactive'
-                        ? 'bg-rose-600 text-white shadow-xs'
-                        : 'text-slate-600 hover:text-rose-700'
-                    }`}
-                  >
-                    <span className={`w-2 h-2 rounded-full ${categoryStatusFilter === 'inactive' ? 'bg-rose-200' : 'bg-rose-400'}`}></span>
-                    <span>غير نشط ({inactiveCatsCount})</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Search, Type Filter & Add Category Button */}
-              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                <div className="relative">
-                  <input
-                    type="text"
-                    placeholder="بحث في التصنيفات..."
-                    value={categorySearchQuery}
-                    onChange={(e) => setCategorySearchQuery(e.target.value)}
-                    className="w-40 sm:w-56 pr-9 pl-3 py-2 bg-white border border-slate-200 rounded-lg text-xs outline-none focus:border-primary"
-                  />
-                  <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-                </div>
-
-                <select
-                  value={categoryTypeFilter}
-                  onChange={(e) => setCategoryTypeFilter(e.target.value as any)}
-                  className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-bold text-slate-700 outline-none focus:border-primary cursor-pointer"
-                >
-                  <option value="all">جميع الأنواع</option>
-                  <option value="service">✂️ خدمات</option>
-                  <option value="product">🛍️ منتجات</option>
-                </select>
-
-                <button 
-                  onClick={handleOpenAddCategory}
-                  className="bg-primary hover:bg-primary-dark text-white px-3.5 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
-                >
-                  <Plus size={15} />
-                  <span>إضافة تصنيف</span>
-                </button>
-              </div>
+            <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+              <h3 className="font-bold text-slate-700">قائمة التصنيفات</h3>
+              <button 
+                onClick={() => {
+                  setEditingCategory(null);
+                  setCategoryFormData({ name: '' });
+                  setShowCategoryModal(true);
+                }}
+                className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors"
+              >
+                <Plus size={16} /> إضافة تصنيف
+              </button>
             </div>
-
-            {/* Categories Table */}
             <div className="overflow-x-auto flex-1 p-4">
-              <table className="w-full text-right text-sm min-w-[650px]">
+              <table className="w-full text-right text-sm">
                 <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
                   <tr>
-                    <th className="px-4 py-3 whitespace-nowrap">اسم التصنيف</th>
-                    <th className="px-4 py-3 text-center whitespace-nowrap">النوع</th>
-                    <th className="px-4 py-3 text-center whitespace-nowrap">الحالة</th>
-                    <th className="px-4 py-3 text-center whitespace-nowrap">الخدمات المرتبطة</th>
-                    <th className="px-4 py-3 text-center whitespace-nowrap">إجراءات</th>
+                    <th className="px-4 py-3">اسم التصنيف</th>
+                    <th className="px-4 py-3 text-center">إجراءات</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {filteredCategories.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="px-4 py-12 text-center text-slate-400">
-                        <div className="flex flex-col items-center justify-center gap-2">
-                          <AlertCircle size={28} className="text-slate-300" />
-                          <p className="font-bold text-sm text-slate-500">لا توجد تصنيفات مطابقة للفلتر المحدد</p>
-                          {(categoryStatusFilter !== 'all' || categoryTypeFilter !== 'all' || categorySearchQuery) && (
-                            <button
-                              onClick={() => {
-                                setCategoryStatusFilter('all');
-                                setCategoryTypeFilter('all');
-                                setCategorySearchQuery('');
-                              }}
-                              className="text-xs font-bold text-primary hover:underline mt-1"
-                            >
-                              إعادة تعيين الفلاتر
-                            </button>
-                          )}
+                  {categories.filter(c => c.id !== 'all' && (!c.type || c.type === 'service')).map(category => (
+                    <tr key={category.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-4 font-bold text-slate-800">{category.name}</td>
+                      <td className="px-4 py-4">
+                        <div className="flex items-center justify-center gap-2">
+                          <button 
+                            onClick={() => {
+                              setEditingCategory(category);
+                              setCategoryFormData(category);
+                              setShowCategoryModal(true);
+                            }}
+                            className="w-8 h-8 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 flex items-center justify-center transition-colors"
+                          >
+                            <Edit size={16} />
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteCategory(category.id)}
+                            className="w-8 h-8 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 flex items-center justify-center transition-colors"
+                          >
+                            <Trash2 size={16} />
+                          </button>
                         </div>
                       </td>
                     </tr>
-                  ) : (
-                    filteredCategories.map(category => {
-                      const linkedServicesCount = services.filter(s => s.categoryId === category.id).length;
-                      const isActive = category.isActive !== false;
-
-                      return (
-                        <tr key={category.id} className="hover:bg-slate-50 transition-colors">
-                          <td className="px-4 py-3.5 font-bold text-slate-800 whitespace-nowrap">
-                            <div className="flex items-center gap-2">
-                              <span className={`w-2 h-2 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-slate-300'}`}></span>
-                              <span>{category.name}</span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3.5 text-center whitespace-nowrap">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${
-                              category.type === 'product'
-                                ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                                : 'bg-purple-50 text-purple-700 border border-purple-200'
-                            }`}>
-                              {category.type === 'product' ? '🛍️ منتجات' : '✂️ خدمات'}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3.5 text-center whitespace-nowrap">
-                            <button
-                              type="button"
-                              onClick={() => handleToggleCategoryStatus(category)}
-                              title={isActive ? 'انقر للتعطيل' : 'انقر للتفعيل'}
-                              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border transition-all cursor-pointer ${
-                                isActive
-                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-                                  : 'bg-slate-100 text-slate-500 border-slate-300 hover:bg-slate-200'
-                              }`}
-                            >
-                              <span className={`w-2 h-2 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-slate-400'}`}></span>
-                              <span>{isActive ? 'نشط' : 'غير نشط'}</span>
-                            </button>
-                          </td>
-                          <td className="px-4 py-3.5 text-center whitespace-nowrap">
-                            <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700">
-                              {linkedServicesCount}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3.5 whitespace-nowrap">
-                            <div className="flex items-center justify-center gap-2">
-                              <button 
-                                onClick={() => handleOpenEditCategory(category)}
-                                title="تعديل التصنيف"
-                                className="w-8 h-8 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 flex items-center justify-center transition-colors cursor-pointer"
-                              >
-                                <Edit size={15} />
-                              </button>
-                              <button 
-                                onClick={() => handleDeleteCategory(category.id)}
-                                title="حذف التصنيف"
-                                className="w-8 h-8 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 flex items-center justify-center transition-colors cursor-pointer"
-                              >
-                                <Trash2 size={15} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
+                  ))}
                 </tbody>
               </table>
             </div>
@@ -1225,6 +1022,56 @@ export function ServicesScreen({
                 </div>
               </div>
 
+              {/* Commissionable Base Amount (المبلغ الخاضع للعمولة) */}
+              <div className="p-3 bg-indigo-50/70 border border-indigo-200/80 rounded-xl space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-indigo-950 flex items-center gap-1.5">
+                    <span>🎯</span>
+                    <span>المبلغ الخاضع للعمولة (اختياري):</span>
+                  </span>
+                  <span className="text-[10px] text-indigo-700 font-bold bg-white px-2 py-0.5 rounded-full border border-indigo-200">
+                    لحساب العمولة على جزء من السعر فقط
+                  </span>
+                </div>
+                <div>
+                  <input 
+                    type="number" 
+                    value={serviceFormData.commissionableAmount ?? ''}
+                    onChange={e => setServiceFormData({...serviceFormData, commissionableAmount: e.target.value ? Number(e.target.value) : undefined})}
+                    className="w-full bg-white border border-indigo-200 rounded-lg px-3 py-2 text-xs font-bold outline-none focus:border-indigo-600" 
+                    placeholder={`اتركه فارغاً ليتم الحساب على كامل سعر الخدمة (${serviceFormData.price || 0} ${settings.currency})`}
+                  />
+                  <p className="text-[10px] text-indigo-900/80 mt-1">
+                    💡 <strong>مثال:</strong> خدمة صبغة بسعر 2000 والعمولة تحسب على 500 فقط؛ اكتب هنا 500 ليتم تطبيق نسبة الفني عليها واستبعاد باقي المبلغ (تكلفة الخامات).
+                  </p>
+                </div>
+              </div>
+
+              {/* خيار استثناء الخدمة من التارجت وصرف عمولتها فوراً */}
+              <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl">
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(serviceFormData.isTargetExempt)}
+                    onChange={e => setServiceFormData({ ...serviceFormData, isTargetExempt: e.target.checked })}
+                    className="w-4 h-4 text-amber-600 rounded border-slate-300 focus:ring-amber-500 mt-0.5 cursor-pointer"
+                  />
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-black text-amber-950">
+                        صرف فوري للعمولة (مستثناة من التارجت اليومي والشهري)
+                      </span>
+                      <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-300">
+                        ⚡ صرف مباشر
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-amber-800/90 mt-1 leading-relaxed">
+                      عند تحديد هذا الخيار، لا يدخل مبلغ الخدمة ضمن وعاء تحقيق التارجت للموظف، وتُصرف عمولتها المحددة مباشرة للموظف في التايم شيت اليومي حتى لو كان نظام الموظف تارجت شهري.
+                    </p>
+                  </div>
+                </label>
+              </div>
+
               {/* 1. Employee Referral Commission (فتح شغل للموظف) */}
               <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl space-y-2">
                 <div className="flex items-center justify-between">
@@ -1405,56 +1252,10 @@ export function ServicesScreen({
                 <label className="block text-sm font-bold text-slate-700 mb-1">اسم التصنيف</label>
                 <input 
                   type="text" 
-                  placeholder="مثال: حلاقة وقص شعر، عناية بالبشرة..."
                   value={categoryFormData.name || ''}
                   onChange={e => setCategoryFormData({...categoryFormData, name: e.target.value})}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 outline-none focus:border-primary text-sm font-bold" 
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 outline-none focus:border-primary" 
                 />
-              </div>
-
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">نوع التصنيف</label>
-                <select 
-                  value={categoryFormData.type || 'service'}
-                  onChange={e => setCategoryFormData({...categoryFormData, type: e.target.value as any})}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 outline-none focus:border-primary text-sm font-bold text-slate-700 cursor-pointer"
-                >
-                  <option value="service">✂️ خدمات</option>
-                  <option value="product">🛍️ منتجات</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1.5">حالة التصنيف</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setCategoryFormData({ ...categoryFormData, isActive: true })}
-                    className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                      categoryFormData.isActive !== false
-                        ? 'bg-emerald-50 text-emerald-700 border-emerald-300 shadow-xs ring-1 ring-emerald-300'
-                        : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    <span className={`w-2.5 h-2.5 rounded-full ${categoryFormData.isActive !== false ? 'bg-emerald-500' : 'bg-slate-300'}`}></span>
-                    <span>🟢 نشط (مفعّل)</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCategoryFormData({ ...categoryFormData, isActive: false })}
-                    className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                      categoryFormData.isActive === false
-                        ? 'bg-rose-50 text-rose-700 border-rose-300 shadow-xs ring-1 ring-rose-300'
-                        : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    <span className={`w-2.5 h-2.5 rounded-full ${categoryFormData.isActive === false ? 'bg-rose-500' : 'bg-slate-300'}`}></span>
-                    <span>⚪ غير نشط (معطّل)</span>
-                  </button>
-                </div>
-                <p className="text-[11px] text-slate-500 mt-1.5">
-                  التصنيفات النشطة تظهر في نقاط البيع وشاشات النظام، بينما غير النشطة يتم إخفاؤها مع الاحتفاظ بسجلاتها.
-                </p>
               </div>
             </div>
             <div className="p-4 bg-slate-50 border-t border-slate-100 flex gap-3">

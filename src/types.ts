@@ -1,61 +1,128 @@
 export type UserRole = 'programmer' | 'owner' | 'admin' | 'supervisor' | 'cashier' | 'receptionist' | 'barber' | 'accountant' | 'warehouse_manager' | 'kiosk' | 'custom';
 
+// 1. صلاحيات الشاشات (ScreenPermission)
+export type ScreenPermission =
+  | 'dashboard'
+  | 'owner_portal'
+  | 'barber_portal'
+  | 'pos'
+  | 'kiosk'
+  | 'queue_calling'
+  | 'bookings'
+  | 'invoices'
+  | 'promo_codes'
+  | 'services'
+  | 'warehouse'
+  | 'warehouse_products'
+  | 'warehouse_suppliers'
+  | 'warehouse_purchases'
+  | 'warehouse_inventory'
+  | 'warehouse_shortages'
+  | 'clients'
+  | 'complaints'
+  | 'employees'
+  | 'hr'
+  | 'fingerprint_logs'
+  | 'treasury'
+  | 'expenses'
+  | 'partners'
+  | 'tips'
+  | 'reports'
+  | 'permissions'
+  | 'settings'
+  | 'manager_ai_chat'
+  | 'saas_subscriptions'
+  | '*'
+  | (string & {});
+
+// 2. صلاحيات الإجراءات والعمليات (ActionPermission)
 export type ActionPermission = 
-  // POS & Sales
+  // POS, Cashier & Sales
   | 'pos_discount' 
   | 'pos_custom_price'
   | 'pos_void' 
   | 'pos_reprint'
   | 'sales_return' 
+  | 'manage_invoices_delete'
   | 'manage_queue'
-  // Shifts & Treasuries
+
+  // Shifts, Treasuries & Financials
   | 'manage_shifts' 
   | 'edit_shift_cash'
   | 'treasury_deposit'
   | 'treasury_withdraw'
   | 'treasury_transfer'
   | 'treasury_view_balance'
-  // Warehouse, Expenses, Purchases & Inventory
+  | 'manage_treasury_delete'
+  | 'delete_transactions'
+
+  // Warehouse, Inventory, Purchasing & Expenses
   | 'manage_products'
   | 'import_products_excel'
   | 'print_barcodes'
-  | 'manage_expenses' 
-  | 'manage_expense_categories'
   | 'manage_suppliers' 
   | 'manage_purchases'
   | 'manage_inventory' 
-  // Staff, HR, Custodies & Clients
+  | 'manage_expenses'
+  | 'manage_expense_categories' // إضافة وتعديل وحذف بنود وتصنيفات المصروفات
+
+  // الإجراء العام والتوافق الإداري لشؤون العاملين
+  | 'manage_hr_actions'
+
+  // 10 صلاحيات إجرائية تفصيلية خاصة بشؤون العاملين (HR Granular Permissions)
+  | 'hr_manage_advances'          // 1. صرف وإدارة وطباعة سندات السلف النقدية
+  | 'hr_manage_penalties'         // 2. تطبيق واعتماد سندات الجزاءات والخصومات الإدارية
+  | 'hr_manage_bonuses'           // 3. تسجيل وصرف سندات الحوافز والمكافآت التشجيعية
+  | 'hr_manage_leaves'            // 4. تسجيل واعتماد وحذف إجازات الموظفين (مدفوعة / غير مدفوعة)
+  | 'hr_manage_permissions'       // 5. تسجيل واعتماد وحذف أذونات الاستئذان والمأموريات الرسمية
+  | 'hr_manage_attendance'        // 6. تسجيل وتعديل الحضور والانصراف والدوام اليدوي
+  | 'hr_approve_delays_overtime'  // 7. العفو عن التأخيرات واعتماد ساعات العمل الإضافية (الأوفرتايم)
+  | 'hr_manage_salary_increments' // 8. إقرار وتطبيق وتعديل زيادات وعلاوات الرواتب
+  | 'hr_disburse_payroll'         // 9. فتح واعتماد وصرف مسير الرواتب الشهرية من الخزائن وطباعة سندات الصرف
+  | 'hr_manage_commissions'       // 10. اعتماد وتصفية وصرف عمولات الخدمات والمبيعات نقدياً
+
+  // Additional HR & Timesheet aliases / operations
+  | 'hr_view_timesheet'
+  | 'hr_delete_attendance'
+  | 'hr_forgive_delays'
+  | 'hr_approve_overtime'
+  | 'hr_salary_increments'
+  | 'hr_disburse_salaries'
+  | 'hr_disburse_commissions'
+  | 'hr_print_slips'
+  | 'hr_fingerprint_sync'
+
+  // Employees & Staff Management (بيانات وملفات الموظفين)
+  | 'manage_employees_add'
+  | 'manage_employees_edit'
+  | 'manage_employees_delete'
+  | 'manage_custodies'
+  | 'manage_end_of_service'
+
+  // Compatibility & Legacy aliases
   | 'manage_employees' 
   | 'manage_salaries'
   | 'manage_hr'
-  | 'manage_hr_actions'
-  // Granular HR Actions
-  | 'hr_manage_advances'
-  | 'hr_manage_penalties'
-  | 'hr_manage_bonuses'
-  | 'hr_manage_leaves'
-  | 'hr_manage_permissions'
-  | 'hr_manage_attendance'
-  | 'hr_approve_delays_overtime'
-  | 'hr_manage_salary_increments'
-  | 'hr_disburse_payroll'
-  | 'hr_manage_commissions'
-  | 'manage_custodies'
+  | 'view_fingerprint_logs'
+
+  // Clients, Loyalty & Complaints
   | 'manage_clients'
+  | 'manage_clients_delete'
+  | 'delete_client'
   | 'view_client_financials'
+
   // Bookings, Partners, Promo Codes & Tips
   | 'manage_booking_settings'
   | 'manage_bookings_delete'
   | 'manage_partners'
   | 'manage_promo_codes'
   | 'manage_tips'
-  | 'view_fingerprint_logs'
-  // Reports, Invoices & System Management
+
+  // Reports, Analytics & System Management
   | 'view_reports' 
-  | 'manage_invoices_delete'
   | 'view_system_analytics'
   | 'view_employee_analytics'
-  | 'export_excel'
+  | 'export_excel' // صلاحية تصدير البيانات والجداول والتقارير إلى ملفات Excel
   | 'manage_settings'
   | 'manage_rbac'
   | '*';
@@ -95,11 +162,29 @@ export interface CustomRole {
   id: string;
   name: string;
   description?: string;
-  screens: string[];
+  screens: ScreenPermission[];
   actions: ActionPermission[];
   createdAt: string;
   isSystem?: boolean;
 }
+
+export interface SecurityQuestionAnswer {
+  question: string;
+  answer: string;
+}
+
+export const PRESET_SECURITY_QUESTIONS: string[] = [
+  'ما هو اسم أول مدرسة التحقت بها في طفولتك؟',
+  'ما هي المدينة أو القرية التي ولدت فيها؟',
+  'ما هو اسم صديق طفولتك الأقرب إليك؟',
+  'ما هو اسم حيوانك الأليف الأول أو المفضل؟',
+  'ما هي أكلتك أو وجبتك المفضلة؟',
+  'ما هو نوع أو لون أول سيارة امتلكتها أو تفضلها؟',
+  'ما هي وجهتك السياحية المفضلة للسفر؟',
+  'ما هو اسم والدتك قبل الزواج (اسم عائلة الأم)؟',
+  'ما هي مادتك الدراسية المفضلة في الثانوية؟',
+  'ما هو فريقك أو ناديك الرياضي المفضل؟'
+];
 
 export interface AppUser {
   id: string;
@@ -116,9 +201,17 @@ export interface AppUser {
   employeeId?: string;
   phone?: string;
   active: boolean;
-  screens: string[];
+  status?: 'active' | 'pending' | 'rejected';
+  securityQuestions?: SecurityQuestionAnswer[];
+  screens: ScreenPermission[];
   actions: ActionPermission[];
   avatar?: string;
+  integritySignature?: string;
+  securityHash?: string;
+  isTampered?: boolean;
+  createdAt?: string;
+  approvedAt?: string;
+  approvedBy?: string;
 }
 
 export type SalonType = 'men' | 'women' | 'mixed';
@@ -217,7 +310,6 @@ export interface Category {
   name: string; 
   icon?: string; 
   type?: 'service' | 'product'; 
-  isActive?: boolean;
 }
 
 export interface ServiceItem { 
@@ -228,6 +320,8 @@ export interface ServiceItem {
   name: string; 
   price: number; 
   discountPrice?: number;
+  commissionableAmount?: number; // المبلغ الخاضع للعمولة (لحساب عمولة الفني على جزء من السعر فقط واستبعاد تكلفة الخامات)
+  isTargetExempt?: boolean; // هل الخدمة معفاة من التارجت وتصرف عمولتها فورياً للموظف دون احتسابها في التارجت؟
   employeeCommissionPercentage?: number;
   employeeCommissionAmount?: number;
   referralCommissionType?: 'fixed' | 'percentage'; // نوع عمولة فتح الشغل / إحالة الموظف
@@ -247,7 +341,6 @@ export interface ServiceItem {
 
 export interface WorkShift {
   id: string;
-  shiftCode?: string; // كود الوردية المميز e.g. SH-20261010-01
   salonId?: string;
   branchId?: string;
   shiftDate: string; // YYYY-MM-DD
@@ -255,12 +348,9 @@ export interface WorkShift {
   closedAt?: string; // ISO String
   openedByUserId?: string;
   openedByUserName?: string;
-  openedByName?: string;
   openedByRole?: string;
   closedByUserId?: string;
   closedByUserName?: string;
-  closedByName?: string;
-  closedByRole?: string;
   initialCash: number; // العهدة الافتتاحية
   expectedCash?: number; // الكاش المتوقع في الدرج عند الإغلاق
   actualCash?: number; // الكاش الفعلي المعدود في الدرج
@@ -269,9 +359,6 @@ export interface WorkShift {
   totalCashSales?: number;
   totalCardSales?: number;
   totalExpenses?: number;
-  totalAdvances?: number;
-  transferredToTreasury?: string;
-  transferredAmount?: number;
   status: 'open' | 'closed';
   notes?: string;
   createdAt?: string;
@@ -429,7 +516,12 @@ export interface Employee {
   commissionModel?: 'none' | 'fixed_rate' | 'target_based' | 'tiered_brackets';
   commissionTiers?: CommissionTier[];
   target: number; 
-  targetType: 'daily' | 'monthly'; 
+  targetType: 'none' | 'daily' | 'monthly'; 
+  dailyTargetAmount?: number;
+  dailyTargetMethod?: 'excess_only' | 'full_amount';
+  monthlyTargetAmount?: number;
+  monthlyTargetMethod?: 'deduct_salary' | 'gross_sales';
+  targetCommissionRate?: number;
   availableVacations: number; 
   salaryType?: 'salary' | 'commission_only' | 'salary_plus_commission';
   allowDualCommission?: boolean;
@@ -531,25 +623,54 @@ export const DEFAULT_CLIENT_TIERS: ClientTierConfig[] = [
   }
 ];
 
-export function calculateClientTotalSpend(client: { id?: string; name: string; phone?: string }, invoices?: Invoice[], periodMonths: number = 0): number {
-  if (!client || !Array.isArray(invoices)) return 0;
+export function calculateClientTotalSpend(
+  client: { id?: string; name: string; phone?: string } | null | undefined, 
+  invoices?: Invoice[], 
+  periodMonths: number = 0
+): number {
+  if (!client || !Array.isArray(invoices) || invoices.length === 0) return 0;
   const now = new Date().getTime();
   const periodMs = periodMonths > 0 ? periodMonths * 30 * 24 * 60 * 60 * 1000 : 0;
+  const clientDigits = client.phone ? String(client.phone).replace(/\D/g, '') : '';
+  const clientNameTrim = client.name ? String(client.name).trim().toLowerCase() : '';
 
-  return invoices
+  const total = invoices
     .filter(inv => {
-      if (!inv || inv.status === 'cancelled') return false;
-      const isMatch = (client.id && inv.clientId === client.id) || 
-                      (client.phone && inv.clientPhone && inv.clientPhone.replace(/\D/g, '') === client.phone.replace(/\D/g, '')) || 
-                      (inv.clientName && inv.clientName.trim().toLowerCase() === client.name.trim().toLowerCase());
-      if (!isMatch) return false;
+      if (!inv || inv.status === 'cancelled' || inv.status === 'refunded') return false;
+      
+      // Match by Client ID (Primary)
+      if (client.id && inv.clientId && inv.clientId === client.id) {
+        // match confirmed
+      } else {
+        // Match by phone number (at least 7 digits to prevent false positives on empty/short strings)
+        const invDigits = inv.clientPhone ? String(inv.clientPhone).replace(/\D/g, '') : '';
+        const phoneMatch = clientDigits.length >= 7 && invDigits.length >= 7 && (
+          clientDigits === invDigits || 
+          clientDigits.endsWith(invDigits) || 
+          invDigits.endsWith(clientDigits)
+        );
+
+        // Match by Client Name (at least 2 characters)
+        const invNameTrim = inv.clientName ? String(inv.clientName).trim().toLowerCase() : '';
+        const nameMatch = clientNameTrim.length >= 2 && invNameTrim.length >= 2 && clientNameTrim === invNameTrim;
+
+        if (!phoneMatch && !nameMatch) return false;
+      }
+
+      // Check period constraint if periodMonths > 0
       if (periodMs > 0) {
-        const invTime = new Date(inv.date).getTime();
-        if (now - invTime > periodMs) return false;
+        const dateStr = inv.date || (inv as any).created_at || (inv as any).shift_date || '';
+        const invTime = dateStr ? new Date(dateStr).getTime() : NaN;
+        if (!isNaN(invTime) && (now - invTime > periodMs)) return false;
       }
       return true;
     })
-    .reduce((sum, inv) => sum + (inv.total || 0), 0);
+    .reduce((sum, inv) => {
+      const invTotal = Number(inv.total ?? (inv as any).total_amount ?? 0);
+      return sum + (isNaN(invTotal) ? 0 : invTotal);
+    }, 0);
+
+  return Math.round(total * 100) / 100;
 }
 
 export function getClientTier(
@@ -557,32 +678,84 @@ export function getClientTier(
   invoices?: Invoice[], 
   tierSettings?: ClientTierSettings
 ): ClientTierConfig {
-  if (!client) {
-    return DEFAULT_CLIENT_TIERS[0];
-  }
-  const tiers = (tierSettings?.tiers && tierSettings.tiers.length > 0) ? tierSettings.tiers : DEFAULT_CLIENT_TIERS;
+  const tiers = (tierSettings?.tiers && Array.isArray(tierSettings.tiers) && tierSettings.tiers.length > 0) 
+    ? tierSettings.tiers 
+    : DEFAULT_CLIENT_TIERS;
   
+  const standardFallback = tiers.find(t => t.id === 'standard' || Number(t.spendingThreshold) === 0) || DEFAULT_CLIENT_TIERS[0];
+
+  if (!client) {
+    return standardFallback;
+  }
+  
+  // If tier system is disabled by salon settings, return standard tier with 0% discount
   if (tierSettings?.enabled === false) {
-    return tiers[0] || DEFAULT_CLIENT_TIERS[0];
+    return { ...standardFallback, discountPercentage: 0 };
   }
 
   const totalSpend = calculateClientTotalSpend(client, invoices, tierSettings?.periodMonths || 0);
   
-  // Sort descending by threshold
-  const sortedTiers = [...tiers].sort((a, b) => b.spendingThreshold - a.spendingThreshold);
+  // Sort descending by spendingThreshold (highest threshold first: Royal -> VIP -> Distinguished -> Standard)
+  const sortedTiers = [...tiers].sort((a, b) => (Number(b.spendingThreshold) || 0) - (Number(a.spendingThreshold) || 0));
   for (const tier of sortedTiers) {
-    if (totalSpend >= tier.spendingThreshold && tier.spendingThreshold > 0) {
+    const threshold = Number(tier.spendingThreshold) || 0;
+    if (threshold > 0 && totalSpend >= threshold) {
       return tier;
     }
   }
 
-  // If manually flagged as VIP but spending hasn't hit threshold yet
+  // If client is manually flagged as VIP, ensure they at least get VIP tier (or Distinguished if no VIP)
   if (client.isVip) {
-    const vipTier = tiers.find(t => t.id === 'vip');
+    const vipTier = tiers.find(t => t.id === 'vip') || tiers.find(t => t.id === 'distinguished');
     if (vipTier) return vipTier;
   }
 
-  return sortedTiers[sortedTiers.length - 1] || DEFAULT_CLIENT_TIERS[0];
+  return standardFallback;
+}
+
+/**
+ * دالة مساعدة لحساب المستوى القادم والتقدم المطلوب للترقية
+ */
+export function getNextClientTier(
+  currentTier: ClientTierConfig,
+  totalSpend: number,
+  tierSettings?: ClientTierSettings
+): {
+  nextTier: ClientTierConfig | null;
+  amountNeeded: number;
+  progressPercentage: number;
+  isMaxTier: boolean;
+} {
+  const tiers = (tierSettings?.tiers && Array.isArray(tierSettings.tiers) && tierSettings.tiers.length > 0) 
+    ? tierSettings.tiers 
+    : DEFAULT_CLIENT_TIERS;
+
+  // Sort ascending by spendingThreshold (Standard -> Distinguished -> VIP -> Royal)
+  const ascendingTiers = [...tiers].sort((a, b) => (Number(a.spendingThreshold) || 0) - (Number(b.spendingThreshold) || 0));
+  
+  // Find the next tier that has a strictly higher threshold than totalSpend (or current tier)
+  const currentThreshold = Number(currentTier.spendingThreshold) || 0;
+  const nextTier = ascendingTiers.find(t => (Number(t.spendingThreshold) || 0) > Math.max(totalSpend, currentThreshold)) || null;
+
+  if (!nextTier) {
+    return {
+      nextTier: null,
+      amountNeeded: 0,
+      progressPercentage: 100,
+      isMaxTier: true
+    };
+  }
+
+  const nextThreshold = Number(nextTier.spendingThreshold) || 1;
+  const amountNeeded = Math.max(0, Math.round((nextThreshold - totalSpend) * 100) / 100);
+  const progressPercentage = Math.min(100, Math.max(0, Math.round((totalSpend / nextThreshold) * 100)));
+
+  return {
+    nextTier,
+    amountNeeded,
+    progressPercentage,
+    isMaxTier: false
+  };
 }
 
 export interface VIPSettings {
@@ -627,11 +800,10 @@ export interface BookingService {
   technicianName: string; 
   price: number; 
   quantity?: number;
-  discountType?: 'percentage' | 'fixed';
-  discountValue?: number;
+  discount?: number;
   type?: 'service' | 'product';
   productId?: string;
-  isCustomPrice?: boolean;
+  productName?: string;
 }
 
 export interface AdvancePayment { 
@@ -665,10 +837,8 @@ export interface Booking {
   id: string; 
   salonId?: string;
   branchId?: string;
-  clientId?: string;
   clientName: string; 
   phone: string; 
-  clientPhone?: string;
   customerEmail?: string;
   date: string; 
   time: string; 
@@ -677,46 +847,30 @@ export interface Booking {
   services: BookingService[]; 
   totalAmount: number; 
   notes?: string;
-  internalNotes?: string; // ملاحظات داخلية خاصة بالإدارة فقط (لا تظهر نهائياً في الإيصال)
-  location?: string;
+  internalNotes?: string; // ملاحظات داخلية خاصة بالإدارة لا تظهر للعميل
   source?: 'online' | 'pos' | 'phone';
   bookingCode?: string;
   queueNumber?: number;
+  invoiceId?: string;
+  isPaid?: boolean;
+  location?: string;
   createdAt?: string;
-  created_at?: string;
-  createdBy?: string;
-  created_by?: string;
-  createdByName?: string;
-  created_by_name?: string;
-  updatedAt?: string;
-  updated_at?: string;
-  updatedBy?: string;
-  updated_by?: string;
-  updatedByName?: string;
-  updated_by_name?: string;
+  createdBy?: string; // اسم المستخدم الذي أنشأ الحجز
+  createdById?: string; // معرف المستخدم الذي أنشأ الحجز
+  updatedAt?: string; // تاريخ ووقت آخر تعديل
+  updatedBy?: string; // اسم المستخدم الذي قام بآخر تعديل عليه
+  updatedById?: string; // معرف المستخدم الذي قام بآخر تعديل عليه
   discountType?: 'percentage' | 'fixed';
   discountValue?: number;
-  _localEditedAt?: number;
-  paidDeposit?: number;
-  paid_deposit?: number;
-  isRefunded?: boolean;
-  is_refunded?: boolean;
-  refundAmount?: number;
-  refund_amount?: number;
-  refundDate?: string;
-  refund_date?: string;
-  refundExpenseId?: string;
-  refund_expense_id?: string;
-  refundTreasuryId?: string;
-  refund_treasury_id?: string;
-  cancelledAt?: string;
-  cancelled_at?: string;
-  cancelledBy?: string;
-  cancelled_by?: string;
-  cancelledByName?: string;
-  cancelled_by_name?: string;
-  refundNotes?: string;
-  refund_notes?: string;
+  discountAmount?: number;
+  paidDeposit?: number; // إجمالي العربون المسدد
+  isDepositRefunded?: boolean; // هل تم استرجاع العربون
+  depositRefundedAt?: string; // تاريخ ووقت استرجاع العربون
+  depositRefundedBy?: string; // اسم المستخدم الذي قام بالاسترجاع
+  depositRefundAmount?: number; // قيمة العربون المسترجع
+  refundExpenseId?: string; // معرف سند المصروف المرتبط بالاسترجاع
+  cancelledAt?: string; // تاريخ ووقت الإلغاء
+  cancelledBy?: string; // اسم المستخدم منفذ الإلغاء
 }
 
 export interface CartItem { 
@@ -727,6 +881,8 @@ export interface CartItem {
   referralEmployeeId?: string; // موظف الإحالة / فتح الشغل
   type: 'service' | 'product'; 
   price: number;
+  discount?: number;
+  originalPrice?: number;
 }
 
 export interface QueueTicket {
@@ -770,6 +926,8 @@ export interface HeldInvoice {
   queueTicketId?: string;
   salonId?: string;
   branchId?: string;
+  isOpen?: boolean;
+  openedBy?: string;
 }
 
 export interface Treasury { 
@@ -879,15 +1037,22 @@ export interface AppSettings {
   aiProvider?: 'builtin' | 'gemini' | 'openai';
   aiApiKey?: string;
   aiAssistantEnabled?: boolean; // تفعيل أو إلغاء تفعيل المساعد الذكي
+  // OpenRouter Integration for Manager AI Chat
+  openrouterApiKey?: string;
+  openrouterModel?: string;
   tipsEnabled?: boolean; // تفعيل نظام البقشيش
   tipsDirectCashDeduction?: boolean; // خصم البقشيش من الكاش مباشرة
   tipPayoutMethod?: 'instant_cash' | 'pooled_deferred'; // طريقة صرف وسداد الإكراميات (فوري كاش أو مجمع مؤجل)
   allowNonCashTips?: boolean; // السماح بالبقشيش عبر طرق الدفع غير النقدية (فيزا / شبكة / تحويل)
-  inactiveClientsTrackingEnabled?: boolean; // تفعيل متابعة العملاء المنقطعين عن الحضور
-  inactiveClientsDays?: number; // عدد أيام الانقطاع المعتمدة لتصنيف العميل كمنقطع (الافتراضي 60)
-  depositRefundAllowedDays?: number; // مهلة استرجاع عربون الحجز بالأيام (0 تعني عدم السماح نهائياً - No Refund Policy)
+  targetCalculationPolicy?: TargetCalculationPolicy; // 1: صافي المبيعات بعد خصم الراتب، 2: إجمالي المبيعات، 3: الشرائح المكتملة، 4: المنتجات والإحالات فقط
+  targetStepAmount?: number; // خطوة التارجت للسياسة 3 (افتراضياً 1000)
+  inactiveClientsTrackingEnabled?: boolean; // تفعيل أو تعطيل نظام متابعة العملاء المنقطعين (افتراضياً true)
+  inactiveClientsDays?: number; // مدة متابعة العملاء الذين لم يحضروا بالأيام (افتراضياً 60 يوم وقابل للتعديل)
+  depositRefundAllowedDays?: number; // مهلة استرجاع العربون بالأيام (0 = عدم السماح نهائياً)
   deposit_refund_allowed_days?: number;
 }
+
+export type TargetCalculationPolicy = 1 | 2 | 3 | 4;
 
 
 export interface AIChatMessage {
@@ -916,13 +1081,16 @@ export interface InvoiceItem {
   serviceName: string; 
   technicianName: string; 
   price: number; 
-  originalPrice?: number;
-  discountAmount?: number;
   quantity?: number; 
   employeeId?: string; 
   referralEmployeeId?: string; // موظف الإحالة / فتح الشغل
   referralEmployeeName?: string;
   referralCommissionAmount?: number;
+  employeeCommission?: number;
+  commissionAmount?: number;
+  commission?: number;
+  commissionableAmount?: number;
+  isTargetExempt?: boolean;
 }
 
 export interface Invoice { 
@@ -957,9 +1125,6 @@ export interface Invoice {
   etaSubmissionUuid?: string;
   etaStatus?: 'submitted' | 'valid' | 'invalid' | 'not_submitted';
   createdBy?: string;
-  createdByName?: string;
-  created_by_name?: string;
-  cashierName?: string;
   // Before and After photos for quality assurance & customer history
   beforePhotoUrl?: string;
   afterPhotoUrl?: string;
@@ -968,63 +1133,52 @@ export interface Invoice {
   remedyReason?: string;
   relatedComplaintId?: string;
   originalInvoiceId?: string;
-  // Sales Returns Tracking
+  // Sales Returns (مرتجعات المبيعات)
+  hasReturn?: boolean;
   returnedAmount?: number;
   returnIds?: string[];
-  // Shift Attribution
-  shiftDate?: string;
-  shiftId?: string;
-  shiftCode?: string;
 }
 
-// ============================================================
-// 🔄 0. نظام مرتجعات المبيعات (Sales Returns Management)
-// ============================================================
-export interface SalesReturnItem {
+export interface ReturnInvoiceItem {
   id: string;
-  originalItemId?: string;
-  itemId?: string; // product or service id
+  itemId?: string;
   type: 'service' | 'product';
   name: string;
-  price: number; // unit effective paid price
   originalQuantity: number;
-  returnQuantity: number;
-  totalRefund: number;
-  technicianId?: string;
-  technicianName?: string;
-  referralEmployeeId?: string;
-  referralEmployeeName?: string;
-  reason?: string;
+  returnedQuantity: number;
+  unitPrice: number;
+  lineDiscount?: number;
+  netRefundAmount: number;
+  employeeId?: string;
+  employeeName?: string;
 }
 
 export interface SalesReturn {
-  id: string; // e.g. RET-1001 or RET-202610-001
+  id: string;
+  returnNumber: string;
+  originalInvoiceId?: string;
+  originalInvoiceNumber?: string;
+  isGeneralReturn?: boolean; // مرتجع أصناف عام بدون فاتورة
   salonId?: string;
   branchId?: string;
   branchCode?: string;
-  originalInvoiceId: string;
-  originalInvoiceDate?: string;
-  date: string; // ISO string
+  date: string;
+  time: string;
   clientId?: string;
   clientName: string;
   clientPhone?: string;
-  items: SalesReturnItem[];
-  subtotalRefund: number;
-  taxRefund?: number;
-  totalRefund: number;
-  refundMethod: string; // treasuryId or 'cash'
-  treasuryId: string;
+  items: ReturnInvoiceItem[];
+  totalRefundAmount: number;
+  refundMethod: 'cash' | 'card' | 'bank' | 'treasury' | 'client_balance';
+  treasuryId?: string;
   treasuryName?: string;
-  paymentSplits?: { amount: number; treasuryId: string }[];
-  reason: string;
-  returnType: 'full' | 'partial';
-  createdBy?: string;
-  createdByName?: string;
+  reason: 'defective' | 'wrong_order' | 'customer_request' | 'service_unsatisfactory' | 'other';
+  reasonText?: string;
   notes?: string;
-  status: 'completed' | 'cancelled';
-  restockProducts?: boolean;
-  reverseCommissions?: boolean;
-  isWithoutInvoice?: boolean;
+  createdByName?: string;
+  createdById?: string;
+  status: 'completed';
+  createdAt: string;
 }
 
 // ============================================================
@@ -1145,6 +1299,7 @@ export interface PromoCodeUsage {
   salonId?: string;
   promoCodeId: string;
   code: string;
+  clientId?: string;
   clientPhone: string;
   clientName?: string;
   invoiceId?: string;
@@ -1209,6 +1364,8 @@ export interface FingerprintLog {
   deviceIp?: string;
   status: 'synced' | 'processed' | 'manual';
   notes?: string;
+  processedDate?: string;
+  processed_date?: string;
 }
 
 
@@ -1262,16 +1419,13 @@ export interface Transaction {
   userId?: string;
   userName?: string;
   shiftDate?: string;
+  shiftId?: string;
+  bookingId?: string;
   branchId?: string;
   salonId?: string;
-  bookingId?: string;
-  booking_id?: string;
-  shiftId?: string;
-  shift_id?: string;
-  shiftCode?: string;
-  shift_code?: string;
-  createdAt?: string;
-  updatedAt?: string;
+  isVoided?: boolean;
+  voidedAt?: string;
+  voidedBy?: string;
 }
 
 export interface Product {
@@ -1285,12 +1439,10 @@ export interface Product {
   currentStock: number;
   commission: number;
   barcode?: string;
-  supplierId?: string;
-  supplierName?: string;
-  productType?: 'retail' | 'raw_material'; // 'retail' (للبيع) | 'raw_material' (مادة خام)
-  isActive?: boolean; // حالة الصنف: نشط أو غير نشط
+  productType?: 'for_sale' | 'raw_material'; // 'للبيع' | 'مادة خام'
   salonId?: string;
   branchId?: string;
+  isActive?: boolean;
 }
 
 export interface Supplier {

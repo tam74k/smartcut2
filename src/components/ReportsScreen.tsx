@@ -1,18 +1,34 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
-import { AppSettings, Transaction, Invoice, Branch, TipRecord, AppUser, Booking, SalesReturn, Client, WorkShift, getClientTier } from '../types';
-import { Calendar, FileBarChart, Download, TrendingUp, TrendingDown, DollarSign, Printer, CheckCircle2, Clock, Wallet, Coins, ShoppingCart, Truck, Edit2, Trash2, RefreshCw, AlertTriangle, User, X, Check, Save, MapPin, RotateCcw, Package, Scissors, UserX, MessageSquare, Phone, Sparkles, Copy, Gift, Crown, FileText } from 'lucide-react';
+import { useState, useMemo, useEffect } from 'react';
+import { AppSettings, Transaction, Invoice, Branch, TipRecord, AppUser, Booking, SalesReturn } from '../types';
+import { Calendar, FileBarChart, Download, TrendingUp, TrendingDown, DollarSign, Printer, CheckCircle2, Clock, Wallet, Coins, ShoppingCart, Truck, Edit2, Trash2, RefreshCw, AlertTriangle, User, X, Check, Save, RotateCcw, UserX, MessageSquare, Phone, Copy, Search, Award, Sparkles, UserCheck, Target } from 'lucide-react';
 import { ClosingReportReceipt } from './ClosingReportReceipt';
 import { ServicesReportReceipt } from './ServicesReportReceipt';
 import { EmployeesReportReceipt } from './EmployeesReportReceipt';
 import { ExpensesReportReceipt } from './ExpensesReportReceipt';
 import { IncomeReportReceipt } from './IncomeReportReceipt';
 import { CustodyReportReceipt } from './CustodyReportReceipt';
-import { ThermalSalesReturnReceipt } from './ThermalSalesReturnReceipt';
 import { exportToExcel } from '../utils/exportExcel';
 import { handlePrintReceipt } from '../utils/print';
 import { calculateEmployeeCommission, calculateEmployeeTotalCommission } from '../utils/commissionHelper';
-import { DB } from '../services/db';
-import { getBookingAdvances, getBookingTotalAdvances } from './BookingsScreen';
+import { calculateEmployeeTargetCommission } from '../utils/targetCalculationHelper';
+import { DB, getFingerprintProcessedDate } from '../services/db';
+import { AuthService } from '../services/auth';
+import { SalesReturnVoucherModal } from './SalesReturnVoucherModal';
+export const safeSplitDate = (d?: string | any): string => {
+  if (!d || typeof d !== 'string') return '';
+  return d.includes('T') ? d.split('T')[0] : (d.includes(' ') ? d.split(' ')[0] : d);
+};
+
+export const isBookingAdvanceTransaction = (t?: any): boolean => {
+  if (!t) return false;
+  const cat = String(t.category || '').toLowerCase();
+  const desc = String(t.description || '').toLowerCase();
+  if (cat === 'مقدم حجز' || cat === 'booking_advance') return true;
+  if (cat.includes('مقدم') && cat.includes('حجز')) return true;
+  if (cat === 'advance' && (desc.includes('حجز') || desc.includes('عربون') || desc.includes('booking'))) return true;
+  if (desc.includes('مقدم حجز') || desc.includes('عربون حجز') || desc.includes('عربون لحجز') || desc.includes('دفعة مقدمة / عربون')) return true;
+  return false;
+};
 
 export function ReportsScreen({ 
   settings, 
@@ -21,6 +37,7 @@ export function ReportsScreen({
   employees = [], 
   services = [], 
   products = [],
+  bookings = [],
   activeBranchId,
   branches = [],
   tips = [],
@@ -32,9 +49,8 @@ export function ReportsScreen({
   currentUser,
   setEmployees,
   setTransactions,
-  bookings = [],
   salesReturns = [],
-  clients = []
+  clients = [],
 }: { 
   settings: AppSettings, 
   transactions: Transaction[], 
@@ -42,6 +58,7 @@ export function ReportsScreen({
   employees: any[], 
   services: any[], 
   products?: any[],
+  bookings?: Booking[],
   activeBranchId?: string,
   branches?: Branch[],
   tips?: TipRecord[],
@@ -53,10 +70,10 @@ export function ReportsScreen({
   currentUser?: AppUser | null,
   setEmployees?: (employees: any[]) => void,
   setTransactions?: (transactions: any[]) => void,
-  bookings?: Booking[],
   salesReturns?: SalesReturn[],
-  clients?: Client[]
+  clients?: any[],
 }) {
+  const canExportExcel = AuthService.canDo('export_excel', currentUser);
 
   const date = new Date();
   const year = date.getFullYear();
@@ -73,20 +90,19 @@ export function ReportsScreen({
   const [selectedOvertimeEmpId, setSelectedOvertimeEmpId] = useState<string>('all');
   const [selectedAdvanceEmpId, setSelectedAdvanceEmpId] = useState<string>('all');
   const [unpaidBookingsFilter, setUnpaidBookingsFilter] = useState<'all' | 'unpaid_only' | 'paid_only'>('all');
-  const [unpaidBookingsSearch, setUnpaidBookingsSearch] = useState('');
-  const [returnsFilterType, setReturnsFilterType] = useState<'all' | 'products' | 'services'>('all');
-  const [returnsTreasuryFilter, setReturnsTreasuryFilter] = useState<string>('all');
-  const [returnsSearch, setReturnsSearch] = useState<string>('');
-  const [inactiveClientsMinDays, setInactiveClientsMinDays] = useState<number>(() => {
-    return Number(settings.inactiveClientsDays) || 60;
-  });
+  const [unpaidBookingsSearch, setUnpaidBookingsSearch] = useState<string>('');
   const [inactiveClientsSearch, setInactiveClientsSearch] = useState<string>('');
-  const [inactiveClientsSort, setInactiveClientsSort] = useState<'days_desc' | 'days_asc' | 'spent_desc' | 'visits_desc'>('days_desc');
-  const [inactiveClientsFilterMode, setInactiveClientsFilterMode] = useState<'all' | 'visited_only' | 'registered_never_visited'>('all');
+  const defaultInactiveDays = Number(settings.inactiveClientsDays) > 0 ? Number(settings.inactiveClientsDays) : 60;
+  const [inactiveDaysFilter, setInactiveDaysFilter] = useState<number>(defaultInactiveDays);
+  const [inactiveStatusFilter, setInactiveStatusFilter] = useState<'all' | 'visited' | 'never_visited'>('all');
+  const [inactiveSortBy, setInactiveSortBy] = useState<'days_desc' | 'days_asc' | 'spend_desc' | 'visits_desc'>('days_desc');
+  const [targetReportSearch, setTargetReportSearch] = useState<string>('');
+  const [targetTypeFilter, setTargetTypeFilter] = useState<'all' | 'daily' | 'monthly' | 'none'>('all');
+  const [targetStatusFilter, setTargetStatusFilter] = useState<'all' | 'achieved' | 'not_achieved'>('all');
 
   useEffect(() => {
-    if (settings.inactiveClientsDays) {
-      setInactiveClientsMinDays(Number(settings.inactiveClientsDays));
+    if (Number(settings.inactiveClientsDays) > 0) {
+      setInactiveDaysFilter(Number(settings.inactiveClientsDays));
     }
   }, [settings.inactiveClientsDays]);
 
@@ -135,29 +151,6 @@ export function ReportsScreen({
   const [activeFrom, setActiveFrom] = useState(defaultFirstDay);
   const [activeTo, setActiveTo] = useState(defaultLastDay);
   const [activeReportType, setActiveReportType] = useState('income');
-  const [workShifts, setWorkShifts] = useState<WorkShift[]>([]);
-  const [isLoadingShifts, setIsLoadingShifts] = useState(false);
-  const [selectedShiftCashier, setSelectedShiftCashier] = useState<string>('all');
-  const [activeShiftForReceipt, setActiveShiftForReceipt] = useState<WorkShift | null>(null);
-
-  const loadWorkShifts = useCallback(async () => {
-    if (!settings.salonId) return;
-    setIsLoadingShifts(true);
-    try {
-      const list = await DB.fetchWorkShifts(settings.salonId, activeBranchId);
-      setWorkShifts(list);
-    } catch (err) {
-      console.error('Error fetching work shifts:', err);
-    } finally {
-      setIsLoadingShifts(false);
-    }
-  }, [settings.salonId, activeBranchId]);
-
-  useEffect(() => {
-    if (reportType === 'shifts' || activeReportType === 'shifts') {
-      loadWorkShifts();
-    }
-  }, [reportType, activeReportType, loadWorkShifts]);
 
   const mainBranch = (branches && branches[0]) || { id: 'b-main', name: 'الفرع الرئيسي' };
   const mainBranchId = mainBranch.id;
@@ -186,13 +179,32 @@ export function ReportsScreen({
     return (tips || []).filter(t => matchesActiveBranch(t.branchId));
   }, [tips, activeBranchId, isMainBranch]);
 
-  const branchSalesReturns = useMemo(() => {
-    return (salesReturns || []).filter(r => matchesActiveBranch(r.branchId));
-  }, [salesReturns, activeBranchId, isMainBranch]);
-
   const branchBookings = useMemo(() => {
     return (bookings || []).filter(b => matchesActiveBranch((b as any).branchId));
   }, [bookings, activeBranchId, isMainBranch]);
+
+  const [localSalesReturns, setLocalSalesReturns] = useState<SalesReturn[]>(salesReturns || []);
+  const [voucherModalReturn, setVoucherModalReturn] = useState<SalesReturn | null>(null);
+
+  useEffect(() => {
+    if (salesReturns && salesReturns.length > 0) {
+      setLocalSalesReturns(salesReturns);
+    }
+  }, [salesReturns]);
+
+  useEffect(() => {
+    DB.fetchSalesReturns(settings.salonId).then(data => {
+      if (Array.isArray(data) && data.length > 0) {
+        setLocalSalesReturns(data);
+      }
+    }).catch(() => {});
+  }, [settings.salonId]);
+
+  const effectiveReturns = (salesReturns && salesReturns.length > 0) ? salesReturns : localSalesReturns;
+
+  const branchSalesReturns = useMemo(() => {
+    return effectiveReturns.filter(r => matchesActiveBranch(r.branchId));
+  }, [effectiveReturns, activeBranchId, isMainBranch]);
 
   const getTreasuryLabel = (tId?: string, paymentMethod?: string) => {
     if (tId) {
@@ -226,6 +238,9 @@ export function ReportsScreen({
     if (!activeFrom || !activeTo) {
       return {
         grossIncome: 0,
+        totalInvoicedSales: 0,
+        totalCashbackUsed: 0,
+        netTreasurySales: 0,
         totalExpenses: 0,
         totalSalaries: 0,
         totalAdvances: 0,
@@ -253,77 +268,26 @@ export function ReportsScreen({
       return d >= activeFrom && d <= activeTo && inv.status !== 'cancelled';
     });
 
-    const grossInvoicesIncome = periodInvoices.reduce((sum, inv) => {
-      const paid = inv.paidAmount !== undefined ? Number(inv.paidAmount) : Number(inv.total) || 0;
-      return sum + paid;
-    }, 0);
+    const totalInvoicedSales = periodInvoices.reduce((sum, inv) => sum + (Number(inv.total) || 0), 0);
+    const totalCashbackUsed = periodInvoices.reduce((sum, inv) => sum + (Number(inv.cashbackUsed) || 0), 0);
 
-    // 1.b Booking Advances (مقدمات وعربون الحجز المحصلة)
-    const isBookingAdvanceTrx = (t: any) => {
-      if (t.type !== 'in') return false;
-      const cat = (t.category || '').toLowerCase();
-      const desc = (t.description || '').toLowerCase();
-      if (cat === 'booking_advance' || cat === 'مقدم حجز' || cat === 'عربون حجز' || cat === 'عربون' || cat === 'حجز') return true;
-      if (cat === 'advance' && !desc.includes('سلف')) return true;
-      if (desc.includes('مقدم حجز') || desc.includes('عربون حجز') || desc.includes('عربون')) return true;
-      return false;
-    };
-
-    const periodBookingAdvTrx = branchTransactions.filter(t => {
-      const d = (t.shiftDate || (t as any).shift_date || t.date || '').split('T')[0];
-      return d >= activeFrom && d <= activeTo && isBookingAdvanceTrx(t);
+    // 1.1 Sales Returns (مرتجعات المبيعات)
+    const periodReturns = branchSalesReturns.filter(r => {
+      const d = (r.returnDate || '').split('T')[0];
+      return d >= activeFrom && d <= activeTo;
     });
-
-    let totalBookingAdvances = periodBookingAdvTrx.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
-    let bookingAdvancesCount = periodBookingAdvTrx.length;
-
-    // فحص مقدمات وعربون الحجز المسجلة في جدول الحجوزات وغير المسجلة كمعاملة
-    branchBookings.forEach(b => {
-      if (b.status === 'cancelled') return;
-      const advances = (b.advancePayments && Array.isArray(b.advancePayments))
-        ? b.advancePayments
-        : (typeof (b as any).advance_payments === 'string'
-          ? (() => { try { return JSON.parse((b as any).advance_payments); } catch { return []; } })()
-          : []);
-
-      if (advances.length === 0 && Number(b.advancePayment || 0) > 0) {
-        advances.push({
-          amount: Number(b.advancePayment),
-          date: b.date || (b as any).createdAt,
-          paymentMethod: (b as any).paymentMethod || 'cash'
-        });
-      }
-
-      advances.forEach((adv: any) => {
-        const advDate = (adv.date || b.date || (b as any).createdAt || '').split('T')[0].trim();
-        if (advDate >= activeFrom && advDate <= activeTo) {
-          const amt = Number(adv.amount) || 0;
-          if (amt <= 0) return;
-          const already = periodBookingAdvTrx.some(t =>
-            Math.abs((Number(t.amount) || 0) - amt) < 0.01 &&
-            (t.description?.includes(b.bookingCode || '') || t.description?.includes(b.id || '') || t.description?.includes(b.clientName || ''))
-          );
-          if (!already) {
-            totalBookingAdvances += amt;
-            bookingAdvancesCount += 1;
-          }
-        }
-      });
-    });
-
-    const grossIncome = grossInvoicesIncome + totalBookingAdvances;
+    const totalReturnsAmount = periodReturns.reduce((sum, r) => sum + (Number(r.totalRefundAmount) || 0), 0);
+    const netSalesAfterReturns = Math.max(0, totalInvoicedSales - totalReturnsAmount);
+    const netTreasurySales = Math.max(0, netSalesAfterReturns - totalCashbackUsed);
+    const grossIncome = netSalesAfterReturns;
 
     // 2. All Expenses (جميع المصروفات)
     const periodTransactions = branchTransactions.filter(t => {
-      const d = (t.shiftDate || (t as any).shift_date || t.date || '').split('T')[0];
+      const d = (t.date || '').split('T')[0];
       return d >= activeFrom && d <= activeTo;
     });
 
-    const directExpenseTx = periodTransactions.filter(t => 
-      (t.type === 'out' || (t.type as string) === 'expense') && 
-      (t.category === 'expense' || t.category === 'مصروفات' || t.category?.includes('مصروف') || Boolean((t as any).expenseCategory)) &&
-      t.category !== 'transfer'
-    );
+    const directExpenseTx = periodTransactions.filter(t => t.type === 'expense');
     const customExpenses = (expenses || []).filter(e => {
       const d = (e.date || '').split('T')[0];
       const isBranchMatch = matchesActiveBranch(e.branchId);
@@ -338,23 +302,6 @@ export function ReportsScreen({
     let totalSalaries = 0;
     let totalAdvances = 0;
 
-    const isAdvTrx = (t: any) => {
-      const isOut = t.type === 'out' || (t.type as string) === 'expense';
-      if (!isOut) return false;
-      const cat = (t.category || '').toLowerCase();
-      const expCat = ((t as any).expenseCategory || '').toLowerCase();
-      const desc = (t.description || '').toLowerCase();
-      return (
-        cat === 'staff_advance' ||
-        cat === 'hr_advance' ||
-        cat === 'advance' ||
-        cat.includes('سلف') ||
-        expCat.includes('سلف') ||
-        desc.includes('سلفة') ||
-        desc.includes('سلف')
-      );
-    };
-
     branchEmployees.forEach(emp => {
       (emp.financialRecords || []).forEach((rec: any) => {
         const d = (rec.date || '').split('T')[0];
@@ -362,8 +309,7 @@ export function ReportsScreen({
           if (rec.type === 'salary') {
             totalSalaries += Number(rec.amount) || 0;
           } else if (rec.type === 'advance') {
-            const isSal = rec.id?.startsWith('FIN-SAL-') || rec.note?.includes('مسير رواتب') || rec.note?.includes('تم استلام صافي الراتب');
-            if (!isSal) totalAdvances += Number(rec.amount) || 0;
+            totalAdvances += Number(rec.amount) || 0;
           }
         }
       });
@@ -374,22 +320,10 @@ export function ReportsScreen({
         .filter(t => t.category?.includes('راتب') || t.category?.includes('رواتب') || t.description?.includes('راتب'))
         .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
     }
-    const periodAdvTrx = periodTransactions.filter(isAdvTrx);
     if (totalAdvances === 0) {
-      totalAdvances = periodAdvTrx.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
-    } else {
-      periodAdvTrx.forEach(t => {
-        const amt = Number(t.amount) || 0;
-        const already = branchEmployees.some(emp => 
-          (emp.financialRecords || []).some((rec: any) => 
-            rec.type === 'advance' && 
-            Math.abs((Number(rec.amount) || 0) - amt) < 0.01 && 
-            (rec.date || '').split('T')[0] >= activeFrom && 
-            (rec.date || '').split('T')[0] <= activeTo
-          )
-        );
-        if (!already) totalAdvances += amt;
-      });
+      totalAdvances = periodTransactions
+        .filter(t => t.category?.includes('سلفة') || t.category?.includes('سلف') || t.description?.includes('سلفة'))
+        .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
     }
 
     // 4. Purchases Paid + Supplier Payments (المسدد في فواتير المشتريات + دفعات الموردين)
@@ -446,45 +380,38 @@ export function ReportsScreen({
       });
     }
 
-    // 5.b Sales Returns (مرتجعات المبيعات)
-    const periodSalesReturns = branchSalesReturns.filter(r => {
-      const d = (r.date || '').split('T')[0];
-      return d >= activeFrom && d <= activeTo && r.status !== 'cancelled';
-    });
-    const totalSalesReturns = periodSalesReturns.reduce((sum, r) => sum + (Number(r.totalRefund) || 0), 0);
-
     // 6. Net Profit Calculation:
-    // صافي الربح = إجمالي الدخل - المرتجعات - المصروفات - الرواتب - السلف - المسدد في المشتريات - دفعات الموردين - العمولات
-    const totalDeductions = totalSalesReturns + totalExpenses + totalSalaries + totalAdvances + totalPurchasesAndSuppliers + totalCommissions;
+    // صافي الربح = إجمالي الدخل - المصروفات - الرواتب - السلف - المسدد في المشتريات - دفعات الموردين - العمولات
+    const totalDeductions = totalExpenses + totalSalaries + totalAdvances + totalPurchasesAndSuppliers + totalCommissions;
     const netProfit = grossIncome - totalDeductions;
     const profitMargin = grossIncome > 0 ? (netProfit / grossIncome) * 100 : 0;
 
     const breakdownList = [
-      { 
-        id: 'income', 
-        label: 'إجمالي الدخل المحصل (فواتير + مقدمات حجز)', 
-        amount: grossIncome, 
-        type: 'plus', 
-        percent: 100, 
-        note: `${periodInvoices.length} فاتورة مسددة (${grossInvoicesIncome.toFixed(2)} ${settings.currency}) + ${bookingAdvancesCount} مقدم حجز (${totalBookingAdvances.toFixed(2)} ${settings.currency})` 
-      },
-      ...(totalSalesReturns > 0 ? [{ id: 'sales_returns', label: 'مرتجعات المبيعات والبنود المستردة (-)', amount: totalSalesReturns, type: 'minus', percent: grossIncome > 0 ? (totalSalesReturns / grossIncome) * 100 : 0, note: `${periodSalesReturns.length} سند مرتجع مبيعات مسجل` }] : []),
+      { id: 'income', label: 'إجمالي مبيعات الفواتير الصادرة', amount: totalInvoicedSales, type: 'plus', percent: 100, note: `${periodInvoices.length} فاتورة مسددة (شاملة الكاش باك)` },
+      ...(totalReturnsAmount > 0 ? [
+        { id: 'sales_returns', label: 'إجمالي مرتجعات المبيعات (إشعارات دائن)', amount: totalReturnsAmount, type: 'minus', percent: totalInvoicedSales > 0 ? (totalReturnsAmount / totalInvoicedSales) * 100 : 0, note: `${periodReturns.length} حركة مرتجع مسجلة بالنظام` },
+        { id: 'net_sales', label: 'صافي المبيعات (بعد خصم المرتجعات)', amount: netSalesAfterReturns, type: 'info', percent: totalInvoicedSales > 0 ? (netSalesAfterReturns / totalInvoicedSales) * 100 : 0, note: `المبيعات الفعلية المتبقية بعد استبعاد المرتجعات` }
+      ] : []),
+      ...(totalCashbackUsed > 0 ? [
+        { id: 'cashback', label: 'المسدد بواسطة الكاش باك (محفظة العملاء)', amount: totalCashbackUsed, type: 'info', percent: grossIncome > 0 ? (totalCashbackUsed / grossIncome) * 100 : 0, note: `سدد من أرصدة ونقاط العملاء • الفارق بين إجمالي الفواتير والمحصل بالخزائن (${Number(netTreasurySales || 0).toFixed(2)} ${settings.currency})` }
+      ] : []),
       { id: 'expenses', label: 'جميع المصروفات التشغيلية والنثرية', amount: totalExpenses, type: 'minus', percent: grossIncome > 0 ? (totalExpenses / grossIncome) * 100 : 0, note: 'مصروفات الإيجار والفواتير والنثريات' },
       { id: 'salaries', label: 'الرواتب الأساسية ومسيرات الصرف', amount: totalSalaries, type: 'minus', percent: grossIncome > 0 ? (totalSalaries / grossIncome) * 100 : 0, note: 'مسيرات الرواتب المنصرفة للكادر' },
       { id: 'advances', label: 'سلف الموظفين المصروفة', amount: totalAdvances, type: 'minus', percent: grossIncome > 0 ? (totalAdvances / grossIncome) * 100 : 0, note: 'السلف الممنوحة خلال هذه الفترة' },
-      { id: 'purchases', label: 'المسدد في فواتير المشتريات', amount: totalPurchasesPaid, type: 'minus', percent: grossIncome > 0 ? (totalPurchasesPaid / grossIncome) * 100 : 0, note: `${periodPurchases.length} فاتورة مشتريات (إجمالي الفواتير: ${totalPurchasesAmount.toFixed(2)} ${settings.currency} - المتبقي كآجل: ${totalPurchasesRemaining.toFixed(2)} ${settings.currency})` },
+      { id: 'purchases', label: 'المسدد في فواتير المشتريات', amount: totalPurchasesPaid, type: 'minus', percent: grossIncome > 0 ? (totalPurchasesPaid / grossIncome) * 100 : 0, note: `${periodPurchases.length} فاتورة مشتريات (إجمالي الفواتير: ${Number(totalPurchasesAmount || 0).toFixed(2)} ${settings.currency} - المتبقي كآجل: ${Number(totalPurchasesRemaining || 0).toFixed(2)} ${settings.currency})` },
       { id: 'supplier_payments', label: 'سندات دفعات وسداد الموردين', amount: totalSupplierPayments, type: 'minus', percent: grossIncome > 0 ? (totalSupplierPayments / grossIncome) * 100 : 0, note: `${periodSupplierPayments.length} سند دفع وسداد للموردين خلال الفترة` },
       { id: 'commissions', label: 'عمولات الموظفين على الخدمات والمنتجات', amount: totalCommissions, type: 'minus', percent: grossIncome > 0 ? (totalCommissions / grossIncome) * 100 : 0, note: 'استحقاقات الفنيين عن المبيعات المنجزة' },
-      { id: 'net_profit', label: 'صافي الربح الفعلي بعد كافة الاستقطاعات', amount: netProfit, type: 'result', percent: profitMargin, note: `هامش الربح الصافي: ${profitMargin.toFixed(1)}%` }
+      { id: 'net_profit', label: 'صافي الربح الفعلي بعد كافة الاستقطاعات', amount: netProfit, type: 'result', percent: profitMargin, note: `هامش الربح الصافي: ${Number(profitMargin || 0).toFixed(1)}%` }
     ];
 
     return {
       grossIncome,
-      grossInvoicesIncome,
-      totalBookingAdvances,
-      bookingAdvancesCount,
-      totalSalesReturns,
-      periodSalesReturns,
+      totalInvoicedSales,
+      totalReturnsAmount,
+      netSalesAfterReturns,
+      returnsCount: periodReturns.length,
+      totalCashbackUsed,
+      netTreasurySales,
       totalExpenses,
       totalSalaries,
       totalAdvances,
@@ -504,7 +431,496 @@ export function ReportsScreen({
       purchasesByMethod,
       breakdownList
     };
-  }, [activeFrom, activeTo, branchInvoices, branchTransactions, branchBookings, expenses, branchEmployees, purchases, supplierPayments, matchesActiveBranch, settings.currency]);
+  }, [activeFrom, activeTo, branchInvoices, branchTransactions, expenses, branchEmployees, purchases, supplierPayments, branchSalesReturns, matchesActiveBranch, settings.currency]);
+
+  // ---- حسابات تقرير مرتجعات المبيعات (Sales Returns Report Data) ----
+  const salesReturnsReportData = useMemo(() => {
+    if (!activeFrom || !activeTo) {
+      return {
+        returns: [],
+        totalRefundAmount: 0,
+        returnsCount: 0,
+        restockedProductsCount: 0,
+        returnedServicesCount: 0,
+        reasonsBreakdown: {},
+        treasuriesBreakdown: {},
+        topReturnedItems: []
+      };
+    }
+
+    const filtered = branchSalesReturns.filter(r => {
+      const d = (r.returnDate || '').split('T')[0];
+      return d >= activeFrom && d <= activeTo;
+    });
+
+    let totalRefund = 0;
+    let restockedProducts = 0;
+    let returnedServices = 0;
+    const reasonsMap: Record<string, { count: number; amount: number }> = {};
+    const treasuriesMap: Record<string, number> = {};
+    const itemsMap: Record<string, { name: string; type: string; qty: number; amount: number }> = {};
+
+    filtered.forEach(r => {
+      totalRefund += Number(r.totalRefundAmount || 0);
+
+      const rName = r.reason || 'أخرى';
+      if (!reasonsMap[rName]) reasonsMap[rName] = { count: 0, amount: 0 };
+      reasonsMap[rName].count += 1;
+      reasonsMap[rName].amount += Number(r.totalRefundAmount || 0);
+
+      const tId = r.treasuryId || r.refundMethod || 'cash';
+      treasuriesMap[tId] = (treasuriesMap[tId] || 0) + Number(r.totalRefundAmount || 0);
+
+      (r.items || []).forEach(item => {
+        if (item.type === 'product' && item.restockToInventory) {
+          restockedProducts += Number(item.quantity || 1);
+        } else if (item.type === 'service') {
+          returnedServices += Number(item.quantity || 1);
+        }
+
+        const itKey = item.itemId || item.name;
+        if (!itemsMap[itKey]) {
+          itemsMap[itKey] = { name: item.name, type: item.type, qty: 0, amount: 0 };
+        }
+        itemsMap[itKey].qty += Number(item.quantity || 1);
+        itemsMap[itKey].amount += Number(item.totalRefund || (item.unitPrice * item.quantity));
+      });
+    });
+
+    const topItems = Object.values(itemsMap).sort((a, b) => b.qty - a.qty);
+
+    return {
+      returns: filtered,
+      totalRefundAmount: totalRefund,
+      returnsCount: filtered.length,
+      restockedProductsCount: restockedProducts,
+      returnedServicesCount: returnedServices,
+      reasonsBreakdown: reasonsMap,
+      treasuriesBreakdown: treasuriesMap,
+      topReturnedItems: topItems
+    };
+  }, [branchSalesReturns, activeFrom, activeTo]);
+
+  const targetReportData = useMemo(() => {
+    if (!activeFrom || !activeTo) {
+      return {
+        rows: [],
+        totalTargetSales: 0,
+        totalEligibleAmount: 0,
+        totalTargetCommissions: 0,
+        totalExemptSales: 0,
+        totalExemptCommissions: 0,
+        achievedCount: 0,
+        totalTargetEmployees: 0,
+        totalEmployees: 0,
+      };
+    }
+
+    const start = new Date(activeFrom);
+    const end = new Date(activeTo);
+    end.setHours(23, 59, 59, 999);
+
+    const periodInvoices = branchInvoices.filter(inv => {
+      const d = new Date(inv.date);
+      return d >= start && d <= end;
+    });
+
+    const rows = branchEmployees.map((emp: any) => {
+      const targetType = (emp.targetType || 'none') as 'none' | 'daily' | 'monthly';
+      const baseSalary = Number(emp.baseSalary ?? emp.basicSalary ?? 0);
+      const commissionRate = Math.max(0, Number(
+        emp.targetCommissionRate !== undefined && emp.targetCommissionRate !== null 
+          ? emp.targetCommissionRate 
+          : (emp.commissionRate ?? 0)
+      ) || 0);
+
+      if (targetType === 'daily') {
+        const dailyTarget = Number(emp.dailyTargetAmount || emp.target || 0);
+        const dailyMethod = emp.dailyTargetMethod || 'excess_only';
+        const methodLabel = dailyMethod === 'full_amount' 
+          ? 'يومي: على كامل المبلغ عند تحقيق التارجت' 
+          : 'يومي: على ما فوق التارجت فقط (الفائض)';
+
+        let totalSales = 0;
+        let totalEligible = 0;
+        let totalCommission = 0;
+        let totalExemptSales = 0;
+        let totalExemptCommission = 0;
+        let totalExemptItems = 0;
+        let daysAchieved = 0;
+        let workingDaysCount = 0;
+
+        const dayMap = new Map<string, any[]>();
+        periodInvoices.forEach(inv => {
+          const d = (inv.date || (inv as any).createdAt || '').split('T')[0];
+          if (d) {
+            if (!dayMap.has(d)) dayMap.set(d, []);
+            dayMap.get(d)!.push(inv);
+          }
+        });
+
+        dayMap.forEach((dayInvs, dStr) => {
+          const dayCalc = calculateEmployeeTargetCommission({
+            employee: emp,
+            settings,
+            invoices: dayInvs,
+            dateRange: { start: dStr, end: dStr },
+            isDaily: true
+          });
+          if (dayCalc.totalValidSales > 0 || dayCalc.exemptSales > 0) {
+            workingDaysCount++;
+          }
+          totalSales += dayCalc.totalValidSales;
+          totalEligible += dayCalc.eligibleAmount;
+          totalCommission += dayCalc.commissionAmount;
+          totalExemptSales += dayCalc.exemptSales;
+          totalExemptCommission += dayCalc.exemptCommission;
+          totalExemptItems += dayCalc.exemptItemsCount;
+          if (dayCalc.isTargetAchieved) {
+            daysAchieved++;
+          }
+        });
+
+        const isAchieved = daysAchieved > 0;
+        const progressPercent = workingDaysCount > 0 ? Math.min(100, Math.round((daysAchieved / workingDaysCount) * 100)) : 0;
+
+        return {
+          empId: emp.id,
+          empCode: emp.code || '',
+          empName: emp.name,
+          empRole: emp.role || 'موظف',
+          targetType,
+          targetRequired: dailyTarget,
+          targetMethod: dailyMethod,
+          targetMethodLabel: methodLabel,
+          baseSalary,
+          totalWorkSales: totalSales,
+          targetSalesPool: totalSales,
+          eligibleAmount: totalEligible,
+          commissionRate,
+          targetCommission: totalCommission,
+          isTargetAchieved: isAchieved,
+          remainingToTarget: Math.max(0, dailyTarget - totalSales),
+          exemptSales: totalExemptSales,
+          exemptCommission: totalExemptCommission,
+          exemptItemsCount: totalExemptItems,
+          progressPercent,
+          daysAchieved,
+          workingDaysCount,
+          totalEarnedCommission: totalCommission + totalExemptCommission
+        };
+      } else if (targetType === 'monthly') {
+        const monthlyTarget = Number(emp.monthlyTargetAmount || emp.target || 0);
+        const monthlyMethod = emp.monthlyTargetMethod || 'deduct_salary';
+        const methodLabel = monthlyMethod === 'gross_sales'
+          ? 'شهري: على إجمالي الشغل بدون خصم الراتب'
+          : 'شهري: خصم الراتب الأساسي ثم النسبة على ما فوق التارجت';
+
+        const calc = calculateEmployeeTargetCommission({
+          employee: emp,
+          settings,
+          invoices: periodInvoices,
+          dateRange: { start: activeFrom, end: activeTo },
+          isDaily: false,
+          daysInMonth: 30
+        });
+
+        return {
+          empId: emp.id,
+          empCode: emp.code || '',
+          empName: emp.name,
+          empRole: emp.role || 'موظف',
+          targetType,
+          targetRequired: monthlyTarget,
+          targetMethod: monthlyMethod,
+          targetMethodLabel: methodLabel,
+          baseSalary,
+          totalWorkSales: calc.totalValidSales,
+          targetSalesPool: calc.totalValidSales,
+          eligibleAmount: calc.eligibleAmount,
+          commissionRate,
+          targetCommission: calc.commissionAmount,
+          isTargetAchieved: calc.isTargetAchieved,
+          remainingToTarget: calc.remainingToTarget,
+          exemptSales: calc.exemptSales,
+          exemptCommission: calc.exemptCommission,
+          exemptItemsCount: calc.exemptItemsCount,
+          progressPercent: calc.achievementPercentage,
+          daysAchieved: calc.isTargetAchieved ? 1 : 0,
+          workingDaysCount: 1,
+          totalEarnedCommission: calc.commissionAmount + calc.exemptCommission
+        };
+      } else {
+        const calc = calculateEmployeeTargetCommission({
+          employee: emp,
+          settings,
+          invoices: periodInvoices,
+          dateRange: { start: activeFrom, end: activeTo },
+          isDaily: false
+        });
+
+        return {
+          empId: emp.id,
+          empCode: emp.code || '',
+          empName: emp.name,
+          empRole: emp.role || 'موظف',
+          targetType: 'none',
+          targetRequired: 0,
+          targetMethod: 'none',
+          targetMethodLabel: 'غير خاضع لنظام التارجت',
+          baseSalary,
+          totalWorkSales: calc.totalValidSales,
+          targetSalesPool: calc.totalValidSales,
+          eligibleAmount: 0,
+          commissionRate: emp.commissionRate || 0,
+          targetCommission: 0,
+          isTargetAchieved: false,
+          remainingToTarget: 0,
+          exemptSales: calc.exemptSales,
+          exemptCommission: calc.exemptCommission,
+          exemptItemsCount: calc.exemptItemsCount,
+          progressPercent: 100,
+          daysAchieved: 0,
+          workingDaysCount: 0,
+          totalEarnedCommission: calc.exemptCommission
+        };
+      }
+    });
+
+    const targetEmployees = rows.filter((r: any) => r.targetType !== 'none');
+    const achievedCount = targetEmployees.filter((r: any) => r.isTargetAchieved).length;
+    const totalTargetSales = rows.reduce((sum: number, r: any) => sum + r.targetSalesPool, 0);
+    const totalEligibleAmount = rows.reduce((sum: number, r: any) => sum + r.eligibleAmount, 0);
+    const totalTargetCommissions = rows.reduce((sum: number, r: any) => sum + r.targetCommission, 0);
+    const totalExemptSales = rows.reduce((sum: number, r: any) => sum + r.exemptSales, 0);
+    const totalExemptCommissions = rows.reduce((sum: number, r: any) => sum + r.exemptCommission, 0);
+
+    return {
+      rows,
+      totalTargetSales,
+      totalEligibleAmount,
+      totalTargetCommissions,
+      totalExemptSales,
+      totalExemptCommissions,
+      achievedCount,
+      totalTargetEmployees: targetEmployees.length,
+      totalEmployees: rows.length
+    };
+  }, [branchEmployees, branchInvoices, activeFrom, activeTo, settings]);
+
+  const inactiveDaysThreshold = inactiveDaysFilter > 0 ? inactiveDaysFilter : (Number(settings.inactiveClientsDays) > 0 ? Number(settings.inactiveClientsDays) : 60);
+
+  const inactiveClientsReportData = useMemo(() => {
+    const now = new Date();
+    const thresholdDays = inactiveDaysThreshold;
+
+    const clientMap = new Map<string, {
+      id: string;
+      name: string;
+      phone: string;
+      lastVisitDate: string;
+      createdAtDate: string;
+      isNeverVisited: boolean;
+      totalVisits: number;
+      totalSpend: number;
+      avgInvoice: number;
+      loyaltyPoints: number;
+      cashback: number;
+      tier: string;
+      isVip: boolean;
+      notes: string;
+      daysAbsent: number;
+    }>();
+
+    // 1. Ingest registered clients
+    (clients || []).forEach(c => {
+      if (!c) return;
+      const cleanPhone = (c.phone || '').trim();
+      const key = cleanPhone || c.id || c.name;
+      if (!key) return;
+
+      const clientLastVisit = c.lastVisit ? safeSplitDate(c.lastVisit) : '';
+      const clientCreatedAt = c.createdAt ? safeSplitDate(c.createdAt) : '';
+
+      clientMap.set(key, {
+        id: c.id || key,
+        name: c.name || 'عميل بدون اسم',
+        phone: c.phone || '',
+        lastVisitDate: clientLastVisit,
+        createdAtDate: clientCreatedAt,
+        isNeverVisited: !clientLastVisit,
+        totalVisits: Number(c.totalVisits) || 0,
+        totalSpend: Number(c.totalSpent) || 0,
+        avgInvoice: 0,
+        loyaltyPoints: Number(c.loyaltyPoints) || 0,
+        cashback: Number(c.cashback) || 0,
+        tier: (c as any).tier || (c as any).membershipLevel || (c.isVip ? 'vip' : 'standard'),
+        isVip: Boolean(c.isVip),
+        notes: c.notes || (c as any).generalNotes || '',
+        daysAbsent: 0
+      });
+    });
+
+    // 2. Scan invoices to update latest visit date, visit count, and spend
+    (invoices || []).forEach(inv => {
+      if (!inv || inv.status === 'cancelled') return;
+      const invPhone = (inv.clientPhone || '').trim();
+      const invName = (inv.clientName || '').trim();
+      const invDate = safeSplitDate(inv.date || (inv as any).created_at);
+      if (!invDate) return;
+
+      let matchedKey = '';
+      if (invPhone && clientMap.has(invPhone)) {
+        matchedKey = invPhone;
+      } else if (inv.clientId && clientMap.has(inv.clientId)) {
+        matchedKey = inv.clientId;
+      } else {
+        for (const [k, cData] of clientMap.entries()) {
+          if (invPhone && cData.phone && (cData.phone === invPhone || cData.phone.replace(/\D/g, '') === invPhone.replace(/\D/g, ''))) {
+            matchedKey = k;
+            break;
+          }
+          if (!matchedKey && invName && cData.name && cData.name.toLowerCase() === invName.toLowerCase()) {
+            matchedKey = k;
+            break;
+          }
+        }
+      }
+
+      const invAmount = Number(inv.total ?? (inv as any).total_amount ?? 0) || 0;
+
+      if (matchedKey) {
+        const existing = clientMap.get(matchedKey)!;
+        if (!existing.lastVisitDate || invDate > existing.lastVisitDate) {
+          existing.lastVisitDate = invDate;
+        }
+        existing.isNeverVisited = false;
+        existing.totalVisits = (existing.totalVisits || 0) + 1;
+        existing.totalSpend = (existing.totalSpend || 0) + invAmount;
+      } else if (invPhone || (invName && invName !== 'عميل نقدي' && invName !== 'عميل عام')) {
+        const newKey = invPhone || invName;
+        clientMap.set(newKey, {
+          id: inv.clientId || newKey,
+          name: invName || 'عميل نقدي',
+          phone: invPhone,
+          lastVisitDate: invDate,
+          createdAtDate: invDate,
+          isNeverVisited: false,
+          totalVisits: 1,
+          totalSpend: invAmount,
+          avgInvoice: invAmount,
+          loyaltyPoints: 0,
+          cashback: 0,
+          tier: 'standard',
+          isVip: false,
+          notes: '',
+          daysAbsent: 0
+        });
+      }
+    });
+
+    // 3. Scan bookings to update latest visit date
+    (bookings || []).forEach(b => {
+      if (!b || b.status === 'cancelled') return;
+      const bPhone = (b.phone || '').trim();
+      const bDate = safeSplitDate(b.date);
+      if (!bDate) return;
+
+      for (const [k, cData] of clientMap.entries()) {
+        if (bPhone && cData.phone && (cData.phone === bPhone || cData.phone.replace(/\D/g, '') === bPhone.replace(/\D/g, ''))) {
+          if (!cData.lastVisitDate || bDate > cData.lastVisitDate) {
+            cData.lastVisitDate = bDate;
+          }
+          cData.isNeverVisited = false;
+          break;
+        }
+      }
+    });
+
+    // 4. Compute days absent and identify inactive clients
+    const allClientsList = Array.from(clientMap.values());
+    const qualifiedInactiveList: any[] = [];
+    let totalSpendAllInactive = 0;
+    let sumDaysAbsent = 0;
+    let vipInactiveCount = 0;
+
+    allClientsList.forEach(c => {
+      const hasVisited = Boolean(c.lastVisitDate);
+      const referenceDate = hasVisited ? c.lastVisitDate : c.createdAtDate;
+      c.isNeverVisited = !hasVisited;
+
+      let daysAbsent = 0;
+      if (referenceDate) {
+        const refTime = new Date(referenceDate).getTime();
+        if (!isNaN(refTime)) {
+          const diffMs = now.getTime() - refTime;
+          daysAbsent = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+        }
+      }
+
+      c.daysAbsent = daysAbsent;
+      c.avgInvoice = c.totalVisits > 0 ? (c.totalSpend / c.totalVisits) : 0;
+
+      if (daysAbsent >= thresholdDays) {
+        qualifiedInactiveList.push(c);
+        totalSpendAllInactive += (c.totalSpend || 0);
+        sumDaysAbsent += daysAbsent;
+
+        const isVipTier = c.tier === 'vip' || c.tier === 'royal' || c.tier === 'distinguished' || c.isVip;
+        if (isVipTier) {
+          vipInactiveCount++;
+        }
+      }
+    });
+
+    // 5. Apply status filter (all / visited / never_visited) and search query
+    const searchQuery = (inactiveClientsSearch || '').trim().toLowerCase();
+
+    const filteredInactiveList = qualifiedInactiveList.filter(c => {
+      if (inactiveStatusFilter === 'visited' && c.isNeverVisited) return false;
+      if (inactiveStatusFilter === 'never_visited' && !c.isNeverVisited) return false;
+
+      if (searchQuery) {
+        const matchName = c.name && c.name.toLowerCase().includes(searchQuery);
+        const matchPhone = c.phone && c.phone.includes(searchQuery);
+        const matchNotes = c.notes && c.notes.toLowerCase().includes(searchQuery);
+        if (!matchName && !matchPhone && !matchNotes) return false;
+      }
+
+      return true;
+    });
+
+    // 6. Sort
+    filteredInactiveList.sort((a, b) => {
+      if (inactiveSortBy === 'days_asc') {
+        return a.daysAbsent - b.daysAbsent;
+      } else if (inactiveSortBy === 'spend_desc') {
+        return (b.totalSpend || 0) - (a.totalSpend || 0);
+      } else if (inactiveSortBy === 'visits_desc') {
+        return (b.totalVisits || 0) - (a.totalVisits || 0);
+      } else {
+        // Default: 'days_desc'
+        return b.daysAbsent - a.daysAbsent;
+      }
+    });
+
+    const inactiveCount = qualifiedInactiveList.length;
+    const avgDaysAbsent = inactiveCount > 0 ? Math.round(sumDaysAbsent / inactiveCount) : 0;
+    const totalClientsCount = allClientsList.length;
+    const inactiveRate = totalClientsCount > 0 ? Math.round((inactiveCount / totalClientsCount) * 100) : 0;
+
+    return {
+      allInactiveClients: qualifiedInactiveList,
+      inactiveClients: filteredInactiveList,
+      inactiveCount,
+      totalClientsCount,
+      totalPreviousSpend: totalSpendAllInactive,
+      avgDaysAbsent,
+      inactiveRate,
+      vipInactiveCount,
+      thresholdDays
+    };
+  }, [clients, invoices, bookings, inactiveDaysThreshold, inactiveStatusFilter, inactiveSortBy, inactiveClientsSearch]);
 
   const overtimeReportData = useMemo(() => {
     if (!activeFrom || !activeTo) return { detailedRows: [], summaryRows: [], totalHours: 0, totalAmount: 0, totalEmployees: 0, otCount: 0 };
@@ -571,25 +987,27 @@ export function ReportsScreen({
         }
 
         const dayLogs = effectiveLogs.filter(l => 
-          (l.employeeId === emp.id || (emp.fingerprintCode && l.fingerprintCode === emp.fingerprintCode)) &&
-          (l.timestamp && (l.timestamp.startsWith(dateStr) || l.timestamp.split('T')[0] === dateStr))
+          (l.employeeId === emp.id || (emp.fingerprintCode && (l.fingerprintCode === emp.fingerprintCode || (l as any).fingerprint_code === emp.fingerprintCode))) &&
+          (getFingerprintProcessedDate(l) === dateStr || (l.timestamp && (l.timestamp.startsWith(dateStr) || l.timestamp.split('T')[0] === dateStr)))
         ).sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
 
-        // Look for next day early morning check_out (00:00 - 11:59) for overnight shift
+        // Look for next day early morning check_out (00:00 - 06:00) for overnight shift as fallback
         const nextDate = new Date(rowDate);
         nextDate.setDate(nextDate.getDate() + 1);
         const nextDateStr = nextDate.toISOString().split('T')[0];
 
         const nextDayEarlyCheckOut = effectiveLogs.find(l => 
-          (l.employeeId === emp.id || (emp.fingerprintCode && l.fingerprintCode === emp.fingerprintCode)) &&
+          (l.employeeId === emp.id || (emp.fingerprintCode && (l.fingerprintCode === emp.fingerprintCode || (l as any).fingerprint_code === emp.fingerprintCode))) &&
           l.type === 'check_out' &&
-          (l.timestamp && (l.timestamp.startsWith(nextDateStr) || l.timestamp.split('T')[0] === nextDateStr)) &&
-          (() => {
-            const timePart = l.timestamp.includes('T') ? l.timestamp.split('T')[1] : l.timestamp.split(' ')[1];
-            if (!timePart) return false;
-            const hour = Number(timePart.split(':')[0]);
-            return hour < 12;
-          })()
+          (getFingerprintProcessedDate(l) === dateStr || (
+            (l.timestamp && (l.timestamp.startsWith(nextDateStr) || safeSplitDate(l.timestamp) === nextDateStr)) &&
+            (() => {
+              const timePart = l.timestamp?.includes('T') ? l.timestamp.split('T')[1] : (l.timestamp?.includes(' ') ? l.timestamp.split(' ')[1] : '');
+              if (!timePart) return false;
+              const hour = Number(timePart.split(':')[0]);
+              return !isNaN(hour) && hour <= 6;
+            })()
+          ))
         );
 
         const checkInLogs = dayLogs.filter(l => l.type === 'check_in');
@@ -605,13 +1023,13 @@ export function ReportsScreen({
         }
 
         if (checkOutLog && (checkInLog || isNextDayLog || checkOutLog !== checkInLog)) {
-          const outTimeStr = checkOutLog.timestamp.includes('T') ? checkOutLog.timestamp.split('T')[1].substring(0, 5) : checkOutLog.timestamp.split(' ')[1]?.substring(0, 5);
-          if (outTimeStr) {
+          const outTimeStr = checkOutLog.timestamp?.includes('T') ? checkOutLog.timestamp.split('T')[1]?.substring(0, 5) : (checkOutLog.timestamp?.includes(' ') ? checkOutLog.timestamp.split(' ')[1]?.substring(0, 5) : '');
+          if (outTimeStr && outTimeStr.includes(':')) {
             const outParts = outTimeStr.split(':').map(Number);
-            let actualOutMin = outParts[0] * 60 + (outParts[1] || 0);
+            let actualOutMin = (outParts[0] || 0) * 60 + (outParts[1] || 0);
 
-            const inTimeStr = checkInLog ? (checkInLog.timestamp.includes('T') ? checkInLog.timestamp.split('T')[1].substring(0, 5) : checkInLog.timestamp.split(' ')[1]?.substring(0, 5)) : null;
-            const actualInMin = inTimeStr ? (Number(inTimeStr.split(':')[0]) * 60 + Number(inTimeStr.split(':')[1])) : totalSchedInMin;
+            const inTimeStr = checkInLog ? (checkInLog.timestamp?.includes('T') ? checkInLog.timestamp.split('T')[1]?.substring(0, 5) : (checkInLog.timestamp?.includes(' ') ? checkInLog.timestamp.split(' ')[1]?.substring(0, 5) : '')) : null;
+            const actualInMin = (inTimeStr && inTimeStr.includes(':')) ? (Number(inTimeStr.split(':')[0] || 0) * 60 + Number(inTimeStr.split(':')[1] || 0)) : totalSchedInMin;
 
             const isOvernight = isNextDayLog || (actualOutMin <= actualInMin);
             if (isOvernight) {
@@ -631,17 +1049,17 @@ export function ReportsScreen({
                   hourlyRate = Number(hr.customOvertimeHourlyRate) || 25;
                   rateLabel = `${hourlyRate} ${settings.currency} (مبلغ محدد)`;
                 } else if (hr.overtimeRateType === '2x') {
-                  const baseHourly = (emp.baseSalary > 0 ? emp.baseSalary / 30 : 0) / 8;
+                  const baseHourly = (Number(emp.baseSalary || 0) > 0 ? Number(emp.baseSalary || 0) / 30 : 0) / 8;
                   hourlyRate = (baseHourly > 0 ? baseHourly : 25) * 2;
-                  rateLabel = `2.0x (${hourlyRate.toFixed(1)} ${settings.currency}/س)`;
+                  rateLabel = `2.0x (${Number(hourlyRate || 0).toFixed(1)} ${settings.currency}/س)`;
                 } else if (hr.overtimeRateType === '1.5x') {
-                  const baseHourly = (emp.baseSalary > 0 ? emp.baseSalary / 30 : 0) / 8;
+                  const baseHourly = (Number(emp.baseSalary || 0) > 0 ? Number(emp.baseSalary || 0) / 30 : 0) / 8;
                   hourlyRate = (baseHourly > 0 ? baseHourly : 25) * 1.5;
-                  rateLabel = `1.5x (${hourlyRate.toFixed(1)} ${settings.currency}/س)`;
+                  rateLabel = `1.5x (${Number(hourlyRate || 0).toFixed(1)} ${settings.currency}/س)`;
                 } else {
-                  const baseHourly = (emp.baseSalary > 0 ? emp.baseSalary / 30 : 0) / 8;
+                  const baseHourly = (Number(emp.baseSalary || 0) > 0 ? Number(emp.baseSalary || 0) / 30 : 0) / 8;
                   hourlyRate = baseHourly > 0 ? baseHourly : 25;
-                  rateLabel = `1.0x (${hourlyRate.toFixed(1)} ${settings.currency}/س)`;
+                  rateLabel = `1.0x (${Number(hourlyRate || 0).toFixed(1)} ${settings.currency}/س)`;
                 }
 
                 const overtimeAmount = hourlyRate * overtimeHours;
@@ -657,8 +1075,8 @@ export function ReportsScreen({
                   scheduledCheckOut,
                   actualCheckOut: isOvernight ? `${outTimeStr} (+1)` : outTimeStr,
                   overtimeMinutes,
-                  overtimeHours: overtimeHours.toFixed(2),
-                  hourlyRate: hourlyRate.toFixed(2),
+                  overtimeHours: Number(overtimeHours || 0).toFixed(2),
+                  hourlyRate: Number(hourlyRate || 0).toFixed(2),
                   rateLabel,
                   overtimeAmount
                 });
@@ -695,19 +1113,23 @@ export function ReportsScreen({
     end.setHours(23, 59, 59, 999);
 
     const filteredTransactions = branchTransactions.filter(t => {
-      const tDateStr = (t.shiftDate || (t as any).shift_date || t.date || '').split('T')[0];
+      const tDateStr = safeSplitDate(t.date);
       return tDateStr >= activeFrom && tDateStr <= activeTo;
     });
 
+    // استبعاد مقدمات الحجز والعربونات والعهد الافتتاحية والتحويلات من بند الإيرادات
     const income = filteredTransactions
-      .filter(t => t.type === 'in' && t.category !== 'transfer' && t.category !== 'عهدة افتتاحية' && t.category !== 'initial_cash')
+      .filter(t => 
+        t.type === 'in' && 
+        t.category !== 'transfer' && 
+        t.category !== 'عهدة افتتاحية' && 
+        t.category !== 'initial_cash' &&
+        !isBookingAdvanceTransaction(t)
+      )
       .reduce((sum, t) => sum + t.amount, 0);
     
     const expense = filteredTransactions
-      .filter(t => 
-        (t.type === 'out' || (t.type as string) === 'expense' || t.category === 'expense' || t.category === 'مصروفات' || t.category?.includes('مصروف')) && 
-        t.category !== 'transfer'
-      )
+      .filter(t => t.type === 'out' && t.category !== 'transfer')
       .reduce((sum, t) => sum + t.amount, 0);
 
     const custodyTransactions = filteredTransactions.filter(
@@ -992,7 +1414,7 @@ export function ReportsScreen({
       if (transactions) {
         const linkedTrx = transactions.find(t => 
           t.id === row.id || 
-          (t.date && t.date.startsWith(row.dateStr.split('T')[0]) && Math.abs(t.amount - row.amount) < 0.01 && (t.category === 'staff_advance' || t.category === 'hr_advance' || t.category === 'advance' || (t.description && t.description.includes('سلفة'))))
+          (t.date && t.date.startsWith(safeSplitDate(row.dateStr)) && Math.abs(t.amount - row.amount) < 0.01 && (t.category === 'staff_advance' || t.category === 'hr_advance' || t.category === 'advance' || (t.description && t.description.includes('سلفة'))))
         );
         if (linkedTrx) {
           const updatedTrx = {
@@ -1042,7 +1464,7 @@ export function ReportsScreen({
       if (transactions) {
         const linkedTrx = transactions.find(t => 
           t.id === row.id || 
-          (t.date && t.date.startsWith(row.dateStr.split('T')[0]) && Math.abs(t.amount - row.amount) < 0.01 && (t.category === 'staff_advance' || t.category === 'hr_advance' || t.category === 'advance' || (t.description && t.description.includes('سلفة'))))
+          (t.date && t.date.startsWith(safeSplitDate(row.dateStr)) && Math.abs(t.amount - row.amount) < 0.01 && (t.category === 'staff_advance' || t.category === 'hr_advance' || t.category === 'advance' || (t.description && t.description.includes('سلفة'))))
         );
         if (linkedTrx) {
           const updatedTransactions = transactions.filter(t => t.id !== linkedTrx.id);
@@ -1058,353 +1480,141 @@ export function ReportsScreen({
     }
   };
 
-  // ---- حسابات تقرير المبالغ المتبقية والغير مسددة في الحجوزات (Unpaid Bookings Report) ----
   const unpaidBookingsReportData = useMemo(() => {
     if (!activeFrom || !activeTo) {
       return {
-        rows: [] as any[],
-        totalAmountSum: 0,
-        totalPaidSum: 0,
-        totalUnpaidSum: 0,
-        unpaidBookingsCount: 0,
-        fullyPaidBookingsCount: 0,
-        totalCount: 0
+        totalCount: 0,
+        totalRequired: 0,
+        totalPaid: 0,
+        totalRemaining: 0,
+        filteredBookings: []
       };
     }
 
-    // 1. Filter bookings by branch and date range
-    const periodBookings = (bookings || []).filter(b => {
-      if (!matchesActiveBranch((b as any).branchId)) return false;
-      const bDate = (b.date ? b.date.split('T')[0].trim() : '');
-      if (activeFrom && bDate < activeFrom) return false;
-      if (activeTo && bDate > activeTo) return false;
+    const periodBookings = branchBookings.filter(b => {
       if (b.status === 'cancelled') return false;
-      return true;
+      const d = safeSplitDate(b.date);
+      return d >= activeFrom && d <= activeTo;
     });
 
-    // 2. Map booking rows with calculated paid & unpaid amounts
-    const mappedRows = periodBookings.map(b => {
-      const total = Number(b.totalAmount) || 0;
-      const advances = getBookingAdvances(b);
-      const paid = getBookingTotalAdvances(b);
-      const unpaid = Math.max(0, total - paid);
+    const mappedBookings = periodBookings.map(b => {
+      const totalAmount = Number(
+        b.totalAmount ||
+        (b.services || []).reduce((acc: number, s: any) => acc + Number(s.price || 0), 0) ||
+        0
+      );
+      const paidAmount = Number(
+        (b as any).paid_amount ??
+        (b as any).paidAmount ??
+        (b.advancePayments && b.advancePayments.length > 0
+          ? b.advancePayments.reduce((acc: number, a: any) => acc + Number(a.amount || 0), 0)
+          : 0)
+      );
+      const remaining = Math.max(0, totalAmount - paidAmount);
 
-      const servicesText = (b.services && b.services.length > 0)
-        ? b.services.map((s: any) => s.serviceName || s.name).filter(Boolean).join(' + ')
-        : '-';
+      const servicesSummary = (b.services || []).map((s: any) => {
+        const sName = s.serviceName || s.name || 'خدمة';
+        const tName = s.technicianName && s.technicianName !== 'غير محدد' ? ` (${s.technicianName})` : '';
+        return `${sName}${tName}`;
+      }).join('، ') || 'بدون خدمات';
 
-      const staffText = (b.services && b.services.length > 0)
-        ? b.services.map((s: any) => s.technicianName).filter(Boolean).join(', ')
-        : '-';
+      let advanceDetails = '0.00';
+      if (b.advancePayments && b.advancePayments.length > 0) {
+        advanceDetails = b.advancePayments.map((a: any) => {
+          const tLabel = getTreasuryLabel(a.treasuryId, a.paymentMethod);
+          return `${Number(a.amount || 0).toFixed(2)} (${tLabel})`;
+        }).join(' + ');
+      } else if (paidAmount > 0) {
+        advanceDetails = `${Number(paidAmount).toFixed(2)} (${getTreasuryLabel((b as any).treasuryId, (b as any).paymentMethod)})`;
+      }
 
-      let statusBadge = { label: 'مؤكد', bg: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
-      if (b.status === 'pending') statusBadge = { label: 'معلق', bg: 'bg-amber-50 text-amber-700 border-amber-200' };
-      else if (b.status === 'completed') statusBadge = { label: 'مكتمل', bg: 'bg-blue-50 text-blue-700 border-blue-200' };
-      else if (b.status === 'cancelled') statusBadge = { label: 'ملغي', bg: 'bg-rose-50 text-rose-700 border-rose-200' };
+      let statusLabel = 'قيد الانتظار';
+      let statusColor = 'bg-amber-100 text-amber-800 border-amber-300';
+      if (b.status === 'confirmed') {
+        statusLabel = 'مؤكد';
+        statusColor = 'bg-blue-100 text-blue-800 border-blue-300';
+      } else if (b.status === 'completed') {
+        statusLabel = 'مكتمل';
+        statusColor = 'bg-emerald-100 text-emerald-800 border-emerald-300';
+      } else if (b.status === 'cancelled') {
+        statusLabel = 'ملغي';
+        statusColor = 'bg-rose-100 text-rose-800 border-rose-300';
+      }
+
+      const customerName = b.clientName || (b as any).customerName || 'عميل نقدي';
+      const customerPhone = b.phone || (b as any).customerPhone || '';
 
       return {
-        id: b.id,
-        bookingCode: b.bookingCode || `#${b.id.slice(-6)}`,
-        clientName: b.clientName || 'عميل نقدي',
-        phone: b.phone || '-',
-        date: (b.date ? b.date.split('T')[0].trim() : ''),
-        time: b.time || '-',
-        servicesText,
-        staffText,
-        totalAmount: total,
-        paidAmount: paid,
-        unpaidAmount: unpaid,
-        status: b.status,
-        statusBadge,
-        statusText: statusBadge.label,
-        location: b.location || '',
-        notes: b.notes || '',
-        advances,
-        rawBooking: b
+        ...b,
+        customerName,
+        customerPhone,
+        totalAmount,
+        paidAmount,
+        remaining,
+        servicesSummary,
+        advanceDetails,
+        statusLabel,
+        statusColor
       };
     });
 
-    // 3. Filter by unpaidBookingsFilter
-    let filtered = mappedRows;
+    let filtered = mappedBookings;
     if (unpaidBookingsFilter === 'unpaid_only') {
-      filtered = filtered.filter(r => r.unpaidAmount > 0.001);
+      filtered = filtered.filter(b => b.remaining > 0.001);
     } else if (unpaidBookingsFilter === 'paid_only') {
-      filtered = filtered.filter(r => r.unpaidAmount <= 0.001);
+      filtered = filtered.filter(b => b.remaining <= 0.001);
     }
 
-    // 4. Filter by search
     if (unpaidBookingsSearch.trim()) {
-      const q = unpaidBookingsSearch.toLowerCase().trim();
-      filtered = filtered.filter(r => 
-        r.clientName.toLowerCase().includes(q) ||
-        r.phone.includes(q) ||
-        r.bookingCode.toLowerCase().includes(q) ||
-        r.servicesText.toLowerCase().includes(q) ||
-        (r.location && r.location.toLowerCase().includes(q))
+      const q = unpaidBookingsSearch.trim().toLowerCase();
+      filtered = filtered.filter(b => 
+        (b.customerName && b.customerName.toLowerCase().includes(q)) ||
+        (b.customerPhone && b.customerPhone.includes(q)) ||
+        (b.bookingCode && b.bookingCode.toLowerCase().includes(q)) ||
+        (b.location && b.location.toLowerCase().includes(q))
       );
     }
 
-    // Sort by date then time descending
-    filtered.sort((a, b) => {
-      const aKey = (a.date || '') + (a.time || '');
-      const bKey = (b.date || '') + (b.time || '');
-      return bKey.localeCompare(aKey);
-    });
-
-    // 5. Totals
-    const totalAmountSum = filtered.reduce((s, r) => s + r.totalAmount, 0);
-    const totalPaidSum = filtered.reduce((s, r) => s + r.paidAmount, 0);
-    const totalUnpaidSum = filtered.reduce((s, r) => s + r.unpaidAmount, 0);
-    const unpaidBookingsCount = filtered.filter(r => r.unpaidAmount > 0.001).length;
-    const fullyPaidBookingsCount = filtered.filter(r => r.unpaidAmount <= 0.001).length;
+    const totalCount = filtered.length;
+    const totalRequired = filtered.reduce((acc, b) => acc + b.totalAmount, 0);
+    const totalPaid = filtered.reduce((acc, b) => acc + b.paidAmount, 0);
+    const totalRemaining = filtered.reduce((acc, b) => acc + b.remaining, 0);
 
     return {
-      rows: filtered,
-      totalAmountSum,
-      totalPaidSum,
-      totalUnpaidSum,
-      unpaidBookingsCount,
-      fullyPaidBookingsCount,
-      totalCount: filtered.length
+      totalCount,
+      totalRequired,
+      totalPaid,
+      totalRemaining,
+      filteredBookings: filtered
     };
-  }, [bookings, activeBranchId, isMainBranch, activeFrom, activeTo, unpaidBookingsFilter, unpaidBookingsSearch]);
-
-  const inactiveClientsReportData = useMemo(() => {
-    const minDays = Number(inactiveClientsMinDays) || Number(settings.inactiveClientsDays) || 60;
-    const nowTime = Date.now();
-    const allClientsList = clients || [];
-
-    // Map each client with their metrics
-    const mapped = allClientsList.map(client => {
-      // Find matching invoices for this client
-      const clientInvs = branchInvoices.filter(inv => {
-        if (!inv || inv.status === 'cancelled') return false;
-        if (client.id && inv.clientId === client.id) return true;
-        if (client.phone && inv.clientPhone && client.phone.replace(/\D/g, '') === inv.clientPhone.replace(/\D/g, '')) return true;
-        if (client.name && inv.clientName && client.name.trim().toLowerCase() === inv.clientName.trim().toLowerCase()) return true;
-        return false;
-      });
-
-      // Find matching bookings
-      const clientBks = (bookings || []).filter(b => {
-        if (!b || b.status === 'cancelled') return false;
-        if (client.id && b.clientId === client.id) return true;
-        if (client.phone && b.clientPhone && client.phone.replace(/\D/g, '') === b.clientPhone.replace(/\D/g, '')) return true;
-        if (client.name && b.clientName && client.name.trim().toLowerCase() === b.clientName.trim().toLowerCase()) return true;
-        return false;
-      });
-
-      // Find candidate dates
-      const candidateDates: number[] = [];
-
-      clientInvs.forEach(inv => {
-        if (inv.date) {
-          const t = new Date(inv.date).getTime();
-          if (!isNaN(t)) candidateDates.push(t);
-        }
-      });
-
-      clientBks.forEach(bk => {
-        if (bk.date) {
-          const dStr = bk.time ? `${bk.date}T${bk.time}` : bk.date;
-          const t = new Date(dStr).getTime();
-          if (!isNaN(t) && t <= nowTime) candidateDates.push(t);
-        }
-      });
-
-      if (client.lastVisit) {
-        const t = new Date(client.lastVisit).getTime();
-        if (!isNaN(t)) candidateDates.push(t);
-      }
-
-      const hasVisited = candidateDates.length > 0;
-      let lastVisitTime = hasVisited ? Math.max(...candidateDates) : 0;
-      let lastVisitDateStr = hasVisited ? new Date(lastVisitTime).toISOString().split('T')[0] : '';
-
-      let daysAbsent = 0;
-      if (hasVisited) {
-        daysAbsent = Math.max(0, Math.floor((nowTime - lastVisitTime) / (1000 * 60 * 60 * 24)));
-      } else if (client.createdAt) {
-        const regTime = new Date(client.createdAt).getTime();
-        if (!isNaN(regTime)) {
-          daysAbsent = Math.max(0, Math.floor((nowTime - regTime) / (1000 * 60 * 60 * 24)));
-        } else {
-          daysAbsent = 999;
-        }
-      } else {
-        daysAbsent = 999;
-      }
-
-      // Calculate total spending & visit count
-      const totalSpend = clientInvs.reduce((sum, inv) => {
-        const val = inv.paidAmount !== undefined ? Number(inv.paidAmount) : Number(inv.total) || 0;
-        return sum + val;
-      }, 0);
-      const visitsCount = clientInvs.length;
-      const avgTicket = visitsCount > 0 ? totalSpend / visitsCount : 0;
-      const tier = getClientTier(client, branchInvoices, settings.tierSettings);
-
-      return {
-        client,
-        hasVisited,
-        lastVisitTime,
-        lastVisitDateStr,
-        daysAbsent,
-        visitsCount,
-        totalSpend,
-        avgTicket,
-        tier
-      };
-    });
-
-    // Filter by minDays
-    let filtered = mapped.filter(r => r.daysAbsent >= minDays);
-
-    // Filter by filter mode
-    if (inactiveClientsFilterMode === 'visited_only') {
-      filtered = filtered.filter(r => r.hasVisited);
-    } else if (inactiveClientsFilterMode === 'registered_never_visited') {
-      filtered = filtered.filter(r => !r.hasVisited);
-    }
-
-    // Filter by search term
-    if (inactiveClientsSearch.trim()) {
-      const q = inactiveClientsSearch.toLowerCase().trim();
-      const qDigits = q.replace(/\D/g, '');
-      filtered = filtered.filter(r => {
-        const nameMatch = r.client.name.toLowerCase().includes(q);
-        const phoneMatch = qDigits ? (r.client.phone || '').replace(/\D/g, '').includes(qDigits) : false;
-        const notesMatch = r.client.notes ? r.client.notes.toLowerCase().includes(q) : false;
-        return nameMatch || phoneMatch || notesMatch;
-      });
-    }
-
-    // Sort
-    filtered.sort((a, b) => {
-      if (inactiveClientsSort === 'days_desc') return b.daysAbsent - a.daysAbsent;
-      if (inactiveClientsSort === 'days_asc') return a.daysAbsent - b.daysAbsent;
-      if (inactiveClientsSort === 'spent_desc') return b.totalSpend - a.totalSpend;
-      if (inactiveClientsSort === 'visits_desc') return b.visitsCount - a.visitsCount;
-      return b.daysAbsent - a.daysAbsent;
-    });
-
-    // Summary KPIs
-    const totalInactiveCount = filtered.length;
-    const totalAllClients = allClientsList.length;
-    const inactivePercentage = totalAllClients > 0 ? (totalInactiveCount / totalAllClients) * 100 : 0;
-    const sumDays = filtered.reduce((s, r) => s + (r.daysAbsent < 999 ? r.daysAbsent : minDays), 0);
-    const avgDaysAbsent = totalInactiveCount > 0 ? Math.round(sumDays / totalInactiveCount) : 0;
-    const totalPreviousRevenue = filtered.reduce((s, r) => s + r.totalSpend, 0);
-    const vipOrRoyalCount = filtered.filter(r => r.tier.id === 'vip' || r.tier.id === 'royal' || r.client.isVip).length;
-
-    return {
-      rows: filtered,
-      totalInactiveCount,
-      totalAllClients,
-      inactivePercentage,
-      avgDaysAbsent,
-      totalPreviousRevenue,
-      vipOrRoyalCount,
-      minDays
-    };
-  }, [clients, branchInvoices, bookings, inactiveClientsMinDays, settings.inactiveClientsDays, settings.tierSettings, inactiveClientsFilterMode, inactiveClientsSearch, inactiveClientsSort]);
+  }, [branchBookings, activeFrom, activeTo, unpaidBookingsFilter, unpaidBookingsSearch, settings.treasuries]);
 
   const handleExport = () => {
+    if (!canExportExcel) {
+      alert('⛔ عذراً، تصدير التقارير إلى Excel يتطلب صلاحية التصدير (export_excel).');
+      return;
+    }
     const filename = `تقرير_${activeReportType}_${activeFrom}_${activeTo}`;
     if (activeReportType === 'income') {
       const headers = ['رقم الحركة', 'التاريخ', 'النوع', 'المبلغ', 'البيان', 'الخزينة'];
-      const isBookingAdv = (t: any) => {
-        const cat = (t.category || '').toLowerCase();
-        const desc = (t.description || '').toLowerCase();
-        return cat === 'booking_advance' || cat === 'مقدم حجز' || cat === 'عربون' || cat === 'عربون حجز' || desc.includes('مقدم حجز') || desc.includes('عربون حجز') || (cat === 'advance' && !desc.includes('سلف'));
-      };
-      const filtered = branchTransactions.filter(t => {
-        const d = (t.shiftDate || (t as any).shift_date || t.date || '').split('T')[0];
-        return d >= activeFrom && d <= activeTo;
+      const filtered = transactions.filter(t => {
+        const d = safeSplitDate(t.date);
+        return d >= activeFrom && d <= activeTo && !isBookingAdvanceTransaction(t);
       });
       const rows = filtered.map(t => [
         t.id,
         t.date,
-        t.type === 'in' ? (isBookingAdv(t) ? 'إيراد / مقدم حجز' : 'إيراد / قبض') : 'مصروف / صرف',
+        t.type === 'in' ? 'إيراد / قبض' : 'مصروف / صرف',
         t.amount,
         t.description,
-        getTreasuryLabel(t.treasury || (t as any).treasuryId)
+        t.treasury
       ]);
-
-      // إضافة مقدمات وعربون الحجز المسجلة في جدول الحجوزات وغير المسجلة كمعاملة منفصلة
-      branchBookings.forEach((b, idx) => {
-        if (b.status === 'cancelled') return;
-        const advances = (b.advancePayments && Array.isArray(b.advancePayments))
-          ? b.advancePayments
-          : (typeof (b as any).advance_payments === 'string'
-            ? (() => { try { return JSON.parse((b as any).advance_payments); } catch { return []; } })()
-            : []);
-
-        if (advances.length === 0 && Number(b.advancePayment || 0) > 0) {
-          advances.push({
-            amount: Number(b.advancePayment),
-            date: b.date || (b as any).createdAt,
-            paymentMethod: (b as any).paymentMethod || 'cash'
-          });
-        }
-
-        advances.forEach((adv: any) => {
-          const advDate = (adv.date || b.date || (b as any).createdAt || '').split('T')[0].trim();
-          if (advDate >= activeFrom && advDate <= activeTo) {
-            const amt = Number(adv.amount) || 0;
-            if (amt <= 0) return;
-            const already = filtered.some(t =>
-              Math.abs((Number(t.amount) || 0) - amt) < 0.01 &&
-              (t.description?.includes(b.bookingCode || '') || t.description?.includes(b.id || '') || t.description?.includes(b.clientName || ''))
-            );
-            if (!already) {
-              rows.push([
-                `ADV-${b.bookingCode || b.id || idx}`,
-                adv.date || b.date || advDate,
-                'إيراد / مقدم حجز',
-                amt,
-                `عربون حجز - العميل: ${b.clientName || 'عميل'} (كود: ${b.bookingCode || b.id})`,
-                getTreasuryLabel(adv.treasuryId || adv.paymentMethod || 'cash')
-              ]);
-            }
-          }
-        });
-      });
-
       exportToExcel(filename, 'تقرير الدخل', headers, rows);
-    } else if (activeReportType === 'shifts') {
-      const headers = ['كود الوردية', 'التاريخ', 'فتح الوردية بواسطة', 'وقت الفتح', 'إغلاق الوردية بواسطة', 'وقت الإغلاق', 'العهدة الافتتاحية', 'إجمالي المبيعات', 'مبيعات كاش', 'مبيعات شبكة', 'إجمالي المصروفات والسلف', 'الكاش المتوقع', 'الكاش الفعلي', 'الفارق', 'المحول للخزينة الرئيسية', 'الحالة'];
-      const filtered = (workShifts || []).filter((s: any) => {
-        const sDate = (s.shiftDate || (s.openedAt || '').split('T')[0] || '');
-        const inDate = (!activeFrom || sDate >= activeFrom) && (!activeTo || sDate <= activeTo);
-        const matchesUser = !selectedShiftCashier || selectedShiftCashier === 'all' || s.openedByUserName === selectedShiftCashier || s.closedByUserName === selectedShiftCashier;
-        return inDate && matchesUser;
-      });
-      const rows = filtered.map(s => [
-        s.shiftCode || s.id,
-        s.shiftDate || '',
-        s.openedByUserName || 'الكاشير',
-        s.openedAt ? new Date(s.openedAt).toLocaleTimeString('ar-SA') : '',
-        s.closedByUserName || '',
-        s.closedAt ? new Date(s.closedAt).toLocaleTimeString('ar-SA') : '',
-        Number(s.initialCash) || 0,
-        Number(s.totalSales) || 0,
-        Number(s.totalCashSales) || 0,
-        Number(s.totalCardSales) || 0,
-        (Number(s.totalExpenses) || 0) + (Number(s.totalAdvances) || 0),
-        Number(s.expectedCash) || 0,
-        Number(s.actualCash) || 0,
-        Number(s.cashDifference) || 0,
-        Number(s.transferredAmount) || 0,
-        s.status === 'closed' ? 'مغلقة' : 'مفتوحة'
-      ]);
-      exportToExcel(filename, 'تقرير_الورديات', headers, rows);
     } else if (activeReportType === 'expenses') {
       const headers = ['رقم السند', 'التاريخ', 'المبلغ', 'التصنيف', 'البيان', 'الخزينة'];
       const filtered = transactions.filter(t => {
-        const d = (t.shiftDate || (t as any).shift_date || t.date || '').split('T')[0];
-        const isExp = t.type === 'out' || (t.type as string) === 'expense' || t.category === 'expense' || t.category === 'مصروفات' || t.category?.includes('مصروف') || Boolean((t as any).expenseCategory);
-        return d >= activeFrom && d <= activeTo && isExp && t.category !== 'transfer';
+        const d = safeSplitDate(t.date);
+        return d >= activeFrom && d <= activeTo && t.type === 'out';
       });
       const rows = filtered.map(t => [
         t.id,
@@ -1418,13 +1628,13 @@ export function ReportsScreen({
     } else if (activeReportType === 'initial_cash') {
       const headers = ['رقم السند', 'التاريخ والوقت', 'تاريخ الوردية', 'المستخدم / الكاشير', 'الخزينة', 'مبلغ العهدة', 'البيان'];
       const filtered = transactions.filter(t => {
-        const d = t.date.split('T')[0];
+        const d = safeSplitDate(t.date);
         return d >= activeFrom && d <= activeTo && (t.category === 'عهدة افتتاحية' || t.category === 'initial_cash');
       });
       const rows = filtered.map(t => [
         t.id,
         t.date,
-        t.shiftDate || t.date.split('T')[0],
+        t.shiftDate || safeSplitDate(t.date),
         t.userName || t.createdBy || 'الكاشير',
         settings.treasuries.find(tr => tr.id === t.treasury)?.name || t.treasury,
         t.amount,
@@ -1459,8 +1669,8 @@ export function ReportsScreen({
           s.baseSalary,
           s.otDaysCount,
           s.totalOtMinutes,
-          s.totalOtHours.toFixed(2),
-          s.totalOtAmount.toFixed(2)
+          Number(s.totalOtHours || 0).toFixed(2),
+          Number(s.totalOtAmount || 0).toFixed(2)
         ]);
         exportToExcel(filename, 'إجمالي_الأوفر_تايم_مجمع', headers, rows);
       } else {
@@ -1476,7 +1686,7 @@ export function ReportsScreen({
           r.overtimeMinutes,
           r.overtimeHours,
           r.rateLabel,
-          r.overtimeAmount.toFixed(2)
+          Number(r.overtimeAmount || 0).toFixed(2)
         ]);
         exportToExcel(filename, 'تفاصيل_الأوفر_تايم_يومي', headers, rows);
       }
@@ -1489,7 +1699,7 @@ export function ReportsScreen({
         r.empName,
         r.empRole,
         r.treasuryName,
-        r.amount.toFixed(2),
+        Number(r.amount || 0).toFixed(2),
         r.note
       ]);
       exportToExcel(filename, 'تقرير_سلف_الموظفين', headers, rows);
@@ -1502,7 +1712,7 @@ export function ReportsScreen({
         r.empName,
         r.empRole,
         r.treasuryName,
-        r.amount.toFixed(2),
+        Number(r.amount || 0).toFixed(2),
         r.note
       ]);
       exportToExcel(filename, 'حركة_صرف_العمولات', headers, rows);
@@ -1511,131 +1721,103 @@ export function ReportsScreen({
       const rows = netProfitReportData.breakdownList.map(b => [
         b.label,
         b.type === 'plus' ? 'إيراد (+)' : b.type === 'minus' ? 'استقطاع / تكلفة (-)' : 'صافي النتيجة (=)',
-        b.amount.toFixed(2),
-        `${b.percent.toFixed(1)}%`,
+        Number(b.amount || 0).toFixed(2),
+        `${Number(b.percent || 0).toFixed(1)}%`,
         b.note
       ]);
       exportToExcel(filename, 'تقرير_صافي_الأرباح_وقائمة_الدخل', headers, rows);
     } else if (activeReportType === 'unpaid_bookings') {
-      const headers = [
-        'رقم الحجز',
-        'اسم العميل',
-        'رقم الجوال',
-        'تاريخ الحجز',
-        'الوقت',
-        'الأعمال المطلوبة',
-        'المبلغ الإجمالي',
-        'المسدد (العربون)',
-        'غير المسدد (المتبقي)',
-        'حالة الحجز',
-        'مكان الحجز'
-      ];
-      const rows = unpaidBookingsReportData.rows.map(r => [
-        r.bookingCode,
-        r.clientName,
-        r.phone,
-        r.date,
-        r.time,
-        r.servicesText,
-        r.totalAmount.toFixed(2),
-        r.paidAmount.toFixed(2),
-        r.unpaidAmount.toFixed(2),
-        r.statusText,
-        r.location || '-'
+      const headers = ['م', 'كود الحجز', 'مكان الحجز', 'اسم العميل', 'رقم الجوال', 'تاريخ الحجز', 'وقت الحجز', 'الخدمات والفني', 'إجمالي الحجز', 'العربون المدفوع', 'المتبقي غير المسدد', 'حالة الحجز'];
+      const rows = unpaidBookingsReportData.filteredBookings.map((b: any, index: number) => [
+        index + 1,
+        b.bookingCode || b.id,
+        b.location || 'غير محدد',
+        b.customerName,
+        b.customerPhone || '',
+        safeSplitDate(b.date),
+        b.time || '',
+        b.servicesSummary,
+        Number(b.totalAmount || 0).toFixed(2),
+        Number(b.paidAmount || 0).toFixed(2),
+        Number(b.remaining || 0).toFixed(2),
+        b.statusLabel
       ]);
-      // Total summary row at bottom
-      rows.push([
-        'المجموع الإجمالي',
-        `عدد الحجوزات: ${unpaidBookingsReportData.rows.length}`,
-        '',
-        `من ${activeFrom} إلى ${activeTo}`,
-        '',
-        '',
-        unpaidBookingsReportData.totalAmountSum.toFixed(2),
-        unpaidBookingsReportData.totalPaidSum.toFixed(2),
-        unpaidBookingsReportData.totalUnpaidSum.toFixed(2),
-        '',
-        ''
-      ]);
-      exportToExcel(filename, 'المبالغ المتبقية في الحجوزات', headers, rows);
+      exportToExcel(filename, 'تقرير_الحجوزات_غير_المسددة', headers, rows);
     } else if (activeReportType === 'sales_returns') {
-      const headers = ['رقم سند المرتجع', 'رقم الفاتورة الأصلية', 'التاريخ والوقت', 'اسم العميل', 'رقم الهاتف', 'نوع المرتجع', 'الأصناف المستردة', 'الخزينة المنصرف منها', 'المبلغ المسترد', 'سبب الإرجاع', 'المسؤول'];
-      const filtered = branchSalesReturns.filter(r => {
-        const d = (r.date || '').split('T')[0];
-        return d >= activeFrom && d <= activeTo && r.status !== 'cancelled';
-      });
-      const rows = filtered.map(r => [
-        r.id,
-        r.originalInvoiceId,
-        new Date(r.date).toLocaleString('ar-SA'),
+      const headers = ['م', 'رقم المرتجع', 'رقم الفاتورة', 'اسم العميل', 'تاريخ المرتجع', 'طريقة الاسترداد', 'سبب الإرجاع', 'عدد الأصناف', 'المبلغ المسترد', 'الكاشير'];
+      const rows = salesReturnsReportData.returns.map((r: SalesReturn, idx: number) => [
+        idx + 1,
+        r.returnNumber,
+        r.invoiceId,
         r.clientName || 'عميل نقدي',
-        r.clientPhone || '-',
-        r.returnType === 'full' ? 'مرتجع كلي' : 'مرتجع جزئي',
-        r.items.map(it => `${it.name} (${it.returnQuantity}×)`).join(' ، '),
-        r.treasuryName || r.treasuryId,
-        r.totalRefund.toFixed(2),
-        r.reason || '-',
-        r.createdByName || '-'
+        safeSplitDate(r.returnDate),
+        getTreasuryLabel(r.treasuryId, r.refundMethod),
+        r.reason || 'أخرى',
+        r.items?.length || 0,
+        Number(r.totalRefundAmount || 0).toFixed(2),
+        r.createdByUserName || 'المسؤول'
       ]);
-      const totalRefundSum = filtered.reduce((s, r) => s + r.totalRefund, 0);
-      rows.push([
-        'المجموع الإجمالي',
-        `عدد السندات: ${filtered.length}`,
-        '',
-        `من ${activeFrom} إلى ${activeTo}`,
-        '',
-        '',
-        '',
-        '',
-        totalRefundSum.toFixed(2),
-        '',
-        ''
-      ]);
-      exportToExcel(filename, 'تقرير مرتجعات المبيعات', headers, rows);
-    } else if (activeReportType === 'inactive_clients') {
+      exportToExcel(filename, 'تقرير_مرتجعات_المبيعات', headers, rows);
+    } else if (activeReportType === 'target_report') {
       const headers = [
-        'اسم العميل',
-        'رقم الجوال',
-        'تاريخ آخر زيارة',
-        'أيام الانقطاع',
-        'حالة الزيارة',
-        'مستوى العميل',
-        'عدد الزيارات السابقة',
-        'إجمالي الإنفاق السابق',
-        'متوسط الفاتورة',
-        'نقاط الولاء',
-        'الكاش باك',
-        'ملاحظات'
+        'م', 
+        'كود الموظف', 
+        'اسم الموظف', 
+        'المسمى الوظيفي', 
+        'نظام التارجت', 
+        'طريقة الحساب', 
+        'قيمة التارجت المطلوب', 
+        'الراتب الأساسي', 
+        'إجمالي العمل (الخاضع للعمولة)', 
+        'المبيعات الخاضعة للتارجت', 
+        'المبلغ المحسوب عليه النسبة', 
+        'نسبة التارجت %', 
+        'عمولة التارجت المستحقة', 
+        'حالة تحقيق التارجت', 
+        'المتبقي لتحقيق التارجت', 
+        'مبيعات الخدمات المعفاة', 
+        'عمولة الخدمات المعفاة',
+        'إجمالي العمولة المستحقة'
       ];
-      const rows = inactiveClientsReportData.rows.map(r => [
-        r.client.name,
-        r.client.phone || '-',
-        r.hasVisited ? r.lastVisitDateStr : 'لم يزر بعد',
-        r.daysAbsent >= 999 ? 'غير محدد' : r.daysAbsent,
-        r.hasVisited ? 'سبق له الزيارة' : 'مسجل جديد بدون زيارات',
-        r.tier.name,
-        r.visitsCount,
-        r.totalSpend.toFixed(2),
-        r.avgTicket.toFixed(2),
-        r.client.loyaltyPoints || 0,
-        (r.client.cashback || 0).toFixed(2),
-        r.client.notes || '-'
+      const rows = targetReportData.rows.map((r: any, idx: number) => [
+        idx + 1,
+        r.empCode,
+        r.empName,
+        r.empRole,
+        r.targetType === 'daily' ? 'تارجت يومي' : r.targetType === 'monthly' ? 'تارجت شهري' : 'بدون تارجت',
+        r.targetMethodLabel,
+        Number(r.targetRequired || 0).toFixed(2),
+        Number(r.baseSalary || 0).toFixed(2),
+        Number(r.totalWorkSales || 0).toFixed(2),
+        Number(r.targetSalesPool || 0).toFixed(2),
+        Number(r.eligibleAmount || 0).toFixed(2),
+        `${r.commissionRate}%`,
+        Number(r.targetCommission || 0).toFixed(2),
+        r.isTargetAchieved ? 'محقق للتارجت 🎯' : (r.targetType === 'none' ? 'بدون تارجت' : 'لم يحقق بعد ⏳'),
+        Number(r.remainingToTarget || 0).toFixed(2),
+        Number(r.exemptSales || 0).toFixed(2),
+        Number(r.exemptCommission || 0).toFixed(2),
+        Number(r.totalEarnedCommission || 0).toFixed(2)
       ]);
-      rows.push([
-        'المجموع الإجمالي',
-        `عدد العملاء: ${inactiveClientsReportData.totalInactiveCount}`,
-        '',
-        `متوسط الغياب: ${inactiveClientsReportData.avgDaysAbsent} يوم`,
-        '',
-        '',
-        '',
-        inactiveClientsReportData.totalPreviousRevenue.toFixed(2),
-        '',
-        '',
-        '',
-        ''
+      exportToExcel(filename, 'تقرير_التارجت_والعمولات_المستهدفة', headers, rows);
+    } else if (activeReportType === 'inactive_clients') {
+      const headers = ['م', 'اسم العميل', 'المستوى', 'حالة الزيارة', 'رقم الموبايل', 'تاريخ آخر زيارة / تسجيل', 'مدة الانقطاع (يوم)', 'الزيارات السابقة', 'إجمالي الإنفاق السابق', 'متوسط الفاتورة', 'نقاط الولاء', 'رصيد الكاش باك', 'الملاحظات'];
+      const rows = inactiveClientsReportData.inactiveClients.map((c: any, idx: number) => [
+        idx + 1,
+        c.name,
+        c.tier === 'royal' ? 'ملكي 💎' : c.tier === 'vip' ? 'VIP 👑' : c.tier === 'distinguished' ? 'متميز 🔷' : 'قياسي ⭐',
+        c.isNeverVisited ? 'مسجل جديد لم يزر بعد' : 'سبق له الزيارة',
+        c.phone || '-',
+        c.lastVisitDate ? c.lastVisitDate : (c.createdAtDate ? `${c.createdAtDate} (تاريخ التسجيل)` : '-'),
+        c.daysAbsent,
+        c.totalVisits || 0,
+        Number(c.totalSpend || 0).toFixed(2),
+        Number(c.avgInvoice || 0).toFixed(2),
+        c.loyaltyPoints || 0,
+        Number(c.cashback || 0).toFixed(2),
+        c.notes || '-'
       ]);
-      exportToExcel(filename, `العملاء_المنقطعين_${inactiveClientsReportData.minDays}_يوم`, headers, rows);
+      exportToExcel(`تقرير_العملاء_المنقطعين_${inactiveClientsReportData.thresholdDays}_يوم`, `العملاء_المنقطعين_${inactiveClientsReportData.thresholdDays}_يوم`, headers, rows);
     } else {
       const headers = ['البيان', 'القيمة'];
       const rows = [
@@ -1658,7 +1840,9 @@ export function ReportsScreen({
         <div className="flex items-center gap-2">
           <button 
             onClick={handleExport}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl font-extrabold text-xs flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+            disabled={!canExportExcel}
+            className={`${canExportExcel ? 'bg-emerald-600 hover:bg-emerald-700 cursor-pointer' : 'bg-slate-300 text-slate-500 cursor-not-allowed opacity-50'} text-white px-4 py-2.5 rounded-xl font-extrabold text-xs flex items-center gap-2 shadow-sm transition-all`}
+            title={canExportExcel ? undefined : "لا تملك صلاحية تصدير التقارير إلى Excel"}
           >
             <Download size={16} />
             <span>تصدير إلى Excel</span>
@@ -1683,10 +1867,10 @@ export function ReportsScreen({
           <div>
             <label className="block text-xs font-bold text-slate-500 mb-1">نوع التقرير</label>
             <select value={reportType} onChange={(e) => setReportType(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary font-semibold text-slate-700 bg-white">
-              <option value="shifts">📋 تقرير الورديات وتسليم الكاشيرات (كود الوردية Z-Report)</option>
-              <option value="inactive_clients">👥 تقرير العملاء المنقطعين عن الزيارة (إعادة التنشيط)</option>
               <option value="net_profit">💎 تقرير الأرباح الصافية (معادلة صافي الربح وقائمة الدخل)</option>
-              <option value="sales_returns">🔄 تقرير مرتجعات المبيعات والبنود المستردة</option>
+              <option value="sales_returns">🔄 تقرير مرتجعات المبيعات (تفصيلي وتحليلي)</option>
+              <option value="target_report">🎯 تقرير التارجت والعمولات المستهدفة للموظفين</option>
+              <option value="inactive_clients">👥 تقرير العملاء المنقطعين عن الزيارة (إعادة التنشيط)</option>
               <option value="unpaid_bookings">📅 تقرير المبالغ المتبقية والغير مسددة في الحجوزات</option>
               <option value="income">تقرير الدخل التفصيلي</option>
               <option value="closing">تقرير إغلاق اليوم</option>
@@ -1715,32 +1899,57 @@ export function ReportsScreen({
           </div>
         </div>
 
-        {/* Sub-filters for Shifts Report */}
-        {reportType === 'shifts' && (
-          <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap gap-4 items-center animate-in fade-in">
-            <div className="flex-1 min-w-[220px]">
-              <label className="block text-xs font-bold text-slate-600 mb-1">فلترة حسب الكاشير أو المستخدم:</label>
+        {/* Sub-filters for Target Report */}
+        {reportType === 'target_report' && (
+          <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-3 gap-4 animate-in fade-in">
+            <div>
+              <label className="block text-xs font-bold text-slate-600 mb-1">بحث بالاسم أو الكود:</label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={targetReportSearch}
+                  onChange={(e) => setTargetReportSearch(e.target.value)}
+                  placeholder="ابحث عن موظف..."
+                  className="w-full bg-white border border-slate-200 rounded-xl pr-9 pl-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-indigo-600"
+                />
+                <Search size={14} className="absolute right-3 top-2.5 text-slate-400" />
+                {targetReportSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setTargetReportSearch('')}
+                    className="absolute left-3 top-2.5 text-slate-400 hover:text-slate-600"
+                  >
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-600 mb-1">دورة / نظام التارجت:</label>
               <select
-                value={selectedShiftCashier}
-                onChange={(e) => setSelectedShiftCashier(e.target.value)}
-                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-primary"
+                value={targetTypeFilter}
+                onChange={(e) => setTargetTypeFilter(e.target.value as any)}
+                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-indigo-600"
               >
-                <option value="all">👥 جميع الكاشيرات والمستخدمين</option>
-                {Array.from(new Set(workShifts.map(s => s.openedByUserName || s.closedByUserName || '').filter(Boolean))).map(cashierName => (
-                  <option key={cashierName} value={cashierName}>{cashierName}</option>
-                ))}
+                <option value="all">🎯 جميع الأنظمة (يومي وشهري وبدون)</option>
+                <option value="daily">📅 تارجت يومي فقط</option>
+                <option value="monthly">🗓️ تارجت شهري فقط</option>
+                <option value="none">⚪ بدون تارجت</option>
               </select>
             </div>
-            <div className="flex items-end">
-              <button
-                type="button"
-                onClick={loadWorkShifts}
-                disabled={isLoadingShifts}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+
+            <div>
+              <label className="block text-xs font-bold text-slate-600 mb-1">حالة تحقيق التارجت:</label>
+              <select
+                value={targetStatusFilter}
+                onChange={(e) => setTargetStatusFilter(e.target.value as any)}
+                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-indigo-600"
               >
-                <RefreshCw size={14} className={isLoadingShifts ? 'animate-spin' : ''} />
-                <span>تحديث قائمة الورديات</span>
-              </button>
+                <option value="all">الكل (المحققون وغير المحققين)</option>
+                <option value="achieved">🎯 محقق للتارجت فقط</option>
+                <option value="not_achieved">⏳ لم يحقق التارجت بعد</option>
+              </select>
             </div>
           </div>
         )}
@@ -1814,88 +2023,48 @@ export function ReportsScreen({
 
         {/* Sub-filters for Unpaid Bookings Report */}
         {reportType === 'unpaid_bookings' && (
-          <div className="mt-4 pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 animate-in fade-in">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs font-bold text-slate-600">تصفية الحجوزات:</span>
+          <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-4 animate-in fade-in">
+            <div>
+              <label className="block text-xs font-bold text-slate-600 mb-1">حالة السداد:</label>
               <div className="flex bg-slate-100 p-1 rounded-xl gap-1">
                 <button
                   type="button"
                   onClick={() => setUnpaidBookingsFilter('all')}
-                  className={`py-1.5 px-3 rounded-lg text-xs font-black transition-all cursor-pointer ${
-                    unpaidBookingsFilter === 'all' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                  className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                    unpaidBookingsFilter === 'all' ? 'bg-white text-primary shadow-xs' : 'text-slate-500 hover:text-slate-800'
                   }`}
                 >
-                  الكل ({unpaidBookingsReportData.totalCount})
+                  الكل
                 </button>
                 <button
                   type="button"
                   onClick={() => setUnpaidBookingsFilter('unpaid_only')}
-                  className={`py-1.5 px-3 rounded-lg text-xs font-black transition-all cursor-pointer ${
-                    unpaidBookingsFilter === 'unpaid_only' ? 'bg-white text-rose-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                  className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                    unpaidBookingsFilter === 'unpaid_only' ? 'bg-white text-rose-600 shadow-xs' : 'text-slate-500 hover:text-slate-800'
                   }`}
                 >
-                  المتبقي غير مسدد فقط ⚠️ ({unpaidBookingsReportData.unpaidBookingsCount})
+                  غير مسدد فقط
                 </button>
                 <button
                   type="button"
                   onClick={() => setUnpaidBookingsFilter('paid_only')}
-                  className={`py-1.5 px-3 rounded-lg text-xs font-black transition-all cursor-pointer ${
-                    unpaidBookingsFilter === 'paid_only' ? 'bg-white text-emerald-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                  className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                    unpaidBookingsFilter === 'paid_only' ? 'bg-white text-emerald-600 shadow-xs' : 'text-slate-500 hover:text-slate-800'
                   }`}
                 >
-                  مسددة بالكامل ✅ ({unpaidBookingsReportData.fullyPaidBookingsCount})
+                  مسدد بالكامل
                 </button>
               </div>
             </div>
 
-            <div className="w-full sm:w-72">
+            <div>
+              <label className="block text-xs font-bold text-slate-600 mb-1">بحث فوري:</label>
               <input
                 type="text"
                 value={unpaidBookingsSearch}
                 onChange={(e) => setUnpaidBookingsSearch(e.target.value)}
-                placeholder="🔍 بحث بالعميل أو الجوال أو رقم الحجز..."
+                placeholder="بحث بالاسم، رقم الجوال، كود الحجز، مكان الحجز..."
                 className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-primary"
-              />
-            </div>
-          </div>
-        )}
-
-        {/* Sub-filters for Sales Returns Report */}
-        {reportType === 'sales_returns' && (
-          <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-3 gap-4 animate-in fade-in">
-            <div>
-              <label className="block text-xs font-bold text-slate-600 mb-1">تصنيف البنود المستردة:</label>
-              <select
-                value={returnsFilterType}
-                onChange={(e) => setReturnsFilterType(e.target.value as any)}
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary text-xs font-semibold text-slate-700 bg-white"
-              >
-                <option value="all">جميع الأصناف (خدمات ومنتجات)</option>
-                <option value="products">منتجات ومبيعات مستودع فقط</option>
-                <option value="services">خدمات صالون فقط</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-600 mb-1">الخزينة المنصرف منها:</label>
-              <select
-                value={returnsTreasuryFilter}
-                onChange={(e) => setReturnsTreasuryFilter(e.target.value)}
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary text-xs font-semibold text-slate-700 bg-white"
-              >
-                <option value="all">جميع الخزائن</option>
-                {settings.treasuries.map(t => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-600 mb-1">بحث في المرتجعات:</label>
-              <input
-                type="text"
-                placeholder="رقم السند، الفاتورة، العميل، الهاتف، السبب..."
-                value={returnsSearch}
-                onChange={(e) => setReturnsSearch(e.target.value)}
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary text-xs"
               />
             </div>
           </div>
@@ -1903,117 +2072,122 @@ export function ReportsScreen({
 
         {/* Sub-filters for Inactive Clients Report */}
         {reportType === 'inactive_clients' && (
-          <div className="mt-4 pt-4 border-t border-slate-100 flex flex-col gap-4 animate-in fade-in">
-            <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
-              {/* Presets and Min Days Input */}
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs font-black text-slate-700 flex items-center gap-1.5 bg-rose-50 text-rose-800 px-2.5 py-1 rounded-lg border border-rose-200">
-                  <UserX size={15} className="text-rose-600" />
-                  <span>معيار الانقطاع (أيام الغياب):</span>
-                </span>
-                
-                <div className="flex items-center gap-1.5">
-                  <input
-                    type="number"
-                    min="1"
-                    max="1000"
-                    value={inactiveClientsMinDays}
-                    onChange={(e) => setInactiveClientsMinDays(Math.max(1, parseInt(e.target.value) || 1))}
-                    className="w-20 bg-white border border-rose-300 rounded-xl px-2.5 py-1.5 text-xs font-mono font-black text-rose-600 outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-100 text-center shadow-2xs"
-                  />
-                  <span className="text-xs text-slate-500 font-bold">يوم فأكثر</span>
+          <div className="mt-4 pt-4 border-t border-slate-100 space-y-4 animate-in fade-in">
+            {/* Days threshold, Chips & Reset */}
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-rose-50/80 p-3.5 rounded-2xl border border-rose-200/80">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-black text-rose-950 whitespace-nowrap flex items-center gap-1.5">
+                    <Clock size={16} className="text-rose-600" />
+                    <span>معيار أيام الانقطاع:</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min="1"
+                      max="1000"
+                      value={inactiveDaysFilter}
+                      onChange={(e) => setInactiveDaysFilter(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                      className="w-24 bg-white border border-rose-300 rounded-xl px-2.5 py-1.5 text-xs font-mono font-black text-rose-950 text-center outline-none focus:border-rose-600 shadow-2xs"
+                    />
+                    <span className="absolute left-2 top-1.5 text-[10px] text-slate-400 font-bold pointer-events-none">يوم</span>
+                  </div>
                 </div>
 
-                {/* Preset Chips */}
-                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
-                  {[30, 45, 60, 90, 120].map(d => (
+                {/* Quick Chips */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {[30, 45, 60, 90, 120].map((d) => (
                     <button
                       key={d}
                       type="button"
-                      onClick={() => setInactiveClientsMinDays(d)}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
-                        inactiveClientsMinDays === d 
-                          ? 'bg-rose-500 text-white shadow-xs' 
-                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
+                      onClick={() => setInactiveDaysFilter(d)}
+                      className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        inactiveDaysFilter === d
+                          ? 'bg-rose-600 text-white shadow-2xs font-black'
+                          : 'bg-white hover:bg-rose-100/70 text-rose-800 border border-rose-200'
                       }`}
                     >
                       {d} يوم
                     </button>
                   ))}
                 </div>
-
-                {/* Reset to Settings Default */}
-                {inactiveClientsMinDays !== (Number(settings.inactiveClientsDays) || 60) && (
-                  <button
-                    type="button"
-                    onClick={() => setInactiveClientsMinDays(Number(settings.inactiveClientsDays) || 60)}
-                    className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 underline flex items-center gap-1 mr-1 cursor-pointer"
-                    title="استعادة المدة المسجلة في الإعدادات العامة"
-                  >
-                    <RefreshCw size={12} />
-                    <span>الافتراضي من الإعدادات ({settings.inactiveClientsDays || 60} يوم)</span>
-                  </button>
-                )}
               </div>
 
-              {/* Search Box */}
-              <div className="w-full md:w-80">
-                <input
-                  type="text"
-                  value={inactiveClientsSearch}
-                  onChange={(e) => setInactiveClientsSearch(e.target.value)}
-                  placeholder="🔍 بحث باسم العميل أو الجوال أو ملاحظات..."
-                  className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-rose-500 shadow-2xs"
-                />
-              </div>
+              {/* Reset to Settings Default */}
+              <button
+                type="button"
+                onClick={() => setInactiveDaysFilter(defaultInactiveDays)}
+                className="text-xs font-bold text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                title="استعادة القيمة المسجلة في الإعدادات العامة"
+              >
+                <RotateCcw size={13} className="text-rose-600" />
+                <span>الافتراضي من الإعدادات ({defaultInactiveDays} يوم)</span>
+              </button>
             </div>
 
-            {/* Filter Modes & Sorting */}
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100 text-xs">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-slate-500 font-bold">نوع العملاء:</span>
+            {/* Visit Status Filter + Search + Sort */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {/* Visit Status Filter */}
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">تصفية حالة العميل:</label>
                 <div className="flex bg-slate-100 p-1 rounded-xl gap-1">
                   <button
                     type="button"
-                    onClick={() => setInactiveClientsFilterMode('all')}
-                    className={`px-3 py-1 rounded-lg font-black transition-all cursor-pointer ${
-                      inactiveClientsFilterMode === 'all' ? 'bg-white text-rose-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                    onClick={() => setInactiveStatusFilter('all')}
+                    className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                      inactiveStatusFilter === 'all' ? 'bg-white text-rose-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    الكل ({inactiveClientsReportData.rows.length})
+                    الكل
                   </button>
                   <button
                     type="button"
-                    onClick={() => setInactiveClientsFilterMode('visited_only')}
-                    className={`px-3 py-1 rounded-lg font-black transition-all cursor-pointer ${
-                      inactiveClientsFilterMode === 'visited_only' ? 'bg-white text-amber-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                    onClick={() => setInactiveStatusFilter('visited')}
+                    className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                      inactiveStatusFilter === 'visited' ? 'bg-white text-rose-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
                     سبق لهم الزيارة وانقطعوا
                   </button>
                   <button
                     type="button"
-                    onClick={() => setInactiveClientsFilterMode('registered_never_visited')}
-                    className={`px-3 py-1 rounded-lg font-black transition-all cursor-pointer ${
-                      inactiveClientsFilterMode === 'registered_never_visited' ? 'bg-white text-purple-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                    onClick={() => setInactiveStatusFilter('never_visited')}
+                    className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                      inactiveStatusFilter === 'never_visited' ? 'bg-white text-rose-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    مسجلين ولم يزوروا بعد
+                    مسجلين جدد ولم يزوروا بعد
                   </button>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                <span className="text-slate-500 font-bold">الترتيب حسب:</span>
+              {/* Text Search */}
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">بحث في قائمة العملاء:</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={inactiveClientsSearch}
+                    onChange={(e) => setInactiveClientsSearch(e.target.value)}
+                    placeholder="ابحث بالاسم، أو رقم الجوال، أو الملاحظات..."
+                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-rose-500 shadow-2xs pr-8"
+                  />
+                  <Search size={14} className="absolute right-2.5 top-2.5 text-slate-400" />
+                </div>
+              </div>
+
+              {/* Sort Dropdown */}
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">ترتيب العملاء:</label>
                 <select
-                  value={inactiveClientsSort}
-                  onChange={(e) => setInactiveClientsSort(e.target.value as any)}
-                  className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 font-bold text-slate-700 outline-none focus:border-rose-500 text-xs shadow-2xs"
+                  value={inactiveSortBy}
+                  onChange={(e: any) => setInactiveSortBy(e.target.value)}
+                  className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-rose-500 shadow-2xs"
                 >
-                  <option value="days_desc">⏳ الأطول غياباً وانقطاعاً أولاً</option>
-                  <option value="days_asc">⏱️ الأحدث انقطاعاً أولاً</option>
-                  <option value="spent_desc">💰 الأعلى إنفاقاً سابقاً (كبار العملاء أولاً)</option>
-                  <option value="visits_desc">🔁 الأكثر زيارات سابقة أولاً</option>
+                  <option value="days_desc">الأطول غياباً وانقطاعاً أولاً (تنازلي)</option>
+                  <option value="days_asc">الأحدث انقطاعاً أولاً (تصاعدي)</option>
+                  <option value="spend_desc">الأعلى إنفاقاً تاريخياً أولاً (كبار العملاء)</option>
+                  <option value="visits_desc">الأكثر زيارات سابقة أولاً</option>
                 </select>
               </div>
             </div>
@@ -2042,11 +2216,11 @@ export function ReportsScreen({
               <div className="bg-white/10 backdrop-blur-md px-6 py-4 rounded-2xl border border-white/20 text-center shrink-0">
                 <p className="text-xs text-slate-300 font-bold mb-0.5">صافي الربح الفعلي</p>
                 <div className={`text-2xl sm:text-3xl font-black font-mono ${netProfitReportData.netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                  {netProfitReportData.netProfit >= 0 ? '+' : ''}{netProfitReportData.netProfit.toFixed(2)}
+                  {netProfitReportData.netProfit >= 0 ? '+' : ''}{Number(netProfitReportData.netProfit || 0).toFixed(2)}
                   <span className="text-xs font-normal text-slate-300 mr-1.5">{settings.currency}</span>
                 </div>
                 <div className="text-[11px] font-bold text-slate-300 mt-1">
-                  هامش الربح: <span className={netProfitReportData.netProfit >= 0 ? 'text-emerald-300 font-mono' : 'text-rose-300 font-mono'}>{netProfitReportData.profitMargin.toFixed(1)}%</span>
+                  هامش الربح: <span className={netProfitReportData.netProfit >= 0 ? 'text-emerald-300 font-mono' : 'text-rose-300 font-mono'}>{Number(netProfitReportData.profitMargin || 0).toFixed(1)}%</span>
                 </div>
               </div>
             </div>
@@ -2060,9 +2234,16 @@ export function ReportsScreen({
               <div>
                 <p className="text-slate-500 text-xs font-bold mb-1">1. إجمالي الدخل من الفواتير (+)</p>
                 <h4 className="text-xl font-black text-emerald-600 font-mono">
-                  {netProfitReportData.grossIncome.toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
+                  {Number(netProfitReportData.grossIncome || 0).toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
                 </h4>
-                <p className="text-[10px] text-slate-400 font-bold mt-1">{netProfitReportData.periodInvoicesCount} فاتورة مسددة</p>
+                <div className="text-[10px] text-slate-400 font-bold mt-1 space-y-0.5">
+                  <p>{netProfitReportData.periodInvoicesCount} فاتورة مسددة</p>
+                  {netProfitReportData.totalCashbackUsed > 0 && (
+                    <p className="text-purple-600 font-mono">
+                      (خزائن: {Number(netProfitReportData.netTreasurySales || 0).toFixed(0)} + كاش باك: {Number(netProfitReportData.totalCashbackUsed || 0).toFixed(0)})
+                    </p>
+                  )}
+                </div>
               </div>
               <div className="w-11 h-11 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600">
                 <TrendingUp size={22} />
@@ -2074,7 +2255,7 @@ export function ReportsScreen({
               <div>
                 <p className="text-slate-500 text-xs font-bold mb-1">2. جميع المصروفات (-)</p>
                 <h4 className="text-xl font-black text-rose-600 font-mono">
-                  {netProfitReportData.totalExpenses.toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
+                  {Number(netProfitReportData.totalExpenses || 0).toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
                 </h4>
                 <p className="text-[10px] text-slate-400 font-bold mt-1">تشغيلية ونثرية وإيجار</p>
               </div>
@@ -2088,7 +2269,7 @@ export function ReportsScreen({
               <div>
                 <p className="text-slate-500 text-xs font-bold mb-1">3. الرواتب المصروفة (-)</p>
                 <h4 className="text-xl font-black text-blue-600 font-mono">
-                  {netProfitReportData.totalSalaries.toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
+                  {Number(netProfitReportData.totalSalaries || 0).toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
                 </h4>
                 <p className="text-[10px] text-slate-400 font-bold mt-1">مسيرات الرواتب الأساسية</p>
               </div>
@@ -2102,7 +2283,7 @@ export function ReportsScreen({
               <div>
                 <p className="text-slate-500 text-xs font-bold mb-1">4. سلف الموظفين (-)</p>
                 <h4 className="text-xl font-black text-amber-600 font-mono">
-                  {netProfitReportData.totalAdvances.toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
+                  {Number(netProfitReportData.totalAdvances || 0).toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
                 </h4>
                 <p className="text-[10px] text-slate-400 font-bold mt-1">السلف المنصرفة للفترة</p>
               </div>
@@ -2116,17 +2297,17 @@ export function ReportsScreen({
               <div className="flex-1">
                 <p className="text-slate-500 text-xs font-bold mb-1">5. المسدد في فواتير المشتريات (-)</p>
                 <h4 className="text-xl font-black text-purple-600 font-mono">
-                  {netProfitReportData.totalPurchasesPaid.toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
+                  {Number(netProfitReportData.totalPurchasesPaid || 0).toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
                 </h4>
                 <div className="flex flex-wrap items-center gap-1 mt-1.5">
                   {Object.keys(netProfitReportData.purchasesByMethod).length > 0 ? (
                     Object.entries(netProfitReportData.purchasesByMethod).map(([m, amt]) => (
                       <span key={m} className="bg-purple-50 text-purple-700 text-[10px] font-bold px-1.5 py-0.5 rounded border border-purple-200">
-                        {getTreasuryLabel(m)}: {Number(amt).toFixed(0)}
+                        {getTreasuryLabel(m)}: {Number(amt || 0).toFixed(0)}
                       </span>
                     ))
                   ) : (
-                    <span className="text-[10px] text-slate-400 font-bold">إجمالي الفواتير: {netProfitReportData.totalPurchasesAmount.toFixed(0)}</span>
+                    <span className="text-[10px] text-slate-400 font-bold">إجمالي الفواتير: {Number(netProfitReportData.totalPurchasesAmount || 0).toFixed(0)}</span>
                   )}
                 </div>
               </div>
@@ -2140,13 +2321,13 @@ export function ReportsScreen({
               <div className="flex-1">
                 <p className="text-slate-500 text-xs font-bold mb-1">6. سندات دفعات وسداد الموردين (-)</p>
                 <h4 className="text-xl font-black text-indigo-600 font-mono">
-                  {netProfitReportData.totalSupplierPayments.toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
+                  {Number(netProfitReportData.totalSupplierPayments || 0).toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
                 </h4>
                 <div className="flex flex-wrap items-center gap-1 mt-1.5">
                   {Object.keys(netProfitReportData.supplierPaymentsByMethod).length > 0 ? (
                     Object.entries(netProfitReportData.supplierPaymentsByMethod).map(([m, amt]) => (
                       <span key={m} className="bg-indigo-50 text-indigo-700 text-[10px] font-bold px-1.5 py-0.5 rounded border border-indigo-200">
-                        {getTreasuryLabel(m)}: {Number(amt).toFixed(0)}
+                        {getTreasuryLabel(m)}: {Number(amt || 0).toFixed(0)}
                       </span>
                     ))
                   ) : (
@@ -2164,7 +2345,7 @@ export function ReportsScreen({
               <div>
                 <p className="text-slate-500 text-xs font-bold mb-1">7. عمولات الموظفين (-)</p>
                 <h4 className="text-xl font-black text-teal-600 font-mono">
-                  {netProfitReportData.totalCommissions.toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
+                  {Number(netProfitReportData.totalCommissions || 0).toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
                 </h4>
                 <p className="text-[10px] text-slate-400 font-bold mt-1">عمولات الخدمات والمنتجات</p>
               </div>
@@ -2173,12 +2354,26 @@ export function ReportsScreen({
               </div>
             </div>
 
+            {/* 7.5 Cashback Used Card */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm border-r-4 border-r-fuchsia-500 flex justify-between items-center">
+              <div>
+                <p className="text-slate-500 text-xs font-bold mb-1">المسدد كاش باك 🎁</p>
+                <h4 className="text-xl font-black text-fuchsia-600 font-mono">
+                  {Number(netProfitReportData.totalCashbackUsed || 0).toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
+                </h4>
+                <p className="text-[10px] text-slate-400 font-bold mt-1">تسوية من رصيد العملاء • فارق الخزائن</p>
+              </div>
+              <div className="w-11 h-11 rounded-xl bg-fuchsia-50 flex items-center justify-center text-fuchsia-600">
+                <Coins size={22} />
+              </div>
+            </div>
+
             {/* 8. Total Deductions (-) */}
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm border-r-4 border-r-slate-700 flex justify-between items-center">
               <div>
                 <p className="text-slate-500 text-xs font-bold mb-1">إجمالي التكاليف والاستقطاعات</p>
                 <h4 className="text-xl font-black text-slate-800 font-mono">
-                  {netProfitReportData.totalDeductions.toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
+                  {Number(netProfitReportData.totalDeductions || 0).toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
                 </h4>
                 <p className="text-[10px] text-slate-400 font-bold mt-1">مجموع البنود (المصروفات + الرواتب + السلف + المشتريات + الموردين + العمولات)</p>
               </div>
@@ -2192,7 +2387,7 @@ export function ReportsScreen({
               <div>
                 <p className={`text-xs font-bold mb-1 ${netProfitReportData.netProfit >= 0 ? 'text-emerald-800' : 'text-rose-800'}`}>صافي الربح المحقق (=)</p>
                 <h4 className={`text-xl font-black font-mono ${netProfitReportData.netProfit >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
-                  {netProfitReportData.netProfit.toFixed(2)} <span className="text-xs font-normal text-slate-500">{settings.currency}</span>
+                  {Number(netProfitReportData.netProfit || 0).toFixed(2)} <span className="text-xs font-normal text-slate-500">{settings.currency}</span>
                 </h4>
                 <p className={`text-[10px] font-bold mt-1 ${netProfitReportData.netProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
                   {netProfitReportData.netProfit >= 0 ? '✅ ربح تشغيلي إيجابي' : '⚠️ عجز / خسارة تشغيلية'}
@@ -2208,63 +2403,240 @@ export function ReportsScreen({
         </div>
       ) : isGenerated && activeReportType === 'unpaid_bookings' ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm border-r-4 border-r-rose-500 flex justify-between items-center">
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm border-r-4 border-r-blue-500 flex justify-between items-center">
             <div>
-              <p className="text-slate-500 text-xs font-bold mb-1">المتبقي غير المسدد (الذمم المطلوبة)</p>
-              <h4 className="text-2xl font-black text-rose-600 font-mono">
-                {unpaidBookingsReportData.totalUnpaidSum.toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
+              <p className="text-slate-500 text-xs font-bold mb-1">إجمالي الحجوزات</p>
+              <h4 className="text-2xl font-black text-slate-800 font-mono">
+                {unpaidBookingsReportData.totalCount} <span className="text-xs font-normal text-slate-400">حجز</span>
               </h4>
-              <p className="text-[11px] font-semibold text-rose-700 mt-0.5">
-                مطلوب تحصيله عند إتمام الحجز
-              </p>
             </div>
-            <div className="w-11 h-11 rounded-xl bg-rose-50 flex items-center justify-center text-rose-600">
-              <AlertTriangle size={22} />
-            </div>
-          </div>
-
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm border-r-4 border-r-emerald-500 flex justify-between items-center">
-            <div>
-              <p className="text-slate-500 text-xs font-bold mb-1">إجمالي المسدد (العربونات)</p>
-              <h4 className="text-2xl font-black text-emerald-600 font-mono">
-                {unpaidBookingsReportData.totalPaidSum.toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
-              </h4>
-              <p className="text-[11px] font-semibold text-emerald-700 mt-0.5">
-                تم توريدها للخزائن كدفعات مقدمة
-              </p>
-            </div>
-            <div className="w-11 h-11 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600">
-              <DollarSign size={22} />
+            <div className="w-11 h-11 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600">
+              <Calendar size={22} />
             </div>
           </div>
 
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm border-r-4 border-r-indigo-500 flex justify-between items-center">
             <div>
-              <p className="text-slate-500 text-xs font-bold mb-1">إجمالي قيمة الحجوزات</p>
+              <p className="text-slate-500 text-xs font-bold mb-1">إجمالي المبالغ المطلوبة</p>
               <h4 className="text-2xl font-black text-indigo-700 font-mono">
-                {unpaidBookingsReportData.totalAmountSum.toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
+                {Number(unpaidBookingsReportData.totalRequired || 0).toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
               </h4>
-              <p className="text-[11px] font-semibold text-slate-500 mt-0.5">
-                إجمالي قيمة الأعمال والخدمات
-              </p>
             </div>
             <div className="w-11 h-11 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
-              <Calendar size={22} />
+              <DollarSign size={22} />
             </div>
           </div>
 
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm border-r-4 border-r-amber-500 flex justify-between items-center">
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm border-r-4 border-r-emerald-500 flex justify-between items-center">
             <div>
-              <p className="text-slate-500 text-xs font-bold mb-1">حجوزات بها متبقي</p>
-              <h4 className="text-2xl font-black text-amber-700 font-mono">
-                {unpaidBookingsReportData.unpaidBookingsCount} <span className="text-xs font-normal text-slate-400">حجز من {unpaidBookingsReportData.totalCount}</span>
+              <p className="text-slate-500 text-xs font-bold mb-1">إجمالي العربون المحصل</p>
+              <h4 className="text-2xl font-black text-emerald-600 font-mono">
+                {Number(unpaidBookingsReportData.totalPaid || 0).toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
               </h4>
-              <p className="text-[11px] font-semibold text-amber-700 mt-0.5">
-                {unpaidBookingsReportData.fullyPaidBookingsCount} حجز مسدد بالكامل
-              </p>
             </div>
-            <div className="w-11 h-11 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600">
-              <Clock size={22} />
+            <div className="w-11 h-11 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600">
+              <CheckCircle2 size={22} />
+            </div>
+          </div>
+
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm border-r-4 border-r-rose-500 flex justify-between items-center">
+            <div>
+              <p className="text-slate-500 text-xs font-bold mb-1">المتبقي غير المسدد</p>
+              <h4 className="text-2xl font-black text-rose-600 font-mono">
+                {Number(unpaidBookingsReportData.totalRemaining || 0).toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
+              </h4>
+            </div>
+            <div className="w-11 h-11 rounded-xl bg-rose-50 flex items-center justify-center text-rose-600">
+              <AlertTriangle size={22} />
+            </div>
+          </div>
+        </div>
+      ) : isGenerated && activeReportType === 'inactive_clients' ? (
+        <div className="space-y-6 mb-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          {/* Gradient Banner */}
+          <div className="bg-gradient-to-r from-slate-900 via-rose-950 to-slate-900 rounded-3xl p-6 text-white shadow-xl border border-rose-900/40 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-72 h-72 bg-rose-500/10 rounded-full blur-3xl pointer-events-none"></div>
+            <div className="absolute bottom-0 left-0 w-48 h-48 bg-amber-500/10 rounded-full blur-2xl pointer-events-none"></div>
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative z-10">
+              <div>
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs font-black mb-2">
+                  <UserX size={14} className="text-rose-400" />
+                  <span>نظام استعادة وتنشيط العملاء (Client Retention)</span>
+                </div>
+                <h3 className="text-xl sm:text-2xl font-black text-white">
+                  تقرير العملاء المنقطعين عن الزيارة (Inactive Clients Retention)
+                </h3>
+                <p className="text-xs text-slate-300 mt-1 max-w-2xl font-medium leading-relaxed">
+                  حصر العملاء الذين انقطعوا عن زيارة الصالون لمدة ({inactiveClientsReportData.thresholdDays} يوم) فأكثر لمتابعتهم وإرسال عروض ترويجية لإعادة تنشيطهم.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3 shrink-0">
+                <div className="bg-white/10 backdrop-blur-md px-5 py-3 rounded-2xl border border-white/20 text-center">
+                  <div className="text-[11px] text-slate-300 font-bold mb-0.5">معيار الانقطاع</div>
+                  <div className="text-xl font-mono font-black text-white">
+                    {inactiveClientsReportData.thresholdDays} <span className="text-xs font-normal text-slate-300">يوم</span>
+                  </div>
+                </div>
+                <div className="bg-rose-500/20 backdrop-blur-md px-5 py-3 rounded-2xl border border-rose-400/30 text-center">
+                  <div className="text-[11px] text-rose-200 font-bold mb-0.5">المنقطعون / الإجمالي</div>
+                  <div className="text-xl font-mono font-black text-rose-300">
+                    {inactiveClientsReportData.inactiveCount} <span className="text-xs font-normal text-rose-200">({inactiveClientsReportData.inactiveRate}%)</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 4 KPI Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+            {/* 1. إجمالي العملاء المنقطعين (حد أحمر) */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm border-r-4 border-r-rose-500 flex justify-between items-center">
+              <div>
+                <p className="text-slate-500 text-xs font-bold mb-1">إجمالي العملاء المنقطعين</p>
+                <h4 className="text-2xl font-black text-rose-700 font-mono">
+                  {inactiveClientsReportData.inactiveCount} <span className="text-xs font-normal text-slate-400">عميل</span>
+                </h4>
+                <p className="text-[10px] text-rose-600 font-bold mt-1">
+                  نسبة الغياب: {inactiveClientsReportData.inactiveRate}% من {inactiveClientsReportData.totalClientsCount} عميل
+                </p>
+              </div>
+              <div className="w-12 h-12 rounded-2xl bg-rose-50 flex items-center justify-center text-rose-600 shadow-xs">
+                <UserX size={22} />
+              </div>
+            </div>
+
+            {/* 2. متوسط فترة الغياب والانقطاع (حد كهرماني) */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm border-r-4 border-r-amber-500 flex justify-between items-center">
+              <div>
+                <p className="text-slate-500 text-xs font-bold mb-1">متوسط فترة الغياب والانقطاع</p>
+                <h4 className="text-2xl font-black text-amber-700 font-mono">
+                  {inactiveClientsReportData.avgDaysAbsent} <span className="text-xs font-normal text-slate-400">يوم</span>
+                </h4>
+                <p className="text-[10px] text-amber-600 font-bold mt-1">
+                  الحد الأدنى المعتمد: {inactiveClientsReportData.thresholdDays} يوم
+                </p>
+              </div>
+              <div className="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center text-amber-600 shadow-xs">
+                <Clock size={22} />
+              </div>
+            </div>
+
+            {/* 3. إجمالي إنفاقهم التاريخي (حد أخضر) */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm border-r-4 border-r-emerald-500 flex justify-between items-center">
+              <div>
+                <p className="text-slate-500 text-xs font-bold mb-1">إجمالي إنفاقهم التاريخي</p>
+                <h4 className="text-2xl font-black text-emerald-700 font-mono">
+                  {Number(inactiveClientsReportData.totalPreviousSpend || 0).toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
+                </h4>
+                <p className="text-[10px] text-emerald-600 font-bold mt-1">المبيعات السابقة المعرضة للفقدان</p>
+              </div>
+              <div className="w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center text-emerald-600 shadow-xs">
+                <DollarSign size={22} />
+              </div>
+            </div>
+
+            {/* 4. عملاء VIP ومميزين منقطعين (حد بنفسجي) */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm border-r-4 border-r-purple-500 flex justify-between items-center">
+              <div>
+                <p className="text-slate-500 text-xs font-bold mb-1">عملاء VIP ومميزين منقطعين</p>
+                <h4 className="text-2xl font-black text-purple-700 font-mono">
+                  {inactiveClientsReportData.vipInactiveCount || 0} <span className="text-xs font-normal text-slate-400">عميل</span>
+                </h4>
+                <p className="text-[10px] text-purple-600 font-bold mt-1">أولوية قصوى للتواصل وإعادة التنشيط</p>
+              </div>
+              <div className="w-12 h-12 rounded-2xl bg-purple-50 flex items-center justify-center text-purple-600 shadow-xs">
+                <Award size={22} />
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : isGenerated && activeReportType === 'target_report' ? (
+        <div className="space-y-4 mb-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="bg-gradient-to-r from-indigo-900 via-indigo-800 to-slate-900 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden">
+            <div className="absolute -left-10 -bottom-10 w-48 h-48 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none" />
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative z-10">
+              <div>
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/30 text-indigo-200 text-xs font-black mb-2 border border-indigo-400/30">
+                  <Target size={14} /> لوحة مؤشرات التارجت والعمولات المستهدفة
+                </span>
+                <h3 className="text-2xl font-black text-white">متابعة الأداء البيعي والتحفيزي لفريق العمل</h3>
+                <p className="text-indigo-200 text-xs mt-1">
+                  الفترة: {activeFrom} إلى {activeTo} • {settings.salonName}
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="bg-white/10 backdrop-blur-md px-5 py-3 rounded-2xl border border-white/10 text-center">
+                  <div className="text-[11px] text-indigo-200 font-bold mb-0.5">المحققون للتارجت</div>
+                  <div className="text-xl font-mono font-black text-emerald-300">
+                    {targetReportData.achievedCount} / {targetReportData.totalTargetEmployees}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+            {/* 1. إجمالي مبيعات التارجت الخاضعة */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm border-r-4 border-r-indigo-500 flex justify-between items-center">
+              <div>
+                <p className="text-slate-500 text-xs font-bold mb-1">المبيعات الخاضعة للتارجت</p>
+                <h4 className="text-2xl font-black text-indigo-700 font-mono">
+                  {Number(targetReportData.totalTargetSales || 0).toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
+                </h4>
+                <p className="text-[10px] text-slate-400 font-bold mt-1">الوعاء البيعي المؤهل للتارجت</p>
+              </div>
+              <div className="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-600 shadow-xs">
+                <DollarSign size={22} />
+              </div>
+            </div>
+
+            {/* 2. إجمالي عمولات التارجت المستحقة */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm border-r-4 border-r-emerald-500 flex justify-between items-center">
+              <div>
+                <p className="text-slate-500 text-xs font-bold mb-1">عمولات التارجت المستحقة</p>
+                <h4 className="text-2xl font-black text-emerald-700 font-mono">
+                  {Number(targetReportData.totalTargetCommissions || 0).toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
+                </h4>
+                <p className="text-[10px] text-emerald-600 font-bold mt-1">المكافآت المحققة لليومي والشهري</p>
+              </div>
+              <div className="w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center text-emerald-600 shadow-xs">
+                <Award size={22} />
+              </div>
+            </div>
+
+            {/* 3. مبيعات وعمولات الخدمات المعفاة */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm border-r-4 border-r-amber-500 flex justify-between items-center">
+              <div>
+                <p className="text-slate-500 text-xs font-bold mb-1">عمولات الخدمات المعفاة (فورية)</p>
+                <h4 className="text-2xl font-black text-amber-700 font-mono">
+                  {Number(targetReportData.totalExemptCommissions || 0).toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
+                </h4>
+                <p className="text-[10px] text-amber-600 font-bold mt-1">
+                  مبيعات معفاة: {Number(targetReportData.totalExemptSales || 0).toFixed(0)} {settings.currency}
+                </p>
+              </div>
+              <div className="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center text-amber-600 shadow-xs">
+                <Sparkles size={22} />
+              </div>
+            </div>
+
+            {/* 4. نسبة تحقيق التارجت */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm border-r-4 border-r-cyan-500 flex justify-between items-center">
+              <div>
+                <p className="text-slate-500 text-xs font-bold mb-1">نسبة نجاح التارجت</p>
+                <h4 className="text-2xl font-black text-cyan-700 font-mono">
+                  {targetReportData.totalTargetEmployees > 0 
+                    ? Math.round((targetReportData.achievedCount / targetReportData.totalTargetEmployees) * 100) 
+                    : 0}%
+                </h4>
+                <p className="text-[10px] text-cyan-600 font-bold mt-1">
+                  {targetReportData.achievedCount} من {targetReportData.totalTargetEmployees} موظف حققوا الهدف
+                </p>
+              </div>
+              <div className="w-12 h-12 rounded-2xl bg-cyan-50 flex items-center justify-center text-cyan-600 shadow-xs">
+                <CheckCircle2 size={22} />
+              </div>
             </div>
           </div>
         </div>
@@ -2274,7 +2646,7 @@ export function ReportsScreen({
             <div>
               <p className="text-slate-500 text-xs font-bold mb-1">إجمالي مبالغ السلف</p>
               <h4 className="text-2xl font-black text-rose-600 font-mono">
-                {advancesReportData.totalAmount.toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
+                {Number(advancesReportData.totalAmount || 0).toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
               </h4>
             </div>
             <div className="w-11 h-11 rounded-xl bg-rose-50 flex items-center justify-center text-rose-600">
@@ -2310,7 +2682,7 @@ export function ReportsScreen({
             <div>
               <p className="text-slate-500 text-xs font-bold mb-1">متوسط السلفة</p>
               <h4 className="text-2xl font-black text-purple-600 font-mono">
-                {advancesReportData.count > 0 ? (advancesReportData.totalAmount / advancesReportData.count).toFixed(2) : '0.00'} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
+                {advancesReportData.count > 0 ? (Number(advancesReportData.totalAmount || 0) / advancesReportData.count).toFixed(2) : '0.00'} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
               </h4>
             </div>
             <div className="w-11 h-11 rounded-xl bg-purple-50 flex items-center justify-center text-purple-600">
@@ -2324,7 +2696,7 @@ export function ReportsScreen({
             <div>
               <p className="text-slate-500 text-xs font-bold mb-1">إجمالي ساعات الإضافي</p>
               <h4 className="text-2xl font-black text-indigo-600 font-mono">
-                {overtimeReportData.totalHours.toFixed(1)} <span className="text-xs font-normal text-slate-400">ساعة</span>
+                {Number(overtimeReportData.totalHours || 0).toFixed(1)} <span className="text-xs font-normal text-slate-400">ساعة</span>
               </h4>
             </div>
             <div className="w-11 h-11 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
@@ -2336,7 +2708,7 @@ export function ReportsScreen({
             <div>
               <p className="text-slate-500 text-xs font-bold mb-1">إجمالي المبالغ المستحقة</p>
               <h4 className="text-2xl font-black text-emerald-600 font-mono">
-                {overtimeReportData.totalAmount.toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
+                {Number(overtimeReportData.totalAmount || 0).toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
               </h4>
             </div>
             <div className="w-11 h-11 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600">
@@ -2374,7 +2746,7 @@ export function ReportsScreen({
             <div>
               <p className="text-slate-500 text-xs font-bold mb-1">إجمالي البقشيش المحصل</p>
               <h4 className="text-2xl font-black text-emerald-600 font-mono">
-                {stats.totalTips.toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
+                {Number(stats.totalTips || 0).toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
               </h4>
             </div>
             <div className="w-11 h-11 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600">
@@ -2386,7 +2758,7 @@ export function ReportsScreen({
             <div>
               <p className="text-slate-500 text-xs font-bold mb-1">المنصرف فوراً (كاش)</p>
               <h4 className="text-2xl font-black text-teal-600 font-mono">
-                {stats.instantCashTips.toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
+                {Number(stats.instantCashTips || 0).toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
               </h4>
             </div>
             <div className="w-11 h-11 rounded-xl bg-teal-50 flex items-center justify-center text-teal-600">
@@ -2398,7 +2770,7 @@ export function ReportsScreen({
             <div>
               <p className="text-slate-500 text-xs font-bold mb-1">المجمع المؤجل (معلق)</p>
               <h4 className="text-2xl font-black text-amber-600 font-mono">
-                {stats.pendingTips.toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
+                {Number(stats.pendingTips || 0).toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
               </h4>
             </div>
             <div className="w-11 h-11 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600">
@@ -2425,7 +2797,7 @@ export function ReportsScreen({
             <div>
               <p className="text-slate-500 text-sm font-bold mb-2">مجموع مبالغ العهدة الافتتاحية</p>
               <h4 className="text-3xl font-extrabold text-amber-600 font-mono">
-                {stats.totalCustody.toFixed(2)} <span className="text-base font-normal text-slate-400">{settings.currency}</span>
+                {Number(stats.totalCustody || 0).toFixed(2)} <span className="text-base font-normal text-slate-400">{settings.currency}</span>
               </h4>
             </div>
             <div className="w-12 h-12 rounded-full bg-amber-50 flex items-center justify-center text-amber-600">
@@ -2447,7 +2819,7 @@ export function ReportsScreen({
             <div>
               <p className="text-slate-500 text-sm font-bold mb-2">متوسط العهدة لكل وردية</p>
               <h4 className="text-3xl font-extrabold text-teal-700 font-mono">
-                {stats.custodyAvg.toFixed(2)} <span className="text-base font-normal text-slate-400">{settings.currency}</span>
+                {Number(stats.custodyAvg || 0).toFixed(2)} <span className="text-base font-normal text-slate-400">{settings.currency}</span>
               </h4>
             </div>
             <div className="w-12 h-12 rounded-full bg-teal-50 flex items-center justify-center text-teal-600">
@@ -2455,12 +2827,12 @@ export function ReportsScreen({
             </div>
           </div>
         </div>
-      ) : isGenerated && activeReportType !== 'inactive_clients' && activeReportType !== 'sales_returns' && activeReportType !== 'unpaid_bookings' && activeReportType !== 'shifts' ? (
+      ) : isGenerated && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm border-r-4 border-r-emerald-500 flex justify-between items-center">
             <div>
               <p className="text-slate-500 text-sm font-bold mb-2">إجمالي الإيرادات</p>
-              <h4 className="text-3xl font-extrabold text-slate-800">{stats.income.toFixed(2)} <span className="text-base font-normal text-slate-400">{settings.currency}</span></h4>
+              <h4 className="text-3xl font-extrabold text-slate-800">{Number(stats.income || 0).toFixed(2)} <span className="text-base font-normal text-slate-400">{settings.currency}</span></h4>
             </div>
             <div className="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-500">
               <TrendingUp size={24} />
@@ -2469,7 +2841,7 @@ export function ReportsScreen({
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm border-r-4 border-r-red-500 flex justify-between items-center">
             <div>
               <p className="text-slate-500 text-sm font-bold mb-2">إجمالي المصروفات</p>
-              <h4 className="text-3xl font-extrabold text-slate-800">{stats.expense.toFixed(2)} <span className="text-base font-normal text-slate-400">{settings.currency}</span></h4>
+              <h4 className="text-3xl font-extrabold text-slate-800">{Number(stats.expense || 0).toFixed(2)} <span className="text-base font-normal text-slate-400">{settings.currency}</span></h4>
             </div>
             <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center text-red-500">
               <TrendingDown size={24} />
@@ -2478,14 +2850,14 @@ export function ReportsScreen({
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm border-r-4 border-r-blue-500 flex justify-between items-center">
             <div>
               <p className="text-slate-500 text-sm font-bold mb-2">صافي الربح</p>
-              <h4 className="text-3xl font-extrabold text-slate-800">{stats.profit.toFixed(2)} <span className="text-base font-normal text-slate-400">{settings.currency}</span></h4>
+              <h4 className="text-3xl font-extrabold text-slate-800">{Number(stats.profit || 0).toFixed(2)} <span className="text-base font-normal text-slate-400">{settings.currency}</span></h4>
             </div>
             <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center text-blue-500">
               <DollarSign size={24} />
             </div>
           </div>
         </div>
-      ) : null}
+      )}
 
       {/* Report Data Placeholder / Table */}
       {!isGenerated ? (
@@ -2499,8 +2871,9 @@ export function ReportsScreen({
             reportType={activeReportType} 
             activeFrom={activeFrom} 
             activeTo={activeTo} 
-            transactions={transactions} 
-            invoices={invoices} 
+            transactions={branchTransactions} 
+            invoices={branchInvoices} 
+            branchInvoices={branchInvoices}
             settings={settings}
             employees={employees}
             services={services}
@@ -2528,22 +2901,26 @@ export function ReportsScreen({
             handleSaveEditAdvance={handleSaveEditAdvance}
             getTreasuryLabel={getTreasuryLabel}
             getSupplierName={getSupplierName}
+            canExportExcel={canExportExcel}
             unpaidBookingsReportData={unpaidBookingsReportData}
-            inactiveClientsReportData={inactiveClientsReportData}
-            bookings={bookings}
-            branchBookings={branchBookings}
-            branchTransactions={branchTransactions}
+            unpaidBookingsFilter={unpaidBookingsFilter}
+            setUnpaidBookingsFilter={setUnpaidBookingsFilter}
+            unpaidBookingsSearch={unpaidBookingsSearch}
+            setUnpaidBookingsSearch={setUnpaidBookingsSearch}
+            salesReturnsReportData={salesReturnsReportData}
             branchSalesReturns={branchSalesReturns}
-            returnsFilterType={returnsFilterType}
-            returnsTreasuryFilter={returnsTreasuryFilter}
-            returnsSearch={returnsSearch}
-            branchInvoices={branchInvoices}
-            workShifts={workShifts}
-            isLoadingShifts={isLoadingShifts}
-            loadWorkShifts={loadWorkShifts}
-            selectedShiftCashier={selectedShiftCashier}
-            activeShiftForReceipt={activeShiftForReceipt}
-            setActiveShiftForReceipt={setActiveShiftForReceipt}
+            voucherModalReturn={voucherModalReturn}
+            setVoucherModalReturn={setVoucherModalReturn}
+            inactiveClientsReportData={inactiveClientsReportData}
+            inactiveClientsSearch={inactiveClientsSearch}
+            setInactiveClientsSearch={setInactiveClientsSearch}
+            targetReportData={targetReportData}
+            targetReportSearch={targetReportSearch}
+            setTargetReportSearch={setTargetReportSearch}
+            targetTypeFilter={targetTypeFilter}
+            setTargetTypeFilter={setTargetTypeFilter}
+            targetStatusFilter={targetStatusFilter}
+            setTargetStatusFilter={setTargetStatusFilter}
           />
         </div>
       )}
@@ -2556,8 +2933,10 @@ function ReportTable({
   reportType, 
   activeFrom, 
   activeTo, 
+  canExportExcel = true,
   transactions, 
   invoices, 
+  branchInvoices,
   settings, 
   employees, 
   services, 
@@ -2585,22 +2964,20 @@ function ReportTable({
   handleSaveEditAdvance,
   getTreasuryLabel: customGetTreasuryLabel,
   getSupplierName: customGetSupplierName,
-  unpaidBookingsReportData,
-  inactiveClientsReportData,
-  bookings = [],
-  branchBookings = [],
-  branchTransactions = [],
+  salesReturnsReportData,
   branchSalesReturns = [],
-  returnsFilterType = 'all',
-  returnsTreasuryFilter = 'all',
-  returnsSearch = '',
-  branchInvoices = [],
-  workShifts = [],
-  isLoadingShifts = false,
-  loadWorkShifts,
-  selectedShiftCashier = 'all',
-  activeShiftForReceipt,
-  setActiveShiftForReceipt
+  voucherModalReturn,
+  setVoucherModalReturn,
+  inactiveClientsReportData,
+  inactiveClientsSearch = '',
+  setInactiveClientsSearch,
+  targetReportData,
+  targetReportSearch = '',
+  setTargetReportSearch,
+  targetTypeFilter = 'all',
+  setTargetTypeFilter,
+  targetStatusFilter = 'all',
+  setTargetStatusFilter
 }: any) {
   const start = new Date(activeFrom);
   const end = new Date(activeTo);
@@ -2670,9 +3047,8 @@ function ReportTable({
           <div className="w-max min-w-full mx-auto bg-white shadow-xl rounded-xl p-4 border border-slate-200">
             <IncomeReportReceipt 
               settings={settings}
-              transactions={branchTransactions && branchTransactions.length > 0 ? branchTransactions : transactions}
-              bookings={branchBookings && branchBookings.length > 0 ? branchBookings : bookings}
-              invoices={branchInvoices && branchInvoices.length > 0 ? branchInvoices : invoices}
+              transactions={transactions.filter(t => !isBookingAdvanceTransaction(t))}
+              invoices={branchInvoices || invoices || []}
               startDate={activeFrom}
               endDate={activeTo}
               dateLabel={dateLabel}
@@ -2686,7 +3062,7 @@ function ReportTable({
 
   if (reportType === 'initial_cash') {
     const custodyTrxs = transactions.filter((t: Transaction) => {
-      const tDateStr = t.date.split('T')[0];
+      const tDateStr = safeSplitDate(t.date);
       return tDateStr >= activeFrom && tDateStr <= activeTo && (t.category === 'عهدة افتتاحية' || t.category === 'initial_cash');
     });
 
@@ -2702,7 +3078,7 @@ function ReportTable({
           <div>
             <h4 className="font-extrabold text-sm text-amber-900">كشف العهد الافتتاحية خلال الفترة ({dateLabel})</h4>
             <p className="text-xs text-amber-700 mt-0.5">
-              إجمالي مبالغ العهد المسجلة: <span className="font-bold font-mono text-slate-900">{totalCustody.toFixed(2)} {settings.currency}</span> ({custodyTrxs.length} وردية)
+              إجمالي مبالغ العهد المسجلة: <span className="font-bold font-mono text-slate-900">{Number(totalCustody || 0).toFixed(2)} {settings.currency}</span> ({custodyTrxs.length} وردية)
             </p>
           </div>
           <button 
@@ -2738,7 +3114,7 @@ function ReportTable({
                 custodyTrxs.map((t: Transaction) => (
                   <tr key={t.id} className="hover:bg-slate-50 transition-colors">
                     <td className="py-3 px-4 font-mono font-bold text-slate-700">{t.id}</td>
-                    <td className="py-3 px-4 font-bold text-slate-800">{t.shiftDate || t.date.split('T')[0]}</td>
+                    <td className="py-3 px-4 font-bold text-slate-800">{t.shiftDate || safeSplitDate(t.date)}</td>
                     <td className="py-3 px-4 text-slate-500 font-medium">{new Date(t.date).toLocaleTimeString('ar-SA')}</td>
                     <td className="py-3 px-4">
                       <span className="bg-slate-100 text-slate-800 font-bold px-2 py-0.5 rounded-md">
@@ -2748,7 +3124,7 @@ function ReportTable({
                     <td className="py-3 px-4 text-slate-600 font-semibold">{getTreasuryName(t.treasury)}</td>
                     <td className="py-3 px-4 text-slate-500">{t.description || 'عهدة افتتاحية لبدء الوردية'}</td>
                     <td className="py-3 px-4 text-left font-mono font-black text-amber-600 text-sm">
-                      +{t.amount.toFixed(2)} {settings.currency}
+                      +{Number(t.amount || 0).toFixed(2)} {settings.currency}
                     </td>
                   </tr>
                 ))
@@ -2759,7 +3135,7 @@ function ReportTable({
                 <tr className="bg-slate-100/90 font-black text-slate-900 border-t-2 border-slate-300">
                   <td colSpan={6} className="py-3 px-4 text-left">مجموع مبالغ العهدة الافتتاحية للفترة:</td>
                   <td className="py-3 px-4 text-left font-mono text-amber-700 text-base">
-                    {totalCustody.toFixed(2)} {settings.currency}
+                    {Number(totalCustody || 0).toFixed(2)} {settings.currency}
                   </td>
                 </tr>
               </tfoot>
@@ -2783,9 +3159,8 @@ function ReportTable({
   
   if (reportType === 'expenses') {
     const filteredTransactions = transactions.filter((t: Transaction) => {
-      const tDateStr = (t.shiftDate || (t as any).shift_date || t.date || '').split('T')[0];
-      const isExp = t.type === 'out' || (t.type as string) === 'expense' || t.category === 'expense' || t.category === 'مصروفات' || t.category?.includes('مصروف') || Boolean((t as any).expenseCategory);
-      return tDateStr >= activeFrom && tDateStr <= activeTo && isExp && t.category !== 'transfer';
+      const tDateStr = safeSplitDate(t.date);
+      return tDateStr >= activeFrom && tDateStr <= activeTo && t.type === 'out' && t.category !== 'transfer';
     });
 
     const dateLabel = start.toISOString().split('T')[0] === end.toISOString().split('T')[0] 
@@ -2811,14 +3186,10 @@ function ReportTable({
 
   if (reportType === 'closing') {
     const filteredTransactions = transactions.filter((t: Transaction) => {
-      const tDateStr = t.date.split('T')[0]; return tDateStr >= activeFrom && tDateStr <= activeTo;
+      const tDateStr = safeSplitDate(t.date); return tDateStr >= activeFrom && tDateStr <= activeTo;
     });
     const filteredInvoices = invoices.filter((i: Invoice) => {
-      const iDateStr = i.date.split('T')[0]; return iDateStr >= activeFrom && iDateStr <= activeTo;
-    });
-    const filteredBookings = (bookings || []).filter((b: any) => {
-      const bDateStr = (b.date || (b as any).createdAt || '').split('T')[0];
-      return bDateStr >= activeFrom && bDateStr <= activeTo;
+      const iDateStr = safeSplitDate(i.date); return iDateStr >= activeFrom && iDateStr <= activeTo;
     });
 
     const dateLabel = start.toISOString().split('T')[0] === end.toISOString().split('T')[0] 
@@ -2835,252 +3206,20 @@ function ReportTable({
             settings={settings} 
             transactions={filteredTransactions} 
             invoices={filteredInvoices} 
-            bookings={filteredBookings}
             dateLabel={dateLabel} 
             userName={activeUserName}
+            employees={employees}
+            fingerprintLogs={fingerprintLogs}
           />
         </div>
       </div>
     );
   }
 
-  if (reportType === 'shifts') {
-    const filteredShifts = (workShifts || []).filter((s: any) => {
-      const sDate = (s.shiftDate || (s.openedAt || '').split('T')[0] || '');
-      const inDateRange = (!activeFrom || sDate >= activeFrom) && (!activeTo || sDate <= activeTo);
-      const matchesCashier = !selectedShiftCashier || selectedShiftCashier === 'all' || 
-        s.openedByUserName === selectedShiftCashier || 
-        s.closedByUserName === selectedShiftCashier;
-      return inDateRange && matchesCashier;
-    });
-
-    const totalSalesSum = filteredShifts.reduce((acc, s) => acc + (Number(s.totalSales) || 0), 0);
-    const totalCashSalesSum = filteredShifts.reduce((acc, s) => acc + (Number(s.totalCashSales) || 0), 0);
-    const totalCardSalesSum = filteredShifts.reduce((acc, s) => acc + (Number(s.totalCardSales) || 0), 0);
-    const totalTransferredSum = filteredShifts.reduce((acc, s) => acc + (Number(s.transferredAmount) || 0), 0);
-    const totalDiffSum = filteredShifts.reduce((acc, s) => acc + (Number(s.cashDifference) || 0), 0);
-    const totalExpensesSum = filteredShifts.reduce((acc, s) => acc + ((Number(s.totalExpenses) || 0) + (Number(s.totalAdvances) || 0)), 0);
-
-    return (
-      <div className="p-4 sm:p-6 space-y-6">
-        {/* ملخص إحصائي سريع للورديات */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-center">
-            <p className="text-xs font-bold text-slate-500 mb-1">إجمالي الورديات</p>
-            <p className="text-2xl font-black text-slate-800 font-mono">{filteredShifts.length}</p>
-          </div>
-          <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-center">
-            <p className="text-xs font-bold text-emerald-700 mb-1">إجمالي المبيعات</p>
-            <p className="text-2xl font-black text-emerald-800 font-mono">{totalSalesSum.toFixed(2)} <span className="text-xs font-normal">{settings.currency}</span></p>
-            <p className="text-[10px] text-emerald-600 mt-1">كاش: {totalCashSalesSum.toFixed(2)} | شبكة: {totalCardSalesSum.toFixed(2)}</p>
-          </div>
-          <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 text-center">
-            <p className="text-xs font-bold text-rose-700 mb-1">المصروفات والسلف</p>
-            <p className="text-2xl font-black text-rose-800 font-mono">{totalExpensesSum.toFixed(2)} <span className="text-xs font-normal">{settings.currency}</span></p>
-          </div>
-          <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 text-center">
-            <p className="text-xs font-bold text-blue-700 mb-1">المرحل للخزينة الرئيسية</p>
-            <p className="text-2xl font-black text-blue-800 font-mono">{totalTransferredSum.toFixed(2)} <span className="text-xs font-normal">{settings.currency}</span></p>
-            <p className={`text-[10px] font-bold mt-1 ${Math.abs(totalDiffSum) < 0.01 ? 'text-slate-500' : totalDiffSum < 0 ? 'text-rose-600' : 'text-blue-600'}`}>
-              فروقات الكاش: {totalDiffSum >= 0 ? `+${totalDiffSum.toFixed(2)}` : totalDiffSum.toFixed(2)}
-            </p>
-          </div>
-        </div>
-
-        {/* جدول الورديات */}
-        {filteredShifts.length === 0 ? (
-          <div className="text-center py-12 text-slate-400">
-            <p className="text-base font-bold">لا توجد ورديات مسجلة في هذا النطاق الزمني</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto rounded-2xl border border-slate-200">
-            <table className="w-full text-right text-xs">
-              <thead className="bg-slate-100 text-slate-700 font-extrabold border-b border-slate-200">
-                <tr>
-                  <th className="py-3 px-3">كود الوردية</th>
-                  <th className="py-3 px-3">التاريخ</th>
-                  <th className="py-3 px-3">فتح الوردية</th>
-                  <th className="py-3 px-3">إغلاق وتسليم</th>
-                  <th className="py-3 px-3 text-center">العهدة</th>
-                  <th className="py-3 px-3 text-center">المبيعات</th>
-                  <th className="py-3 px-3 text-center">المصروفات والسلف</th>
-                  <th className="py-3 px-3 text-center">المتوقع / الفعلي</th>
-                  <th className="py-3 px-3 text-center">الفارق</th>
-                  <th className="py-3 px-3 text-center">المرحل للخزينة</th>
-                  <th className="py-3 px-3 text-center">الحالة</th>
-                  <th className="py-3 px-3 text-center">إجراء</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredShifts.map((shift: any) => {
-                  const sCode = shift.shiftCode || shift.id?.substring(0, 8);
-                  const isClosed = shift.status === 'closed' || Boolean(shift.closedAt);
-                  const expCash = Number(shift.expectedCash) || 0;
-                  const actCash = Number(shift.actualCash) || 0;
-                  const diff = shift.cashDifference !== undefined ? Number(shift.cashDifference) : (actCash - expCash);
-                  const diffStatus = Math.abs(diff) < 0.01 
-                    ? 'متطابق ✓' 
-                    : diff < 0 
-                      ? `عجز (${Math.abs(diff).toFixed(2)})` 
-                      : `زيادة (+${diff.toFixed(2)})`;
-                  const diffColor = Math.abs(diff) < 0.01 
-                    ? 'text-slate-600' 
-                    : diff < 0 
-                      ? 'text-rose-600 font-bold' 
-                      : 'text-blue-600 font-bold';
-
-                  return (
-                    <tr key={shift.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="py-3 px-3 font-mono font-bold text-slate-800">
-                        <span className="bg-slate-900 text-white text-[11px] px-2 py-0.5 rounded font-mono">
-                          {sCode}
-                        </span>
-                      </td>
-                      <td className="py-3 px-3 font-semibold text-slate-700 whitespace-nowrap">
-                        {shift.shiftDate || (shift.openedAt ? shift.openedAt.split('T')[0] : '-')}
-                      </td>
-                      <td className="py-3 px-3 whitespace-nowrap">
-                        <div className="font-bold text-slate-800">{shift.openedByUserName || 'الكاشير'}</div>
-                        <div className="text-[10px] text-slate-400 font-mono">
-                          {shift.openedAt ? new Date(shift.openedAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }) : '-'}
-                        </div>
-                      </td>
-                      <td className="py-3 px-3 whitespace-nowrap">
-                        <div className="font-bold text-slate-800">{shift.closedByUserName || (isClosed ? 'المسؤول' : '-')}</div>
-                        <div className="text-[10px] text-slate-400 font-mono">
-                          {shift.closedAt ? new Date(shift.closedAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }) : '-'}
-                        </div>
-                      </td>
-                      <td className="py-3 px-3 text-center font-mono font-bold text-slate-700">
-                        {(Number(shift.initialCash) || 0).toFixed(2)}
-                      </td>
-                      <td className="py-3 px-3 text-center">
-                        <span className="font-mono font-black text-emerald-700">
-                          {(Number(shift.totalSales) || 0).toFixed(2)}
-                        </span>
-                        <div className="text-[10px] text-slate-400">
-                          نقد: {(Number(shift.totalCashSales) || 0).toFixed(2)} | شبكة: {(Number(shift.totalCardSales) || 0).toFixed(2)}
-                        </div>
-                      </td>
-                      <td className="py-3 px-3 text-center font-mono font-bold text-rose-600">
-                        {((Number(shift.totalExpenses) || 0) + (Number(shift.totalAdvances) || 0)).toFixed(2)}
-                      </td>
-                      <td className="py-3 px-3 text-center font-mono text-[11px]">
-                        <div>متوقع: <span className="font-bold">{expCash.toFixed(2)}</span></div>
-                        <div>فعلي: <span className="font-bold">{actCash.toFixed(2)}</span></div>
-                      </td>
-                      <td className={`py-3 px-3 text-center font-mono ${diffColor}`}>
-                        {diffStatus}
-                      </td>
-                      <td className="py-3 px-3 text-center font-mono font-black text-blue-700">
-                        {(Number(shift.transferredAmount) || 0).toFixed(2)}
-                      </td>
-                      <td className="py-3 px-3 text-center whitespace-nowrap">
-                        {isClosed ? (
-                          <span className="bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full text-[10px] font-bold">مغلقة</span>
-                        ) : (
-                          <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full text-[10px] font-bold animate-pulse">مفتوحة 🟢</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-3 text-center whitespace-nowrap">
-                        <button
-                          onClick={() => setActiveShiftForReceipt(shift)}
-                          className="bg-slate-800 hover:bg-slate-900 text-white font-bold px-2.5 py-1.5 rounded-lg text-[11px] inline-flex items-center gap-1 transition-all shadow-xs cursor-pointer active:scale-95"
-                          title="عرض وطباعة إيصال إغلاق الوردية"
-                        >
-                          <Printer size={13} className="text-emerald-400" />
-                          <span>Z-Report</span>
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* Modal لمعاينة وطباعة إيصال الوردية المحددة */}
-        {activeShiftForReceipt && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
-            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md my-8 overflow-hidden">
-              <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                <h3 className="font-extrabold text-sm text-slate-800">
-                  إيصال الوردية [{activeShiftForReceipt.shiftCode || activeShiftForReceipt.id?.substring(0, 8)}]
-                </h3>
-                <button onClick={() => setActiveShiftForReceipt(null)} className="text-slate-400 hover:text-red-500 font-bold">✕</button>
-              </div>
-              <div className="p-4 overflow-hidden flex justify-center bg-slate-100 max-h-[60vh] overflow-y-auto">
-                <div id="print-shift-receipt-container" className="bg-white shadow-sm p-4 w-full rounded-2xl">
-                  <ClosingReportReceipt 
-                    settings={settings}
-                    transactions={transactions.filter((t: any) => {
-                      const tShiftId = t.shiftId || t.shift_id;
-                      if (tShiftId && activeShiftForReceipt.id) {
-                        return tShiftId === activeShiftForReceipt.id;
-                      }
-                      return (t.shiftDate && t.shiftDate === activeShiftForReceipt.shiftDate) || (t.date && t.date.startsWith(activeShiftForReceipt.shiftDate));
-                    })}
-                    invoices={invoices.filter((i: any) => {
-                      if (i.status === 'cancelled') return false;
-                      if (i.shiftId && activeShiftForReceipt.id) {
-                        return i.shiftId === activeShiftForReceipt.id;
-                      }
-                      return (i.shiftDate && i.shiftDate === activeShiftForReceipt.shiftDate) || (i.date && i.date.startsWith(activeShiftForReceipt.shiftDate));
-                    })}
-                    bookings={bookings}
-                    dateLabel={activeShiftForReceipt.shiftDate}
-                    initialCash={activeShiftForReceipt.initialCash}
-                    userName={activeShiftForReceipt.closedByUserName || activeShiftForReceipt.openedByUserName || 'الكاشير'}
-                    shiftCode={activeShiftForReceipt.shiftCode}
-                    openedByUserName={activeShiftForReceipt.openedByUserName}
-                    openedAt={activeShiftForReceipt.openedAt}
-                    closedByUserName={activeShiftForReceipt.closedByUserName}
-                    closedAt={activeShiftForReceipt.closedAt}
-                    expectedCash={activeShiftForReceipt.expectedCash}
-                    actualCash={activeShiftForReceipt.actualCash}
-                    cashDifference={activeShiftForReceipt.cashDifference}
-                    transferredAmount={activeShiftForReceipt.transferredAmount}
-                    mainTreasuryName={activeShiftForReceipt.transferredToTreasury || 'الخزينة الرئيسية'}
-                  />
-                </div>
-              </div>
-              <div className="p-4 bg-slate-50 border-t border-slate-100 flex gap-2">
-                <button 
-                  onClick={() => {
-                    import('../utils/print').then(m => m.handlePrintReceipt('print-shift-receipt-container', false, '80mm'));
-                  }}
-                  className="flex-1 bg-slate-900 hover:bg-slate-800 text-white font-extrabold py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 text-xs shadow cursor-pointer active:scale-95"
-                >
-                  <Printer size={15} className="text-emerald-400" />
-                  <span>طباعة حراري (80mm)</span>
-                </button>
-                <button 
-                  onClick={() => {
-                    import('../utils/print').then(m => m.handlePrintReceipt('print-shift-receipt-container', true, 'a4'));
-                  }}
-                  className="bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 font-extrabold py-2.5 px-4 rounded-xl transition-all flex items-center justify-center gap-1 text-xs shadow-xs cursor-pointer active:scale-95"
-                >
-                  <FileText size={15} className="text-slate-500" />
-                  <span>A4</span>
-                </button>
-                <button
-                  onClick={() => setActiveShiftForReceipt(null)}
-                  className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold px-3 py-2.5 rounded-xl text-xs cursor-pointer"
-                >
-                  إغلاق
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  }
-
+  
   if (reportType === 'services_report') {
     const filteredInvoices = invoices.filter((i: Invoice) => {
-      const iDateStr = i.date.split('T')[0]; return iDateStr >= activeFrom && iDateStr <= activeTo;
+      const iDateStr = safeSplitDate(i.date); return iDateStr >= activeFrom && iDateStr <= activeTo;
     });
 
     const dateLabel = start.toISOString().split('T')[0] === end.toISOString().split('T')[0] 
@@ -3121,7 +3260,7 @@ function ReportTable({
               <span>كشف وسجل حركة صرف عمولات الموظفين ({dateLabel})</span>
             </h4>
             <p className="text-xs text-amber-800 mt-0.5">
-              إجمالي العمولات المصروفة: <strong className="font-mono text-slate-900 font-bold">{data.totalAmount.toFixed(2)} {settings.currency}</strong> ({data.count} سند صرف)
+              إجمالي العمولات المصروفة: <strong className="font-mono text-slate-900 font-bold">{Number(data.totalAmount || 0).toFixed(2)} {settings.currency}</strong> ({data.count} سند صرف)
             </p>
           </div>
           <button 
@@ -3137,7 +3276,7 @@ function ReportTable({
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
             <p className="text-xs font-bold text-slate-500">إجمالي المبالغ المصروفة</p>
             <h3 className="text-xl font-black font-mono text-amber-600 mt-1">
-              {data.totalAmount.toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
+              {Number(data.totalAmount || 0).toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
             </h3>
           </div>
 
@@ -3154,7 +3293,7 @@ function ReportTable({
               {data.treasuryBreakdown.map((t: any, i: number) => (
                 <div key={i} className="flex justify-between text-[11px]">
                   <span className="text-slate-600 font-bold">{t.name}:</span>
-                  <span className="font-mono font-bold text-slate-900">{t.amount.toFixed(2)}</span>
+                  <span className="font-mono font-bold text-slate-900">{Number(t.amount || 0).toFixed(2)}</span>
                 </div>
               ))}
               {data.treasuryBreakdown.length === 0 && (
@@ -3201,7 +3340,7 @@ function ReportTable({
                       </td>
                       <td className="py-3 px-4 text-slate-600 max-w-xs truncate">{row.note}</td>
                       <td className="py-3 px-4 text-left font-mono font-black text-rose-600 text-sm">
-                        {row.amount.toFixed(2)} {settings.currency}
+                        {Number(row.amount || 0).toFixed(2)} {settings.currency}
                       </td>
                       <td className="py-3 px-4 text-center">
                         <button
@@ -3239,7 +3378,7 @@ function ReportTable({
                       إجمالي العمولات المصروفة للفترة ({data.rows.length} حركة):
                     </td>
                     <td className="py-3 px-4 text-left font-mono text-rose-700 text-base font-black">
-                      {data.totalAmount.toFixed(2)} {settings.currency}
+                      {Number(data.totalAmount || 0).toFixed(2)} {settings.currency}
                     </td>
                     <td className="py-3 px-4"></td>
                   </tr>
@@ -3278,14 +3417,14 @@ function ReportTable({
                   <td className="p-2 border border-slate-300 font-bold">{row.empName}</td>
                   <td className="p-2 border border-slate-300">{row.treasuryName}</td>
                   <td className="p-2 border border-slate-300">{row.note}</td>
-                  <td className="p-2 border border-slate-300 font-mono font-bold text-left">{row.amount.toFixed(2)} {settings.currency}</td>
+                  <td className="p-2 border border-slate-300 font-mono font-bold text-left">{Number(row.amount || 0).toFixed(2)} {settings.currency}</td>
                 </tr>
               ))}
             </tbody>
             <tfoot>
               <tr className="bg-slate-100 font-black border border-slate-400">
                 <td colSpan={6} className="p-2 border border-slate-400 text-left">الإجمالي الكلي:</td>
-                <td className="p-2 border border-slate-400 font-mono text-left">{data.totalAmount.toFixed(2)} {settings.currency}</td>
+                <td className="p-2 border border-slate-400 font-mono text-left">{Number(data.totalAmount || 0).toFixed(2)} {settings.currency}</td>
               </tr>
             </tfoot>
           </table>
@@ -3296,7 +3435,7 @@ function ReportTable({
 
   if (reportType === 'employees') {
     const filteredInvoices = invoices.filter((i: Invoice) => {
-      const iDateStr = i.date.split('T')[0]; return iDateStr >= activeFrom && iDateStr <= activeTo;
+      const iDateStr = safeSplitDate(i.date); return iDateStr >= activeFrom && iDateStr <= activeTo;
     });
 
     const dateLabel = start.toISOString().split('T')[0] === end.toISOString().split('T')[0] 
@@ -3340,8 +3479,8 @@ function ReportTable({
           const itemTotal = (Number(item.price) || 0) * qty;
           const effectivePrice = Math.max(0, itemTotal - (itemTotal * discountRatio));
 
-          const service = services.find((s: any) => s.id === item.itemId || s.name === item.serviceName);
-          const product = products && products.find((p: any) => p.id === item.itemId || p.name === item.serviceName);
+          const service = services.find((s: any) => s.id === item.itemId || s.id === item.id || s.name === item.serviceName);
+          const product = products && products.find((p: any) => p.id === item.itemId || p.id === item.id || p.name === item.serviceName);
 
           // 1. عمولة التنفيذ (فني التنفيذ)
           const performerEmp = employees.find((e: any) => (item.employeeId && e.id === item.employeeId) || (item.technicianName && e.name === item.technicianName));
@@ -3349,20 +3488,26 @@ function ReportTable({
           const performerEntry = getOrCreate(performerName);
 
           if (performerEntry) {
-            let execComm = 0;
-            if (item.type === 'product' || (!service && product)) {
-              if (product && product.commission > 0) {
-                execComm = product.commission * qty;
-              } else if (performerEmp) {
-                execComm = calculateEmployeeCommission(performerEmp, effectivePrice);
-              }
-            } else {
-              if (service && service.employeeCommissionAmount !== undefined && service.employeeCommissionAmount > 0) {
-                execComm = service.employeeCommissionAmount * qty;
-              } else if (service && service.employeeCommissionPercentage !== undefined && service.employeeCommissionPercentage > 0) {
-                execComm = effectivePrice * (service.employeeCommissionPercentage / 100);
-              } else if (performerEmp) {
-                execComm = calculateEmployeeCommission(performerEmp, effectivePrice);
+            let execComm = Number(item.employeeCommission ?? item.commissionAmount ?? (item as any).commission ?? 0);
+            if (execComm <= 0) {
+              if (item.type === 'product' || (!service && product)) {
+                if (product && product.commission > 0) {
+                  execComm = product.commission * qty;
+                } else if (performerEmp) {
+                  execComm = calculateEmployeeCommission(performerEmp, effectivePrice);
+                }
+              } else {
+                const srvAmount = Number(service?.employeeCommissionAmount ?? service?.commissionAmount ?? 0);
+                const srvPct = Number(service?.employeeCommissionPercentage ?? service?.commissionRate ?? 0);
+                const rawBase = Number(service?.commissionableAmount ?? (item as any).commissionableAmount ?? 0);
+                const commBase = rawBase > 0 ? (rawBase * qty) : effectivePrice;
+                if (srvAmount > 0) {
+                  execComm = srvAmount * qty;
+                } else if (srvPct > 0) {
+                  execComm = commBase * (srvPct / 100);
+                } else if (performerEmp) {
+                  execComm = calculateEmployeeCommission(performerEmp, commBase);
+                }
               }
             }
 
@@ -3421,22 +3566,26 @@ function ReportTable({
     const grandTotalComm = empList.reduce((s, e) => s + e.totalCommission, 0);
 
     const handleExportExcel = () => {
+      if (!canExportExcel) {
+        alert('⛔ عذراً، تصدير التقارير إلى Excel يتطلب صلاحية التصدير (export_excel).');
+        return;
+      }
       const excelData = empList.map(e => ({
         'الموظف': e.name,
         'العدد': e.count,
-        'اجمالي الشغل': e.totalWork.toFixed(2),
-        'عمولة تنفيذ': e.executionCommission.toFixed(2),
-        'عمولة فتح شغل': e.openingCommission.toFixed(2),
-        'مجموع العمولة': e.totalCommission.toFixed(2)
+        'اجمالي الشغل': Number(e.totalWork || 0).toFixed(2),
+        'عمولة تنفيذ': Number(e.executionCommission || 0).toFixed(2),
+        'عمولة فتح شغل': Number(e.openingCommission || 0).toFixed(2),
+        'مجموع العمولة': Number(e.totalCommission || 0).toFixed(2)
       }));
 
       excelData.push({
         'الموظف': 'الإجمالي العام',
         'العدد': grandTotalCount,
-        'اجمالي الشغل': grandTotalWork.toFixed(2),
-        'عمولة تنفيذ': grandTotalExecComm.toFixed(2),
-        'عمولة فتح شغل': grandTotalOpenComm.toFixed(2),
-        'مجموع العمولة': grandTotalComm.toFixed(2)
+        'اجمالي الشغل': Number(grandTotalWork || 0).toFixed(2),
+        'عمولة تنفيذ': Number(grandTotalExecComm || 0).toFixed(2),
+        'عمولة فتح شغل': Number(grandTotalOpenComm || 0).toFixed(2),
+        'مجموع العمولة': Number(grandTotalComm || 0).toFixed(2)
       });
 
       exportToExcel(excelData, `تقرير_أعمال_وعمولات_الموظفين_${dateLabel.replace(/\s+/g, '_')}`);
@@ -3453,7 +3602,9 @@ function ReportTable({
           <div className="flex items-center gap-2">
             <button
               onClick={handleExportExcel}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm transition-all"
+              disabled={!canExportExcel}
+              className={`${canExportExcel ? 'bg-emerald-600 hover:bg-emerald-700 cursor-pointer' : 'bg-slate-300 text-slate-500 cursor-not-allowed opacity-50'} text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm transition-all`}
+              title={canExportExcel ? undefined : "لا تملك صلاحية تصدير Excel"}
             >
               <Download size={16} /> تصدير إكسيل
             </button>
@@ -3477,7 +3628,7 @@ function ReportTable({
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs border-r-4 border-r-blue-500">
             <p className="text-slate-500 text-xs font-bold mb-1">إجمالي الشغل</p>
             <h4 className="text-xl font-black text-slate-900">
-              {grandTotalWork.toFixed(2)} <span className="text-xs font-bold text-slate-400">{settings.currency}</span>
+              {Number(grandTotalWork || 0).toFixed(2)} <span className="text-xs font-bold text-slate-400">{settings.currency}</span>
             </h4>
             <p className="text-[10px] text-slate-400 mt-1">صافي قيمة الخدمات والمنتجات</p>
           </div>
@@ -3491,7 +3642,7 @@ function ReportTable({
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs border-r-4 border-r-purple-500">
             <p className="text-slate-500 text-xs font-bold mb-1">عمولات التنفيذ</p>
             <h4 className="text-xl font-black text-purple-700">
-              {grandTotalExecComm.toFixed(2)} <span className="text-xs font-bold text-slate-400">{settings.currency}</span>
+              {Number(grandTotalExecComm || 0).toFixed(2)} <span className="text-xs font-bold text-slate-400">{settings.currency}</span>
             </h4>
             <p className="text-[10px] text-slate-400 mt-1">المستحقة لفنيي التنفيذ</p>
           </div>
@@ -3499,7 +3650,7 @@ function ReportTable({
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs border-r-4 border-r-amber-500">
             <p className="text-slate-500 text-xs font-bold mb-1">عمولات فتح الشغل</p>
             <h4 className="text-xl font-black text-amber-700">
-              {grandTotalOpenComm.toFixed(2)} <span className="text-xs font-bold text-slate-400">{settings.currency}</span>
+              {Number(grandTotalOpenComm || 0).toFixed(2)} <span className="text-xs font-bold text-slate-400">{settings.currency}</span>
             </h4>
             <p className="text-[10px] text-slate-400 mt-1">عمولات الإحالة والترشيح</p>
           </div>
@@ -3507,7 +3658,7 @@ function ReportTable({
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs border-r-4 border-r-emerald-500 bg-emerald-50/20">
             <p className="text-slate-500 text-xs font-bold mb-1">مجموع العمولات المستحقة</p>
             <h4 className="text-xl font-black text-emerald-700">
-              {grandTotalComm.toFixed(2)} <span className="text-xs font-bold text-slate-400">{settings.currency}</span>
+              {Number(grandTotalComm || 0).toFixed(2)} <span className="text-xs font-bold text-slate-400">{settings.currency}</span>
             </h4>
             <p className="text-[10px] text-emerald-600 mt-1">تنفيذ + فتح شغل</p>
           </div>
@@ -3545,16 +3696,16 @@ function ReportTable({
                       {emp.count}
                     </td>
                     <td className="py-3 px-4 text-center font-extrabold text-slate-800 font-mono">
-                      {emp.totalWork.toFixed(2)} <span className="text-[10px] text-slate-400 font-normal">{settings.currency}</span>
+                      {Number(emp.totalWork || 0).toFixed(2)} <span className="text-[10px] text-slate-400 font-normal">{settings.currency}</span>
                     </td>
                     <td className="py-3 px-4 text-center font-bold text-purple-700 font-mono">
-                      {emp.executionCommission.toFixed(2)} <span className="text-[10px] text-slate-400 font-normal">{settings.currency}</span>
+                      {Number(emp.executionCommission || 0).toFixed(2)} <span className="text-[10px] text-slate-400 font-normal">{settings.currency}</span>
                     </td>
                     <td className="py-3 px-4 text-center font-bold text-amber-700 font-mono">
-                      {emp.openingCommission.toFixed(2)} <span className="text-[10px] text-slate-400 font-normal">{settings.currency}</span>
+                      {Number(emp.openingCommission || 0).toFixed(2)} <span className="text-[10px] text-slate-400 font-normal">{settings.currency}</span>
                     </td>
                     <td className="py-3 px-4 text-left font-black text-emerald-700 font-mono text-sm">
-                      {emp.totalCommission.toFixed(2)} <span className="text-[10px] text-slate-400 font-normal">{settings.currency}</span>
+                      {Number(emp.totalCommission || 0).toFixed(2)} <span className="text-[10px] text-slate-400 font-normal">{settings.currency}</span>
                     </td>
                   </tr>
                 ))}
@@ -3571,10 +3722,10 @@ function ReportTable({
                   <tr className="bg-slate-900 text-white font-black text-xs border-t-2 border-slate-900">
                     <td className="py-3.5 px-4 font-black text-sm">الإجمالي العام</td>
                     <td className="py-3.5 px-4 text-center font-mono font-black">{grandTotalCount}</td>
-                    <td className="py-3.5 px-4 text-center font-mono font-black">{grandTotalWork.toFixed(2)} {settings.currency}</td>
-                    <td className="py-3.5 px-4 text-center font-mono font-black text-purple-300">{grandTotalExecComm.toFixed(2)} {settings.currency}</td>
-                    <td className="py-3.5 px-4 text-center font-mono font-black text-amber-300">{grandTotalOpenComm.toFixed(2)} {settings.currency}</td>
-                    <td className="py-3.5 px-4 text-left font-mono font-black text-emerald-300 text-sm">{grandTotalComm.toFixed(2)} {settings.currency}</td>
+                    <td className="py-3.5 px-4 text-center font-mono font-black">{Number(grandTotalWork || 0).toFixed(2)} {settings.currency}</td>
+                    <td className="py-3.5 px-4 text-center font-mono font-black text-purple-300">{Number(grandTotalExecComm || 0).toFixed(2)} {settings.currency}</td>
+                    <td className="py-3.5 px-4 text-center font-mono font-black text-amber-300">{Number(grandTotalOpenComm || 0).toFixed(2)} {settings.currency}</td>
+                    <td className="py-3.5 px-4 text-left font-mono font-black text-emerald-300 text-sm">{Number(grandTotalComm || 0).toFixed(2)} {settings.currency}</td>
                   </tr>
                 </tfoot>
               )}
@@ -3605,7 +3756,7 @@ function ReportTable({
 
   if (reportType === 'initial_cash') {
     const custodyTrxs = transactions.filter((t: Transaction) => {
-      const tDateStr = t.date.split('T')[0];
+      const tDateStr = safeSplitDate(t.date);
       return tDateStr >= activeFrom && tDateStr <= activeTo && (t.category === 'عهدة افتتاحية' || t.category === 'initial_cash');
     });
 
@@ -3623,7 +3774,7 @@ function ReportTable({
             <div>
               <p className="text-slate-500 text-xs font-bold mb-1">إجمالي مبالغ العهد المسجلة</p>
               <h4 className="text-2xl font-black text-slate-800">
-                {totalCustody.toFixed(2)} <span className="text-xs font-bold text-slate-400">{settings.currency}</span>
+                {Number(totalCustody || 0).toFixed(2)} <span className="text-xs font-bold text-slate-400">{settings.currency}</span>
               </h4>
             </div>
             <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
@@ -3645,7 +3796,7 @@ function ReportTable({
             <div>
               <p className="text-slate-500 text-xs font-bold mb-1">متوسط العهدة لكل وردية</p>
               <h4 className="text-2xl font-black text-slate-800">
-                {custodyTrxs.length > 0 ? (totalCustody / custodyTrxs.length).toFixed(2) : '0.00'} <span className="text-xs font-bold text-slate-400">{settings.currency}</span>
+                {custodyTrxs.length > 0 ? (Number(totalCustody || 0) / custodyTrxs.length).toFixed(2) : '0.00'} <span className="text-xs font-bold text-slate-400">{settings.currency}</span>
               </h4>
             </div>
             <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
@@ -3678,7 +3829,7 @@ function ReportTable({
                 {custodyTrxs.map(trx => (
                   <tr key={trx.id} className="hover:bg-slate-50 transition-colors">
                     <td className="py-3 px-4 font-mono font-bold text-slate-700">{trx.id}</td>
-                    <td className="py-3 px-4 font-bold text-slate-900">{trx.shiftDate || trx.date.split('T')[0]}</td>
+                    <td className="py-3 px-4 font-bold text-slate-900">{trx.shiftDate || safeSplitDate(trx.date)}</td>
                     <td className="py-3 px-4 text-slate-500 font-mono">{new Date(trx.date).toLocaleTimeString('ar-SA')}</td>
                     <td className="py-3 px-4">
                       <span className="bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-lg font-extrabold border border-indigo-200 inline-flex items-center gap-1">
@@ -3689,7 +3840,7 @@ function ReportTable({
                       {settings.treasuries.find(t => t.id === trx.treasury)?.name || trx.treasury}
                     </td>
                     <td className="py-3 px-4 font-black text-sm text-emerald-600">
-                      +{trx.amount.toFixed(2)} <span className="text-[10px] font-bold text-slate-400">{settings.currency}</span>
+                      +{Number(trx.amount || 0).toFixed(2)} <span className="text-[10px] font-bold text-slate-400">{settings.currency}</span>
                     </td>
                     <td className="py-3 px-4 text-slate-600">{trx.description || 'عهدة افتتاحية'}</td>
                   </tr>
@@ -3745,7 +3896,7 @@ function ReportTable({
             <div>
               <p className="text-slate-500 text-xs font-bold mb-1">إجمالي البقشيش</p>
               <h4 className="text-2xl font-black text-slate-800 font-mono">
-                {stats.totalTips.toFixed(2)} <span className="text-xs font-bold text-slate-400">{settings.currency}</span>
+                {Number(stats.totalTips || 0).toFixed(2)} <span className="text-xs font-bold text-slate-400">{settings.currency}</span>
               </h4>
             </div>
             <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
@@ -3757,7 +3908,7 @@ function ReportTable({
             <div>
               <p className="text-slate-500 text-xs font-bold mb-1">صُرف فوراً كاش</p>
               <h4 className="text-2xl font-black text-teal-600 font-mono">
-                {stats.instantCashTips.toFixed(2)} <span className="text-xs font-bold text-slate-400">{settings.currency}</span>
+                {Number(stats.instantCashTips || 0).toFixed(2)} <span className="text-xs font-bold text-slate-400">{settings.currency}</span>
               </h4>
             </div>
             <div className="w-10 h-10 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center font-bold">
@@ -3769,7 +3920,7 @@ function ReportTable({
             <div>
               <p className="text-slate-500 text-xs font-bold mb-1">مجمع مؤجل (معلق)</p>
               <h4 className="text-2xl font-black text-amber-600 font-mono">
-                {stats.pendingTips.toFixed(2)} <span className="text-xs font-bold text-slate-400">{settings.currency}</span>
+                {Number(stats.pendingTips || 0).toFixed(2)} <span className="text-xs font-bold text-slate-400">{settings.currency}</span>
               </h4>
             </div>
             <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
@@ -3832,7 +3983,7 @@ function ReportTable({
                       </span>
                     </td>
                     <td className="py-3 px-4 font-black text-sm text-emerald-600">
-                      +{tip.amount.toFixed(2)} <span className="text-[10px] font-bold text-slate-400">{settings.currency}</span>
+                      +{Number(tip.amount || 0).toFixed(2)} <span className="text-[10px] font-bold text-slate-400">{settings.currency}</span>
                     </td>
                     <td className="py-3 px-4 text-center">
                       {tip.status === 'paid_out' ? (
@@ -3930,7 +4081,8 @@ function ReportTable({
                       <td className="py-3 px-4 text-slate-400 font-mono text-center">{idx + 1}</td>
                       <td className="py-3 px-4 font-mono font-bold text-slate-700">{row.empCode}</td>
                       <td className="py-3 px-4 font-bold text-slate-900">{row.empName}</td>
-                      <td className="py-3 px-4 font-mono text-slate-700">{Number(row.baseSalary || 0) > 0 ? `${Number(row.baseSalary).toFixed(2)} ${settings.currency}` : 'نسبة فقط'}</td>
+                      <td className="py-3 px-4 text-slate-600">{row.role}</td>
+                      <td className="py-3 px-4 font-mono text-slate-700">{Number(row.baseSalary || 0) > 0 ? `${Number(row.baseSalary || 0).toFixed(2)} ${settings.currency}` : 'نسبة فقط'}</td>
                       <td className="py-3 px-4">
                         <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md text-[11px] font-bold border border-indigo-200">
                           {row.rateType === 'custom_fixed_amount' ? `${row.customHourlyRate} ${settings.currency}/ساعة (مبلغ محدد)` : row.rateType}
@@ -3938,9 +4090,9 @@ function ReportTable({
                       </td>
                       <td className="py-3 px-4 font-mono font-bold text-slate-800 text-center">{row.otDaysCount} يوم</td>
                       <td className="py-3 px-4 font-mono text-slate-600 text-center">{row.totalOtMinutes} دقيقة</td>
-                      <td className="py-3 px-4 font-mono font-black text-indigo-700 text-center">{row.totalOtHours.toFixed(2)} ساعة</td>
+                      <td className="py-3 px-4 font-mono font-black text-indigo-700 text-center">{Number(row.totalOtHours || 0).toFixed(2)} ساعة</td>
                       <td className="py-3 px-4 font-mono font-black text-sm text-emerald-600 text-left pl-6">
-                        {row.totalOtAmount.toFixed(2)} <span className="text-[10px] text-slate-400 font-normal">{settings.currency}</span>
+                        {Number(row.totalOtAmount || 0).toFixed(2)} <span className="text-[10px] text-slate-400 font-normal">{settings.currency}</span>
                       </td>
                     </tr>
                   ))}
@@ -3958,9 +4110,9 @@ function ReportTable({
                       <td colSpan={6} className="py-3 px-4 text-center font-black">المجموع الكلي</td>
                       <td className="py-3 px-4 text-center font-mono">{summaryRows.reduce((s: number, r: any) => s + r.otDaysCount, 0)} يوم</td>
                       <td className="py-3 px-4 text-center font-mono">{summaryRows.reduce((s: number, r: any) => s + r.totalOtMinutes, 0)} د</td>
-                      <td className="py-3 px-4 text-center font-mono text-indigo-700">{totalHours.toFixed(2)} ساعة</td>
+                      <td className="py-3 px-4 text-center font-mono text-indigo-700">{Number(totalHours || 0).toFixed(2)} ساعة</td>
                       <td className="py-3 px-4 font-mono text-emerald-700 text-left pl-6 font-black text-sm">
-                        {totalAmount.toFixed(2)} {settings.currency}
+                        {Number(totalAmount || 0).toFixed(2)} {settings.currency}
                       </td>
                     </tr>
                   </tfoot>
@@ -4004,7 +4156,7 @@ function ReportTable({
                         </span>
                       </td>
                       <td className="py-3 px-4 font-mono font-black text-sm text-emerald-600 text-left pl-6">
-                        +{row.overtimeAmount.toFixed(2)} <span className="text-[10px] text-slate-400 font-normal">{settings.currency}</span>
+                        +{Number(row.overtimeAmount || 0).toFixed(2)} <span className="text-[10px] text-slate-400 font-normal">{settings.currency}</span>
                       </td>
                     </tr>
                   ))}
@@ -4021,10 +4173,10 @@ function ReportTable({
                     <tr>
                       <td colSpan={8} className="py-3 px-4 text-center font-black">المجموع الكلي ({detailedRows.length} سجل)</td>
                       <td className="py-3 px-4 text-center font-mono">{detailedRows.reduce((s: number, r: any) => s + r.overtimeMinutes, 0)} د</td>
-                      <td className="py-3 px-4 text-center font-mono text-indigo-700">{totalHours.toFixed(2)} س</td>
+                      <td className="py-3 px-4 text-center font-mono text-indigo-700">{Number(totalHours || 0).toFixed(2)} س</td>
                       <td></td>
                       <td className="py-3 px-4 font-mono text-emerald-700 text-left pl-6 font-black text-sm">
-                        {totalAmount.toFixed(2)} {settings.currency}
+                        {Number(totalAmount || 0).toFixed(2)} {settings.currency}
                       </td>
                     </tr>
                   </tfoot>
@@ -4053,7 +4205,7 @@ function ReportTable({
             <div>
               <p className="text-slate-500 text-xs font-bold mb-1">إجمالي مبالغ السلف</p>
               <h4 className="text-2xl font-black text-rose-600 font-mono">
-                {data.totalAmount.toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
+                {Number(data.totalAmount || 0).toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
               </h4>
             </div>
             <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center font-bold">
@@ -4088,7 +4240,7 @@ function ReportTable({
               {data.treasuryBreakdown.map((tb, idx) => (
                 <div key={idx} className="flex justify-between text-xs">
                   <span className="text-slate-600 font-semibold">{tb.name}:</span>
-                  <span className="font-mono font-bold text-rose-600">{tb.amount.toFixed(2)} ({tb.count})</span>
+                  <span className="font-mono font-bold text-rose-600">{Number(tb.amount || 0).toFixed(2)} ({tb.count})</span>
                 </div>
               ))}
               {data.treasuryBreakdown.length === 0 && (
@@ -4164,7 +4316,7 @@ function ReportTable({
                     </td>
                     <td className="py-3 px-4 text-slate-600 max-w-xs truncate" title={row.note}>{row.note}</td>
                     <td className="py-3 px-4 text-left font-mono font-black text-rose-600 text-sm">
-                      {row.amount.toFixed(2)}
+                      {Number(row.amount || 0).toFixed(2)}
                     </td>
                     <td className="py-3 px-4 text-center print:hidden">
                       <div className="flex items-center justify-center gap-1.5">
@@ -4174,7 +4326,7 @@ function ReportTable({
                           onClick={() => setEditingAdvance({
                             row,
                             amount: row.amount,
-                            date: row.dateStr.split('T')[0],
+                            date: safeSplitDate(row.dateStr),
                             treasuryId: row.treasuryId || settings.treasuries[0]?.id || 'cash',
                             note: row.note
                           })}
@@ -4239,7 +4391,7 @@ function ReportTable({
                       المجموع الكلي لسلف الموظفين المنصرفة ({data.rows.length} سلفة):
                     </td>
                     <td className="py-3 px-4 text-left font-mono text-rose-700 text-base font-black">
-                      {data.totalAmount.toFixed(2)} {settings.currency}
+                      {Number(data.totalAmount || 0).toFixed(2)} {settings.currency}
                     </td>
                     <td className="print:hidden"></td>
                   </tr>
@@ -4358,7 +4510,7 @@ function ReportTable({
             <div className="flex items-center gap-2">
               <span className="text-xl font-black text-slate-800">📊 قائمة الدخل وصافي الأرباح التشغيلية</span>
               <span className="bg-emerald-50 text-emerald-700 font-bold text-xs px-2.5 py-1 rounded-lg border border-emerald-200">
-                {netProfitReportData.profitMargin.toFixed(1)}% هامش الربح
+                {Number(netProfitReportData.profitMargin || 0).toFixed(1)}% هامش الربح
               </span>
             </div>
             <p className="text-slate-400 text-xs mt-1">الفترة الزمنية: <span className="font-mono font-bold text-slate-700">{dateLabel}</span> • {settings.salonName}</p>
@@ -4366,7 +4518,7 @@ function ReportTable({
 
           <div className="flex items-center gap-3">
             <div className={`px-4 py-2 rounded-xl text-xs font-black border ${netProfitReportData.netProfit >= 0 ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-rose-50 text-rose-800 border-rose-200'}`}>
-              صافي الربح: <span className="font-mono text-sm">{netProfitReportData.netProfit.toFixed(2)} {settings.currency}</span>
+              صافي الربح: <span className="font-mono text-sm">{Number(netProfitReportData.netProfit || 0).toFixed(2)} {settings.currency}</span>
             </div>
           </div>
         </div>
@@ -4375,17 +4527,17 @@ function ReportTable({
         <div className="mb-6 p-4 bg-slate-50 rounded-2xl border border-slate-200">
           <div className="flex justify-between items-center text-xs font-bold text-slate-700 mb-2">
             <span>توزيع عناصر المعادلة من إجمالي الدخل:</span>
-            <span className="font-mono text-emerald-700">{netProfitReportData.grossIncome.toFixed(2)} {settings.currency} (100%)</span>
+            <span className="font-mono text-emerald-700">{Number(netProfitReportData.grossIncome || 0).toFixed(2)} {settings.currency} (100%)</span>
           </div>
           <div className="w-full h-4 bg-slate-200 rounded-full overflow-hidden flex shadow-inner">
-            <div title={`مصروفات: ${netProfitReportData.totalExpenses.toFixed(1)}`} style={{ width: `${Math.min(100, (netProfitReportData.totalExpenses / (netProfitReportData.grossIncome || 1)) * 100)}%` }} className="bg-rose-500 h-full"></div>
-            <div title={`رواتب: ${netProfitReportData.totalSalaries.toFixed(1)}`} style={{ width: `${Math.min(100, (netProfitReportData.totalSalaries / (netProfitReportData.grossIncome || 1)) * 100)}%` }} className="bg-blue-500 h-full"></div>
-            <div title={`سلف: ${netProfitReportData.totalAdvances.toFixed(1)}`} style={{ width: `${Math.min(100, (netProfitReportData.totalAdvances / (netProfitReportData.grossIncome || 1)) * 100)}%` }} className="bg-amber-500 h-full"></div>
-            <div title={`مشتريات: ${netProfitReportData.totalPurchasesPaid.toFixed(1)}`} style={{ width: `${Math.min(100, (netProfitReportData.totalPurchasesPaid / (netProfitReportData.grossIncome || 1)) * 100)}%` }} className="bg-purple-500 h-full"></div>
-            <div title={`دفعات موردين: ${netProfitReportData.totalSupplierPayments.toFixed(1)}`} style={{ width: `${Math.min(100, (netProfitReportData.totalSupplierPayments / (netProfitReportData.grossIncome || 1)) * 100)}%` }} className="bg-indigo-500 h-full"></div>
-            <div title={`عمولات: ${netProfitReportData.totalCommissions.toFixed(1)}`} style={{ width: `${Math.min(100, (netProfitReportData.totalCommissions / (netProfitReportData.grossIncome || 1)) * 100)}%` }} className="bg-teal-500 h-full"></div>
+            <div title={`مصروفات: ${Number(netProfitReportData.totalExpenses || 0).toFixed(1)}`} style={{ width: `${Math.min(100, (netProfitReportData.totalExpenses / (netProfitReportData.grossIncome || 1)) * 100)}%` }} className="bg-rose-500 h-full"></div>
+            <div title={`رواتب: ${Number(netProfitReportData.totalSalaries || 0).toFixed(1)}`} style={{ width: `${Math.min(100, (netProfitReportData.totalSalaries / (netProfitReportData.grossIncome || 1)) * 100)}%` }} className="bg-blue-500 h-full"></div>
+            <div title={`سلف: ${Number(netProfitReportData.totalAdvances || 0).toFixed(1)}`} style={{ width: `${Math.min(100, (netProfitReportData.totalAdvances / (netProfitReportData.grossIncome || 1)) * 100)}%` }} className="bg-amber-500 h-full"></div>
+            <div title={`مشتريات: ${Number(netProfitReportData.totalPurchasesPaid || 0).toFixed(1)}`} style={{ width: `${Math.min(100, (netProfitReportData.totalPurchasesPaid / (netProfitReportData.grossIncome || 1)) * 100)}%` }} className="bg-purple-500 h-full"></div>
+            <div title={`دفعات موردين: ${Number(netProfitReportData.totalSupplierPayments || 0).toFixed(1)}`} style={{ width: `${Math.min(100, (netProfitReportData.totalSupplierPayments / (netProfitReportData.grossIncome || 1)) * 100)}%` }} className="bg-indigo-500 h-full"></div>
+            <div title={`عمولات: ${Number(netProfitReportData.totalCommissions || 0).toFixed(1)}`} style={{ width: `${Math.min(100, (netProfitReportData.totalCommissions / (netProfitReportData.grossIncome || 1)) * 100)}%` }} className="bg-teal-500 h-full"></div>
             {netProfitReportData.netProfit > 0 && (
-              <div title={`صافي الربح: ${netProfitReportData.netProfit.toFixed(1)}`} style={{ width: `${Math.max(0, (netProfitReportData.netProfit / (netProfitReportData.grossIncome || 1)) * 100)}%` }} className="bg-emerald-500 h-full"></div>
+              <div title={`صافي الربح: ${Number(netProfitReportData.netProfit || 0).toFixed(1)}`} style={{ width: `${Math.max(0, (netProfitReportData.netProfit / (netProfitReportData.grossIncome || 1)) * 100)}%` }} className="bg-emerald-500 h-full"></div>
             )}
           </div>
           <div className="flex flex-wrap items-center gap-4 mt-2.5 text-[11px] font-bold text-slate-600">
@@ -4442,14 +4594,14 @@ function ReportTable({
                     )}
                   </td>
                   <td className="py-3.5 px-4 font-mono font-bold text-center text-slate-700">
-                    {item.percent.toFixed(1)}%
+                    {Number(item.percent || 0).toFixed(1)}%
                   </td>
                   <td className="py-3.5 px-4 text-slate-500 text-xs">
                     {item.note}
                   </td>
                   <td className="py-3.5 px-4 font-mono font-black text-sm text-left pl-6">
                     <span className={item.type === 'plus' ? 'text-emerald-600' : item.type === 'minus' ? 'text-rose-600' : item.amount >= 0 ? 'text-emerald-700 text-base' : 'text-rose-700 text-base'}>
-                      {item.type === 'minus' ? '-' : item.type === 'plus' ? '+' : ''}{item.amount.toFixed(2)}
+                      {item.type === 'minus' ? '-' : item.type === 'plus' ? '+' : ''}{Number(item.amount || 0).toFixed(2)}
                     </span>
                   </td>
                 </tr>
@@ -4461,7 +4613,7 @@ function ReportTable({
                   صافي الأرباح التشغيلية النهائية للفترة (المعادلة المعتمدة)
                 </td>
                 <td className={`py-4 px-4 font-mono text-left pl-6 font-black text-base ${netProfitReportData.netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                  {netProfitReportData.netProfit >= 0 ? '+' : ''}{netProfitReportData.netProfit.toFixed(2)} {settings.currency}
+                  {netProfitReportData.netProfit >= 0 ? '+' : ''}{Number(netProfitReportData.netProfit || 0).toFixed(2)} {settings.currency}
                 </td>
               </tr>
             </tfoot>
@@ -4483,13 +4635,13 @@ function ReportTable({
             
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <div className="bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-700 font-bold">
-                إجمالي الفواتير: <span className="font-mono text-purple-700">{netProfitReportData.totalPurchasesAmount.toFixed(2)} {settings.currency}</span>
+                إجمالي الفواتير: <span className="font-mono text-purple-700">{Number(netProfitReportData.totalPurchasesAmount || 0).toFixed(2)} {settings.currency}</span>
               </div>
               <div className="bg-purple-50 px-3 py-1.5 rounded-lg border border-purple-200 text-purple-800 font-bold">
-                المسدد فعلياً: <span className="font-mono">{netProfitReportData.totalPurchasesPaid.toFixed(2)} {settings.currency}</span>
+                المسدد فعلياً: <span className="font-mono">{Number(netProfitReportData.totalPurchasesPaid || 0).toFixed(2)} {settings.currency}</span>
               </div>
               <div className="bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-200 text-amber-800 font-bold">
-                المتبقي كآجل: <span className="font-mono">{netProfitReportData.totalPurchasesRemaining.toFixed(2)} {settings.currency}</span>
+                المتبقي كآجل: <span className="font-mono">{Number(netProfitReportData.totalPurchasesRemaining || 0).toFixed(2)} {settings.currency}</span>
               </div>
             </div>
           </div>
@@ -4546,13 +4698,13 @@ function ReportTable({
                         </span>
                       </td>
                       <td className="py-2.5 px-3 font-mono font-bold text-slate-700 text-center">
-                        {total.toFixed(2)}
+                        {Number(total || 0).toFixed(2)}
                       </td>
                       <td className="py-2.5 px-3 font-mono font-black text-purple-700 text-center">
-                        {paid.toFixed(2)}
+                        {Number(paid || 0).toFixed(2)}
                       </td>
                       <td className="py-2.5 px-3 font-mono font-bold text-amber-700 text-center">
-                        {remaining.toFixed(2)}
+                        {Number(remaining || 0).toFixed(2)}
                       </td>
                       <td className="py-2.5 px-3 text-center">
                         {isFullyPaid ? (
@@ -4587,13 +4739,13 @@ function ReportTable({
                       المجموع ({netProfitReportData.periodPurchases.length} فاتورة)
                     </td>
                     <td className="py-2.5 px-3 text-center font-mono font-black">
-                      {netProfitReportData.totalPurchasesAmount.toFixed(2)}
+                      {Number(netProfitReportData.totalPurchasesAmount || 0).toFixed(2)}
                     </td>
                     <td className="py-2.5 px-3 text-center font-mono font-black text-purple-700">
-                      {netProfitReportData.totalPurchasesPaid.toFixed(2)}
+                      {Number(netProfitReportData.totalPurchasesPaid || 0).toFixed(2)}
                     </td>
                     <td className="py-2.5 px-3 text-center font-mono font-black text-amber-700">
-                      {netProfitReportData.totalPurchasesRemaining.toFixed(2)}
+                      {Number(netProfitReportData.totalPurchasesRemaining || 0).toFixed(2)}
                     </td>
                     <td></td>
                   </tr>
@@ -4617,7 +4769,7 @@ function ReportTable({
             </div>
 
             <div className="bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-200 text-indigo-800 font-bold text-xs">
-              إجمالي دفعات الموردين: <span className="font-mono text-sm">{netProfitReportData.totalSupplierPayments.toFixed(2)} {settings.currency}</span>
+              إجمالي دفعات الموردين: <span className="font-mono text-sm">{Number(netProfitReportData.totalSupplierPayments || 0).toFixed(2)} {settings.currency}</span>
             </div>
           </div>
 
@@ -4671,7 +4823,7 @@ function ReportTable({
                         {notes}
                       </td>
                       <td className="py-2.5 px-3 font-mono font-black text-sm text-indigo-700 text-left pl-6">
-                        {amount.toFixed(2)}
+                        {Number(amount || 0).toFixed(2)}
                       </td>
                     </tr>
                   );
@@ -4691,7 +4843,7 @@ function ReportTable({
                       المجموع الكلي لدفعات وسداد الموردين ({netProfitReportData.periodSupplierPayments.length} سند)
                     </td>
                     <td className="py-2.5 px-3 font-mono text-indigo-800 text-left pl-6 font-black text-sm">
-                      {netProfitReportData.totalSupplierPayments.toFixed(2)} {settings.currency}
+                      {Number(netProfitReportData.totalSupplierPayments || 0).toFixed(2)} {settings.currency}
                     </td>
                   </tr>
                 </tfoot>
@@ -4705,159 +4857,125 @@ function ReportTable({
 
   /* ---------------- UNPAID BOOKINGS REPORT TABLE ---------------- */
   if (reportType === 'unpaid_bookings') {
-    const data = unpaidBookingsReportData || {
-      rows: [],
-      totalAmountSum: 0,
-      totalPaidSum: 0,
-      totalUnpaidSum: 0,
-      unpaidBookingsCount: 0,
-      fullyPaidBookingsCount: 0,
-      totalCount: 0
-    };
+    const dateLabel = start.toISOString().split('T')[0] === end.toISOString().split('T')[0] 
+      ? start.toISOString().split('T')[0] 
+      : `${start.toISOString().split('T')[0]} - ${end.toISOString().split('T')[0]}`;
 
     return (
       <div id="report-receipt-container" className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden p-6 animate-in fade-in">
-        {/* Header (Screen & Print) */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 pb-4 border-b border-slate-200">
           <div>
             <div className="flex items-center gap-2">
               <span className="text-xl font-black text-slate-800">📅 تقرير المبالغ المتبقية والغير مسددة في الحجوزات</span>
-              <span className="bg-indigo-50 text-indigo-700 font-bold text-xs px-2.5 py-1 rounded-lg border border-indigo-200">
-                {data.rows.length} حجز
+              <span className="bg-rose-50 text-rose-700 font-bold text-xs px-2.5 py-1 rounded-lg border border-rose-200">
+                {unpaidBookingsReportData?.filteredBookings?.length || 0} حجز
               </span>
             </div>
-            <p className="text-slate-400 text-xs mt-1">
-              الفترة الزمنية: من <span className="font-mono font-bold text-slate-700">{activeFrom}</span> إلى <span className="font-mono font-bold text-slate-700">{activeTo}</span> • {settings.salonName}
-            </p>
+            <p className="text-slate-400 text-xs mt-1">الفترة الزمنية: <span className="font-mono font-bold text-slate-700">{dateLabel}</span> • {settings.salonName}</p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="px-3.5 py-1.5 rounded-xl text-xs font-black bg-rose-50 text-rose-800 border border-rose-200">
-              إجمالي غير المسدد: <span className="font-mono text-sm">{data.totalUnpaidSum.toFixed(2)} {settings.currency}</span>
-            </div>
-            <div className="px-3.5 py-1.5 rounded-xl text-xs font-black bg-emerald-50 text-emerald-800 border border-emerald-200">
-              إجمالي المسدد: <span className="font-mono text-sm">{data.totalPaidSum.toFixed(2)} {settings.currency}</span>
+          <div className="flex items-center gap-3">
+            <div className="px-4 py-2 rounded-xl text-xs font-black border bg-rose-50 text-rose-800 border-rose-200">
+              إجمالي المتبقي: <span className="font-mono text-sm">{Number(unpaidBookingsReportData?.totalRemaining || 0).toFixed(2)} {settings.currency}</span>
             </div>
           </div>
         </div>
 
-        {/* Printable/Exportable Table */}
-        <div className="overflow-x-auto rounded-xl border border-slate-200">
-          <table className="w-full text-right text-xs">
-            <thead className="bg-slate-800 text-white font-bold text-[11px]">
-              <tr>
-                <th className="py-3 px-3 text-center w-10">#</th>
-                <th className="py-3 px-3">رقم الحجز</th>
-                <th className="py-3 px-3">اسم العميل</th>
-                <th className="py-3 px-3">تاريخ الحجز</th>
-                <th className="py-3 px-3">الأعمال المطلوبة</th>
-                <th className="py-3 px-3 text-center">المبلغ الإجمالي</th>
-                <th className="py-3 px-3 text-center">المسدد (العربون)</th>
-                <th className="py-3 px-3 text-center">غير المسدد (المتبقي)</th>
+        <div className="overflow-x-auto">
+          <table className="w-full text-right text-xs border-collapse">
+            <thead>
+              <tr className="bg-slate-100 text-slate-700 border-b border-slate-200 font-bold">
+                <th className="py-3 px-3 text-center w-12">م</th>
+                <th className="py-3 px-3">رقم ومكان الحجز</th>
+                <th className="py-3 px-3">العميل ورقم الجوال</th>
+                <th className="py-3 px-3">تاريخ ووقت الحجز</th>
+                <th className="py-3 px-3">الخدمات والفني</th>
+                <th className="py-3 px-3 text-left">إجمالي الحجز</th>
+                <th className="py-3 px-3 text-left">العربون وطريقة الدفع</th>
+                <th className="py-3 px-3 text-left">المتبقي غير المسدد</th>
                 <th className="py-3 px-3 text-center">الحالة</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
-              {data.rows.map((row: any, idx: number) => {
-                const isUnpaid = row.unpaidAmount > 0.001;
+            <tbody className="divide-y divide-slate-100">
+              {(unpaidBookingsReportData?.filteredBookings || []).map((b: any, index: number) => {
+                const isUnpaid = Number(b.remaining || 0) > 0.001;
                 return (
-                  <tr key={row.id || idx} className={`hover:bg-slate-50 transition-colors ${isUnpaid ? 'bg-rose-50/20' : ''}`}>
-                    <td className="py-3 px-3 text-center text-slate-400 font-mono text-[11px]">
-                      {idx + 1}
+                  <tr key={b.id || index} className="hover:bg-slate-50/80 transition-colors">
+                    <td className="py-3 px-3 text-center text-slate-500 font-mono font-semibold">
+                      {index + 1}
                     </td>
                     <td className="py-3 px-3">
-                      <div className="font-mono font-bold text-indigo-700">{row.bookingCode}</div>
-                      {row.location && (
-                        <div className="text-[10px] text-slate-500 flex items-center gap-0.5 mt-0.5" title="مكان الحجز">
-                          <MapPin size={10} className="text-slate-400" />
-                          <span>{row.location}</span>
+                      <div className="font-mono font-bold text-slate-800 text-xs">{b.bookingCode || b.id}</div>
+                      {b.location && (
+                        <div className="mt-1">
+                          <span className="inline-block px-2 py-0.5 rounded text-[10px] font-black bg-purple-50 text-purple-700 border border-purple-200">
+                            📍 {b.location}
+                          </span>
                         </div>
                       )}
                     </td>
                     <td className="py-3 px-3">
-                      <div className="font-bold text-slate-900">{row.clientName}</div>
-                      <div className="text-[10px] font-mono text-slate-400" dir="ltr">{row.phone}</div>
+                      <div className="font-bold text-slate-800">{b.customerName}</div>
+                      {b.customerPhone && (
+                        <div className="text-[11px] font-mono text-slate-400 dir-ltr text-right">{b.customerPhone}</div>
+                      )}
                     </td>
                     <td className="py-3 px-3">
-                      <div className="font-mono font-bold text-slate-800">{row.date}</div>
-                      <div className="text-[10px] font-mono text-slate-400" dir="ltr">{row.time}</div>
+                      <div className="font-semibold text-slate-700">{safeSplitDate(b.date)}</div>
+                      <div className="text-[11px] text-slate-400 font-mono">{b.time || ''}</div>
                     </td>
                     <td className="py-3 px-3 max-w-xs">
-                      <div className="font-bold text-slate-800 leading-snug">{row.servicesText}</div>
-                      {row.staffText && row.staffText !== '-' && (
-                        <div className="text-[10px] text-slate-500 mt-0.5">الموظف: {row.staffText}</div>
-                      )}
-                    </td>
-                    <td className="py-3 px-3 text-center font-mono font-black text-slate-900 text-sm">
-                      {row.totalAmount.toFixed(2)} <span className="text-[10px] font-normal text-slate-400">{settings.currency}</span>
-                    </td>
-                    <td className="py-3 px-3 text-center">
-                      <div className="font-mono font-black text-emerald-700 text-sm">
-                        {row.paidAmount.toFixed(2)} <span className="text-[10px] font-normal text-slate-400">{settings.currency}</span>
+                      <div className="text-slate-600 truncate font-medium" title={b.servicesSummary}>
+                        {b.servicesSummary}
                       </div>
-                      {row.advances && row.advances.length > 0 && (
-                        <div className="text-[10px] text-slate-500 mt-0.5 flex flex-wrap justify-center gap-1">
-                          {row.advances.map((adv: any, aIdx: number) => (
-                            <span key={adv.id || aIdx} className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-1 rounded text-[9px] font-semibold">
-                              عربون {aIdx + 1}: {Number(adv.amount || 0).toFixed(0)} ({adv.treasuryName || adv.paymentMethod || 'كاش'})
-                            </span>
-                          ))}
-                        </div>
-                      )}
+                    </td>
+                    <td className="py-3 px-3 font-mono font-bold text-slate-800 text-left">
+                      {Number(b.totalAmount || 0).toFixed(2)} {settings.currency}
+                    </td>
+                    <td className="py-3 px-3 font-mono text-xs text-slate-600 text-left">
+                      {b.advanceDetails}
+                    </td>
+                    <td className="py-3 px-3 text-left">
+                      <span className={`inline-block font-mono font-bold px-2 py-1 rounded-lg text-xs border ${
+                        isUnpaid 
+                          ? 'bg-rose-50 text-rose-700 border-rose-200' 
+                          : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      }`}>
+                        {Number(b.remaining || 0).toFixed(2)} {settings.currency}
+                      </span>
                     </td>
                     <td className="py-3 px-3 text-center">
-                      {isUnpaid ? (
-                        <div className="inline-flex flex-col items-center">
-                          <span className="font-mono font-black text-rose-600 text-sm">
-                            {row.unpaidAmount.toFixed(2)} <span className="text-[10px] font-normal text-slate-400">{settings.currency}</span>
-                          </span>
-                          <span className="bg-rose-100 text-rose-800 text-[9px] font-bold px-1.5 py-0.5 rounded-full mt-0.5 border border-rose-200">
-                            متبقي غير مسدد
-                          </span>
-                        </div>
-                      ) : (
-                        <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-200">
-                          مسدد بالكامل ✅
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-3 px-3 text-center">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${row.statusBadge.bg}`}>
-                        {row.statusBadge.label}
+                      <span className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${b.statusColor}`}>
+                        {b.statusLabel}
                       </span>
                     </td>
                   </tr>
                 );
               })}
-
-              {data.rows.length === 0 && (
+              {(!unpaidBookingsReportData?.filteredBookings || unpaidBookingsReportData.filteredBookings.length === 0) && (
                 <tr>
                   <td colSpan={9} className="py-12 text-center text-slate-400 font-bold">
-                    لا توجد حجوزات مسجلة مطابقة للشروط خلال هذه الفترة
+                    لا توجد حجوزات مطابقة للفترة أو محددات البحث المحددة
                   </td>
                 </tr>
               )}
             </tbody>
-
-            {/* Totals Row (مجاميع بالأسفل) */}
-            {data.rows.length > 0 && (
-              <tfoot className="bg-slate-100 font-black text-slate-900 border-t-2 border-slate-300 text-xs">
+            {unpaidBookingsReportData?.filteredBookings && unpaidBookingsReportData.filteredBookings.length > 0 && (
+              <tfoot className="bg-slate-100 font-black text-slate-800 border-t-2 border-slate-300">
                 <tr>
-                  <td colSpan={5} className="py-3.5 px-3 text-center font-black text-sm text-slate-800">
-                    المجاميع الكلية للفترة المحددة ({data.rows.length} حجز)
+                  <td colSpan={5} className="py-3 px-4 text-center font-black text-sm">
+                    الإجمالي الكلي ({unpaidBookingsReportData.totalCount} حجز)
                   </td>
-                  <td className="py-3.5 px-3 font-mono text-center font-black text-sm text-indigo-900">
-                    {data.totalAmountSum.toFixed(2)} {settings.currency}
+                  <td className="py-3 px-3 font-mono font-black text-left text-sm text-indigo-700">
+                    {Number(unpaidBookingsReportData.totalRequired || 0).toFixed(2)} {settings.currency}
                   </td>
-                  <td className="py-3.5 px-3 font-mono text-center font-black text-sm text-emerald-800">
-                    {data.totalPaidSum.toFixed(2)} {settings.currency}
+                  <td className="py-3 px-3 font-mono font-black text-left text-sm text-emerald-700">
+                    {Number(unpaidBookingsReportData.totalPaid || 0).toFixed(2)} {settings.currency}
                   </td>
-                  <td className="py-3.5 px-3 font-mono text-center font-black text-sm text-rose-700">
-                    {data.totalUnpaidSum.toFixed(2)} {settings.currency}
+                  <td className="py-3 px-3 font-mono font-black text-left text-sm text-rose-700">
+                    {Number(unpaidBookingsReportData.totalRemaining || 0).toFixed(2)} {settings.currency}
                   </td>
-                  <td className="py-3.5 px-3 text-center text-[11px] text-slate-500 font-bold">
-                    {data.unpaidBookingsCount} متبقي | {data.fullyPaidBookingsCount} مسدد
-                  </td>
+                  <td></td>
                 </tr>
               </tfoot>
             )}
@@ -4867,78 +4985,57 @@ function ReportTable({
     );
   }
 
+  /* ---------------- SALES RETURNS REPORT ---------------- */
   if (reportType === 'sales_returns') {
     const dateLabel = start.toISOString().split('T')[0] === end.toISOString().split('T')[0] 
       ? start.toISOString().split('T')[0] 
       : `${start.toISOString().split('T')[0]} - ${end.toISOString().split('T')[0]}`;
 
-    // Filter returns
-    const periodReturns = branchSalesReturns.filter(ret => {
-      const d = (ret.date || '').split('T')[0];
-      if (d < activeFrom || d > activeTo) return false;
-      if (ret.status === 'cancelled') return false;
+    const data = salesReturnsReportData;
 
-      if (returnsTreasuryFilter !== 'all' && ret.treasuryId !== returnsTreasuryFilter) return false;
-
-      if (returnsFilterType === 'products') {
-        const hasProd = (ret.items || []).some(it => it.type === 'product');
-        if (!hasProd) return false;
-      } else if (returnsFilterType === 'services') {
-        const hasSrv = (ret.items || []).some(it => it.type !== 'product');
-        if (!hasSrv) return false;
+    const handleExportExcel = () => {
+      if (!canExportExcel) {
+        alert('⛔ عذراً، تصدير التقارير إلى Excel يتطلب صلاحية التصدير (export_excel).');
+        return;
       }
+      const excelData = data.returns.map((r: SalesReturn, idx: number) => ({
+        'م': idx + 1,
+        'رقم المرتجع': r.returnNumber,
+        'رقم الفاتورة': r.invoiceId,
+        'العميل': r.clientName || 'عميل نقدي',
+        'التاريخ': safeSplitDate(r.returnDate),
+        'طريقة الاسترداد': getTreasuryLabel(r.treasuryId, r.refundMethod),
+        'السبب': r.reason || 'أخرى',
+        'عدد الأصناف': r.items?.length || 0,
+        'مبلغ المرتجع': Number(r.totalRefundAmount || 0).toFixed(2),
+        'الكاشير': r.createdByUserName || 'المسؤول'
+      }));
 
-      if (returnsSearch.trim()) {
-        const q = returnsSearch.toLowerCase().trim();
-        const idMatch = (ret.id || '').toLowerCase().includes(q);
-        const invMatch = (ret.originalInvoiceId || '').toLowerCase().includes(q);
-        const nameMatch = (ret.clientName || '').toLowerCase().includes(q);
-        const phoneMatch = (ret.clientPhone || '').includes(q);
-        const reasonMatch = (ret.reason || '').toLowerCase().includes(q);
-        return idMatch || invMatch || nameMatch || phoneMatch || reasonMatch;
-      }
-
-      return true;
-    }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-    // Compute period invoices & gross sales for comparison
-    const periodInvoices = branchInvoices.filter(inv => {
-      const d = (inv.date || '').split('T')[0];
-      return d >= activeFrom && d <= activeTo && inv.status !== 'cancelled';
-    });
-    const grossSalesAmount = periodInvoices.reduce((sum, inv) => sum + (Number(inv.total) || 0), 0);
-
-    const totalRefundsAmount = periodReturns.reduce((sum, ret) => sum + (Number(ret.totalRefund) || 0), 0);
-    const netSales = Math.max(0, grossSalesAmount - totalRefundsAmount);
-    const returnRate = grossSalesAmount > 0 ? (totalRefundsAmount / grossSalesAmount) * 100 : 0;
-
-    let productItemsCount = 0;
-    let serviceItemsCount = 0;
-    let productRefundsAmount = 0;
-    let serviceRefundsAmount = 0;
-
-    periodReturns.forEach(ret => {
-      (ret.items || []).forEach(it => {
-        if (it.type === 'product') {
-          productItemsCount += (it.returnQuantity || 1);
-          productRefundsAmount += (it.totalRefund || (it.price * it.returnQuantity) || 0);
-        } else {
-          serviceItemsCount += (it.returnQuantity || 1);
-          serviceRefundsAmount += (it.totalRefund || (it.price * it.returnQuantity) || 0);
-        }
+      excelData.push({
+        'م': '' as any,
+        'رقم المرتجع': 'الإجمالي الكلي',
+        'رقم الفاتورة': '',
+        'العميل': '',
+        'التاريخ': '',
+        'طريقة الاسترداد': '',
+        'السبب': '',
+        'عدد الأصناف': data.returns.reduce((sum, r) => sum + (r.items?.length || 0), 0) as any,
+        'مبلغ المرتجع': Number(data.totalRefundAmount || 0).toFixed(2),
+        'الكاشير': ''
       });
-    });
+
+      exportToExcel(excelData, `تقرير_مرتجعات_المبيعات_${activeFrom}_${activeTo}`);
+    };
 
     return (
-      <div id="report-receipt-container" className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden p-6 animate-in fade-in" dir="rtl">
-        
-        {/* Top Header */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 pb-4 border-b border-slate-200">
+      <div id="report-receipt-container" className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden p-6 animate-in fade-in space-y-6">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-5 border-b border-slate-200">
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xl font-black text-slate-800">🔄 تقرير مرتجعات المبيعات والبنود المستردة</span>
+              <span className="text-xl font-black text-slate-800">🔄 تقرير مرتجعات المبيعات (إشعارات دائن)</span>
               <span className="bg-rose-50 text-rose-700 font-bold text-xs px-2.5 py-1 rounded-lg border border-rose-200">
-                {periodReturns.length} سند مرتجع
+                {data.returnsCount} عملية مرتجع
               </span>
             </div>
             <p className="text-slate-400 text-xs mt-1">
@@ -4946,470 +5043,851 @@ function ReportTable({
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => handlePrintReceipt('report-receipt-container', true, 'a4')}
-              className="bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer shadow-sm print:hidden"
+              onClick={handleExportExcel}
+              disabled={!canExportExcel}
+              className={`${canExportExcel ? 'bg-emerald-600 hover:bg-emerald-700 cursor-pointer' : 'bg-slate-300 text-slate-500 cursor-not-allowed opacity-50'} text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm transition-all`}
             >
-              <Printer size={15} />
-              <span>طباعة التقرير (A4)</span>
+              <Download size={15} /> تصدير إكسل
+            </button>
+            <button
+              onClick={() => window.print()}
+              className="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+            >
+              <Printer size={15} /> طباعة التقرير
             </button>
           </div>
         </div>
 
-        {/* KPI Summary Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
-          <div className="bg-rose-50/80 p-3.5 rounded-2xl border border-rose-200">
-            <span className="text-[11px] font-bold text-rose-700 block">إجمالي المسترد</span>
-            <div className="text-lg font-black text-rose-800 font-mono mt-0.5">
-              {totalRefundsAmount.toFixed(2)} <span className="text-[10px] font-normal">{settings.currency}</span>
+        {/* 4 KPI Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="p-4 rounded-2xl bg-gradient-to-br from-rose-50 to-rose-100/40 border border-rose-200 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold text-rose-800">إجمالي مبالغ المرتجعات</p>
+              <p className="text-2xl font-black text-rose-950 mt-1 font-mono">
+                {Number(data.totalRefundAmount || 0).toFixed(2)} <span className="text-xs">{settings.currency}</span>
+              </p>
             </div>
-            <span className="text-[10px] text-rose-600 block mt-1">{periodReturns.length} عملية استرجاع</span>
+            <div className="w-12 h-12 rounded-xl bg-rose-500 text-white flex items-center justify-center shadow-md shadow-rose-500/20">
+              <RotateCcw size={22} />
+            </div>
           </div>
 
-          <div className="bg-emerald-50/80 p-3.5 rounded-2xl border border-emerald-200">
-            <span className="text-[11px] font-bold text-emerald-700 block">صافي المبيعات</span>
-            <div className="text-lg font-black text-emerald-800 font-mono mt-0.5">
-              {netSales.toFixed(2)} <span className="text-[10px] font-normal">{settings.currency}</span>
+          <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-50 to-amber-100/40 border border-amber-200 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold text-amber-800">عدد عمليات المرتجع</p>
+              <p className="text-2xl font-black text-amber-950 mt-1 font-mono">
+                {data.returnsCount} <span className="text-xs font-sans">عملية</span>
+              </p>
             </div>
-            <span className="text-[10px] text-emerald-600 block mt-1">بعد خصم المرتجعات</span>
+            <div className="w-12 h-12 rounded-xl bg-amber-500 text-white flex items-center justify-center shadow-md shadow-amber-500/20">
+              <FileBarChart size={22} />
+            </div>
           </div>
 
-          <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
-            <span className="text-[11px] font-bold text-slate-600 block">إجمالي المبيعات (قبل الخصم)</span>
-            <div className="text-lg font-black text-slate-800 font-mono mt-0.5">
-              {grossSalesAmount.toFixed(2)} <span className="text-[10px] font-normal">{settings.currency}</span>
+          <div className="p-4 rounded-2xl bg-gradient-to-br from-blue-50 to-blue-100/40 border border-blue-200 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold text-blue-800">منتجات مسترجعة للمخزون</p>
+              <p className="text-2xl font-black text-blue-950 mt-1 font-mono">
+                {data.restockedProductsCount} <span className="text-xs font-sans">قطعة</span>
+              </p>
             </div>
-            <span className="text-[10px] text-slate-500 block mt-1">{periodInvoices.length} فاتورة</span>
+            <div className="w-12 h-12 rounded-xl bg-blue-500 text-white flex items-center justify-center shadow-md shadow-blue-500/20">
+              <ShoppingCart size={22} />
+            </div>
           </div>
 
-          <div className="bg-amber-50/80 p-3.5 rounded-2xl border border-amber-200">
-            <span className="text-[11px] font-bold text-amber-800 block">نسبة المرتجعات %</span>
-            <div className="text-lg font-black text-amber-900 font-mono mt-0.5">
-              {returnRate.toFixed(1)}%
+          <div className="p-4 rounded-2xl bg-gradient-to-br from-purple-50 to-purple-100/40 border border-purple-200 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold text-purple-800">خدمات تم إلغاؤها / إرجاعها</p>
+              <p className="text-2xl font-black text-purple-950 mt-1 font-mono">
+                {data.returnedServicesCount} <span className="text-xs font-sans">خدمة</span>
+              </p>
             </div>
-            <span className="text-[10px] text-amber-700 block mt-1">من إجمالي المبيعات</span>
-          </div>
-
-          <div className="bg-blue-50/80 p-3.5 rounded-2xl border border-blue-200">
-            <span className="text-[11px] font-bold text-blue-700 block">مرتجع المنتجات</span>
-            <div className="text-lg font-black text-blue-900 font-mono mt-0.5">
-              {productRefundsAmount.toFixed(2)} <span className="text-[10px] font-normal">{settings.currency}</span>
+            <div className="w-12 h-12 rounded-xl bg-purple-500 text-white flex items-center justify-center shadow-md shadow-purple-500/20">
+              <Coins size={22} />
             </div>
-            <span className="text-[10px] text-blue-600 block mt-1">{productItemsCount} قطعة للمستودع</span>
-          </div>
-
-          <div className="bg-purple-50/80 p-3.5 rounded-2xl border border-purple-200">
-            <span className="text-[11px] font-bold text-purple-700 block">مرتجع الخدمات</span>
-            <div className="text-lg font-black text-purple-900 font-mono mt-0.5">
-              {serviceRefundsAmount.toFixed(2)} <span className="text-[10px] font-normal">{settings.currency}</span>
-            </div>
-            <span className="text-[10px] text-purple-600 block mt-1">{serviceItemsCount} خدمة معدلة</span>
           </div>
         </div>
 
-        {/* Detailed Table */}
-        <div className="overflow-x-auto border border-slate-200 rounded-2xl">
-          <table className="w-full text-right text-xs">
-            <thead className="bg-slate-900 text-white font-bold text-[11px]">
-              <tr>
-                <th className="py-3 px-3 text-center">#</th>
-                <th className="py-3 px-3">رقم السند</th>
-                <th className="py-3 px-3">الفاتورة الأصلية</th>
-                <th className="py-3 px-3">التاريخ والوقت</th>
-                <th className="py-3 px-3">العميل</th>
-                <th className="py-3 px-3">الأصناف المرجعة</th>
-                <th className="py-3 px-3 text-center">النوع</th>
-                <th className="py-3 px-3">الخزينة المنصرف منها</th>
-                <th className="py-3 px-3 text-center">المبلغ المسترد</th>
-                <th className="py-3 px-3">سبب المرتجع</th>
-                <th className="py-3 px-3 text-center print:hidden">طباعة</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 font-medium">
-              {periodReturns.map((ret, idx) => (
-                <tr key={ret.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="py-3 px-3 text-center font-mono text-slate-400">{idx + 1}</td>
-                  <td className="py-3 px-3 font-mono font-bold text-rose-700">{ret.id}</td>
-                  <td className="py-3 px-3 font-mono font-bold text-slate-700">#{ret.originalInvoiceId}</td>
-                  <td className="py-3 px-3 text-slate-600">{new Date(ret.date).toLocaleString('ar-SA')}</td>
-                  <td className="py-3 px-3">
-                    <div className="font-bold text-slate-800">{ret.clientName || 'عميل نقدي'}</div>
-                    {ret.clientPhone && <div className="text-[10px] font-mono text-slate-400">{ret.clientPhone}</div>}
-                  </td>
-                  <td className="py-3 px-3 max-w-xs">
-                    <div className="flex flex-col gap-1">
-                      {ret.items.map((it, iIdx) => (
-                        <div key={iIdx} className="text-[11px] text-slate-700 flex items-center gap-1">
-                          <span className="font-bold text-slate-900">{it.name}</span>
-                          <span className="font-mono text-rose-600 font-bold">({it.returnQuantity}×)</span>
-                          <span className={`text-[9px] px-1 rounded ${it.type === 'product' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'}`}>
-                            {it.type === 'product' ? 'منتج' : 'خدمة'}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="py-3 px-3 text-center">
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                      ret.returnType === 'full' ? 'bg-rose-100 text-rose-800 border border-rose-200' : 'bg-amber-100 text-amber-800 border border-amber-200'
-                    }`}>
-                      {ret.returnType === 'full' ? 'كلي' : 'جزئي'}
-                    </span>
-                  </td>
-                  <td className="py-3 px-3 text-slate-700 font-bold">
-                    {ret.treasuryName || ret.treasuryId}
-                  </td>
-                  <td className="py-3 px-3 text-center font-mono font-black text-rose-600 text-sm">
-                    {Number(ret.totalRefund).toFixed(2)} {settings.currency}
-                  </td>
-                  <td className="py-3 px-3 text-slate-600 text-[11px] max-w-xs truncate" title={ret.reason + (ret.notes ? ` - ${ret.notes}` : '')}>
-                    {ret.reason}
-                  </td>
-                  <td className="py-3 px-3 text-center print:hidden">
-                    <button
-                      onClick={() => {
-                        const printContent = document.getElementById(`thermal-sales-return-report-${ret.id}`)?.outerHTML;
-                        if (printContent) {
-                          const w = window.open('', '', 'width=800,height=600');
-                          if (w) {
-                            w.document.write('<html><head><title>طباعة سند المرتجع</title><link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet"><style>body{margin:0;display:flex;justify-content:center;background:#fff;direction:rtl;font-family:"Cairo",sans-serif;}</style></head><body>' + printContent + '</body></html>');
-                            w.setTimeout(() => { w.focus(); w.print(); w.close(); }, 500);
-                          }
-                        }
-                      }}
-                      className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 inline-flex items-center justify-center transition-colors cursor-pointer"
-                      title="طباعة إيصال المرتجع"
-                    >
-                      <Printer size={13} />
-                    </button>
-                    <div className="hidden">
-                      <ThermalSalesReturnReceipt salesReturn={ret} settings={settings} id={`thermal-sales-return-report-${ret.id}`} />
-                    </div>
-                  </td>
-                </tr>
+        {/* 2 Analytical Breakdown Panels */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Reason Breakdown */}
+          <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50">
+            <h4 className="text-xs font-black text-slate-800 mb-3 flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
+              <span>تحليل أسباب المرتجعات</span>
+            </h4>
+            <div className="space-y-2">
+              {Object.entries(data.reasonsBreakdown).map(([reason, stat]: [string, any]) => (
+                <div key={reason} className="p-2.5 bg-white rounded-xl border border-slate-200 flex items-center justify-between text-xs">
+                  <span className="font-bold text-slate-700">{reason}</span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-slate-400 font-mono">({stat.count} مرات)</span>
+                    <span className="font-mono font-black text-rose-700">{stat.amount.toFixed(2)} {settings.currency}</span>
+                  </div>
+                </div>
               ))}
-
-              {periodReturns.length === 0 && (
-                <tr>
-                  <td colSpan={11} className="py-12 text-center text-slate-400 font-bold">
-                    لا توجد عمليات مرتجع مبيعات مسجلة خلال هذه الفترة الزمنية
-                  </td>
-                </tr>
+              {Object.keys(data.reasonsBreakdown).length === 0 && (
+                <p className="text-center py-4 text-xs text-slate-400 font-bold">لا توجد بيانات أسباب مسجلة</p>
               )}
-            </tbody>
+            </div>
+          </div>
 
-            {periodReturns.length > 0 && (
-              <tfoot className="bg-slate-100 font-black text-slate-900 border-t-2 border-slate-300 text-xs">
-                <tr>
-                  <td colSpan={8} className="py-3.5 px-3 text-center font-black text-sm text-slate-800">
-                    إجمالي المبالغ المستردة للفترة ({periodReturns.length} سند مرتجع)
-                  </td>
-                  <td className="py-3.5 px-3 font-mono text-center font-black text-base text-rose-700">
-                    {totalRefundsAmount.toFixed(2)} {settings.currency}
-                  </td>
-                  <td colSpan={2} className="py-3.5 px-3 text-[11px] text-slate-500 font-bold">
-                    صافي المبيعات المحققة: {netSales.toFixed(2)} {settings.currency}
-                  </td>
-                </tr>
-              </tfoot>
-            )}
-          </table>
+          {/* Refund Methods / Treasuries Breakdown */}
+          <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50">
+            <h4 className="text-xs font-black text-slate-800 mb-3 flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-indigo-500" />
+              <span>الخزائن وطرق استرداد المبالغ</span>
+            </h4>
+            <div className="space-y-2">
+              {Object.entries(data.treasuriesBreakdown).map(([tId, amount]: [string, any]) => (
+                <div key={tId} className="p-2.5 bg-white rounded-xl border border-slate-200 flex items-center justify-between text-xs">
+                  <span className="font-bold text-slate-700">{getTreasuryLabel(tId)}</span>
+                  <span className="font-mono font-black text-indigo-700">{amount.toFixed(2)} {settings.currency}</span>
+                </div>
+              ))}
+              {Object.keys(data.treasuriesBreakdown).length === 0 && (
+                <p className="text-center py-4 text-xs text-slate-400 font-bold">لا توجد مبالغ مستردة مسجلة</p>
+              )}
+            </div>
+          </div>
         </div>
+
+        {/* Top Returned Items */}
+        {data.topReturnedItems.length > 0 && (
+          <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white">
+            <div className="p-3.5 bg-slate-100/70 border-b border-slate-200 font-black text-xs text-slate-800 flex items-center justify-between">
+              <span>الأصناف والخدمات الأكثر إرجاعاً</span>
+              <span className="text-[11px] text-slate-400 font-normal">مرتبة تنازلياً حسب كمية الإرجاع</span>
+            </div>
+            <table className="w-full text-right text-xs">
+              <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
+                <tr>
+                  <th className="py-2.5 px-3 text-center w-12">م</th>
+                  <th className="py-2.5 px-3">اسم الصنف / الخدمة</th>
+                  <th className="py-2.5 px-3 text-center">النوع</th>
+                  <th className="py-2.5 px-3 text-center">الكمية المرتجعة</th>
+                  <th className="py-2.5 px-3 text-left pl-6">إجمالي المبلغ المسترد</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {data.topReturnedItems.slice(0, 10).map((it, idx) => (
+                  <tr key={idx} className="hover:bg-slate-50/60 transition-colors">
+                    <td className="py-2.5 px-3 text-center font-mono text-slate-400">{idx + 1}</td>
+                    <td className="py-2.5 px-3 font-bold text-slate-800">{it.name}</td>
+                    <td className="py-2.5 px-3 text-center">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${it.type === 'product' ? 'bg-amber-100 text-amber-800' : 'bg-purple-100 text-purple-800'}`}>
+                        {it.type === 'product' ? 'منتج' : 'خدمة'}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-3 text-center font-mono font-bold text-rose-700">{it.qty}</td>
+                    <td className="py-2.5 px-3 font-mono font-black text-slate-800 text-left pl-6">
+                      {it.amount.toFixed(2)} {settings.currency}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Detailed Returns Table */}
+        <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white">
+          <div className="p-3.5 bg-slate-900 text-white font-black text-xs flex items-center justify-between">
+            <span>سجل عمليات مرتجعات المبيعات التفصيلي</span>
+            <span className="text-[11px] text-slate-300 font-mono font-normal">{data.returns.length} سجل</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-right text-xs">
+              <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                <tr>
+                  <th className="py-3 px-3 text-center w-12">م</th>
+                  <th className="py-3 px-3">رقم المرتجع</th>
+                  <th className="py-3 px-3">رقم الفاتورة</th>
+                  <th className="py-3 px-3">التاريخ والوقت</th>
+                  <th className="py-3 px-3">العميل</th>
+                  <th className="py-3 px-3">سبب الإرجاع</th>
+                  <th className="py-3 px-3">طريقة الاسترداد / الخزينة</th>
+                  <th className="py-3 px-3">الأصناف المرتجعة</th>
+                  <th className="py-3 px-3 text-left">مبلغ المرتجع</th>
+                  <th className="py-3 px-3 text-center">طباعة إشعار</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {data.returns.map((r, idx) => (
+                  <tr key={r.id || idx} className="hover:bg-rose-50/20 transition-colors">
+                    <td className="py-3 px-3 text-center font-mono text-slate-400">{idx + 1}</td>
+                    <td className="py-3 px-3 font-mono font-bold text-rose-700">{r.returnNumber}</td>
+                    <td className="py-3 px-3 font-mono font-bold text-slate-700">#{r.invoiceId}</td>
+                    <td className="py-3 px-3 text-slate-500 font-mono">{safeSplitDate(r.returnDate)}</td>
+                    <td className="py-3 px-3 font-bold text-slate-800">{r.clientName || 'عميل نقدي'}</td>
+                    <td className="py-3 px-3 text-slate-600 max-w-xs truncate">{r.reason || 'أخرى'}</td>
+                    <td className="py-3 px-3">
+                      <span className="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-700 font-bold border border-slate-200">
+                        {getTreasuryLabel(r.treasuryId, r.refundMethod)}
+                      </span>
+                    </td>
+                    <td className="py-3 px-3 max-w-xs truncate text-slate-600" title={r.items?.map(i => `${i.name} (x${i.quantity})`).join(', ')}>
+                      {r.items?.map(i => `${i.name} (x${i.quantity})`).join(', ') || '-'}
+                    </td>
+                    <td className="py-3 px-3 font-mono font-black text-rose-700 text-left">
+                      {Number(r.totalRefundAmount || 0).toFixed(2)} {settings.currency}
+                    </td>
+                    <td className="py-3 px-3 text-center">
+                      <button
+                        onClick={() => setVoucherModalReturn(r)}
+                        className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold border border-rose-200 flex items-center gap-1 mx-auto transition-colors cursor-pointer"
+                        title="طباعة إشعار دائن (سند مرتجع)"
+                      >
+                        <Printer size={13} />
+                        <span>طباعة</span>
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+
+                {data.returns.length === 0 && (
+                  <tr>
+                    <td colSpan={10} className="py-12 text-center text-slate-400 font-bold">
+                      لا توجد عمليات مرتجع مسجلة في هذه الفترة الزمنية
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+              {data.returns.length > 0 && (
+                <tfoot className="bg-slate-100 font-black text-slate-900 border-t-2 border-slate-300">
+                  <tr>
+                    <td colSpan={8} className="py-3 px-4 text-center font-black">
+                      إجمالي مبالغ المرتجعات ({data.returns.length} عملية)
+                    </td>
+                    <td className="py-3 px-3 font-mono text-rose-700 font-black text-sm text-left">
+                      {Number(data.totalRefundAmount || 0).toFixed(2)} {settings.currency}
+                    </td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        </div>
+
+        {/* Modal for Credit Note Voucher */}
+        {voucherModalReturn && (
+          <SalesReturnVoucherModal
+            isOpen={true}
+            onClose={() => setVoucherModalReturn(null)}
+            salesReturn={voucherModalReturn}
+            settings={settings}
+          />
+        )}
       </div>
     );
   }
 
   if (reportType === 'inactive_clients') {
-    const data = inactiveClientsReportData;
-    return (
-      <div id="report-receipt-container" className="p-4 sm:p-6 space-y-6">
-        {/* Banner Header */}
-        <div className="bg-gradient-to-r from-rose-900 via-slate-900 to-rose-950 text-white p-6 rounded-3xl shadow-lg border border-rose-800/40 relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-80 h-80 bg-rose-500/10 rounded-full blur-3xl pointer-events-none"></div>
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative z-10">
-            <div>
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs font-black mb-2">
-                <UserX size={14} />
-                <span>إعادة تنشيط العملاء والتواصل المباشر</span>
-              </div>
-              <h3 className="text-xl sm:text-2xl font-black text-white">
-                تقرير العملاء المنقطعين عن الزيارة (Inactive Clients Retention)
-              </h3>
-              <p className="text-xs text-rose-100/80 mt-1.5 max-w-2xl font-medium leading-relaxed">
-                قائمة حصرية بالعملاء الذين لم يسجلوا أي فاتورة أو زيارة منذ <strong className="text-white underline font-bold">{data.minDays} يوماً</strong> فأكثر (المعيار المعتمد في الإعدادات: {settings.inactiveClientsDays || 60} يوم). يتيح لك هذا التقرير التواصل معهم مباشرة عبر الواتساب وتقديم عروض ترويجية لعودتهم.
-              </p>
-            </div>
+    const data = inactiveClientsReportData || {
+      allInactiveClients: [],
+      inactiveClients: [],
+      inactiveCount: 0,
+      totalClientsCount: 0,
+      totalPreviousSpend: 0,
+      avgDaysAbsent: 0,
+      inactiveRate: 0,
+      vipInactiveCount: 0,
+      thresholdDays: 60
+    };
 
-            <div className="bg-white/10 backdrop-blur-md px-6 py-4 rounded-2xl border border-white/20 text-center shrink-0">
-              <p className="text-xs text-rose-200 font-bold mb-0.5">العملاء المنقطعين المرصودين</p>
-              <div className="text-3xl font-black font-mono text-white">
-                {data.totalInactiveCount}
-                <span className="text-xs font-normal text-rose-200 mr-1.5">عميل</span>
-              </div>
-              <div className="text-[11px] font-bold text-rose-200 mt-1">
-                يشكلون <span className="font-mono text-amber-300 font-black">{data.inactivePercentage.toFixed(1)}%</span> من قاعدة العملاء
-              </div>
+    const filteredClients = data.inactiveClients || [];
+
+    const handleExportExcel = () => {
+      const headers = ['م', 'اسم العميل', 'المستوى', 'حالة الزيارة', 'رقم الموبايل', 'تاريخ آخر زيارة / تسجيل', 'مدة الانقطاع (يوم)', 'الزيارات السابقة', 'إجمالي الإنفاق السابق', 'متوسط الفاتورة', 'نقاط الولاء', 'رصيد الكاش باك', 'الملاحظات'];
+      const rows = filteredClients.map((c: any, idx: number) => [
+        idx + 1,
+        c.name,
+        c.tier === 'royal' ? 'ملكي 💎' : c.tier === 'vip' ? 'VIP 👑' : c.tier === 'distinguished' ? 'متميز 🔷' : 'قياسي ⭐',
+        c.isNeverVisited ? 'مسجل جديد لم يزر بعد' : 'سبق له الزيارة',
+        c.phone || '-',
+        c.lastVisitDate ? c.lastVisitDate : (c.createdAtDate ? `${c.createdAtDate} (تاريخ التسجيل)` : '-'),
+        c.daysAbsent,
+        c.totalVisits || 0,
+        Number(c.totalSpend || 0).toFixed(2),
+        Number(c.avgInvoice || 0).toFixed(2),
+        c.loyaltyPoints || 0,
+        Number(c.cashback || 0).toFixed(2),
+        c.notes || '-'
+      ]);
+      exportToExcel(`تقرير_العملاء_المنقطعين_${data.thresholdDays}_يوم`, `العملاء_المنقطعين_${data.thresholdDays}_يوم`, headers, rows);
+    };
+
+    const handleCopyPhone = (phone: string) => {
+      if (!phone) return;
+      navigator.clipboard.writeText(phone);
+      alert(`تم نسخ رقم الموبايل: ${phone}`);
+    };
+
+    const getWhatsAppUrl = (client: any) => {
+      const phoneDigits = (client.phone || '').replace(/\D/g, '');
+      if (!phoneDigits) return null;
+      let fullPhone = phoneDigits;
+      if (fullPhone.startsWith('05') && fullPhone.length === 10) {
+        fullPhone = '966' + fullPhone.slice(1);
+      } else if (fullPhone.startsWith('01') && fullPhone.length === 11) {
+        fullPhone = '20' + fullPhone.slice(1);
+      }
+      const salonName = settings.salonName || 'صالون سمارت كت';
+      const msg = `مرحباً أستاذ ${client.name} 🌹\nاشتقنا لزيارتك في ${salonName}!\nيسعدنا أن نقدم لك عرضاً وخصماً خاصاً وحصرياً بمناسبة عودتك لزيارتنا.\nهل تود حجز موعدك القادم معنا اليوم؟ ✂️✨`;
+      return `https://wa.me/${fullPhone}?text=${encodeURIComponent(msg)}`;
+    };
+
+    const totalDisplayedVisits = filteredClients.reduce((sum: number, c: any) => sum + (c.totalVisits || 0), 0);
+    const totalDisplayedSpend = filteredClients.reduce((sum: number, c: any) => sum + Number(c.totalSpend || 0), 0);
+    const avgDisplayedDays = filteredClients.length > 0 ? Math.round(filteredClients.reduce((sum: number, c: any) => sum + c.daysAbsent, 0) / filteredClients.length) : 0;
+    const avgInvoiceOverall = totalDisplayedVisits > 0 ? (totalDisplayedSpend / totalDisplayedVisits) : 0;
+
+    return (
+      <div id="report-receipt-container" className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden p-6 animate-in fade-in space-y-6">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-5 border-b border-slate-200">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xl font-black text-slate-800 flex items-center gap-2">
+                <UserX size={24} className="text-rose-600" />
+                <span>👥 تقرير العملاء المنقطعين عن الزيارة (إعادة التنشيط)</span>
+                <span className="text-xs font-bold text-rose-700 bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200">
+                  معيار الانقطاع: {data.thresholdDays} يوم فأكثر
+                </span>
+              </span>
             </div>
+            <p className="text-slate-500 text-xs mt-1">
+              متابعة وإعادة استهداف العملاء الغائبين لتعزيز نسبة الولاء والعودة للصالون • {settings.salonName}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleExportExcel}
+              disabled={!canExportExcel}
+              className={`${canExportExcel ? 'bg-emerald-600 hover:bg-emerald-700 cursor-pointer' : 'bg-slate-300 text-slate-500 cursor-not-allowed opacity-50'} text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm transition-all`}
+            >
+              <Download size={15} /> تصدير إكسل
+            </button>
+            <button
+              onClick={() => window.print()}
+              className="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+            >
+              <Printer size={15} /> طباعة التقرير
+            </button>
           </div>
         </div>
 
         {/* 4 Summary KPI Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Card 1: Count */}
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs border-r-4 border-r-rose-500 flex items-center justify-between">
+          <div className="p-4 rounded-2xl bg-white border-2 border-rose-200 shadow-xs flex items-center justify-between border-r-4 border-r-rose-600">
             <div>
-              <p className="text-slate-500 text-xs font-bold mb-1">إجمالي العملاء المنقطعين</p>
-              <h4 className="text-2xl font-black text-rose-600 font-mono">
-                {data.totalInactiveCount} <span className="text-xs font-normal text-slate-400">عميل</span>
-              </h4>
-              <p className="text-[10px] text-slate-400 font-bold mt-1">من إجمالي {data.totalAllClients} عميل مسجل</p>
+              <p className="text-xs font-bold text-rose-800">إجمالي العملاء المنقطعين</p>
+              <p className="text-2xl font-black text-rose-950 mt-1 font-mono">
+                {data.inactiveCount} <span className="text-xs font-sans">عميل</span>
+              </p>
+              <p className="text-[10px] text-rose-600 font-bold mt-0.5">
+                نسبة الغياب: {data.inactiveRate}% من {data.totalClientsCount} عميل
+              </p>
             </div>
-            <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center">
-              <UserX size={24} />
+            <div className="w-12 h-12 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center">
+              <UserX size={22} />
             </div>
           </div>
 
-          {/* Card 2: Average Days Absent */}
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs border-r-4 border-r-amber-500 flex items-center justify-between">
+          <div className="p-4 rounded-2xl bg-white border-2 border-amber-200 shadow-xs flex items-center justify-between border-r-4 border-r-amber-500">
             <div>
-              <p className="text-slate-500 text-xs font-bold mb-1">متوسط فترة الغياب والانقطاع</p>
-              <h4 className="text-2xl font-black text-amber-600 font-mono">
-                {data.avgDaysAbsent} <span className="text-xs font-normal text-slate-400">يوم</span>
-              </h4>
-              <p className="text-[10px] text-slate-400 font-bold mt-1">المعيار المعتمد: {data.minDays} يوم غياب</p>
+              <p className="text-xs font-bold text-amber-800">متوسط فترة الغياب والانقطاع</p>
+              <p className="text-2xl font-black text-amber-950 mt-1 font-mono">
+                {data.avgDaysAbsent} <span className="text-xs font-sans">يوم</span>
+              </p>
+              <p className="text-[10px] text-amber-700 font-bold mt-0.5">
+                الحد الأدنى: {data.thresholdDays} يوم
+              </p>
             </div>
-            <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center">
-              <Clock size={24} />
+            <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+              <Clock size={22} />
             </div>
           </div>
 
-          {/* Card 3: Previous Revenue */}
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs border-r-4 border-r-emerald-500 flex items-center justify-between">
+          <div className="p-4 rounded-2xl bg-white border-2 border-emerald-200 shadow-xs flex items-center justify-between border-r-4 border-r-emerald-500">
             <div>
-              <p className="text-slate-500 text-xs font-bold mb-1">إجمالي إنفاقهم التاريخي</p>
-              <h4 className="text-2xl font-black text-emerald-600 font-mono">
-                {data.totalPreviousRevenue.toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
-              </h4>
-              <p className="text-[10px] text-slate-400 font-bold mt-1">إيرادات يمكن استعادتها بإعادة تنشيطهم</p>
+              <p className="text-xs font-bold text-emerald-800">إجمالي إنفاقهم التاريخي</p>
+              <p className="text-2xl font-black text-emerald-950 mt-1 font-mono">
+                {Number(data.totalPreviousSpend || 0).toFixed(2)} <span className="text-xs">{settings.currency}</span>
+              </p>
+              <p className="text-[10px] text-emerald-700 font-bold mt-0.5">مبيعات سابقة معرضة للفقدان</p>
             </div>
-            <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-              <DollarSign size={24} />
+            <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+              <DollarSign size={22} />
             </div>
           </div>
 
-          {/* Card 4: VIP / High Spenders */}
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs border-r-4 border-r-purple-500 flex items-center justify-between">
+          <div className="p-4 rounded-2xl bg-white border-2 border-purple-200 shadow-xs flex items-center justify-between border-r-4 border-r-purple-500">
             <div>
-              <p className="text-slate-500 text-xs font-bold mb-1">عملاء VIP ومميزين منقطعين</p>
-              <h4 className="text-2xl font-black text-purple-600 font-mono">
-                {data.vipOrRoyalCount} <span className="text-xs font-normal text-slate-400">عميل مميز</span>
-              </h4>
-              <p className="text-[10px] text-slate-400 font-bold mt-1">أولوية أولى للاتصال والمتابعة الخاصة</p>
+              <p className="text-xs font-bold text-purple-800">عملاء VIP ومميزين منقطعين</p>
+              <p className="text-2xl font-black text-purple-950 mt-1 font-mono">
+                {data.vipInactiveCount || 0} <span className="text-xs font-sans">عميل</span>
+              </p>
+              <p className="text-[10px] text-purple-600 font-bold mt-0.5">أولوية قصوى للمتابعة</p>
             </div>
-            <div className="w-12 h-12 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center">
-              <Crown size={24} />
+            <div className="w-12 h-12 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
+              <Award size={22} />
             </div>
           </div>
         </div>
 
-        {/* Data Table */}
-        <div className="overflow-x-auto border border-slate-200 rounded-2xl bg-white shadow-xs">
-          <table className="w-full text-right text-xs">
-            <thead className="bg-slate-900 text-white font-bold text-[11px]">
-              <tr>
-                <th className="py-3.5 px-3 text-center">#</th>
-                <th className="py-3.5 px-3">العميل والمستوى</th>
-                <th className="py-3.5 px-3">رقم الجوال</th>
-                <th className="py-3.5 px-3">تاريخ آخر زيارة</th>
-                <th className="py-3.5 px-3 text-center">مدة الانقطاع</th>
-                <th className="py-3.5 px-3 text-center">الزيارات السابقة</th>
-                <th className="py-3.5 px-3 text-center">إجمالي الإنفاق</th>
-                <th className="py-3.5 px-3 text-center">متوسط الفاتورة</th>
-                <th className="py-3.5 px-3 text-center">النقاط والكاش باك</th>
-                <th className="py-3.5 px-3">ملاحظات</th>
-                <th className="py-3.5 px-3 text-center print:hidden">إجراء إعادة التنشيط</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 font-medium">
-              {data.rows.map((row: any, idx: number) => {
-                const client = row.client;
-                const phoneClean = (client.phone || '').replace(/[^0-9]/g, '');
-                const salonName = settings.salonName || 'صالون سمارت كت';
-                const messageText = encodeURIComponent(
-                  `مرحباً بك أستاذ ${client.name} 🌸\n` +
-                  `اشتقنا لزيارتك في ${salonName}!\n` +
-                  `يسعدنا دعوتك لتشريفنا قريباً مع خصم خاص وخدمة مميزة على حجزك القادم ✨\n` +
-                  `بانتظار زيارتك ونسعد دائماً بخدمتك!`
-                );
-                const waUrl = phoneClean ? `https://wa.me/${phoneClean}?text=${messageText}` : '';
+        {/* Detailed Inactive Clients Table */}
+        <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-2xs">
+          <div className="p-3.5 bg-slate-900 text-white font-black text-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+            <div className="flex items-center gap-2">
+              <span>قائمة العملاء الذين لم يحضروا منذ {data.thresholdDays} يوماً فأكثر</span>
+              <span className="text-[11px] bg-slate-800 text-slate-300 px-2.5 py-0.5 rounded-full font-mono">
+                {filteredClients.length} عميل معروض
+              </span>
+            </div>
+            <div className="text-[11px] text-slate-400 font-normal">
+              💡 اضغط على زر «دعوة عودة 💬» لإرسال رسالة ترحيبية وعرض مخصص عبر واتساب مباشرة
+            </div>
+          </div>
 
-                // Absense badge style
-                const isVeryLong = row.daysAbsent >= 120;
-                const isMediumLong = row.daysAbsent >= 60;
-                const badgeColor = isVeryLong
-                  ? 'bg-rose-100 text-rose-800 border-rose-300'
-                  : isMediumLong
-                  ? 'bg-amber-100 text-amber-900 border-amber-300'
-                  : 'bg-yellow-50 text-yellow-800 border-yellow-200';
+          <div className="overflow-x-auto">
+            <table className="w-full text-right text-xs">
+              <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                <tr>
+                  <th className="py-3 px-3 text-center w-12">#</th>
+                  <th className="py-3 px-3">العميل والمستوى</th>
+                  <th className="py-3 px-3">رقم الجوال</th>
+                  <th className="py-3 px-3">تاريخ آخر زيارة</th>
+                  <th className="py-3 px-3 text-center">مدة الانقطاع</th>
+                  <th className="py-3 px-3 text-center">الزيارات السابقة</th>
+                  <th className="py-3 px-3 text-left">إجمالي الإنفاق</th>
+                  <th className="py-3 px-3 text-left">متوسط الفاتورة</th>
+                  <th className="py-3 px-3 text-center">النقاط والكاش باك</th>
+                  <th className="py-3 px-3">الملاحظات</th>
+                  <th className="py-3 px-3 text-center print:hidden">إجراءات المتابعة</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-semibold">
+                {filteredClients.map((c: any, idx: number) => {
+                  const waUrl = getWhatsAppUrl(c);
+                  const isCriticalAbsent = c.daysAbsent >= 120;
+                  const isMediumAbsent = c.daysAbsent >= 60 && c.daysAbsent < 120;
 
-                return (
-                  <tr key={client.id || idx} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="py-3.5 px-3 text-center font-mono text-slate-400 text-[11px]">{idx + 1}</td>
-                    
-                    {/* Client Name & Tier */}
-                    <td className="py-3.5 px-3">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center font-black text-slate-700 shrink-0">
-                          {row.tier.id !== 'standard' ? row.tier.icon : client.name.charAt(0)}
-                        </div>
-                        <div>
-                          <div className="font-extrabold text-slate-900 flex items-center gap-1.5">
-                            <span>{client.name}</span>
-                            {client.isVip && (
-                              <span className="text-amber-500" title="عميل VIP">👑</span>
-                            )}
+                  return (
+                    <tr key={c.id || idx} className="hover:bg-rose-50/25 transition-colors">
+                      <td className="py-3 px-3 text-center font-mono text-slate-400">{idx + 1}</td>
+                      <td className="py-3 px-3 font-bold text-slate-900">
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center gap-1.5">
+                            <User size={14} className="text-slate-400 shrink-0" />
+                            <span className="font-bold text-slate-900">{c.name}</span>
                           </div>
-                          <div className="flex items-center gap-1 mt-0.5">
-                            <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded border ${row.tier.badgeBg} ${row.tier.badgeText} ${row.tier.badgeBorder}`}>
-                              {row.tier.name}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-black border ${
+                              c.tier === 'royal'
+                                ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                : c.tier === 'vip'
+                                ? 'bg-purple-100 text-purple-900 border-purple-300'
+                                : c.tier === 'distinguished'
+                                ? 'bg-blue-100 text-blue-900 border-blue-300'
+                                : 'bg-slate-100 text-slate-700 border-slate-200'
+                            }`}>
+                              {c.tier === 'royal' ? '💎 ملكي' : c.tier === 'vip' ? '👑 VIP' : c.tier === 'distinguished' ? '🔷 متميز' : '⭐ قياسي'}
                             </span>
-                            {!row.hasVisited && (
-                              <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-purple-50 text-purple-700 border border-purple-200">
-                                جديد لم يزر بعد
+                            {c.isNeverVisited && (
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-300">
+                                جديد لم يزر بعد ✨
                               </span>
                             )}
                           </div>
                         </div>
-                      </div>
-                    </td>
-
-                    {/* Phone */}
-                    <td className="py-3.5 px-3">
-                      {client.phone ? (
-                        <div className="flex items-center gap-1.5 font-mono text-xs text-slate-700 font-bold" dir="ltr">
-                          <span>{client.phone}</span>
+                      </td>
+                      <td className="py-3 px-3 font-mono text-slate-700" dir="ltr">
+                        <div className="flex items-center gap-1.5 justify-end">
+                          <span>{c.phone || '-'}</span>
+                          {c.phone && (
+                            <button
+                              type="button"
+                              onClick={() => handleCopyPhone(c.phone)}
+                              className="text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 print:hidden"
+                              title="نسخ رقم الموبايل"
+                            >
+                              <Copy size={12} />
+                            </button>
+                          )}
                         </div>
-                      ) : (
-                        <span className="text-slate-400 font-normal">-</span>
-                      )}
-                    </td>
-
-                    {/* Last Visit Date */}
-                    <td className="py-3.5 px-3 text-slate-600 font-mono">
-                      {row.hasVisited ? (
-                        <div>
-                          <div className="font-bold text-slate-800">{row.lastVisitDateStr}</div>
-                          <div className="text-[10px] text-slate-400 font-sans">آخر فاتورة مسجلة</div>
-                        </div>
-                      ) : (
-                        <span className="text-slate-400 text-[11px]">لا توجد زيارات سابقة</span>
-                      )}
-                    </td>
-
-                    {/* Days Absent Badge */}
-                    <td className="py-3.5 px-3 text-center">
-                      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono font-black border ${badgeColor}`}>
-                        <Clock size={11} />
-                        <span>{row.daysAbsent >= 999 ? 'غير محدد' : `${row.daysAbsent} يوم`}</span>
-                      </span>
-                    </td>
-
-                    {/* Visits Count */}
-                    <td className="py-3.5 px-3 text-center font-mono font-black text-slate-800">
-                      {row.visitsCount}
-                    </td>
-
-                    {/* Total Spend */}
-                    <td className="py-3.5 px-3 text-center font-mono font-black text-emerald-700 text-sm">
-                      {row.totalSpend.toFixed(2)} <span className="text-[10px] font-normal text-slate-400">{settings.currency}</span>
-                    </td>
-
-                    {/* Average Ticket */}
-                    <td className="py-3.5 px-3 text-center font-mono font-bold text-slate-700">
-                      {row.avgTicket.toFixed(2)} <span className="text-[10px] font-normal text-slate-400">{settings.currency}</span>
-                    </td>
-
-                    {/* Loyalty Points & Cashback */}
-                    <td className="py-3.5 px-3 text-center">
-                      <div className="flex flex-col items-center gap-0.5">
-                        <span className="text-[10px] font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md border border-purple-200">
-                          🎁 {client.loyaltyPoints || 0} نقطة
-                        </span>
-                        {(client.cashback || 0) > 0 && (
-                          <span className="text-[10px] font-mono font-bold text-emerald-600">
-                            كاش باك: {client.cashback} {settings.currency}
-                          </span>
+                      </td>
+                      <td className="py-3 px-3 text-slate-600 font-mono">
+                        {c.lastVisitDate ? (
+                          <span>{c.lastVisitDate}</span>
+                        ) : c.createdAtDate ? (
+                          <div className="text-[11px] text-slate-500">
+                            <div>{c.createdAtDate}</div>
+                            <span className="text-[9px] text-slate-400">(تاريخ التسجيل)</span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-400">-</span>
                         )}
+                      </td>
+                      <td className="py-3 px-3 text-center font-mono font-black">
+                        <span className={`px-2.5 py-0.5 rounded-full text-xs inline-flex items-center gap-1 border ${
+                          isCriticalAbsent
+                            ? 'bg-rose-100 text-rose-800 border-rose-300'
+                            : isMediumAbsent
+                            ? 'bg-orange-100 text-orange-900 border-orange-300'
+                            : 'bg-amber-100 text-amber-900 border-amber-300'
+                        }`}>
+                          <span>{c.daysAbsent}</span>
+                          <span className="text-[10px] font-normal">يوم</span>
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 text-center font-mono font-bold text-slate-700">
+                        {c.totalVisits || 0}
+                      </td>
+                      <td className="py-3 px-3 font-mono font-black text-slate-800 text-left">
+                        {Number(c.totalSpend || 0).toFixed(2)} {settings.currency}
+                      </td>
+                      <td className="py-3 px-3 font-mono font-black text-slate-700 text-left">
+                        {Number(c.avgInvoice || 0).toFixed(2)} {settings.currency}
+                      </td>
+                      <td className="py-3 px-3 text-center">
+                        <div className="flex flex-col items-center gap-0.5 text-[11px]">
+                          <span className="font-mono font-bold text-indigo-700">{c.loyaltyPoints || 0} نقطة</span>
+                          {Number(c.cashback || 0) > 0 && (
+                            <span className="font-mono text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+                              {Number(c.cashback).toFixed(2)} {settings.currency}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-3 px-3 text-slate-600 max-w-[150px] truncate" title={c.notes || ''}>
+                        {c.notes || '-'}
+                      </td>
+                      <td className="py-3 px-3 text-center print:hidden">
+                        <div className="flex items-center justify-center gap-1.5">
+                          {waUrl ? (
+                            <a
+                              href={waUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs flex items-center gap-1.5 shadow-2xs transition-colors"
+                              title="إرسال رسالة ترحيبية ودعوة عودة مع خصم حصري عبر واتساب"
+                            >
+                              <MessageSquare size={13} />
+                              <span>دعوة عودة 💬</span>
+                            </a>
+                          ) : (
+                            <span className="text-slate-400 text-[10px]">لا يوجد هاتف</span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+
+                {filteredClients.length === 0 && (
+                  <tr>
+                    <td colSpan={11} className="py-16 text-center text-slate-500">
+                      <div className="flex flex-col items-center justify-center space-y-3">
+                        <div className="w-14 h-14 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 shadow-xs">
+                          <UserCheck size={28} />
+                        </div>
+                        <p className="text-sm font-black text-slate-800">
+                          {inactiveClientsSearch
+                            ? `لا توجد نتائج مطابقة لبحثك "${inactiveClientsSearch}"`
+                            : `رائع! لا يوجد عملاء منقطعون تجاوزوا مدة (${data.thresholdDays}) يوم وفق الفلتر الحالي.`}
+                        </p>
+                        <p className="text-xs text-slate-400 max-w-md">
+                          جميع عملائك على تواصل وزيارات منتظمة، أو يمكنك تقليل معيار عدد الأيام من شريط الفلاتر بالأعلى لفحص فترات غياب أقصر.
+                        </p>
                       </div>
-                    </td>
-
-                    {/* Notes */}
-                    <td className="py-3.5 px-3 max-w-xs text-slate-500 text-[11px] truncate" title={client.notes || ''}>
-                      {client.notes || '-'}
-                    </td>
-
-                    {/* Quick WhatsApp Action Button */}
-                    <td className="py-3.5 px-3 text-center print:hidden">
-                      {waUrl ? (
-                        <a
-                          href={waUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-xs transition-all cursor-pointer"
-                          title="إرسال رسالة ترحيبية ودعوة عودة عبر واتساب"
-                        >
-                          <MessageSquare size={14} />
-                          <span>دعوة عودة 💬</span>
-                        </a>
-                      ) : (
-                        <span className="text-slate-400 text-[10px]">بدون جوال</span>
-                      )}
                     </td>
                   </tr>
-                );
-              })}
-
-              {data.rows.length === 0 && (
-                <tr>
-                  <td colSpan={11} className="py-16 text-center">
-                    <div className="w-16 h-16 mx-auto rounded-3xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-3">
-                      <CheckCircle2 size={32} />
-                    </div>
-                    <h4 className="text-base font-black text-slate-800 mb-1">
-                      لا يوجد عملاء منقطعين تنطبق عليهم شروط المدة ({data.minDays} يوم)
-                    </h4>
-                    <p className="text-xs text-slate-500 max-w-md mx-auto">
-                      جميع عملائك زاروا الصالون خلال هذه الفترة المحددة أو يمكنك تقليل مدة الانقطاع من شريط التصفية بالأعلى لرؤية فئات أخرى.
-                    </p>
-                  </td>
-                </tr>
+                )}
+              </tbody>
+              {filteredClients.length > 0 && (
+                <tfoot className="bg-slate-100 font-black text-slate-900 border-t-2 border-slate-300">
+                  <tr>
+                    <td colSpan={4} className="py-3.5 px-4 text-center font-black">
+                      إجمالي العملاء المنقطعين المعروضين ({filteredClients.length} عميل)
+                    </td>
+                    <td className="py-3.5 px-3 text-center font-mono text-rose-700 font-black">
+                      متوسط {avgDisplayedDays} يوم
+                    </td>
+                    <td className="py-3.5 px-3 text-center font-mono">
+                      {totalDisplayedVisits} زيارة
+                    </td>
+                    <td className="py-3.5 px-3 font-mono text-slate-900 font-black text-sm text-left">
+                      {totalDisplayedSpend.toFixed(2)} {settings.currency}
+                    </td>
+                    <td className="py-3.5 px-3 font-mono text-slate-900 font-black text-sm text-left">
+                      {avgInvoiceOverall.toFixed(2)} {settings.currency}
+                    </td>
+                    <td colSpan={3}></td>
+                  </tr>
+                </tfoot>
               )}
-            </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-            {/* Table Footer Totals */}
-            {data.rows.length > 0 && (
-              <tfoot className="bg-slate-100 font-black text-slate-900 border-t-2 border-slate-300 text-xs">
+  if (reportType === 'target_report') {
+    const data = targetReportData || { rows: [] };
+    const filteredRows = (data.rows || []).filter((r: any) => {
+      // Search filter
+      if (targetReportSearch && targetReportSearch.trim()) {
+        const q = targetReportSearch.trim().toLowerCase();
+        const matchesName = (r.empName || '').toLowerCase().includes(q);
+        const matchesCode = (r.empCode || '').toLowerCase().includes(q);
+        const matchesRole = (r.empRole || '').toLowerCase().includes(q);
+        if (!matchesName && !matchesCode && !matchesRole) return false;
+      }
+      // Type filter
+      if (targetTypeFilter && targetTypeFilter !== 'all') {
+        if (r.targetType !== targetTypeFilter) return false;
+      }
+      // Status filter
+      if (targetStatusFilter === 'achieved' && !r.isTargetAchieved) return false;
+      if (targetStatusFilter === 'not_achieved' && (r.isTargetAchieved || r.targetType === 'none')) return false;
+      return true;
+    });
+
+    const totalTargetRequired = filteredRows.reduce((sum: number, r: any) => sum + Number(r.targetRequired || 0), 0);
+    const totalSalesPool = filteredRows.reduce((sum: number, r: any) => sum + Number(r.targetSalesPool || 0), 0);
+    const totalEligible = filteredRows.reduce((sum: number, r: any) => sum + Number(r.eligibleAmount || 0), 0);
+    const totalCommission = filteredRows.reduce((sum: number, r: any) => sum + Number(r.targetCommission || 0), 0);
+    const totalExemptSales = filteredRows.reduce((sum: number, r: any) => sum + Number(r.exemptSales || 0), 0);
+    const totalExemptCommission = filteredRows.reduce((sum: number, r: any) => sum + Number(r.exemptCommission || 0), 0);
+    const totalGrandCommission = filteredRows.reduce((sum: number, r: any) => sum + Number(r.totalEarnedCommission || 0), 0);
+
+    return (
+      <div id="report-receipt-container" className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden p-6 animate-in fade-in space-y-6">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-5 border-b border-slate-200">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xl font-black text-slate-800 flex items-center gap-2">
+                <Target size={24} className="text-indigo-600" />
+                <span>🎯 تقرير التارجت والعمولات المستهدفة للموظفين</span>
+                <span className="text-xs font-bold text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-200">
+                  الفترة: {activeFrom} إلى {activeTo}
+                </span>
+              </span>
+            </div>
+            <p className="text-slate-500 text-xs mt-1">
+              متابعة تحقيق التارجت اليومي والشهري، واحتساب العمولات الخاضعة والمعفاة بدقة • {settings.salonName}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => handlePrintReceipt('report-receipt-container', true, 'a4')}
+              className="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+            >
+              <Printer size={15} /> طباعة التقرير
+            </button>
+          </div>
+        </div>
+
+        {/* Detailed Target Table */}
+        <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-2xs">
+          <div className="p-3.5 bg-slate-900 text-white font-black text-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+            <div className="flex items-center gap-2">
+              <span>كشف أداء وعمولات التارجت لموظفي الفرع</span>
+              <span className="text-[11px] bg-slate-800 text-slate-300 px-2.5 py-0.5 rounded-full font-mono">
+                {filteredRows.length} موظف معروض
+              </span>
+            </div>
+            <div className="text-[11px] text-slate-300 font-normal">
+              💡 الخدمات ذات الصرف الفوري معفاة من التارجت وتظهر عمولتها مباشرة بالعمود المخصص
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-right text-xs">
+              <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
                 <tr>
-                  <td colSpan={4} className="py-3.5 px-3 text-center font-black text-sm text-slate-800">
-                    المجاميع الكلية للعملاء المنقطعين ({data.rows.length} عميل)
-                  </td>
-                  <td className="py-3.5 px-3 font-mono text-center font-black text-xs text-amber-800">
-                    متوسط: {data.avgDaysAbsent} يوم
-                  </td>
-                  <td className="py-3.5 px-3 text-center font-mono font-black text-slate-800">
-                    {data.rows.reduce((s: number, r: any) => s + r.visitsCount, 0)} زيارة
-                  </td>
-                  <td className="py-3.5 px-3 font-mono text-center font-black text-base text-emerald-800">
-                    {data.totalPreviousRevenue.toFixed(2)} {settings.currency}
-                  </td>
-                  <td colSpan={4} className="py-3.5 px-3 text-[11px] text-slate-500 font-bold">
-                    معيار الفلترة: {data.minDays} يوم غياب • المعيار المسجل بالإعدادات: {settings.inactiveClientsDays || 60} يوم
-                  </td>
+                  <th className="py-3 px-3 text-center w-10">#</th>
+                  <th className="py-3 px-3">الموظف</th>
+                  <th className="py-3 px-3 text-center">نظام التارجت</th>
+                  <th className="py-3 px-3">طريقة الاحتساب</th>
+                  <th className="py-3 px-3 text-left">التارجت المطلوب</th>
+                  <th className="py-3 px-3 text-left">المبيعات الخاضعة</th>
+                  <th className="py-3 px-3 text-center min-w-[130px]">نسبة الإنجاز</th>
+                  <th className="py-3 px-3 text-center">حالة التارجت</th>
+                  <th className="py-3 px-3 text-left">المبلغ الخاضع للنسبة</th>
+                  <th className="py-3 px-3 text-center">النسبة</th>
+                  <th className="py-3 px-3 text-left">عمولة التارجت</th>
+                  <th className="py-3 px-3 text-left">مبيعات معفاة</th>
+                  <th className="py-3 px-3 text-left">عمولة معفاة</th>
+                  <th className="py-3 px-3 text-left font-black text-slate-900">إجمالي المستحق</th>
                 </tr>
-              </tfoot>
-            )}
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-semibold">
+                {filteredRows.map((r: any, idx: number) => {
+                  return (
+                    <tr key={r.empId} className="hover:bg-slate-50 transition-colors">
+                      <td className="py-3 px-3 text-center text-slate-400 font-mono text-[11px]">
+                        {idx + 1}
+                      </td>
+                      <td className="py-3 px-3">
+                        <div className="font-black text-slate-900">{r.empName}</div>
+                        <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
+                          {r.empCode && <span className="font-mono bg-slate-100 px-1 rounded">{r.empCode}</span>}
+                          <span>{r.empRole}</span>
+                          {r.baseSalary > 0 && <span>• راتب: {r.baseSalary}</span>}
+                        </div>
+                      </td>
+                      <td className="py-3 px-3 text-center">
+                        {r.targetType === 'daily' ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-cyan-100 text-cyan-800 border border-cyan-200">
+                            يومي 📅
+                          </span>
+                        ) : r.targetType === 'monthly' ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-100 text-purple-800 border border-purple-200">
+                            شهري 🗓️
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                            بدون
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3 px-3">
+                        <span className="text-[11px] text-slate-600 block max-w-[190px] leading-tight">
+                          {r.targetMethodLabel}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 font-mono font-bold text-slate-700 text-left">
+                        {r.targetRequired > 0 ? `${Number(r.targetRequired).toFixed(2)}` : '-'}
+                      </td>
+                      <td className="py-3 px-3 font-mono font-black text-slate-900 text-left">
+                        {Number(r.targetSalesPool).toFixed(2)}
+                      </td>
+                      <td className="py-3 px-3 text-center">
+                        {r.targetType !== 'none' ? (
+                          <div className="flex flex-col gap-1 items-center">
+                            <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden border border-slate-200">
+                              <div 
+                                className={`h-full rounded-full transition-all ${
+                                  r.isTargetAchieved 
+                                    ? 'bg-emerald-500' 
+                                    : r.progressPercent >= 70 
+                                    ? 'bg-amber-500' 
+                                    : 'bg-rose-500'
+                                }`}
+                                style={{ width: `${Math.min(100, r.progressPercent)}%` }}
+                              />
+                            </div>
+                            <span className="font-mono text-[10px] font-bold text-slate-500">
+                              {r.progressPercent}% {r.targetType === 'daily' && r.workingDaysCount > 0 ? `(${r.daysAchieved}/${r.workingDaysCount} يوم)` : ''}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 text-[10px]">-</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-3 text-center">
+                        {r.targetType === 'none' ? (
+                          <span className="text-slate-400 text-[10px]">بدون تارجت</span>
+                        ) : r.isTargetAchieved ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 inline-flex items-center gap-1">
+                            <span>محقق 🎯</span>
+                          </span>
+                        ) : (
+                          <div className="flex flex-col items-center">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                              جاري السعي ⏳
+                            </span>
+                            {r.remainingToTarget > 0 && (
+                              <span className="text-[9px] text-rose-500 font-mono mt-0.5 font-bold">
+                                متبقي: {Number(r.remainingToTarget).toFixed(0)}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-3 px-3 font-mono font-bold text-indigo-700 text-left">
+                        {Number(r.eligibleAmount).toFixed(2)}
+                      </td>
+                      <td className="py-3 px-3 text-center font-mono font-bold text-slate-600">
+                        {r.commissionRate}%
+                      </td>
+                      <td className="py-3 px-3 font-mono font-black text-emerald-700 text-left">
+                        {Number(r.targetCommission).toFixed(2)}
+                      </td>
+                      <td className="py-3 px-3 font-mono text-slate-600 text-left">
+                        {Number(r.exemptSales).toFixed(2)}
+                      </td>
+                      <td className="py-3 px-3 font-mono font-bold text-amber-700 text-left">
+                        {Number(r.exemptCommission).toFixed(2)}
+                      </td>
+                      <td className="py-3 px-3 font-mono font-black text-slate-900 text-left bg-slate-50">
+                        {Number(r.totalEarnedCommission).toFixed(2)} {settings.currency}
+                      </td>
+                    </tr>
+                  );
+                })}
+
+                {filteredRows.length === 0 && (
+                  <tr>
+                    <td colSpan={14} className="py-16 text-center text-slate-500">
+                      <div className="flex flex-col items-center justify-center space-y-3">
+                        <div className="w-14 h-14 rounded-full bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600 shadow-xs">
+                          <Target size={28} />
+                        </div>
+                        <p className="text-sm font-black text-slate-800">
+                          {targetReportSearch
+                            ? `لا توجد نتائج مطابقة للبحث "${targetReportSearch}"`
+                            : 'لا توجد بيانات تارجت للموظفين في هذه الفترة المحددة.'}
+                        </p>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+              {filteredRows.length > 0 && (
+                <tfoot className="bg-slate-100 font-black text-slate-900 border-t-2 border-slate-300">
+                  <tr>
+                    <td colSpan={4} className="py-3.5 px-4 text-center font-black">
+                      الإجمالي العام ({filteredRows.length} موظف)
+                    </td>
+                    <td className="py-3.5 px-3 font-mono text-left font-black text-slate-800">
+                      {totalTargetRequired.toFixed(2)}
+                    </td>
+                    <td className="py-3.5 px-3 font-mono text-left font-black text-slate-900">
+                      {totalSalesPool.toFixed(2)}
+                    </td>
+                    <td colSpan={2}></td>
+                    <td className="py-3.5 px-3 font-mono text-left font-black text-indigo-800">
+                      {totalEligible.toFixed(2)}
+                    </td>
+                    <td></td>
+                    <td className="py-3.5 px-3 font-mono text-left font-black text-emerald-800">
+                      {totalCommission.toFixed(2)}
+                    </td>
+                    <td className="py-3.5 px-3 font-mono text-left font-bold text-slate-700">
+                      {totalExemptSales.toFixed(2)}
+                    </td>
+                    <td className="py-3.5 px-3 font-mono text-left font-black text-amber-800">
+                      {totalExemptCommission.toFixed(2)}
+                    </td>
+                    <td className="py-3.5 px-3 font-mono text-left font-black text-slate-950 text-sm bg-slate-200/70">
+                      {totalGrandCommission.toFixed(2)} {settings.currency}
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
         </div>
       </div>
     );
