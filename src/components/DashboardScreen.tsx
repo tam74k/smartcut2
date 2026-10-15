@@ -412,7 +412,48 @@ export function DashboardScreen({
     );
   };
 
-  // Total Expenses (purchases, expenses, bills, operational payouts — excluding staff advances and drawer transfers)
+  // دالة فحص ما إذا كانت المعاملة تمثل عمولة موظف منصرفة
+  const isCommissionTrx = (trx: any) => {
+    const isOut = trx.type === 'out' || (trx.type as string) === 'expense';
+    if (!isOut) return false;
+    const cat = (trx.category || '').toLowerCase();
+    const desc = (trx.description || '').toLowerCase();
+    return (
+      cat === 'commission' || 
+      cat === 'commissions' || 
+      cat === 'commission_payout' || 
+      cat === 'عمولة' || 
+      cat === 'عمولات' || 
+      cat === 'صرف عمولة' || 
+      desc.includes('صرف عمولة') || 
+      desc.includes('عمولة فورية')
+    );
+  };
+
+  // دالة فحص ما إذا كانت المعاملة تمثل بقشيش منصرف من الخزينة / الدرج
+  const isTipTrx = (trx: any) => {
+    const isOut = trx.type === 'out' || (trx.type as string) === 'expense';
+    if (!isOut) return false;
+    const cat = (trx.category || '').toLowerCase();
+    const desc = (trx.description || '').toLowerCase();
+    const id = (trx.id || '').toLowerCase();
+    return (
+      id.startsWith('trx-tip') ||
+      cat === 'صرف بقشيش فوري' ||
+      cat === 'صرف بقشيش موظفين' ||
+      cat === 'صرف بقشيش' ||
+      cat === 'بقشيش' ||
+      cat === 'إكرامية' ||
+      cat === 'إكراميات' ||
+      cat === 'tip' ||
+      cat === 'tips' ||
+      cat === 'tip_payout' ||
+      desc.includes('بقشيش') ||
+      desc.includes('إكرام')
+    );
+  };
+
+  // Total Expenses (purchases, expenses, bills, operational payouts — excluding staff advances, commissions, tips and drawer transfers)
   const totalExpense = useMemo(() => {
     if (!isShiftOpen) return 0;
     return todayTrx
@@ -420,6 +461,8 @@ export function DashboardScreen({
         const isOut = t.type === 'out' || (t.type as string) === 'expense' || t.category === 'expense' || t.category === 'مصروفات' || (t.category && t.category.includes('مصروف'));
         if (!isOut) return false;
         if (isStaffAdvanceTrx(t)) return false;
+        if (isCommissionTrx(t)) return false;
+        if (isTipTrx(t)) return false;
         const cat = (t.category || '').toLowerCase();
         const desc = (t.description || '').toLowerCase();
         if (cat === 'transfer' || desc.includes('تحويل') || desc.includes('تصفير')) return false;
@@ -726,15 +769,20 @@ export function DashboardScreen({
               }
               const totalAdvancesForTreasury = trxAdvancesForTreasury + empRecAdvancesForTreasury;
 
+              const commissionsForTreasury = tTrx.filter(trx => trx.type === 'out' && isCommissionTrx(trx)).reduce((sum, trx) => sum + (Number(trx.amount) || 0), 0);
+              const tipsForTreasury = tTrx.filter(trx => trx.type === 'out' && isTipTrx(trx)).reduce((sum, trx) => sum + (Number(trx.amount) || 0), 0);
+
               const regularExpenses = tTrx.filter(trx => {
                 if (isStaffAdvanceTrx(trx)) return false;
+                if (isCommissionTrx(trx)) return false;
+                if (isTipTrx(trx)) return false;
                 const isOut = trx.type === 'out' || (trx.type as string) === 'expense' || trx.category === 'expense' || trx.category === 'مصروفات' || trx.category?.includes('مصروف');
                 if (!isOut) return false;
                 if (trx.category === 'transfer' || trx.description?.includes('تحويل')) return false;
                 return true;
               }).reduce((sum, trx) => sum + (Number(trx.amount) || 0), 0);
 
-              const outcome = regularExpenses + totalAdvancesForTreasury;
+              const outcome = regularExpenses + totalAdvancesForTreasury + commissionsForTreasury + tipsForTreasury;
               const net = income - outcome;
 
               if (isMain) {
@@ -793,6 +841,28 @@ export function DashboardScreen({
                             <span>سلف موظفين:</span>
                           </span>
                           <span className="text-amber-300 font-bold font-mono">-{totalAdvancesForTreasury.toFixed(2)} {settings.currency}</span>
+                        </div>
+                      )}
+
+                      {/* عمولات فورية منصرفة */}
+                      {commissionsForTreasury > 0 && (
+                        <div className="flex justify-between items-center bg-purple-500/15 border border-purple-400/30 px-2 py-1 rounded-lg text-purple-200 font-extrabold">
+                          <span className="flex items-center gap-1">
+                            <span>✂️</span>
+                            <span>عمولات فورية منصرفة:</span>
+                          </span>
+                          <span className="text-purple-300 font-bold font-mono">-{commissionsForTreasury.toFixed(2)} {settings.currency}</span>
+                        </div>
+                      )}
+
+                      {/* بقشيش منصرف من الخزينة */}
+                      {tipsForTreasury > 0 && (
+                        <div className="flex justify-between items-center bg-blue-500/15 border border-blue-400/30 px-2 py-1 rounded-lg text-blue-200 font-extrabold">
+                          <span className="flex items-center gap-1">
+                            <span>🪙</span>
+                            <span>بقشيش منصرف:</span>
+                          </span>
+                          <span className="text-blue-300 font-bold font-mono">-{tipsForTreasury.toFixed(2)} {settings.currency}</span>
                         </div>
                       )}
 
@@ -905,6 +975,28 @@ export function DashboardScreen({
                           <span>سلف موظفين:</span>
                         </span>
                         <span className="text-amber-300 font-bold font-mono">-{totalAdvancesForTreasury.toFixed(2)} {settings.currency}</span>
+                      </div>
+                    )}
+
+                    {/* عمولات فورية منصرفة من هذه الخزينة (الدرج) */}
+                    {commissionsForTreasury > 0 && (
+                      <div className="flex justify-between items-center bg-purple-500/15 border border-purple-400/30 px-2 py-1 rounded-lg text-purple-200 font-extrabold">
+                        <span className="flex items-center gap-1">
+                          <span>✂️</span>
+                          <span>عمولات فورية منصرفة:</span>
+                        </span>
+                        <span className="text-purple-300 font-bold font-mono">-{commissionsForTreasury.toFixed(2)} {settings.currency}</span>
+                      </div>
+                    )}
+
+                    {/* بقشيش مدفوع من الدرج / الخزينة */}
+                    {tipsForTreasury > 0 && (
+                      <div className="flex justify-between items-center bg-blue-500/15 border border-blue-400/30 px-2.5 py-1 rounded-lg text-blue-200 font-extrabold">
+                        <span className="flex items-center gap-1">
+                          <span>🪙</span>
+                          <span>{isCash ? 'بقشيش مدفوع من الدرج:' : 'بقشيش منصرف:'}</span>
+                        </span>
+                        <span className="text-blue-300 font-bold font-mono">-{tipsForTreasury.toFixed(2)} {settings.currency}</span>
                       </div>
                     )}
 

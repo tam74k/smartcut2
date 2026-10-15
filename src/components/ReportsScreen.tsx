@@ -535,11 +535,16 @@ export function ReportsScreen({
       ) || 0);
 
       if (targetType === 'daily') {
-        const dailyTarget = Number(emp.dailyTargetAmount || emp.target || 0);
         const dailyMethod = emp.dailyTargetMethod || 'excess_only';
-        const methodLabel = dailyMethod === 'full_amount' 
-          ? 'يومي: على كامل المبلغ عند تحقيق التارجت' 
-          : 'يومي: على ما فوق التارجت فقط (الفائض)';
+        const dailyMult = Number(emp.dailyTargetMultiplier ?? emp.targetSalaryMultiplier ?? 1) || 1;
+        const dailyTarget = dailyMethod === 'salary_multiplier'
+          ? Math.round((((emp.baseSalary || 0) / 30) * dailyMult) * 100) / 100
+          : Number(emp.dailyTargetAmount || emp.target || 0);
+        const methodLabel = dailyMethod === 'salary_multiplier'
+          ? `يومي: مضاعف الراتب (${dailyMult}x الراتب اليومي)`
+          : (dailyMethod === 'full_amount' 
+            ? 'يومي: على كامل المبلغ عند تحقيق التارجت' 
+            : 'يومي: على ما فوق التارجت فقط (الفائض)');
 
         let totalSales = 0;
         let totalEligible = 0;
@@ -610,11 +615,8 @@ export function ReportsScreen({
           totalEarnedCommission: totalCommission + totalExemptCommission
         };
       } else if (targetType === 'monthly') {
-        const monthlyTarget = Number(emp.monthlyTargetAmount || emp.target || 0);
         const monthlyMethod = emp.monthlyTargetMethod || 'deduct_salary';
-        const methodLabel = monthlyMethod === 'gross_sales'
-          ? 'شهري: على إجمالي الشغل بدون خصم الراتب'
-          : 'شهري: خصم الراتب الأساسي ثم النسبة على ما فوق التارجت';
+        const monthlyMult = Number(emp.monthlyTargetMultiplier ?? emp.targetSalaryMultiplier ?? 1) || 1;
 
         const calc = calculateEmployeeTargetCommission({
           employee: emp,
@@ -624,6 +626,16 @@ export function ReportsScreen({
           isDaily: false,
           daysInMonth: 30
         });
+
+        const monthlyTarget = monthlyMethod === 'salary_multiplier'
+          ? (calc.targetAmount || Math.round(((emp.baseSalary || 0) * monthlyMult) * 100) / 100)
+          : Number(emp.monthlyTargetAmount || emp.target || 0);
+
+        const methodLabel = monthlyMethod === 'salary_multiplier'
+          ? `شهري: مضاعف الراتب (${monthlyMult}x الراتب الشهري)`
+          : (monthlyMethod === 'gross_sales'
+            ? 'شهري: على إجمالي الشغل بدون خصم الراتب'
+            : 'شهري: خصم الراتب الأساسي ثم النسبة على ما فوق التارجت');
 
         return {
           empId: emp.id,
@@ -1210,9 +1222,21 @@ export function ReportsScreen({
       });
     });
 
-    // Also check transactions categorized as 'commissions'
+    // Also check transactions categorized as commissions / commission payouts
     branchTransactions.forEach(trx => {
-      if (trx.category === 'commissions' && trx.type === 'out') {
+      const cat = (trx.category || '').toLowerCase();
+      const desc = (trx.description || '').toLowerCase();
+      const isCommTrx = (
+        cat === 'commission' || 
+        cat === 'commissions' || 
+        cat === 'commission_payout' || 
+        cat === 'عمولة' || 
+        cat === 'عمولات' || 
+        cat === 'صرف عمولة' || 
+        desc.includes('صرف عمولة') || 
+        desc.includes('عمولة فورية')
+      );
+      if (isCommTrx && trx.type === 'out') {
         const d = (trx.date || '').split('T')[0];
         if (d >= activeFrom && d <= activeTo) {
           const alreadyExists = rows.some(r => r.id === trx.id || (r.dateStr.startsWith(d) && Math.abs(r.amount - trx.amount) < 0.01));

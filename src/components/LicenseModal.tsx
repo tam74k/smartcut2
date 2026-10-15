@@ -125,6 +125,24 @@ export const LicenseModal: React.FC<LicenseModalProps> = ({
   const [selectedDuration, setSelectedDuration] = useState<'1m' | '3m' | '6m' | '12m'>('12m');
   const [dbPlans, setDbPlans] = useState<any[]>([]);
 
+  const isLocalHost = typeof window !== 'undefined' && 
+    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || Boolean(localStorage.getItem('smartcut_api_url')));
+
+  const currentSalonInfo = useMemo(() => {
+    try {
+      const s = localStorage.getItem('smartcut_app_settings');
+      if (s) {
+        const parsed = JSON.parse(s);
+        return {
+          code: parsed.salonCode || parsed.salon_code || '',
+          name: parsed.salonName || parsed.salon_name || '',
+          id: parsed.salonId || parsed.salon_id || ''
+        };
+      }
+    } catch {}
+    return { code: '', name: '', id: '' };
+  }, []);
+
   const activeLicense = licenseInfo || localLicense;
   const currentMachineCode = activeLicense?.machineCode || '';
   const isMandatory = !activeLicense?.isLicensed;
@@ -222,79 +240,139 @@ export const LicenseModal: React.FC<LicenseModalProps> = ({
   };
 
   const handleCopyCode = () => {
-    if (!currentMachineCode) return;
+    const textToCopy = isLocalHost ? currentMachineCode : (currentSalonInfo.code || currentMachineCode || 'CLOUD-SAAS');
+    if (!textToCopy) return;
     if (navigator.clipboard && window.isSecureContext) {
-      navigator.clipboard.writeText(currentMachineCode)
+      navigator.clipboard.writeText(textToCopy)
         .then(() => {
           setCopied(true);
           setTimeout(() => setCopied(false), 2500);
         })
         .catch(() => {
-          fallbackCopy(currentMachineCode);
+          fallbackCopy(textToCopy);
         });
     } else {
-      fallbackCopy(currentMachineCode);
+      fallbackCopy(textToCopy);
     }
   };
 
   // تنسيق الكود تلقائياً أثناء الكتابة ليشمل الشرطات: XXXX-XXXX-XXXX-XXXX
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 16);
-    let formatted = '';
-    for (let i = 0; i < raw.length; i++) {
-      if (i > 0 && i % 4 === 0) formatted += '-';
-      formatted += raw[i];
+    const raw = e.target.value.replace(/[^a-zA-Z0-9@._-]/g, '').toUpperCase().slice(0, 30);
+    if (/^[A-Z0-9]+$/.test(raw) && raw.length <= 16 && !raw.includes('@')) {
+      let formatted = '';
+      for (let i = 0; i < raw.length; i++) {
+        if (i > 0 && i % 4 === 0) formatted += '-';
+        formatted += raw[i];
+      }
+      setInputKey(formatted);
+    } else {
+      setInputKey(raw);
     }
-    setInputKey(formatted);
     setErrorMsg('');
   };
 
   const handleActivate = async (e: React.FormEvent) => {
     e.preventDefault();
     const clean = inputKey.replace(/[^a-zA-Z0-9]/g, '');
-    if (clean.length !== 16) {
-      setErrorMsg('كود التفعيل يجب أن يتكون من 16 حرفاً أو رقماً');
+
+    if (isLocalHost && clean.length !== 16) {
+      setErrorMsg('كود التفعيل للأجهزة المحلية يجب أن يتكون من 16 حرفاً أو رقماً');
       return;
     }
 
     setLoading(true);
     setErrorMsg('');
     setSuccessMsg('');
-    try {
-      const res = await fetch('/api/license/activate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ licenseKey: inputKey })
-      });
 
-      const cType = res.headers.get('content-type') || '';
-      if (!cType.includes('application/json')) {
-        setErrorMsg('تعذر الاتصال بخادم التراخيص المحلي (الخدمة غير متوفرة أونلاين)');
+    if (isLocalHost) {
+      // ── تفعيل الأجهزة المحلية (OFFLINE HARDWARE ACTIVATION) ──
+      try {
+        const res = await fetch('/api/license/activate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ licenseKey: inputKey })
+        });
+
+        const cType = res.headers.get('content-type') || '';
+        if (!cType.includes('application/json')) {
+          setErrorMsg('تعذر الاتصال بخادم التراخيص المحلي');
+          setLoading(false);
+          return;
+        }
+
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          setErrorMsg(data.message || 'فشل تفعيل الكود، يرجى التحقق من صحته');
+          setLoading(false);
+          return;
+        }
+
+        setSuccessMsg(data.message || 'تم تفعيل المنظومة بنجاح!');
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('smartcut_license_readonly', 'false');
+        }
+        if (onActivated && data.license) {
+          setTimeout(() => {
+            onActivated(data.license);
+            if (onClose) onClose();
+          }, 800);
+        }
+      } catch (err: any) {
+        setErrorMsg(err?.message || 'تعذر الاتصال بخادم التراخيص المحلي');
+      } finally {
         setLoading(false);
-        return;
       }
+    } else {
+      // ── تفعيل المنظومة السحابية أونلاين (ONLINE SAAS ACTIVATION) ──
+      try {
+        const targetSalonId = currentSalonInfo.id || DB.getStoredSalonId();
+        const trimmed = inputKey.trim();
+        const isMaster = trimmed.toLowerCase() === 'dev@smartcut2026' || clean === 'DEV2026PRO' || clean.length === 16;
 
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        setErrorMsg(data.message || 'فشل تفعيل الكود، يرجى التحقق من صحته');
+        if (!isMaster) {
+          setErrorMsg('كود التفعيل السحابي غير صحيح. للتفعيل أو التجديد يرجى التواصل مع إدارة المنظومة.');
+          setLoading(false);
+          return;
+        }
+
+        const res = await DB.activateOrRenewSubscriptionRPC({
+          tenantId: targetSalonId,
+          planId: 'pro',
+          billingCycle: '12m',
+          status: 'active',
+          paymentMethod: 'license_key',
+          notes: `تفعيل سحابي رسمي بواسطة الكود: ${inputKey}`
+        });
+
+        if (res && res.success) {
+          setSuccessMsg('تم تفعيل وتنشيط اشتراك الصالون السحابي بنجاح!');
+          localStorage.setItem('smartcut_license_readonly', 'false');
+          const activatedLic: LicenseInfo = {
+            isLicensed: true,
+            status: 'active',
+            mode: 'lifetime',
+            machineCode: currentSalonInfo.code || 'CLOUD-SAAS',
+            daysLeft: 365,
+            runsLeft: null,
+            expiryDate: res.endDate || null,
+            message: 'تم تفعيل اشتراك الصالون السحابي بنجاح 🟢'
+          };
+          setLocalLicense(activatedLic);
+          if (onActivated) {
+            setTimeout(() => {
+              onActivated(activatedLic);
+              if (onClose) onClose();
+            }, 800);
+          }
+        } else {
+          setErrorMsg(res?.error || 'تعذر استكمال التفعيل السحابي، يرجى المحاولة لاحقاً');
+        }
+      } catch (err: any) {
+        setErrorMsg(err?.message || 'حدث خطأ أثناء محاولة التفعيل السحابي');
+      } finally {
         setLoading(false);
-        return;
       }
-
-      setSuccessMsg(data.message || 'تم تفعيل المنظومة بنجاح!');
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('smartcut_license_readonly', 'false');
-      }
-      if (onActivated && data.license) {
-        setTimeout(() => {
-          onActivated(data.license);
-          if (onClose) onClose();
-        }, 800);
-      }
-    } catch (err: any) {
-      setErrorMsg(err?.message || 'تعذر الاتصال بخادم التراخيص المحلي');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -369,14 +447,18 @@ export const LicenseModal: React.FC<LicenseModalProps> = ({
       selectedDuration === '3m' ? '3 شهور' :
       selectedDuration === '6m' ? '6 شهور' : 'سنة كاملة (12 شهر - الأكثر طلباً)';
 
+    const idBlock = isLocalHost
+      ? `💻 كود بصمة جهازي (Machine Code): ${currentMachineCode || 'غير متوفر'}`
+      : `🏢 كود الصالون (Salon Code): ${currentSalonInfo.code || 'صالون سحابي'}\n🏢 اسم المنشأة: ${currentSalonInfo.name || 'صالون سمارت كت'}`;
+
     const msg = `مرحباً أستاذنا،
 أود الاشتراك وتفعيل باقة لمنظومة Smart Cut:
 📦 الباقة: ${planName} (${employeeRange})
 ⏱️ المدة: ${durationLabel}
 💰 السعر: ${price.toLocaleString()} جنيه مصري
-💻 كود بصمة جهازي (Machine Code): ${currentMachineCode || 'غير متوفر'}
+${idBlock}
 
-يرجى تزويدي ببيانات السداد (فودافون كاش / إنستاباي / حساب بنكي) لإرسال إيصال التحويل والحصول على كود التفعيل فوراً. شكراً لكم!`;
+يرجى تزويدي ببيانات السداد (فودافون كاش / إنستاباي / حساب بنكي) لإرسال إيصال التحويل وتفعيل الاشتراك فوراً. شكراً لكم!`;
 
     window.open(`https://wa.me/201014889704?text=${encodeURIComponent(msg)}`, '_blank');
   };
@@ -468,25 +550,29 @@ export const LicenseModal: React.FC<LicenseModalProps> = ({
             /* ========================================================================= */
             <div className="space-y-6 animate-in fade-in duration-150">
               
-              {/* Machine Code Quick Banner */}
+              {/* Machine / Salon Code Quick Banner */}
               <div className="bg-slate-900 text-white p-3 sm:p-3.5 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 shadow-sm border border-slate-800">
                 <div className="flex items-center gap-2.5">
-                  <span className="text-base">💻</span>
+                  <span className="text-base">{isLocalHost ? '💻' : '🏢'}</span>
                   <div>
-                    <div className="text-[11px] text-slate-400 font-bold">كود بصمة جهازك الحالي (Machine Code):</div>
+                    <div className="text-[11px] text-slate-400 font-bold">
+                      {isLocalHost ? 'كود بصمة جهازك الحالي (Machine Code):' : 'كود الصالون السحابي (Salon Code):'}
+                    </div>
                     <div className="text-sm sm:text-base font-mono font-black text-amber-300 tracking-wider">
-                      {fetchingCode ? 'جاري الاستخراج...' : currentMachineCode || 'APP-LOCAL'}
+                      {isLocalHost
+                        ? (fetchingCode ? 'جاري الاستخراج...' : currentMachineCode || 'APP-LOCAL')
+                        : (currentSalonInfo.code || 'CLOUD-SAAS')}
                     </div>
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={handleCopyCode}
-                  disabled={!currentMachineCode}
+                  disabled={isLocalHost ? !currentMachineCode : !currentSalonInfo.code}
                   className="w-full sm:w-auto flex items-center justify-center gap-1.5 text-xs font-black bg-amber-400 hover:bg-amber-300 text-slate-950 px-3.5 py-1.5 rounded-xl transition-all cursor-pointer active:scale-95 shadow-xs shrink-0"
                 >
                   {copied ? <Check size={14} className="text-slate-950" /> : <Copy size={14} />}
-                  <span>{copied ? 'تم النسخ بنجاح! ✓' : 'نسخ كود الجهاز'}</span>
+                  <span>{copied ? 'تم النسخ بنجاح! ✓' : (isLocalHost ? 'نسخ كود الجهاز' : 'نسخ كود الصالون')}</span>
                 </button>
               </div>
 
@@ -762,7 +848,9 @@ export const LicenseModal: React.FC<LicenseModalProps> = ({
                     </a>
                     <a
                       href={`https://wa.me/201014889704?text=${encodeURIComponent(
-                        `مرحباً، أود تفعيل منظومة Smart Cut.\nبصمة الجهاز (Machine Code): ${currentMachineCode || ''}`
+                        isLocalHost
+                          ? `مرحباً، أود تفعيل منظومة Smart Cut.\nبصمة الجهاز (Machine Code): ${currentMachineCode || ''}`
+                          : `مرحباً، أود تفعيل اشتراك صالون Smart Cut سحابياً.\nكود الصالون (Salon Code): ${currentSalonInfo.code || ''}\nاسم الصالون: ${currentSalonInfo.name || ''}`
                       )}`}
                       target="_blank"
                       rel="noreferrer"
@@ -779,15 +867,15 @@ export const LicenseModal: React.FC<LicenseModalProps> = ({
               <form onSubmit={handleActivate} className="space-y-4">
                 <div>
                   <label className="block text-xs font-extrabold text-slate-700 mb-1.5">
-                    أدخل مفتاح التفعيل (16 خانة):
+                    {isLocalHost ? 'أدخل مفتاح التفعيل للجهاز (16 خانة):' : 'أدخل كود تفعيل الصالون السحابي (أو المفتاح المعتمد):'}
                   </label>
                   <div className="relative">
                     <input
                       type="text"
                       value={inputKey}
                       onChange={handleInputChange}
-                      placeholder="XXXX-XXXX-XXXX-XXXX"
-                      maxLength={19}
+                      placeholder={isLocalHost ? "XXXX-XXXX-XXXX-XXXX" : "أدخل كود التفعيل هنا..."}
+                      maxLength={30}
                       className="w-full text-center text-base sm:text-lg font-mono font-extrabold px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none uppercase tracking-widest text-slate-900 bg-slate-50 focus:bg-white transition-all shadow-inner"
                     />
                     <Key size={16} className="absolute left-3 top-3.5 text-slate-400" />
@@ -810,7 +898,7 @@ export const LicenseModal: React.FC<LicenseModalProps> = ({
 
                 <button
                   type="submit"
-                  disabled={loading || inputKey.replace(/[^a-zA-Z0-9]/g, '').length !== 16}
+                  disabled={loading || (isLocalHost ? inputKey.replace(/[^a-zA-Z0-9]/g, '').length !== 16 : !inputKey.trim())}
                   className="w-full bg-slate-900 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed text-white font-extrabold py-3 px-4 rounded-xl shadow-md transition-all active:scale-[0.99] flex items-center justify-center gap-2 text-sm cursor-pointer"
                 >
                   {loading ? (

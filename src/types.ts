@@ -10,6 +10,7 @@ export type ScreenPermission =
   | 'queue_calling'
   | 'bookings'
   | 'invoices'
+  | 'deferred_invoices'
   | 'promo_codes'
   | 'services'
   | 'warehouse'
@@ -527,9 +528,12 @@ export interface Employee {
   target: number; 
   targetType: 'none' | 'daily' | 'monthly'; 
   dailyTargetAmount?: number;
-  dailyTargetMethod?: 'excess_only' | 'full_amount';
+  dailyTargetMethod?: 'excess_only' | 'full_amount' | 'salary_multiplier';
+  dailyTargetMultiplier?: number;
   monthlyTargetAmount?: number;
-  monthlyTargetMethod?: 'deduct_salary' | 'gross_sales';
+  monthlyTargetMethod?: 'deduct_salary' | 'gross_sales' | 'salary_multiplier';
+  monthlyTargetMultiplier?: number;
+  targetSalaryMultiplier?: number;
   targetCommissionRate?: number;
   availableVacations: number; 
   salaryType?: 'salary' | 'commission_only' | 'salary_plus_commission';
@@ -798,6 +802,8 @@ export interface Client {
   dob?: string;
   notes?: string;
   preferences?: ClientPreferences;
+  debt?: number;
+  totalDebt?: number;
   createdAt?: string;
 }
 
@@ -1053,6 +1059,7 @@ export interface AppSettings {
   tipsDirectCashDeduction?: boolean; // خصم البقشيش من الكاش مباشرة
   tipPayoutMethod?: 'instant_cash' | 'pooled_deferred'; // طريقة صرف وسداد الإكراميات (فوري كاش أو مجمع مؤجل)
   allowNonCashTips?: boolean; // السماح بالبقشيش عبر طرق الدفع غير النقدية (فيزا / شبكة / تحويل)
+  instantCommissionFromDrawer?: boolean; // صرف العمولة الفورية من الدرج مباشرة عند تنفيذ خدمة مستثناة من التارجت
   targetCalculationPolicy?: TargetCalculationPolicy; // 1: صافي المبيعات بعد خصم الراتب، 2: إجمالي المبيعات، 3: الشرائح المكتملة، 4: المنتجات والإحالات فقط
   targetStepAmount?: number; // خطوة التارجت للسياسة 3 (افتراضياً 1000)
   inactiveClientsTrackingEnabled?: boolean; // تفعيل أو تعطيل نظام متابعة العملاء المنقطعين (افتراضياً true)
@@ -1061,7 +1068,7 @@ export interface AppSettings {
   deposit_refund_allowed_days?: number;
 }
 
-export type TargetCalculationPolicy = 1 | 2 | 3 | 4;
+export type TargetCalculationPolicy = 1 | 2 | 3 | 4 | 5;
 
 
 export interface AIChatMessage {
@@ -1118,8 +1125,26 @@ export interface Invoice {
   bookingId?: string;
   vatAmount?: number;
   cashbackUsed?: number;
-  total: number; 
-  status: 'completed' | 'cancelled' | 'refunded'; 
+  total: number;
+  paid?: number;
+  remaining?: number;
+  dueDate?: string;
+  notes?: string;
+  badDebtReason?: string;
+  badDebtAt?: string;
+  badDebtBy?: string;
+  paymentsHistory?: {
+    id: string;
+    date: string;
+    amount: number;
+    paymentMethod: string;
+    treasuryId: string;
+    notes?: string;
+    createdBy?: string;
+    shiftId?: string;
+    shiftCode?: string;
+  }[];
+  status: 'completed' | 'cancelled' | 'refunded' | 'partially_paid' | 'deferred' | 'unpaid' | 'bad_debt'; 
   items: InvoiceItem[]; 
   paymentMethods?: { amount: number; treasuryId: string; }[];
   promoCode?: string;

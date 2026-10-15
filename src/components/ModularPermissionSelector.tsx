@@ -102,7 +102,7 @@ export const SYSTEM_MODULES: SystemModule[] = [
     badgeText: 'text-emerald-700',
     borderClass: 'border-emerald-200',
     headerBgClass: 'bg-emerald-50/80',
-    screenIds: ['pos', 'kiosk', 'queue_calling', 'bookings', 'invoices', 'sales_returns'],
+    screenIds: ['pos', 'kiosk', 'queue_calling', 'bookings', 'invoices', 'deferred_invoices', 'sales_returns'],
     actionIds: [
       'pos_discount',
       'pos_custom_price',

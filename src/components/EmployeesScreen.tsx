@@ -121,8 +121,11 @@ export function EmployeesScreen({
     target: 0,
     dailyTargetAmount: 0,
     dailyTargetMethod: 'excess_only',
+    dailyTargetMultiplier: 1,
     monthlyTargetAmount: 0,
     monthlyTargetMethod: 'deduct_salary',
+    monthlyTargetMultiplier: 1,
+    targetSalaryMultiplier: 1,
     targetCommissionRate: 0,
     targetType: 'none',
     availableVacations: 21,
@@ -488,8 +491,11 @@ export function EmployeesScreen({
       commissionModel: emp.commissionModel || (emp.commissionRate === 0 ? 'none' : 'fixed_rate'),
       dailyTargetAmount: emp.dailyTargetAmount ?? 0,
       dailyTargetMethod: emp.dailyTargetMethod || 'excess_only',
+      dailyTargetMultiplier: emp.dailyTargetMultiplier ?? emp.targetSalaryMultiplier ?? 1,
       monthlyTargetAmount: emp.monthlyTargetAmount ?? (emp.target ?? 0),
       monthlyTargetMethod: emp.monthlyTargetMethod || 'deduct_salary',
+      monthlyTargetMultiplier: emp.monthlyTargetMultiplier ?? emp.targetSalaryMultiplier ?? 1,
+      targetSalaryMultiplier: emp.targetSalaryMultiplier ?? 1,
       targetCommissionRate: emp.targetCommissionRate ?? 0,
       targetType: emp.targetType || ((Number(emp.dailyTargetAmount) > 0) ? 'daily' : ((Number(emp.monthlyTargetAmount || emp.target) > 0) ? 'monthly' : 'none')),
       email: emp.email || '',
@@ -1410,8 +1416,28 @@ export function EmployeesScreen({
                     type="number" 
                     min="0"
                     step="any"
-                    value={formData.baseSalary !== undefined && formData.baseSalary !== null ? formData.baseSalary : ''} 
-                    onChange={e => setFormData({ ...formData, baseSalary: e.target.value === '' ? ('' as any) : Number(e.target.value) })}
+                    onChange={e => {
+                      const newSalary = e.target.value === '' ? ('' as any) : Number(e.target.value);
+                      const numSalary = Number(newSalary) || 0;
+                      let newDailyTarget = formData.dailyTargetAmount;
+                      let newMonthlyTarget = formData.monthlyTargetAmount;
+                      let newTarget = formData.target;
+                      if (formData.dailyTargetMethod === 'salary_multiplier') {
+                        newDailyTarget = Math.round(((numSalary / 30) * (formData.dailyTargetMultiplier ?? 1)) * 100) / 100;
+                        if (formData.targetType === 'daily') newTarget = newDailyTarget;
+                      }
+                      if (formData.monthlyTargetMethod === 'salary_multiplier') {
+                        newMonthlyTarget = Math.round((numSalary * (formData.monthlyTargetMultiplier ?? 1)) * 100) / 100;
+                        if (formData.targetType === 'monthly') newTarget = newMonthlyTarget;
+                      }
+                      setFormData({ 
+                        ...formData, 
+                        baseSalary: newSalary,
+                        dailyTargetAmount: newDailyTarget,
+                        monthlyTargetAmount: newMonthlyTarget,
+                        target: newTarget
+                      });
+                    }}
                     placeholder="0.00"
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:border-indigo-600 outline-none"
                   />
@@ -1631,36 +1657,99 @@ export function EmployeesScreen({
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                          مبلغ التارجت اليومي المستهدف ({settings.currency}):
-                        </label>
-                        <input 
-                          type="number" 
-                          min="0"
-                          step="any"
-                          value={formData.dailyTargetAmount ?? 0} 
-                          onChange={e => {
-                            const val = Math.max(0, parseFloat(e.target.value) || 0);
-                            setFormData({ ...formData, dailyTargetAmount: val, target: val });
-                          }}
-                          placeholder="0.00"
-                          className="w-full bg-white border border-indigo-300 rounded-xl px-3 py-2 text-xs font-mono font-bold outline-none"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
                           طريقة احتساب التارجت اليومي:
                         </label>
                         <select
                           value={formData.dailyTargetMethod || 'excess_only'}
-                          onChange={e => setFormData({ ...formData, dailyTargetMethod: e.target.value as any })}
+                          onChange={e => {
+                            const newMethod = e.target.value as any;
+                            let newDailyTarget = formData.dailyTargetAmount;
+                            let newTarget = formData.target;
+                            if (newMethod === 'salary_multiplier') {
+                              const numSalary = Number(formData.baseSalary) || 0;
+                              const m = formData.dailyTargetMultiplier ?? 1;
+                              newDailyTarget = Math.round(((numSalary / 30) * m) * 100) / 100;
+                              newTarget = newDailyTarget;
+                            }
+                            setFormData({ 
+                              ...formData, 
+                              dailyTargetMethod: newMethod,
+                              dailyTargetAmount: newDailyTarget,
+                              target: newTarget
+                            });
+                          }}
                           className="w-full bg-white border border-indigo-300 rounded-xl px-3 py-2 text-xs font-bold outline-none"
                         >
                           <option value="excess_only">1. على ما فوق التارجت فقط (النسبة على المبلغ الزائد)</option>
                           <option value="full_amount">2. على كامل المبلغ طالما تجاوز التارجت</option>
+                          <option value="salary_multiplier">3. مضاعف الراتب (العمولة على ما يزيد عن مضاعف الراتب)</option>
                         </select>
                       </div>
+
+                      {formData.dailyTargetMethod === 'salary_multiplier' ? (
+                        <div>
+                          <label className="block text-[11px] font-bold text-indigo-900 mb-1">
+                            مضاعف الراتب اليومي (اكتب مثلاً: 1 أو 1.5 أو 2):
+                          </label>
+                          <div className="relative">
+                            <input
+                              type="number"
+                              min="0.1"
+                              step="0.1"
+                              value={formData.dailyTargetMultiplier ?? 1}
+                              onChange={e => {
+                                const m = Math.max(0, parseFloat(e.target.value) || 1);
+                                const numSalary = Number(formData.baseSalary) || 0;
+                                const calculatedTarget = Math.round(((numSalary / 30) * m) * 100) / 100;
+                                setFormData({
+                                  ...formData,
+                                  dailyTargetMultiplier: m,
+                                  targetSalaryMultiplier: m,
+                                  dailyTargetAmount: calculatedTarget,
+                                  target: calculatedTarget
+                                });
+                              }}
+                              placeholder="1.0"
+                              className="w-full bg-indigo-50 border border-indigo-400 rounded-xl px-3 py-2 text-xs font-mono font-bold outline-none text-indigo-900"
+                            />
+                            <span className="absolute left-3 top-2 text-xs text-indigo-600 font-bold">× الراتب اليومي</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                            مبلغ التارجت اليومي المستهدف ({settings.currency}):
+                          </label>
+                          <input 
+                            type="number" 
+                            min="0"
+                            step="any"
+                            value={formData.dailyTargetAmount ?? 0} 
+                            onChange={e => {
+                              const val = Math.max(0, parseFloat(e.target.value) || 0);
+                              setFormData({ ...formData, dailyTargetAmount: val, target: val });
+                            }}
+                            placeholder="0.00"
+                            className="w-full bg-white border border-indigo-300 rounded-xl px-3 py-2 text-xs font-mono font-bold outline-none"
+                          />
+                        </div>
+                      )}
                     </div>
+
+                    {formData.dailyTargetMethod === 'salary_multiplier' && (
+                      <div className="p-2.5 bg-indigo-50/90 border border-indigo-200 rounded-xl text-xs space-y-1">
+                        <div className="flex items-center justify-between font-bold text-indigo-900">
+                          <span>💡 قيمة التارجت اليومي المطلوب تحقيقه:</span>
+                          <span className="font-mono text-indigo-700 bg-white px-2.5 py-0.5 rounded-lg border border-indigo-300 text-xs">
+                            {Math.round(((Number(formData.baseSalary) || 0) / 30 * (formData.dailyTargetMultiplier ?? 1)) * 100) / 100} {settings.currency}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-indigo-700 leading-relaxed">
+                          الراتب اليومي ({(Math.round(((Number(formData.baseSalary) || 0) / 30) * 100) / 100).toLocaleString()} {settings.currency}) × {formData.dailyTargetMultiplier ?? 1} = يُلزم الموظف بتحقيق هذا المبلغ، وتُحسب العمولة بنسبة {formData.targetCommissionRate || 0}% على كل ما يزيد عن هذا المبلغ في اليوم.
+                        </p>
+                      </div>
+                    )}
+
                     <p className="text-[10px] text-slate-500">
                       💡 في التارجت اليومي، يحسب التارجت يومياً بالتايم شيت بناءً على الخدمات الخاضعة للتارجت + تضاف عمولة الخدمات المعفاة من التارجت مباشرة.
                     </p>
@@ -1673,36 +1762,99 @@ export function EmployeesScreen({
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                          مبلغ التارجت الشهري المستهدف ({settings.currency}):
-                        </label>
-                        <input 
-                          type="number" 
-                          min="0"
-                          step="any"
-                          value={formData.monthlyTargetAmount ?? 0} 
-                          onChange={e => {
-                            const val = Math.max(0, parseFloat(e.target.value) || 0);
-                            setFormData({ ...formData, monthlyTargetAmount: val, target: val });
-                          }}
-                          placeholder="0.00"
-                          className="w-full bg-white border border-indigo-300 rounded-xl px-3 py-2 text-xs font-mono font-bold outline-none"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
                           طريقة احتساب التارجت الشهري:
                         </label>
                         <select
                           value={formData.monthlyTargetMethod || 'deduct_salary'}
-                          onChange={e => setFormData({ ...formData, monthlyTargetMethod: e.target.value as any })}
+                          onChange={e => {
+                            const newMethod = e.target.value as any;
+                            let newMonthlyTarget = formData.monthlyTargetAmount;
+                            let newTarget = formData.target;
+                            if (newMethod === 'salary_multiplier') {
+                              const numSalary = Number(formData.baseSalary) || 0;
+                              const m = formData.monthlyTargetMultiplier ?? 1;
+                              newMonthlyTarget = Math.round((numSalary * m) * 100) / 100;
+                              newTarget = newMonthlyTarget;
+                            }
+                            setFormData({ 
+                              ...formData, 
+                              monthlyTargetMethod: newMethod,
+                              monthlyTargetAmount: newMonthlyTarget,
+                              target: newTarget
+                            });
+                          }}
                           className="w-full bg-white border border-indigo-300 rounded-xl px-3 py-2 text-xs font-bold outline-none"
                         >
                           <option value="deduct_salary">1. خصم الراتب من الشغل (النسبة على ما فوق التارجت)</option>
                           <option value="gross_sales">2. على إجمالي الشغل مباشرة (بدون خصم المرتب)</option>
+                          <option value="salary_multiplier">3. مضاعف الراتب (العمولة على ما يزيد عن مضاعف الراتب)</option>
                         </select>
                       </div>
+
+                      {formData.monthlyTargetMethod === 'salary_multiplier' ? (
+                        <div>
+                          <label className="block text-[11px] font-bold text-indigo-900 mb-1">
+                            مضاعف الراتب الشهري (اكتب مثلاً: 1 أو 1.5 أو 2):
+                          </label>
+                          <div className="relative">
+                            <input
+                              type="number"
+                              min="0.1"
+                              step="0.1"
+                              value={formData.monthlyTargetMultiplier ?? 1}
+                              onChange={e => {
+                                const m = Math.max(0, parseFloat(e.target.value) || 1);
+                                const numSalary = Number(formData.baseSalary) || 0;
+                                const calculatedTarget = Math.round((numSalary * m) * 100) / 100;
+                                setFormData({
+                                  ...formData,
+                                  monthlyTargetMultiplier: m,
+                                  targetSalaryMultiplier: m,
+                                  monthlyTargetAmount: calculatedTarget,
+                                  target: calculatedTarget
+                                });
+                              }}
+                              placeholder="1.0"
+                              className="w-full bg-indigo-50 border border-indigo-400 rounded-xl px-3 py-2 text-xs font-mono font-bold outline-none text-indigo-900"
+                            />
+                            <span className="absolute left-3 top-2 text-xs text-indigo-600 font-bold">× الراتب الشهري</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                            مبلغ التارجت الشهري المستهدف ({settings.currency}):
+                          </label>
+                          <input 
+                            type="number" 
+                            min="0"
+                            step="any"
+                            value={formData.monthlyTargetAmount ?? 0} 
+                            onChange={e => {
+                              const val = Math.max(0, parseFloat(e.target.value) || 0);
+                              setFormData({ ...formData, monthlyTargetAmount: val, target: val });
+                            }}
+                            placeholder="0.00"
+                            className="w-full bg-white border border-indigo-300 rounded-xl px-3 py-2 text-xs font-mono font-bold outline-none"
+                          />
+                        </div>
+                      )}
                     </div>
+
+                    {formData.monthlyTargetMethod === 'salary_multiplier' && (
+                      <div className="p-2.5 bg-indigo-50/90 border border-indigo-200 rounded-xl text-xs space-y-1">
+                        <div className="flex items-center justify-between font-bold text-indigo-900">
+                          <span>💡 قيمة التارجت الشهري المطلوب تحقيقه:</span>
+                          <span className="font-mono text-indigo-700 bg-white px-2.5 py-0.5 rounded-lg border border-indigo-300 text-xs">
+                            {Math.round(((Number(formData.baseSalary) || 0) * (formData.monthlyTargetMultiplier ?? 1)) * 100) / 100} {settings.currency}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-indigo-700 leading-relaxed">
+                          الراتب الأساسي ({(Number(formData.baseSalary) || 0).toLocaleString()} {settings.currency}) × {formData.monthlyTargetMultiplier ?? 1} = يُلزم الموظف بتحقيق هذا التارجت، وتُحسب العمولة بنسبة {formData.targetCommissionRate || 0}% على كل ما يزيد عن هذا المبلغ شهرياً.
+                        </p>
+                      </div>
+                    )}
+
                     <p className="text-[10px] text-indigo-800 font-bold bg-indigo-50 p-2 rounded-lg border border-indigo-200">
                       ℹ️ في التارجت الشهري: لا يظهر بالتايم شيت اليومي أي عمولات إلا على الخدمات المعفاة من التارجت فقط، بينما يظهر استحقاق التارجت في تقرير التارجت ومسير الرواتب الشهري.
                     </p>

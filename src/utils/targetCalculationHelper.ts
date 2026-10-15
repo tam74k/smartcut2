@@ -52,6 +52,8 @@ export function getTargetPolicyLabel(policy: TargetCalculationPolicy = 1): strin
       return 'تارجت الشرائح التراكمية المكتملة (خطوة الشريحة)';
     case 4:
       return 'تارجت المنتجات وفتح الشغل فقط (بدون الخدمات)';
+    case 5:
+      return 'تارجت مضاعف الراتب (العمولة على ما يزيد عن مضاعف الراتب)';
     default:
       return 'تارجت صافي المبيعات (السياسة 1)';
   }
@@ -122,17 +124,33 @@ export function calculateEmployeeTargetCommission({
   let targetMethod = '';
   let targetMethodLabel = 'بدون تارجت';
 
+  const rawTargetMultiplier = Number(
+    isDaily 
+      ? (employee.dailyTargetMultiplier ?? employee.targetSalaryMultiplier ?? 1)
+      : (employee.monthlyTargetMultiplier ?? employee.targetSalaryMultiplier ?? 1)
+  );
+  const targetMultiplier = isNaN(rawTargetMultiplier) || rawTargetMultiplier <= 0 ? 1 : rawTargetMultiplier;
+
   if (targetType === 'none') {
     targetAmount = 0;
     targetMethod = 'none';
     targetMethodLabel = 'الموظف غير خاضع لنظام التارجت';
   } else if (isDaily) {
     if (targetType === 'daily') {
-      targetAmount = Number(employee.dailyTargetAmount || employee.target || 0);
       targetMethod = employee.dailyTargetMethod || 'excess_only';
-      targetMethodLabel = targetMethod === 'full_amount' 
-        ? 'تارجت يومي: على كامل المبلغ عند تجاوز التارجت' 
-        : 'تارجت يومي: على ما فوق التارجت فقط (الفائض)';
+      if (targetMethod === 'salary_multiplier' || policy === 5) {
+        targetMethod = 'salary_multiplier';
+        const baseSalary = Number(employee.baseSalary ?? (employee as any).basicSalary ?? 0);
+        const dailySalary = baseSalary / (daysInMonth || 30);
+        targetAmount = Math.round((dailySalary * targetMultiplier) * 100) / 100;
+        targetMethodLabel = `تارجت يومي: مضاعف الراتب (${targetMultiplier}x الراتب اليومي)`;
+      } else if (targetMethod === 'full_amount') {
+        targetAmount = Number(employee.dailyTargetAmount || employee.target || 0);
+        targetMethodLabel = 'تارجت يومي: على كامل المبلغ عند تجاوز التارجت';
+      } else {
+        targetAmount = Number(employee.dailyTargetAmount || employee.target || 0);
+        targetMethodLabel = 'تارجت يومي: على ما فوق التارجت فقط (الفائض)';
+      }
     } else {
       // Monthly target employee being evaluated on a daily scope
       targetAmount = 0;
@@ -142,11 +160,18 @@ export function calculateEmployeeTargetCommission({
   } else {
     // Monthly evaluation
     if (targetType === 'monthly' || targetType === 'daily') {
-      targetAmount = Number(employee.monthlyTargetAmount || employee.target || 0);
-      targetMethod = employee.monthlyTargetMethod || (policy === 2 ? 'gross_sales' : 'deduct_salary');
-      targetMethodLabel = targetMethod === 'gross_sales'
-        ? 'تارجت شهري: على إجمالي الشغل بدون خصم الراتب'
-        : 'تارجت شهري: خصم الراتب الأساسي ثم النسبة على ما فوق التارجت';
+      targetMethod = employee.monthlyTargetMethod || (policy === 5 ? 'salary_multiplier' : (policy === 2 ? 'gross_sales' : 'deduct_salary'));
+      if (targetMethod === 'salary_multiplier') {
+        const baseSalary = Number(employee.baseSalary ?? (employee as any).basicSalary ?? 0);
+        targetAmount = Math.round((baseSalary * targetMultiplier) * 100) / 100;
+        targetMethodLabel = `تارجت شهري: مضاعف الراتب (${targetMultiplier}x الراتب الشهري)`;
+      } else if (targetMethod === 'gross_sales') {
+        targetAmount = Number(employee.monthlyTargetAmount || employee.target || 0);
+        targetMethodLabel = 'تارجت شهري: على إجمالي الشغل بدون خصم الراتب';
+      } else {
+        targetAmount = Number(employee.monthlyTargetAmount || employee.target || 0);
+        targetMethodLabel = 'تارجت شهري: خصم الراتب الأساسي ثم النسبة على ما فوق التارجت';
+      }
     }
   }
   targetAmount = Math.max(0, targetAmount || 0);
@@ -273,7 +298,18 @@ export function calculateEmployeeTargetCommission({
     }
   } else {
     // MONTHLY TARGET EVALUATION
-    if (targetMethod === 'gross_sales') {
+    if (targetMethod === 'salary_multiplier') {
+      // Method 3 / Policy 5: Salary multiplier (Commission on excess sales above baseSalary * multiplier)
+      baseSalaryDeduction = 0;
+      achievedAmount = totalValidSales;
+      if (totalValidSales >= targetAmount) {
+        eligibleAmount = Math.max(0, totalValidSales - targetAmount);
+        commissionAmount = eligibleAmount * rateMultiplier;
+      } else {
+        eligibleAmount = 0;
+        commissionAmount = 0;
+      }
+    } else if (targetMethod === 'gross_sales') {
       // Method 2: Gross sales without deducting salary
       baseSalaryDeduction = 0;
       achievedAmount = totalValidSales;

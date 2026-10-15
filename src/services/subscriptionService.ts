@@ -41,7 +41,7 @@ export const COUNTRY_CURRENCY_MAP: Record<string, { currency: string; tax: numbe
 };
 
 export function getCountryMeta(countryName: string) {
-  if (!countryName) return COUNTRY_CURRENCY_MAP['المملكة العربية السعودية'];
+  if (!countryName) return COUNTRY_CURRENCY_MAP['جمهورية مصر العربية'];
   if (COUNTRY_CURRENCY_MAP[countryName]) return COUNTRY_CURRENCY_MAP[countryName];
   
   // Fuzzy match for common short names
@@ -51,7 +51,7 @@ export function getCountryMeta(countryName: string) {
       return val;
     }
   }
-  return { currency: 'SAR', tax: 15, phoneCode: '+966', nameEn: 'Saudi Arabia' };
+  return { currency: 'EGP', tax: 14, phoneCode: '+20', nameEn: 'Egypt' };
 }
 
 /**
@@ -238,8 +238,10 @@ export const SubscriptionService = {
       logoUrl: '',
       treasuries: [
         { id: 'main', name: 'الخزنة الرئيسية', isMain: true },
-        { id: 'cash', name: 'كاش (الدرج)', isMain: false },
-        { id: 'card', name: 'شبكة / فيزا', isMain: false }
+        { id: 'cash', name: 'كاش الدرج', isMain: false },
+        { id: 'card', name: 'فيزا', isMain: false },
+        { id: 'instapay', name: 'انستاباي', isMain: false },
+        { id: 'vodafone_cash', name: 'فودافون كاش', isMain: false }
       ],
       printerName: 'طابعة الكاشير',
       paperSize: '80mm',
@@ -467,7 +469,7 @@ export const SubscriptionService = {
     const salons = this.getSalons();
     const salon = salons.find(s => s.id === branch?.salonId) || (fallbackSettings?.salonId ? salons.find(s => s.id === fallbackSettings.salonId) : null);
     
-    const countryName = branch?.country || salon?.country || fallbackSettings?.country || 'المملكة العربية السعودية';
+    const countryName = branch?.country || salon?.country || fallbackSettings?.country || 'جمهورية مصر العربية';
     const meta = getCountryMeta(countryName);
     const actualSalonName = salon?.name || fallbackSettings?.salonName || 'صالون سمارت كت';
 

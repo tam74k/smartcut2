@@ -4,7 +4,7 @@ import {
   Tag, X, Package, Clock, UserCog, Calendar, CheckCircle2, Image as ImageIcon,
   Wrench, ShieldAlert, Camera, Crown, Sparkles, PauseCircle, PlayCircle,
   FilePlus2, Layers, Zap, AlertCircle, DollarSign, Coffee, Sliders, Save, AlertTriangle, Loader2,
-  Printer, Eye, FileText, RotateCcw, Barcode
+  Printer, Eye, FileText, RotateCcw, Barcode, Hourglass, CheckCircle
 } from 'lucide-react';
 import { 
   AppSettings, CartItem, ServiceItem, Booking, Invoice, Client, Category, Employee,
@@ -389,6 +389,12 @@ export function POSScreen({
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [completedInvoice, setCompletedInvoice] = useState<Invoice | null>(null);
   const [mobilePrintNotice, setMobilePrintNotice] = useState<string | null>(null);
+
+  // Deferred & Partial Payment State (الفواتير الآجلة والسداد الجزئي)
+  const [paymentMode, setPaymentMode] = useState<'full' | 'partial' | 'deferred'>('full');
+  const [partialPaidAmount, setPartialPaidAmount] = useState<number | ''>('');
+  const [deferredDueDate, setDeferredDueDate] = useState<string>('');
+  const [deferredNotes, setDeferredNotes] = useState<string>('');
 
   // Before & After Photos for Invoice (Max 500 KB)
   const [beforePhotoUrl, setBeforePhotoUrl] = useState('');
@@ -1155,11 +1161,49 @@ export function POSScreen({
       const cashbackUsed = isRemedyInvoice ? 0 : (splitAmounts['cashback'] || 0);
       const remainingTotal = finalTotal - cashbackUsed;
     
-    if (isRemedyInvoice) {
+    // التحقق من متطلبات الفاتورة الآجلة أو السداد الجزئي
+    if (paymentMode === 'deferred' || paymentMode === 'partial') {
+      const clientName = selectedClient ? selectedClient.name : clientSearch?.trim();
+      const clientPhone = selectedClient ? selectedClient.phone : '';
+      if (!clientName || clientName === 'عميل نقدي' || !clientPhone) {
+        alert('⚠️ تنبيه: الفواتير الآجلة والسداد الجزئي يتطلبان اختيار عميل مسجل وتحديد رقم هاتفه لمتابعة الذمة والمطالبات بدقة.');
+        setIsSubmittingPayment(false);
+        return;
+      }
+    }
+
+    let actualPaid = finalTotal;
+    let actualRemaining = 0;
+    let invoiceStatus: Invoice['status'] = 'completed';
+
+    if (paymentMode === 'deferred') {
+      actualPaid = 0;
+      actualRemaining = finalTotal;
+      invoiceStatus = 'deferred';
+      splits = [];
+    } else if (paymentMode === 'partial') {
+      const partialVal = Number(partialPaidAmount) || 0;
+      if (partialVal <= 0 || partialVal >= finalTotal) {
+        alert('⚠️ المبلغ المسدد جزئياً يجب أن يكون أكبر من صفر وأقل من إجمالي الفاتورة!');
+        setIsSubmittingPayment(false);
+        return;
+      }
+      if (!singleTreasury) {
+        alert('الرجاء اختيار طريقة وخزينة دفع الجزء المسدد حالياً');
+        setIsSubmittingPayment(false);
+        return;
+      }
+      actualPaid = partialVal;
+      actualRemaining = Math.max(0, finalTotal - partialVal);
+      invoiceStatus = 'partially_paid';
+      splits = [{ amount: partialVal, treasuryId: singleTreasury }];
+    } else if (isRemedyInvoice) {
       splits = [{ amount: 0, treasuryId: 'remedy_free' }];
     } else if (paymentType === 'single') {
       if (remainingTotal > 0 && !singleTreasury) {
-        alert('الرجاء اختيار طريقة الدفع'); return;
+        alert('الرجاء اختيار طريقة الدفع'); 
+        setIsSubmittingPayment(false);
+        return;
       }
       // If non-cash and has tip, the card terminal was charged with (remainingTotal + calculatedTip)
       const actualTreasuryCharged = remainingTotal + (!isCashPayment && calculatedTip > 0 ? calculatedTip : 0);
@@ -1168,7 +1212,9 @@ export function POSScreen({
     } else {
       const totalSplit = Object.values(splitAmounts).reduce((a: number, b) => a + (Number(b) || 0), 0) as number;
       if (totalSplit < finalTotal) {
-        alert('مجموع المبالغ الموزعة يجب أن يساوي أو يزيد عن المطلوب سداده!'); return;
+        alert('مجموع المبالغ الموزعة يجب أن يساوي أو يزيد عن المطلوب سداده!'); 
+        setIsSubmittingPayment(false);
+        return;
       }
       splits = Object.entries(splitAmounts).filter(([_, amt]) => Number(amt) > 0).map(([tId, amt]) => ({ amount: Number(amt), treasuryId: tId }));
     }
@@ -1188,8 +1234,19 @@ export function POSScreen({
       subtotal: subtotal,
       vatAmount: vatAmount,
       total: finalTotal, // net paid (0 if remedy)
-      paid: finalTotal,
-      remaining: 0,
+      paid: actualPaid,
+      remaining: actualRemaining,
+      dueDate: (paymentMode === 'deferred' || paymentMode === 'partial') ? (deferredDueDate || undefined) : undefined,
+      notes: (paymentMode === 'deferred' || paymentMode === 'partial') ? (deferredNotes || undefined) : undefined,
+      paymentsHistory: paymentMode === 'partial' ? [{
+        id: 'PMT-' + Date.now(),
+        date: effectiveIsShiftOpen ? (effectiveShiftDate + 'T' + new Date().toTimeString().split(' ')[0]) : new Date().toISOString(),
+        amount: actualPaid,
+        paymentMethod: settings.treasuries.find(t => t.id === singleTreasury)?.name || singleTreasury || 'كاش',
+        treasuryId: singleTreasury || 'cash',
+        notes: 'الدفعة الأولى عند إصدار الفاتورة',
+        createdBy: currentUser?.name || 'الكاشير'
+      }] : [],
       discount: isRemedyInvoice ? subtotal : discountAmount,
       paymentMethod: splits[0]?.treasuryId || 'cash',
       treasuryId: splits[0]?.treasuryId || 'main',
@@ -1205,7 +1262,7 @@ export function POSScreen({
       tipAmount: calculatedTip > 0 ? calculatedTip : undefined,
       tipEmployeeId: calculatedTip > 0 ? (isUnspecifiedTip ? 'unspecified' : assignedTipEmployee?.id) : undefined,
       tipEmployeeName: calculatedTip > 0 ? (isUnspecifiedTip ? 'غير محدد (عامة للصالون)' : assignedTipEmployee?.name) : undefined,
-      status: 'completed',
+      status: invoiceStatus,
 
       beforePhotoUrl: beforePhotoUrl || undefined,
       afterPhotoUrl: afterPhotoUrl || undefined,
@@ -1477,6 +1534,10 @@ export function POSScreen({
       setAppliedPromo(null);
       setPromoDiscountAmount(0);
       setPromoError(null);
+      setPaymentMode('full');
+      setPartialPaidAmount('');
+      setDeferredDueDate('');
+      setDeferredNotes('');
       setItemTypeFilter('service');
       setSelectedCategory('all');
       setSearchQuery('');
@@ -3177,197 +3238,351 @@ export function POSScreen({
                 <p className="text-3xl font-extrabold text-primary">{finalTotal.toFixed(2)} <span className="text-sm font-normal text-slate-500">{settings.currency}</span></p>
               </div>
 
-              {/* Received Amount & Tips / Change Calculation */}
-              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-slate-700">المبلغ المدفوع من العميل:</label>
-                  <div className="flex items-center gap-1.5">
-                    <input
-                      type="number"
-                      min={finalTotal}
-                      step="any"
-                      value={receivedAmount}
-                      onChange={e => setReceivedAmount(e.target.value === '' ? '' : Number(e.target.value))}
-                      placeholder={finalTotal.toFixed(2)}
-                      className="w-28 px-3 py-1.5 bg-white border border-slate-300 rounded-xl text-left font-mono font-black text-sm focus:border-primary outline-none"
-                    />
-                    <span className="text-xs text-slate-500 font-bold">{settings.currency}</span>
+              {/* اختيار نوع السداد: فوري كلي / جزئي آجل / مؤجل بالكامل */}
+              <div className="grid grid-cols-3 gap-1.5 bg-slate-100 p-1 rounded-xl text-center mb-3">
+                <button
+                  type="button"
+                  onClick={() => setPaymentMode('full')}
+                  className={`py-2 px-1 text-xs font-black rounded-lg transition-all flex flex-col items-center gap-1 cursor-pointer ${
+                    paymentMode === 'full' 
+                      ? 'bg-emerald-600 text-white shadow-sm' 
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                  }`}
+                >
+                  <CheckCircle size={15} />
+                  <span>سداد فوري كلي</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPaymentMode('partial')}
+                  className={`py-2 px-1 text-xs font-black rounded-lg transition-all flex flex-col items-center gap-1 cursor-pointer ${
+                    paymentMode === 'partial' 
+                      ? 'bg-blue-600 text-white shadow-sm' 
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                  }`}
+                >
+                  <Clock size={15} />
+                  <span>سداد جزئي + آجل</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPaymentMode('deferred')}
+                  className={`py-2 px-1 text-xs font-black rounded-lg transition-all flex flex-col items-center gap-1 cursor-pointer ${
+                    paymentMode === 'deferred' 
+                      ? 'bg-amber-600 text-white shadow-sm' 
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                  }`}
+                >
+                  <Hourglass size={15} />
+                  <span>مؤجلة بالكامل</span>
+                </button>
+              </div>
+
+              {/* تنبيه ضرورة تحديد العميل للفواتير الآجلة والجزئية */}
+              {(paymentMode === 'deferred' || paymentMode === 'partial') && (!selectedClient || !selectedClient.name || selectedClient.name === 'عميل نقدي') && (
+                <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl text-amber-900 text-xs font-bold flex items-start gap-2 animate-in fade-in">
+                  <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-extrabold">تنبيه ذمم العملاء:</p>
+                    <p className="font-medium text-[11px] mt-0.5">يجب اختيار عميل مسجل وتحديد رقم هاتفه لمتابعة الذمة والمطالبات بدقة. العميل الحالي: <span className="underline">{selectedClient?.name || clientSearch || 'عميل نقدي'}</span></p>
                   </div>
                 </div>
+              )}
 
-                {/* Case 1: Cash Change Due */}
-                {isCashPayment && changeDue > 0 && (
-                  <div className="flex items-center justify-between text-xs bg-emerald-50 text-emerald-800 p-2.5 rounded-xl border border-emerald-200 font-bold">
-                    <span>الباقي المستحق للعميل (كاش):</span>
-                    <span className="font-mono text-base font-black text-emerald-700">
-                      {changeDue.toFixed(2)} {settings.currency}
-                    </span>
+              {/* شاشة الفاتورة المؤجلة بالكامل */}
+              {paymentMode === 'deferred' && (
+                <div className="space-y-3">
+                  <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-center space-y-2">
+                    <div className="inline-flex p-2 rounded-full bg-amber-100 text-amber-700">
+                      <Hourglass size={24} />
+                    </div>
+                    <h4 className="font-extrabold text-amber-900 text-sm">فاتورة مؤجلة بالكامل (سداد لاحقاً)</h4>
+                    <p className="text-xs text-amber-800 leading-relaxed">
+                      سيتم قيد كامل المبلغ <span className="font-mono font-black text-amber-950 text-sm">({finalTotal.toFixed(2)} {settings.currency})</span> كدين مستحق في قسم الفواتير الآجلة على العميل <span className="font-bold underline">{selectedClient?.name || clientSearch || 'عميل نقدي'}</span>، ولن يتم تسجيل أي حركة قبض في الخزائن حالياً.
+                    </p>
                   </div>
-                )}
 
-                {/* Case 2: Non-Cash Tip Recognized */}
-                {!isCashPayment && calculatedTip > 0 && (
-                  <div className="space-y-2.5 bg-gradient-to-br from-purple-50 to-indigo-50 text-purple-950 p-4 rounded-2xl border border-purple-200 shadow-xs">
-                    <div className="flex items-center justify-between border-b border-purple-200/60 pb-2">
-                      <span className="flex items-center gap-1.5 text-xs font-black text-purple-900">
-                        <DollarSign size={16} className="text-purple-600" />
-                        <span>مبلغ الزيادة (الإكرامية / البقشيش):</span>
-                      </span>
-                      <span className="font-mono text-lg font-black text-purple-700">
-                        +{calculatedTip.toFixed(2)} {settings.currency}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 text-[11px] bg-white/80 p-2.5 rounded-xl border border-purple-100">
-                      <div>
-                        <span className="text-slate-500 block">المبلغ المدفوع بالفيزا:</span>
-                        <span className="font-mono font-bold text-slate-800">{receivedNum.toFixed(2)} {settings.currency}</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-500 block">صافي الفاتورة:</span>
-                        <span className="font-mono font-bold text-slate-800">{finalTotal.toFixed(2)} {settings.currency}</span>
-                      </div>
-                    </div>
-
+                  <div className="space-y-3 bg-slate-50 border border-slate-200 rounded-xl p-3.5">
                     <div>
-                      <label className="block text-[11px] font-bold text-purple-900 mb-1">الموظف المستحق للإكرامية *</label>
-                      <select
-                        value={tipEmployeeId || 'unspecified'}
-                        onChange={e => setTipEmployeeId(e.target.value)}
-                        className="w-full bg-white border border-purple-300 rounded-xl px-3 py-1.5 text-xs font-bold text-purple-950 outline-none focus:border-purple-600 shadow-2xs"
-                      >
-                        <option value="unspecified">✨ غير محدد (إكرامية عامة للصالون)</option>
-                        {employees.filter(e => e.isActive !== false).map(emp => (
-                          <option key={emp.id} value={emp.id}>{emp.name}</option>
-                        ))}
-                      </select>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">تاريخ الاستحقاق المتوقع (اختياري):</label>
+                      <input 
+                        type="date"
+                        value={deferredDueDate}
+                        onChange={e => setDeferredDueDate(e.target.value)}
+                        className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs font-bold outline-none focus:border-amber-500"
+                      />
                     </div>
-
-                    {(tipEmployeeId === 'unspecified' || !tipEmployeeId) ? (
-                      <div className="text-[11px] font-semibold p-2.5 rounded-xl border flex items-center gap-1.5 bg-purple-100/70 border-purple-300 text-purple-950">
-                        <Sparkles size={14} className="text-purple-700 shrink-0" />
-                        <span>✨ إكرامية عامة للصالون: لا تُخصص لأي موظف وتُسجل كإيراد عام للصالون (لن يتم خصم أي مبالغ من درج الكاش).</span>
-                      </div>
-                    ) : (
-                      <div className="text-[11px] font-semibold p-2.5 rounded-xl border flex items-center gap-1.5" style={{
-                        backgroundColor: (settings.tipPayoutMethod || 'instant_cash') === 'instant_cash' ? '#ecfdf5' : '#eef2ff',
-                        borderColor: (settings.tipPayoutMethod || 'instant_cash') === 'instant_cash' ? '#a7f3d0' : '#c7d2fe',
-                        color: (settings.tipPayoutMethod || 'instant_cash') === 'instant_cash' ? '#065f46' : '#3730a3'
-                      }}>
-                        {(settings.tipPayoutMethod || 'instant_cash') === 'instant_cash' ? (
-                          <>
-                            <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />
-                            <span>🟢 الصرف الفوري: يُخصم البقشيش فوراً نقداً من درج الكاش لتسليمه للموظف، وتُسجل الفيزا بكامل المبلغ ({receivedNum.toFixed(2)} {settings.currency}).</span>
-                          </>
-                        ) : (
-                          <>
-                            <Clock size={14} className="text-indigo-600 shrink-0" />
-                            <span>🟡 الصرف المؤجل: يُسجل البقشيش كرصيد مجمع للموظف ويُصرف لاحقاً من الخزينة المحددة.</span>
-                          </>
-                        )}
-                      </div>
-                    )}
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">ملاحظات الذمة والتأجيل:</label>
+                      <input 
+                        type="text"
+                        placeholder="سبب التأجيل، اتفاق السداد..."
+                        value={deferredNotes}
+                        onChange={e => setDeferredNotes(e.target.value)}
+                        className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs font-medium outline-none focus:border-amber-500"
+                      />
+                    </div>
                   </div>
-                )}
-              </div>
-
-
-
-              {(() => {
-                const maxCashback = selectedClient 
-                  ? Number(selectedClient.cashback !== undefined ? selectedClient.cashback : selectedClient.loyaltyPoints || 0) 
-                  : 0;
-                
-                return (
-                  <>
-                    {selectedClient && maxCashback > 0 && (
-                      <div className="mb-4 bg-blue-50 p-4 rounded-xl border border-blue-100">
-                        <div className="flex justify-between items-center mb-2">
-                          <span className="text-sm font-bold text-blue-800">رصيد الكاش باك المتوفر:</span>
-                          <span className="text-sm font-bold text-blue-600">{maxCashback.toFixed(2)} {settings.currency}</span>
-                        </div>
-                        <label className="block text-xs font-bold text-blue-700 mb-1">المبلغ المستخدم من الكاش باك (سيتم خصمه من الإجمالي):</label>
-                        <input 
-                          type="number" 
-                          max={Math.min(maxCashback, finalTotal)}
-                          min={0}
-                          value={splitAmounts['cashback'] || ''}
-                          onChange={(e) => {
-                            let val = Number(e.target.value);
-                            if (val > maxCashback) val = maxCashback;
-                            if (val > finalTotal) val = finalTotal;
-                            if (val < 0) val = 0;
-                            setSplitAmounts(prev => ({...prev, 'cashback': val}));
-                          }}
-                          className="w-full bg-white border border-blue-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500"
-                        />
-                        {settings.tierSettings?.allowTierDiscountWithCashback === false && discount.value > 0 && (
-                          <p className="text-[10px] text-amber-800 font-bold mt-1.5 flex items-center gap-1">
-                            <span>ℹ️</span>
-                            <span>سياسة الصالون: لا يُجمع بين خصم المستوى التلقائي ({discount.value}%) وسداد كامل الفاتورة بالكاش باك.</span>
-                          </p>
-                        )}
-                      </div>
-                    )}
-                  </>
-                );
-              })()}
-
-              <div className="flex bg-slate-100 p-1 rounded-lg mb-6">
-                <button 
-                  onClick={() => setPaymentType('single')}
-                  className={`flex-1 py-2 text-sm font-bold rounded-md transition-colors ${paymentType === 'single' ? 'bg-white shadow-sm text-primary' : 'text-slate-500 hover:text-slate-700'}`}
-                >
-                  طريقة دفع واحدة
-                </button>
-                <button 
-                  onClick={() => setPaymentType('split')}
-                  className={`flex-1 py-2 text-sm font-bold rounded-md transition-colors ${paymentType === 'split' ? 'bg-white shadow-sm text-primary' : 'text-slate-500 hover:text-slate-700'}`}
-                >
-                  تقسيم الفاتورة
-                </button>
-              </div>
-
-              {paymentType === 'single' ? (
-                <div className="space-y-3">
-                  {settings.treasuries.filter(t => !t.isMain).map(t => (
-                    <label key={t.id} className={`flex items-center gap-3 p-3 border rounded-xl cursor-pointer transition-all ${singleTreasury === t.id ? 'border-primary bg-primary/5 ring-1 ring-primary/20' : 'border-slate-200 hover:border-slate-300'}`}>
-                      <input type="radio" name="treasury" value={t.id} checked={singleTreasury === t.id} onChange={() => setSingleTreasury(t.id)} className="w-4 h-4 text-primary" />
-                      <span className="font-bold text-slate-700">{t.name}</span>
-                    </label>
-                  ))}
                 </div>
-              ) : (
+              )}
+
+              {/* شاشة السداد الجزئي */}
+              {paymentMode === 'partial' && (
                 <div className="space-y-3">
-                  {settings.treasuries.filter(t => !t.isMain).map(t => (
-                    <div key={t.id} className="flex items-center justify-between p-3 border border-slate-200 rounded-xl bg-slate-50">
-                      <span className="font-bold text-slate-700">{t.name}</span>
-                      <div className="flex items-center gap-2">
-                        <input 
-                          type="number" 
-                          min="0"
-                          placeholder="0"
-                          className="w-24 px-3 py-1.5 border border-slate-300 rounded-lg text-left outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
-                          value={splitAmounts[t.id] || ''}
-                          onChange={(e) => setSplitAmounts({...splitAmounts, [t.id]: Number(e.target.value)})}
+                  <div className="bg-blue-50 border border-blue-200 rounded-2xl p-3.5 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-blue-900">المبلغ المدفوع الآن نقدياً/فيزا:</label>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="number"
+                          min="0.5"
+                          max={finalTotal - 0.01}
+                          step="any"
+                          value={partialPaidAmount}
+                          onChange={e => setPartialPaidAmount(e.target.value === '' ? '' : Number(e.target.value))}
+                          placeholder={(finalTotal / 2).toFixed(2)}
+                          className="w-28 px-3 py-1.5 bg-white border border-blue-300 rounded-xl text-left font-mono font-black text-sm text-blue-700 focus:border-blue-600 outline-none"
                         />
-                        <span className="text-xs text-slate-500">{settings.currency}</span>
+                        <span className="text-xs text-blue-800 font-bold">{settings.currency}</span>
                       </div>
                     </div>
-                  ))}
-                  <div className="mt-2 text-center text-sm font-bold">
-                    <span className="text-slate-500">المتبقي للتوزيع: </span>
-                    {(() => {
-                      const totalSplit = Object.values(splitAmounts).reduce((a: number, b) => a + (Number(b) || 0), 0) as number;
-                      const remaining = finalTotal - totalSplit;
-                      return (
-                        <span className={remaining === 0 ? 'text-emerald-600' : 'text-red-500'}>
-                          {remaining.toFixed(2)}
+                    <div className="flex items-center justify-between text-xs bg-white/80 p-2.5 rounded-xl border border-blue-100">
+                      <span className="text-slate-600 font-bold">المتبقي الآجل المستحق لاحقاً:</span>
+                      <span className="font-mono text-sm font-black text-red-600">
+                        {Math.max(0, finalTotal - (Number(partialPaidAmount) || 0)).toFixed(2)} {settings.currency}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">تاريخ الاستحقاق:</label>
+                        <input 
+                          type="date"
+                          value={deferredDueDate}
+                          onChange={e => setDeferredDueDate(e.target.value)}
+                          className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-bold outline-none focus:border-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">ملاحظات الذمة:</label>
+                        <input 
+                          type="text"
+                          placeholder="ملاحظات..."
+                          value={deferredNotes}
+                          onChange={e => setDeferredNotes(e.target.value)}
+                          className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-blue-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="block text-xs font-bold text-slate-700">خزينة سداد الدفعة المدفوعة حالياً ({Number(partialPaidAmount) || 0} {settings.currency}):</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {settings.treasuries.filter(t => !t.isMain).map(t => (
+                        <label key={t.id} className={`flex items-center gap-2 p-2.5 border rounded-xl cursor-pointer text-xs font-bold transition-all ${singleTreasury === t.id ? 'border-blue-600 bg-blue-50 text-blue-900 ring-1 ring-blue-500/20' : 'border-slate-200 text-slate-700 hover:border-slate-300'}`}>
+                          <input type="radio" name="partial_treasury" value={t.id} checked={singleTreasury === t.id} onChange={() => setSingleTreasury(t.id)} className="w-3.5 h-3.5 text-blue-600" />
+                          <span>{t.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* شاشة السداد الفوري الكامل (الوضع المعتاد) */}
+              {paymentMode === 'full' && (
+                <>
+                  {/* Received Amount & Tips / Change Calculation */}
+                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-700">المبلغ المدفوع من العميل:</label>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="number"
+                          min={finalTotal}
+                          step="any"
+                          value={receivedAmount}
+                          onChange={e => setReceivedAmount(e.target.value === '' ? '' : Number(e.target.value))}
+                          placeholder={finalTotal.toFixed(2)}
+                          className="w-28 px-3 py-1.5 bg-white border border-slate-300 rounded-xl text-left font-mono font-black text-sm focus:border-primary outline-none"
+                        />
+                        <span className="text-xs text-slate-500 font-bold">{settings.currency}</span>
+                      </div>
+                    </div>
+
+                    {/* Case 1: Cash Change Due */}
+                    {isCashPayment && changeDue > 0 && (
+                      <div className="flex items-center justify-between text-xs bg-emerald-50 text-emerald-800 p-2.5 rounded-xl border border-emerald-200 font-bold">
+                        <span>الباقي المستحق للعميل (كاش):</span>
+                        <span className="font-mono text-base font-black text-emerald-700">
+                          {changeDue.toFixed(2)} {settings.currency}
                         </span>
-                      );
-                    })()}
+                      </div>
+                    )}
+
+                    {/* Case 2: Non-Cash Tip Recognized */}
+                    {!isCashPayment && calculatedTip > 0 && (
+                      <div className="space-y-2.5 bg-gradient-to-br from-purple-50 to-indigo-50 text-purple-950 p-4 rounded-2xl border border-purple-200 shadow-xs">
+                        <div className="flex items-center justify-between border-b border-purple-200/60 pb-2">
+                          <span className="flex items-center gap-1.5 text-xs font-black text-purple-900">
+                            <DollarSign size={16} className="text-purple-600" />
+                            <span>مبلغ الزيادة (الإكرامية / البقشيش):</span>
+                          </span>
+                          <span className="font-mono text-lg font-black text-purple-700">
+                            +{calculatedTip.toFixed(2)} {settings.currency}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 text-[11px] bg-white/80 p-2.5 rounded-xl border border-purple-100">
+                          <div>
+                            <span className="text-slate-500 block">المبلغ المدفوع بالفيزا:</span>
+                            <span className="font-mono font-bold text-slate-800">{receivedNum.toFixed(2)} {settings.currency}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 block">صافي الفاتورة:</span>
+                            <span className="font-mono font-bold text-slate-800">{finalTotal.toFixed(2)} {settings.currency}</span>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-bold text-purple-900 mb-1">الموظف المستحق للإكرامية *</label>
+                          <select
+                            value={tipEmployeeId || 'unspecified'}
+                            onChange={e => setTipEmployeeId(e.target.value)}
+                            className="w-full bg-white border border-purple-300 rounded-xl px-3 py-1.5 text-xs font-bold text-purple-950 outline-none focus:border-purple-600 shadow-2xs"
+                          >
+                            <option value="unspecified">✨ غير محدد (إكرامية عامة للصالون)</option>
+                            {employees.filter(e => e.isActive !== false).map(emp => (
+                              <option key={emp.id} value={emp.id}>{emp.name}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {(tipEmployeeId === 'unspecified' || !tipEmployeeId) ? (
+                          <div className="text-[11px] font-semibold p-2.5 rounded-xl border flex items-center gap-1.5 bg-purple-100/70 border-purple-300 text-purple-950">
+                            <Sparkles size={14} className="text-purple-700 shrink-0" />
+                            <span>✨ إكرامية عامة للصالون: لا تُخصص لأي موظف وتُسجل كإيراد عام للصالون (لن يتم خصم أي مبالغ من درج الكاش).</span>
+                          </div>
+                        ) : (
+                          <div className="text-[11px] font-semibold p-2.5 rounded-xl border flex items-center gap-1.5" style={{
+                            backgroundColor: (settings.tipPayoutMethod || 'instant_cash') === 'instant_cash' ? '#ecfdf5' : '#eef2ff',
+                            borderColor: (settings.tipPayoutMethod || 'instant_cash') === 'instant_cash' ? '#a7f3d0' : '#c7d2fe',
+                            color: (settings.tipPayoutMethod || 'instant_cash') === 'instant_cash' ? '#065f46' : '#3730a3'
+                          }}>
+                            {(settings.tipPayoutMethod || 'instant_cash') === 'instant_cash' ? (
+                              <>
+                                <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />
+                                <span>🟢 الصرف الفوري: يُخصم البقشيش فوراً نقداً من درج الكاش لتسليمه للموظف، وتُسجل الفيزا بكامل المبلغ ({receivedNum.toFixed(2)} {settings.currency}).</span>
+                              </>
+                            ) : (
+                              <>
+                                <Clock size={14} className="text-indigo-600 shrink-0" />
+                                <span>🟡 الصرف المؤجل: يُسجل البقشيش كرصيد مجمع للموظف ويُصرف لاحقاً من الخزينة المحددة.</span>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
-                </div>
+
+                  {(() => {
+                    const maxCashback = selectedClient 
+                      ? Number(selectedClient.cashback !== undefined ? selectedClient.cashback : selectedClient.loyaltyPoints || 0) 
+                      : 0;
+                    
+                    return (
+                      <>
+                        {selectedClient && maxCashback > 0 && (
+                          <div className="mb-4 bg-blue-50 p-4 rounded-xl border border-blue-100">
+                            <div className="flex justify-between items-center mb-2">
+                              <span className="text-sm font-bold text-blue-800">رصيد الكاش باك المتوفر:</span>
+                              <span className="text-sm font-bold text-blue-600">{maxCashback.toFixed(2)} {settings.currency}</span>
+                            </div>
+                            <label className="block text-xs font-bold text-blue-700 mb-1">المبلغ المستخدم من الكاش باك (سيتم خصمه من الإجمالي):</label>
+                            <input 
+                              type="number" 
+                              max={Math.min(maxCashback, finalTotal)}
+                              min={0}
+                              value={splitAmounts['cashback'] || ''}
+                              onChange={(e) => {
+                                let val = Number(e.target.value);
+                                if (val > maxCashback) val = maxCashback;
+                                if (val > finalTotal) val = finalTotal;
+                                if (val < 0) val = 0;
+                                setSplitAmounts(prev => ({...prev, 'cashback': val}));
+                              }}
+                              className="w-full bg-white border border-blue-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500"
+                            />
+                            {settings.tierSettings?.allowTierDiscountWithCashback === false && discount.value > 0 && (
+                              <p className="text-[10px] text-amber-800 font-bold mt-1.5 flex items-center gap-1">
+                                <span>ℹ️</span>
+                                <span>سياسة الصالون: لا يُجمع بين خصم المستوى التلقائي ({discount.value}%) وسداد كامل الفاتورة بالكاش باك.</span>
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+
+                  <div className="flex bg-slate-100 p-1 rounded-lg mb-6">
+                    <button 
+                      onClick={() => setPaymentType('single')}
+                      className={`flex-1 py-2 text-sm font-bold rounded-md transition-colors ${paymentType === 'single' ? 'bg-white shadow-sm text-primary' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                      طريقة دفع واحدة
+                    </button>
+                    <button 
+                      onClick={() => setPaymentType('split')}
+                      className={`flex-1 py-2 text-sm font-bold rounded-md transition-colors ${paymentType === 'split' ? 'bg-white shadow-sm text-primary' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                      تقسيم الفاتورة
+                    </button>
+                  </div>
+
+                  {paymentType === 'single' ? (
+                    <div className="space-y-3">
+                      {settings.treasuries.filter(t => !t.isMain).map(t => (
+                        <label key={t.id} className={`flex items-center gap-3 p-3 border rounded-xl cursor-pointer transition-all ${singleTreasury === t.id ? 'border-primary bg-primary/5 ring-1 ring-primary/20' : 'border-slate-200 hover:border-slate-300'}`}>
+                          <input type="radio" name="treasury" value={t.id} checked={singleTreasury === t.id} onChange={() => setSingleTreasury(t.id)} className="w-4 h-4 text-primary" />
+                          <span className="font-bold text-slate-700">{t.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {settings.treasuries.filter(t => !t.isMain).map(t => (
+                        <div key={t.id} className="flex items-center justify-between p-3 border border-slate-200 rounded-xl bg-slate-50">
+                          <span className="font-bold text-slate-700">{t.name}</span>
+                          <div className="flex items-center gap-2">
+                            <input 
+                              type="number" 
+                              min="0"
+                              placeholder="0"
+                              className="w-24 px-3 py-1.5 border border-slate-300 rounded-lg text-left outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+                              value={splitAmounts[t.id] || ''}
+                              onChange={(e) => setSplitAmounts({...splitAmounts, [t.id]: Number(e.target.value)})}
+                            />
+                            <span className="text-xs text-slate-500">{settings.currency}</span>
+                          </div>
+                        </div>
+                      ))}
+                      <div className="mt-2 text-center text-sm font-bold">
+                        <span className="text-slate-500">المتبقي للتوزيع: </span>
+                        {(() => {
+                          const totalSplit = Object.values(splitAmounts).reduce((a: number, b) => a + (Number(b) || 0), 0) as number;
+                          const remaining = finalTotal - totalSplit;
+                          return (
+                            <span className={remaining === 0 ? 'text-emerald-600' : 'text-red-500'}>
+                              {remaining.toFixed(2)}
+                            </span>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
@@ -3378,33 +3593,47 @@ export function POSScreen({
                 disabled={isSubmittingPayment}
                 onClick={() => handleConfirmPayment(false)}
                 className="flex-1 bg-slate-200 hover:bg-slate-300 disabled:opacity-50 text-slate-800 font-extrabold py-3 px-3 rounded-xl transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer active:scale-95 text-xs"
-                title="سداد الفاتورة وإغلاق النافذة مباشرة بدون معاينة أو طباعة"
+                title="إتمام وحفظ الفاتورة بدون طباعة"
               >
                 {isSubmittingPayment ? (
                   <Loader2 size={16} className="animate-spin" />
                 ) : (
                   <X size={16} />
                 )}
-                <span>سداد وإغلاق</span>
+                <span>
+                  {paymentMode === 'deferred' ? 'تأجيل وإغلاق' : paymentMode === 'partial' ? 'سداد الدفعة وإغلاق' : 'سداد وإغلاق'}
+                </span>
               </button>
 
-              {/* زر سداد وطباعة الفاتورة مباشرة على الطابعة الافتراضية بدون صندوق محاورة أو شاشة معاينة */}
+              {/* زر سداد وطباعة الفاتورة مباشرة على الطابعة الافتراضية */}
               <button 
                 type="button"
                 disabled={isSubmittingPayment}
                 onClick={() => handleConfirmPayment(true)}
-                className="flex-[1.4] bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-black py-3 px-3 rounded-xl transition-all shadow-md shadow-emerald-600/25 flex items-center justify-center gap-2 cursor-pointer active:scale-95 text-xs"
-                title="سداد الفاتورة والطباعة مباشرة على الطابعة الافتراضية بدون صندوق محاورة وبدون شاشة معاينة"
+                className={`flex-[1.4] disabled:opacity-50 text-white font-black py-3 px-3 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-95 text-xs ${
+                  paymentMode === 'deferred'
+                    ? 'bg-amber-600 hover:bg-amber-500 shadow-amber-600/25'
+                    : paymentMode === 'partial'
+                    ? 'bg-blue-600 hover:bg-blue-500 shadow-blue-600/25'
+                    : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/25'
+                }`}
+                title="إتمام العملية والطباعة مباشرة على الطابعة الافتراضية"
               >
                 {isSubmittingPayment ? (
                   <>
                     <Loader2 size={16} className="animate-spin" />
-                    <span>جاري السداد والطباعة...</span>
+                    <span>جاري الحفظ والطباعة...</span>
                   </>
                 ) : (
                   <>
                     <Printer size={17} />
-                    <span>سداد وطباعة الفاتورة 🖨️</span>
+                    <span>
+                      {paymentMode === 'deferred' 
+                        ? 'تأجيل الفاتورة وطباعتها ⏳' 
+                        : paymentMode === 'partial' 
+                        ? 'سداد الدفعة وطباعة الفاتورة ⚖️' 
+                        : 'سداد وطباعة الفاتورة 🖨️'}
+                    </span>
                   </>
                 )}
               </button>

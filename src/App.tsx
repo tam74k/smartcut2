@@ -10,7 +10,7 @@ import {
   UsersRound, List, Menu, X, Printer, Package, Truck, 
   ShoppingCart, ClipboardList, Shield, User as UserIcon, Sparkles, BarChart3, Boxes, Bot,
   AlertCircle, Smartphone, ShieldAlert, ShieldCheck, Tag, HeartHandshake, Briefcase, Fingerprint, Radio,
-  Key, AlertTriangle, Clock, Lock, ChevronUp, ChevronDown, Zap, MessageSquare
+  Key, AlertTriangle, Clock, Lock, ChevronUp, ChevronDown, Zap, MessageSquare, Hourglass
 } from 'lucide-react';
 import { POSScreen } from './components/POSScreen';
 import { SettingsScreen } from './components/SettingsScreen';
@@ -20,6 +20,7 @@ import { DashboardScreen } from './components/DashboardScreen';
 import { OwnerExecutivePortal } from './components/OwnerExecutivePortal';
 import { BookingsScreen } from './components/BookingsScreen';
 import { InvoicesScreen } from './components/InvoicesScreen';
+import { DeferredInvoicesScreen } from './components/DeferredInvoicesScreen';
 import { ClientsScreen } from './components/ClientsScreen';
 import { ComplaintsScreen } from './components/ComplaintsScreen';
 import { TreasuryScreen } from './components/TreasuryScreen';
@@ -2490,6 +2491,12 @@ export default function App() {
     const updatedProducts = [...products];
     const newMovements: any[] = [];
     const newFinancialRecords: any[] = [];
+    const instantCommissionPayouts: Array<{
+      employeeId: string;
+      employeeName: string;
+      serviceName: string;
+      amount: number;
+    }> = [];
     
     invoice.items.forEach(item => {
       if (item.type === 'product' && item.itemId) {
@@ -2528,6 +2535,7 @@ export default function App() {
          const srv = services.find(s => s.id === item.itemId || s.id === item.id || s.name === item.serviceName);
          const performerEmp = employees.find(e => (item.employeeId && e.id === item.employeeId) || (item.technicianName && e.name === item.technicianName));
          const targetEmpId = item.employeeId || performerEmp?.id;
+         const isExempt = Boolean(item.isTargetExempt ?? srv?.isTargetExempt);
          
          let commAmount = Number(item.employeeCommission ?? item.commissionAmount ?? (item as any).commission ?? 0);
          if (commAmount <= 0 && srv) {
@@ -2542,8 +2550,8 @@ export default function App() {
 
          if (commAmount > 0 && targetEmpId) {
            const hasFixedComm = performerEmp && hasEmployeeFixedCommission(performerEmp);
-           // إذا كان للموظف عمولة ثابتة، فلا تحسب عمولة تنفيذ الخدمات إلا في حال تحديد خيار احتساب العمولتين معاً
-           const shouldAwardServiceCommission = !hasFixedComm || performerEmp?.allowDualCommission;
+           // إذا كان للموظف عمولة ثابتة، فلا تحسب عمولة تنفيذ الخدمات إلا في حال تحديد خيار احتساب العمولتين معاً أو إذا كانت الخدمة مستثناة من التارجت وصرفها فوري
+           const shouldAwardServiceCommission = isExempt || !hasFixedComm || performerEmp?.allowDualCommission;
 
            if (shouldAwardServiceCommission) {
              newFinancialRecords.push({
@@ -2553,9 +2561,34 @@ export default function App() {
                  date: invoice.date,
                  type: 'commission',
                  amount: commAmount,
-                 note: `عمولة تنفيذ خدمة: ${item.serviceName || srv?.name || 'خدمة'}`
+                 note: `عمولة تنفيذ خدمة: ${item.serviceName || srv?.name || 'خدمة'}${isExempt ? ' (مستثناة من التارجت - صرف فوري)' : ''}`
                }
              });
+
+             // إذا كان خيار صرف العمولة الفورية من الدرج مفعلاً في الإعدادات وكانت الخدمة مستثناة من التارجت:
+             if (settings.instantCommissionFromDrawer && isExempt) {
+               const cashTreasuryId = settings.treasuries.find(t => t.id === 'cash' || t.name.includes('كاش') || t.name.includes('نقد') || t.name.includes('درج'))?.id || 'cash';
+               
+               // تسجيل سند صرف عمولة للموظف ليظهر كمسدد في التايم شيت وتقارير العمولات
+               newFinancialRecords.push({
+                 employeeId: targetEmpId,
+                 record: {
+                   id: 'FIN-COMM-PAY-' + Math.random().toString(36).substr(2, 9),
+                   date: invoice.date,
+                   type: 'commission_payout',
+                   amount: commAmount,
+                   treasuryId: cashTreasuryId,
+                   note: `صرف عمولة فورية من الدرج: ${item.serviceName || srv?.name || 'خدمة'} (فاتورة #${invoice.id})`
+                 }
+               });
+
+               instantCommissionPayouts.push({
+                 employeeId: targetEmpId,
+                 employeeName: performerEmp?.name || item.technicianName || 'الموظف',
+                 serviceName: item.serviceName || srv?.name || 'خدمة',
+                 amount: commAmount
+               });
+             }
            }
          }
 
@@ -2606,12 +2639,20 @@ export default function App() {
       });
     }
 
-    // 2. Add transactions for the payments (يدعم السداد الكاش والفيزا والمقسم بالتساوي)
-    const effectiveSplits = (paymentSplits && paymentSplits.length > 0)
-      ? paymentSplits
-      : (invoice.paymentMethods && invoice.paymentMethods.length > 0
-          ? invoice.paymentMethods
-          : (Number(invoice.total) > 0 ? [{ amount: Number(invoice.total), treasuryId: invoice.treasuryId || invoice.paymentMethod || 'cash' }] : []));
+    // 2. Add transactions for the payments (يدعم السداد الكاش والفيزا والمقسم بالتساوي والآجل)
+    const isDeferred = invoice.status === 'deferred' || (invoice.paid !== undefined && Number(invoice.paid) === 0);
+    const paidAmount = Number(invoice.paid ?? invoice.total ?? 0);
+    const effectiveSplits = isDeferred
+      ? []
+      : (paymentSplits && paymentSplits.length > 0)
+        ? paymentSplits
+        : (invoice.paymentMethods && invoice.paymentMethods.length > 0
+            ? invoice.paymentMethods
+            : (paidAmount > 0 ? [{ amount: paidAmount, treasuryId: invoice.treasuryId || invoice.paymentMethod || 'cash' }] : []));
+
+    const effectiveShiftId = invoice.shiftId || (shiftData?.isOpen ? (shiftData as any).shiftId : undefined);
+    const effectiveShiftCode = invoice.shiftCode || (shiftData?.isOpen ? (shiftData as any).shiftCode : undefined);
+    const effectiveShiftDate = invoice.shiftDate || (shiftData?.isOpen ? shiftData.date : undefined);
 
     const newTrxs: Transaction[] = effectiveSplits
       .filter(split => split.treasuryId !== 'cashback' && split.treasuryId !== 'remedy_free' && Number(split.amount) > 0)
@@ -2626,6 +2667,9 @@ export default function App() {
         treasury: split.treasuryId || invoice.treasuryId || invoice.paymentMethod || 'cash',
         branchId: activeBranchId,
         branchCode: activeBranch?.code,
+        shiftId: effectiveShiftId,
+        shiftCode: effectiveShiftCode,
+        shiftDate: effectiveShiftDate,
         invoiceId: invoice.id
       } as any));
 
@@ -2646,9 +2690,36 @@ export default function App() {
           description: `صرف بقشيش فوري كاش - فاتورة ${invoice.id} للموظف ${invoice.tipEmployeeName || 'الموظف'}`,
           treasury: cashTreasuryId,
           branchId: activeBranchId,
-          branchCode: activeBranch?.code
+          branchCode: activeBranch?.code,
+          shiftId: effectiveShiftId,
+          shiftCode: effectiveShiftCode,
+          shiftDate: effectiveShiftDate,
+          invoiceId: invoice.id
         } as any);
       }
+    }
+
+    // 2.c. If instant commission from drawer is enabled and invoice has target-exempt services, deduct directly from Cash Drawer
+    if (settings.instantCommissionFromDrawer && instantCommissionPayouts.length > 0) {
+      const cashTreasuryId = settings.treasuries.find(t => t.id === 'cash' || t.name.includes('كاش') || t.name.includes('نقد') || t.name.includes('درج'))?.id || 'cash';
+      instantCommissionPayouts.forEach(payout => {
+        newTrxs.push({
+          id: 'TRX-COMM-CASH-' + Math.random().toString(36).substr(2, 9),
+          salonId: settings.salonId,
+          date: invoice.date,
+          type: 'out',
+          amount: payout.amount,
+          category: 'commission_payout',
+          description: `صرف عمولة فورية من الدرج - ${payout.serviceName} للموظف ${payout.employeeName} (فاتورة #${invoice.id})`,
+          treasury: cashTreasuryId,
+          branchId: activeBranchId,
+          branchCode: activeBranch?.code,
+          shiftId: effectiveShiftId,
+          shiftCode: effectiveShiftCode,
+          shiftDate: effectiveShiftDate,
+          invoiceId: invoice.id
+        } as any);
+      });
     }
 
     if (newTrxs.length > 0) {
@@ -3002,6 +3073,23 @@ export default function App() {
           setItemMovements={handleSetItemMovements}
           salesReturns={branchSalesReturns}
           setSalesReturns={handleSetSalesReturns}
+          onNavigateToDeferred={() => setActiveTab('deferred_invoices')}
+        />
+      );
+
+      case 'deferred_invoices': return (
+        <DeferredInvoicesScreen 
+          settings={settings}
+          invoices={branchInvoices}
+          setInvoices={handleSetInvoices}
+          transactions={branchTransactions}
+          setTransactions={handleSetTransactions}
+          clients={salonClients}
+          setClients={handleSetClients}
+          activeBranchId={activeBranchId}
+          branches={branches}
+          currentUser={currentUser}
+          onNavigate={setActiveTab}
         />
       );
 
@@ -3175,6 +3263,7 @@ export default function App() {
     { id: 'expenses', icon: Banknote, label: 'المصروفات' },
     { id: 'treasury', icon: Wallet, label: 'الخزائن والماليات' },
     { id: 'invoices', icon: Receipt, label: 'الفواتير' },
+    { id: 'deferred_invoices', icon: Hourglass, label: 'الفواتير الآجلة والذمم' },
     { id: 'clients', icon: Users, label: 'العملاء' },
     { id: 'complaints', icon: AlertCircle, label: 'شكاوى العملاء' },
     { id: 'services', icon: List, label: 'الخدمات' },

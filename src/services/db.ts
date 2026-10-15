@@ -321,6 +321,9 @@ export async function ensureCoreSchema(): Promise<void> {
       ensureColumn('services', 'is_target_exempt', 'BOOLEAN'),
       ensureColumn('employees', 'daily_target_method', 'VARCHAR(50)'),
       ensureColumn('employees', 'monthly_target_method', 'VARCHAR(50)'),
+      ensureColumn('employees', 'daily_target_multiplier', 'NUMERIC(5,2)'),
+      ensureColumn('employees', 'monthly_target_multiplier', 'NUMERIC(5,2)'),
+      ensureColumn('employees', 'target_salary_multiplier', 'NUMERIC(5,2)'),
       ensureColumn('products', 'retail_price', 'NUMERIC(10,2)'),
       ensureColumn('products', 'sell_price', 'NUMERIC(10,2)'),
       ensureColumn('products', 'min_stock_alert', 'NUMERIC(12,2)'),
@@ -1296,10 +1299,10 @@ export const DB = {
             salonType: salonRow.salon_type || 'men',
             taxNumber: salonRow.tax_number || '300000000000003',
             commercialReg: salonRow.commercial_reg || '1010000000',
-            vatEnabled: (salonRow.currency === 'SAR' || (salonRow.country && /السعودية|saudi/i.test(salonRow.country))),
-            vatRate: (salonRow.currency === 'SAR' || (salonRow.country && /السعودية|saudi/i.test(salonRow.country))) ? 15 : 0,
-            currency: salonRow.currency || 'SAR',
-            country: salonRow.country || 'المملكة العربية السعودية',
+            vatEnabled: true,
+            vatRate: (salonRow.currency === 'SAR' || (salonRow.country && /السعودية|saudi/i.test(salonRow.country))) ? 15 : 14,
+            currency: salonRow.currency || 'EGP',
+            country: salonRow.country || 'جمهورية مصر العربية',
             phone: salonRow.phone || mainBranch?.phone || '',
             address: salonRow.address || mainBranch?.address || '',
             logoUrl: salonRow.logo_url || null,
@@ -1311,9 +1314,11 @@ export const DB = {
             receiptFooterNote: 'شكراً لزيارتكم ونسعد بخدمتكم دائماً',
             bookingNotes: 'يرجى الحضور قبل الموعد بـ 10 دقائق',
             treasuries: [
-              { id: 'main', name: 'الخزينة الرئيسية', isMain: true },
-              { id: 'cash', name: 'كاش (الدرج)', isMain: false },
-              { id: 'card', name: 'شبكة / فيزا', isMain: false }
+              { id: 'main', name: 'الخزنة الرئيسية', isMain: true },
+              { id: 'cash', name: 'كاش الدرج', isMain: false },
+              { id: 'card', name: 'فيزا', isMain: false },
+              { id: 'instapay', name: 'انستاباي', isMain: false },
+              { id: 'vodafone_cash', name: 'فودافون كاش', isMain: false }
             ],
             expenseCategories: ['إيجار', 'كهرباء ومياه', 'صيانة ومطبوعات', 'أدوات ومستهلكات', 'ضيافة ونظافة', 'أخرى']
           };
@@ -1347,6 +1352,11 @@ export const DB = {
       res.deposit_refund_allowed_days = res.depositRefundAllowedDays;
       res.openrouterApiKey = uiSet.openrouterApiKey || null;
       res.openrouterModel = uiSet.openrouterModel || null;
+      res.instantCommissionFromDrawer = data.instant_commission_from_drawer !== undefined 
+        ? toBool(data.instant_commission_from_drawer) 
+        : (uiSet.instantCommissionFromDrawer !== undefined ? toBool(uiSet.instantCommissionFromDrawer) : false);
+      res.tipPayoutMethod = data.tip_payout_method || uiSet.tipPayoutMethod || 'instant_cash';
+      res.allowNonCashTips = data.allow_non_cash_tips !== undefined ? toBool(data.allow_non_cash_tips) : (uiSet.allowNonCashTips !== undefined ? toBool(uiSet.allowNonCashTips) : true);
 
       return res;
     } catch (e) { return null; }
@@ -1373,7 +1383,10 @@ export const DB = {
         ...existingUiSettings,
         depositRefundAllowedDays: depositRefundDays,
         openrouterApiKey: settings.openrouterApiKey || existingUiSettings.openrouterApiKey || null,
-        openrouterModel: settings.openrouterModel || existingUiSettings.openrouterModel || null
+        openrouterModel: settings.openrouterModel || existingUiSettings.openrouterModel || null,
+        instantCommissionFromDrawer: settings.instantCommissionFromDrawer !== undefined ? Boolean(settings.instantCommissionFromDrawer) : (existingUiSettings.instantCommissionFromDrawer ?? false),
+        tipPayoutMethod: settings.tipPayoutMethod || existingUiSettings.tipPayoutMethod || 'instant_cash',
+        allowNonCashTips: settings.allowNonCashTips !== undefined ? Boolean(settings.allowNonCashTips) : (existingUiSettings.allowNonCashTips ?? true)
       };
 
       // Allowed columns strictly corresponding to public.app_settings in Supabase
@@ -1385,8 +1398,8 @@ export const DB = {
         logo_url: settings.logoUrl || null,
         phone: settings.phone || '0500000000',
         address: settings.address || '',
-        currency: settings.currency || 'SAR',
-        country: settings.country || 'المملكة العربية السعودية',
+        currency: settings.currency || 'EGP',
+        country: settings.country || 'جمهورية مصر العربية',
         tax_number: settings.taxNumber || '300000000000003',
         commercial_reg: settings.commercialReg || '1010000000',
         vat_enabled: settings.vatEnabled !== undefined ? toBool(settings.vatEnabled) : true,
@@ -1753,6 +1766,11 @@ export const DB = {
         shift_code: inv.shiftCode || null,
         tips: Number(inv.tipAmount ?? inv.tips ?? 0),
         notes: inv.notes || inv.note || null,
+        due_date: inv.dueDate || inv.due_date || null,
+        bad_debt_reason: inv.badDebtReason || inv.bad_debt_reason || null,
+        bad_debt_at: inv.badDebtAt || inv.bad_debt_at || null,
+        bad_debt_by: inv.badDebtBy || inv.bad_debt_by || null,
+        payments_history: inv.paymentsHistory || inv.payments_history || [],
         created_by: inv.createdBy || null
       };
 
@@ -1928,76 +1946,197 @@ export const DB = {
   },
 
   // ---- الحجوزات ----
-  async fetchBookings(salonId?: string) { return DB.fetchAll<any>('bookings', undefined, salonId); },
+  async fetchBookings(salonId?: string) { 
+    const list = await DB.fetchAll<any>('bookings', undefined, salonId);
+    return (list || []).map(dbBookingToApp);
+  },
   async saveBooking(b: any, salonId?: string) {
     const client = sb(); if (!client || !b) return null;
     const validSalonId = toSalonUUID(salonId || b.salonId || getSalonId());
-    const validBranchId = toBranchUUID((b as any).branchId) || (b as any).branchId || null;
+    const validBranchId = toBranchUUID((b as any).branchId);
     try {
-      const allowedSources = ['pos', 'online', 'kiosk', 'app'];
+      const allowedSources = ['pos', 'online', 'phone'];
       const safeSource = allowedSources.includes(b.source) ? b.source : 'pos';
       const safePhone = b.phone || b.clientPhone || b.customerPhone || '0000000000';
       const safeName = b.clientName || b.customerName || 'عميل حجز';
       const firstSrv = (b.services && Array.isArray(b.services) && b.services[0]) ? b.services[0] : null;
-      const safeEmpId = b.employeeId || b.barberId || firstSrv?.technicianId || firstSrv?.employeeId || '00000000-0000-0000-0000-000000000000';
-      const safeEmpName = b.employeeName || b.barberName || firstSrv?.technicianName || firstSrv?.employeeName || 'موظف';
+      const safeEmpId = b.employeeId || b.barberId || firstSrv?.technicianId || firstSrv?.employeeId || null;
+      const safeEmpName = b.employeeName || b.barberName || firstSrv?.technicianName || firstSrv?.employeeName || null;
       const safeSrvId = b.serviceId || firstSrv?.serviceId || firstSrv?.id || null;
+      const safeSrvName = b.serviceName || firstSrv?.serviceName || firstSrv?.name || null;
+
+      const rawClientId = b.clientId || b.customerId || (b as any).client_id;
+      const safeClientId = (rawClientId && UUID_REGEX.test(rawClientId)) ? rawClientId : null;
+
+      const safeDate = typeof b.date === 'string' ? b.date.split('T')[0].trim() : (b.date || new Date().toISOString().split('T')[0]);
+      const rawTime = b.time || b.startTime || '10:00';
+      const safeTime = String(rawTime).includes('T')
+        ? (String(rawTime).split('T')[1]?.slice(0, 5) || '10:00')
+        : (String(rawTime).slice(0, 8) || '10:00');
+
+      const allowedStatuses = ['pending', 'confirmed', 'completed', 'cancelled', 'no_show'];
+      const safeStatus = allowedStatuses.includes(b.status) ? b.status : 'confirmed';
+
+      let cleanAdvances = b.advancePayments || b.advance_payments || [];
+      if (typeof cleanAdvances === 'string') {
+        try { cleanAdvances = JSON.parse(cleanAdvances); } catch { cleanAdvances = []; }
+      }
+      if (!Array.isArray(cleanAdvances)) cleanAdvances = [];
+
+      let cleanServices = b.services || [];
+      if (typeof cleanServices === 'string') {
+        try { cleanServices = JSON.parse(cleanServices); } catch { cleanServices = []; }
+      }
+      if (!Array.isArray(cleanServices)) cleanServices = [];
 
       const snap: any = {
-        id: b.id, 
-        salon_id: validSalonId, 
+        id: b.id || ('B-' + Math.random().toString(36).substring(2, 9).toUpperCase()),
+        salon_id: validSalonId,
         branch_id: validBranchId,
         branch_code: (b as any).branchCode || null,
-        client_id: b.clientId || b.customerId || null,
+        client_id: safeClientId,
         client_name: safeName,
-        customer_name: safeName,
         client_phone: safePhone,
-        customer_phone: safePhone,
-        employee_id: safeEmpId,
-        employee_name: safeEmpName,
-        barber_id: b.barberId || safeEmpId,
-        service_id: safeSrvId,
-        customer_email: b.customerEmail || null, 
-        booking_code: b.bookingCode || null,
-        source: safeSource, 
-        services: b.services || [],
-        total_price: b.totalPrice ?? b.totalAmount ?? 0,
-        total_amount: b.totalAmount ?? b.totalPrice ?? 0,
-        date: b.date,
-        start_time: b.startTime || b.time || '09:00',
-        time: b.time || b.startTime || '09:00',
-        status: b.status || 'confirmed',
-        queue_number: b.queueNumber || null,
-        advance_payments: b.advancePayments || [],
-        paid_deposit: b.paidDeposit !== undefined ? Number(b.paidDeposit) : (b.advancePayments && Array.isArray(b.advancePayments) ? b.advancePayments.reduce((s: number, p: any) => s + (Number(p.amount) || 0), 0) : 0),
-        is_deposit_refunded: Boolean(b.isDepositRefunded),
-        deposit_refunded_at: b.depositRefundedAt || null,
-        deposit_refunded_by: b.depositRefundedBy || null,
-        deposit_refund_amount: b.depositRefundAmount !== undefined ? Number(b.depositRefundAmount) : null,
-        refund_expense_id: b.refundExpenseId || null,
-        cancelled_at: b.cancelledAt || null,
-        cancelled_by: b.cancelledBy || null,
+        customer_email: b.customerEmail || b.customer_email || null,
+        booking_code: b.bookingCode || b.booking_code || null,
+        source: safeSource,
+        services: cleanServices,
+        total_amount: Number(b.totalAmount ?? b.total_amount ?? b.totalPrice ?? b.total_price ?? 0),
+        date: safeDate,
+        time: safeTime,
+        status: safeStatus,
+        advance_payments: cleanAdvances,
         notes: b.notes || null,
-        internal_notes: b.internalNotes || null,
-        location: b.location || null,
-        is_paid: b.isPaid !== undefined ? Boolean(b.isPaid) : false,
-        invoice_id: b.invoiceId || null,
-        discount_type: b.discountType || null,
-        discount_value: b.discountValue !== undefined ? Number(b.discountValue) : null,
-        discount_amount: b.discountAmount !== undefined ? Number(b.discountAmount) : null,
-        created_at: b.createdAt || undefined,
-        created_by: b.createdBy || b.createdByName || null,
-        created_by_name: b.createdBy || b.createdByName || null,
-        created_by_id: b.createdById || null,
-        updated_at: b.updatedAt || new Date().toISOString(),
-        updated_by: b.updatedBy || b.updatedByName || null,
-        updated_by_name: b.updatedBy || b.updatedByName || null,
-        updated_by_id: b.updatedById || null
+        created_at: b.createdAt || b.created_at || new Date().toISOString()
       };
-      const { error } = await client.from('bookings').upsert(snap, { onConflict: 'id' });
-      if (error) { console.error('DB.saveBooking error:', error.message); return null; }
+
+      // Add optional fields supported by schema migrations
+      if (safeEmpId) snap.employee_id = safeEmpId;
+      if (safeEmpName) snap.employee_name = safeEmpName;
+      if (safeSrvId) snap.service_id = safeSrvId;
+      if (safeSrvName) snap.service_name = safeSrvName;
+      if (b.queueNumber !== undefined && b.queueNumber !== null) snap.queue_number = b.queueNumber;
+      if (b.location) snap.location = b.location;
+      if (b.internalNotes) snap.internal_notes = b.internalNotes;
+      if (b.isPaid !== undefined) snap.is_paid = Boolean(b.isPaid);
+      if (b.invoiceId) snap.invoice_id = b.invoiceId;
+      if (b.discountType) snap.discount_type = b.discountType;
+      if (b.discountValue !== undefined && b.discountValue !== null) snap.discount_value = Number(b.discountValue);
+      if (b.discountAmount !== undefined && b.discountAmount !== null) snap.discount_amount = Number(b.discountAmount);
+      if (b.createdBy || b.createdByName) snap.created_by = b.createdBy || b.createdByName;
+      if (b.createdByName || b.createdBy) snap.created_by_name = b.createdByName || b.createdBy;
+      if (b.updatedAt) snap.updated_at = b.updatedAt;
+      if (b.updatedBy || b.updatedByName) snap.updated_by = b.updatedBy || b.updatedByName;
+      if (b.updatedByName || b.updatedBy) snap.updated_by_name = b.updatedByName || b.updatedBy;
+
+      // Resilient local storage update
+      try {
+        const stored = localStorage.getItem('smartcut_bookings');
+        const list = stored ? JSON.parse(stored) : [];
+        const idx = list.findIndex((item: any) => item.id === snap.id);
+        if (idx >= 0) {
+          list[idx] = { ...list[idx], ...b };
+        } else {
+          list.unshift(b);
+        }
+        localStorage.setItem('smartcut_bookings', JSON.stringify(list));
+      } catch (e) {}
+
+      let attempts = 0;
+      let lastError: any = null;
+
+      while (attempts < 8) {
+        attempts++;
+        const { error } = await client.from('bookings').upsert(snap, { onConflict: 'id' });
+        if (!error) {
+          lastError = null;
+          break;
+        }
+
+        lastError = error;
+        const errMsg = error.message || '';
+
+        // 1. Foreign Key constraint on client_id or branch_id
+        if (error.code === '23503' || errMsg.includes('foreign key') || errMsg.includes('client_id')) {
+          if (snap.client_id) {
+            console.warn('DB.saveBooking client_id foreign key retry with null');
+            snap.client_id = null;
+            continue;
+          }
+        }
+        if (error.code === '23503' || errMsg.includes('foreign key') || errMsg.includes('branch_id')) {
+          if (snap.branch_id) {
+            console.warn('DB.saveBooking branch_id foreign key retry with null');
+            snap.branch_id = null;
+            continue;
+          }
+        }
+
+        // 2. Missing Column in Schema Cache (PGRST204 or PostgreSQL 42703)
+        const missingColMatch = errMsg.match(/Could not find the '([^']+)' column of '([^']+)'/i)
+          || errMsg.match(/column "([^"]+)" of relation "([^"]+)" does not exist/i);
+
+        if (missingColMatch) {
+          const missingCol = missingColMatch[1];
+          console.warn(`DB.saveBooking stripping unknown column '${missingCol}' and retrying...`);
+          delete snap[missingCol];
+          continue;
+        }
+
+        // 3. Fallback for specific optional columns that might not exist in older tables
+        let pruned = false;
+        const optionalCols = [
+          'created_by', 'created_by_name', 'updated_at', 'updated_by', 'updated_by_name',
+          'internal_notes', 'location', 'queue_number', 'is_paid', 'invoice_id',
+          'discount_type', 'discount_value', 'discount_amount',
+          'employee_id', 'employee_name', 'service_id', 'service_name', 'branch_code'
+        ];
+        for (const col of optionalCols) {
+          if (errMsg.includes(col) && snap[col] !== undefined) {
+            delete snap[col];
+            pruned = true;
+          }
+        }
+        if (pruned) continue;
+
+        // 4. Check constraint violation on source or status
+        if (errMsg.includes('source') || errMsg.includes('check constraint')) {
+          snap.source = 'pos';
+          snap.status = 'confirmed';
+          continue;
+        }
+
+        break;
+      }
+
+      if (lastError) {
+        console.warn('DB.saveBooking trying guaranteed minimal payload:', lastError.message);
+        const minimalSnap = {
+          id: snap.id,
+          salon_id: snap.salon_id,
+          branch_id: snap.branch_id,
+          client_name: snap.client_name || 'عميل نقدي',
+          client_phone: snap.client_phone || '0000000000',
+          source: 'pos',
+          services: snap.services || [],
+          total_amount: snap.total_amount || 0,
+          date: snap.date,
+          time: snap.time || '10:00',
+          status: 'confirmed',
+          advance_payments: snap.advance_payments || []
+        };
+        const minRetry = await client.from('bookings').upsert(minimalSnap, { onConflict: 'id' });
+        if (minRetry.error) {
+          console.error('DB.saveBooking failed completely:', minRetry.error.message);
+          return null;
+        }
+      }
+
       return b;
-    } catch (e) { console.error('DB.saveBooking exception:', e); return null; }
+    } catch (e) {
+      console.error('DB.saveBooking exception:', e);
+      return null;
+    }
   },
 
   // ---- الموظفون ----
@@ -2041,8 +2180,11 @@ export const DB = {
         target_type: e.targetType || 'monthly',
         daily_target_amount: Number(e.dailyTargetAmount ?? e.daily_target_amount ?? 0),
         daily_target_method: e.dailyTargetMethod || 'excess_only',
+        daily_target_multiplier: Number(e.dailyTargetMultiplier ?? e.targetSalaryMultiplier ?? 1) || 1,
         monthly_target_amount: Number(e.monthlyTargetAmount ?? e.monthly_target_amount ?? e.target ?? 5000),
         monthly_target_method: e.monthlyTargetMethod || 'deduct_salary',
+        monthly_target_multiplier: Number(e.monthlyTargetMultiplier ?? e.targetSalaryMultiplier ?? 1) || 1,
+        target_salary_multiplier: Number(e.targetSalaryMultiplier ?? e.monthlyTargetMultiplier ?? e.dailyTargetMultiplier ?? 1) || 1,
         target_commission_rate: Number(e.targetCommissionRate ?? e.target_commission_rate ?? 0),
         available_vacations: e.availableVacations ?? 21,
         salary_type: e.salaryType || 'salary',
@@ -2061,7 +2203,15 @@ export const DB = {
         end_of_service: e.endOfService || null,
         updated_at: new Date().toISOString()
       };
-      const { error } = await client.from('employees').upsert(snap, { onConflict: 'id' });
+      let { error } = await client.from('employees').upsert(snap, { onConflict: 'id' });
+      if (error && (error.message?.includes('daily_target_multiplier') || error.message?.includes('monthly_target_multiplier') || error.message?.includes('target_salary_multiplier'))) {
+        console.warn('DB.saveEmployee: multiplier columns not found in schema cache, retrying without them...', error.message);
+        delete (snap as any).daily_target_multiplier;
+        delete (snap as any).monthly_target_multiplier;
+        delete (snap as any).target_salary_multiplier;
+        const retryResult = await client.from('employees').upsert(snap, { onConflict: 'id' });
+        error = retryResult.error;
+      }
       if (error) { console.error('DB.saveEmployee error:', error.message); return null; }
       return e;
     } catch (e2) { console.error('DB.saveEmployee exception:', e2); return null; }
@@ -4289,9 +4439,12 @@ export function dbEmployeeToApp(row: any) {
     targetAmount: Number(row.targetAmount ?? row.target_amount ?? row.target ?? 5000),
     targetType: row.targetType || row.target_type || 'monthly',
     dailyTargetAmount: Number(row.dailyTargetAmount ?? row.daily_target_amount ?? (row.target_type === 'daily' ? (row.target ?? row.target_amount ?? 300) : 0)),
-    dailyTargetMethod: (row.dailyTargetMethod || row.daily_target_method || 'excess_only') as 'excess_only' | 'full_amount',
+    dailyTargetMethod: (row.dailyTargetMethod || row.daily_target_method || 'excess_only') as 'excess_only' | 'full_amount' | 'salary_multiplier',
+    dailyTargetMultiplier: Number(row.dailyTargetMultiplier ?? row.daily_target_multiplier ?? row.targetSalaryMultiplier ?? row.target_salary_multiplier ?? 1),
     monthlyTargetAmount: Number(row.monthlyTargetAmount ?? row.monthly_target_amount ?? (row.target_type !== 'daily' ? (row.target ?? row.target_amount ?? 5000) : 5000)),
-    monthlyTargetMethod: (row.monthlyTargetMethod || row.monthly_target_method || 'deduct_salary') as 'deduct_salary' | 'gross_sales',
+    monthlyTargetMethod: (row.monthlyTargetMethod || row.monthly_target_method || 'deduct_salary') as 'deduct_salary' | 'gross_sales' | 'salary_multiplier',
+    monthlyTargetMultiplier: Number(row.monthlyTargetMultiplier ?? row.monthly_target_multiplier ?? row.targetSalaryMultiplier ?? row.target_salary_multiplier ?? 1),
+    targetSalaryMultiplier: Number(row.targetSalaryMultiplier ?? row.target_salary_multiplier ?? row.monthlyTargetMultiplier ?? row.monthly_target_multiplier ?? row.dailyTargetMultiplier ?? row.daily_target_multiplier ?? 1),
     targetCommissionRate: Number(row.targetCommissionRate ?? row.target_commission_rate ?? row.commissionRate ?? row.commission_rate ?? 0),
     availableVacations: Number(row.availableVacations ?? row.available_vacations ?? 21),
     salaryType: row.salaryType || row.salary_type || 'salary',
@@ -4641,6 +4794,15 @@ export function dbInvoiceToApp(row: any): any {
     cashierId: row.cashierId || row.cashier_id || undefined,
     cashierName: row.cashierName || row.cashier_name || undefined,
     notes: row.notes || '',
+    dueDate: row.dueDate || row.due_date || undefined,
+    badDebtReason: row.badDebtReason || row.bad_debt_reason || undefined,
+    badDebtAt: row.badDebtAt || row.bad_debt_at || undefined,
+    badDebtBy: row.badDebtBy || row.bad_debt_by || undefined,
+    paymentsHistory: Array.isArray(row.paymentsHistory || row.payments_history)
+      ? (row.paymentsHistory || row.payments_history)
+      : (typeof (row.paymentsHistory || row.payments_history) === 'string'
+          ? (function() { try { return JSON.parse(row.paymentsHistory || row.payments_history); } catch { return []; } })()
+          : []),
     tipAmount: Number(row.tipAmount ?? row.tips ?? 0),
     bookingId: row.bookingId || row.booking_id || undefined,
     shiftId: row.shiftId || row.shift_id || undefined,

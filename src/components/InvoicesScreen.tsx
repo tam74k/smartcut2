@@ -3,7 +3,7 @@ import { AppSettings, Invoice, Transaction, Client, Branch, Product, Employee, S
 import { 
   Search, Filter, Printer, XCircle, Edit, CheckCircle, ChevronDown, 
   ChevronUp, Image as ImageIcon, Wrench, Eye, X, Trash2, RotateCcw,
-  FileSpreadsheet
+  FileSpreadsheet, Hourglass
 } from 'lucide-react';
 import { DB } from '../services/db';
 import { InvoicesImportModal } from './InvoicesImportModal';
@@ -45,6 +45,7 @@ export function InvoicesScreen({
   salesReturns = [],
   onProcessSalesReturn,
   onNavigateToReturns,
+  onNavigateToDeferred,
 }: { 
   settings: AppSettings;
   invoices: Invoice[];
@@ -64,13 +65,14 @@ export function InvoicesScreen({
   salesReturns?: SalesReturn[];
   onProcessSalesReturn?: (ret: SalesReturn) => void;
   onNavigateToReturns?: () => void;
+  onNavigateToDeferred?: () => void;
 }) {
   const [showImportModal, setShowImportModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [branchFilter, setBranchFilter] = useState<string>('all');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'cancelled' | 'unpaid' | 'refunded' | 'partial_refund'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'cancelled' | 'unpaid' | 'deferred' | 'partially_paid' | 'refunded' | 'partial_refund'>('all');
   const [returnTargetInvoice, setReturnTargetInvoice] = useState<Invoice | null>(null);
   const [paymentFilter, setPaymentFilter] = useState<string>('all');
   const [showFilters, setShowFilters] = useState(false);
@@ -378,6 +380,17 @@ export function InvoicesScreen({
             </button>
           )}
 
+          {onNavigateToDeferred && (
+            <button
+              onClick={onNavigateToDeferred}
+              className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-xs transition-all cursor-pointer active:scale-95"
+              title="الانتقال إلى شاشة إدارة الفواتير الآجلة والذمم والمطالبات"
+            >
+              <Hourglass size={16} />
+              <span>الفواتير الآجلة والذمم ({invoices.filter(i => (i.status === 'deferred' || i.status === 'partially_paid') && (Number(i.remaining) > 0 || Number(i.paid) === 0)).length})</span>
+            </button>
+          )}
+
           <button 
             onClick={() => setShowImportModal(true)}
             className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-xs transition-all cursor-pointer active:scale-95"
@@ -419,6 +432,8 @@ export function InvoicesScreen({
             <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)} className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary font-bold">
               <option value="all">الكل</option>
               <option value="completed">مكتملة ومسددة</option>
+              <option value="deferred">مؤجلة بالكامل</option>
+              <option value="partially_paid">مسددة جزئياً</option>
               <option value="partial_refund">مرتجع جزئي</option>
               <option value="refunded">مرتجع كلي</option>
               <option value="unpaid">غير مسددة</option>
@@ -524,6 +539,37 @@ export function InvoicesScreen({
                       }
                       if (inv.status === 'completed') {
                         return <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-600">مسددة</span>;
+                      }
+                      if (inv.status === 'deferred') {
+                        return (
+                          <div className="flex flex-col items-center gap-0.5">
+                            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                              مؤجلة
+                            </span>
+                            <span className="text-[10px] text-amber-700 font-mono font-bold">
+                              متبقي: {(Number(inv.remaining) || Number(inv.total) || 0).toFixed(2)}
+                            </span>
+                          </div>
+                        );
+                      }
+                      if (inv.status === 'partially_paid') {
+                        return (
+                          <div className="flex flex-col items-center gap-0.5">
+                            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-900 border border-blue-300">
+                              مسددة جزئياً
+                            </span>
+                            <span className="text-[10px] text-red-600 font-mono font-bold">
+                              متبقي: {(Number(inv.remaining) || 0).toFixed(2)}
+                            </span>
+                          </div>
+                        );
+                      }
+                      if (inv.status === 'bad_debt') {
+                        return (
+                          <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-900 border border-rose-300">
+                            دين معدوم
+                          </span>
+                        );
                       }
                       if (inv.status === 'unpaid') {
                         return <span className="px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-600">غير مسددة</span>;

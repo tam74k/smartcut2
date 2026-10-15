@@ -196,13 +196,41 @@ export function ClosingReportReceipt({
       t.category === 'مقدم حجز'
     )).reduce((s, x) => s + (Number(x.amount) || 0), 0);
 
-    const income = recordedSales + invoiceSales;
-    const expenses = tTrx.filter(t => t.type === 'out' && (t.category === 'expense' || t.category === 'مصروفات')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    const isTipTrx = (t: any) => {
+      const cat = (t.category || '').toLowerCase();
+      const desc = (t.description || '').toLowerCase();
+      const id = (t.id || '').toLowerCase();
+      return (
+        id.startsWith('trx-tip') ||
+        cat === 'صرف بقشيش فوري' ||
+        cat === 'صرف بقشيش موظفين' ||
+        cat === 'صرف بقشيش' ||
+        cat === 'بقشيش' ||
+        cat === 'إكرامية' ||
+        cat === 'إكراميات' ||
+        cat === 'tip' ||
+        cat === 'tips' ||
+        cat === 'tip_payout' ||
+        desc.includes('بقشيش') ||
+        desc.includes('إكرام')
+      );
+    };
+
+    const tips = tTrx.filter(t => t.type === 'out' && isTipTrx(t)).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    const expenses = tTrx.filter(t => t.type === 'out' && !isTipTrx(t) && (t.category === 'expense' || t.category === 'مصروفات')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
     const salaries = tTrx.filter(t => t.type === 'out' && (t.category === 'salary' || t.category === 'رواتب')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
     const advances = tTrx.filter(t => t.type === 'out' && (t.category === 'hr_advance' || t.category === 'staff_advance' || t.category === 'advance' || t.category === 'سلف')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
     const purchases = tTrx.filter(t => t.type === 'out' && (t.category === 'purchase' || t.category === 'مشتريات')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
     const supplierPayments = tTrx.filter(t => t.type === 'out' && (t.category === 'supplier_payment' || t.category === 'supplier' || t.category === 'سداد مورد')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    const commissions = tTrx.filter(t => t.type === 'out' && (t.category === 'commission' || t.category === 'عمولة')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    const commissions = tTrx.filter(t => t.type === 'out' && (
+      t.category === 'commission' || 
+      t.category === 'commissions' || 
+      t.category === 'commission_payout' || 
+      t.category === 'عمولة' || 
+      t.category === 'عمولات' || 
+      t.category === 'صرف عمولة' ||
+      (t.description && (t.description.includes('صرف عمولة') || t.description.includes('عمولة فورية')))
+    )).reduce((s, x) => s + (Number(x.amount) || 0), 0);
     
     const transfersIn = tTrx.filter(t => t.type === 'in' && t.category === 'transfer').reduce((s, x) => s + (Number(x.amount) || 0), 0);
     const transfersOut = tTrx.filter(t => t.type === 'out' && t.category === 'transfer').reduce((s, x) => s + (Number(x.amount) || 0), 0);
@@ -210,10 +238,10 @@ export function ClosingReportReceipt({
     const deposits = tTrx.filter(t => t.type === 'in' && (t.category === 'deposit' || t.category === 'إيداع')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
     const initialCashSum = tTrx.filter(t => t.type === 'in' && (t.category === 'عهدة افتتاحية' || t.category === 'initial_cash')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
 
-    const net = (income + transfersIn + deposits + initialCashSum) - (expenses + salaries + advances + purchases + supplierPayments + commissions + transfersOut + withdrawals);
+    const net = (income + transfersIn + deposits + initialCashSum) - (expenses + salaries + advances + purchases + supplierPayments + commissions + tips + transfersOut + withdrawals);
 
     return {
-      income, expenses, salaries, advances, purchases, supplierPayments, commissions, transfersIn, transfersOut, withdrawals, deposits, initialCashSum, net
+      income, expenses, salaries, advances, purchases, supplierPayments, commissions, tips, transfersIn, transfersOut, withdrawals, deposits, initialCashSum, net
     };
   };
 
@@ -314,6 +342,9 @@ export function ClosingReportReceipt({
               <div className="flex justify-between text-gray-700"><span>إجمالي مشتروات:</span><span>{stats.purchases.toFixed(2)}</span></div>
               <div className="flex justify-between text-gray-700"><span>دفعات وسداد موردين:</span><span>{stats.supplierPayments.toFixed(2)}</span></div>
               <div className="flex justify-between text-gray-700"><span>نسب الموظفين (العمولات):</span><span>{stats.commissions.toFixed(2)}</span></div>
+              {stats.tips > 0 && (
+                <div className="flex justify-between text-gray-700"><span>إكراميات وبقشيش (الدرج):</span><span>{stats.tips.toFixed(2)}</span></div>
+              )}
               <div className="flex justify-between text-gray-700"><span>مبالغ السحب (بدون تحويل):</span><span>{stats.withdrawals.toFixed(2)}</span></div>
               <div className="flex justify-between text-gray-700"><span>مبالغ السحب بالتحويل:</span><span>{stats.transfersOut.toFixed(2)}</span></div>
               

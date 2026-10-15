@@ -4,7 +4,7 @@ import {
   Save, Globe, Receipt, MessageSquare, Wallet, Plus, Trash2, CheckCircle, 
   Edit2, Shield, Cloud, Sparkles, RefreshCw, X, Check, Database, Download, 
   Upload, HardDrive, AlertTriangle, FileCheck, RefreshCcw, Landmark, FileSpreadsheet,
-  QrCode, Key, Send, CheckCircle2, ShieldCheck, HelpCircle, Building2, Layers, Clock, DollarSign,
+  QrCode, Key, Send, CheckCircle2, ShieldCheck, HelpCircle, Building2, Layers, Clock, DollarSign, Coins,
   Printer, Wifi, Laptop, Lock, UserX, CalendarCheck, Calendar
 } from 'lucide-react';
 
@@ -1169,6 +1169,42 @@ export function SettingsScreen({
                 <p>البقشيش المدفوع نقداً (كاش) يُسلّم ويوزع لحظياً للموظف دون تأثير على حسابات الشبكة الإلكترونية.</p>
               </div>
             </div>
+          </div>
+        </div>
+
+        {/* Instant Commission from Drawer Setting Card */}
+        <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
+          <div className="flex items-center gap-2 mb-4 border-b border-slate-100 pb-3">
+            <div className="w-8 h-8 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center">
+              <Coins size={16} />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-800">صرف العمولة الفورية من الدرج (كاش)</h3>
+              <p className="text-xs text-slate-500">خصم عمولات الخدمات المستثناة من التارجت مباشرة من كاش الدرج لحظة تنفيذ الفاتورة</p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <label className={`flex items-start gap-3 p-4 rounded-xl border cursor-pointer transition-all ${
+              settings.instantCommissionFromDrawer
+                ? 'bg-amber-50/70 border-amber-300 ring-2 ring-amber-500/20'
+                : 'bg-slate-50 border-slate-200 hover:bg-slate-100/70'
+            }`}>
+              <input
+                type="checkbox"
+                checked={Boolean(settings.instantCommissionFromDrawer)}
+                onChange={e => handleChange('instantCommissionFromDrawer', e.target.checked)}
+                className="mt-1 w-4 h-4 accent-amber-600 rounded cursor-pointer"
+              />
+              <div>
+                <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                  <span>⚡ تفعيل خصم وصرف العمولة الفورية من كاش (الدرج) مباشرة</span>
+                </span>
+                <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                  عند تفعيل هذا الخيار: عند إتمام فاتورة تحتوي على خدمة محدد لها عمولة فورية غير داخلة في تارجت الموظف (مستثناة من التارجت)، يتم خصم مبلغ العمولة فورياً من كاش الدرج، وتظهر تلقائياً في بند العمولات عند إغلاق الوردية وعند الضغط على مبيعات الوردية مع ظهورها في تقارير العمولات وسندات الصرف.
+                </p>
+              </div>
+            </label>
           </div>
         </div>
 
@@ -2463,7 +2499,42 @@ export function SettingsScreen({
           </div>
         </div>
 
-        
+        {/* Instant Commission from Drawer Setting Card */}
+        <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
+          <div className="flex items-center gap-2 mb-4 border-b border-slate-100 pb-3">
+            <div className="w-8 h-8 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center">
+              <Coins size={16} />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-800">صرف العمولة الفورية من الدرج (كاش)</h3>
+              <p className="text-xs text-slate-500">خصم عمولات الخدمات المستثناة من التارجت مباشرة من كاش الدرج لحظة تنفيذ الفاتورة</p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <label className={`flex items-start gap-3 p-4 rounded-xl border cursor-pointer transition-all ${
+              settings.instantCommissionFromDrawer
+                ? 'bg-amber-50/70 border-amber-300 ring-2 ring-amber-500/20'
+                : 'bg-slate-50 border-slate-200 hover:bg-slate-100/70'
+            }`}>
+              <input
+                type="checkbox"
+                checked={Boolean(settings.instantCommissionFromDrawer)}
+                onChange={e => handleChange('instantCommissionFromDrawer', e.target.checked)}
+                className="mt-1 w-4 h-4 accent-amber-600 rounded cursor-pointer"
+              />
+              <div>
+                <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                  <span>⚡ تفعيل خصم وصرف العمولة الفورية من كاش (الدرج) مباشرة</span>
+                </span>
+                <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                  عند تفعيل هذا الخيار: عند إتمام فاتورة تحتوي على خدمة محدد لها عمولة فورية غير داخلة في تارجت الموظف (مستثناة من التارجت)، يتم خصم مبلغ العمولة فورياً من كاش الدرج، وتظهر تلقائياً في بند العمولات عند إغلاق الوردية وعند الضغط على مبيعات الوردية مع ظهورها في تقارير العمولات وسندات الصرف.
+                </p>
+              </div>
+            </label>
+          </div>
+        </div>
+
         {/* Categories Settings */}
         <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 border-b border-slate-100 pb-3">

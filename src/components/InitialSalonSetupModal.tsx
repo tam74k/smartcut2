@@ -13,10 +13,11 @@ interface InitialSalonSetupModalProps {
 }
 
 export const DEFAULT_INITIAL_TREASURIES = [
-  { id: 'main', name: 'الخزينة الرئيسية', isMain: true },
-  { id: 'cash', name: 'الدرج كاش', isMain: false },
+  { id: 'main', name: 'الخزنة الرئيسية', isMain: true },
+  { id: 'cash', name: 'كاش الدرج', isMain: false },
+  { id: 'card', name: 'فيزا', isMain: false },
   { id: 'instapay', name: 'انستاباي', isMain: false },
-  { id: 'vodafone', name: 'فودافون', isMain: false }
+  { id: 'vodafone_cash', name: 'فودافون كاش', isMain: false }
 ];
 
 export function InitialSalonSetupModal({ isOpen, onComplete }: InitialSalonSetupModalProps) {
