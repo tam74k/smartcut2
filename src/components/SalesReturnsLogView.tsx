@@ -3,7 +3,7 @@ import { SalesReturn, Invoice, AppSettings, AppUser } from '../types';
 import { 
   RotateCcw, Search, Calendar, Filter, Printer, FileSpreadsheet, 
   Eye, Package, Scissors, DollarSign, ArrowUpRight, CheckCircle2, 
-  HelpCircle, AlertCircle, Plus, Trash2 
+  HelpCircle, AlertCircle, Plus, Trash2, Check, X 
 } from 'lucide-react';
 import { exportToExcel } from '../utils/exportExcel';
 import { AuthService } from '../services/auth';
@@ -159,7 +159,7 @@ export function SalesReturnsLogView({
   // Export to Excel
   const handleExportExcel = () => {
     if (!canExportExcel) {
-      alert('⛔ عذراً، لا تملك صلاحية التصدير إلى Excel (export_excel).');
+      alert('عذراً، لا تملك صلاحية التصدير إلى Excel (export_excel).');
       return;
     }
     const data = filteredReturns.map(r => ({
@@ -231,8 +231,9 @@ export function SalesReturnsLogView({
           <div className="text-lg sm:text-xl font-black font-mono text-slate-900">
             {metrics.totalProductsCount} <span className="text-xs font-sans text-slate-500">قطعة</span>
           </div>
-          <span className="text-[10px] text-emerald-600 font-bold block mt-0.5">
-            تمت إعادة المخزون تلقائياً ✓
+          <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-1 mt-0.5">
+            <Check size={11} className="text-emerald-600" />
+            <span>تمت إعادة المخزون تلقائياً</span>
           </span>
         </div>
 
@@ -276,7 +277,7 @@ export function SalesReturnsLogView({
               title="تسجيل مرتجع أصناف عام ومباشر بدون اشتراط فاتورة سابقة"
             >
               <Package size={15} />
-              <span>مرتجع أصناف عام 📦</span>
+              <span>مرتجع أصناف عام</span>
             </button>
 
             {/* Quick New Return Button */}
@@ -535,8 +536,9 @@ export function SalesReturnsLogView({
               <button
                 onClick={() => setShowInvoiceSearchModal(false)}
                 className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 cursor-pointer"
+                title="إغلاق"
               >
-                ✕
+                <X size={16} />
               </button>
             </div>
 
@@ -556,9 +558,10 @@ export function SalesReturnsLogView({
                   setShowInvoiceSearchModal(false);
                   if (handleStartReturn) handleStartReturn(undefined);
                 }}
-                className="bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-xl text-xs font-black shadow-xs cursor-pointer transition-all shrink-0 active:scale-95"
+                className="bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-xl text-xs font-black shadow-xs cursor-pointer transition-all shrink-0 active:scale-95 inline-flex items-center gap-1.5"
               >
-                بدء مرتجع عام 📦
+                <Package size={13} />
+                <span>بدء مرتجع عام</span>
               </button>
             </div>
 

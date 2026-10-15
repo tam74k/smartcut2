@@ -161,7 +161,7 @@ export function RegisterModal({ isOpen, onClose, onSuccess }: RegisterModalProps
             <div className="space-y-2">
               <h4 className="text-lg font-black text-slate-900">تم تسجيل طلب حسابك بنجاح!</h4>
               <p className="text-xs text-slate-600 max-w-md mx-auto leading-relaxed">
-                حسابك الآن في حالة <span className="font-extrabold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">معلق بانتظار الموافقة ⏳</span>
+                حسابك الآن في حالة <span className="font-extrabold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">معلق بانتظار الموافقة</span>
               </p>
               <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-xs text-slate-700 text-right space-y-2 max-w-md mx-auto mt-4">
                 <div className="flex items-center gap-2 font-bold text-indigo-900">
@@ -317,7 +317,7 @@ export function RegisterModal({ isOpen, onClose, onSuccess }: RegisterModalProps
             <div className="pt-3 border-t border-slate-100 space-y-3">
               <div className="flex items-center gap-1.5 text-xs font-black text-slate-900">
                 <HelpCircle size={16} className="text-indigo-600" />
-                <span>3 أسئلة أمان لاستعادة كلمة المرور (إلزامية) 🔒</span>
+                <span>3 أسئلة أمان لاستعادة كلمة المرور (إلزامية)</span>
               </div>
               <p className="text-[11px] text-slate-500 leading-tight">
                 اختر 3 أسئلة مختلفة وأدخل إجاباتك الخاصة لاستخدامها عند نسيان كلمة المرور في أي وقت:

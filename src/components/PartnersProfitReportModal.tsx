@@ -1,7 +1,7 @@
 import React from 'react';
 import { AppSettings, Partner } from '../types';
 import { handlePrintReceipt } from '../utils/print';
-import { Printer, X, Download, PieChart as PieIcon, Award } from 'lucide-react';
+import { Printer, X, Download, PieChart as PieIcon, Award, BarChart3, FileText, AlertTriangle } from 'lucide-react';
 
 export interface PartnerProfitReportRow {
   partnerId: string;
@@ -56,7 +56,7 @@ export function PartnersProfitReportModal({
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/70">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold shadow-xs">
-              📊
+              <BarChart3 size={18} />
             </div>
             <div>
               <h3 className="font-black text-sm text-slate-800">تقرير توزيع أرباح الشركاء والمستثمرين والتسويات السنوية</h3>
@@ -94,8 +94,9 @@ export function PartnersProfitReportModal({
                   {settings.salonName || 'صالون سمارت كت للرجال'}
                 </h1>
                 <p className="text-xs text-slate-500 font-medium">سجل تجاري / ترخيص: {settings.commercialRegister || settings.taxNumber || '1010789456'}</p>
-                <div className="inline-block mt-2 px-3 py-1 bg-emerald-50 text-emerald-900 border border-emerald-200 rounded-lg text-[11px] font-black">
-                  📑 تقرير الأرباح والتسويات الختامية المعتمد للشركاء
+                <div className="inline-flex items-center gap-1.5 mt-2 px-3 py-1 bg-emerald-50 text-emerald-900 border border-emerald-200 rounded-lg text-[11px] font-black">
+                  <FileText size={13} className="text-emerald-800" />
+                  <span>تقرير الأرباح والتسويات الختامية المعتمد للشركاء</span>
                 </div>
               </div>
 
@@ -192,7 +193,12 @@ export function PartnersProfitReportModal({
                         {r.netPayableAmount > 0 ? `+${r.netPayableAmount.toLocaleString()}` : '0.00'}
                       </td>
                       <td className="p-2.5 text-center font-mono font-black text-amber-800">
-                        {r.carriedDebitBalance > 0 ? `⚠️ ${r.carriedDebitBalance.toLocaleString()}` : '-'}
+                        {r.carriedDebitBalance > 0 ? (
+                          <span className="inline-flex items-center gap-1">
+                            <AlertTriangle size={11} className="text-amber-600 shrink-0" />
+                            <span>{r.carriedDebitBalance.toLocaleString()}</span>
+                          </span>
+                        ) : '-'}
                       </td>
                     </tr>
                   ))}

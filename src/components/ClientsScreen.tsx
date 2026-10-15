@@ -5,11 +5,26 @@ import {
   Calendar, Phone, DollarSign, FileText, Printer, CheckCircle2, 
   Clock, Sparkles, User, Scissors, Coffee, Crown, ShieldCheck, 
   HeartHandshake, Sliders, ChevronLeft, Save, Droplets, Zap,
-  TrendingUp, Award, HelpCircle, FileSpreadsheet
+  TrendingUp, Award, HelpCircle, FileSpreadsheet,
+  Mail, Edit3, Globe, AlertTriangle, Check, BarChart3, Gem, Star
 } from 'lucide-react';
 import { handlePrintReceipt } from '../utils/print';
 import { DB } from '../services/db';
 import { ClientsImportModal } from './ClientsImportModal';
+
+const renderTierIcon = (tierId?: string, size = 12) => {
+  switch (tierId) {
+    case 'royal':
+      return <Gem size={size} />;
+    case 'vip':
+      return <Crown size={size} />;
+    case 'distinguished':
+      return <Award size={size} />;
+    case 'standard':
+    default:
+      return <Star size={size} />;
+  }
+};
 
 export function ClientsScreen({ 
   settings, 
@@ -261,13 +276,13 @@ export function ClientsScreen({
                             ? 'bg-gradient-to-br from-blue-600 to-indigo-600 text-white'
                             : 'bg-slate-900 text-white'
                         }`}>
-                          {clientTier.id !== 'standard' ? clientTier.icon : client.name.charAt(0)}
+                          {clientTier.id !== 'standard' ? renderTierIcon(clientTier.id, 16) : client.name.charAt(0)}
                         </div>
                         <div>
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="font-extrabold text-slate-900 text-xs">{client.name}</span>
-                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border shadow-2xs flex items-center gap-0.5 ${clientTier.badgeBg} ${clientTier.badgeText} ${clientTier.badgeBorder}`}>
-                              <span>{clientTier.icon}</span>
+                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border shadow-2xs flex items-center gap-1 ${clientTier.badgeBg} ${clientTier.badgeText} ${clientTier.badgeBorder}`}>
+                              {renderTierIcon(clientTier.id, 11)}
                               <span>{clientTier.name}</span>
                               {clientTier.discountPercentage > 0 && <span>({clientTier.discountPercentage}%)</span>}
                             </span>
@@ -294,7 +309,7 @@ export function ClientsScreen({
                       >
                         <Coffee size={13} className={client.preferences?.favoriteBeverage ? 'text-amber-700' : 'text-slate-400'} />
                         <Scissors size={13} className={client.preferences?.hairStyleNotes ? 'text-indigo-600' : 'text-slate-400'} />
-                        <span>{client.preferences ? 'تفضيلات مسجلة ✓' : '+ إضافة تفضيلات'}</span>
+                        <span>{client.preferences ? 'تفضيلات مسجلة' : '+ إضافة تفضيلات'}</span>
                       </button>
                     </td>
 
@@ -331,7 +346,7 @@ export function ClientsScreen({
                           title="فتح بطاقة العميل الكاملة"
                         >
                           <User size={13} />
-                          <span>بطاقة العميل 🪪</span>
+                          <span>بطاقة العميل</span>
                         </button>
 
                         {/* WhatsApp Message */}
@@ -393,21 +408,34 @@ export function ClientsScreen({
                       ? 'bg-gradient-to-br from-blue-600 to-indigo-600 text-white'
                       : 'bg-indigo-600 text-white'
                   }`}>
-                    {clientTier.id !== 'standard' ? clientTier.icon : client.name.charAt(0)}
+                    {clientTier.id !== 'standard' ? renderTierIcon(clientTier.id, 24) : client.name.charAt(0)}
                   </div>
                   <div>
                     <div className="flex items-center gap-2.5 flex-wrap">
                       <h3 className="font-black text-lg sm:text-xl text-white">{client.name}</h3>
                       <span className={`text-xs font-black px-3 py-0.5 rounded-full shadow-md flex items-center gap-1 border ${clientTier.badgeBg} ${clientTier.badgeText} ${clientTier.badgeBorder}`}>
-                        <span>{clientTier.icon}</span>
+                        {renderTierIcon(clientTier.id, 13)}
                         <span>مستوى {clientTier.name}</span>
                         {clientTier.discountPercentage > 0 && <span>({clientTier.discountPercentage}% خصم)</span>}
                       </span>
                     </div>
                     <div className="flex flex-wrap items-center gap-3 mt-1 text-xs text-slate-300">
-                      <span className="font-mono" dir="ltr">📱 {client.phone}</span>
-                      {client.email && <span>✉️ {client.email}</span>}
-                      {client.createdAt && <span>📅 مسجل منذ: {client.createdAt.split('T')[0]}</span>}
+                      <span className="font-mono flex items-center gap-1" dir="ltr">
+                        <Phone size={12} className="text-slate-400" />
+                        {client.phone}
+                      </span>
+                      {client.email && (
+                        <span className="flex items-center gap-1">
+                          <Mail size={12} className="text-slate-400" />
+                          {client.email}
+                        </span>
+                      )}
+                      {client.createdAt && (
+                        <span className="flex items-center gap-1">
+                          <Calendar size={12} className="text-slate-400" />
+                          مسجل منذ: {client.createdAt.split('T')[0]}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -424,7 +452,7 @@ export function ClientsScreen({
                     }`}
                   >
                     <Crown size={14} />
-                    <span>{isVip ? 'إلغاء صفة VIP' : 'ترقية فورية إلى VIP 👑'}</span>
+                    <span>{isVip ? 'إلغاء صفة VIP' : 'ترقية فورية إلى VIP'}</span>
                   </button>
 
                   <button 
@@ -439,22 +467,26 @@ export function ClientsScreen({
               {/* 2. Sub-Tabs */}
               <div className="flex border-b border-slate-200 bg-slate-100/70 p-2 gap-2 overflow-x-auto">
                 {[
-                  { id: 'overview', label: 'ملخص ومعدل الإنفاق بالفروع 📊' },
-                  { id: 'preferences', label: 'تفضيلات الحلاقة والضيافة ✂️☕' },
-                  { id: 'invoices', label: `سجل الفواتير السابقة (${clientInvs.length}) 🧾` }
-                ].map(tab => (
-                  <button
-                    key={tab.id}
-                    onClick={() => setProfileActiveTab(tab.id as any)}
-                    className={`px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-black shrink-0 transition-all cursor-pointer flex items-center gap-2 ${
-                      profileActiveTab === tab.id
-                        ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                        : 'bg-white text-slate-700 hover:bg-slate-200/80 border border-slate-200'
-                    }`}
-                  >
-                    <span>{tab.label}</span>
-                  </button>
-                ))}
+                  { id: 'overview', label: 'ملخص ومعدل الإنفاق بالفروع', icon: BarChart3 },
+                  { id: 'preferences', label: 'تفضيلات الحلاقة والضيافة', icon: Coffee },
+                  { id: 'invoices', label: `سجل الفواتير السابقة (${clientInvs.length})`, icon: Receipt }
+                ].map(tab => {
+                  const TabIcon = tab.icon;
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => setProfileActiveTab(tab.id as any)}
+                      className={`px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-black shrink-0 transition-all cursor-pointer flex items-center gap-2 ${
+                        profileActiveTab === tab.id
+                          ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+                          : 'bg-white text-slate-700 hover:bg-slate-200/80 border border-slate-200'
+                      }`}
+                    >
+                      <TabIcon size={14} />
+                      <span>{tab.label}</span>
+                    </button>
+                  );
+                })}
               </div>
 
               {/* 3. Modal Body Content */}
@@ -471,7 +503,7 @@ export function ClientsScreen({
                           <Crown size={20} className="text-amber-600" />
                           <div>
                             <h4 className="font-black text-sm text-slate-900">
-                              {isVip ? 'العميل حاصل على عضوية VIP الممتازة 👑' : 'التقدم نحو الترقية إلى عضوية VIP'}
+                              {isVip ? 'العميل حاصل على عضوية VIP الممتازة' : 'التقدم نحو الترقية إلى عضوية VIP'}
                             </h4>
                             <p className="text-xs text-slate-500 mt-0.5">
                               {isVip 
@@ -493,8 +525,9 @@ export function ClientsScreen({
                         />
                       </div>
                       {!isVip && (
-                        <p className="text-[11px] text-amber-800 font-bold">
-                          💡 متبقي للعميل إنفاق <span className="font-mono font-black">{Math.max(0, vipThreshold - totalSpend).toFixed(2)} {settings.currency}</span> ليتم ترقيته تلقائياً إلى عميل VIP.
+                        <p className="text-[11px] text-amber-800 font-bold flex items-center gap-1.5">
+                          <Sparkles size={13} className="text-amber-600 inline shrink-0" />
+                          <span>متبقي للعميل إنفاق <span className="font-mono font-black">{Math.max(0, vipThreshold - totalSpend).toFixed(2)} {settings.currency}</span> ليتم ترقيته تلقائياً إلى عميل VIP.</span>
                         </p>
                       )}
                     </div>
@@ -555,9 +588,10 @@ export function ClientsScreen({
                         <button
                           type="button"
                           onClick={() => setProfileActiveTab('preferences')}
-                          className="text-indigo-600 hover:text-indigo-800 font-black text-xs underline cursor-pointer"
+                          className="text-indigo-600 hover:text-indigo-800 font-black text-xs underline cursor-pointer flex items-center gap-1"
                         >
-                          تعديل التفضيلات الكاملة ✏️
+                          <span>تعديل التفضيلات الكاملة</span>
+                          <Edit3 size={12} />
                         </button>
                       </div>
 
@@ -565,26 +599,26 @@ export function ClientsScreen({
                         <div className="bg-white p-3 rounded-2xl border border-slate-200">
                           <span className="text-[10px] text-slate-400 font-bold block mb-1">طريقة الحلاقة:</span>
                           <span className="font-bold text-slate-800">
-                            {client.preferences?.shavingMethod === 'blade' ? 'موس كلاسيكي 🪒' :
-                             client.preferences?.shavingMethod === 'scissors_only' ? 'مقص فقط ✂️' :
-                             client.preferences?.shavingMethod === 'both' ? 'ماكينة وموس ✨' : 'ماكينة كهربائية ⚡'}
+                            {client.preferences?.shavingMethod === 'blade' ? 'موس كلاسيكي' :
+                             client.preferences?.shavingMethod === 'scissors_only' ? 'مقص فقط' :
+                             client.preferences?.shavingMethod === 'both' ? 'ماكينة وموس' : 'ماكينة كهربائية'}
                           </span>
                         </div>
 
                         <div className="bg-white p-3 rounded-2xl border border-slate-200">
                           <span className="text-[10px] text-slate-400 font-bold block mb-1">المشروب والضيافة:</span>
                           <span className="font-bold text-slate-800">
-                            {client.preferences?.favoriteBeverage || 'قهوة تركي ☕'}
+                            {client.preferences?.favoriteBeverage || 'قهوة تركي'}
                           </span>
                         </div>
 
                         <div className="bg-white p-3 rounded-2xl border border-slate-200">
                           <span className="text-[10px] text-slate-400 font-bold block mb-1">كمية السكر:</span>
                           <span className="font-bold text-slate-800">
-                            {client.preferences?.sugarLevel === 'none' ? 'بدون سكر 🚫' :
-                             client.preferences?.sugarLevel === 'half' ? 'نصف ملعقة (خفيف) 🥄' :
-                             client.preferences?.sugarLevel === 'two_spoons' ? 'ملعقتين 🥄🥄' :
-                             client.preferences?.sugarLevel === 'extra' ? 'زيادة 🍯' : 'ملعقة واحدة 🥄'}
+                            {client.preferences?.sugarLevel === 'none' ? 'بدون سكر' :
+                             client.preferences?.sugarLevel === 'half' ? 'نصف ملعقة (خفيف)' :
+                             client.preferences?.sugarLevel === 'two_spoons' ? 'ملعقتين' :
+                             client.preferences?.sugarLevel === 'extra' ? 'زيادة سكر' : 'ملعقة واحدة'}
                           </span>
                         </div>
                       </div>
@@ -600,7 +634,7 @@ export function ClientsScreen({
                     {savePrefSuccess && (
                       <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-800 p-3 rounded-2xl text-xs font-black flex items-center gap-2">
                         <CheckCircle2 size={16} className="text-emerald-600" />
-                        <span>تم حفظ وتحديث تفضيلات العميل بنجاح في قاعدة البيانات وتظهر لجميع الفنيين ✓</span>
+                        <span>تم حفظ وتحديث تفضيلات العميل بنجاح في قاعدة البيانات وتظهر لجميع الفنيين</span>
                       </div>
                     )}
 
@@ -608,7 +642,7 @@ export function ClientsScreen({
                     <div className="bg-slate-50 p-5 rounded-3xl border border-slate-200 space-y-4">
                       <h4 className="text-sm font-black text-slate-900 flex items-center gap-2">
                         <Scissors size={18} className="text-indigo-600" />
-                        <span>تفضيلات الحلاقة وقصة الشعر واللحية ✂️</span>
+                        <span>تفضيلات الحلاقة وقصة الشعر واللحية</span>
                       </h4>
 
                       {/* Shaving Method Radio Cards */}
@@ -616,10 +650,10 @@ export function ClientsScreen({
                         <label className="block text-xs font-bold text-slate-700 mb-2">أداة وطريقة الحلاقة المفضلة للعميل:</label>
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                           {[
-                            { id: 'machine', label: 'ماكينة كهربائية ⚡', desc: 'تجنب الموس الحاد' },
-                            { id: 'blade', label: 'موس كلاسيكي 🪒', desc: 'تنعيم وحلاقة بالموس' },
-                            { id: 'scissors_only', label: 'مقص فقط ✂️', desc: 'قص هادئ بالمقص' },
-                            { id: 'both', label: 'ماكينة + موس ✨', desc: 'حلاقة مدمجة كاملة' }
+                            { id: 'machine', label: 'ماكينة كهربائية', desc: 'تجنب الموس الحاد' },
+                            { id: 'blade', label: 'موس كلاسيكي', desc: 'تنعيم وحلاقة بالموس' },
+                            { id: 'scissors_only', label: 'مقص فقط', desc: 'قص هادئ بالمقص' },
+                            { id: 'both', label: 'ماكينة + موس', desc: 'حلاقة مدمجة كاملة' }
                           ].map(opt => (
                             <label
                               key={opt.id}
@@ -694,7 +728,7 @@ export function ClientsScreen({
                     <div className="bg-slate-50 p-5 rounded-3xl border border-slate-200 space-y-4">
                       <h4 className="text-sm font-black text-slate-900 flex items-center gap-2">
                         <Coffee size={18} className="text-amber-700" />
-                        <span>تفضيلات الضيافة والمشروبات ☕</span>
+                        <span>تفضيلات الضيافة والمشروبات</span>
                       </h4>
 
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
@@ -706,14 +740,14 @@ export function ClientsScreen({
                             onChange={e => setPrefForm({ ...prefForm, favoriteBeverage: e.target.value })}
                             className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-indigo-600"
                           >
-                            <option value="قهوة تركي">☕ قهوة تركي</option>
-                            <option value="إسبريسو">☕ إسبريسو</option>
-                            <option value="قهوة عربية">☕ قهوة عربية</option>
-                            <option value="شاي كرك">🫖 شاي كرك</option>
-                            <option value="شاي أحمر">🫖 شاي أحمر كلاسيكي</option>
-                            <option value="شاي أخضر">🍵 شاي أخضر بالنعناع</option>
-                            <option value="ماء فقط">💧 ماء فقط</option>
-                            <option value="عصير برتقال">🍊 عصير طازج</option>
+                            <option value="قهوة تركي">قهوة تركي</option>
+                            <option value="إسبريسو">إسبريسو</option>
+                            <option value="قهوة عربية">قهوة عربية</option>
+                            <option value="شاي كرك">شاي كرك</option>
+                            <option value="شاي أحمر">شاي أحمر كلاسيكي</option>
+                            <option value="شاي أخضر">شاي أخضر بالنعناع</option>
+                            <option value="ماء فقط">ماء فقط</option>
+                            <option value="عصير برتقال">عصير طازج</option>
                           </select>
                         </div>
 
@@ -725,11 +759,11 @@ export function ClientsScreen({
                             onChange={e => setPrefForm({ ...prefForm, sugarLevel: e.target.value as any })}
                             className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-indigo-600"
                           >
-                            <option value="none">🚫 بدون سكر (سادة)</option>
-                            <option value="half">🥄 نصف ملعقة (سكر خفيف)</option>
-                            <option value="one_spoon">🥄 ملعقة واحدة (مضبوط)</option>
-                            <option value="two_spoons">🥄🥄 ملعقتين</option>
-                            <option value="extra">🍯 زيادة سكر (حلو)</option>
+                            <option value="none">بدون سكر (سادة)</option>
+                            <option value="half">نصف ملعقة (سكر خفيف)</option>
+                            <option value="one_spoon">ملعقة واحدة (مضبوط)</option>
+                            <option value="two_spoons">ملعقتين</option>
+                            <option value="extra">زيادة سكر (حلو)</option>
                           </select>
                         </div>
 
@@ -741,8 +775,8 @@ export function ClientsScreen({
                             onChange={e => setPrefForm({ ...prefForm, waterTemperature: e.target.value as any })}
                             className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-indigo-600"
                           >
-                            <option value="cold">❄️ ماء بارد</option>
-                            <option value="room">💧 ماء عادي (حرارة الغرفة)</option>
+                            <option value="cold">ماء بارد</option>
+                            <option value="room">ماء عادي (حرارة الغرفة)</option>
                             <option value="none">لا يطلب ماء</option>
                           </select>
                         </div>
@@ -770,7 +804,7 @@ export function ClientsScreen({
                       className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-3 rounded-2xl text-xs shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-98"
                     >
                       <Save size={16} />
-                      <span>حفظ تفضيلات العميل وتطبيقها فوراً ✓</span>
+                      <span>حفظ تفضيلات العميل وتطبيقها فوراً</span>
                     </button>
                   </div>
                 )}
@@ -847,8 +881,9 @@ export function ClientsScreen({
 
               {/* 4. Modal Footer */}
               <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-between items-center">
-                <span className="text-xs text-slate-500 font-medium">
-                  بيانات وتفضيلات هذا العميل موحدة وتظهر في شاشة الحجز وشاشة الكاشير لجميع فروع الصالون 🌐
+                <span className="text-xs text-slate-500 font-medium flex items-center gap-1.5">
+                  <Globe size={13} className="text-slate-400" />
+                  <span>بيانات وتفضيلات هذا العميل موحدة وتظهر في شاشة الحجز وشاشة الكاشير لجميع فروع الصالون</span>
                 </span>
                 <button
                   type="button"
@@ -999,12 +1034,13 @@ export function ClientsScreen({
               <div>
                 <label className="block font-bold text-amber-800 mb-1 flex items-center justify-between">
                   <span className="flex items-center gap-1.5">
-                    <span>🎁</span>
+                    <Gift size={14} className="text-amber-700" />
                     <span>رقم جوال العميل الذي رشحه (اختياري)</span>
                   </span>
                   {referrerClientInModal && (
-                    <span className="text-[10px] text-emerald-700 font-extrabold bg-emerald-100/90 px-2 py-0.5 rounded-md">
-                      تم التعرف على العميل ✅
+                    <span className="text-[10px] text-emerald-700 font-extrabold bg-emerald-100/90 px-2 py-0.5 rounded-md flex items-center gap-1">
+                      <Check size={11} className="text-emerald-700" />
+                      <span>تم التعرف على العميل</span>
                     </span>
                   )}
                 </label>
@@ -1034,7 +1070,10 @@ export function ClientsScreen({
                 </div>
 
                 {clientForm.referredByPhone && clientForm.phone && clientForm.referredByPhone.trim().replace(/\D/g, '') === clientForm.phone.trim().replace(/\D/g, '') && (
-                  <p className="text-[11px] text-red-500 font-bold mt-1">⚠️ لا يمكن إدخال رقم العميل نفسه كمرشِح</p>
+                  <p className="text-[11px] text-red-500 font-bold mt-1 flex items-center gap-1">
+                    <AlertTriangle size={12} className="text-red-500 shrink-0" />
+                    <span>لا يمكن إدخال رقم العميل نفسه كمرشِح</span>
+                  </p>
                 )}
 
                 {referrerClientInModal && (

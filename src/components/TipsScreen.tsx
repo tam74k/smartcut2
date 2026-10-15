@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { AppSettings, TipRecord, Employee, Transaction } from '../types';
 import { 
   DollarSign, CheckCircle2, Clock, Wallet, User, Calendar, 
-  ArrowDownRight, Check, FileText, Filter, Search, UserCheck
+  ArrowDownRight, Check, FileText, Filter, Search, UserCheck, Sparkles, X
 } from 'lucide-react';
 import { DB } from '../services/db';
 
@@ -198,7 +198,7 @@ export function TipsScreen({
             className="px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
           >
             <option value="all">جميع الموظفين ({employees.length})</option>
-            <option value="unspecified">✨ غير محدد (عامة للصالون)</option>
+            <option value="unspecified">غير محدد (عامة للصالون)</option>
             {employees.map(e => (
               <option key={e.id} value={e.id}>{e.name}</option>
             ))}
@@ -250,7 +250,7 @@ export function TipsScreen({
                       <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs ${
                         tip.employeeId === 'unspecified' ? 'bg-purple-100 text-purple-700' : 'bg-emerald-50 text-emerald-700'
                       }`}>
-                        {tip.employeeId === 'unspecified' ? '✨' : (tip.employeeName?.charAt(0) || 'م')}
+                        {tip.employeeId === 'unspecified' ? <Sparkles size={13} /> : (tip.employeeName?.charAt(0) || 'م')}
                       </div>
                       <span>{tip.employeeName}</span>
                     </td>
@@ -285,8 +285,9 @@ export function TipsScreen({
                     </td>
                     <td className="p-3.5 text-left">
                       {tip.employeeId === 'unspecified' ? (
-                        <span className="text-[11px] text-purple-700 font-bold">
-                          ✨ عامة للصالون (لا تتطلب صرف)
+                        <span className="text-[11px] text-purple-700 font-bold inline-flex items-center gap-1">
+                          <Sparkles size={11} className="text-purple-600" />
+                          <span>عامة للصالون (لا تتطلب صرف)</span>
                         </span>
                       ) : tip.status === 'pending_payout' ? (
                         <button
@@ -321,9 +322,10 @@ export function TipsScreen({
               </h3>
               <button 
                 onClick={() => setShowPayoutModal(false)}
-                className="text-slate-400 hover:text-red-500 font-bold text-lg p-1"
+                className="text-slate-400 hover:text-red-500 font-bold p-1 rounded-lg hover:bg-slate-100 transition-colors"
+                title="إغلاق"
               >
-                ✕
+                <X size={18} />
               </button>
             </div>
 

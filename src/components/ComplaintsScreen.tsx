@@ -23,7 +23,8 @@ import {
   ChevronDown,
   Sparkles,
   Layers,
-  ArrowRight
+  ArrowRight,
+  Camera
 } from 'lucide-react';
 import { ClientComplaint, Invoice, Employee, Client, AppSettings, AppUser } from '../types';
 import { ComplaintsService } from '../services/complaintsService';
@@ -203,7 +204,7 @@ export function ComplaintsScreen({
       afterPhotoUrl: ''
     });
     reloadComplaints();
-    alert('✅ تم تسجيل الشكوى بنجاح وبدء مسار المتابعة!');
+    alert('تم تسجيل الشكوى بنجاح وبدء مسار المتابعة!');
   };
 
   const handleAddAction = (e: React.FormEvent) => {
@@ -240,7 +241,7 @@ export function ComplaintsScreen({
     if (updated) setSelectedComplaint(updated);
 
     if (offerFreeRemedy && onNavigateToPOSWithRemedy) {
-      if (confirm('✅ تم تسجيل الحل بنجاح! هل ترغب في فتح شاشة الكاشير (POS) الآن لإصدار فاتورة إصلاح مجانية (0.00 ر.س) للعميل؟')) {
+      if (confirm('تم تسجيل الحل بنجاح! هل ترغب في فتح شاشة الكاشير (POS) الآن لإصدار فاتورة إصلاح مجانية (0.00 ر.س) للعميل؟')) {
         onNavigateToPOSWithRemedy(
           selectedComplaint.clientPhone,
           selectedComplaint.clientName,
@@ -249,7 +250,7 @@ export function ComplaintsScreen({
         );
       }
     } else {
-      alert('✅ تم إغلاق وحل الشكوى بنجاح!');
+      alert('تم إغلاق وحل الشكوى بنجاح!');
     }
   };
 
@@ -267,19 +268,19 @@ export function ComplaintsScreen({
   });
 
   const categoryLabels: Record<string, string> = {
-    service_quality: '✂️ جودة الخدمة والقص',
-    staff_behavior: '🤝 سلوك وتعامل الموظف',
-    timing_delay: '⏰ تأخير في الموعد',
-    skin_hair_damage: '⚠️ حساسية أو تلف بشرة/شعر',
-    pricing: '💰 أسعار وفواتير',
-    other: '📋 أخرى'
+    service_quality: 'جودة الخدمة والقص',
+    staff_behavior: 'سلوك وتعامل الموظف',
+    timing_delay: 'تأخير في الموعد',
+    skin_hair_damage: 'حساسية أو تلف بشرة/شعر',
+    pricing: 'أسعار وفواتير',
+    other: 'أخرى'
   };
 
   const statusBadges: Record<string, { label: string; bg: string; text: string; border: string }> = {
-    open: { label: 'مفتوحة 🟡', bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-200' },
-    in_progress: { label: 'قيد المتابعة 🔵', bg: 'bg-blue-50', text: 'text-blue-800', border: 'border-blue-200' },
-    resolved: { label: 'تم الحل 🟢', bg: 'bg-emerald-50', text: 'text-emerald-800', border: 'border-emerald-200' },
-    rejected: { label: 'مرفوضة 🔴', bg: 'bg-rose-50', text: 'text-rose-800', border: 'border-rose-200' }
+    open: { label: 'مفتوحة', bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-200' },
+    in_progress: { label: 'قيد المتابعة', bg: 'bg-blue-50', text: 'text-blue-800', border: 'border-blue-200' },
+    resolved: { label: 'تم الحل', bg: 'bg-emerald-50', text: 'text-emerald-800', border: 'border-emerald-200' },
+    rejected: { label: 'مرفوضة', bg: 'bg-rose-50', text: 'text-rose-800', border: 'border-rose-200' }
   };
 
   return (
@@ -441,8 +442,9 @@ export function ComplaintsScreen({
 
                     <div className="flex items-center gap-1.5">
                       {c.isRemedyProvided && (
-                        <span className="bg-purple-100 text-purple-800 text-[10px] font-black px-2 py-0.5 rounded-full border border-purple-200">
-                          إصلاح مجاني 🔧
+                        <span className="bg-purple-100 text-purple-800 text-[10px] font-black px-2 py-0.5 rounded-full border border-purple-200 inline-flex items-center gap-1">
+                          <Wrench size={10} />
+                          <span>إصلاح مجاني</span>
                         </span>
                       )}
                       <span className={`text-[11px] font-black px-2.5 py-0.5 rounded-full border ${badge.bg} ${badge.text} ${badge.border}`}>
@@ -636,7 +638,7 @@ export function ComplaintsScreen({
               <div className="p-3.5 bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl text-xs font-bold flex items-start gap-2 animate-in fade-in">
                 <ShieldAlert size={18} className="text-amber-600 shrink-0 mt-0.5" />
                 <div>
-                  <p className="font-black text-amber-950">⚠️ تنبيه سجل العميل السابق:</p>
+                  <p className="font-black text-amber-950">تنبيه سجل العميل السابق:</p>
                   <p className="mt-0.5 text-amber-800">{clientHistory.warningMessage}</p>
                 </div>
               </div>
@@ -720,12 +722,12 @@ export function ComplaintsScreen({
                     onChange={e => setNewForm({ ...newForm, category: e.target.value as any })}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-rose-600"
                   >
-                    <option value="service_quality">✂️ جودة الخدمة والقص</option>
-                    <option value="staff_behavior">🤝 سلوك وتعامل الموظف</option>
-                    <option value="timing_delay">⏰ تأخير في الموعد</option>
-                    <option value="skin_hair_damage">⚠️ حساسية أو تلف بشرة/شعر</option>
-                    <option value="pricing">💰 أسعار وفواتير</option>
-                    <option value="other">📋 أخرى</option>
+                    <option value="service_quality">جودة الخدمة والقص</option>
+                    <option value="staff_behavior">سلوك وتعامل الموظف</option>
+                    <option value="timing_delay">تأخير في الموعد</option>
+                    <option value="skin_hair_damage">حساسية أو تلف بشرة/شعر</option>
+                    <option value="pricing">أسعار وفواتير</option>
+                    <option value="other">أخرى</option>
                   </select>
                 </div>
 
@@ -753,7 +755,7 @@ export function ComplaintsScreen({
                     <option value="low">منخفضة</option>
                     <option value="medium">متوسطة</option>
                     <option value="high">عالية</option>
-                    <option value="urgent">طارئة جداً 🚨</option>
+                    <option value="urgent">طارئة جداً</option>
                   </select>
                 </div>
               </div>
@@ -783,7 +785,10 @@ export function ComplaintsScreen({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                   {/* Before Photo */}
                   <div className="border border-dashed border-slate-300 rounded-xl p-3 text-center bg-white">
-                    <p className="text-[11px] font-bold text-slate-700 mb-2">📷 صورة قبل (Before)</p>
+                    <p className="text-[11px] font-bold text-slate-700 mb-2 flex items-center justify-center gap-1">
+                      <Camera size={13} />
+                      <span>صورة قبل (Before)</span>
+                    </p>
                     {newForm.beforePhotoUrl ? (
                       <div className="relative w-full h-28 rounded-lg overflow-hidden border border-slate-200 mb-2">
                         <img src={newForm.beforePhotoUrl} alt="Before" className="w-full h-full object-cover" />
@@ -805,7 +810,10 @@ export function ComplaintsScreen({
 
                   {/* After Photo */}
                   <div className="border border-dashed border-slate-300 rounded-xl p-3 text-center bg-white">
-                    <p className="text-[11px] font-bold text-slate-700 mb-2">📷 صورة بعد (After)</p>
+                    <p className="text-[11px] font-bold text-slate-700 mb-2 flex items-center justify-center gap-1">
+                      <Camera size={13} />
+                      <span>صورة بعد (After)</span>
+                    </p>
                     {newForm.afterPhotoUrl ? (
                       <div className="relative w-full h-28 rounded-lg overflow-hidden border border-slate-200 mb-2">
                         <img src={newForm.afterPhotoUrl} alt="After" className="w-full h-full object-cover" />
@@ -936,8 +944,9 @@ export function ComplaintsScreen({
                     onChange={e => setOfferFreeRemedy(e.target.checked)}
                     className="w-4 h-4 text-purple-600 rounded"
                   />
-                  <span className="text-xs font-black text-purple-950 flex items-center gap-1">
-                    <span>🔧 تقديم إصلاح مجاني على حساب الصالون (فاتورة 0.00 ر.س)</span>
+                  <span className="text-xs font-black text-purple-950 flex items-center gap-1.5">
+                    <Wrench size={13} className="text-purple-600" />
+                    <span>تقديم إصلاح مجاني على حساب الصالون (فاتورة 0.00 ر.س)</span>
                   </span>
                 </label>
                 <p className="text-[11px] text-purple-800 pr-6">

@@ -290,7 +290,7 @@ export function ClientsImportModal({
     setIsImporting(false);
     onImportComplete(addedList, updatedList);
     onClose();
-    alert(`🎉 تم استيراد وحفظ ${addedList.length} عميل جديد وتحديث ${updatedList.length} عميل في قاعدة البيانات بنجاح!`);
+    alert(`تم استيراد وحفظ ${addedList.length} عميل جديد وتحديث ${updatedList.length} عميل في قاعدة البيانات بنجاح.`);
   };
 
   if (!isOpen) return null;

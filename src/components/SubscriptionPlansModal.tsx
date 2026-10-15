@@ -218,13 +218,13 @@ export const SubscriptionPlansModal: React.FC<Props> = ({
 
     const msg = `مرحباً فريق سمارت كت،
 أرغب في الاشتراك / تجديد باقة صالوننا${orderRef ? ` (رقم الطلب: #${orderRef})` : ''}:
-🏛️ اسم الصالون: ${salonName}
-📦 الباقة المختارة: ${planName}
-⏱️ دورة الفوترة: ${cycleLabel}
-💰 سعر الباقة الأساسية: ${Number(planPriceTotal || 0).toLocaleString()} ${currencyLabel}
-🏢 عدد الفروع الإضافية: ${additionalBranches} فرع ${additionalBranches > 0 ? `(سعر الفرع ${Number(addonPricePerBranch || 0).toLocaleString()} ${currencyLabel} = إجمالي ${Number(addonsTotal || 0).toLocaleString()} ${currencyLabel})` : ''}
-💳 إجمالي الفاتورة المطلوب سدادها: ${Number(grandTotal || 0).toLocaleString()} ${currencyLabel}
-${totalSavings > 0 ? `🎁 إجمالي التوفير: ${Number(totalSavings || 0).toLocaleString()} ${currencyLabel}\n` : ''}
+• اسم الصالون: ${salonName}
+• الباقة المختارة: ${planName}
+• دورة الفوترة: ${cycleLabel}
+• سعر الباقة الأساسية: ${Number(planPriceTotal || 0).toLocaleString()} ${currencyLabel}
+• عدد الفروع الإضافية: ${additionalBranches} فرع ${additionalBranches > 0 ? `(سعر الفرع ${Number(addonPricePerBranch || 0).toLocaleString()} ${currencyLabel} = إجمالي ${Number(addonsTotal || 0).toLocaleString()} ${currencyLabel})` : ''}
+• إجمالي الفاتورة المطلوب سدادها: ${Number(grandTotal || 0).toLocaleString()} ${currencyLabel}
+${totalSavings > 0 ? `• إجمالي التوفير: ${Number(totalSavings || 0).toLocaleString()} ${currencyLabel}\n` : ''}
 يرجى تزويدي ببيانات الدفع (حساب بنكي / فودافون كاش / إنستاباي / رابط فيزا) لإرفاق إيصال التحويل وتأكيد التفعيل فوراً. شكراً لكم!`;
 
     const cleanPhone = (settings.contactPhone || '201014888000').replace(/[^0-9]/g, '');
@@ -275,7 +275,7 @@ ${totalSavings > 0 ? `🎁 إجمالي التوفير: ${Number(totalSavings ||
   // Dedicated Programmer-Only Direct Activation (Requires confirm)
   const handleProgrammerDirectActivation = async () => {
     if (!selectedPlan) return;
-    if (!window.confirm(`⚡ تنبيه المبرمج الرئيسي:\nهل أنت متأكد من تفعيل باقة (${selectedPlan.planNameAr}) فورياً وتحديث تاريخ انتهاء الصالون في قاعدة البيانات بدون انتظار السداد؟`)) {
+    if (!window.confirm(`تنبيه المبرمج الرئيسي:\nهل أنت متأكد من تفعيل باقة (${selectedPlan.planNameAr}) فورياً وتحديث تاريخ انتهاء الصالون في قاعدة البيانات بدون انتظار السداد؟`)) {
       return;
     }
     setIsSubmitting(true);
@@ -294,7 +294,7 @@ ${totalSavings > 0 ? `🎁 إجمالي التوفير: ${Number(totalSavings ||
       });
 
       if (res && (res.success || res.status === 'active')) {
-        setSuccessMessage('🎉 تم تفعيل الباقة وتحديث حالة المنشأة بنجاح بواسطة المبرمج!');
+        setSuccessMessage('تم تفعيل الباقة وتحديث حالة المنشأة بنجاح بواسطة المبرمج!');
         if (onSubscriptionUpdated) {
           setTimeout(() => {
             onSubscriptionUpdated();
@@ -386,8 +386,9 @@ ${totalSavings > 0 ? `🎁 إجمالي التوفير: ${Number(totalSavings ||
                 }`}
               >
                 <span>سنوي (12 شهر)</span>
-                <span className="bg-amber-400/30 text-amber-200 text-[10px] px-1.5 py-0.5 rounded-full border border-amber-400/40">
-                  🏆 الأكثر توفيراً
+                <span className="bg-amber-400/30 text-amber-200 text-[10px] px-1.5 py-0.5 rounded-full border border-amber-400/40 inline-flex items-center gap-1">
+                  <Sparkles size={11} className="text-amber-300" />
+                  <span>الأكثر توفيراً</span>
                 </span>
               </button>
             </div>
@@ -402,7 +403,7 @@ ${totalSavings > 0 ? `🎁 إجمالي التوفير: ${Number(totalSavings ||
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
-                <span>🇪🇬 مصر (EGP)</span>
+                <span>مصر (EGP)</span>
               </button>
               <button
                 onClick={() => setCurrency('USD')}
@@ -412,7 +413,7 @@ ${totalSavings > 0 ? `🎁 إجمالي التوفير: ${Number(totalSavings ||
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
-                <span>🌐 دولي (USD $)</span>
+                <span>دولي (USD $)</span>
               </button>
             </div>
           </div>
@@ -429,7 +430,7 @@ ${totalSavings > 0 ? `🎁 إجمالي التوفير: ${Number(totalSavings ||
               <div className="space-y-1 max-w-lg">
                 <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-xs font-black mb-1">
                   <Clock size={12} />
-                  بانتظار التحقق من السداد والاعتماد ⏳
+                  بانتظار التحقق من السداد والاعتماد
                 </span>
                 <h3 className="text-2xl font-black text-slate-900">تم تسجيل طلب الاشتراك بنجاح!</h3>
                 <p className="text-xs text-slate-500">
@@ -479,7 +480,7 @@ ${totalSavings > 0 ? `🎁 إجمالي التوفير: ${Number(totalSavings ||
                   className="w-full py-3.5 px-5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-lg shadow-emerald-600/25 transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95"
                 >
                   <MessageCircle size={18} />
-                  <span>إرسال إيصال السداد عبر واتساب الآن 📲</span>
+                  <span>إرسال إيصال السداد عبر واتساب الآن</span>
                 </button>
 
                 <button
@@ -582,7 +583,7 @@ ${totalSavings > 0 ? `🎁 إجمالي التوفير: ${Number(totalSavings ||
                       {savings > 0 && (
                         <div className="mt-2.5 pt-2 border-t border-slate-200/60 flex items-center justify-between text-xs font-black text-emerald-700 bg-emerald-50/80 px-2.5 py-1 rounded-lg">
                           <span>وفرت مع هذه المدة:</span>
-                          <span className="font-mono text-emerald-600">{Number(savings || 0).toLocaleString()} {currencyLabel} 🎉</span>
+                          <span className="font-mono text-emerald-600">{Number(savings || 0).toLocaleString()} {currencyLabel}</span>
                         </div>
                       )}
                     </div>
@@ -694,7 +695,7 @@ ${totalSavings > 0 ? `🎁 إجمالي التوفير: ${Number(totalSavings ||
                 <p className="text-xs text-amber-300 font-bold flex items-center justify-center md:justify-start gap-1">
                   <span>وفرت:</span>
                   <strong className="font-mono">{Number(totalSavings || 0).toLocaleString()} {currencyLabel}</strong>
-                  <span>مقارنة بالدفع الشهري المنفصل! 🎁</span>
+                  <span>مقارنة بالدفع الشهري المنفصل!</span>
                 </p>
               )}
             </div>
@@ -705,7 +706,7 @@ ${totalSavings > 0 ? `🎁 إجمالي التوفير: ${Number(totalSavings ||
                 className="w-full sm:w-auto px-5 py-3.5 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold text-xs shadow-lg shadow-emerald-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95"
               >
                 <MessageCircle size={18} />
-                <span>طلب التفعيل الفوري عبر واتساب 📲</span>
+                <span>طلب التفعيل الفوري عبر واتساب</span>
               </button>
 
               <button
@@ -714,7 +715,7 @@ ${totalSavings > 0 ? `🎁 إجمالي التوفير: ${Number(totalSavings ||
                 className="w-full sm:w-auto px-5 py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 active:scale-95"
               >
                 <Receipt size={18} />
-                <span>{isSubmitting ? 'جاري التسجيل...' : 'تسجيل طلب اشتراك (بانتظار السداد) 📋'}</span>
+                <span>{isSubmitting ? 'جاري التسجيل...' : 'تسجيل طلب اشتراك (بانتظار السداد)'}</span>
               </button>
 
               {isProgrammer && (
@@ -725,7 +726,7 @@ ${totalSavings > 0 ? `🎁 إجمالي التوفير: ${Number(totalSavings ||
                   title="صلاحية خاصة بالمبرمج الرئيسي فقط"
                 >
                   <Zap size={16} className="text-slate-950" />
-                  <span>تفعيل فوري مباشر (صلاحية المبرمج) ⚡</span>
+                  <span>تفعيل فوري مباشر (صلاحية المبرمج)</span>
                 </button>
               )}
             </div>

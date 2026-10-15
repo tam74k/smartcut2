@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { ShieldCheck, Copy, Check, Key, AlertTriangle, Clock, RefreshCw, X, Sparkles, Phone, MessageCircle } from 'lucide-react';
+import { 
+  ShieldCheck, Copy, Check, Key, AlertTriangle, Clock, RefreshCw, X, Sparkles, 
+  Phone, MessageCircle, Crown, Users, Flame, Laptop, Building2, KeyRound, BarChart3, Eye, Shield 
+} from 'lucide-react';
 import { DB } from '../services/db';
 
 export interface LicenseInfo {
@@ -19,7 +22,7 @@ const DURATIONS = [
   { id: '1m', label: 'شهر', months: 1, isPopular: false },
   { id: '3m', label: '3 شهور', months: 3, isPopular: false },
   { id: '6m', label: '6 شهور', months: 6, isPopular: false },
-  { id: '12m', label: 'سنة', months: 12, isPopular: true, badge: '🔥 الأكثر طلباً وتوفيراً' }
+  { id: '12m', label: 'سنة', months: 12, isPopular: true, badge: 'الأكثر طلباً وتوفيراً' }
 ] as const;
 
 const PLANS = [
@@ -356,7 +359,7 @@ export const LicenseModal: React.FC<LicenseModalProps> = ({
             daysLeft: 365,
             runsLeft: null,
             expiryDate: res.endDate || null,
-            message: 'تم تفعيل اشتراك الصالون السحابي بنجاح 🟢'
+            message: 'تم تفعيل اشتراك الصالون السحابي بنجاح'
           };
           setLocalLicense(activatedLic);
           if (onActivated) {
@@ -384,14 +387,14 @@ export const LicenseModal: React.FC<LicenseModalProps> = ({
     if (typeof lic.maxEmployees === 'number' && lic.maxEmployees > 0) {
       empQuota = (
         <div className="mt-1.5 flex items-center justify-between text-[11px] bg-white/70 px-2.5 py-1 rounded-lg border border-current/20 font-bold">
-          <span>👥 باقة الموظفين:</span>
+          <span className="flex items-center gap-1.5"><Users size={12} /><span>باقة الموظفين:</span></span>
           <span className="text-indigo-800">حتى {lic.maxEmployees} موظفين حد أقصى</span>
         </div>
       );
     } else if (lic.isLicensed && lic.status === 'active') {
       empQuota = (
         <div className="mt-1.5 flex items-center justify-between text-[11px] bg-white/70 px-2.5 py-1 rounded-lg border border-current/20 font-bold">
-          <span>👥 باقة الموظفين:</span>
+          <span className="flex items-center gap-1.5"><Users size={12} /><span>باقة الموظفين:</span></span>
           <span className="text-emerald-700">غير محدودة (مفتوحة ∞)</span>
         </div>
       );
@@ -424,7 +427,7 @@ export const LicenseModal: React.FC<LicenseModalProps> = ({
         <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 p-3 rounded-2xl text-xs font-bold space-y-1">
           <div className="flex items-center gap-2">
             <Sparkles size={16} className="text-emerald-600 shrink-0" />
-            <span>البرنامج مرخص رسمياً مدى الحياة 👑</span>
+            <span>البرنامج مرخص رسمياً مدى الحياة</span>
           </div>
           {empQuota}
         </div>
@@ -448,14 +451,14 @@ export const LicenseModal: React.FC<LicenseModalProps> = ({
       selectedDuration === '6m' ? '6 شهور' : 'سنة كاملة (12 شهر - الأكثر طلباً)';
 
     const idBlock = isLocalHost
-      ? `💻 كود بصمة جهازي (Machine Code): ${currentMachineCode || 'غير متوفر'}`
-      : `🏢 كود الصالون (Salon Code): ${currentSalonInfo.code || 'صالون سحابي'}\n🏢 اسم المنشأة: ${currentSalonInfo.name || 'صالون سمارت كت'}`;
+      ? `كود بصمة جهازي (Machine Code): ${currentMachineCode || 'غير متوفر'}`
+      : `كود الصالون (Salon Code): ${currentSalonInfo.code || 'صالون سحابي'}\nاسم المنشأة: ${currentSalonInfo.name || 'صالون سمارت كت'}`;
 
     const msg = `مرحباً أستاذنا،
 أود الاشتراك وتفعيل باقة لمنظومة Smart Cut:
-📦 الباقة: ${planName} (${employeeRange})
-⏱️ المدة: ${durationLabel}
-💰 السعر: ${price.toLocaleString()} جنيه مصري
+الباقة: ${planName} (${employeeRange})
+المدة: ${durationLabel}
+السعر: ${price.toLocaleString()} جنيه مصري
 ${idBlock}
 
 يرجى تزويدي ببيانات السداد (فودافون كاش / إنستاباي / حساب بنكي) لإرسال إيصال التحويل وتفعيل الاشتراك فوراً. شكراً لكم!`;
@@ -528,12 +531,14 @@ ${idBlock}
             <Key size={15} className="text-indigo-600" />
             <span>إدخال كود التفعيل (تنشيط الجهاز)</span>
             {activeLicense?.isLicensed ? (
-              <span className="bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-bold">
-                مفعل ✅
+              <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                <Check size={11} className="stroke-[3]" />
+                <span>مفعل</span>
               </span>
             ) : (
-              <span className="bg-rose-100 text-rose-800 text-[10px] px-2 py-0.5 rounded-full font-bold animate-pulse">
-                مطلوب 🔑
+              <span className="inline-flex items-center gap-1 bg-rose-100 text-rose-800 text-[10px] px-2 py-0.5 rounded-full font-bold animate-pulse">
+                <KeyRound size={11} />
+                <span>مطلوب</span>
               </span>
             )}
           </button>
@@ -553,7 +558,7 @@ ${idBlock}
               {/* Machine / Salon Code Quick Banner */}
               <div className="bg-slate-900 text-white p-3 sm:p-3.5 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 shadow-sm border border-slate-800">
                 <div className="flex items-center gap-2.5">
-                  <span className="text-base">{isLocalHost ? '💻' : '🏢'}</span>
+                  <span className="text-amber-400">{isLocalHost ? <Laptop size={18} /> : <Building2 size={18} />}</span>
                   <div>
                     <div className="text-[11px] text-slate-400 font-bold">
                       {isLocalHost ? 'كود بصمة جهازك الحالي (Machine Code):' : 'كود الصالون السحابي (Salon Code):'}
@@ -572,7 +577,7 @@ ${idBlock}
                   className="w-full sm:w-auto flex items-center justify-center gap-1.5 text-xs font-black bg-amber-400 hover:bg-amber-300 text-slate-950 px-3.5 py-1.5 rounded-xl transition-all cursor-pointer active:scale-95 shadow-xs shrink-0"
                 >
                   {copied ? <Check size={14} className="text-slate-950" /> : <Copy size={14} />}
-                  <span>{copied ? 'تم النسخ بنجاح! ✓' : (isLocalHost ? 'نسخ كود الجهاز' : 'نسخ كود الصالون')}</span>
+                  <span>{copied ? 'تم النسخ بنجاح!' : (isLocalHost ? 'نسخ كود الجهاز' : 'نسخ كود الصالون')}</span>
                 </button>
               </div>
 
@@ -603,10 +608,11 @@ ${idBlock}
                       >
                         <span className="text-sm font-black">{dur.label}</span>
                         {isAnnual && (
-                          <span className={`text-[10px] font-black px-2 py-0.2 rounded-full ${
+                          <span className={`inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.2 rounded-full ${
                             isSelected ? 'bg-slate-950 text-amber-300' : 'bg-amber-200 text-amber-950'
                           }`}>
-                            🔥 الأكثر طلباً
+                            <Flame size={10} />
+                            <span>الأكثر طلباً</span>
                           </span>
                         )}
                       </button>
@@ -634,14 +640,16 @@ ${idBlock}
                     >
                       {isAnnual && (
                         <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 text-[10px] font-black px-3 py-0.5 rounded-full shadow-sm flex items-center gap-1 border border-amber-300">
-                          <span>⭐ الأكثر طلباً وتوفيراً</span>
+                          <Sparkles size={11} />
+                          <span>الأكثر طلباً وتوفيراً</span>
                         </div>
                       )}
 
                       <div className="space-y-3">
                         <div className="flex items-center justify-between">
-                          <span className={`text-[11px] font-black px-2.5 py-1 rounded-lg border ${plan.badgeColor}`}>
-                            👥 {plan.employeeRange}
+                          <span className={`inline-flex items-center gap-1 text-[11px] font-black px-2.5 py-1 rounded-lg border ${plan.badgeColor}`}>
+                            <Users size={12} />
+                            <span>{plan.employeeRange}</span>
                           </span>
                           {saving > 0 && (
                             <span className="text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full">
@@ -692,7 +700,7 @@ ${idBlock}
                         }`}
                       >
                         <MessageCircle size={15} />
-                        <span>طلب هذه الباقة عبر واتساب 📲</span>
+                        <span>طلب هذه الباقة عبر واتساب</span>
                       </button>
                     </div>
                   );
@@ -703,11 +711,12 @@ ${idBlock}
               <div className="bg-white border border-slate-200 rounded-2xl p-4 space-y-2.5 shadow-2xs">
                 <div className="flex items-center justify-between">
                   <h4 className="text-xs font-black text-slate-900 flex items-center gap-1.5">
-                    <span>📊</span>
+                    <BarChart3 size={15} className="text-indigo-600" />
                     <span>جدول الأسعار النهائي المقترح (بالجنيه المصري):</span>
                   </h4>
-                  <span className="text-[10px] text-amber-700 font-black bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
-                    👑 الباقات السنوية هي الأكثر طلباً وتوفيراً
+                  <span className="inline-flex items-center gap-1 text-[10px] text-amber-700 font-black bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                    <Crown size={12} />
+                    <span>الباقات السنوية هي الأكثر طلباً وتوفيراً</span>
                   </span>
                 </div>
 
@@ -720,7 +729,7 @@ ${idBlock}
                         <th className="p-2.5 font-bold text-center">3 شهور</th>
                         <th className="p-2.5 font-bold text-center">6 شهور</th>
                         <th className="p-2.5 font-black text-center bg-amber-100 text-amber-950 border-r border-l border-amber-300">
-                          سنة (الأكثر طلباً 🔥)
+                          سنة (الأكثر طلباً)
                         </th>
                       </tr>
                     </thead>
@@ -732,7 +741,7 @@ ${idBlock}
                           <td className="p-2.5 font-mono text-center text-slate-700">{plan.prices['3m'].toLocaleString()} ج.م</td>
                           <td className="p-2.5 font-mono text-center text-slate-700">{plan.prices['6m'].toLocaleString()} ج.م</td>
                           <td className="p-2.5 font-mono text-center font-black text-amber-950 bg-amber-50/80 border-r border-l border-amber-200">
-                            {plan.prices['12m'].toLocaleString()} ج.م 👑
+                            {plan.prices['12m'].toLocaleString()} ج.م
                           </td>
                         </tr>
                       ))}
@@ -755,9 +764,10 @@ ${idBlock}
                 <button
                   type="button"
                   onClick={() => setActiveTab('key')}
-                  className="w-full sm:w-auto bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0"
+                  className="w-full sm:w-auto bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 inline-flex items-center justify-center gap-1.5"
                 >
-                  إدخال كود التفعيل الآن 🔑
+                  <KeyRound size={13} />
+                  <span>إدخال كود التفعيل الآن</span>
                 </button>
               </div>
 
@@ -772,7 +782,7 @@ ${idBlock}
               <div className="bg-slate-50 border border-slate-200 p-4 rounded-2xl space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                    <span>💻</span>
+                    <Laptop size={15} className="text-indigo-600" />
                     <span>بصمة الجهاز الفريدة (Machine Code):</span>
                   </span>
                   <button
@@ -782,7 +792,7 @@ ${idBlock}
                     className="flex items-center gap-1.5 text-xs font-extrabold text-indigo-700 hover:text-indigo-900 bg-indigo-100/80 hover:bg-indigo-200/80 border border-indigo-200 px-3 py-1.5 rounded-xl transition-all cursor-pointer shadow-xs active:scale-95 disabled:opacity-50"
                   >
                     {copied ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
-                    <span>{copied ? 'تم النسخ بنجاح! ✓' : 'نسخ الكود'}</span>
+                    <span>{copied ? 'تم النسخ بنجاح!' : 'نسخ الكود'}</span>
                   </button>
                 </div>
 
@@ -802,7 +812,7 @@ ${idBlock}
                         {currentMachineCode}
                       </span>
                       <span className="text-[10px] text-slate-400 group-hover:text-indigo-600 font-bold transition-colors">
-                        (انقر للنسخ 📋)
+                        (انقر للنسخ)
                       </span>
                     </div>
                   ) : (
@@ -917,7 +927,7 @@ ${idBlock}
 
               {/* Data Safety Assurance */}
               <div className="bg-emerald-50/60 border border-emerald-100 rounded-xl p-3 flex items-start gap-2.5">
-                <span className="text-emerald-600 font-bold text-sm shrink-0">🛡️</span>
+                <ShieldCheck size={18} className="text-emerald-600 shrink-0" />
                 <p className="text-[11px] text-emerald-900 font-medium leading-relaxed">
                   <strong>أمان البيانات:</strong> جميع بياناتك وفواتيرك وحساباتك السابقة في قاعدة البيانات محفوظة ومحمية بنسبة 100% ولن تتأثر أو تُحذف عند انتهاء الترخيص أو التجديد.
                 </p>
@@ -930,7 +940,7 @@ ${idBlock}
                   onClick={() => setActiveTab('plans')}
                   className="text-xs text-indigo-700 hover:text-indigo-900 font-bold underline transition-colors cursor-pointer"
                 >
-                  الاطلاع على باقات وأسعار التجديد المقترحة 💎
+                  الاطلاع على باقات وأسعار التجديد المقترحة
                 </button>
               </div>
 
@@ -942,9 +952,10 @@ ${idBlock}
               <button
                 type="button"
                 onClick={onClose}
-                className="text-xs text-slate-500 hover:text-slate-800 font-bold underline transition-colors cursor-pointer"
+                className="text-xs text-slate-500 hover:text-slate-800 font-bold underline transition-colors cursor-pointer inline-flex items-center gap-1.5"
               >
-                الاستمرار بالاطلاع على البيانات والتقارير في وضع القراءة فقط 👁️
+                <Eye size={13} />
+                <span>الاستمرار بالاطلاع على البيانات والتقارير في وضع القراءة فقط</span>
               </button>
             </div>
           )}

@@ -4,7 +4,7 @@ import { HeldInvoice } from '../types';
 import { sealUserRecord } from '../utils/securityCrypto';
 
 // ============================================================
-// 🗄️ SmartCut DB Service — طبقة البيانات الموحدة
+// SmartCut DB Service — طبقة البيانات الموحدة
 // تحوّل بين camelCase (TypeScript) وsnake_case (PostgreSQL)
 // ============================================================
 
@@ -131,7 +131,7 @@ function getSalonId(): string {
 }
 
 // ============================================================
-// 🛡️ نظام الفحص والإنشاء التلقائي للأعمدة (Self-Healing Schema Engine) - Hardened Against SQLi
+// نظام الفحص والإنشاء التلقائي للأعمدة (Self-Healing Schema Engine) - Hardened Against SQLi
 // ============================================================
 const verifiedColumns = new Set<string>();
 const SAFE_IDENTIFIER_REGEX = /^[a-zA-Z0-9_]+$/;
@@ -258,6 +258,8 @@ export async function ensureCoreSchema(): Promise<void> {
       ensureColumn('partners', 'total_profit_received', 'NUMERIC(15,2)'),
       ensureColumn('partners', 'opening_balance', 'NUMERIC(15,2)'),
       ensureColumn('partners', 'exit_date', 'DATE'),
+      ensureColumn('profit_distributions', 'capital_addition_amount', 'NUMERIC(15,2)'),
+      ensureColumn('profit_distributions', 'new_capital_share', 'NUMERIC(15,2)'),
       ensureColumn('invoices', 'advance_deduction', 'NUMERIC(12,2)'),
       ensureColumn('invoices', 'booking_id', 'VARCHAR(100)'),
       ensureColumn('bookings', 'advance_payments', 'JSONB'),
@@ -2301,7 +2303,7 @@ export const DB = {
           allowed: false,
           currentUsedBytes,
           limitMb,
-          message: `⚠️ تم استنفاذ المساحة التخزينية المخصصة لهذا الفرع (${limitMb} MB). المساحة الحالية المستخدمة: ${usedMb} MB. تم إيقاف رفع الصور لهذا الفرع لتجنب تجاوز الحد المسموح. يمكنك زيادة المساحة التخزينية للفرع من شاشة الإعدادات.`
+          message: `تم استنفاذ المساحة التخزينية المخصصة لهذا الفرع (${limitMb} MB). المساحة الحالية المستخدمة: ${usedMb} MB. تم إيقاف رفع الصور لهذا الفرع لتجنب تجاوز الحد المسموح. يمكنك زيادة المساحة التخزينية للفرع من شاشة الإعدادات.`
         };
       }
 
@@ -3117,6 +3119,8 @@ export const DB = {
         distributable_profit_pool: pd.distributableProfitPool ?? 0,
         partner_share_percentage: pd.partnerSharePercentage ?? 0,
         gross_profit_share: pd.grossProfitShare ?? 0,
+        capital_addition_amount: pd.capitalAdditionAmount ?? 0,
+        new_capital_share: pd.newCapitalShare ?? 0,
         drawings_deducted: pd.drawingsDeducted ?? 0,
         prior_debit_deducted: pd.priorDebitDeducted ?? 0,
         net_payable_amount: pd.netPayableAmount ?? 0,
@@ -4136,7 +4140,7 @@ export const DB = {
     if (!client) return null;
 
     const validSalonId = toSalonUUID(salonId);
-    console.log('⚡ [Fast Startup] تحميل البيانات الأساسية للصالون:', validSalonId);
+    console.log('[Fast Startup] تحميل البيانات الأساسية للصالون:', validSalonId);
     
     // Fetch ONLY essential catalog needed for POS & basic operations concurrently
     const [categories, services, employees, clients, products, suppliers, purchaseInvoices, supplierPayments] = await Promise.all([
@@ -4325,7 +4329,7 @@ export const DB = {
     if (!client) return null;
 
     const validSalonId = toSalonUUID(salonId);
-    console.log('⏳ جاري تحميل البيانات من Supabase للصالون:', validSalonId);
+    console.log('جاري تحميل البيانات من Supabase للصالون:', validSalonId);
     const [
       categories, services, employees, clients,
       products, suppliers, invoices, transactions,
@@ -4356,7 +4360,7 @@ export const DB = {
       DB.fetchAll<any>('fingerprint_logs', undefined, validSalonId),
     ]);
 
-    console.log('✅ تم تحميل جميع بيانات الصالون من Supabase بنجاح');
+    console.log('تم تحميل جميع بيانات الصالون من Supabase بنجاح');
     return {
       categories, services, employees, clients,
       products, suppliers, invoices, transactions,

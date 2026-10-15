@@ -6,7 +6,7 @@ import * as XLSX from 'xlsx';
  */
 export function checkCanExportExcel(): boolean {
   if (!AuthService.canDo('export_excel')) {
-    alert('⛔ عذراً، لا تملك صلاحية تصدير البيانات إلى Excel. يرجى التواصل مع إدارة النظام لمنحك الإذن.');
+    alert('عذراً، لا تملك صلاحية تصدير البيانات إلى Excel. يرجى التواصل مع إدارة النظام لمنحك الإذن.');
     return false;
   }
   return true;

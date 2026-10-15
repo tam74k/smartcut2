@@ -10,7 +10,7 @@ import {
   TrendingUp, TrendingDown, Wallet, CreditCard, Banknote, Building2, Shield, Eye, Lock,
   Receipt, Sparkles, Check, X, Phone, User, Store, Filter, Award, ChevronRight, ArrowRight,
   PieChart, BarChart3, Activity, Percent, Crown, Briefcase, FileBarChart, Layers, Edit2, Trash2, ArrowDownRight,
-  MessageCircle, Search, Scissors, Copy, ChevronUp
+  MessageCircle, Search, Scissors, Copy, ChevronUp, Globe, ExternalLink
 } from 'lucide-react';
 
 interface PaymentSlice {
@@ -382,7 +382,7 @@ function AttendanceGaugeChart({
             <div className="flex justify-between text-[11px] font-bold text-slate-300">
               <span>توزيع الكادر ({total} موظف)</span>
               <span className={absenceRate > 0 ? 'text-rose-400 font-black' : 'text-emerald-400 font-black'}>
-                {absenceRate > 0 ? `الغياب: ${absenceRate}%` : 'لا يوجد غياب 🟢'}
+                {absenceRate > 0 ? `الغياب: ${absenceRate}%` : 'لا يوجد غياب'}
               </span>
             </div>
 
@@ -2430,11 +2430,11 @@ export function OwnerExecutivePortal({
   // Quick WhatsApp Executive Summary
   const handleSendWhatsAppSummary = () => {
     const currency = settings.currency || 'SAR';
-    const text = `📊 *ملخص أداء الصالون - ${settings.salonName}*
-🏬 *الفرع:* ${activeBranch.name}
-📅 *الفترة:* ${dateRange.label}
+    const text = `*ملخص أداء الصالون - ${settings.salonName}*
+*الفرع:* ${activeBranch.name}
+*الفترة:* ${dateRange.label}
 
-💰 *الإيرادات المالية:*
+*الإيرادات المالية:*
 • إجمالي الدخل: *${revenueStats.totalRevenue.toLocaleString()} ${currency}*
 • الكاش / نقدي: ${revenueStats.cash.toLocaleString()} ${currency}
 • مدى / شبكة: ${revenueStats.card.toLocaleString()} ${currency}
@@ -2446,11 +2446,11 @@ export function OwnerExecutivePortal({
 • مقدم حجز: ${netProfitData.totalBookingAdvances.toLocaleString()} ${currency} (${netProfitData.bookingAdvancesCount} دفعة مقدمة)
 • الصافي: *${revenueStats.netProfit.toLocaleString()} ${currency}*
 
-👥 *العملاء والحجوزات:*
+*العملاء والحجوزات:*
 • إجمالي العملاء: ${bookingsStats.totalClientsServed}
 • إجمالي الحجوزات: ${bookingsStats.totalBookings} (مكتمل: ${bookingsStats.completed} • قادم: ${bookingsStats.confirmed + bookingsStats.pending})
 
-⏰ *حضور ودوام الكادر:*
+*حضور ودوام الكادر:*
 • حاضرون: ${attendanceStats.presentCount}
 • متأخرون: ${attendanceStats.lateCount} (${attendanceStats.totalDelayMin} دقيقة تأخير)
 • غائبون: ${attendanceStats.absentCount}
@@ -2560,7 +2560,10 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-400 truncate flex items-center gap-1.5 mt-0.5">
-                  <span className="text-amber-400 font-bold">👑 {currentUser?.name || 'مالك الصالون'}</span>
+                  <span className="text-amber-400 font-bold flex items-center gap-1">
+                    <Crown size={12} className="text-amber-400" />
+                    <span>{currentUser?.name || 'مالك الصالون'}</span>
+                  </span>
                   <span>•</span>
                   <span className="text-emerald-400 font-bold">{activeBranch.name}</span>
                 </p>
@@ -2573,9 +2576,17 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
               title="نسخ رابط صفحة المالك المباشر"
               className="hidden lg:flex items-center gap-1.5 bg-slate-800/90 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white px-2.5 py-1.5 rounded-xl text-[11px] font-mono transition-all cursor-pointer"
             >
-              <span>🔗 /owner</span>
-              <span className="text-[10px] text-amber-400 font-bold font-sans">
-                {copiedLink ? '✓ تم النسخ!' : 'نسخ الرابط'}
+              <ExternalLink size={12} className="text-slate-400" />
+              <span>/owner</span>
+              <span className="text-[10px] text-amber-400 font-bold font-sans flex items-center gap-1">
+                {copiedLink ? (
+                  <>
+                    <Check size={11} />
+                    <span>تم النسخ!</span>
+                  </>
+                ) : (
+                  <span>نسخ الرابط</span>
+                )}
               </span>
             </button>
           </div>
@@ -2590,10 +2601,10 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                   onChange={(e) => onSelectBranch(e.target.value)}
                   className="bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold px-2.5 py-1.5 rounded-xl border border-slate-700 outline-none cursor-pointer"
                 >
-                  <option value="all">🌐 كافة الفروع مجمعة ({branches.length})</option>
+                  <option value="all">كافة الفروع مجمعة ({branches.length})</option>
                   {branches.map(b => (
                     <option key={b.id} value={b.id}>
-                      🏢 {b.name}
+                      {b.name}
                     </option>
                   ))}
                 </select>
@@ -2700,11 +2711,12 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
 
             <button
               onClick={() => setPeriod('custom')}
-              className={`px-3 py-1 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+              className={`px-3 py-1 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 ${
                 period === 'custom' ? 'bg-amber-500 text-slate-950 shadow-xs' : 'text-slate-300 hover:bg-slate-800'
               }`}
             >
-              تاريخ مخصص 📅
+              <Calendar size={13} />
+              <span>تاريخ مخصص</span>
             </button>
           </div>
 
@@ -2888,9 +2900,15 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                 </div>
                 <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-800 text-[10px] font-bold">
                   {attendanceStats.lateCount > 0 ? (
-                    <span className="text-amber-400">⚠️ {attendanceStats.lateCount} متأخر</span>
+                    <span className="text-amber-400 flex items-center gap-1">
+                      <AlertTriangle size={11} />
+                      <span>{attendanceStats.lateCount} متأخر</span>
+                    </span>
                   ) : (
-                    <span className="text-emerald-400">✓ دوام منضبط</span>
+                    <span className="text-emerald-400 flex items-center gap-1">
+                      <Check size={11} />
+                      <span>دوام منضبط</span>
+                    </span>
                   )}
                   <span className="text-slate-400 group-hover:translate-x-[-2px] transition-transform">عرض ‹</span>
                 </div>
@@ -2933,8 +2951,12 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                   {bookingsStats.totalBookings} <span className="text-xs font-normal text-purple-400">حجز</span>
                 </div>
                 <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-800 text-[10px] text-slate-400 font-semibold">
-                  <span className="text-purple-300">
-                    ⚡ {bookingsStats.createdInPeriodCount} أُنشئت | 📅 {bookingsStats.scheduledInPeriodCount} موعد
+                  <span className="text-purple-300 flex items-center gap-1">
+                    <Sparkles size={11} />
+                    <span>{bookingsStats.createdInPeriodCount} أُنشئت</span>
+                    <span className="text-slate-600">|</span>
+                    <Calendar size={11} />
+                    <span>{bookingsStats.scheduledInPeriodCount} موعد</span>
                   </span>
                   <span className="text-purple-400 group-hover:translate-x-[-2px] transition-transform">عرض ‹</span>
                 </div>
@@ -3135,7 +3157,8 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                     >
                       <div className="flex items-center justify-between mb-2">
                         <span className="font-black text-xs text-white flex items-center gap-1.5">
-                          <span>🏢 {b.branch.name}</span>
+                          <Building2 size={13} className="text-amber-400" />
+                          <span>{b.branch.name}</span>
                           {b.branch.isMain && (
                             <span className="bg-amber-500/20 text-amber-300 text-[9px] px-1.5 py-0.2 rounded font-bold">الرئيسي</span>
                           )}
@@ -3324,8 +3347,18 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                 <div className={`text-lg font-black font-mono ${netProfitData.netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                   {netProfitData.netProfit >= 0 ? '+' : ''}{netProfitData.netProfit.toLocaleString()} <span className="text-[10px] text-slate-400 font-normal">{currency}</span>
                 </div>
-                <p className={`text-[9px] font-bold mt-1 ${netProfitData.netProfit >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
-                  {netProfitData.netProfit >= 0 ? '✅ فائض ربحي إيجابي' : '⚠️ عجز تشغيلي'}
+                <p className={`text-[9px] font-bold mt-1 flex items-center gap-1 ${netProfitData.netProfit >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                  {netProfitData.netProfit >= 0 ? (
+                    <>
+                      <Check size={11} className="text-emerald-400" />
+                      <span>فائض ربحي إيجابي</span>
+                    </>
+                  ) : (
+                    <>
+                      <AlertTriangle size={11} className="text-rose-400" />
+                      <span>عجز تشغيلي</span>
+                    </>
+                  )}
                 </p>
               </div>
 
@@ -3786,8 +3819,9 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                             <div className="flex items-center gap-1.5">
                               <p className="text-xs font-black text-white">{tStat.name}</p>
                               {tStat.isMain && (
-                                <span className="bg-amber-400/20 text-amber-300 border border-amber-400/30 text-[9px] font-black px-1.5 py-0.2 rounded-md">
-                                  رئيسية 🏦
+                                <span className="bg-amber-400/20 text-amber-300 border border-amber-400/30 text-[9px] font-black px-1.5 py-0.2 rounded-md flex items-center gap-1">
+                                  <Building2 size={10} />
+                                  <span>رئيسية</span>
                                 </span>
                               )}
                             </div>
@@ -4168,22 +4202,34 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
             <div className="grid grid-cols-4 gap-2 text-center">
               <div className="bg-slate-900 p-3 rounded-2xl border border-emerald-500/30">
                 <p className="text-2xl font-black text-emerald-400">{attendanceStats.presentCount}</p>
-                <p className="text-[10px] font-bold text-slate-400 mt-1">حاضر منتظم 🟢</p>
+                <p className="text-[10px] font-bold text-slate-400 mt-1 flex items-center justify-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                  <span>حاضر منتظم</span>
+                </p>
               </div>
 
               <div className="bg-slate-900 p-3 rounded-2xl border border-amber-500/30">
                 <p className="text-2xl font-black text-amber-400">{attendanceStats.lateCount}</p>
-                <p className="text-[10px] font-bold text-slate-400 mt-1">متأخر 🟡</p>
+                <p className="text-[10px] font-bold text-slate-400 mt-1 flex items-center justify-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                  <span>متأخر</span>
+                </p>
               </div>
 
               <div className="bg-slate-900 p-3 rounded-2xl border border-red-500/30">
                 <p className="text-2xl font-black text-red-400">{attendanceStats.absentCount}</p>
-                <p className="text-[10px] font-bold text-slate-400 mt-1">غائب 🔴</p>
+                <p className="text-[10px] font-bold text-slate-400 mt-1 flex items-center justify-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+                  <span>غائب</span>
+                </p>
               </div>
 
               <div className="bg-slate-900 p-3 rounded-2xl border border-blue-500/30">
                 <p className="text-2xl font-black text-blue-400">{attendanceStats.leaveCount}</p>
-                <p className="text-[10px] font-bold text-slate-400 mt-1">إجازة/عطلة 🔵</p>
+                <p className="text-[10px] font-bold text-slate-400 mt-1 flex items-center justify-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                  <span>إجازة/عطلة</span>
+                </p>
               </div>
             </div>
 
@@ -4259,7 +4305,10 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                 }`}
               >
                 <p className="text-xl font-black text-purple-300">{bookingsStats.createdInPeriodCount}</p>
-                <p className="text-[10px] font-bold text-purple-300 mt-0.5">⚡ أُنشئت بالفترة</p>
+                <p className="text-[10px] font-bold text-purple-300 mt-0.5 flex items-center justify-center gap-1">
+                  <Sparkles size={11} />
+                  <span>أُنشئت بالفترة</span>
+                </p>
               </div>
 
               <div 
@@ -4269,7 +4318,10 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                 }`}
               >
                 <p className="text-xl font-black text-sky-400">{bookingsStats.scheduledInPeriodCount}</p>
-                <p className="text-[10px] font-bold text-sky-300 mt-0.5">📅 مواعيد بالفترة</p>
+                <p className="text-[10px] font-bold text-sky-300 mt-0.5 flex items-center justify-center gap-1">
+                  <Calendar size={11} />
+                  <span>مواعيد بالفترة</span>
+                </p>
               </div>
 
               <div 
@@ -4279,7 +4331,10 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                 }`}
               >
                 <p className="text-xl font-black text-emerald-400">{bookingsStats.completed}</p>
-                <p className="text-[10px] font-bold text-slate-400 mt-0.5">مكتملة ✓</p>
+                <p className="text-[10px] font-bold text-slate-400 mt-0.5 flex items-center justify-center gap-1">
+                  <Check size={11} className="text-emerald-400" />
+                  <span>مكتملة</span>
+                </p>
               </div>
 
               <div 
@@ -4289,7 +4344,10 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                 }`}
               >
                 <p className="text-xl font-black text-blue-400">{bookingsStats.confirmed}</p>
-                <p className="text-[10px] font-bold text-slate-400 mt-0.5">مؤكدة 📅</p>
+                <p className="text-[10px] font-bold text-slate-400 mt-0.5 flex items-center justify-center gap-1">
+                  <Calendar size={11} className="text-blue-400" />
+                  <span>مؤكدة</span>
+                </p>
               </div>
 
               <div 
@@ -4299,7 +4357,10 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                 }`}
               >
                 <p className="text-xl font-black text-amber-400">{bookingsStats.pending}</p>
-                <p className="text-[10px] font-bold text-slate-400 mt-0.5">معلقة ⏳</p>
+                <p className="text-[10px] font-bold text-slate-400 mt-0.5 flex items-center justify-center gap-1">
+                  <Clock size={11} className="text-amber-400" />
+                  <span>معلقة</span>
+                </p>
               </div>
 
               <div 
@@ -4309,7 +4370,10 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                 }`}
               >
                 <p className="text-xl font-black text-rose-400">{bookingsStats.cancelled}</p>
-                <p className="text-[10px] font-bold text-slate-400 mt-0.5">ملغاة ✕</p>
+                <p className="text-[10px] font-bold text-slate-400 mt-0.5 flex items-center justify-center gap-1">
+                  <X size={11} className="text-rose-400" />
+                  <span>ملغاة</span>
+                </p>
               </div>
 
               <div 
@@ -4323,7 +4387,8 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                   <span className="text-[10px] font-normal text-purple-400 mr-1">{currency}</span>
                 </p>
                 <p className="text-[10px] font-bold text-purple-300 mt-0.5 flex items-center justify-center gap-1">
-                  <span>مقدم حجز 💰</span>
+                  <Wallet size={11} />
+                  <span>مقدم حجز</span>
                 </p>
               </div>
 
@@ -4387,7 +4452,10 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                       : 'bg-purple-950/30 text-purple-300 border-purple-500/30 hover:bg-purple-900/40'
                   }`}
                 >
-                  ⚡ أُنشئت بالفترة ({bookingsStats.createdInPeriodCount})
+                  <span className="flex items-center gap-1.5">
+                    <Sparkles size={12} />
+                    <span>أُنشئت بالفترة ({bookingsStats.createdInPeriodCount})</span>
+                  </span>
                 </button>
 
                 <button
@@ -4398,7 +4466,10 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                       : 'bg-sky-950/30 text-sky-300 border-sky-500/30 hover:bg-sky-900/40'
                   }`}
                 >
-                  📅 مواعيد بالفترة ({bookingsStats.scheduledInPeriodCount})
+                  <span className="flex items-center gap-1.5">
+                    <Calendar size={12} />
+                    <span>مواعيد بالفترة ({bookingsStats.scheduledInPeriodCount})</span>
+                  </span>
                 </button>
 
                 <button
@@ -4453,7 +4524,10 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                       : 'bg-purple-950/30 text-purple-300 border-purple-500/30 hover:bg-purple-900/40'
                   }`}
                 >
-                  بها مقدم حجز 💰 ({bookingsStats.bookingsWithAdvanceCount})
+                  <span className="flex items-center gap-1.5">
+                    <Wallet size={12} />
+                    <span>بها مقدم حجز ({bookingsStats.bookingsWithAdvanceCount})</span>
+                  </span>
                 </button>
               </div>
             </div>
@@ -4508,19 +4582,19 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                         {/* Badges for Created in Period & Scheduled in Period */}
                         {isCreatedInPeriod && (
                           <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-purple-500/25 text-purple-200 border border-purple-400/40 flex items-center gap-1 shadow-sm">
-                            <span>⚡</span>
+                            <Sparkles size={11} className="text-purple-300" />
                             <span>أُنشئ بالفترة</span>
                           </span>
                         )}
                         {isScheduledInPeriod && (
                           <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-sky-500/20 text-sky-300 border border-sky-400/30 flex items-center gap-1">
-                            <span>📅</span>
+                            <Calendar size={11} className="text-sky-300" />
                             <span>موعد بالفترة</span>
                           </span>
                         )}
                         {isAdvancePaidInPeriod && (
                           <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-emerald-500/25 text-emerald-200 border border-emerald-400/40 flex items-center gap-1 shadow-sm">
-                            <span>💰</span>
+                            <Wallet size={11} className="text-emerald-300" />
                             <span>عربون مسدد بالفترة</span>
                           </span>
                         )}
@@ -4534,8 +4608,23 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                         )}
 
                         {/* Booking Source badge */}
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-800/80 text-slate-400 border border-slate-700/60">
-                          {b.source === 'online' ? '🌐 أونلاين' : b.source === 'phone' ? '📞 اتصال' : '💻 كاشير'}
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-800/80 text-slate-400 border border-slate-700/60 inline-flex items-center gap-1">
+                          {b.source === 'online' ? (
+                            <>
+                              <Globe size={11} className="text-sky-400" />
+                              <span>أونلاين</span>
+                            </>
+                          ) : b.source === 'phone' ? (
+                            <>
+                              <Phone size={11} className="text-emerald-400" />
+                              <span>اتصال</span>
+                            </>
+                          ) : (
+                            <>
+                              <Store size={11} className="text-amber-400" />
+                              <span>كاشير</span>
+                            </>
+                          )}
                         </span>
 
                         {/* Queue number if exists */}
@@ -4567,10 +4656,30 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                           b.status === 'cancelled' ? 'bg-rose-500/20 text-rose-400 border-rose-500/30' :
                           'bg-amber-500/20 text-amber-400 border-amber-500/30'
                         }`}>
-                          {b.status === 'completed' && <span>مكتمل ✓</span>}
-                          {b.status === 'confirmed' && <span>مؤكد 📅</span>}
-                          {b.status === 'pending' && <span>معلق ⏳</span>}
-                          {b.status === 'cancelled' && <span>ملغي ✕</span>}
+                          {b.status === 'completed' && (
+                            <>
+                              <Check size={12} />
+                              <span>مكتمل</span>
+                            </>
+                          )}
+                          {b.status === 'confirmed' && (
+                            <>
+                              <Calendar size={12} />
+                              <span>مؤكد</span>
+                            </>
+                          )}
+                          {b.status === 'pending' && (
+                            <>
+                              <Clock size={12} />
+                              <span>معلق</span>
+                            </>
+                          )}
+                          {b.status === 'cancelled' && (
+                            <>
+                              <X size={12} />
+                              <span>ملغي</span>
+                            </>
+                          )}
                         </span>
                       </div>
                     </div>
@@ -4633,7 +4742,10 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
 
                         {createdDateFormatted && (
                           <div className="text-[10px] text-slate-400 flex items-center gap-1 sm:border-r sm:pr-2.5 sm:border-slate-800">
-                            <span className="text-purple-400 font-bold">⚡ وُثّق:</span>
+                            <span className="text-purple-400 font-bold flex items-center gap-1">
+                              <Sparkles size={10} />
+                              <span>وُثّق:</span>
+                            </span>
                             <span className="font-mono text-slate-300">{createdDateFormatted}</span>
                           </div>
                         )}
@@ -4872,12 +4984,12 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                     {u.active ? (
                       <>
                         <UserCheck size={14} />
-                        <span>مفعل 🟢</span>
+                        <span>مفعل</span>
                       </>
                     ) : (
                       <>
                         <UserX size={14} />
-                        <span>معطل 🔴</span>
+                        <span>معطل</span>
                       </>
                     )}
                   </button>

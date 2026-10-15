@@ -162,16 +162,16 @@ export const SalesReturnsScreen: React.FC<SalesReturnsScreenProps> = ({
 
   const handleDelete = (ret: SalesReturn) => {
     if (!canDelete) {
-      alert('⛔ حذف سندات المرتجع مقتصر على إدارة النظام.');
+      alert('عذراً، حذف سندات المرتجع مقتصر على إدارة النظام.');
       return;
     }
-    if (window.confirm(`⚠️ تحذير: هل أنت متأكد من حذف سند المرتجع رقم (${ret.id})؟ سيتم إلغاء أثره المالي وعكس القيود المرتبطة.`)) {
+    if (window.confirm(`تحذير: هل أنت متأكد من حذف سند المرتجع رقم (${ret.id})؟ سيتم إلغاء أثره المالي وعكس القيود المرتبطة.`)) {
       if (onDeleteSalesReturn) {
         onDeleteSalesReturn(ret.id);
       } else {
         setSalesReturns(prev => prev.filter(r => r.id !== ret.id));
       }
-      alert('✅ تم حذف سند المرتجع بنجاح.');
+      alert('تم حذف سند المرتجع بنجاح.');
     }
   };
 

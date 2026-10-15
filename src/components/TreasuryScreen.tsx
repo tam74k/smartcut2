@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { AppSettings, Transaction, Treasury, Branch, AppUser, Invoice, Booking } from '../types';
-import { Wallet, ArrowDownRight, ArrowUpRight, ArrowRightLeft, XCircle, Download, Building2, Trash2, Loader2, CalendarCheck, Printer } from 'lucide-react';
+import { Wallet, ArrowDownRight, ArrowUpRight, ArrowRightLeft, XCircle, Download, Building2, Trash2, Loader2, CalendarCheck, Printer, Banknote, CreditCard, Landmark, Coins, User, X } from 'lucide-react';
 import { exportToExcel } from '../utils/exportExcel';
 import { AuthService } from '../services/auth';
 import { DB } from '../services/db';
@@ -191,12 +191,12 @@ export function TreasuryScreen({
       AuthService.canDo('pos_void', currentUser);
 
     if (!isAuthorized) {
-      alert('⛔ عذراً، حذف الحركات المالية يتطلب صلاحية الإدارة (الأدمن أو المالك).');
+      alert('عذراً، حذف الحركات المالية يتطلب صلاحية الإدارة (الأدمن أو المالك).');
       return;
     }
 
     if (trx.id.startsWith('TRX-INV-')) {
-      alert('⚠️ هذه الحركة مسجلة تلقائياً من فاتورة مبيعات. لحذفها، يرجى حذف الفاتورة أو إلغاؤها من شاشة الفواتير.');
+      alert('هذه الحركة مسجلة تلقائياً من فاتورة مبيعات. لحذفها، يرجى حذف الفاتورة أو إلغاؤها من شاشة الفواتير.');
       return;
     }
 
@@ -207,9 +207,9 @@ export function TreasuryScreen({
 
     let warningMsg = '';
     if (isSales) {
-      warningMsg = '\n\n⚠️ ملاحظة: هذه الحركة ناتجة عن فاتورة مبيعات. لحذف الفاتورة بالكامل وإلغاء خدماتها وتعديل المخزون وعمولات الموظفين، يرجى حذفها من شاشة الفواتير.';
+      warningMsg = '\n\nملاحظة: هذه الحركة ناتجة عن فاتورة مبيعات. لحذف الفاتورة بالكامل وإلغاء خدماتها وتعديل المخزون وعمولات الموظفين، يرجى حذفها من شاشة الفواتير.';
     } else if (isCustody) {
-      warningMsg = '\n\n⚠️ تحذير: هذه الحركة تمثل عهدة افتتاحية للوردية، وحذفها سيؤثر على مطابقة رصيد الوردية والخزينة.';
+      warningMsg = '\n\nتحذير: هذه الحركة تمثل عهدة افتتاحية للوردية، وحذفها سيؤثر على مطابقة رصيد الوردية والخزينة.';
     }
 
     // فحص ما إذا كان هناك طرف مقابل لعملية التحويل بين الخزائن
@@ -235,7 +235,7 @@ export function TreasuryScreen({
 
     let deletePairToo = false;
     if (pairedTrx) {
-      confirmText += `\n\n🔄 تم العثور على الطرف المقابل لعملية التحويل (الخزينة الأخرى: ${settings.treasuries.find(t => t.id === pairedTrx?.treasury)?.name || pairedTrx.treasury}).\nهل تريد حذف طرفي التحويل معاً لإبقاء الخزينتين متوازنتين؟`;
+      confirmText += `\n\nتم العثور على الطرف المقابل لعملية التحويل (الخزينة الأخرى: ${settings.treasuries.find(t => t.id === pairedTrx?.treasury)?.name || pairedTrx.treasury}).\nهل تريد حذف طرفي التحويل معاً لإبقاء الخزينتين متوازنتين؟`;
     }
 
     if (!window.confirm(confirmText)) return;
@@ -260,10 +260,10 @@ export function TreasuryScreen({
       const idsToDelete = new Set([trx.id, ...(deletePairToo && pairedTrx ? [pairedTrx.id] : [])]);
       setTransactions(transactions.filter(t => !idsToDelete.has(t.id)));
 
-      alert(deletePairToo ? '✅ تم حذف طرفي عملية التحويل بنجاح.' : '✅ تم حذف الحركة المالية بنجاح.');
+      alert(deletePairToo ? 'تم حذف طرفي عملية التحويل بنجاح.' : 'تم حذف الحركة المالية بنجاح.');
     } catch (err: any) {
       console.error('Error deleting transaction:', err);
-      alert('❌ حدث خطأ أثناء الحذف: ' + (err?.message || 'يرجى المحاولة مجدداً'));
+      alert('حدث خطأ أثناء الحذف: ' + (err?.message || 'يرجى المحاولة مجدداً'));
     } finally {
       setDeletingId(null);
     }
@@ -555,7 +555,7 @@ export function TreasuryScreen({
         <div className="mb-6 p-4 rounded-2xl bg-indigo-50/90 border border-indigo-200/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-black text-sm shadow-xs">
-              🏢
+              <Building2 size={20} />
             </div>
             <div>
               <h3 className="text-sm font-black text-indigo-950 flex items-center gap-2">
@@ -563,7 +563,7 @@ export function TreasuryScreen({
                 <span className="text-indigo-600 font-extrabold">{settings.salonName || activeBranch?.name || 'الفرع النشط'}</span>
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                🌍 {settings.country} • العملة: <strong className="text-slate-700">{settings.currency}</strong> • حالة الوردية: {shiftData.isOpen ? <span className="text-emerald-700 font-bold">مفتوحة ({shiftData.date}) 🟢</span> : <span className="text-slate-500 font-bold">مغلقة ⚪</span>}
+                {settings.country} • العملة: <strong className="text-slate-700">{settings.currency}</strong> • حالة الوردية: {shiftData.isOpen ? <span className="text-emerald-700 font-bold">مفتوحة ({shiftData.date})</span> : <span className="text-slate-500 font-bold">مغلقة</span>}
               </p>
             </div>
           </div>
@@ -651,7 +651,8 @@ export function TreasuryScreen({
                 {/* Custody Breakdown Tag */}
                 {totalCustody > 0 && (
                   <div className="mb-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-amber-400/20 text-amber-200 border border-amber-300/30 text-xs font-black">
-                    <span>💰 العهدة الافتتاحية:</span>
+                    <Wallet size={12} className="text-amber-300" />
+                    <span>العهدة الافتتاحية:</span>
                     <span className="text-amber-100 font-mono">+{totalCustody.toFixed(2)} {settings.currency}</span>
                     <span className="text-[10px] text-amber-300/80 font-normal">(مضمنة بالرصيد)</span>
                   </div>
@@ -665,8 +666,9 @@ export function TreasuryScreen({
                     </span>
                   )}
                   {totalBookingAdvances > 0 && (
-                    <span className="bg-teal-400/25 text-teal-100 px-2 py-0.5 rounded-md border border-teal-400/30">
-                      📅 مقدمات حجز: {totalBookingAdvances.toFixed(0)}
+                    <span className="bg-teal-400/25 text-teal-100 px-2 py-0.5 rounded-md border border-teal-400/30 flex items-center gap-1">
+                      <CalendarCheck size={11} />
+                      <span>مقدمات حجز: {totalBookingAdvances.toFixed(0)}</span>
                     </span>
                   )}
                   {totalExpenses > 0 && (
@@ -783,12 +785,20 @@ export function TreasuryScreen({
                     ? 'bg-purple-50 border-purple-200 text-purple-800'
                     : 'bg-slate-50 border-slate-200 text-slate-800';
                   
-                  const iconEmoji = isCash ? '💵' : isCard ? '💳' : isTransfer ? '🏦' : '🪙';
-
                   return (
                     <div key={entry.treasuryId} className={`p-4 rounded-xl border ${colorClass} flex flex-col gap-2`}>
                       <div className="flex items-center gap-2">
-                        <span className="text-xl">{iconEmoji}</span>
+                        <span className="p-1 rounded-md bg-white/60 shadow-2xs">
+                          {isCash ? (
+                            <Banknote size={16} />
+                          ) : isCard ? (
+                            <CreditCard size={16} />
+                          ) : isTransfer ? (
+                            <Landmark size={16} />
+                          ) : (
+                            <Coins size={16} />
+                          )}
+                        </span>
                         <span className="font-bold text-sm truncate">{entry.treasuryName}</span>
                       </div>
                       <div className="font-black text-xl font-mono">
@@ -868,7 +878,7 @@ export function TreasuryScreen({
                 onClick={() => setCategoryFilter('custody')}
                 className={`px-2.5 py-1 rounded-lg transition-all ${categoryFilter === 'custody' ? 'bg-amber-500 text-white shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'}`}
               >
-                💰 عهدة
+                عهدة
               </button>
               <button 
                 onClick={() => setCategoryFilter('deposit_withdraw')}
@@ -897,10 +907,10 @@ export function TreasuryScreen({
               {(fromDate || toDate) && (
                 <button 
                   onClick={() => { setFromDate(''); setToDate(''); }}
-                  className="text-slate-400 hover:text-red-500 text-[10px] font-bold px-1"
+                  className="text-slate-400 hover:text-red-500 p-0.5 rounded transition-colors"
                   title="مسح التاريخ"
                 >
-                  ✕
+                  <X size={12} />
                 </button>
               )}
             </div>
@@ -950,7 +960,8 @@ export function TreasuryScreen({
                     <td className="py-3.5 px-4">
                       {trx.userName || trx.createdBy ? (
                         <span className="inline-flex items-center gap-1 text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md font-bold text-[11px]">
-                          👤 {trx.userName || trx.createdBy}
+                          <User size={11} className="text-slate-500" />
+                          <span>{trx.userName || trx.createdBy}</span>
                         </span>
                       ) : (
                         <span className="text-slate-400">-</span>
@@ -959,7 +970,8 @@ export function TreasuryScreen({
                     <td className="py-3.5 px-4">
                       {isCustody ? (
                         <span className="inline-flex items-center gap-1 text-amber-800 bg-amber-100/80 px-2.5 py-1 rounded-full font-black border border-amber-300">
-                          💰 عهدة افتتاحية
+                          <Wallet size={12} className="text-amber-700" />
+                          <span>عهدة افتتاحية</span>
                         </span>
                       ) : trx.type === 'in' ? (
                         <span className="inline-flex items-center gap-1 text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full font-bold border border-emerald-200">

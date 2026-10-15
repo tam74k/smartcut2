@@ -54,7 +54,7 @@ class RealtimeSyncManager {
         // Cloud production mode without dedicated socket server - real-time sync runs via Supabase
         return;
       }
-      console.log(`🔌 [WebSockets] Connecting to real-time server at: ${socketUrl}`);
+      console.log(`[WebSockets] Connecting to real-time server at: ${socketUrl}`);
 
       this.socket = io(socketUrl, {
         transports: ['websocket', 'polling'],
@@ -67,7 +67,7 @@ class RealtimeSyncManager {
 
       this.socket.on('connect', () => {
         this.isConnected = true;
-        console.log(`✅ [WebSockets] Connected to real-time server! (ID: ${this.socket?.id})`);
+        console.log(`[WebSockets] Connected to real-time server! (ID: ${this.socket?.id})`);
         
         // Re-subscribe to all active table rooms
         for (const table of this.listeners.keys()) {
@@ -100,11 +100,11 @@ class RealtimeSyncManager {
 
       // Listen to Turso cloud sync completion events
       this.socket.on('cloud-sync-complete', (payload: any) => {
-        console.log('☁️ [WebSockets] Received cloud-sync-complete notification:', payload);
+        console.log('[WebSockets] Received cloud-sync-complete notification:', payload);
         this.dispatchCloudSyncComplete(payload);
       });
     } catch (err: any) {
-      console.error('❌ [WebSockets] Initialization error:', err?.message || err);
+      console.error('[WebSockets] Initialization error:', err?.message || err);
     }
   }
 

@@ -347,11 +347,10 @@ export function IncomeReportReceipt({
         <p className="text-[10px]">المستخدم: {effectiveUserName}</p>
       </div>
 
-      {/* ملخص يوضح اشتمال الدخل على المبيعات ومقدمات الحجز */}
       <div className="flex flex-wrap items-center justify-between gap-3 p-2.5 bg-emerald-50 border border-emerald-300 rounded-lg mb-3 text-[10px] font-bold text-emerald-950">
-        <div>🛍️ مبيعات الفواتير: <span className="font-mono font-black text-emerald-800">{totals.totalSales.toFixed(2)} {settings.currency}</span></div>
-        <div>📅 مقدمات وعربون الحجز: <span className="font-mono font-black text-teal-700">+{totals.totalBookingAdvances.toFixed(2)} {settings.currency}</span></div>
-        <div className="bg-emerald-600 text-white px-2.5 py-1 rounded">💰 إجمالي الدخل المحصل: <span className="font-mono font-black">{totals.incomeTotal.toFixed(2)} {settings.currency}</span></div>
+        <div>مبيعات الفواتير: <span className="font-mono font-black text-emerald-800">{totals.totalSales.toFixed(2)} {settings.currency}</span></div>
+        <div>مقدمات وعربون الحجز: <span className="font-mono font-black text-teal-700">+{totals.totalBookingAdvances.toFixed(2)} {settings.currency}</span></div>
+        <div className="bg-emerald-600 text-white px-2.5 py-1 rounded">إجمالي الدخل المحصل: <span className="font-mono font-black">{totals.incomeTotal.toFixed(2)} {settings.currency}</span></div>
       </div>
 
       <div className="mb-2 overflow-x-auto">

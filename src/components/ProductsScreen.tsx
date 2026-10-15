@@ -845,8 +845,8 @@ export function ProductsScreen({
           className="w-44 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 outline-none focus:border-primary focus:bg-white font-bold text-slate-700 cursor-pointer"
         >
           <option value="all">جميع الأنواع</option>
-          <option value="retail">🛍️ للبيع (POS)</option>
-          <option value="raw_material">🧪 مادة خام (استهلاك)</option>
+          <option value="retail">للبيع (POS)</option>
+          <option value="raw_material">مادة خام (استهلاك)</option>
         </select>
         <select 
           value={statusFilter}
@@ -854,8 +854,8 @@ export function ProductsScreen({
           className="w-40 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 outline-none focus:border-primary focus:bg-white font-bold text-slate-700 cursor-pointer"
         >
           <option value="all">جميع الحالات</option>
-          <option value="active">🟢 نشط فقط</option>
-          <option value="inactive">⚪ غير نشط فقط</option>
+          <option value="active">نشط فقط</option>
+          <option value="inactive">غير نشط فقط</option>
         </select>
         <select 
           value={categoryFilter}
@@ -1038,8 +1038,8 @@ export function ProductsScreen({
                     }}
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary font-bold text-slate-800 bg-white text-xs sm:text-sm"
                   >
-                    <option value="retail">🛍️ منتج للبيع (Retail) - يظهر في POS</option>
-                    <option value="raw_material">🧪 مادة خام (استهلاك داخلي) - لا يباع</option>
+                    <option value="retail">منتج للبيع (Retail) - يظهر في POS</option>
+                    <option value="raw_material">مادة خام (استهلاك داخلي) - لا يباع</option>
                   </select>
                 </div>
 
@@ -1051,8 +1051,8 @@ export function ProductsScreen({
                     onChange={e => setFormData({ ...formData, isActive: e.target.value === 'active' })}
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary font-bold text-slate-800 bg-white text-xs sm:text-sm"
                   >
-                    <option value="active">🟢 صنف نشط (مفعّل في النظام والتنبيهات)</option>
-                    <option value="inactive">⚪ صنف غير نشط (موقوف عن التقارير)</option>
+                    <option value="active">صنف نشط (مفعّل في النظام والتنبيهات)</option>
+                    <option value="inactive">صنف غير نشط (موقوف عن التقارير)</option>
                   </select>
                 </div>
 

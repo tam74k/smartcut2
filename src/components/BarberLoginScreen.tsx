@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Scissors, Lock, User, Sparkles, ShieldCheck, ArrowRight, Smartphone, Building2, CheckCircle2, ChevronDown } from 'lucide-react';
+import { Scissors, Lock, User, Sparkles, ShieldCheck, ArrowRight, Smartphone, Building2, CheckCircle2, ChevronDown, Crown } from 'lucide-react';
 import { AuthService } from '../services/auth';
 import { SubscriptionService } from '../services/subscriptionService';
 import { AppUser, AppSettings, Branch } from '../types';
@@ -60,7 +60,7 @@ export function BarberLoginScreen({
 
       // Check if user has barber, admin or programmer role
       if (user.role !== 'barber' && user.role !== 'admin' && user.role !== 'programmer') {
-        setError('⚠️ هذا الحساب غير مصرح له بالدخول لبوابة الفنيين والكوافير.');
+        setError('هذا الحساب غير مصرح له بالدخول لبوابة الفنيين والكوافير.');
         setIsLoading(false);
         return;
       }
@@ -132,7 +132,10 @@ export function BarberLoginScreen({
             </div>
           </div>
 
-          <h2 className="text-2xl font-black text-white mb-1 tracking-tight">مرحباً بك مجدداً ✂️</h2>
+          <h2 className="text-2xl font-black text-white mb-1 tracking-tight flex items-center gap-2">
+            <span>مرحباً بك مجدداً</span>
+            <Scissors size={20} className="text-indigo-400" />
+          </h2>
           <p className="text-xs text-slate-400 mb-6 font-normal leading-relaxed">
             سجّل دخولك لمتابعة مواعيد حجوزاتك، عمولاتك المكتسبة، إنجاز التارجت اللحظي وسجل الدوام والسلف.
           </p>
@@ -207,9 +210,10 @@ export function BarberLoginScreen({
             if (onSwitchToOwnerPortal) onSwitchToOwnerPortal();
             else window.location.href = '/owner';
           }}
-          className="text-indigo-400 hover:text-indigo-300 font-bold hover:underline cursor-pointer flex items-center gap-1"
+          className="text-indigo-400 hover:text-indigo-300 font-bold hover:underline cursor-pointer flex items-center gap-1.5"
         >
-          <span>👑 بوابة المالك</span>
+          <Crown size={13} className="text-amber-400" />
+          <span>بوابة المالك</span>
         </button>
       </footer>
     </div>

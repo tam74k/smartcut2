@@ -313,7 +313,7 @@ export function ExpensesImportModal({
     setIsImporting(false);
     onImportComplete(newTransactions, newCatsToRegister);
     onClose();
-    alert(`🎉 تم استيراد ${newTransactions.length} قيد مصروف بنجاح وتحديث الحسابات والخزائن في قاعدة البيانات!`);
+    alert(`تم استيراد ${newTransactions.length} قيد مصروف بنجاح وتحديث الحسابات والخزائن في قاعدة البيانات.`);
   };
 
   if (!isOpen) return null;

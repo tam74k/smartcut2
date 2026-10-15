@@ -566,8 +566,8 @@ export function EmployeeCommissionsDetailedSection({
               className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-800 focus:border-indigo-600 outline-none cursor-pointer"
             >
               <option value="all">الكل (تنفيذ وإحالة)</option>
-              <option value="execution">✂️ تنفيذ فقط</option>
-              <option value="referral">⚡ إحالة فقط</option>
+              <option value="execution">تنفيذ فقط</option>
+              <option value="referral">إحالة فقط</option>
             </select>
           </div>
         </div>
@@ -655,7 +655,7 @@ export function EmployeeCommissionsDetailedSection({
         <div className="bg-white border border-slate-200/90 rounded-3xl p-4 shadow-2xs flex flex-col justify-between">
           <div className="flex justify-between items-start">
             <span className="text-xs font-bold text-slate-500 flex items-center gap-1">
-              <span>✂️ عمولات التنفيذ</span>
+              <span>عمولات التنفيذ</span>
             </span>
             <div className="w-7 h-7 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
               <Scissors size={15} />
@@ -674,7 +674,7 @@ export function EmployeeCommissionsDetailedSection({
         <div className="bg-white border border-slate-200/90 rounded-3xl p-4 shadow-2xs flex flex-col justify-between">
           <div className="flex justify-between items-start">
             <span className="text-xs font-bold text-slate-500 flex items-center gap-1">
-              <span>⚡ عمولات الإحالة</span>
+              <span>عمولات الإحالة</span>
             </span>
             <div className="w-7 h-7 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
               <Zap size={15} />
@@ -829,7 +829,7 @@ export function EmployeeCommissionsDetailedSection({
                     <td className="p-3">
                       <div className="font-bold text-slate-900">{row.serviceName}</div>
                       <div className="text-[10px] text-slate-400 font-semibold">
-                        {row.itemType === 'product' ? 'منتج 📦' : 'خدمة ✂️'} {row.quantity > 1 ? `(الكمية: ${row.quantity})` : ''}
+                        {row.itemType === 'product' ? 'منتج' : 'خدمة'} {row.quantity > 1 ? `(الكمية: ${row.quantity})` : ''}
                       </div>
                     </td>
 
@@ -938,12 +938,14 @@ export function EmployeeCommissionsDetailedSection({
                     <div key={it.uniqueId} className="flex justify-between items-center text-xs px-2 py-1 bg-white rounded-lg border border-slate-100">
                       <div className="flex items-center gap-2">
                         {it.commissionType === 'execution' ? (
-                          <span className="text-[9px] font-black bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded">
-                            ✂️ تنفيذ
+                          <span className="inline-flex items-center gap-1 text-[9px] font-black bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded">
+                            <Scissors size={10} />
+                            <span>تنفيذ</span>
                           </span>
                         ) : (
-                          <span className="text-[9px] font-black bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded">
-                            ⚡ إحالة
+                          <span className="inline-flex items-center gap-1 text-[9px] font-black bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded">
+                            <Zap size={10} />
+                            <span>إحالة</span>
                           </span>
                         )}
                         <span className="font-bold text-slate-800">{it.serviceName}</span>
@@ -1107,7 +1109,7 @@ export function EmployeeCommissionsDetailedSection({
                 onClick={() => setPreviewInvoice(null)}
                 className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center cursor-pointer"
               >
-                ✕
+                <X size={16} />
               </button>
             </div>
 

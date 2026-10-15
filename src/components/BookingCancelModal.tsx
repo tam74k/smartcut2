@@ -68,7 +68,7 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
     if (isSubmitting) return;
 
     if (refundDeposit && !shiftData?.isOpen) {
-      alert('⚠️ الوردية مغلقة حالياً!\nلا يمكن استرجاع العربون وقيده ضمن مصروفات الوردية الحالية قبل فتح الوردية.');
+      alert('تنبيه: الوردية مغلقة حالياً!\nلا يمكن استرجاع العربون وقيده ضمن مصروفات الوردية الحالية قبل فتح الوردية.');
       return;
     }
 
@@ -268,7 +268,7 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
                       <strong>البند:</strong> مسترجع حجوزات
                     </div>
                     <div className="text-slate-700">
-                      <strong>الوردية:</strong> {shiftData?.isOpen ? `الوردية المفتوحة (${shiftData.date})` : '⚠️ الوردية مغلقة'}
+                      <strong>الوردية:</strong> {shiftData?.isOpen ? `الوردية المفتوحة (${shiftData.date})` : 'الوردية مغلقة'}
                     </div>
                     <div className="text-slate-700 text-[10px] bg-white p-2 rounded-lg border border-slate-200 leading-relaxed font-mono">
                       {expenseDescription}

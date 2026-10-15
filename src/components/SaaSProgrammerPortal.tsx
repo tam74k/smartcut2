@@ -4,7 +4,7 @@ import {
   UserCheck, UserX, Plus, Edit3, DollarSign, MessageSquare, Globe, Mail, 
   Phone, Sliders, X, ExternalLink, ChevronDown, Lock, Zap, Shield, Key, 
   Database, RefreshCw, AlertTriangle, ArrowRight, UserPlus, Layers, Server,
-  Trash2, Receipt, CreditCard, LogOut, HardDrive
+  Trash2, Receipt, CreditCard, LogOut, HardDrive, Crown, Save, Settings, Check, AlertCircle, FileSpreadsheet, Info
 } from 'lucide-react';
 import { SalonTenant, AppUser, Branch } from '../types';
 import { SubscriptionService, COUNTRY_CURRENCY_MAP } from '../services/subscriptionService';
@@ -68,7 +68,7 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
     const ok = await DB.savePlatformSettings(platformForm);
     setIsSavingPlatformSettings(false);
     if (ok) {
-      alert('✅ تم حفظ إعدادات وهوية المنظومة وأرقام الدعم الفني في قاعدة البيانات بنجاح!');
+      alert('تم حفظ إعدادات وهوية المنظومة وأرقام الدعم الفني في قاعدة البيانات بنجاح.');
       setShowPlatformSettingsModal(false);
     } else {
       alert('حدث خطأ أثناء حفظ الإعدادات في قاعدة البيانات');
@@ -102,7 +102,7 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
     const ok = await AuthService.updateProgrammerPassword(newProgPass.trim());
     setIsUpdatingPass(false);
     if (ok) {
-      alert('✅ تم حفظ وتحديث كلمة مرور المطور في قاعدة البيانات بنجاح!');
+      alert('تم حفظ وتحديث كلمة مرور المطور في قاعدة البيانات بنجاح.');
       setShowChangeProgrammerPassModal(false);
       setNewProgPass('');
       setConfirmProgPass('');
@@ -246,7 +246,7 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
     SubscriptionService.saveBranches(updatedAll);
     await DB.saveBranch(updatedBranch);
     setEditingStorageBranch(null);
-    alert(`✅ تم تحديث السعة التخزينية لفرع (${updatedBranch.name}) إلى ${newLimit} ميجابايت بنجاح وحفظها بالسحابة!`);
+    alert(`تم تحديث السعة التخزينية لفرع (${updatedBranch.name}) إلى ${newLimit} ميجابايت بنجاح وحفظها بالسحابة.`);
   };
 
   const handleSyncBranchStorage = async (branch: Branch) => {
@@ -255,7 +255,7 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
       const res = await DB.syncBranchStorageUsage(branch.salonId, branch.id);
       if (res && res.success) {
         setBranches(prev => prev.map(b => b.id === branch.id ? { ...b, usedStorageBytes: res.usedBytes } : b));
-        alert(`✅ تمت المزامنة بنجاح: الحجم الفعلي لفرع (${branch.name}) هو ${res.usedMb} MB من إجمالي ${branch.storageLimitMb || 50} MB`);
+        alert(`تمت المزامنة بنجاح: الحجم الفعلي لفرع (${branch.name}) هو ${res.usedMb} MB من إجمالي ${branch.storageLimitMb || 50} MB.`);
       } else {
         alert('تعذر استخراج الحجم الفعلي من السحابة');
       }
@@ -347,7 +347,7 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
       trialDays: 7,
       plan: 'pro'
     });
-    alert('✅ تم إنشاء الصالون وتجهيز الحساب والتجربة المجانية (7 أيام) وحفظ المستخدم بقاعدة البيانات بنجاح!');
+    alert('تم إنشاء الصالون وتجهيز الحساب والتجربة المجانية (7 أيام) وحفظ المستخدم بقاعدة البيانات بنجاح.');
   };
 
   const handleToggleActive = async (salon: SalonTenant) => {
@@ -419,7 +419,7 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
     }
     const currentPlanName = updated?.subscriptionPlan || showExtendModal.subscriptionPlan || 'pro';
     setShowExtendModal(null);
-    alert(`✅ تم تمديد فترة ${isTrial ? 'التجربة' : 'الاشتراك'} لصالون (${showExtendModal.name}) بنجاح بمقدار +${extendDaysCount} يوماً (الباقة: ${currentPlanName}) وحفظها بقاعدة البيانات!`);
+    alert(`تم تمديد فترة ${isTrial ? 'التجربة' : 'الاشتراك'} لصالون (${showExtendModal.name}) بنجاح بمقدار +${extendDaysCount} يوماً (الباقة: ${currentPlanName}) وحفظها بقاعدة البيانات.`);
     loadData();
   };
 
@@ -446,7 +446,7 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
     if (updated) {
       setSalons(prev => prev.map(s => s.id === salon.id ? { ...s, ...updated } : s));
       setSelectedControlSalon(null);
-      alert(`✅ تم تمديد الفترة التجريبية لصالون (${salon.name}) بنجاح (+${days} أيام) مع الحفاظ على باقة (${currentPlan}) وتحديث السحابة!`);
+      alert(`تم تمديد الفترة التجريبية لصالون (${salon.name}) بنجاح (+${days} أيام) مع الحفاظ على باقة (${currentPlan}) وتحديث السحابة.`);
       loadData();
     }
   };
@@ -460,7 +460,7 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
     if (updated) {
       setSalons(prev => prev.map(s => s.id === salon.id ? { ...s, ...updated } : s));
       setSelectedControlSalon(null);
-      alert(`✅ تم إعادة صالون (${salon.name}) إلى الوضع التجريبي بنجاح (${days} أيام - باقة ${targetPlan}) وتحديث السحابة!`);
+      alert(`تم إعادة صالون (${salon.name}) إلى الوضع التجريبي بنجاح (${days} أيام - باقة ${targetPlan}) وتحديث السحابة.`);
       loadData();
     }
   };
@@ -473,7 +473,7 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
     if (updated) {
       setSalons(prev => prev.map(s => s.id === salon.id ? { ...s, ...updated } : s));
       setSelectedControlSalon(null);
-      alert(`🛑 تم إلغاء اشتراك صالون (${salon.name}) وإنهاء صلاحيته وقفل المنظومة لوضع القراءة فقط بنجاح!`);
+      alert(`تم إلغاء اشتراك صالون (${salon.name}) وإنهاء صلاحيته وقفل المنظومة لوضع القراءة فقط بنجاح.`);
       loadData();
     }
   };
@@ -491,7 +491,7 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
     });
     if (res && res.success) {
       setSelectedControlSalon(null);
-      alert(`🎉 تم تفعيل باقة (${plan}) رسمياً لصالون (${salon.name}) بنجاح!`);
+      alert(`تم تفعيل باقة (${plan}) رسمياً لصالون (${salon.name}) بنجاح.`);
       loadData();
     }
   };
@@ -538,7 +538,7 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
     });
 
     setSelectedControlSalon(null);
-    alert(`✅ تم حفظ وتحديث بيانات اشتراك (${selectedControlSalon.name}) في السحابة بنجاح!`);
+    alert(`تم حفظ وتحديث بيانات اشتراك (${selectedControlSalon.name}) في السحابة بنجاح.`);
     loadData();
   };
 
@@ -550,7 +550,7 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
     }
     const ok = await DB.approvePendingSubscription(order.id, sId);
     if (ok) {
-      alert(`🎉 تم اعتماد سداد الطلب وتفعيل الصالون رسمياً بنجاح!`);
+      alert(`تم اعتماد سداد الطلب وتفعيل الصالون رسمياً بنجاح.`);
       loadData();
     } else {
       alert('تعذر اعتماد الطلب، يرجى المحاولة لاحقاً');
@@ -588,7 +588,7 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
       await DB.saveSalon(updated);
     }
     setEditingSalon(null);
-    alert('✅ تم حفظ تعديلات الصالون في قاعدة البيانات بنجاح!');
+    alert('تم حفظ تعديلات الصالون في قاعدة البيانات بنجاح.');
   };
 
   const handleResetPassword = async (e: React.FormEvent) => {
@@ -604,7 +604,7 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
         }
       }
       AuthService.saveUsers(users);
-      alert(`✅ تم تغيير كلمة مرور أدمن صالون (${showResetPassModal.name}) وحفظها بقاعدة البيانات: ${newAdminPassword.trim()}`);
+      alert(`تم تغيير كلمة مرور أدمن صالون (${showResetPassModal.name}) وحفظها بقاعدة البيانات: ${newAdminPassword.trim()}`);
     } else {
       const newAdmin: AppUser = {
         id: 'usr-' + Math.random().toString(36).substring(2, 9),
@@ -622,7 +622,7 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
       };
       AuthService.saveUser(newAdmin);
       await DB.saveUser(newAdmin);
-      alert(`✅ تم تعيين مستخدم أدمن جديد للصالون وحفظه بقاعدة البيانات بكلمة مرور: ${newAdminPassword.trim()}`);
+      alert(`تم تعيين مستخدم أدمن جديد للصالون وحفظه بقاعدة البيانات بكلمة مرور: ${newAdminPassword.trim()}`);
     }
     setShowResetPassModal(null);
   };
@@ -642,8 +642,9 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
                 <h1 className="text-xl md:text-2xl font-black text-white tracking-tight">
                   لوحة تحكم المطور والمبرمج الرئيسي
                 </h1>
-                <span className="bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-widest uppercase">
-                  SaaS Master Root 👑
+                <span className="bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-widest uppercase inline-flex items-center gap-1">
+                  <Crown size={12} className="text-amber-400" />
+                  <span>SaaS Master Root</span>
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-1">
@@ -660,7 +661,7 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
               title="مزامنة وتحديث البيانات من السحابة وقاعدة بيانات Supabase"
             >
               <RefreshCw size={15} className={isLoadingData ? 'animate-spin text-indigo-400' : 'text-slate-400'} />
-              <span>{isLoadingData ? 'جارِ المزامنة...' : 'تحديث من السحابة 🔄'}</span>
+              <span>{isLoadingData ? 'جارِ المزامنة...' : 'تحديث من السحابة'}</span>
             </button>
 
             <button
@@ -669,7 +670,7 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
               title="تعديل هوية المنظومة، الشعار، وأرقام الدعم الفني والبريد الإلكتروني الظاهرة في شاشة الدخول"
             >
               <Sliders size={15} />
-              <span>هوية ودعم المنظومة ⚙️</span>
+              <span>هوية ودعم المنظومة</span>
             </button>
 
             <button
@@ -730,15 +731,24 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
             <p className="text-2xl font-black text-white">{stats.total}</p>
           </div>
           <div className="bg-slate-900/80 p-4 rounded-2xl border border-emerald-900/40">
-            <p className="text-[11px] font-bold text-emerald-400 mb-1">اشتراكات مفعلة ونشطة 🟢</p>
+            <p className="text-[11px] font-bold text-emerald-400 mb-1 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+              <span>اشتراكات مفعلة ونشطة</span>
+            </p>
             <p className="text-2xl font-black text-emerald-400">{stats.active}</p>
           </div>
           <div className="bg-slate-900/80 p-4 rounded-2xl border border-amber-900/40">
-            <p className="text-[11px] font-bold text-amber-400 mb-1">فترة تجريبية (7 أيام) 🟡</p>
+            <p className="text-[11px] font-bold text-amber-400 mb-1 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+              <span>فترة تجريبية (7 أيام)</span>
+            </p>
             <p className="text-2xl font-black text-amber-400">{stats.trial}</p>
           </div>
           <div className="bg-slate-900/80 p-4 rounded-2xl border border-rose-900/40">
-            <p className="text-[11px] font-bold text-rose-400 mb-1">منتهية أو معطلة 🔴</p>
+            <p className="text-[11px] font-bold text-rose-400 mb-1 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+              <span>منتهية أو معطلة</span>
+            </p>
             <p className="text-2xl font-black text-rose-400">{stats.expired}</p>
           </div>
         </div>
@@ -755,7 +765,7 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
           }`}
         >
           <Building2 size={16} />
-          <span>🏢 صالونات المنظومة ({salons.length})</span>
+          <span>صالونات المنظومة ({salons.length})</span>
         </button>
 
         <button
@@ -767,10 +777,11 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
           }`}
         >
           <Layers size={16} />
-          <span>🏬 الفروع وطلبات التفعيل ({branches.length})</span>
+          <span>الفروع وطلبات التفعيل ({branches.length})</span>
           {branches.filter(b => b.status === 'pending_activation').length > 0 && (
-            <span className="bg-amber-500 text-slate-950 px-2 py-0.5 rounded-full text-[10px] font-black animate-pulse">
-              {branches.filter(b => b.status === 'pending_activation').length} بانتظار الاعتماد ⏳
+            <span className="bg-amber-500 text-slate-950 px-2 py-0.5 rounded-full text-[10px] font-black animate-pulse flex items-center gap-1">
+              <Clock size={10} />
+              <span>{branches.filter(b => b.status === 'pending_activation').length} بانتظار الاعتماد</span>
             </span>
           )}
         </button>
@@ -784,10 +795,11 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
           }`}
         >
           <Receipt size={16} />
-          <span>📋 طلبات الفواتير والاشتراكات ({pendingSubscriptions.length})</span>
+          <span>طلبات الفواتير والاشتراكات ({pendingSubscriptions.length})</span>
           {pendingSubscriptions.length > 0 && (
-            <span className="bg-amber-500 text-slate-950 px-2 py-0.5 rounded-full text-[10px] font-black animate-pulse">
-              {pendingSubscriptions.length} بانتظار التحقق ⏳
+            <span className="bg-amber-500 text-slate-950 px-2 py-0.5 rounded-full text-[10px] font-black animate-pulse flex items-center gap-1">
+              <Clock size={10} />
+              <span>{pendingSubscriptions.length} بانتظار التحقق</span>
             </span>
           )}
         </button>
@@ -811,12 +823,12 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
             <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto pb-2 md:pb-0">
               {[
                 { id: 'all', label: `الكل (${stats.total})` },
-                { id: 'expired_trials', label: `تجريبية لم تشترك 📋 (${stats.expiredTrials})` },
-                { id: 'expiring_soon', label: `تنتهي خلال 5 أيام ⚠️ (${stats.expiringSoon})` },
-                { id: 'expired', label: `المنتهية 🔴 (${stats.expired})` },
-                { id: 'active', label: `المفعلة 🟢 (${stats.active})` },
-                { id: 'trial', label: `التجريبية 🟡 (${stats.trial})` },
-                { id: 'suspended', label: 'الموقوفة ⛔' }
+                { id: 'expired_trials', label: `تجريبية لم تشترك (${stats.expiredTrials})` },
+                { id: 'expiring_soon', label: `تنتهي خلال 5 أيام (${stats.expiringSoon})` },
+                { id: 'expired', label: `المنتهية (${stats.expired})` },
+                { id: 'active', label: `المفعلة (${stats.active})` },
+                { id: 'trial', label: `التجريبية (${stats.trial})` },
+                { id: 'suspended', label: 'الموقوفة' }
               ].map(tab => (
                 <button
                   key={tab.id}
@@ -836,9 +848,9 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
             <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto pb-2 md:pb-0">
               {[
                 { id: 'all', label: 'كافة الفروع' },
-                { id: 'pending_activation', label: `بانتظار التفعيل (${branches.filter(b => b.status === 'pending_activation').length}) 🟡` },
-                { id: 'active', label: 'الفروع النشطة 🟢' },
-                { id: 'suspended', label: 'المعلقة 🔴' }
+                { id: 'pending_activation', label: `بانتظار التفعيل (${branches.filter(b => b.status === 'pending_activation').length})` },
+                { id: 'active', label: 'الفروع النشطة' },
+                { id: 'suspended', label: 'المعلقة' }
               ].map(tab => (
                 <button
                   key={tab.id}
@@ -927,7 +939,7 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
                               ? 'bg-amber-950 text-amber-300 border border-amber-800'
                               : 'bg-emerald-950 text-emerald-300 border border-emerald-800'
                           }`}>
-                            {!salon.isActive ? 'موقوف ⛔' : isExpired ? 'منتهي 🔴' : salon.subscriptionStatus === 'trial' ? 'تجريبي (7 أيام) 🟡' : 'ساري 🟢'}
+                            {!salon.isActive ? 'موقوف' : isExpired ? 'منتهي' : salon.subscriptionStatus === 'trial' ? 'تجريبي (7 أيام)' : 'ساري'}
                           </span>
                         </div>
                       </td>
@@ -960,7 +972,7 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
                           <span className={`text-[10px] font-black ${
                             salon.isActive ? 'text-emerald-400' : 'text-slate-500'
                           }`}>
-                            {salon.isActive ? 'مفعل 🟢' : 'معطل 🔴'}
+                            {salon.isActive ? 'مفعل' : 'معطل'}
                           </span>
                         </div>
                       </td>
@@ -1078,17 +1090,17 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
                           {isPending ? (
                             <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2.5 py-1 rounded-xl text-[11px] font-black inline-flex items-center gap-1.5 animate-pulse">
                               <Clock size={12} />
-                              <span>بانتظار التفعيل ⏳</span>
+                              <span>بانتظار التفعيل</span>
                             </span>
                           ) : isActive ? (
                             <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2.5 py-1 rounded-xl text-[11px] font-black inline-flex items-center gap-1.5">
                               <CheckCircle2 size={12} />
-                              <span>مفعل ونشط 🟢</span>
+                              <span>مفعل ونشط</span>
                             </span>
                           ) : (
                             <span className="bg-rose-500/20 text-rose-300 border border-rose-500/40 px-2.5 py-1 rounded-xl text-[11px] font-black inline-flex items-center gap-1.5">
                               <ShieldAlert size={12} />
-                              <span>معلق وموقوف 🔴</span>
+                              <span>معلق وموقوف</span>
                             </span>
                           )}
                         </td>
@@ -1160,7 +1172,7 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
                               <span className={`text-[10px] font-black ${
                                 branch.isActive ? 'text-emerald-400' : 'text-slate-500'
                               }`}>
-                                {branch.isActive ? 'مفعل 🟢' : isPending ? 'بانتظار الاعتماد ⏳' : 'معلق ⏸️'}
+                                {branch.isActive ? 'مفعل' : isPending ? 'بانتظار الاعتماد' : 'معلق'}
                               </span>
                             </div>
 
@@ -1671,8 +1683,9 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
             </div>
 
             <form onSubmit={handleChangeProgrammerPassword} className="space-y-4">
-              <div className="bg-purple-950/40 border border-purple-500/30 p-3 rounded-2xl text-[11px] text-purple-200">
-                <span>🔐 اسم مستخدم المطور: </span>
+              <div className="bg-purple-950/40 border border-purple-500/30 p-3 rounded-2xl text-[11px] text-purple-200 flex items-center gap-1.5">
+                <Key size={14} className="text-purple-300" />
+                <span>اسم مستخدم المطور: </span>
                 <strong className="text-white font-mono font-black">programmer</strong>
               </div>
 
@@ -1724,7 +1737,7 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
                   ) : (
                     <>
                       <CheckCircle2 size={14} />
-                      <span>حفظ وتحديث بقاعدة البيانات 💾</span>
+                      <span>حفظ وتحديث بقاعدة البيانات</span>
                     </>
                   )}
                 </button>
@@ -1836,7 +1849,7 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
                   ) : (
                     <>
                       <CheckCircle2 size={15} />
-                      <span>حفظ الإعدادات في قاعدة البيانات 💾</span>
+                      <span>حفظ الإعدادات في قاعدة البيانات</span>
                     </>
                   )}
                 </button>
@@ -1866,7 +1879,7 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
                         ? 'bg-amber-950 text-amber-300 border-amber-800'
                         : 'bg-rose-950 text-rose-300 border-rose-800'
                     }`}>
-                      {selectedControlSalon.subscriptionStatus === 'active' ? 'مشترك ساري 🟢' : selectedControlSalon.subscriptionStatus === 'trial' ? 'فترة تجريبية 🟡' : 'منتهي / معطل 🔴'}
+                      {selectedControlSalon.subscriptionStatus === 'active' ? 'مشترك ساري' : selectedControlSalon.subscriptionStatus === 'trial' ? 'فترة تجريبية' : 'منتهي / معطل'}
                     </span>
                   </h3>
                   <p className="text-[11px] text-slate-400 font-mono mt-0.5">
@@ -1981,7 +1994,7 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
                         className="w-full py-1.5 bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-600/40 font-black rounded-lg text-[11px] transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md shadow-rose-950/50"
                       >
                         <Lock size={12} />
-                        <span>إنهاء الاشتراك وقفل الحساب 🛑</span>
+                        <span>إنهاء الاشتراك وقفل الحساب</span>
                       </button>
                     </div>
                   </div>
@@ -2007,7 +2020,7 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
                         onClick={() => handleExecuteDirectActivate(selectedControlSalon, 12, 'pro')}
                         className="px-2.5 py-1 bg-emerald-600/30 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-600/60 font-bold rounded-lg text-[11px] transition-all cursor-pointer"
                       >
-                        باقة الاحتراف (سنة كاملة 🌟)
+                        باقة الاحتراف (سنة كاملة)
                       </button>
                     </div>
                   </div>
@@ -2125,7 +2138,7 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
                     className="px-5 py-2 rounded-xl text-xs font-black text-white bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-600/30 flex items-center gap-1.5 cursor-pointer transition-all"
                   >
                     <CheckCircle2 size={14} />
-                    <span>حفظ وتحديث بيانات الاشتراك بالسحابة 💾</span>
+                    <span>حفظ وتحديث بيانات الاشتراك بالسحابة</span>
                   </button>
                 </div>
               </form>
@@ -2200,8 +2213,9 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
                 ))}
               </div>
 
-              <p className="text-[11px] text-amber-300/80 bg-amber-950/40 p-2.5 rounded-lg border border-amber-800/60 leading-relaxed">
-                ⚡ بصفتك المبرمج، يمكنك رفع أو خفض السعة التخزينية للفرع في أي وقت، وسيتم تطبيق هذا الحد فوراً في سوبابيز وتحديث ضوابط رفع الصور.
+              <p className="text-[11px] text-amber-300/80 bg-amber-950/40 p-2.5 rounded-lg border border-amber-800/60 leading-relaxed flex items-start gap-1.5">
+                <Info size={14} className="text-amber-400 shrink-0 mt-0.5" />
+                <span>بصفتك المبرمج، يمكنك رفع أو خفض السعة التخزينية للفرع في أي وقت، وسيتم تطبيق هذا الحد فوراً في سوبابيز وتحديث ضوابط رفع الصور.</span>
               </p>
             </div>
 

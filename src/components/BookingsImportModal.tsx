@@ -799,9 +799,9 @@ export function BookingsImportModal({
     onImportComplete(newBookingsList, newClientsList, newTransactionsList);
     onClose();
     if (newBookingsList.length > 0) {
-      alert(`🎉 تم استيراد ${newBookingsList.length} حجز بنجاح ومزامنتها مع قاعدة البيانات!`);
+      alert(`تم استيراد ${newBookingsList.length} حجز بنجاح ومزامنتها مع قاعدة البيانات.`);
     } else {
-      alert('⚠️ لم يتم حفظ أي حجز. يرجى التحقق من صحة البيانات وسجلات الأخطاء.');
+      alert('لم يتم حفظ أي حجز. يرجى التحقق من صحة البيانات وسجلات الأخطاء.');
     }
   };
 
@@ -947,8 +947,9 @@ export function BookingsImportModal({
                     <li><strong className="text-slate-800">سعر الخدمة:</strong> القيمة المالية للخدمة.</li>
                     <li><strong className="text-indigo-600">اسم الفني / الموظف (اختياري):</strong> اسم الموظف المنفذ، ويمكن تركه فارغاً أو كتابة (غير محدد) ليتم اعتماده كحجز بدون فني محدد.</li>
                   </ul>
-                  <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg text-[10px] text-amber-800">
-                    💡 <strong>ملاحظة هامة:</strong> يتم قراءة العرابين وتوزيعها تلقائياً على القيود المالية للخزائن، وخصمها من الفاتورة عند تحويل الحجز إلى POS.
+                  <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg text-[10px] text-amber-800 flex items-start gap-1.5">
+                    <Info size={13} className="text-amber-700 shrink-0 mt-0.5" />
+                    <span><strong>ملاحظة هامة:</strong> يتم قراءة العرابين وتوزيعها تلقائياً على القيود المالية للخزائن، وخصمها من الفاتورة عند تحويل الحجز إلى POS.</span>
                   </div>
                 </div>
               </div>

@@ -263,7 +263,7 @@ export function FingerprintImportModal({
     setIsImporting(false);
     onImportComplete(newLogs);
     onClose();
-    alert(`🎉 تم استيراد وتحديث ${newLogs.length} حركة بصمة في سجل الدوام والتايم شيت بنجاح!`);
+    alert(`تم استيراد وتحديث ${newLogs.length} حركة بصمة في سجل الدوام والتايم شيت بنجاح.`);
   };
 
   if (!isOpen) return null;

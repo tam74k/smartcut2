@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { 
   Building2, Globe, DollarSign, Phone, MapPin, 
-  Sparkles, CheckCircle2, ShieldCheck, ArrowLeft, Loader2, Store
+  Sparkles, CheckCircle2, ShieldCheck, ArrowLeft, Loader2, Store,
+  Scissors, Check, AlertCircle, Landmark
 } from 'lucide-react';
 import { COUNTRY_CURRENCY_MAP, getCountryMeta, SubscriptionService } from '../services/subscriptionService';
 import { AppSettings, Branch } from '../types';
@@ -172,7 +173,7 @@ export function InitialSalonSetupModal({ isOpen, onComplete }: InitialSalonSetup
         <div className="flex items-center justify-between gap-3 mb-6">
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200/80 text-emerald-800 text-xs font-black">
             <Sparkles size={15} className="text-emerald-600 animate-pulse" />
-            <span>تفعيل تجريبي مجاني 7 أيام (حتى 5 موظفين) 🎁</span>
+            <span>تفعيل تجريبي مجاني 7 أيام (حتى 5 موظفين)</span>
           </div>
           <span className="text-[11px] font-bold text-slate-400 bg-slate-100 px-2.5 py-1 rounded-full">
             الإعداد الأولي لأول مرة
@@ -195,8 +196,9 @@ export function InitialSalonSetupModal({ isOpen, onComplete }: InitialSalonSetup
         </div>
 
         {errorMsg && (
-          <div className="mb-5 p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold leading-relaxed">
-            ⚠️ {errorMsg}
+          <div className="mb-5 p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold leading-relaxed flex items-center gap-2">
+            <AlertCircle size={15} className="shrink-0 text-rose-600" />
+            <span>{errorMsg}</span>
           </div>
         )}
 
@@ -229,35 +231,38 @@ export function InitialSalonSetupModal({ isOpen, onComplete }: InitialSalonSetup
               <button
                 type="button"
                 onClick={() => setSalonType('men')}
-                className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all text-center ${
+                className={`inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl border text-xs font-bold transition-all text-center ${
                   salonType === 'men'
                     ? 'bg-indigo-50 border-indigo-500 text-indigo-900 ring-2 ring-indigo-500/20 shadow-sm'
                     : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
                 }`}
               >
-                💈 صالون رجالي
+                <Scissors size={14} />
+                <span>صالون رجالي</span>
               </button>
               <button
                 type="button"
                 onClick={() => setSalonType('women')}
-                className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all text-center ${
+                className={`inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl border text-xs font-bold transition-all text-center ${
                   salonType === 'women'
                     ? 'bg-pink-50 border-pink-500 text-pink-900 ring-2 ring-pink-500/20 shadow-sm'
                     : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
                 }`}
               >
-                💇‍♀️ صالون نسائي
+                <Sparkles size={14} />
+                <span>صالون نسائي</span>
               </button>
               <button
                 type="button"
                 onClick={() => setSalonType('mixed')}
-                className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all text-center ${
+                className={`inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl border text-xs font-bold transition-all text-center ${
                   salonType === 'mixed'
                     ? 'bg-purple-50 border-purple-500 text-purple-900 ring-2 ring-purple-500/20 shadow-sm'
                     : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
                 }`}
               >
-                ✂️ مختلط / أطفال
+                <Building2 size={14} />
+                <span>مختلط / أطفال</span>
               </button>
             </div>
           </div>
@@ -345,24 +350,25 @@ export function InitialSalonSetupModal({ isOpen, onComplete }: InitialSalonSetup
             </span>
             <div className="grid grid-cols-2 gap-2 text-[11px] font-bold text-slate-700">
               <div className="flex items-center gap-1.5 bg-white p-2 rounded-lg border border-slate-200/60">
-                <span className="text-emerald-600">✓</span>
+                <Check size={13} className="text-emerald-600 stroke-[3]" />
                 <span>الفروع: الفرع الرئيسي فقط</span>
               </div>
               <div className="flex items-center gap-1.5 bg-white p-2 rounded-lg border border-slate-200/60">
-                <span className="text-emerald-600">✓</span>
+                <Check size={13} className="text-emerald-600 stroke-[3]" />
                 <span>الضريبة: غير مفعلة (0%)</span>
               </div>
               <div className="flex items-center gap-1.5 bg-white p-2 rounded-lg border border-slate-200/60">
-                <span className="text-emerald-600">✓</span>
+                <Check size={13} className="text-emerald-600 stroke-[3]" />
                 <span>الفاتورة الإلكترونية: غير مفعلة</span>
               </div>
               <div className="flex items-center gap-1.5 bg-white p-2 rounded-lg border border-slate-200/60">
-                <span className="text-emerald-600">✓</span>
+                <Check size={13} className="text-emerald-600 stroke-[3]" />
                 <span>الخزينة الرئيسية: ثابتة دائماً</span>
               </div>
             </div>
-            <div className="text-[10px] text-slate-500 pt-1">
-              🏦 الخزائن المضافة افتراضياً: <strong>الخزينة الرئيسية</strong> • <strong>الدرج كاش</strong> • <strong>انستاباي</strong> • <strong>فودافون</strong>
+            <div className="text-[10px] text-slate-500 pt-1 flex items-center gap-1.5">
+              <Landmark size={12} className="text-slate-400 shrink-0" />
+              <span>الخزائن المضافة افتراضياً: <strong>الخزينة الرئيسية</strong> • <strong>الدرج كاش</strong> • <strong>انستاباي</strong> • <strong>فودافون</strong></span>
             </div>
           </div>
 

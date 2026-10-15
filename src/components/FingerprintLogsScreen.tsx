@@ -143,7 +143,7 @@ export function FingerprintLogsScreen({
             title="تحديث وسحب أحدث البصمات من السحابة"
           >
             <RefreshCw size={14} className={isRefreshing ? 'animate-spin text-blue-600' : 'text-slate-600'} />
-            <span>{isRefreshing ? 'جارٍ السحب...' : 'تحديث السجلات الآن 🔄'}</span>
+            <span>{isRefreshing ? 'جارٍ السحب...' : 'تحديث السجلات الآن'}</span>
           </button>
         </div>
       </div>

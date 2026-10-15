@@ -1,7 +1,7 @@
 import React from 'react';
 import { AppSettings, Partner } from '../types';
 import { handlePrintReceipt } from '../utils/print';
-import { Printer, X, Download, ShieldCheck, TrendingUp, ArrowDownRight, ArrowUpRight } from 'lucide-react';
+import { Printer, X, Download, ShieldCheck, TrendingUp, ArrowDownRight, ArrowUpRight, Scale, Building2 } from 'lucide-react';
 
 export interface PartnerLedgerEntry {
   id: string;
@@ -53,7 +53,7 @@ export function PartnerLedgerPrintModal({
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/70">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold shadow-xs">
-              ⚖️
+              <Scale size={18} />
             </div>
             <div>
               <h3 className="font-black text-sm text-slate-800">كشف حساب شريك مالي معتمد (Partner Financial Ledger)</h3>
@@ -93,8 +93,9 @@ export function PartnerLedgerPrintModal({
                 </h1>
                 <p className="text-xs text-slate-500 font-medium">سجل تجاري / ترخيص: {settings.commercialRegister || settings.taxNumber || '1010789456'}</p>
                 <p className="text-xs text-slate-500 font-medium">العنوان: {settings.address || 'المملكة العربية السعودية'}</p>
-                <div className="inline-block mt-2 px-3 py-1 bg-amber-50 text-amber-900 border border-amber-200 rounded-lg text-[11px] font-black">
-                  🏛️ كشف حساب الشركاء وحصص رأس المال والأرباح
+                <div className="inline-flex items-center gap-1.5 mt-2 px-3 py-1 bg-amber-50 text-amber-900 border border-amber-200 rounded-lg text-[11px] font-black">
+                  <Building2 size={13} className="text-amber-800" />
+                  <span>كشف حساب الشركاء وحصص رأس المال والأرباح</span>
                 </div>
               </div>
 

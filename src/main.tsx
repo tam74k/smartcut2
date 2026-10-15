@@ -2,6 +2,7 @@ import React, { StrictMode, Component, ErrorInfo, ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
+import { AlertTriangle, RefreshCw } from 'lucide-react';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -35,8 +36,8 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
     if (this.state.hasError) {
       return (
         <div className="min-h-screen bg-slate-900 text-white flex flex-col items-center justify-center p-6 text-center font-sans">
-          <div className="w-16 h-16 bg-rose-500/20 text-rose-400 rounded-3xl flex items-center justify-center text-3xl mb-4 border border-rose-500/30">
-            ⚠️
+          <div className="w-16 h-16 bg-rose-500/20 text-rose-400 rounded-3xl flex items-center justify-center mb-4 border border-rose-500/30">
+            <AlertTriangle size={32} />
           </div>
           <h2 className="text-xl font-bold mb-2">تنبيه في تشغيل الواجهة</h2>
           <p className="text-sm text-slate-400 max-w-md mb-6">
@@ -45,9 +46,10 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
           <div className="flex gap-3 mb-4">
             <button
               onClick={() => window.location.reload()}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2.5 rounded-xl font-bold text-sm shadow-lg transition-all"
+              className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2.5 rounded-xl font-bold text-sm shadow-lg transition-all flex items-center gap-2"
             >
-              🔄 إعادة تحميل الصفحة
+              <RefreshCw size={16} />
+              <span>إعادة تحميل الصفحة</span>
             </button>
             <button
               onClick={this.handleReset}

@@ -1,17 +1,20 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   AppSettings, Partner, PartnerTransaction, Transaction, 
-  PartnerDrawing, ProfitDistribution, PartnerExitInstallment 
+  PartnerDrawing, ProfitDistribution, PartnerExitInstallment,
+  Invoice, Employee, Branch, SalesReturn 
 } from '../types';
 import { 
   Users, Plus, Wallet, ArrowDownRight, ArrowUpRight, DollarSign, 
   PieChart as PieIcon, Trash2, Edit2, CheckCircle2, AlertTriangle, 
-  Calendar, Phone, FileText, Printer, ShieldAlert, LogOut, RefreshCw, Layers
+  Calendar, Phone, FileText, Printer, ShieldAlert, LogOut, RefreshCw, Layers,
+  Building2, Scale, X
 } from 'lucide-react';
 import { DB } from '../services/db';
 import { PartnerLedgerPrintModal, PartnerLedgerEntry } from './PartnerLedgerPrintModal';
 import { PartnersProfitReportModal, PartnerProfitReportRow } from './PartnersProfitReportModal';
 import { getActiveShiftDate, getEffectiveDateTime, getEffectiveDateOnly } from '../utils/shiftDate';
+import { AccountingPnLSection } from './AccountingPnLSection';
 
 interface PartnersScreenProps {
   settings: AppSettings;
@@ -21,6 +24,13 @@ interface PartnersScreenProps {
   setPartnerTransactions: (updater: PartnerTransaction[] | ((prev: PartnerTransaction[]) => PartnerTransaction[])) => void;
   transactions: Transaction[];
   setTransactions: (updater: Transaction[] | ((prev: Transaction[]) => Transaction[])) => void;
+  invoices?: Invoice[];
+  employees?: Employee[];
+  products?: any[];
+  purchases?: any[];
+  supplierPayments?: any[];
+  salesReturns?: SalesReturn[];
+  branches?: Branch[];
   activeBranchId?: string;
   currentUser?: any;
   shiftData?: { isOpen: boolean; date: string; initialCash?: number };
@@ -34,12 +44,19 @@ export function PartnersScreen({
   setPartnerTransactions,
   transactions = [],
   setTransactions,
+  invoices = [],
+  employees = [],
+  products = [],
+  purchases = [],
+  supplierPayments = [],
+  salesReturns = [],
+  branches = [],
   activeBranchId,
   currentUser,
   shiftData
 }: PartnersScreenProps) {
   // Navigation subtabs
-  const [activeTab, setActiveTab] = useState<'partners' | 'transactions' | 'settlement' | 'exit_installments'>('partners');
+  const [activeTab, setActiveTab] = useState<'pnl_accounting' | 'partners' | 'transactions' | 'settlement' | 'exit_installments'>('pnl_accounting');
   
   // Modals state
   const [showAddPartnerModal, setShowAddPartnerModal] = useState(false);
@@ -685,8 +702,9 @@ export function PartnersScreen({
             <h1 className="text-xl sm:text-2xl font-black text-slate-900">
               وحدة إدارة الشركاء وحصص رأس المال
             </h1>
-            <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 font-extrabold">
-              نظام SaaS متعدد المستأجرين 🏛️
+            <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 font-extrabold flex items-center gap-1">
+              <Building2 size={11} />
+              <span>نظام SaaS متعدد المستأجرين</span>
             </span>
           </div>
           <p className="text-xs text-slate-500">
@@ -701,7 +719,7 @@ export function PartnersScreen({
             className="flex items-center gap-1.5 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl transition-all shadow-xs cursor-pointer"
           >
             <Printer size={15} />
-            <span>تقرير أرباح الشركاء 📑</span>
+            <span>تقرير أرباح الشركاء</span>
           </button>
 
           <button
@@ -712,8 +730,8 @@ export function PartnersScreen({
             }}
             className="flex items-center gap-1.5 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black rounded-xl transition-all shadow-xs cursor-pointer"
           >
-            <RefreshCw size={15} />
-            <span>التسوية الختامية السنوية ⚖️</span>
+            <Scale size={15} />
+            <span>التسوية الختامية السنوية</span>
           </button>
 
           <button
@@ -782,10 +800,21 @@ export function PartnersScreen({
       </div>
 
       {/* 3. Navigation Sub-Tabs */}
-      <div className="flex gap-2 border-b border-slate-200 pb-2">
+      <div className="flex gap-2 border-b border-slate-200 pb-2 overflow-x-auto">
+        <button
+          onClick={() => setActiveTab('pnl_accounting')}
+          className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+            activeTab === 'pnl_accounting' 
+              ? 'bg-emerald-600 text-white shadow-xs' 
+              : 'text-emerald-800 bg-emerald-50 hover:bg-emerald-100'
+          }`}
+        >
+          <Scale size={14} />
+          <span>الأرباح والخسائر وتعلية رأس المال</span>
+        </button>
         <button
           onClick={() => setActiveTab('partners')}
-          className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+          className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 ${
             activeTab === 'partners' 
               ? 'bg-slate-900 text-white shadow-xs' 
               : 'text-slate-600 hover:bg-slate-100'
@@ -795,7 +824,7 @@ export function PartnersScreen({
         </button>
         <button
           onClick={() => setActiveTab('transactions')}
-          className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+          className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 ${
             activeTab === 'transactions' 
               ? 'bg-slate-900 text-white shadow-xs' 
               : 'text-slate-600 hover:bg-slate-100'
@@ -805,7 +834,7 @@ export function PartnersScreen({
         </button>
         <button
           onClick={() => setActiveTab('settlement')}
-          className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+          className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 ${
             activeTab === 'settlement' 
               ? 'bg-slate-900 text-white shadow-xs' 
               : 'text-slate-600 hover:bg-slate-100'
@@ -815,7 +844,7 @@ export function PartnersScreen({
         </button>
         <button
           onClick={() => setActiveTab('exit_installments')}
-          className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+          className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 ${
             activeTab === 'exit_installments' 
               ? 'bg-slate-900 text-white shadow-xs' 
               : 'text-slate-600 hover:bg-slate-100'
@@ -824,6 +853,28 @@ export function PartnersScreen({
           جدولة مستحقات التخارج ({exitInstallments.length})
         </button>
       </div>
+
+      {/* ========================================================= */}
+      {/* TAB 0: SIMPLIFIED ACCOUNTING P&L & CAPITAL REINVESTMENT */}
+      {/* ========================================================= */}
+      {activeTab === 'pnl_accounting' && (
+        <AccountingPnLSection
+          settings={settings}
+          partners={partners}
+          setPartners={setPartners}
+          partnerTransactions={partnerTransactions}
+          setPartnerTransactions={setPartnerTransactions}
+          invoices={invoices}
+          transactions={transactions}
+          employees={employees}
+          purchases={purchases}
+          supplierPayments={supplierPayments}
+          salesReturns={salesReturns}
+          branches={branches}
+          activeBranchId={activeBranchId}
+          currentUser={currentUser}
+        />
+      )}
 
       {/* ========================================================= */}
       {/* TAB 1: PARTNERS LIST & EQUITY DILUTION PROGRESS */}
@@ -912,7 +963,22 @@ export function PartnersScreen({
                               p.status === 'exited' ? 'bg-slate-200 text-slate-700 border border-slate-300' :
                               'bg-amber-50 text-amber-700 border border-amber-200'
                             }`}>
-                              {p.status === 'active' ? '🟢 شريك نشط' : p.status === 'exited' ? '⚪ منسحب (متخارج)' : '🟡 في طور التخارج'}
+                              {p.status === 'active' ? (
+                                <span className="inline-flex items-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                  <span>شريك نشط</span>
+                                </span>
+                              ) : p.status === 'exited' ? (
+                                <span className="inline-flex items-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                                  <span>منسحب (متخارج)</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                                  <span>في طور التخارج</span>
+                                </span>
+                              )}
                             </span>
                           </td>
                           <td className="p-3.5 font-extrabold text-slate-800">
@@ -928,8 +994,9 @@ export function PartnersScreen({
                           </td>
                           <td className="p-3.5 font-mono font-bold">
                             {p.debitBalance && p.debitBalance > 0 ? (
-                              <span className="text-amber-700 bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200">
-                                ⚠️ {p.debitBalance.toLocaleString()} {settings.currency}
+                              <span className="text-amber-700 bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200 inline-flex items-center gap-1">
+                                <AlertTriangle size={11} />
+                                <span>{p.debitBalance.toLocaleString()} {settings.currency}</span>
                               </span>
                             ) : (
                               <span className="text-slate-400">0.00</span>
@@ -1116,7 +1183,12 @@ export function PartnersScreen({
                         {pd.netPayableAmount > 0 ? `+${pd.netPayableAmount.toLocaleString()}` : '0.00'}
                       </td>
                       <td className="p-3.5 font-mono text-amber-800 font-black">
-                        {pd.carriedDebitBalance > 0 ? `⚠️ ${pd.carriedDebitBalance.toLocaleString()}` : '-'}
+                        {pd.carriedDebitBalance > 0 ? (
+                          <span className="inline-flex items-center gap-1">
+                            <AlertTriangle size={11} className="text-amber-600" />
+                            <span>{pd.carriedDebitBalance.toLocaleString()}</span>
+                          </span>
+                        ) : '-'}
                       </td>
                       <td className="p-3.5">
                         <span className={`px-2 py-0.5 rounded-lg font-bold text-[10px] ${
@@ -1208,9 +1280,9 @@ export function PartnersScreen({
               </h3>
               <button 
                 onClick={() => setShowAddPartnerModal(false)}
-                className="text-slate-400 hover:text-red-500 font-bold text-lg p-1 cursor-pointer"
+                className="text-slate-400 hover:text-red-500 font-bold p-1 cursor-pointer"
               >
-                ✕
+                <X size={18} />
               </button>
             </div>
 
@@ -1334,9 +1406,9 @@ export function PartnersScreen({
               </h3>
               <button 
                 onClick={() => setShowTxModal(false)}
-                className="text-slate-400 hover:text-red-500 font-bold text-lg p-1 cursor-pointer"
+                className="text-slate-400 hover:text-red-500 font-bold p-1 cursor-pointer"
               >
-                ✕
+                <X size={18} />
               </button>
             </div>
 
@@ -1449,15 +1521,18 @@ export function PartnersScreen({
               </h3>
               <button 
                 onClick={() => setShowExitModal(false)}
-                className="text-slate-400 hover:text-red-500 font-bold text-lg p-1 cursor-pointer"
+                className="text-slate-400 hover:text-red-500 font-bold p-1 cursor-pointer"
               >
-                ✕
+                <X size={18} />
               </button>
             </div>
 
             <form onSubmit={handleExecutePartnerExit} className="p-5 flex flex-col gap-4">
               <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 space-y-1 font-bold">
-                <div>⚠️ تنبيه مالي وإداري:</div>
+                <div className="flex items-center gap-1.5">
+                  <AlertTriangle size={14} className="text-amber-600" />
+                  <span>تنبيه مالي وإداري:</span>
+                </div>
                 <div className="text-[11px] font-normal text-amber-800">
                   عند تأكيد التخارج، سيتم تحويل حالة الشريك إلى "منسحب" وتصفير حصته في رأس المال مع إعادة احتساب نسب باقي الشركاء تلقائياً.
                 </div>
@@ -1558,9 +1633,9 @@ export function PartnersScreen({
               </h3>
               <button 
                 onClick={() => setShowSettlementModal(false)}
-                className="text-slate-400 hover:text-red-500 font-bold text-lg p-1 cursor-pointer"
+                className="text-slate-400 hover:text-red-500 font-bold p-1 cursor-pointer"
               >
-                ✕
+                <X size={18} />
               </button>
             </div>
 

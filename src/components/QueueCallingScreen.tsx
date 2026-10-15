@@ -3,7 +3,7 @@ import {
   Users, Volume2, VolumeX, Phone, CheckCircle2, Clock, 
   Scissors, Search, UserCheck, XCircle, AlertTriangle, 
   Sparkles, Plus, ExternalLink, RefreshCw, Radio, UserX, ArrowRight, Eye, Play,
-  Printer
+  Printer, Tablet, Megaphone, Calendar, ShoppingCart, Check
 } from 'lucide-react';
 import { AppSettings, Branch, Employee, QueueTicket, Client, HeldInvoice, Booking, ServiceItem } from '../types';
 import { QueueService } from '../services/queueService';
@@ -554,7 +554,7 @@ export function QueueCallingScreen({
     setShowAddModal(false);
     setNewClientPhone('');
     setNewClientName('');
-    alert(`✅ تم إضافة العميل بنجاح برقم دور #${ticket.queueNumber} وفُتحت له فاتورة معلقة في الكاشير!`);
+    alert(`تم إضافة العميل بنجاح برقم دور #${ticket.queueNumber} وفُتحت له فاتورة معلقة في الكاشير!`);
   };
 
   // Filtered tickets
@@ -590,8 +590,9 @@ export function QueueCallingScreen({
           <div>
             <h1 className="font-black text-lg sm:text-xl flex items-center gap-2">
               <span>شاشة المتابعة والمناداة (طابور الانتظار)</span>
-              <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                مباشر 🟢
+              <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span>مباشر</span>
               </span>
             </h1>
             <p className="text-xs text-slate-400 mt-0.5">
@@ -634,8 +635,8 @@ export function QueueCallingScreen({
             rel="noreferrer"
             className="px-3 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black rounded-xl text-xs flex items-center gap-1.5 shadow-md shadow-amber-500/20 transition-all cursor-pointer"
           >
-            <ExternalLink size={14} />
-            <span>فتح شاشة التابلت (الكيوسك) 📱</span>
+            <Tablet size={14} />
+            <span>فتح شاشة التابلت (الكيوسك)</span>
           </a>
 
           {/* Manual Add Button */}
@@ -678,8 +679,9 @@ export function QueueCallingScreen({
                 </p>
               </div>
             ) : (
-              <p className="text-sm font-bold text-slate-400 mt-1">
-                لا يوجد عملاء بانتظار الدور حالياً (كل الأدوار تم خدمتها) ✓
+              <p className="text-sm font-bold text-slate-400 mt-1 flex items-center gap-1.5">
+                <Check size={15} className="text-emerald-400" />
+                <span>لا يوجد عملاء بانتظار الدور حالياً (كل الأدوار تم خدمتها)</span>
               </p>
             )}
           </div>
@@ -695,7 +697,7 @@ export function QueueCallingScreen({
           }`}
         >
           <Volume2 size={22} />
-          <span>المناداة على العميل التالي بالدور 📣</span>
+          <span>المناداة على العميل التالي بالدور</span>
         </button>
       </div>
 
@@ -709,7 +711,10 @@ export function QueueCallingScreen({
               : 'bg-slate-900/60 border-slate-800 hover:border-slate-700'
           }`}
         >
-          <span className="text-xs text-amber-400 font-bold">في الانتظار ⏳</span>
+          <span className="text-xs text-amber-400 font-bold flex items-center gap-1.5">
+            <Clock size={13} />
+            <span>في الانتظار</span>
+          </span>
           <p className="text-2xl font-black text-white font-mono mt-1">{stats.waiting}</p>
         </button>
 
@@ -721,7 +726,10 @@ export function QueueCallingScreen({
               : 'bg-slate-900/60 border-slate-800 hover:border-slate-700'
           }`}
         >
-          <span className="text-xs text-indigo-400 font-bold">تم استدعاؤهم 📢</span>
+          <span className="text-xs text-indigo-400 font-bold flex items-center gap-1.5">
+            <Megaphone size={13} />
+            <span>تم استدعاؤهم</span>
+          </span>
           <p className="text-2xl font-black text-white font-mono mt-1">{stats.called}</p>
         </button>
 
@@ -733,7 +741,10 @@ export function QueueCallingScreen({
               : 'bg-slate-900/60 border-slate-800 hover:border-slate-700'
           }`}
         >
-          <span className="text-xs text-cyan-400 font-bold">قيد الخدمة ✂️</span>
+          <span className="text-xs text-cyan-400 font-bold flex items-center gap-1.5">
+            <Scissors size={13} />
+            <span>قيد الخدمة</span>
+          </span>
           <p className="text-2xl font-black text-white font-mono mt-1">{stats.inService}</p>
         </button>
 
@@ -745,7 +756,10 @@ export function QueueCallingScreen({
               : 'bg-slate-900/60 border-slate-800 hover:border-slate-700'
           }`}
         >
-          <span className="text-xs text-emerald-400 font-bold">تم الإنجاز ✅</span>
+          <span className="text-xs text-emerald-400 font-bold flex items-center gap-1.5">
+            <CheckCircle2 size={13} />
+            <span>تم الإنجاز</span>
+          </span>
           <p className="text-2xl font-black text-white font-mono mt-1">{stats.completed}</p>
         </button>
 
@@ -757,7 +771,10 @@ export function QueueCallingScreen({
               : 'bg-slate-900/60 border-slate-800 hover:border-slate-700'
           }`}
         >
-          <span className="text-xs text-rose-400 font-bold">لم يحضر / ملغي ❌</span>
+          <span className="text-xs text-rose-400 font-bold flex items-center gap-1.5">
+            <UserX size={13} />
+            <span>لم يحضر / ملغي</span>
+          </span>
           <p className="text-2xl font-black text-white font-mono mt-1">{stats.noShow}</p>
         </button>
       </div>
@@ -856,8 +873,23 @@ export function QueueCallingScreen({
 
                       {/* Source */}
                       <td className="py-3.5 px-4">
-                        <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-slate-800 text-slate-300 border border-slate-700">
-                          {ticket.source === 'kiosk' ? '📱 كيوسك تابلت' : ticket.source === 'booking' ? '📅 حجز مسبق' : '🛒 كاشير'}
+                        <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-slate-800 text-slate-300 border border-slate-700 inline-flex items-center gap-1">
+                          {ticket.source === 'kiosk' ? (
+                            <>
+                              <Tablet size={11} className="text-amber-400" />
+                              <span>كيوسك تابلت</span>
+                            </>
+                          ) : ticket.source === 'booking' ? (
+                            <>
+                              <Calendar size={11} className="text-indigo-400" />
+                              <span>حجز مسبق</span>
+                            </>
+                          ) : (
+                            <>
+                              <ShoppingCart size={11} className="text-slate-400" />
+                              <span>كاشير</span>
+                            </>
+                          )}
                         </span>
                       </td>
 
@@ -910,15 +942,41 @@ export function QueueCallingScreen({
                               ? 'bg-emerald-950 text-emerald-300 border-emerald-800'
                               : 'bg-rose-950 text-rose-300 border-rose-800'
                           }`}>
-                            {isWaiting && 'في الانتظار ⏳'}
-                            {isCalled && 'تم النداء عليه 📢'}
-                            {isInService && 'قيد الخدمة ✂️'}
-                            {isDone && 'مكتمل ✅'}
-                            {isNoShow && 'لم يحضر ❌'}
+                            {isWaiting && (
+                              <>
+                                <Clock size={11} />
+                                <span>في الانتظار</span>
+                              </>
+                            )}
+                            {isCalled && (
+                              <>
+                                <Megaphone size={11} />
+                                <span>تم النداء عليه</span>
+                              </>
+                            )}
+                            {isInService && (
+                              <>
+                                <Scissors size={11} />
+                                <span>قيد الخدمة</span>
+                              </>
+                            )}
+                            {isDone && (
+                              <>
+                                <CheckCircle2 size={11} />
+                                <span>مكتمل</span>
+                              </>
+                            )}
+                            {isNoShow && (
+                              <>
+                                <XCircle size={11} />
+                                <span>لم يحضر</span>
+                              </>
+                            )}
                           </span>
                           {ticket.heldInvoiceId && (
                             <span className="px-2 py-0.5 rounded-md text-[9px] font-black bg-amber-500/10 text-amber-400 border border-amber-500/30 flex items-center gap-1 shadow-sm">
-                              فاتورة معلقة ✓
+                              <Check size={10} className="text-amber-400" />
+                              <span>فاتورة معلقة</span>
                             </span>
                           )}
                         </div>
@@ -1033,10 +1091,20 @@ export function QueueCallingScreen({
             <div className="text-xs text-slate-300 mb-4 bg-slate-800/80 p-3 rounded-2xl border border-slate-700/60 space-y-1">
               <div className="flex justify-between items-center">
                 <span>العميل: <strong className="text-white text-sm">#{assigningTicket.queueNumber} - {assigningTicket.clientName}</strong></span>
-                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold inline-flex items-center gap-1 ${
                   assigningTicket.status === 'in_service' ? 'bg-cyan-900 text-cyan-200' : 'bg-amber-900/80 text-amber-200'
                 }`}>
-                  {assigningTicket.status === 'in_service' ? 'قيد الخدمة ✂️' : 'في الانتظار ⏳'}
+                  {assigningTicket.status === 'in_service' ? (
+                    <>
+                      <Scissors size={10} />
+                      <span>قيد الخدمة</span>
+                    </>
+                  ) : (
+                    <>
+                      <Clock size={10} />
+                      <span>في الانتظار</span>
+                    </>
+                  )}
                 </span>
               </div>
               {assigningTicket.assignedEmployeeName && (

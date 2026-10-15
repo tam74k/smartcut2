@@ -5,7 +5,7 @@ import {
   Edit2, Shield, Cloud, Sparkles, RefreshCw, X, Check, Database, Download, 
   Upload, HardDrive, AlertTriangle, FileCheck, RefreshCcw, Landmark, FileSpreadsheet,
   QrCode, Key, Send, CheckCircle2, ShieldCheck, HelpCircle, Building2, Layers, Clock, DollarSign, Coins,
-  Printer, Wifi, Laptop, Lock, UserX, CalendarCheck, Calendar
+  Printer, Wifi, Laptop, Lock, UserX, CalendarCheck, Calendar, Settings, Smartphone, Copy, Package, Scissors, Crown, Award, MapPin, ExternalLink
 } from 'lucide-react';
 
 import { AuthService, ROLE_LABELS } from '../services/auth';
@@ -210,7 +210,7 @@ export function SettingsScreen({
         <div class="card">
           ${settings.logoUrl ? `<img src="${settings.logoUrl}" class="logo" alt="Logo" />` : ''}
           <h1>${settings.salonName || 'صالون العناية'}</h1>
-          <p>احجز موعدك فوراً وامسح الرمز بكاميرا الجوال 📱</p>
+          <p>احجز موعدك فوراً وامسح الرمز بكاميرا الجوال</p>
           <div class="qr-box">
             <img src="${qrImageUrl}" class="qr-img" alt="Booking QR Code" />
           </div>
@@ -468,9 +468,9 @@ export function SettingsScreen({
       updateZatca('complianceCsid', res.csid);
       updateZatca('complianceSecret', res.secret);
       updateZatca('compliancePassed', true);
-      alert('✅ تم الحصول على شهادة الامتثال (Compliance CSID) بنجاح واجتياز الفحص التجريبي!');
+      alert('تم الحصول على شهادة الامتثال (Compliance CSID) بنجاح واجتياز الفحص التجريبي!');
     } else {
-      alert('❌ خطأ في طلب الشهادة: ' + (res.errors?.join(' - ') || 'فشل التحقق من رمز OTP'));
+      alert('خطأ في طلب الشهادة: ' + (res.errors?.join(' - ') || 'فشل التحقق من رمز OTP'));
     }
   };
 
@@ -482,9 +482,9 @@ export function SettingsScreen({
       updateZatca('productionCsid', res.csid);
       updateZatca('productionSecret', res.secret);
       updateZatca('isOnboarded', true);
-      alert('🎉 مبارك! تم إصدار شهادة الإنتاج الحقيقية (Production CSID) بنجاح وتفعيل الربط الحي مع منظومة الفوترة الإلكترونية ZATCA!');
+      alert('تم إصدار شهادة الإنتاج الحقيقية (Production CSID) بنجاح وتفعيل الربط الحي مع منظومة الفوترة الإلكترونية ZATCA!');
     } else {
-      alert('❌ خطأ في إصدار شهادة الإنتاج: ' + (res.errors?.join(' - ') || 'تأكد من اجتياز شهادة الامتثال أولاً'));
+      alert('خطأ في إصدار شهادة الإنتاج: ' + (res.errors?.join(' - ') || 'تأكد من اجتياز شهادة الامتثال أولاً'));
     }
   };
 
@@ -825,19 +825,20 @@ export function SettingsScreen({
         <div className="mb-5 p-3.5 rounded-2xl bg-indigo-50 border border-indigo-200/80 flex items-center justify-between gap-3 shadow-2xs">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-black text-xs shadow-xs">
-              🏢
+              <Building2 size={16} />
             </div>
             <div>
               <p className="text-xs font-black text-indigo-950">
                 أنت تقوم بتعديل إعدادات: <span className="text-indigo-600 font-extrabold">{settings.salonName || branches.find(b => b.id === activeBranchId)?.name || 'الفرع النشط'}</span>
               </p>
               <p className="text-[11px] text-slate-500 mt-0.5">
-                🌍 {settings.country} • العملة: <strong className="text-slate-700">{settings.currency}</strong> • نسبة الضريبة: <strong className="text-slate-700">{settings.vatRate}%</strong> • (إعدادات معزولة تماماً لكل فرع)
+                {settings.country} • العملة: <strong className="text-slate-700">{settings.currency}</strong> • نسبة الضريبة: <strong className="text-slate-700">{settings.vatRate}%</strong> • (إعدادات معزولة تماماً لكل فرع)
               </p>
             </div>
           </div>
-          <span className="text-[10px] font-black bg-indigo-600/10 text-indigo-700 border border-indigo-300 px-2.5 py-1 rounded-lg">
-            🔒 عزل كامل للفرع
+          <span className="text-[10px] font-black bg-indigo-600/10 text-indigo-700 border border-indigo-300 px-2.5 py-1 rounded-lg inline-flex items-center gap-1">
+            <Lock size={10} />
+            <span>عزل كامل للفرع</span>
           </span>
         </div>
       )}
@@ -845,7 +846,7 @@ export function SettingsScreen({
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
           <h2 className="text-xl font-black text-slate-800 flex items-center gap-2">
-            <span>⚙️</span>
+            <Settings size={22} className="text-indigo-600" />
             <span>إعدادات النظام والفرع</span>
           </h2>
           <p className="text-xs text-slate-500 mt-1">
@@ -902,7 +903,7 @@ export function SettingsScreen({
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-white/10 pb-3 mb-4">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 flex items-center justify-center font-black text-lg">
-                    🔑
+                    <Key size={18} />
                   </div>
                   <div>
                     <h3 className="text-sm font-black text-white flex items-center gap-2">
@@ -923,7 +924,7 @@ export function SettingsScreen({
                 <div className="bg-white/5 border border-white/10 rounded-xl p-3.5 space-y-1.5">
                   <div className="flex items-center justify-between text-xs font-bold text-slate-300">
                     <span className="flex items-center gap-1.5">
-                      <span>🏢</span>
+                      <Building2 size={13} className="text-indigo-400" />
                       <span>كود الصالون (Salon ID):</span>
                     </span>
                     <button
@@ -940,11 +941,12 @@ export function SettingsScreen({
                       {copiedSalonId ? (
                         <>
                           <Check size={12} className="text-emerald-300" />
-                          <span>تم النسخ ✓</span>
+                          <span>تم النسخ</span>
                         </>
                       ) : (
                         <>
-                          <span>نسخ الكود 📋</span>
+                          <Copy size={12} />
+                          <span>نسخ الكود</span>
                         </>
                       )}
                     </button>
@@ -958,7 +960,7 @@ export function SettingsScreen({
                 <div className="bg-white/5 border border-white/10 rounded-xl p-3.5 space-y-1.5">
                   <div className="flex items-center justify-between text-xs font-bold text-slate-300">
                     <span className="flex items-center gap-1.5">
-                      <span>📍</span>
+                      <MapPin size={13} className="text-indigo-400" />
                       <span>كود الفرع النشط ({currentBranchName}):</span>
                     </span>
                     <button
@@ -975,11 +977,12 @@ export function SettingsScreen({
                       {copiedBranchId ? (
                         <>
                           <Check size={12} className="text-emerald-300" />
-                          <span>تم النسخ ✓</span>
+                          <span>تم النسخ</span>
                         </>
                       ) : (
                         <>
-                          <span>نسخ الكود 📋</span>
+                          <Copy size={12} />
+                          <span>نسخ الكود</span>
                         </>
                       )}
                     </button>
@@ -1019,9 +1022,9 @@ export function SettingsScreen({
                 onChange={(e) => handleChange('salonType', e.target.value as any)}
                 className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-[13px] font-bold text-slate-800 focus:border-primary outline-none transition-colors"
               >
-                <option value="men">💈 صالون رجالي (Men's Salon)</option>
-                <option value="women">💇‍♀️ صالون / مشغل نسائي (Women's Salon & Spa)</option>
-                <option value="mixed">✂️ صالون مختلط / أطفال ومناسبات (Unisex / Kids)</option>
+                <option value="men">صالون رجالي (Men's Salon)</option>
+                <option value="women">صالون / مشغل نسائي (Women's Salon & Spa)</option>
+                <option value="mixed">صالون مختلط / أطفال ومناسبات (Unisex / Kids)</option>
               </select>
             </div>
             <div>
@@ -1117,7 +1120,7 @@ export function SettingsScreen({
                   />
                   <div>
                     <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
-                      <span>🟢 صرف فوري من الكاش (خصم مباشر من الدرج)</span>
+                      <span>صرف فوري من الكاش (خصم مباشر من الدرج)</span>
                     </span>
                     <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
                       عند دفع العميل مبلغ زيادة بالفيزا/البطاقة، يُسجل المبلغ الإجمالي في خانة الفيزا (لمطابقة كشف حساب ماكينة الشبكة)، ويتم خصم مبلغ البقشيش فورياً نقداً من درج الكاش لتسليمه للموظف لحظياً.
@@ -1140,7 +1143,7 @@ export function SettingsScreen({
                   />
                   <div>
                     <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
-                      <span>🟡 مجمع ومؤجل (صرف لاحق من الخزينة المحددة)</span>
+                      <span>مجمع ومؤجل (صرف لاحق من الخزينة المحددة)</span>
                     </span>
                     <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
                       تتجمع مبالغ البقشيش في حساب ومستحقات الموظف في النظام، ويتم صرفها وسدادها لاحقاً (مع الرواتب أو عند الطلب) من خلال شاشة الإكراميات مع تحديد خزينة الصرف.
@@ -1165,7 +1168,10 @@ export function SettingsScreen({
               </div>
 
               <div className="p-3 bg-white rounded-lg border border-slate-200 text-[11px] text-slate-600 space-y-1">
-                <p className="font-bold text-slate-700">💡 آلية عمل البقشيش الكاش:</p>
+                <p className="font-bold text-slate-700 flex items-center gap-1">
+                  <Sparkles size={12} className="text-amber-500" />
+                  <span>آلية عمل البقشيش الكاش:</span>
+                </p>
                 <p>البقشيش المدفوع نقداً (كاش) يُسلّم ويوزع لحظياً للموظف دون تأثير على حسابات الشبكة الإلكترونية.</p>
               </div>
             </div>
@@ -1198,7 +1204,7 @@ export function SettingsScreen({
               />
               <div>
                 <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
-                  <span>⚡ تفعيل خصم وصرف العمولة الفورية من كاش (الدرج) مباشرة</span>
+                  <span>تفعيل خصم وصرف العمولة الفورية من كاش (الدرج) مباشرة</span>
                 </span>
                 <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
                   عند تفعيل هذا الخيار: عند إتمام فاتورة تحتوي على خدمة محدد لها عمولة فورية غير داخلة في تارجت الموظف (مستثناة من التارجت)، يتم خصم مبلغ العمولة فورياً من كاش الدرج، وتظهر تلقائياً في بند العمولات عند إغلاق الوردية وعند الضغط على مبيعات الوردية مع ظهورها في تقارير العمولات وسندات الصرف.
@@ -1228,7 +1234,7 @@ export function SettingsScreen({
                 className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
               >
                 <Plus size={15} />
-                <span>➕ طلب إضافة فرع جديد</span>
+                <span>طلب إضافة فرع جديد</span>
               </button>
             </div>
 
@@ -1296,16 +1302,16 @@ export function SettingsScreen({
                     {isPending ? (
                       <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black px-2 py-0.5 rounded-md flex items-center gap-1 animate-pulse">
                         <Clock size={10} />
-                        <span>بانتظار التفعيل ⏳</span>
+                        <span>بانتظار التفعيل</span>
                       </span>
                     ) : isActive ? (
                       <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-black px-2 py-0.5 rounded-md flex items-center gap-1">
                         <CheckCircle2 size={10} />
-                        <span>مفعل ونشط 🟢</span>
+                        <span>مفعل ونشط</span>
                       </span>
                     ) : (
                       <span className="bg-rose-100 text-rose-800 border border-rose-300 text-[10px] font-black px-2 py-0.5 rounded-md">
-                        موقوف 🔴
+                        موقوف
                       </span>
                     )}
                   </div>
@@ -1341,7 +1347,7 @@ export function SettingsScreen({
 
                         <div className="flex items-center justify-between mt-1 text-[10px]">
                           <span className={isFull ? 'text-rose-600 font-black' : isWarning ? 'text-amber-700 font-bold' : 'text-slate-500'}>
-                            {isFull ? '🚫 ممتلئ (الرفع متوقف)' : isWarning ? '⚠️ قارب على الامتلاء' : '🟢 متاح للرفع'}
+                            {isFull ? 'ممتلئ (الرفع متوقف)' : isWarning ? 'قارب على الامتلاء' : 'متاح للرفع'}
                           </span>
                           <span className="font-mono font-bold text-slate-500">{pct}%</span>
                         </div>
@@ -1359,7 +1365,7 @@ export function SettingsScreen({
                             title="مزامنة واحتساب المساحة الفعلية من سوبابيز"
                           >
                             <RefreshCw size={10} className={syncingBranchId === branch.id ? 'animate-spin text-indigo-600' : ''} />
-                            <span>{syncingBranchId === branch.id ? 'جاري الفحص...' : 'فحص الحجم 🔄'}</span>
+                            <span>{syncingBranchId === branch.id ? 'جاري الفحص...' : 'فحص الحجم'}</span>
                           </button>
                         </div>
                       </div>
@@ -1393,7 +1399,7 @@ export function SettingsScreen({
                 className="text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 self-start sm:self-auto"
               >
                 <RefreshCw size={13} className={isSyncingAll ? 'animate-spin' : ''} />
-                <span>{isSyncingAll ? 'جاري مزامنة الفروع...' : 'مزامنة واحتساب سعة الكل سحابياً 🔄'}</span>
+                <span>{isSyncingAll ? 'جاري مزامنة الفروع...' : 'مزامنة واحتساب سعة الكل سحابياً'}</span>
               </button>
             </div>
 
@@ -1459,16 +1465,18 @@ export function SettingsScreen({
                         <td className="py-3 px-3">
                           {isFull ? (
                             <span className="bg-rose-100 text-rose-800 border border-rose-200 px-2 py-0.5 rounded-full text-[10px] font-black inline-flex items-center gap-1">
-                              <span className="w-1.5 h-1.5 rounded-full bg-rose-600 animate-ping"></span>
-                              ممتلئ - الرفع متوقف 🚫
+                              <AlertTriangle size={11} className="text-rose-600" />
+                              <span>ممتلئ - الرفع متوقف</span>
                             </span>
                           ) : isWarning ? (
                             <span className="bg-amber-100 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-full text-[10px] font-bold inline-flex items-center gap-1">
-                              قارب على الامتلاء ⚠️
+                              <AlertTriangle size={11} className="text-amber-700" />
+                              <span>قارب على الامتلاء</span>
                             </span>
                           ) : (
                             <span className="bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full text-[10px] font-bold inline-flex items-center gap-1">
-                              متاح للرفع 🟢
+                              <CheckCircle2 size={11} className="text-emerald-700" />
+                              <span>متاح للرفع</span>
                             </span>
                           )}
                         </td>
@@ -1604,8 +1612,9 @@ export function SettingsScreen({
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="text-base font-black text-white">رابط ورمز QR بوابة حجز الصالون الأونلاين (SaaS)</h3>
-                  <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-black px-2 py-0.5 rounded-full">
-                    مخصص ومحمي 🔒
+                  <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-black px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                    <Lock size={10} />
+                    <span>مخصص ومحمي</span>
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 mt-0.5">
@@ -1620,7 +1629,7 @@ export function SettingsScreen({
               className="bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 shadow-lg shadow-emerald-600/20 cursor-pointer transition-all active:scale-95"
             >
               <QrCode size={15} />
-              <span>طباعة ملصق الباركود للمحل 🖨️</span>
+              <span>طباعة ملصق الباركود للمحل</span>
             </button>
           </div>
 
@@ -1690,7 +1699,8 @@ export function SettingsScreen({
                       </>
                     ) : (
                       <>
-                        <span>نسخ الرابط 📋</span>
+                        <Copy size={12} />
+                        <span>نسخ الرابط</span>
                       </>
                     )}
                   </button>
@@ -1698,7 +1708,7 @@ export function SettingsScreen({
 
                 <div className="flex flex-wrap items-center gap-3 pt-2">
                   <a
-                    href={`https://wa.me/?text=${encodeURIComponent(`✨ رابط حجز المواعيد الأونلاين في ${settings.salonName || 'صالون العناية'}:\n${salonBookingUrl}\nكود الصالون: ${salonCode}`)}`}
+                    href={`https://wa.me/?text=${encodeURIComponent(`رابط حجز المواعيد الأونلاين في ${settings.salonName || 'صالون العناية'}:\n${salonBookingUrl}\nكود الصالون: ${salonCode}`)}`}
                     target="_blank"
                     rel="noreferrer"
                     className="text-xs font-bold text-emerald-400 hover:text-emerald-300 flex items-center gap-1"
@@ -1713,7 +1723,8 @@ export function SettingsScreen({
                     rel="noreferrer"
                     className="text-xs font-bold text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
                   >
-                    <span>فتح ومعاينة صفحة الحجز ↗</span>
+                    <span>فتح ومعاينة صفحة الحجز</span>
+                    <ExternalLink size={12} />
                   </a>
                 </div>
               </div>
@@ -1742,21 +1753,21 @@ export function SettingsScreen({
                   rel="noreferrer"
                   className="flex-1 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 text-[11px] font-bold py-2 rounded-xl text-center"
                 >
-                  تحميل PNG 💾
+                  <span>تحميل PNG</span>
                 </a>
                 <button
                   type="button"
                   onClick={handlePrintSalonQr}
                   className="flex-1 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 text-[11px] font-bold py-2 rounded-xl cursor-pointer"
                 >
-                  طباعة 🖨️
+                  <span>طباعة</span>
                 </button>
               </div>
             </div>
           </div>
         </div>
 
-        {/* 📅 سياسة وشروط الحجوزات واسترجاع العربون */}
+        {/* سياسة وشروط الحجوزات واسترجاع العربون */}
         <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-6">
           <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
             <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
@@ -1767,11 +1778,11 @@ export function SettingsScreen({
               <p className="text-xs text-slate-500">تخصيص الشروط المطبوعة أسفل إيصال الحجز وتحديد مهلة استرجاع العربون للصالون</p>
             </div>
           </div>
-          {/* 📅 ملاحظات وتنبيهات إيصال الحجز (تخصيص لكل صالون) */}
+          {/* ملاحظات وتنبيهات إيصال الحجز (تخصيص لكل صالون) */}
           <div className="mt-4 pt-4 border-t border-slate-100">
             <label className="block text-[12px] font-bold text-slate-700 mb-1 flex items-center justify-between">
               <span className="flex items-center gap-1.5">
-                <span>📅</span>
+                <Calendar size={14} className="text-indigo-600" />
                 <span>ملاحظات وشروط إيصال الحجز (تظهر في أسفل إيصال الحجز)</span>
               </span>
               <span className="text-[11px] text-indigo-600 font-bold bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200">
@@ -1788,21 +1799,23 @@ export function SettingsScreen({
             <p className="text-[11px] text-slate-400 mt-1">تُكتب هنا أي شروط أو تعليمات خاصة بالصالون لتظهر مطبوعة أسفل إيصال الحجز للعملاء وتختلف من صالون إلى صالون.</p>
           </div>
 
-          {/* 💰 سياسة استرجاع عربون الحجز (Deposit Refund Policy) */}
+          {/* سياسة استرجاع عربون الحجز (Deposit Refund Policy) */}
           <div className="mt-4 pt-4 border-t border-slate-100">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
               <label className="block text-[12px] font-bold text-slate-800 flex items-center gap-1.5">
-                <span className="text-base">⏳</span>
+                <Clock size={15} className="text-amber-500" />
                 <span>مهلة استرجاع عربون الحجز (بالأيام - Deposit Refund Policy):</span>
               </label>
               <div className="flex items-center gap-1.5">
                 {Number(settings.depositRefundAllowedDays ?? settings.deposit_refund_allowed_days ?? 0) === 0 ? (
-                  <span className="text-[11px] font-black bg-rose-50 text-rose-700 px-2.5 py-0.5 rounded-full border border-rose-200">
-                    ⛔ غير مسموح بالاسترجاع نهائياً (No Refund Policy)
+                  <span className="text-[11px] font-black bg-rose-50 text-rose-700 px-2.5 py-0.5 rounded-full border border-rose-200 inline-flex items-center gap-1">
+                    <AlertTriangle size={11} className="text-rose-600" />
+                    <span>غير مسموح بالاسترجاع نهائياً (No Refund Policy)</span>
                   </span>
                 ) : (
-                  <span className="text-[11px] font-black bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full border border-emerald-200">
-                    ✅ مسموح بالاسترجاع خلال {settings.depositRefundAllowedDays ?? settings.deposit_refund_allowed_days} يوم من وقت الإنشاء
+                  <span className="text-[11px] font-black bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full border border-emerald-200 inline-flex items-center gap-1">
+                    <CheckCircle2 size={11} className="text-emerald-700" />
+                    <span>مسموح بالاسترجاع خلال {settings.depositRefundAllowedDays ?? settings.deposit_refund_allowed_days} يوم من وقت الإنشاء</span>
                   </span>
                 )}
               </div>
@@ -1911,7 +1924,7 @@ export function SettingsScreen({
             </div>
           </div>
         </div>
-        {/* 🖨️ Network & Kiosk Thermal Printer Setup */}
+        {/* Network & Kiosk Thermal Printer Setup */}
         <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <div className="flex items-center gap-3">
@@ -2029,7 +2042,7 @@ export function SettingsScreen({
                 className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-sm cursor-pointer disabled:opacity-50"
               >
                 <Printer size={15} />
-                <span>{printerTestStatus?.loading ? 'جاري الفحص...' : '🖨️ طباعة تجريبية واختبار الاتصال'}</span>
+                <span>{printerTestStatus?.loading ? 'جاري الفحص...' : 'طباعة تجريبية واختبار الاتصال'}</span>
               </button>
 
               {printerTestStatus && !printerTestStatus.loading && (
@@ -2042,8 +2055,9 @@ export function SettingsScreen({
               )}
             </div>
 
-            <div className="text-[11px] text-slate-500 bg-slate-100 px-3 py-1.5 rounded-xl">
-              💡 يمكنك تشغيل خادم الطباعة الخفيف على كمبيوتر الاستقبال عبر تشغيل ملف: <code className="text-amber-700 font-bold font-mono">scripts/start_printer_server.bat</code>
+            <div className="text-[11px] text-slate-500 bg-slate-100 px-3 py-1.5 rounded-xl flex items-center gap-1">
+              <Sparkles size={12} className="text-amber-500 shrink-0" />
+              <span>يمكنك تشغيل خادم الطباعة الخفيف على كمبيوتر الاستقبال عبر تشغيل ملف: <code className="text-amber-700 font-bold font-mono">scripts/start_printer_server.bat</code></span>
             </div>
           </div>
         </div>
@@ -2097,7 +2111,7 @@ export function SettingsScreen({
                 </div>
                 <div>
                   <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
-                    <span>🇸🇦 الربط مع هيئة الزكاة والضريبة والجمارك ZATCA (السعودية)</span>
+                    <span>الربط مع هيئة الزكاة والضريبة والجمارك ZATCA (السعودية)</span>
                     <span className="bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-bold">المرحلة الثانية (فاتورة)</span>
                   </h3>
                   <p className="text-xs text-slate-500 mt-0.5">
@@ -2108,7 +2122,7 @@ export function SettingsScreen({
 
               <div className="flex items-center gap-3">
                 <span className={`text-[11px] font-black px-2.5 py-1 rounded-full border ${zatcaConfig.isOnboarded ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-amber-50 text-amber-800 border-amber-200'}`}>
-                  {zatcaConfig.isOnboarded ? 'جاهز للربط الحي 🟢' : 'بانتظار التهيئة (Onboarding) 🟡'}
+                  {zatcaConfig.isOnboarded ? 'جاهز للربط الحي' : 'بانتظار التهيئة (Onboarding)'}
                 </span>
 
                 <label className="relative inline-flex items-center cursor-pointer">
@@ -2134,9 +2148,9 @@ export function SettingsScreen({
                       onChange={e => updateZatca('environment', e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-emerald-600 outline-none"
                     >
-                      <option value="sandbox">🛠️ بيئة المطورين التجريبية (Sandbox)</option>
-                      <option value="simulation">🧪 بيئة المحاكاة والاختبار (Simulation)</option>
-                      <option value="production">🚀 البيئة الحقيقية المباشرة (Production)</option>
+                      <option value="sandbox">بيئة المطورين التجريبية (Sandbox)</option>
+                      <option value="simulation">بيئة المحاكاة والاختبار (Simulation)</option>
+                      <option value="production">البيئة الحقيقية المباشرة (Production)</option>
                     </select>
                   </div>
 
@@ -2263,8 +2277,9 @@ export function SettingsScreen({
                   </div>
 
                   {zatcaConfig.complianceCsid && (
-                    <div className="text-[11px] font-mono text-emerald-900 bg-emerald-100/70 p-2 rounded-lg truncate">
-                      ✓ Compliance CSID: {zatcaConfig.complianceCsid}
+                    <div className="text-[11px] font-mono text-emerald-900 bg-emerald-100/70 p-2 rounded-lg truncate flex items-center gap-1.5">
+                      <Check size={13} className="text-emerald-700 shrink-0" />
+                      <span>Compliance CSID: {zatcaConfig.complianceCsid}</span>
                     </div>
                   )}
                 </div>
@@ -2314,7 +2329,7 @@ export function SettingsScreen({
                 </div>
                 <div>
                   <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
-                    <span>🇪🇬 منظومة الفاتورة والإيصال الإلكتروني - مصلحة الضرائب المصرية (ETA)</span>
+                    <span>منظومة الفاتورة والإيصال الإلكتروني - مصلحة الضرائب المصرية (ETA)</span>
                     <span className="bg-sky-100 text-sky-800 text-[10px] px-2 py-0.5 rounded-full font-bold">POS e-Receipt v1.2</span>
                   </h3>
                   <p className="text-xs text-slate-500 mt-0.5">
@@ -2325,7 +2340,7 @@ export function SettingsScreen({
 
               <div className="flex items-center gap-3">
                 <span className={`text-[11px] font-black px-2.5 py-1 rounded-full border ${etaConfig.enabled ? 'bg-sky-50 text-sky-800 border-sky-200' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
-                  {etaConfig.enabled ? 'مفعل 🟢' : 'معطل ⚪'}
+                  {etaConfig.enabled ? 'مفعل' : 'معطل'}
                 </span>
 
                 <label className="relative inline-flex items-center cursor-pointer">
@@ -2350,8 +2365,8 @@ export function SettingsScreen({
                       onChange={e => updateEta('environment', e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-sky-600 outline-none"
                     >
-                      <option value="preproduction">🧪 البيئة التجريبية (Pre-production)</option>
-                      <option value="production">🚀 البيئة الفعلية الحية (Production)</option>
+                      <option value="preproduction">البيئة التجريبية (Pre-production)</option>
+                      <option value="production">البيئة الفعلية الحية (Production)</option>
                     </select>
                   </div>
 
@@ -2525,7 +2540,7 @@ export function SettingsScreen({
               />
               <div>
                 <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
-                  <span>⚡ تفعيل خصم وصرف العمولة الفورية من كاش (الدرج) مباشرة</span>
+                  <span>تفعيل خصم وصرف العمولة الفورية من كاش (الدرج) مباشرة</span>
                 </span>
                 <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
                   عند تفعيل هذا الخيار: عند إتمام فاتورة تحتوي على خدمة محدد لها عمولة فورية غير داخلة في تارجت الموظف (مستثناة من التارجت)، يتم خصم مبلغ العمولة فورياً من كاش الدرج، وتظهر تلقائياً في بند العمولات عند إغلاق الوردية وعند الضغط على مبيعات الوردية مع ظهورها في تقارير العمولات وسندات الصرف.
@@ -2621,7 +2636,19 @@ export function SettingsScreen({
                       <div className="flex flex-col gap-0.5">
                         <span className="font-bold text-[13px] text-slate-800">{c.name}</span>
                         <div className="flex items-center gap-2">
-                          <span className="text-[10px] text-slate-500">{c.type === 'product' ? '🛍️ منتجات' : '✂️ خدمات'}</span>
+                          <span className="text-[10px] text-slate-500 inline-flex items-center gap-1">
+                            {c.type === 'product' ? (
+                              <>
+                                <Package size={11} className="text-slate-400" />
+                                <span>منتجات</span>
+                              </>
+                            ) : (
+                              <>
+                                <Scissors size={11} className="text-slate-400" />
+                                <span>خدمات</span>
+                              </>
+                            )}
+                          </span>
                           <button
                             type="button"
                             onClick={() => toggleCategoryStatus(c)}
@@ -2716,7 +2743,8 @@ export function SettingsScreen({
               {/* SECTION 1: OVERTIME (العمل الإضافي) */}
               <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80 space-y-4">
                 <div className="flex items-center gap-2 border-b border-slate-200/60 pb-2.5">
-                  <span className="text-sm font-black text-slate-800">⏱️ قواعد احتساب الأوفر تايم (Overtime Calculation)</span>
+                  <Clock size={16} className="text-slate-700" />
+                  <span className="text-sm font-black text-slate-800">قواعد احتساب الأوفر تايم (Overtime Calculation)</span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -2778,7 +2806,10 @@ export function SettingsScreen({
               {/* SECTION 2: DELAYS & LATENESS (قواعد وخصومات التأخير) */}
               <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80 space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/60 pb-2.5">
-                  <span className="text-sm font-black text-slate-800">⏳ قواعد وشرائح احتساب التأخير (Lateness Tiers & Deductions)</span>
+                  <div className="flex items-center gap-2">
+                    <Clock size={16} className="text-slate-700" />
+                    <span className="text-sm font-black text-slate-800">قواعد وشرائح احتساب التأخير (Lateness Tiers & Deductions)</span>
+                  </div>
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-bold text-slate-600">نوع الخصم:</span>
                     <select
@@ -2982,7 +3013,7 @@ export function SettingsScreen({
               {/* SECTION 3: MONTHLY PERMISSIONS & ALLOWANCE (قواعد الاستئذان الشهري) */}
               <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80 space-y-4">
                 <div className="flex items-center gap-2 border-b border-slate-200/60 pb-2.5">
-                  <span className="text-sm font-black text-slate-800">🚪 قواعد رصيد الاستئذان الشهري (Monthly Permissions & Deduction)</span>
+                  <span className="text-sm font-black text-slate-800">قواعد رصيد الاستئذان الشهري (Monthly Permissions & Deduction)</span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -3023,7 +3054,7 @@ export function SettingsScreen({
                 </div>
 
                 <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-200 text-xs text-emerald-950 font-bold flex items-center gap-2">
-                  <span>💡</span>
+                  <Sparkles size={14} className="text-emerald-700 shrink-0" />
                   <span>
                     <strong>آلية الخصم عند تجاوز الحد الشهري:</strong> يتم احتساب الدقائق الزائدة عن رصيد الساعتين المسموح به شهرياً، وتخصم كل دقيقة إضافية بسعر الدقيقة الفعلي للموظف في ذلك اليوم (بناءً على راتبه الأساسي المعتمد في ذلك التاريخ مقسوماً على 8 ساعات و60 دقيقة).
                   </span>
@@ -3033,7 +3064,7 @@ export function SettingsScreen({
               {/* SECTION 4: ABSENCE & WEEKLY OFF RULES (قواعد خصم الغياب والإجازة الأسبوعية) */}
               <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80 space-y-4">
                 <div className="flex items-center gap-2 border-b border-slate-200/60 pb-2.5">
-                  <span className="text-sm font-black text-slate-800">🏖️ قواعد خصم الغياب والإجازة الأسبوعية (Absence & Weekly Off Rules)</span>
+                  <span className="text-sm font-black text-slate-800">قواعد خصم الغياب والإجازة الأسبوعية (Absence & Weekly Off Rules)</span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -3099,14 +3130,27 @@ export function SettingsScreen({
         {/* TAB 6: Clients, Loyalty & WhatsApp */}
         {activeTab === 'clients' && (
           <div className="space-y-5 animate-in fade-in duration-200">
-        {/* 👑💎 Comprehensive Client Loyalty Tiers & VIP Management Settings */}
+        {/* Comprehensive Client Loyalty Tiers & VIP Management Settings */}
         {(() => {
           const defaultTiers = [
-            { id: 'standard', name: 'قياسي', icon: '⭐', spendingThreshold: 0, discountPercentage: 0, color: 'slate', badgeBg: 'bg-slate-100', badgeText: 'text-slate-700', badgeBorder: 'border-slate-300', description: 'المستوى الأساسي الافتراضي لجميع العملاء الجدد' },
-            { id: 'distinguished', name: 'متميز', icon: '🔷', spendingThreshold: 300, discountPercentage: 5, color: 'blue', badgeBg: 'bg-blue-50', badgeText: 'text-blue-700', badgeBorder: 'border-blue-300', description: 'عميل منتظم بإنفاق يتجاوز الحد الأدنى' },
-            { id: 'vip', name: 'VIP', icon: '👑', spendingThreshold: 800, discountPercentage: 10, color: 'amber', badgeBg: 'bg-amber-50', badgeText: 'text-amber-800', badgeBorder: 'border-amber-400', description: 'عضوية كبار الشخصيات مع أولوية وخصم مميز' },
-            { id: 'royal', name: 'ملكي', icon: '💎', spendingThreshold: 1500, discountPercentage: 15, color: 'purple', badgeBg: 'bg-purple-50', badgeText: 'text-purple-800', badgeBorder: 'border-purple-400', description: 'العضوية الملكية البلاتينية لأعلى العملاء إنفاقاً' }
+            { id: 'standard', name: 'قياسي', icon: 'standard', spendingThreshold: 0, discountPercentage: 0, color: 'slate', badgeBg: 'bg-slate-100', badgeText: 'text-slate-700', badgeBorder: 'border-slate-300', description: 'المستوى الأساسي الافتراضي لجميع العملاء الجدد' },
+            { id: 'distinguished', name: 'متميز', icon: 'distinguished', spendingThreshold: 300, discountPercentage: 5, color: 'blue', badgeBg: 'bg-blue-50', badgeText: 'text-blue-700', badgeBorder: 'border-blue-300', description: 'عميل منتظم بإنفاق يتجاوز الحد الأدنى' },
+            { id: 'vip', name: 'VIP', icon: 'vip', spendingThreshold: 800, discountPercentage: 10, color: 'amber', badgeBg: 'bg-amber-50', badgeText: 'text-amber-800', badgeBorder: 'border-amber-400', description: 'عضوية كبار الشخصيات مع أولوية وخصم مميز' },
+            { id: 'royal', name: 'ملكي', icon: 'royal', spendingThreshold: 1500, discountPercentage: 15, color: 'purple', badgeBg: 'bg-purple-50', badgeText: 'text-purple-800', badgeBorder: 'border-purple-400', description: 'العضوية الملكية البلاتينية لأعلى العملاء إنفاقاً' }
           ];
+
+          const renderTierIcon = (tierId: string) => {
+            switch (tierId) {
+              case 'royal':
+                return <Crown size={18} className="text-purple-600" />;
+              case 'vip':
+                return <Award size={18} className="text-amber-600" />;
+              case 'distinguished':
+                return <Sparkles size={18} className="text-blue-600" />;
+              default:
+                return <ShieldCheck size={18} className="text-slate-500" />;
+            }
+          };
 
           const currentTierSettings = settings.tierSettings || {
             enabled: true,
@@ -3131,8 +3175,8 @@ export function SettingsScreen({
             <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-5">
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-400 via-amber-500 to-purple-600 text-white flex items-center justify-center font-black shadow-md">
-                    👑
+                  <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-black shadow-md shadow-amber-500/20">
+                    <Crown size={20} />
                   </div>
                   <div>
                     <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
@@ -3149,7 +3193,7 @@ export function SettingsScreen({
 
                 <div className="flex items-center gap-3">
                   <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${currentTierSettings.enabled ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>
-                    {currentTierSettings.enabled ? 'نظام المستويات مفعل 🟢' : 'معطل ⚪'}
+                    {currentTierSettings.enabled ? 'نظام المستويات مفعل' : 'معطل'}
                   </span>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input 
@@ -3237,7 +3281,7 @@ export function SettingsScreen({
                         >
                           <div>
                             <div className="flex items-center justify-between mb-2">
-                              <span className="text-xl">{tier.icon}</span>
+                              <span className="p-1 rounded-lg bg-white/80 border border-slate-200">{renderTierIcon(tier.id)}</span>
                               <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${tier.badgeBg} ${tier.badgeText} ${tier.badgeBorder}`}>
                                 {tier.name}
                               </span>
@@ -3291,7 +3335,7 @@ export function SettingsScreen({
                   </div>
 
                   <div className="p-3 bg-indigo-50/70 rounded-2xl border border-indigo-200 text-xs text-indigo-950 font-bold flex items-center gap-2">
-                    <span>💡</span>
+                    <Sparkles size={14} className="text-indigo-600 shrink-0" />
                     <span>
                       بمجرد إدخال رقم العميل في شاشة الكاشير (POS) أو شاشة الحجز، يفحص النظام مستوى العميل عبر كافة فروع الصالون ويظهر شارة المستوى ويطبق نسبة الخصم تلقائياً.
                     </span>
@@ -3304,7 +3348,7 @@ export function SettingsScreen({
         })()}
 
         {/* ============================================================ */}
-        {/* 👥⏳ Inactive Clients Tracking Settings (متابعة العملاء المنقطعين) */}
+        {/* Inactive Clients Tracking Settings (متابعة العملاء المنقطعين) */}
         {/* ============================================================ */}
         <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-5">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
@@ -3331,7 +3375,7 @@ export function SettingsScreen({
                   ? 'bg-emerald-50 text-emerald-800 border-emerald-200' 
                   : 'bg-slate-50 text-slate-500 border-slate-200'
               }`}>
-                {(settings.inactiveClientsTrackingEnabled ?? true) ? 'المتابعة مفعلة 🟢' : 'معطلة ⚪'}
+                {(settings.inactiveClientsTrackingEnabled ?? true) ? 'المتابعة مفعلة' : 'معطلة'}
               </span>
               <label className="relative inline-flex items-center cursor-pointer">
                 <input 
@@ -3411,7 +3455,7 @@ export function SettingsScreen({
 
               {/* Informative Help Box */}
               <div className="p-3.5 bg-amber-50/80 rounded-2xl border border-amber-200 text-xs text-amber-950 font-bold flex items-start gap-2.5">
-                <span className="text-base shrink-0">💡</span>
+                <Sparkles size={14} className="text-amber-600 shrink-0 mt-0.5" />
                 <span className="leading-relaxed">
                   يتم ربط هذه المدة ({settings.inactiveClientsDays ?? 60} يوماً) تلقائياً بـ 
                   <strong className="text-amber-900 mx-1 underline">تقرير العملاء المنقطعين عن الزيارة</strong>
@@ -3436,7 +3480,7 @@ export function SettingsScreen({
               </div>
             </div>
             <span className="text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 px-3 py-1 rounded-full">
-              واتساب آلي 💬
+              واتساب آلي
             </span>
           </div>
 
@@ -3479,17 +3523,18 @@ export function SettingsScreen({
           </div>
 
           <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-            <div className="text-xs text-slate-600">
-              💡 <strong>تنبيه:</strong> تأكد من تسجيل اسم الجلسة ومفتاح API بالشكل الصحيح لإرسال إشعارات الفواتير ورموز OTP وتذكيرات المواعيد.
+            <div className="text-xs text-slate-600 flex items-center gap-1.5">
+              <Sparkles size={14} className="text-amber-500 shrink-0" />
+              <span><strong>تنبيه:</strong> تأكد من تسجيل اسم الجلسة ومفتاح API بالشكل الصحيح لإرسال إشعارات الفواتير ورموز OTP وتذكيرات المواعيد.</span>
             </div>
             <button
               type="button"
               onClick={async () => {
                 const res = await import('../services/evolutionApiService').then(m => m.EvolutionApiService.checkConnection(settings));
                 if (res.connected) {
-                  alert(`✅ جلسة الواتساب متصلة بنجاح! رقم الواتساب: ${res.phone || 'متصل'}`);
+                  alert(`جلسة الواتساب متصلة بنجاح! رقم الواتساب: ${res.phone || 'متصل'}`);
                 } else {
-                  alert(`❌ حالة الاتصال: غير متصل (${res.error || 'يرجى مراجعة اسم الجلسة ومفتاح API'})`);
+                  alert(`حالة الاتصال: غير متصل (${res.error || 'يرجى مراجعة اسم الجلسة ومفتاح API'})`);
                 }
               }}
               className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-sm cursor-pointer whitespace-nowrap"
@@ -3521,8 +3566,9 @@ export function SettingsScreen({
                 </p>
               </div>
             </div>
-            <span className="text-[11px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200 px-3 py-1 rounded-full">
-              ملف شامل واحد 📦
+            <span className="text-[11px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200 px-3 py-1 rounded-full flex items-center gap-1.5">
+              <Package size={12} />
+              <span>ملف شامل واحد</span>
             </span>
           </div>
 
@@ -3536,8 +3582,9 @@ export function SettingsScreen({
                   </div>
                   <div>
                     <h4 className="text-sm font-extrabold text-slate-900">سحب نسخة احتياطية للبيانات</h4>
-                    <p className="text-[11px] text-emerald-700 font-bold">
-                      🏢 الفرع النشط: {branches.find(b => b.id === activeBranchId)?.name || settings.salonName}
+                    <p className="text-[11px] text-emerald-700 font-bold flex items-center gap-1">
+                      <Building2 size={12} />
+                      <span>الفرع النشط: {branches.find(b => b.id === activeBranchId)?.name || settings.salonName}</span>
                     </p>
                   </div>
                 </div>
@@ -3563,7 +3610,7 @@ export function SettingsScreen({
                     className="w-full bg-slate-900 hover:bg-slate-800 text-white py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer border border-slate-700"
                   >
                     <Download size={14} />
-                    <span>🌐 سحب نسخة احتياطية شاملة لكافة الفروع (المالك)</span>
+                    <span>سحب نسخة احتياطية شاملة لكافة الفروع (المالك)</span>
                   </button>
                 )}
               </div>
@@ -3717,8 +3764,9 @@ export function SettingsScreen({
               </div>
 
               <form onSubmit={handleCreateBranch} className="space-y-3">
-                <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl text-xs text-amber-900 font-bold">
-                  <p>⏳ ملاحظة: بعد إضافة الفرع، سيكون بحالة <strong>بانتظار التفعيل</strong> لحين اعتماده من إدارة المنظومة (المبرمج الرئيسي).</p>
+                <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl text-xs text-amber-900 font-bold flex items-start gap-2">
+                  <Clock size={14} className="text-amber-700 shrink-0 mt-0.5" />
+                  <p>ملاحظة: بعد إضافة الفرع، سيكون بحالة <strong>بانتظار التفعيل</strong> لحين اعتماده من إدارة المنظومة (المبرمج الرئيسي).</p>
                 </div>
 
                 {/* Country Selection (Auto configures currency & VAT) */}

@@ -1238,8 +1238,9 @@ export const SalesReturnModal: React.FC<SalesReturnModalProps> = ({
                             </select>
                           </div>
                         ) : (
-                          <div className="p-2 bg-emerald-50 text-emerald-800 rounded-lg text-[11px] font-medium border border-emerald-200">
-                            ✓ تسوية مخزنية فقط: لن يتم صرف أي مبالغ نقدية من الخزينة (المبلغ المسترد = 0.00).
+                          <div className="p-2 bg-emerald-50 text-emerald-800 rounded-lg text-[11px] font-medium border border-emerald-200 flex items-center gap-1.5">
+                            <Check size={13} className="text-emerald-700 shrink-0" />
+                            <span>تسوية مخزنية فقط: لن يتم صرف أي مبالغ نقدية من الخزينة (المبلغ المسترد = 0.00).</span>
                           </div>
                         )}
                       </div>

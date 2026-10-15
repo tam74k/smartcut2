@@ -16,7 +16,8 @@ import {
   DollarSign, 
   Layers,
   ArrowUpDown,
-  Printer
+  Printer,
+  Lock
 } from 'lucide-react';
 import { DB } from '../services/db';
 import { ExpensesImportModal } from './ExpensesImportModal';
@@ -298,7 +299,7 @@ export function ExpensesScreen({
 
   const handleOpenCategoriesModal = () => {
     if (!canManageCategories) {
-      alert('⛔ عذراً، لا تملك صلاحية إدارة وتعديل بنود وتصنيفات الصرف. يرجى مراجعة إدارة النظام.');
+      alert('عذراً، لا تملك صلاحية إدارة وتعديل بنود وتصنيفات الصرف. يرجى مراجعة إدارة النظام.');
       return;
     }
     setShowCategoriesModal(true);
@@ -306,7 +307,7 @@ export function ExpensesScreen({
 
   const handleAddCategory = () => {
     if (!canManageCategories) {
-      setErrorMsg('⛔ عذراً، لا تملك صلاحية إضافة بنود صرف جديدة.');
+      setErrorMsg('عذراً، لا تملك صلاحية إضافة بنود صرف جديدة.');
       return;
     }
     if (!newCategoryName.trim()) return;
@@ -324,7 +325,7 @@ export function ExpensesScreen({
 
   const handleDeleteCategory = (cat: string) => {
     if (!canManageCategories) {
-      alert('⛔ عذراً، لا تملك صلاحية حذف بنود الصرف.');
+      alert('عذراً، لا تملك صلاحية حذف بنود الصرف.');
       return;
     }
     setCategoryToDelete(cat);
@@ -332,7 +333,7 @@ export function ExpensesScreen({
 
   const confirmDeleteCategory = () => {
     if (!canManageCategories) {
-      alert('⛔ عذراً، لا تملك صلاحية حذف بنود الصرف.');
+      alert('عذراً، لا تملك صلاحية حذف بنود الصرف.');
       return;
     }
     if (categoryToDelete) {
@@ -378,7 +379,12 @@ export function ExpensesScreen({
           >
             <Edit2 size={16} className={canManageCategories ? 'text-slate-500' : 'text-slate-400'} />
             <span>إدارة بنود الصرف</span>
-            {!canManageCategories && <span className="text-[10px] bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded font-black">🔒 مقفل</span>}
+            {!canManageCategories && (
+              <span className="text-[10px] bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded font-black inline-flex items-center gap-1">
+                <Lock size={10} />
+                <span>مقفل</span>
+              </span>
+            )}
           </button>
           <button 
             onClick={() => {

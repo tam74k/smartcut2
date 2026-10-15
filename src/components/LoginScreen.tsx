@@ -17,7 +17,9 @@ import {
   UserPlus,
   Zap,
   Headphones,
-  MessageSquare
+  MessageSquare,
+  Check,
+  AlertCircle
 } from 'lucide-react';
 
 import { AuthService } from '../services/auth';
@@ -245,7 +247,7 @@ export function LoginScreen({ onLoginSuccess, settings, onOpenSaaSAdmin }: Login
     }
 
     if (!regForm.salonType) {
-      setError('⚠️ يجب اختيار نوع الصالون (رجالي - نسائي - مختلط) لإتمام التسجيل');
+      setError('يجب اختيار نوع الصالون (رجالي - نسائي - مختلط) لإتمام التسجيل');
       return;
     }
 
@@ -369,7 +371,7 @@ export function LoginScreen({ onLoginSuccess, settings, onOpenSaaSAdmin }: Login
           <div className="mb-5 p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-black rounded-2xl flex items-center gap-3 animate-in fade-in">
             <CheckCircle2 size={24} className="text-emerald-600 shrink-0" />
             <div>
-              <p className="text-sm font-black">🎉 تم تسجيل صالونك وتفعيل التجربة المجانية (7 أيام) بنجاح!</p>
+              <p className="text-sm font-black">تم تسجيل صالونك وتفعيل التجربة المجانية (7 أيام) بنجاح!</p>
               <p className="text-[11px] font-normal text-emerald-700 mt-0.5">جارٍ تحويلك مباشرة إلى لوحة التحكم...</p>
             </div>
           </div>
@@ -466,16 +468,18 @@ export function LoginScreen({ onLoginSuccess, settings, onOpenSaaSAdmin }: Login
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="block text-xs font-bold text-slate-700">نوع الصالون / النشاط *</label>
-                <span className="text-[10px] text-amber-700 font-bold bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
-                  إلزامي للاختيار ⚠️
+                <span className="text-[10px] text-amber-700 font-bold bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 inline-flex items-center gap-1">
+                  <AlertCircle size={10} />
+                  <span>إلزامي للاختيار</span>
                 </span>
               </div>
               <div className="grid grid-cols-3 gap-2">
                 {[
-                  { id: 'men', label: 'رجالي', icon: '💈', desc: 'حلاقة وعناية رجالية' },
-                  { id: 'women', label: 'نسائي', icon: '💇‍♀️', desc: 'مشغل وصالون نسائي' },
-                  { id: 'mixed', label: 'مختلط', icon: '✂️', desc: 'رجالي ونسائي / أطفال' }
+                  { id: 'men', label: 'رجالي', icon: Scissors, desc: 'حلاقة وعناية رجالية' },
+                  { id: 'women', label: 'نسائي', icon: Sparkles, desc: 'مشغل وصالون نسائي' },
+                  { id: 'mixed', label: 'مختلط', icon: Building2, desc: 'رجالي ونسائي / أطفال' }
                 ].map(t => {
+                  const Icon = t.icon;
                   const isSelected = regForm.salonType === t.id;
                   return (
                     <button
@@ -490,10 +494,10 @@ export function LoginScreen({ onLoginSuccess, settings, onOpenSaaSAdmin }: Login
                     >
                       {isSelected && (
                         <div className="absolute top-1.5 left-1.5 w-3.5 h-3.5 bg-white text-emerald-600 rounded-full flex items-center justify-center text-[9px] font-black shadow-xs">
-                          ✓
+                          <Check size={10} className="stroke-[3]" />
                         </div>
                       )}
-                      <span className="text-xl leading-none">{t.icon}</span>
+                      <Icon size={20} className={isSelected ? 'text-white' : 'text-slate-500'} />
                       <span className="text-xs font-black">{t.label}</span>
                       <span className={`text-[9px] leading-tight ${isSelected ? 'text-emerald-100 font-medium' : 'text-slate-400'}`}>
                         {t.desc}

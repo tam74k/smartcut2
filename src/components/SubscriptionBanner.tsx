@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Sparkles, Building2, Cloud, CloudOff, CheckCircle2, ChevronDown, X, Smartphone, Lock } from 'lucide-react';
+import { Sparkles, Building2, Cloud, CloudOff, CheckCircle2, ChevronDown, X, Smartphone, Lock, Home, CreditCard, Crown, AlertCircle } from 'lucide-react';
 import { SaaSSubscription, Branch, AppUser } from '../types';
 
 interface SubscriptionBannerProps {
@@ -63,15 +63,15 @@ export function SubscriptionBanner({
       {(isExpired || isSuspended) && (
         <div className="bg-gradient-to-r from-rose-700 via-red-600 to-rose-700 text-white px-4 py-2 flex items-center justify-between text-xs font-bold border-b border-red-800 z-40 shadow-md animate-pulse">
           <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-white animate-ping"></span>
-            <span>⛔ تنبيه هام: لقد انتهت فترة اشتراك هذا الصالون (أو الحساب موقوف مؤقتاً). المنظومة تعمل الآن بوضع <strong>الاطلاع فقط (Read-Only)</strong> ولا يمكن حفظ فواتير أو تعديلات جديدة.</span>
+            <AlertCircle size={15} className="text-white shrink-0" />
+            <span>تنبيه هام: لقد انتهت فترة اشتراك هذا الصالون (أو الحساب موقوف مؤقتاً). المنظومة تعمل الآن بوضع <strong>الاطلاع فقط (Read-Only)</strong> ولا يمكن حفظ فواتير أو تعديلات جديدة.</span>
           </div>
           <button
             onClick={onOpenPricingModal || (() => setShowPlanModal(true))}
             className="bg-white text-rose-700 hover:bg-rose-50 px-3 py-1 rounded-lg text-[11px] font-black shadow-sm transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shrink-0"
           >
-            <Sparkles size={12} className="text-rose-600" />
-            <span>تجديد / ترقية الباقة الآن 💳</span>
+            <CreditCard size={13} className="text-rose-600" />
+            <span>تجديد / ترقية الباقة الآن</span>
           </button>
         </div>
       )}
@@ -81,10 +81,10 @@ export function SubscriptionBanner({
         <div className="bg-gradient-to-r from-amber-600 via-amber-500 to-amber-600 text-white px-4 py-2 flex items-center justify-between text-xs font-bold border-b border-amber-700 z-40 shadow-md">
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-white animate-ping"></span>
-            <span>⏳ تنبيه: هذا الفرع ({activeBranch.name}) بانتظار الاعتماد والتفعيل من قِبل إدارة المنظومة (المبرمج الرئيسي) • تم تجميد إدخال البيانات لهذا الفرع لحين التفعيل.</span>
+            <span>تنبيه: هذا الفرع ({activeBranch.name}) بانتظار الاعتماد والتفعيل من قِبل إدارة المنظومة (المبرمج الرئيسي) • تم تجميد إدخال البيانات لهذا الفرع لحين التفعيل.</span>
           </div>
           <span className="bg-white/20 text-white px-3 py-1 rounded-lg text-[11px] font-black">
-            بانتظار التفعيل 🟡
+            بانتظار التفعيل
           </span>
         </div>
       )}
@@ -100,7 +100,8 @@ export function SubscriptionBanner({
                   className="flex items-center gap-1.5 text-emerald-400 hover:text-emerald-300 font-extrabold px-2 py-0.5 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
                   title="انقر للتبديل بين الصالونات المسجلة في السحابة"
                 >
-                  <span>🏠 {displaySalonName}</span>
+                  <Home size={13} className="text-emerald-400" />
+                  <span>{displaySalonName}</span>
                   <ChevronDown size={13} className="text-emerald-500" />
                 </button>
 
@@ -133,7 +134,7 @@ export function SubscriptionBanner({
               </div>
             ) : (
               <span className="text-emerald-400 font-extrabold flex items-center gap-1.5">
-                <span>🏠</span>
+                <Home size={13} className="text-emerald-400" />
                 <span>{displaySalonName}</span>
               </span>
             )}
@@ -145,7 +146,7 @@ export function SubscriptionBanner({
               title="انقر لترقية أو تجديد الباقة"
             >
               <Sparkles size={10} />
-              <span>{isTrial ? `تجريبي (${Math.max(0, daysLeft)} يوم متبقي) - ترقية ✨` : `باقة ${subscription.plan.toUpperCase()}`}</span>
+              <span>{isTrial ? `تجريبي (${Math.max(0, daysLeft)} يوم متبقي) - ترقية` : `باقة ${subscription.plan.toUpperCase()}`}</span>
             </button>
           </div>
 
@@ -187,7 +188,10 @@ export function SubscriptionBanner({
               <div className="absolute left-0 mt-1.5 w-64 bg-slate-800 border border-slate-700 rounded-xl shadow-xl py-1 z-50 animate-in fade-in zoom-in-95">
                 <div className="px-3 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-700 flex justify-between items-center">
                   <span>تبديل الفرع المختار</span>
-                  <span className="text-emerald-400 font-mono text-[9px]">المالك 👑</span>
+                  <span className="text-emerald-400 font-mono text-[9px] flex items-center gap-1">
+                    <Crown size={11} className="text-amber-400" />
+                    <span>المالك</span>
+                  </span>
                 </div>
                 {effectiveBranches.map(b => (
                   <button
@@ -200,8 +204,8 @@ export function SubscriptionBanner({
                       b.id === activeBranchId ? 'text-emerald-400 font-bold bg-slate-700/50' : 'text-slate-200'
                     }`}
                   >
-                    <div className="flex items-center gap-1.5 truncate">
-                      <span>{b.status === 'pending_activation' ? '🟡' : '🟢'}</span>
+                    <div className="flex items-center gap-2 truncate">
+                      <span className={`w-2 h-2 rounded-full shrink-0 ${b.status === 'pending_activation' ? 'bg-amber-400' : 'bg-emerald-400'}`}></span>
                       <span className="truncate">{b.name}</span>
                       {b.status === 'pending_activation' && (
                         <span className="text-[10px] text-amber-400 font-normal">(بانتظار التفعيل)</span>
@@ -257,7 +261,7 @@ export function SubscriptionBanner({
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500 font-bold">حالة الاشتراك:</span>
-                <span className="font-bold text-emerald-600">ساري ونشط 🟢</span>
+                <span className="font-bold text-emerald-600">ساري ونشط</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500 font-bold">تاريخ التجديد:</span>
@@ -277,8 +281,8 @@ export function SubscriptionBanner({
                 }}
                 className="flex-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-extrabold py-2.5 rounded-xl text-xs transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
               >
-                <Sparkles size={14} />
-                <span>ترقية / تجديد الباقة 💳</span>
+                <CreditCard size={14} />
+                <span>ترقية / تجديد الباقة</span>
               </button>
               <button
                 onClick={() => setShowPlanModal(false)}

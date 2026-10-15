@@ -30,7 +30,13 @@ import {
   CreditCard,
   RefreshCw,
   Layers,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Scissors,
+  Banknote,
+  Landmark,
+  Check,
+  AlertCircle,
+  ArrowLeft
 } from 'lucide-react';
 import { SalonTenant, Branch, SubscriptionPaymentRecord } from '../types';
 import { SubscriptionService, COUNTRY_CURRENCY_MAP } from '../services/subscriptionService';
@@ -254,7 +260,7 @@ export function SaaSSubscriptionsScreen({ onSwitchSalon }: SaaSSubscriptionsScre
       initialStatus: 'trial'
     });
     loadAllData();
-    alert('✅ تم تسجيل الصالون بنجاح وتجهيز حسابه في المنظومة وقاعدة البيانات!');
+    alert('تم تسجيل الصالون بنجاح وتجهيز حسابه في المنظومة وقاعدة البيانات.');
   };
 
   // Open Renewal Modal
@@ -355,15 +361,15 @@ export function SaaSSubscriptionsScreen({ onSwitchSalon }: SaaSSubscriptionsScre
       const salon = activationTarget.item as SalonTenant;
       if (mode === 'trial') {
         SubscriptionService.activateSalon(salon.id, 'trial', { days: durationValue });
-        alert(`✅ تم تفعيل حساب الصالون كفترة تجريبية لمدة (${durationValue} أيام) بنجاح!`);
+        alert(`تم تفعيل حساب الصالون كفترة تجريبية لمدة (${durationValue} أيام) بنجاح.`);
       } else {
         SubscriptionService.activateSalon(salon.id, 'active', { months: durationValue });
-        alert(`✅ تم تفعيل وتنشيط اشتراك الصالون الرسمي لمدة (${durationValue} شهور) بنجاح!`);
+        alert(`تم تفعيل وتنشيط اشتراك الصالون الرسمي لمدة (${durationValue} شهور) بنجاح.`);
       }
     } else {
       const branch = activationTarget.item as Branch;
       SubscriptionService.activateBranch(branch.id);
-      alert(`✅ تم تفعيل الفرع (${branch.name}) بنجاح وأصبح متاحاً للعمل!`);
+      alert(`تم تفعيل الفرع (${branch.name}) بنجاح وأصبح متاحاً للعمل.`);
     }
 
     setActivationTarget(null);
@@ -387,7 +393,7 @@ export function SaaSSubscriptionsScreen({ onSwitchSalon }: SaaSSubscriptionsScre
     SubscriptionService.updateSalon(editingSalon.id, editingSalon);
     setEditingSalon(null);
     loadAllData();
-    alert('✅ تم حفظ تعديلات بيانات واشتراك الصالون بنجاح!');
+    alert('تم حفظ تعديلات بيانات واشتراك الصالون بنجاح.');
   };
 
   return (
@@ -535,7 +541,7 @@ export function SaaSSubscriptionsScreen({ onSwitchSalon }: SaaSSubscriptionsScre
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-[11px] font-black text-purple-900 flex items-center gap-1">
-                    <span>تجريبية منتهية لم تشترك 📋</span>
+                    <span>تجريبية منتهية لم تشترك</span>
                   </p>
                   <p className="text-2xl font-black text-purple-700 mt-1">{stats.expiredTrials}</p>
                 </div>
@@ -555,7 +561,7 @@ export function SaaSSubscriptionsScreen({ onSwitchSalon }: SaaSSubscriptionsScre
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-[11px] font-extrabold text-amber-900 flex items-center gap-1">
-                    <span>تنتهي خلال 5 أيام ⚠️</span>
+                    <span>تنتهي خلال 5 أيام</span>
                   </p>
                   <p className="text-2xl font-black text-amber-700 mt-1">{stats.expiringSoon}</p>
                 </div>
@@ -603,7 +609,7 @@ export function SaaSSubscriptionsScreen({ onSwitchSalon }: SaaSSubscriptionsScre
                     statusFilter === 'expired_trials' ? 'bg-purple-700 text-white shadow-xs font-black' : 'text-purple-800 hover:text-purple-950 font-black'
                   }`}
                 >
-                  📋 تجريبية منتهية لم تشترك ({stats.expiredTrials})
+                  تجريبية لم تشترك ({stats.expiredTrials})
                 </button>
                 <button
                   onClick={() => setStatusFilter('expiring_soon')}
@@ -611,7 +617,7 @@ export function SaaSSubscriptionsScreen({ onSwitchSalon }: SaaSSubscriptionsScre
                     statusFilter === 'expiring_soon' ? 'bg-amber-500 text-white shadow-xs font-black' : 'text-amber-800 hover:text-amber-950 font-extrabold'
                   }`}
                 >
-                  تنتهي خلال 5 أيام ⚠️ ({stats.expiringSoon})
+                  تنتهي قريباً ({stats.expiringSoon})
                 </button>
                 <button
                   onClick={() => setStatusFilter('expired')}
@@ -619,7 +625,7 @@ export function SaaSSubscriptionsScreen({ onSwitchSalon }: SaaSSubscriptionsScre
                     statusFilter === 'expired' ? 'bg-rose-600 text-white shadow-xs font-black' : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  منتهية الصلاحية 🔴 ({stats.expired})
+                  منتهية الصلاحية ({stats.expired})
                 </button>
                 <button
                   onClick={() => setStatusFilter('active')}
@@ -627,7 +633,7 @@ export function SaaSSubscriptionsScreen({ onSwitchSalon }: SaaSSubscriptionsScre
                     statusFilter === 'active' ? 'bg-white text-emerald-700 shadow-xs font-black' : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  نشط 🟢 ({stats.active})
+                  المفعلة ({stats.active})
                 </button>
                 <button
                   onClick={() => setStatusFilter('trial')}
@@ -635,7 +641,7 @@ export function SaaSSubscriptionsScreen({ onSwitchSalon }: SaaSSubscriptionsScre
                     statusFilter === 'trial' ? 'bg-white text-amber-700 shadow-xs font-black' : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  تجريبي ⏳ ({stats.trial})
+                  فترة تجريبية ({stats.trial})
                 </button>
               </div>
 
@@ -753,12 +759,14 @@ export function SaaSSubscriptionsScreen({ onSwitchSalon }: SaaSSubscriptionsScre
                             {daysLeft > 5 ? (
                               <span className="text-emerald-700 font-bold">متبقي {daysLeft} يوم</span>
                             ) : daysLeft >= 0 ? (
-                              <span className="text-amber-700 font-black bg-amber-100 px-1.5 py-0.2 rounded border border-amber-300">
-                                ⚠️ متبقي {daysLeft} يوم فقط!
+                              <span className="text-amber-700 font-black bg-amber-100 px-1.5 py-0.5 rounded border border-amber-300 inline-flex items-center gap-1">
+                                <AlertTriangle size={11} className="text-amber-700 shrink-0" />
+                                <span>متبقي {daysLeft} يوم فقط!</span>
                               </span>
                             ) : (
-                              <span className="text-rose-600 font-black bg-rose-50 px-1.5 py-0.2 rounded border border-rose-200">
-                                ⛔ منتهي منذ {-daysLeft} يوم
+                              <span className="text-rose-600 font-black bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200 inline-flex items-center gap-1">
+                                <AlertCircle size={11} className="text-rose-600 shrink-0" />
+                                <span>منتهي منذ {-daysLeft} يوم</span>
                               </span>
                             )}
                           </div>
@@ -860,8 +868,9 @@ export function SaaSSubscriptionsScreen({ onSwitchSalon }: SaaSSubscriptionsScre
             </h4>
 
             {pendingSalons.length === 0 ? (
-              <div className="py-6 text-center text-slate-400 font-bold text-xs">
-                لا توجد صالونات معلقة حالياً ✓ جميع الصالونات مفعلة ومحدثة.
+              <div className="py-6 text-center text-slate-400 font-bold text-xs flex items-center justify-center gap-1.5">
+                <Check size={14} className="text-emerald-500" />
+                <span>جميع الصالونات مفعلة ومحدثة.</span>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
@@ -872,8 +881,9 @@ export function SaaSSubscriptionsScreen({ onSwitchSalon }: SaaSSubscriptionsScre
                         <h5 className="font-black text-sm text-slate-900">{s.name}</h5>
                         <p className="text-xs text-slate-500 font-semibold mt-0.5">المالك: {s.ownerName || '-'}</p>
                       </div>
-                      <span className="bg-amber-100 text-amber-800 text-[10px] font-black px-2 py-0.5 rounded-md border border-amber-300">
-                        معلق ⏳
+                      <span className="bg-amber-100 text-amber-800 text-[10px] font-black px-2 py-0.5 rounded-md border border-amber-300 flex items-center gap-1">
+                        <Clock size={10} className="text-amber-700" />
+                        <span>معلق</span>
                       </span>
                     </div>
 
@@ -886,9 +896,10 @@ export function SaaSSubscriptionsScreen({ onSwitchSalon }: SaaSSubscriptionsScre
                     <div className="border-t border-amber-200/80 pt-3 flex gap-2">
                       <button
                         onClick={() => setActivationTarget({ type: 'salon', item: s })}
-                        className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-xl text-xs font-black transition-colors shadow-xs"
+                        className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-xl text-xs font-black transition-colors shadow-xs flex items-center justify-center gap-1.5"
                       >
-                        ⚡ تفعيل الصالون الآن
+                        <Zap size={13} className="text-white" />
+                        <span>تفعيل الصالون الآن</span>
                       </button>
                     </div>
                   </div>
@@ -905,8 +916,9 @@ export function SaaSSubscriptionsScreen({ onSwitchSalon }: SaaSSubscriptionsScre
             </h4>
 
             {pendingBranches.length === 0 ? (
-              <div className="py-6 text-center text-slate-400 font-bold text-xs">
-                لا توجد فروع معلقة حالياً ✓ جميع الفروع نشطة.
+              <div className="py-6 text-center text-slate-400 font-bold text-xs flex items-center justify-center gap-1.5">
+                <Check size={14} className="text-emerald-500" />
+                <span>جميع الفروع نشطة ومحدثة.</span>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
@@ -936,9 +948,10 @@ export function SaaSSubscriptionsScreen({ onSwitchSalon }: SaaSSubscriptionsScre
                       <div className="border-t border-indigo-200/80 pt-3 flex gap-2">
                         <button
                           onClick={() => handleExecuteActivation('active', 1)}
-                          className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-xl text-xs font-black transition-colors shadow-xs"
+                          className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-xl text-xs font-black transition-colors shadow-xs flex items-center justify-center gap-1.5"
                         >
-                          🟢 اعتماد وتفعيل الفرع
+                          <Check size={13} className="text-white" />
+                          <span>اعتماد وتفعيل الفرع</span>
                         </button>
                       </div>
                     </div>
@@ -999,16 +1012,33 @@ export function SaaSSubscriptionsScreen({ onSwitchSalon }: SaaSSubscriptionsScre
                       </span>
                     </td>
                     <td className="p-3.5 font-mono text-slate-600">
-                      {p.periodStart} ➔ {p.periodEnd}
+                      {p.periodStart} ← {p.periodEnd}
                     </td>
                     <td className="p-3.5 font-mono font-black text-emerald-600 text-sm">
                       {p.amount} {p.currency}
                     </td>
                     <td className="p-3.5 font-bold text-slate-700">
-                      {p.paymentMethod === 'bank_transfer' ? 'تحويل بنكي 🏦' :
-                       p.paymentMethod === 'cash' ? 'نقدي / كاش 💵' :
-                       p.paymentMethod === 'card' ? 'بطاقة / مدى 💳' :
-                       p.paymentMethod === 'online' ? 'دفع إلكتروني ⚡' : 'أخرى'}
+                      {p.paymentMethod === 'bank_transfer' ? (
+                        <span className="inline-flex items-center gap-1">
+                          <Landmark size={13} className="text-slate-500" />
+                          <span>تحويل بنكي</span>
+                        </span>
+                      ) : p.paymentMethod === 'cash' ? (
+                        <span className="inline-flex items-center gap-1">
+                          <Banknote size={13} className="text-slate-500" />
+                          <span>نقدي / كاش</span>
+                        </span>
+                      ) : p.paymentMethod === 'card' ? (
+                        <span className="inline-flex items-center gap-1">
+                          <CreditCard size={13} className="text-slate-500" />
+                          <span>بطاقة / مدى</span>
+                        </span>
+                      ) : p.paymentMethod === 'online' ? (
+                        <span className="inline-flex items-center gap-1">
+                          <Zap size={13} className="text-amber-500" />
+                          <span>دفع إلكتروني</span>
+                        </span>
+                      ) : 'أخرى'}
                     </td>
                     <td className="p-3.5 text-slate-500 font-mono">
                       {new Date(p.paymentDate).toLocaleDateString('ar-SA')}
@@ -1085,7 +1115,7 @@ export function SaaSSubscriptionsScreen({ onSwitchSalon }: SaaSSubscriptionsScre
                         : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                     }`}
                   >
-                    ⚡ شهر واحد
+                    شهر واحد
                   </button>
 
                   <button
@@ -1097,7 +1127,7 @@ export function SaaSSubscriptionsScreen({ onSwitchSalon }: SaaSSubscriptionsScre
                         : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                     }`}
                   >
-                    💎 3 شهور
+                    3 شهور
                   </button>
 
                   <button
@@ -1109,7 +1139,7 @@ export function SaaSSubscriptionsScreen({ onSwitchSalon }: SaaSSubscriptionsScre
                         : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                     }`}
                   >
-                    ⭐ 6 شهور
+                    6 شهور
                   </button>
 
                   <button
@@ -1121,7 +1151,7 @@ export function SaaSSubscriptionsScreen({ onSwitchSalon }: SaaSSubscriptionsScre
                         : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                     }`}
                   >
-                    👑 سنة كاملة
+                    سنة كاملة
                   </button>
                 </div>
               </div>
@@ -1148,10 +1178,10 @@ export function SaaSSubscriptionsScreen({ onSwitchSalon }: SaaSSubscriptionsScre
                     onChange={e => setRenewalForm({ ...renewalForm, paymentMethod: e.target.value as any })}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-emerald-600"
                   >
-                    <option value="bank_transfer">تحويل بنكي 🏦</option>
-                    <option value="cash">نقدي / كاش 💵</option>
-                    <option value="card">شبكة / بطاقة 💳</option>
-                    <option value="online">دفع إلكتروني ⚡</option>
+                    <option value="bank_transfer">تحويل بنكي</option>
+                    <option value="cash">نقدي / كاش</option>
+                    <option value="card">شبكة / بطاقة</option>
+                    <option value="online">دفع إلكتروني</option>
                     <option value="other">أخرى</option>
                   </select>
                 </div>
@@ -1192,7 +1222,7 @@ export function SaaSSubscriptionsScreen({ onSwitchSalon }: SaaSSubscriptionsScre
                   className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl text-xs shadow-md shadow-emerald-600/30 flex items-center justify-center gap-1.5"
                 >
                   <CheckCircle2 size={16} />
-                  <span>تأكيد التجديد وتحديث الصلاحية 🚀</span>
+                  <span>تأكيد التجديد وتحديث الصلاحية</span>
                 </button>
               </div>
             </form>
@@ -1316,29 +1346,31 @@ export function SaaSSubscriptionsScreen({ onSwitchSalon }: SaaSSubscriptionsScre
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="block text-xs font-bold text-slate-700">نوع الصالون / النشاط *</label>
-                  <span className="text-[10px] text-amber-700 font-bold bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
-                    إلزامي للاختيار ⚠️
+                  <span className="text-[10px] text-amber-700 font-bold bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 flex items-center gap-1">
+                    <AlertTriangle size={10} className="text-amber-600" />
+                    <span>إلزامي للاختيار</span>
                   </span>
                 </div>
                 <div className="grid grid-cols-3 gap-2">
                   {[
-                    { id: 'men' as const, label: 'رجالي', icon: '💈' },
-                    { id: 'women' as const, label: 'نسائي', icon: '💇‍♀️' },
-                    { id: 'mixed' as const, label: 'مختلط', icon: '✂️' }
+                    { id: 'men' as const, label: 'رجالي', icon: Scissors },
+                    { id: 'women' as const, label: 'نسائي', icon: Sparkles },
+                    { id: 'mixed' as const, label: 'مختلط', icon: Building2 }
                   ].map(t => {
                     const isSelected = newSalonForm.salonType === t.id;
+                    const IconComp = t.icon;
                     return (
                       <button
                         key={t.id}
                         type="button"
                         onClick={() => setNewSalonForm({ ...newSalonForm, salonType: t.id })}
-                        className={`p-2 rounded-2xl border text-center transition-all cursor-pointer flex flex-col items-center justify-center gap-1 ${
+                        className={`p-2.5 rounded-2xl border text-center transition-all cursor-pointer flex flex-col items-center justify-center gap-1.5 ${
                           isSelected
                             ? 'bg-emerald-600 text-white border-emerald-600 shadow-md shadow-emerald-600/30 font-black ring-2 ring-emerald-500/20'
                             : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200 font-bold'
                         }`}
                       >
-                        <span className="text-lg leading-none">{t.icon}</span>
+                        <IconComp size={18} className={isSelected ? 'text-white' : 'text-slate-600'} />
                         <span className="text-xs">{t.label}</span>
                       </button>
                     );
@@ -1447,9 +1479,10 @@ export function SaaSSubscriptionsScreen({ onSwitchSalon }: SaaSSubscriptionsScre
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl text-xs shadow-md shadow-emerald-600/30"
+                  className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl text-xs shadow-md shadow-emerald-600/30 flex items-center justify-center gap-1.5"
                 >
-                  حفظ وتسجيل الصالون 🚀
+                  <Check size={14} className="text-white" />
+                  <span>حفظ وتسجيل الصالون</span>
                 </button>
               </div>
             </form>
@@ -1492,10 +1525,10 @@ export function SaaSSubscriptionsScreen({ onSwitchSalon }: SaaSSubscriptionsScre
                     onChange={e => setEditingSalon({ ...editingSalon, subscriptionStatus: e.target.value as any })}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold"
                   >
-                    <option value="active">نشط (Active 🟢)</option>
-                    <option value="trial">تجريبي (Trial ⏳)</option>
-                    <option value="expired">منتهي (Expired ⚠️)</option>
-                    <option value="suspended">موقوف (Suspended ⛔)</option>
+                    <option value="active">نشط (Active)</option>
+                    <option value="trial">تجريبي (Trial)</option>
+                    <option value="expired">منتهي (Expired)</option>
+                    <option value="suspended">موقوف (Suspended)</option>
                   </select>
                 </div>
 
@@ -1587,7 +1620,7 @@ export function SaaSSubscriptionsScreen({ onSwitchSalon }: SaaSSubscriptionsScre
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500 font-bold">فترة الصلاحية:</span>
-                <span className="font-mono font-bold text-slate-700">{selectedReceiptPayment.periodStart} ➔ {selectedReceiptPayment.periodEnd}</span>
+                <span className="font-mono font-bold text-slate-700">{selectedReceiptPayment.periodStart} ← {selectedReceiptPayment.periodEnd}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500 font-bold">طريقة السداد:</span>

@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { AppSettings, Transaction, Invoice, Branch, TipRecord, AppUser, Booking, SalesReturn } from '../types';
-import { Calendar, FileBarChart, Download, TrendingUp, TrendingDown, DollarSign, Printer, CheckCircle2, Clock, Wallet, Coins, ShoppingCart, Truck, Edit2, Trash2, RefreshCw, AlertTriangle, User, X, Check, Save, RotateCcw, UserX, MessageSquare, Phone, Copy, Search, Award, Sparkles, UserCheck, Target } from 'lucide-react';
+import { Calendar, FileBarChart, Download, TrendingUp, TrendingDown, DollarSign, Printer, CheckCircle2, Clock, Wallet, Coins, ShoppingCart, Truck, Edit2, Trash2, RefreshCw, AlertTriangle, User, X, Check, Save, RotateCcw, UserX, MessageSquare, Phone, Copy, Search, Award, Sparkles, UserCheck, Target, ArrowLeft, MapPin } from 'lucide-react';
 import { ClosingReportReceipt } from './ClosingReportReceipt';
 import { ServicesReportReceipt } from './ServicesReportReceipt';
 import { EmployeesReportReceipt } from './EmployeesReportReceipt';
@@ -1454,7 +1454,7 @@ export function ReportsScreen({
         }
       }
 
-      alert('✅ تم تعديل السلفة بنجاح');
+      alert('تم تعديل السلفة بنجاح');
       setEditingAdvance(null);
     } catch (err: any) {
       console.error('Error updating advance:', err);
@@ -1497,7 +1497,7 @@ export function ReportsScreen({
         }
       }
 
-      alert('🗑️ تم حذف السلفة بنجاح');
+      alert('تم حذف السلفة بنجاح');
     } catch (err: any) {
       console.error('Error deleting advance:', err);
       alert('حدث خطأ أثناء حذف السلفة: ' + (err?.message || 'خطأ غير معروف'));
@@ -1615,7 +1615,7 @@ export function ReportsScreen({
 
   const handleExport = () => {
     if (!canExportExcel) {
-      alert('⛔ عذراً، تصدير التقارير إلى Excel يتطلب صلاحية التصدير (export_excel).');
+      alert('عذراً، تصدير التقارير إلى Excel يتطلب صلاحية التصدير (export_excel).');
       return;
     }
     const filename = `تقرير_${activeReportType}_${activeFrom}_${activeTo}`;
@@ -1817,7 +1817,7 @@ export function ReportsScreen({
         Number(r.eligibleAmount || 0).toFixed(2),
         `${r.commissionRate}%`,
         Number(r.targetCommission || 0).toFixed(2),
-        r.isTargetAchieved ? 'محقق للتارجت 🎯' : (r.targetType === 'none' ? 'بدون تارجت' : 'لم يحقق بعد ⏳'),
+        r.isTargetAchieved ? 'محقق للتارجت' : (r.targetType === 'none' ? 'بدون تارجت' : 'لم يحقق بعد'),
         Number(r.remainingToTarget || 0).toFixed(2),
         Number(r.exemptSales || 0).toFixed(2),
         Number(r.exemptCommission || 0).toFixed(2),
@@ -1829,7 +1829,7 @@ export function ReportsScreen({
       const rows = inactiveClientsReportData.inactiveClients.map((c: any, idx: number) => [
         idx + 1,
         c.name,
-        c.tier === 'royal' ? 'ملكي 💎' : c.tier === 'vip' ? 'VIP 👑' : c.tier === 'distinguished' ? 'متميز 🔷' : 'قياسي ⭐',
+        c.tier === 'royal' ? 'ملكي' : c.tier === 'vip' ? 'VIP' : c.tier === 'distinguished' ? 'متميز' : 'قياسي',
         c.isNeverVisited ? 'مسجل جديد لم يزر بعد' : 'سبق له الزيارة',
         c.phone || '-',
         c.lastVisitDate ? c.lastVisitDate : (c.createdAtDate ? `${c.createdAtDate} (تاريخ التسجيل)` : '-'),
@@ -1891,21 +1891,21 @@ export function ReportsScreen({
           <div>
             <label className="block text-xs font-bold text-slate-500 mb-1">نوع التقرير</label>
             <select value={reportType} onChange={(e) => setReportType(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary font-semibold text-slate-700 bg-white">
-              <option value="net_profit">💎 تقرير الأرباح الصافية (معادلة صافي الربح وقائمة الدخل)</option>
-              <option value="sales_returns">🔄 تقرير مرتجعات المبيعات (تفصيلي وتحليلي)</option>
-              <option value="target_report">🎯 تقرير التارجت والعمولات المستهدفة للموظفين</option>
-              <option value="inactive_clients">👥 تقرير العملاء المنقطعين عن الزيارة (إعادة التنشيط)</option>
-              <option value="unpaid_bookings">📅 تقرير المبالغ المتبقية والغير مسددة في الحجوزات</option>
+              <option value="net_profit">تقرير الأرباح الصافية (معادلة صافي الربح وقائمة الدخل)</option>
+              <option value="sales_returns">تقرير مرتجعات المبيعات (تفصيلي وتحليلي)</option>
+              <option value="target_report">تقرير التارجت والعمولات المستهدفة للموظفين</option>
+              <option value="inactive_clients">تقرير العملاء المنقطعين عن الزيارة (إعادة التنشيط)</option>
+              <option value="unpaid_bookings">تقرير المبالغ المتبقية والغير مسددة في الحجوزات</option>
               <option value="income">تقرير الدخل التفصيلي</option>
               <option value="closing">تقرير إغلاق اليوم</option>
               <option value="employees">أعمال وعمولات الموظفين</option>
-              <option value="commission_payouts">💵 حركة صرف العمولات (سندات الصرف والخزن)</option>
-              <option value="advances">💸 تقرير سلف الموظفين وتفاصيلها</option>
+              <option value="commission_payouts">حركة صرف العمولات (سندات الصرف والخزن)</option>
+              <option value="advances">تقرير سلف الموظفين وتفاصيلها</option>
               <option value="services_report">تقرير الخدمات</option>
               <option value="expenses">تقرير المصروفات</option>
               <option value="initial_cash">تقرير العهد الافتتاحية</option>
               <option value="tips">تقرير البقشيش والإكراميات</option>
-              <option value="overtime">⏱️ تقرير ساعات العمل الإضافي (الأوفر تايم)</option>
+              <option value="overtime">تقرير ساعات العمل الإضافي (الأوفر تايم)</option>
             </select>
           </div>
           <div>
@@ -1956,10 +1956,10 @@ export function ReportsScreen({
                 onChange={(e) => setTargetTypeFilter(e.target.value as any)}
                 className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-indigo-600"
               >
-                <option value="all">🎯 جميع الأنظمة (يومي وشهري وبدون)</option>
-                <option value="daily">📅 تارجت يومي فقط</option>
-                <option value="monthly">🗓️ تارجت شهري فقط</option>
-                <option value="none">⚪ بدون تارجت</option>
+                <option value="all">جميع الأنظمة (يومي وشهري وبدون)</option>
+                <option value="daily">تارجت يومي فقط</option>
+                <option value="monthly">تارجت شهري فقط</option>
+                <option value="none">بدون تارجت</option>
               </select>
             </div>
 
@@ -1971,8 +1971,8 @@ export function ReportsScreen({
                 className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-indigo-600"
               >
                 <option value="all">الكل (المحققون وغير المحققين)</option>
-                <option value="achieved">🎯 محقق للتارجت فقط</option>
-                <option value="not_achieved">⏳ لم يحقق التارجت بعد</option>
+                <option value="achieved">محقق للتارجت فقط</option>
+                <option value="not_achieved">لم يحقق التارجت بعد</option>
               </select>
             </div>
           </div>
@@ -1988,7 +1988,7 @@ export function ReportsScreen({
                 onChange={(e) => setSelectedAdvanceEmpId(e.target.value)}
                 className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-primary"
               >
-                <option value="all">👥 جميع الموظفين (الكل)</option>
+                <option value="all">جميع الموظفين (الكل)</option>
                 {branchEmployees.map(emp => (
                   <option key={emp.id} value={emp.id}>{emp.name} ({emp.role || 'موظف'})</option>
                 ))}
@@ -2011,20 +2011,22 @@ export function ReportsScreen({
                 <button
                   type="button"
                   onClick={() => setOvertimeViewMode('summary')}
-                  className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                  className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                     overtimeViewMode === 'summary' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'
                   }`}
                 >
-                  📊 مجمع حسب الموظف
+                  <FileBarChart size={13} />
+                  <span>مجمع حسب الموظف</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setOvertimeViewMode('detailed')}
-                  className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                  className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                     overtimeViewMode === 'detailed' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'
                   }`}
                 >
-                  📅 تفصيلي يوم بيوم
+                  <Calendar size={13} />
+                  <span>تفصيلي يوم بيوم</span>
                 </button>
               </div>
             </div>
@@ -2036,7 +2038,7 @@ export function ReportsScreen({
                 onChange={(e) => setSelectedOvertimeEmpId(e.target.value)}
                 className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-indigo-600"
               >
-                <option value="all">👥 جميع الموظفين</option>
+                <option value="all">جميع الموظفين</option>
                 {branchEmployees.map(emp => (
                   <option key={emp.id} value={emp.id}>{emp.name} ({emp.role || 'موظف'})</option>
                 ))}
@@ -2381,7 +2383,7 @@ export function ReportsScreen({
             {/* 7.5 Cashback Used Card */}
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm border-r-4 border-r-fuchsia-500 flex justify-between items-center">
               <div>
-                <p className="text-slate-500 text-xs font-bold mb-1">المسدد كاش باك 🎁</p>
+                <p className="text-slate-500 text-xs font-bold mb-1">المسدد كاش باك</p>
                 <h4 className="text-xl font-black text-fuchsia-600 font-mono">
                   {Number(netProfitReportData.totalCashbackUsed || 0).toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
                 </h4>
@@ -2413,9 +2415,19 @@ export function ReportsScreen({
                 <h4 className={`text-xl font-black font-mono ${netProfitReportData.netProfit >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
                   {Number(netProfitReportData.netProfit || 0).toFixed(2)} <span className="text-xs font-normal text-slate-500">{settings.currency}</span>
                 </h4>
-                <p className={`text-[10px] font-bold mt-1 ${netProfitReportData.netProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                  {netProfitReportData.netProfit >= 0 ? '✅ ربح تشغيلي إيجابي' : '⚠️ عجز / خسارة تشغيلية'}
-                </p>
+                <div className={`text-[10px] font-bold mt-1 ${netProfitReportData.netProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                  {netProfitReportData.netProfit >= 0 ? (
+                    <span className="flex items-center gap-1">
+                      <CheckCircle2 size={12} className="text-emerald-600 inline" />
+                      <span>ربح تشغيلي إيجابي</span>
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1">
+                      <AlertTriangle size={12} className="text-rose-600 inline" />
+                      <span>عجز / خسارة تشغيلية</span>
+                    </span>
+                  )}
+                </div>
               </div>
               <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${netProfitReportData.netProfit >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
                 <DollarSign size={22} />
@@ -3056,7 +3068,8 @@ function ReportTable({
       <div className="w-full flex flex-col items-center py-6 bg-slate-100/90 rounded-2xl">
         <div className="flex flex-wrap items-center justify-between gap-4 w-full px-6 mb-4 print:hidden">
           <div className="text-xs text-slate-600 font-bold flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs">
-            <span>👈 يمكنك التمرير أفقياً لرؤية باقي أعمدة التقرير كاملة (اليسار)</span>
+            <ArrowLeft size={13} className="text-slate-500" />
+            <span>يمكنك التمرير أفقياً لرؤية باقي أعمدة التقرير كاملة (اليسار)</span>
           </div>
           <button 
             onClick={() => { import('../utils/print').then(m => m.handlePrintReceipt('print-income-receipt', true)); }} 
@@ -3591,7 +3604,7 @@ function ReportTable({
 
     const handleExportExcel = () => {
       if (!canExportExcel) {
-        alert('⛔ عذراً، تصدير التقارير إلى Excel يتطلب صلاحية التصدير (export_excel).');
+        alert('عذراً، تصدير التقارير إلى Excel يتطلب صلاحية التصدير (export_excel).');
         return;
       }
       const excelData = empList.map(e => ({
@@ -3802,7 +3815,7 @@ function ReportTable({
               </h4>
             </div>
             <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
-              💰
+              <Wallet size={20} />
             </div>
           </div>
 
@@ -3812,7 +3825,7 @@ function ReportTable({
               <h4 className="text-2xl font-black text-slate-800">{custodyTrxs.length} وردية</h4>
             </div>
             <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
-              🕒
+              <Clock size={20} />
             </div>
           </div>
 
@@ -3824,7 +3837,7 @@ function ReportTable({
               </h4>
             </div>
             <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
-              📊
+              <TrendingUp size={20} />
             </div>
           </div>
         </div>
@@ -3857,7 +3870,8 @@ function ReportTable({
                     <td className="py-3 px-4 text-slate-500 font-mono">{new Date(trx.date).toLocaleTimeString('ar-SA')}</td>
                     <td className="py-3 px-4">
                       <span className="bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-lg font-extrabold border border-indigo-200 inline-flex items-center gap-1">
-                        👤 {trx.userName || trx.createdBy || 'الكاشير'}
+                        <User size={12} />
+                        <span>{trx.userName || trx.createdBy || 'الكاشير'}</span>
                       </span>
                     </td>
                     <td className="py-3 px-4 font-semibold text-slate-700">
@@ -3924,7 +3938,7 @@ function ReportTable({
               </h4>
             </div>
             <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
-              💵
+              <DollarSign size={20} />
             </div>
           </div>
 
@@ -3936,7 +3950,7 @@ function ReportTable({
               </h4>
             </div>
             <div className="w-10 h-10 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center font-bold">
-              🟢
+              <CheckCircle2 size={20} />
             </div>
           </div>
 
@@ -3948,7 +3962,7 @@ function ReportTable({
               </h4>
             </div>
             <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
-              ⏳
+              <Clock size={20} />
             </div>
           </div>
 
@@ -3958,7 +3972,7 @@ function ReportTable({
               <h4 className="text-2xl font-black text-slate-800 font-mono">{filteredTipsList.length} فاتورة</h4>
             </div>
             <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
-              📋
+              <FileBarChart size={20} />
             </div>
           </div>
         </div>
@@ -4002,7 +4016,8 @@ function ReportTable({
                           ? 'bg-purple-100 text-purple-800 border-purple-300' 
                           : 'bg-purple-50 text-purple-700 border-purple-200'
                       } px-2.5 py-1 rounded-lg font-extrabold border inline-flex items-center gap-1`}>
-                        {tip.employeeId === 'unspecified' ? '✨' : '👤'} {tip.employeeName}
+                        {tip.employeeId === 'unspecified' ? <Sparkles size={11} className="text-purple-600" /> : <User size={11} className="text-purple-600" />}
+                        <span>{tip.employeeName}</span>
                       </span>
                     </td>
                     <td className="py-3 px-4 font-semibold text-slate-600">
@@ -4017,17 +4032,17 @@ function ReportTable({
                       {tip.employeeId === 'unspecified' ? (
                         <span className="bg-purple-100 text-purple-800 border border-purple-300 text-[10px] font-black px-2.5 py-1 rounded-lg inline-flex items-center gap-1">
                           <CheckCircle2 size={11} />
-                          <span>إيراد عام للصالون ✨</span>
+                          <span>إيراد عام للصالون</span>
                         </span>
                       ) : tip.status === 'paid_out' ? (
                         <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-black px-2.5 py-1 rounded-lg inline-flex items-center gap-1">
                           <CheckCircle2 size={11} />
-                          <span>{tip.payoutMethod === 'instant_cash' ? 'صُرف فوراً كاش 🟢' : 'تم الصرف لاحقاً 🔵'}</span>
+                          <span>{tip.payoutMethod === 'instant_cash' ? 'صُرف فوراً كاش' : 'تم الصرف لاحقاً'}</span>
                         </span>
                       ) : (
                         <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black px-2.5 py-1 rounded-lg inline-flex items-center gap-1">
                           <Clock size={11} />
-                          <span>مجمع مؤجل (معلق) ⏳</span>
+                          <span>مجمع مؤجل (معلق)</span>
                         </span>
                       )}
                     </td>
@@ -4541,7 +4556,10 @@ function ReportTable({
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 pb-4 border-b border-slate-200">
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xl font-black text-slate-800">📊 قائمة الدخل وصافي الأرباح التشغيلية</span>
+              <span className="text-xl font-black text-slate-800 flex items-center gap-2">
+                <TrendingUp size={22} className="text-indigo-600" />
+                <span>قائمة الدخل وصافي الأرباح التشغيلية</span>
+              </span>
               <span className="bg-emerald-50 text-emerald-700 font-bold text-xs px-2.5 py-1 rounded-lg border border-emerald-200">
                 {Number(netProfitReportData.profitMargin || 0).toFixed(1)}% هامش الربح
               </span>
@@ -4899,7 +4917,10 @@ function ReportTable({
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 pb-4 border-b border-slate-200">
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xl font-black text-slate-800">📅 تقرير المبالغ المتبقية والغير مسددة في الحجوزات</span>
+              <span className="text-xl font-black text-slate-800 flex items-center gap-2">
+                <Calendar size={22} className="text-indigo-600" />
+                <span>تقرير المبالغ المتبقية والغير مسددة في الحجوزات</span>
+              </span>
               <span className="bg-rose-50 text-rose-700 font-bold text-xs px-2.5 py-1 rounded-lg border border-rose-200">
                 {unpaidBookingsReportData?.filteredBookings?.length || 0} حجز
               </span>
@@ -4941,8 +4962,9 @@ function ReportTable({
                       <div className="font-mono font-bold text-slate-800 text-xs">{b.bookingCode || b.id}</div>
                       {b.location && (
                         <div className="mt-1">
-                          <span className="inline-block px-2 py-0.5 rounded text-[10px] font-black bg-purple-50 text-purple-700 border border-purple-200">
-                            📍 {b.location}
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black bg-purple-50 text-purple-700 border border-purple-200">
+                            <MapPin size={10} className="text-purple-600" />
+                            <span>{b.location}</span>
                           </span>
                         </div>
                       )}
@@ -5028,7 +5050,7 @@ function ReportTable({
 
     const handleExportExcel = () => {
       if (!canExportExcel) {
-        alert('⛔ عذراً، تصدير التقارير إلى Excel يتطلب صلاحية التصدير (export_excel).');
+        alert('عذراً، تصدير التقارير إلى Excel يتطلب صلاحية التصدير (export_excel).');
         return;
       }
       const excelData = data.returns.map((r: SalesReturn, idx: number) => ({
@@ -5066,7 +5088,8 @@ function ReportTable({
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-5 border-b border-slate-200">
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xl font-black text-slate-800">🔄 تقرير مرتجعات المبيعات (إشعارات دائن)</span>
+              <RotateCcw size={22} className="text-rose-600" />
+              <span className="text-xl font-black text-slate-800">تقرير مرتجعات المبيعات (إشعارات دائن)</span>
               <span className="bg-rose-50 text-rose-700 font-bold text-xs px-2.5 py-1 rounded-lg border border-rose-200">
                 {data.returnsCount} عملية مرتجع
               </span>
@@ -5339,7 +5362,7 @@ function ReportTable({
       const rows = filteredClients.map((c: any, idx: number) => [
         idx + 1,
         c.name,
-        c.tier === 'royal' ? 'ملكي 💎' : c.tier === 'vip' ? 'VIP 👑' : c.tier === 'distinguished' ? 'متميز 🔷' : 'قياسي ⭐',
+        c.tier === 'royal' ? 'ملكي' : c.tier === 'vip' ? 'VIP' : c.tier === 'distinguished' ? 'متميز' : 'قياسي',
         c.isNeverVisited ? 'مسجل جديد لم يزر بعد' : 'سبق له الزيارة',
         c.phone || '-',
         c.lastVisitDate ? c.lastVisitDate : (c.createdAtDate ? `${c.createdAtDate} (تاريخ التسجيل)` : '-'),
@@ -5370,7 +5393,7 @@ function ReportTable({
         fullPhone = '20' + fullPhone.slice(1);
       }
       const salonName = settings.salonName || 'صالون سمارت كت';
-      const msg = `مرحباً أستاذ ${client.name} 🌹\nاشتقنا لزيارتك في ${salonName}!\nيسعدنا أن نقدم لك عرضاً وخصماً خاصاً وحصرياً بمناسبة عودتك لزيارتنا.\nهل تود حجز موعدك القادم معنا اليوم؟ ✂️✨`;
+      const msg = `مرحباً أستاذ ${client.name}\nاشتقنا لزيارتك في ${salonName}!\nيسعدنا أن نقدم لك عرضاً وخصماً خاصاً وحصرياً بمناسبة عودتك لزيارتنا.\nهل تود حجز موعدك القادم معنا اليوم؟`;
       return `https://wa.me/${fullPhone}?text=${encodeURIComponent(msg)}`;
     };
 
@@ -5387,7 +5410,7 @@ function ReportTable({
             <div className="flex items-center gap-2">
               <span className="text-xl font-black text-slate-800 flex items-center gap-2">
                 <UserX size={24} className="text-rose-600" />
-                <span>👥 تقرير العملاء المنقطعين عن الزيارة (إعادة التنشيط)</span>
+                <span>تقرير العملاء المنقطعين عن الزيارة (إعادة التنشيط)</span>
                 <span className="text-xs font-bold text-rose-700 bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200">
                   معيار الانقطاع: {data.thresholdDays} يوم فأكثر
                 </span>
@@ -5483,8 +5506,9 @@ function ReportTable({
                 {filteredClients.length} عميل معروض
               </span>
             </div>
-            <div className="text-[11px] text-slate-400 font-normal">
-              💡 اضغط على زر «دعوة عودة 💬» لإرسال رسالة ترحيبية وعرض مخصص عبر واتساب مباشرة
+            <div className="text-[11px] text-slate-400 font-normal flex items-center gap-1">
+              <Sparkles size={12} className="text-amber-400 shrink-0" />
+              <span>اضغط على زر «دعوة عودة» لإرسال رسالة ترحيبية وعرض مخصص عبر واتساب مباشرة</span>
             </div>
           </div>
 
@@ -5530,11 +5554,11 @@ function ReportTable({
                                 ? 'bg-blue-100 text-blue-900 border-blue-300'
                                 : 'bg-slate-100 text-slate-700 border-slate-200'
                             }`}>
-                              {c.tier === 'royal' ? '💎 ملكي' : c.tier === 'vip' ? '👑 VIP' : c.tier === 'distinguished' ? '🔷 متميز' : '⭐ قياسي'}
+                              {c.tier === 'royal' ? 'ملكي' : c.tier === 'vip' ? 'VIP' : c.tier === 'distinguished' ? 'متميز' : 'قياسي'}
                             </span>
                             {c.isNeverVisited && (
                               <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-300">
-                                جديد لم يزر بعد ✨
+                                جديد لم يزر بعد
                               </span>
                             )}
                           </div>
@@ -5612,7 +5636,7 @@ function ReportTable({
                               title="إرسال رسالة ترحيبية ودعوة عودة مع خصم حصري عبر واتساب"
                             >
                               <MessageSquare size={13} />
-                              <span>دعوة عودة 💬</span>
+                              <span>دعوة عودة</span>
                             </a>
                           ) : (
                             <span className="text-slate-400 text-[10px]">لا يوجد هاتف</span>
@@ -5709,7 +5733,7 @@ function ReportTable({
             <div className="flex items-center gap-2">
               <span className="text-xl font-black text-slate-800 flex items-center gap-2">
                 <Target size={24} className="text-indigo-600" />
-                <span>🎯 تقرير التارجت والعمولات المستهدفة للموظفين</span>
+                <span>تقرير التارجت والعمولات المستهدفة للموظفين</span>
                 <span className="text-xs font-bold text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-200">
                   الفترة: {activeFrom} إلى {activeTo}
                 </span>
@@ -5739,8 +5763,9 @@ function ReportTable({
                 {filteredRows.length} موظف معروض
               </span>
             </div>
-            <div className="text-[11px] text-slate-300 font-normal">
-              💡 الخدمات ذات الصرف الفوري معفاة من التارجت وتظهر عمولتها مباشرة بالعمود المخصص
+            <div className="text-[11px] text-slate-300 font-normal flex items-center gap-1">
+              <Sparkles size={12} className="text-amber-400 shrink-0" />
+              <span>الخدمات ذات الصرف الفوري معفاة من التارجت وتظهر عمولتها مباشرة بالعمود المخصص</span>
             </div>
           </div>
 
@@ -5782,11 +5807,11 @@ function ReportTable({
                       <td className="py-3 px-3 text-center">
                         {r.targetType === 'daily' ? (
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-cyan-100 text-cyan-800 border border-cyan-200">
-                            يومي 📅
+                            يومي
                           </span>
                         ) : r.targetType === 'monthly' ? (
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-100 text-purple-800 border border-purple-200">
-                            شهري 🗓️
+                            شهري
                           </span>
                         ) : (
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
@@ -5833,12 +5858,14 @@ function ReportTable({
                           <span className="text-slate-400 text-[10px]">بدون تارجت</span>
                         ) : r.isTargetAchieved ? (
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 inline-flex items-center gap-1">
-                            <span>محقق 🎯</span>
+                            <CheckCircle2 size={11} className="text-emerald-700" />
+                            <span>محقق</span>
                           </span>
                         ) : (
                           <div className="flex flex-col items-center">
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
-                              جاري السعي ⏳
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 inline-flex items-center gap-1">
+                              <Clock size={10} className="text-amber-600" />
+                              <span>جاري السعي</span>
                             </span>
                             {r.remainingToTarget > 0 && (
                               <span className="text-[9px] text-rose-500 font-mono mt-0.5 font-bold">

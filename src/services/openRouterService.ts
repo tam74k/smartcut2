@@ -2,7 +2,7 @@ import OpenAI from 'openai';
 import { AppSettings } from '../types';
 
 // ==============================================================================
-// 🤖 OpenRouter Text-to-SQL Service (libSQL Local Database Query Engine)
+// OpenRouter Text-to-SQL Service (libSQL Local Database Query Engine)
 // ==============================================================================
 
 export interface OpenRouterConfig {
@@ -21,7 +21,7 @@ export interface ChatMessage {
 }
 
 export const POPULAR_OPENROUTER_MODELS = [
-  { id: 'openai/gpt-4o-mini', name: 'OpenAI GPT-4o Mini (الأسرع والأدق في استعلامات SQL - موصى به 🌟)' },
+  { id: 'openai/gpt-4o-mini', name: 'OpenAI GPT-4o Mini (الأسرع والأدق في استعلامات SQL - موصى به)' },
   { id: 'google/gemini-2.5-flash', name: 'Google Gemini 2.5 Flash (سريع جداً ومنخفض التكلفة)' },
   { id: 'google/gemini-2.5-pro', name: 'Google Gemini 2.5 Pro (أعلى قدرات استدلال وتحليل)' },
   { id: 'deepseek/deepseek-chat', name: 'DeepSeek Chat V3 (أداء عالي واقتصادي)' },

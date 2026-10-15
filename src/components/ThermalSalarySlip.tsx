@@ -102,7 +102,7 @@ export function ThermalSalarySlip({
       {/* Earnings (الإضافات والمستحقات) */}
       <div className="space-y-1 text-[10px] border-b border-dashed border-slate-200 pb-2 mb-2">
         <p className="font-black text-[10px] text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded">
-          ➕ الاستحقاقات والإضافات:
+          الاستحقاقات والإضافات:
         </p>
         
         {summary.monthlySalary > 0 && (
@@ -146,7 +146,7 @@ export function ThermalSalarySlip({
       {/* Deductions (الخصومات والاستقطاعات) */}
       <div className="space-y-1 text-[10px] border-b border-dashed border-slate-200 pb-2 mb-2">
         <p className="font-black text-[10px] text-rose-800 bg-rose-50 px-1.5 py-0.5 rounded">
-          ➖ الاستقطاعات والخصومات:
+          الاستقطاعات والخصومات:
         </p>
 
         {summary.absenceDeduction > 0 && (

@@ -292,7 +292,7 @@ export function ClosingReportReceipt({
       {attendanceStats && (
         <div className="mb-4 border-b border-black border-dashed pb-3">
           <div className="font-bold text-center border-b border-black border-dashed pb-1 mb-2 bg-gray-100">
-            ملخص حضور وبصمة الوردية ⏱️
+            ملخص حضور وبصمة الوردية
           </div>
           <div className="space-y-1 text-xs">
             <div className="flex justify-between">
@@ -354,7 +354,7 @@ export function ClosingReportReceipt({
               </div>
               {!treasury.isMain && stats.net > 0 && (
                 <div className="text-[10px] text-emerald-800 bg-emerald-50 rounded p-1 mt-1 text-center font-bold">
-                  🔄 سيتم تصفير هذا الصافي ونقله تلقائياً إلى الخزينة الرئيسية
+                  سيتم تصفير هذا الصافي ونقله تلقائياً إلى الخزينة الرئيسية
                 </div>
               )}
             </div>

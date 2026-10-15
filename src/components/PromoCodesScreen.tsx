@@ -4,7 +4,7 @@ import { DB } from '../services/db';
 import { 
   Tag, Plus, CheckCircle2, Clock, Trash2, Edit2, Copy, Check, 
   Users, DollarSign, Calendar, Percent, AlertCircle, FileText,
-  Receipt, Printer, RefreshCw
+  Receipt, Printer, RefreshCw, X
 } from 'lucide-react';
 
 interface PromoCodesScreenProps {
@@ -221,7 +221,7 @@ export function PromoCodesScreen({
           const updatedList = promoCodes.map(c => c.id === editingCode.id ? updatedPromo : c);
           localStorage.setItem('smartcut_promo_codes', JSON.stringify(updatedList));
         } catch (e) {}
-        alert(`✅ تم تحديث كود الخصم (${cleanCode}) في قاعدة البيانات بنجاح!`);
+        alert(`تم تحديث كود الخصم (${cleanCode}) في قاعدة البيانات بنجاح.`);
       } else {
         // Check duplicate
         if (promoCodes.some(c => c.code === cleanCode)) {
@@ -253,7 +253,7 @@ export function PromoCodesScreen({
         try {
           localStorage.setItem('smartcut_promo_codes', JSON.stringify([...promoCodes, newPromo]));
         } catch (e) {}
-        alert(`✅ تم حفظ كود الخصم (${cleanCode}) في قاعدة البيانات السحابية بنجاح!`);
+        alert(`تم حفظ كود الخصم (${cleanCode}) في قاعدة البيانات السحابية بنجاح.`);
       }
       setShowAddModal(false);
     } catch (err: any) {
@@ -697,9 +697,10 @@ export function PromoCodesScreen({
               </h3>
               <button 
                 onClick={() => setShowAddModal(false)}
-                className="text-slate-400 hover:text-red-500 font-bold text-lg p-1"
+                className="text-slate-400 hover:text-red-500 font-bold p-1 rounded-lg hover:bg-slate-100 transition-colors"
+                title="إغلاق"
               >
-                ✕
+                <X size={18} />
               </button>
             </div>
 
@@ -883,9 +884,10 @@ export function PromoCodesScreen({
 
                 <button 
                   onClick={() => setSelectedCodeForDetails(null)}
-                  className="text-slate-400 hover:text-slate-700 font-bold text-lg p-2 rounded-xl hover:bg-slate-100 transition-colors"
+                  className="text-slate-400 hover:text-slate-700 font-bold p-2 rounded-xl hover:bg-slate-100 transition-colors"
+                  title="إغلاق"
                 >
-                  ✕
+                  <X size={18} />
                 </button>
               </div>
 

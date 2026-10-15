@@ -3,7 +3,8 @@ import { AppSettings, Booking, Invoice, Transaction, PurchaseInvoice, ItemMoveme
 import { 
   TrendingUp, Receipt, CalendarClock, ArrowUpRight, ArrowDownRight, 
   Edit2, FileText, Banknote, Eye, X, Trash2, AlertTriangle, Package,
-  Bell, CheckCircle2, Check, Scissors, Calendar, Clock, User, Building2
+  Bell, CheckCircle2, Check, Scissors, Calendar, Clock, User, Building2,
+  Landmark, ShoppingBag, ArrowDownLeft, HandCoins, Coins, Wallet, CreditCard
 } from 'lucide-react';
 import { DashboardChartsSection } from './DashboardChartsSection';
 import { AuthService } from '../services/auth';
@@ -634,8 +635,9 @@ export function DashboardScreen({
             </p>
             <h3 className="text-lg font-extrabold text-emerald-600 font-mono">{todaySalesRevenue.toFixed(2)} <span className="text-sm font-normal text-slate-500">{settings.currency}</span></h3>
             {todayBookingAdvances > 0 && (
-              <p className="text-[11px] font-bold text-teal-600 flex items-center gap-1 mt-1">
-                <span>📅 منها مقدمات حجز:</span>
+              <p className="text-[11px] font-bold text-teal-600 flex items-center gap-1.5 mt-1">
+                <Calendar className="w-3.5 h-3.5 text-teal-500" />
+                <span>منها مقدمات حجز:</span>
                 <span className="font-mono">+{todayBookingAdvances.toFixed(2)} {settings.currency}</span>
               </p>
             )}
@@ -793,7 +795,7 @@ export function DashboardScreen({
                   >
                     <div className="flex justify-between items-center mb-3">
                       <span className="font-extrabold text-sm text-white flex items-center gap-1.5">
-                        <span>🏛️</span>
+                        <Landmark className="w-4 h-4 text-emerald-400" />
                         {t.name}
                       </span>
                       <span className="bg-emerald-400/20 text-emerald-300 text-[10px] font-black px-2 py-0.5 rounded-full border border-emerald-300/30">
@@ -804,8 +806,8 @@ export function DashboardScreen({
                     <div className="space-y-2 text-xs">
                       {/* مبيعات اليوم/الوردية الموجهة لها */}
                       <div className="flex justify-between items-center text-slate-300">
-                        <span className="flex items-center gap-1">
-                          <span>🛍️</span>
+                        <span className="flex items-center gap-1.5">
+                          <ShoppingBag className="w-3.5 h-3.5 text-slate-400" />
                           <span>{isShiftOpen ? 'مبيعات الوردية الموجهة لها:' : 'مبيعات اليوم الموجهة لها:'}</span>
                         </span>
                         <span className="text-emerald-400 font-bold font-mono">+{sales.toFixed(2)} {settings.currency}</span>
@@ -813,8 +815,8 @@ export function DashboardScreen({
 
                       {/* مقدم حجز */}
                       <div className={`flex justify-between items-center ${bookingAdvancesAmt > 0 ? 'bg-teal-500/15 border border-teal-400/30 px-2 py-1 rounded-lg text-teal-200 font-extrabold' : 'text-slate-300'}`}>
-                        <span className="flex items-center gap-1">
-                          <span>📅</span>
+                        <span className="flex items-center gap-1.5">
+                          <Calendar className="w-3.5 h-3.5 text-teal-400" />
                           <span>مقدم حجز:</span>
                         </span>
                         <span className={`font-mono ${bookingAdvancesAmt > 0 ? 'text-teal-300 font-black' : 'text-slate-300 font-bold'}`}>
@@ -825,8 +827,8 @@ export function DashboardScreen({
                       {/* إيداعات وتحويلات اليوم/الوردية */}
                       {otherIn > 0 && (
                         <div className="flex justify-between items-center text-slate-300">
-                          <span className="flex items-center gap-1">
-                            <span>📥</span>
+                          <span className="flex items-center gap-1.5">
+                            <ArrowDownLeft className="w-3.5 h-3.5 text-teal-400" />
                             <span>{isShiftOpen ? 'إيداعات وتحويلات الوردية:' : 'إيداعات وتحويلات اليوم:'}</span>
                           </span>
                           <span className="text-teal-400 font-bold font-mono">+{otherIn.toFixed(2)} {settings.currency}</span>
@@ -836,8 +838,8 @@ export function DashboardScreen({
                       {/* سلف موظفين المنصرفة من هذه الخزينة */}
                       {totalAdvancesForTreasury > 0 && (
                         <div className="flex justify-between items-center bg-amber-500/15 border border-amber-400/30 px-2 py-1 rounded-lg text-amber-200 font-extrabold">
-                          <span className="flex items-center gap-1">
-                            <span>🤝</span>
+                          <span className="flex items-center gap-1.5">
+                            <HandCoins className="w-3.5 h-3.5 text-amber-400" />
                             <span>سلف موظفين:</span>
                           </span>
                           <span className="text-amber-300 font-bold font-mono">-{totalAdvancesForTreasury.toFixed(2)} {settings.currency}</span>
@@ -847,8 +849,8 @@ export function DashboardScreen({
                       {/* عمولات فورية منصرفة */}
                       {commissionsForTreasury > 0 && (
                         <div className="flex justify-between items-center bg-purple-500/15 border border-purple-400/30 px-2 py-1 rounded-lg text-purple-200 font-extrabold">
-                          <span className="flex items-center gap-1">
-                            <span>✂️</span>
+                          <span className="flex items-center gap-1.5">
+                            <Scissors className="w-3.5 h-3.5 text-purple-400" />
                             <span>عمولات فورية منصرفة:</span>
                           </span>
                           <span className="text-purple-300 font-bold font-mono">-{commissionsForTreasury.toFixed(2)} {settings.currency}</span>
@@ -858,8 +860,8 @@ export function DashboardScreen({
                       {/* بقشيش منصرف من الخزينة */}
                       {tipsForTreasury > 0 && (
                         <div className="flex justify-between items-center bg-blue-500/15 border border-blue-400/30 px-2 py-1 rounded-lg text-blue-200 font-extrabold">
-                          <span className="flex items-center gap-1">
-                            <span>🪙</span>
+                          <span className="flex items-center gap-1.5">
+                            <Coins className="w-3.5 h-3.5 text-blue-400" />
                             <span>بقشيش منصرف:</span>
                           </span>
                           <span className="text-blue-300 font-bold font-mono">-{tipsForTreasury.toFixed(2)} {settings.currency}</span>
@@ -868,8 +870,8 @@ export function DashboardScreen({
 
                       {/* مسحوبات ومصروفات اليوم/الوردية */}
                       <div className="flex justify-between items-center text-slate-300 border-b border-slate-700/80 pb-2">
-                        <span className="flex items-center gap-1">
-                          <span>💸</span>
+                        <span className="flex items-center gap-1.5">
+                          <ArrowUpRight className="w-3.5 h-3.5 text-rose-400" />
                           <span>{isShiftOpen ? 'مسحوبات ومصروفات الوردية:' : 'مسحوبات ومصروفات اليوم:'}</span>
                         </span>
                         <span className="text-rose-400 font-bold font-mono">-{regularExpenses.toFixed(2)} {settings.currency}</span>
@@ -889,8 +891,8 @@ export function DashboardScreen({
 
                       {/* الرصيد الفعلي المتراكم للخزينة الرئيسية */}
                       <div className="flex justify-between items-center pt-1 font-black text-sm text-white">
-                        <span className="flex items-center gap-1 text-emerald-200">
-                          <span>🏛️</span>
+                        <span className="flex items-center gap-1.5 text-emerald-200">
+                          <Landmark className="w-4 h-4 text-emerald-400" />
                           <span>الرصيد الفعلي المتراكم:</span>
                         </span>
                         <span className={`font-mono text-base font-black ${cumulativeBalance >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
@@ -913,8 +915,7 @@ export function DashboardScreen({
                 >
                   <div className="flex justify-between items-center mb-3">
                     <span className="font-extrabold text-sm text-white flex items-center gap-1.5">
-                      {isCash && <span>💵</span>}
-                      {!isCash && <span>💳</span>}
+                      {isCash ? <Banknote className="w-4 h-4 text-amber-400" /> : <CreditCard className="w-4 h-4 text-indigo-400" />}
                       {t.name}
                     </span>
                     {isCash && (
@@ -928,8 +929,8 @@ export function DashboardScreen({
                     {/* Highlighted Custody Row for Cash */}
                     {custody > 0 && (
                       <div className="flex justify-between items-center bg-amber-500/15 border border-amber-400/30 px-2.5 py-1.5 rounded-xl text-amber-200 font-extrabold">
-                        <span className="flex items-center gap-1">
-                          <span>💰</span>
+                        <span className="flex items-center gap-1.5">
+                          <Wallet className="w-3.5 h-3.5 text-amber-400" />
                           <span>العهدة الافتتاحية:</span>
                         </span>
                         <span className="font-mono text-amber-100 font-black">+{custody.toFixed(2)} {settings.currency}</span>
@@ -938,8 +939,8 @@ export function DashboardScreen({
 
                     {/* Sales Row */}
                     <div className="flex justify-between items-center text-slate-300">
-                      <span className="flex items-center gap-1">
-                        <span>🛍️</span>
+                      <span className="flex items-center gap-1.5">
+                        <ShoppingBag className="w-3.5 h-3.5 text-slate-400" />
                         <span>{isShiftOpen ? 'مبيعات وإيرادات الوردية:' : 'مبيعات وإيرادات اليوم:'}</span>
                       </span>
                       <span className="text-emerald-400 font-bold font-mono">+{sales.toFixed(2)} {settings.currency}</span>
@@ -947,8 +948,8 @@ export function DashboardScreen({
 
                     {/* Booking Advances Row - مقدم حجز (يظهر دائماً في جميع الخزائن) */}
                     <div className={`flex justify-between items-center ${bookingAdvancesAmt > 0 ? 'bg-teal-500/15 border border-teal-400/30 px-2 py-1 rounded-lg text-teal-200 font-extrabold' : 'text-slate-300'}`}>
-                      <span className="flex items-center gap-1">
-                        <span>📅</span>
+                      <span className="flex items-center gap-1.5">
+                        <Calendar className="w-3.5 h-3.5 text-teal-400" />
                         <span>مقدم حجز:</span>
                       </span>
                       <span className={`font-mono ${bookingAdvancesAmt > 0 ? 'text-teal-300 font-black' : 'text-slate-300 font-bold'}`}>
@@ -959,8 +960,8 @@ export function DashboardScreen({
                     {/* Other Inflows */}
                     {otherIn > 0 && (
                       <div className="flex justify-between items-center text-slate-300">
-                        <span className="flex items-center gap-1">
-                          <span>📥</span>
+                        <span className="flex items-center gap-1.5">
+                          <ArrowDownLeft className="w-3.5 h-3.5 text-teal-400" />
                           <span>{isShiftOpen ? 'إيداعات أخرى (الوردية):' : 'إيداعات أخرى:'}</span>
                         </span>
                         <span className="text-teal-400 font-bold font-mono">+{otherIn.toFixed(2)} {settings.currency}</span>
@@ -970,8 +971,8 @@ export function DashboardScreen({
                     {/* سلف موظفين المنصرفة من هذه الخزينة */}
                     {totalAdvancesForTreasury > 0 && (
                       <div className="flex justify-between items-center bg-amber-500/15 border border-amber-400/30 px-2 py-1 rounded-lg text-amber-200 font-extrabold">
-                        <span className="flex items-center gap-1">
-                          <span>🤝</span>
+                        <span className="flex items-center gap-1.5">
+                          <HandCoins className="w-3.5 h-3.5 text-amber-400" />
                           <span>سلف موظفين:</span>
                         </span>
                         <span className="text-amber-300 font-bold font-mono">-{totalAdvancesForTreasury.toFixed(2)} {settings.currency}</span>
@@ -981,8 +982,8 @@ export function DashboardScreen({
                     {/* عمولات فورية منصرفة من هذه الخزينة (الدرج) */}
                     {commissionsForTreasury > 0 && (
                       <div className="flex justify-between items-center bg-purple-500/15 border border-purple-400/30 px-2 py-1 rounded-lg text-purple-200 font-extrabold">
-                        <span className="flex items-center gap-1">
-                          <span>✂️</span>
+                        <span className="flex items-center gap-1.5">
+                          <Scissors className="w-3.5 h-3.5 text-purple-400" />
                           <span>عمولات فورية منصرفة:</span>
                         </span>
                         <span className="text-purple-300 font-bold font-mono">-{commissionsForTreasury.toFixed(2)} {settings.currency}</span>
@@ -992,8 +993,8 @@ export function DashboardScreen({
                     {/* بقشيش مدفوع من الدرج / الخزينة */}
                     {tipsForTreasury > 0 && (
                       <div className="flex justify-between items-center bg-blue-500/15 border border-blue-400/30 px-2.5 py-1 rounded-lg text-blue-200 font-extrabold">
-                        <span className="flex items-center gap-1">
-                          <span>🪙</span>
+                        <span className="flex items-center gap-1.5">
+                          <Coins className="w-3.5 h-3.5 text-blue-400" />
                           <span>{isCash ? 'بقشيش مدفوع من الدرج:' : 'بقشيش منصرف:'}</span>
                         </span>
                         <span className="text-blue-300 font-bold font-mono">-{tipsForTreasury.toFixed(2)} {settings.currency}</span>
@@ -1002,8 +1003,8 @@ export function DashboardScreen({
 
                     {/* Outflows */}
                     <div className="flex justify-between items-center text-slate-300 border-b border-slate-700/80 pb-2">
-                      <span className="flex items-center gap-1">
-                        <span>💸</span>
+                      <span className="flex items-center gap-1.5">
+                        <ArrowUpRight className="w-3.5 h-3.5 text-rose-400" />
                         <span>{isShiftOpen ? 'مسحوبات ومصروفات الوردية:' : 'مسحوبات ومصروفات:'}</span>
                       </span>
                       <span className="text-rose-400 font-bold font-mono">-{regularExpenses.toFixed(2)} {settings.currency}</span>
@@ -1042,7 +1043,7 @@ export function DashboardScreen({
                     ? 'bg-amber-100 text-amber-800 border border-amber-300' 
                     : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                 }`}>
-                  {pendingBookings.length > 0 ? `${pendingBookings.length} حجز معلق` : 'لا توجد حجوزات معلقة ✓'}
+                  {pendingBookings.length > 0 ? `${pendingBookings.length} حجز معلق` : 'لا توجد حجوزات معلقة'}
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-0.5">الحجوزات الواردة عبر التطبيق أو الموقع والتي لم يتم تأكيدها وقبولها من قبل الصالون بعد</p>
@@ -1077,7 +1078,7 @@ export function DashboardScreen({
                         </div>
                       </div>
                       <span className="bg-amber-100 text-amber-800 text-[10px] font-black px-2 py-0.5 rounded-full border border-amber-300">
-                        قيد الانتظار ⏳
+                        قيد الانتظار
                       </span>
                     </div>
 
@@ -1744,13 +1745,13 @@ export function DashboardScreen({
                   <div>
                     <span className="text-[10px] text-slate-400 font-bold block mb-0.5">حالة الحجز</span>
                     {previewBooking.status === 'confirmed' ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">مؤكد ✓</span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">مؤكد</span>
                     ) : previewBooking.status === 'pending' ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">معلق ⏳</span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">معلق</span>
                     ) : previewBooking.status === 'completed' ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">مكتمل 🎯</span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">مكتمل</span>
                     ) : (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">ملغي ✕</span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">ملغي</span>
                     )}
                   </div>
 
@@ -1834,8 +1835,9 @@ export function DashboardScreen({
                 {/* 3. Advance Payments Details (if any) */}
                 {previewBooking.advancePayments && previewBooking.advancePayments.length > 0 && (
                   <div>
-                    <span className="font-bold text-xs text-slate-800 block mb-2">
-                      💰 تفاصيل الدفعات المقدمة المسددة ({previewBooking.advancePayments.length}):
+                    <span className="font-bold text-xs text-slate-800 flex items-center gap-1.5 mb-2">
+                      <Wallet className="w-4 h-4 text-emerald-600" />
+                      <span>تفاصيل الدفعات المقدمة المسددة ({previewBooking.advancePayments.length}):</span>
                     </span>
                     <div className="space-y-1.5">
                       {previewBooking.advancePayments.map((adv, aIdx) => (

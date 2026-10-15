@@ -1,7 +1,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 // ==============================================================================
-// 🔗 بيانات الاتصال بـ Supabase — SmartCut V2 Pro (Singleton REST Client Instance)
+// بيانات الاتصال بـ Supabase — SmartCut V2 Pro (Singleton REST Client Instance)
 // ==============================================================================
 const DEFAULT_SUPABASE_URL = 'https://api.101488.xyz';
 const DEFAULT_SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNjcyNTMxMjAwLCJleHAiOjE5ODgxNTA0MDB9.vW9qTGUVdfudKMLfAqHL78-QAtSMs58uNMlP-6dyySw';
@@ -78,7 +78,7 @@ export const SupabaseService = {
       if (error && error.code !== 'PGRST116') {
         return { success: false, message: error.message };
       }
-      return { success: true, message: 'تم الاتصال بقاعدة بيانات Supabase السحابية بنجاح! ✅' };
+      return { success: true, message: 'تم الاتصال بقاعدة بيانات Supabase السحابية بنجاح!' };
     } catch (err: any) {
       return { success: false, message: err?.message || 'فشل الاتصال' };
     }

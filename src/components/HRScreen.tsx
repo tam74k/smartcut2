@@ -9,7 +9,8 @@ import {
   RotateCcw, Sparkles, Plus, CheckSquare, Square, FileText, Ban, ShieldAlert,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Download, DollarSign, Award, ArrowUpRight, Check, X, Wallet,
   Edit, Trash2, TrendingUp, TrendingDown, History, Percent, Coins, Palmtree, RefreshCw, DoorOpen, Timer,
-  ShieldCheck, Briefcase, Maximize2, Minimize2, FileSpreadsheet, Search
+  ShieldCheck, Briefcase, Maximize2, Minimize2, FileSpreadsheet, Search,
+  Moon, Sun, Save, SlidersHorizontal
 } from 'lucide-react';
 
 import { ThermalSalarySlip, SalarySlipSummary } from './ThermalSalarySlip';
@@ -513,7 +514,7 @@ export function HRScreen({
       await DB.saveEmployee(emp);
     }
 
-    alert(`✅ تم تطبيق وحفظ زيادة الراتب بنجاح لـ (${updatedEmployeesList.length}) موظف، وتوثيق كافة الحركات في قاعدة البيانات وسجل تاريخ الزيادات.`);
+    alert(`تم تطبيق وحفظ زيادة الراتب بنجاح لـ (${updatedEmployeesList.length}) موظف، وتوثيق كافة الحركات في قاعدة البيانات وسجل تاريخ الزيادات.`);
     setShowSalaryIncrementModal(false);
   };
 
@@ -951,7 +952,7 @@ export function HRScreen({
           // الحالة 7: مأموريات العمل الخارجية (Official Missions)
           // استثناء كامل من خصم رصيد الأذونات، واحتساب اليوم كدوام كامل مدفوع الأجر
           status = 'mission';
-          statusLabel = 'مأمورية عمل رسمية 💼';
+          statusLabel = 'مأمورية عمل رسمية';
           workedHoursFormatted = '08:00:00';
           earnedDaily = dailyRate;
           delayMinutes = 0;
@@ -1627,19 +1628,19 @@ export function HRScreen({
       return;
     }
     if (type === 'advance' && !canManageAdvances) {
-      alert('⛔ عذراً، طباعة سند السلفة يتطلب صلاحية إدارة وصرف السلف النقدية (hr_manage_advances).');
+      alert('عذراً، طباعة سند السلفة يتطلب صلاحية إدارة وصرف السلف النقدية (hr_manage_advances).');
       return;
     }
     if (type === 'penalty' && !canManagePenalties) {
-      alert('⛔ عذراً، طباعة سند الجزاء يتطلب صلاحية إدارة الجزاءات والخصومات (hr_manage_penalties).');
+      alert('عذراً، طباعة سند الجزاء يتطلب صلاحية إدارة الجزاءات والخصومات (hr_manage_penalties).');
       return;
     }
     if (type === 'bonus' && !canManageBonuses) {
-      alert('⛔ عذراً، طباعة سند المكافأة يتطلب صلاحية إدارة المكافآت والحوافز (hr_manage_bonuses).');
+      alert('عذراً، طباعة سند المكافأة يتطلب صلاحية إدارة المكافآت والحوافز (hr_manage_bonuses).');
       return;
     }
     if (type === 'commission_payout' && !canDisburseCommissions) {
-      alert('⛔ عذراً، طباعة سند صرف العمولة يتطلب صلاحية إدارة وصرف العمولات (hr_manage_commissions).');
+      alert('عذراً، طباعة سند صرف العمولة يتطلب صلاحية إدارة وصرف العمولات (hr_manage_commissions).');
       return;
     }
     printThermalFinancialVoucher(settings, {
@@ -1780,7 +1781,7 @@ export function HRScreen({
       setLocalLogs(updateFn);
 
       setShowAttendanceModal(false);
-      alert('✅ تم حفظ وتحديث التايم شيت بنجاح في قاعدة البيانات.');
+      alert('تم حفظ وتحديث التايم شيت بنجاح في قاعدة البيانات.');
     } catch (err: any) {
       console.error('Error in handleSaveAttendance:', err);
       alert('حدث خطأ أثناء حفظ التايم شيت: ' + (err?.message || 'خطأ غير معروف'));
@@ -1827,7 +1828,7 @@ export function HRScreen({
     setLocalLogs(deleteFn);
 
     setShowAttendanceModal(false);
-    alert('✅ تم حذف تسجيل الحضور لهذا اليوم واعتباره كغياب.');
+    alert('تم حذف تسجيل الحضور لهذا اليوم واعتباره كغياب.');
   };
 
 
@@ -2017,7 +2018,7 @@ export function HRScreen({
 
       setShowCommissionModal(false);
       setCommAmount('');
-      alert(`✅ تم صرف وتوثيق العمولة للموظف (${targetEmp.name}) بقيمة ${Number(amountVal || 0).toFixed(2)} ${settings.currency} بنجاح وطباعة إيصال الصرف للتوقيع.`);
+      alert(`تم صرف وتوثيق العمولة للموظف (${targetEmp.name}) بقيمة ${Number(amountVal || 0).toFixed(2)} ${settings.currency} بنجاح وطباعة إيصال الصرف للتوقيع.`);
     } catch (err: any) {
       console.error('Error in handleDisburseCommission:', err);
       alert('حدث خطأ أثناء صرف العمولة: ' + (err?.message || 'خطأ غير معروف'));
@@ -2119,7 +2120,7 @@ export function HRScreen({
         ? ((Number(targetEmp?.baseSalary || 0)) / 30 * leaveDaysCount).toFixed(2)
         : '0.00';
 
-      alert(`🏖️ تم تسجيل وتطبيق الإجازة بنجاح!\n• الموظف: ${targetEmp.name}\n• المدة: ${leaveDaysCount} يوم (من ${leaveStartDate} إلى ${leaveEndDate})\n• النوع: ${leaveType === 'paid' ? 'مدفوعة الأجر (يتم احتساب الراتب)' : 'بدون أجر (خصم اليومية دون جزاء غياب)'}\n• تم توزيعها تلقائياً على التايم شيت.`);
+      alert(`تم تسجيل وتطبيق الإجازة بنجاح!\n• الموظف: ${targetEmp.name}\n• المدة: ${leaveDaysCount} يوم (من ${leaveStartDate} إلى ${leaveEndDate})\n• النوع: ${leaveType === 'paid' ? 'مدفوعة الأجر (يتم احتساب الراتب)' : 'بدون أجر (خصم اليومية دون جزاء غياب)'}\n• تم توزيعها تلقائياً على التايم شيت.`);
     } catch (err: any) {
       console.error('Error saving leave:', err);
       alert('حدث خطأ أثناء تسجيل الإجازة: ' + (err?.message || 'خطأ غير معروف'));
@@ -2149,7 +2150,7 @@ export function HRScreen({
       }
 
       setEmployees(employees.map(e => e.id === targetEmp.id ? updatedEmp : e));
-      alert('✅ تم حذف الإجازة بنجاح وإعادة ضبط التايم شيت.');
+      alert('تم حذف الإجازة بنجاح وإعادة ضبط التايم شيت.');
     } catch (err: any) {
       console.error('Error deleting leave:', err);
       alert('حدث خطأ أثناء حذف الإجازة: ' + (err?.message || 'خطأ غير معروف'));
@@ -2265,8 +2266,8 @@ export function HRScreen({
       setShowPermissionModal(false);
 
       const durationHours = (Number(permDurationMinutes || 0) / 60).toFixed(1);
-      const typeLabel = permType === 'official_mission' ? '💼 مأمورية عمل رسمية خارجية' : (permType === 'shift_start' ? '🌅 إذن بداية الدوام' : '⏱️ إذن وسط الدوام');
-      alert(`✅ تم اعتماد وتسجيل الإذن بنجاح!\n• الموظف: ${targetEmp.name}\n• النوع: ${typeLabel}\n• التاريخ: ${permDate}\n• الفترة: من ${permStartTime} إلى ${permEndTime} (${permDurationMinutes} دقيقة / ${durationHours} ساعة)\n• المعاملة: ${permType === 'official_mission' ? 'مأمورية مدفوعة بدون استهلاك رصيد' : (permIsExcused ? 'مستثنى ومقبول (معفى من الخصم)' : 'يخضع لحساب الرصيد والخصومات')}\n• تم التحديث الفوري في التايم شيت.`);
+      const typeLabel = permType === 'official_mission' ? 'مأمورية عمل رسمية خارجية' : (permType === 'shift_start' ? 'إذن بداية الدوام' : 'إذن وسط الدوام');
+      alert(`تم اعتماد وتسجيل الإذن بنجاح!\n• الموظف: ${targetEmp.name}\n• النوع: ${typeLabel}\n• التاريخ: ${permDate}\n• الفترة: من ${permStartTime} إلى ${permEndTime} (${permDurationMinutes} دقيقة / ${durationHours} ساعة)\n• المعاملة: ${permType === 'official_mission' ? 'مأمورية مدفوعة بدون استهلاك رصيد' : (permIsExcused ? 'مستثنى ومقبول (معفى من الخصم)' : 'يخضع لحساب الرصيد والخصومات')}\n• تم التحديث الفوري في التايم شيت.`);
     } catch (err: any) {
       console.error('Error saving permission:', err);
       alert('حدث خطأ أثناء تسجيل الإذن: ' + (err?.message || 'خطأ غير معروف'));
@@ -2296,7 +2297,7 @@ export function HRScreen({
       }
 
       setEmployees(employees.map(e => e.id === targetEmp.id ? updatedEmp : e));
-      alert('✅ تم حذف الإذن بنجاح وتحديث التايم شيت.');
+      alert('تم حذف الإذن بنجاح وتحديث التايم شيت.');
     } catch (err: any) {
       console.error('Error deleting permission:', err);
       alert('حدث خطأ أثناء حذف الإذن: ' + (err?.message || 'خطأ غير معروف'));
@@ -2422,7 +2423,7 @@ export function HRScreen({
     const alreadyPaidSelected = payrollDisbursementData.filter(d => targetEmpIds.includes(d.emp.id) && d.isAlreadyPaid);
     if (alreadyPaidSelected.length > 0) {
       const details = alreadyPaidSelected.map(d => `• ${d.emp.name}: تم الصرف مسبقاً بتاريخ (${d.paidRecord?.date}) بمبلغ ${d.paidRecord?.amount} ${settings.currency}`).join('\n');
-      alert(`⚠️ تنبيه نظام الرواتب (منع الازدواجية والتكرار):\nتم صرف راتب هذا الشهر (${selectedMonth}) مسبقاً للموظفين التاليين:\n${details}\n\nسيتم استبعادهم فوراً لمنع التكرار والصرف لمن لم يُصرف لهم فقط.`);
+      alert(`تنبيه نظام الرواتب (منع الازدواجية والتكرار):\nتم صرف راتب هذا الشهر (${selectedMonth}) مسبقاً للموظفين التاليين:\n${details}\n\nسيتم استبعادهم فوراً لمنع التكرار والصرف لمن لم يُصرف لهم فقط.`);
     }
 
     // ترشيح الموظفين المستحقين الذين لم يُصرف لهم راتب هذا الشهر ولهم صافي مستحق
@@ -2512,7 +2513,7 @@ export function HRScreen({
     }
 
     setShowDisbursementModal(false);
-    alert(`✅ تم صرف وتوثيق رواتب (${targets.length}) موظف بنجاح بقيمة إجمالية ${targets.reduce((s, t) => s + (Number(t.netPayable || 0)), 0).toFixed(2)} ${settings.currency} وطباعة إيصالات الاستلام للتوقيع.`);
+    alert(`تم صرف وتوثيق رواتب (${targets.length}) موظف بنجاح بقيمة إجمالية ${targets.reduce((s, t) => s + (Number(t.netPayable || 0)), 0).toFixed(2)} ${settings.currency} وطباعة إيصالات الاستلام للتوقيع.`);
   };
 
   if (currentUser && !canViewTimesheet) {
@@ -2571,7 +2572,7 @@ export function HRScreen({
   };
 
   // =========================================================================
-  // 💰 قسم ملخص وتفاصيل العمولات (Commissions Breakdown & Detailed Summary)
+  // قسم ملخص وتفاصيل العمولات (Commissions Breakdown & Detailed Summary)
   // =========================================================================
   interface CommissionDetailRow {
     rowId: string;
@@ -3098,7 +3099,7 @@ export function HRScreen({
               title="سحب حركات البصمة والتايم شيت من ملف إكسل"
             >
               <FileSpreadsheet size={14} />
-              <span>سحب من إكسل 📥</span>
+              <span>سحب من إكسل</span>
             </button>
           )}
 
@@ -3112,7 +3113,7 @@ export function HRScreen({
               title="تحديث فوري للبصمات والبيانات"
             >
               <RefreshCw size={14} className={isRefreshingLogs ? 'animate-spin text-indigo-600' : 'text-slate-600'} />
-              <span>{isRefreshingLogs ? 'جارٍ المزامنة...' : 'تحديث الآن 🔄'}</span>
+              <span>{isRefreshingLogs ? 'جارٍ المزامنة...' : 'تحديث الآن'}</span>
             </button>
           )}
           {/* View Mode Toggle */}
@@ -3140,7 +3141,7 @@ export function HRScreen({
             disabled={!canManageAttendance}
             onClick={() => {
               if (!canManageAttendance) {
-                alert('⛔ عذراً، لا تملك صلاحية تسجيل وتعديل الحضور والانصراف (hr_manage_attendance)');
+                alert('عذراً، لا تملك صلاحية تسجيل وتعديل الحضور والانصراف (hr_manage_attendance)');
                 return;
               }
               setAttendanceForm({
@@ -3162,7 +3163,7 @@ export function HRScreen({
             title={canManageAttendance ? 'تسجيل أو تعديل حضور' : 'لا تملك صلاحية تسجيل وتعديل الحضور (hr_manage_attendance)'}
           >
             <Plus size={15} />
-            <span>تسجيل / تعديل حضور ⏱️</span>
+            <span>تسجيل / تعديل حضور</span>
           </button>
 
           {/* 2. تسجيل زيادة راتب */}
@@ -3170,7 +3171,7 @@ export function HRScreen({
             disabled={!canSalaryIncrements}
             onClick={() => {
               if (!canSalaryIncrements) {
-                alert('⛔ عذراً، لا تملك صلاحية إقرار وتطبيق زيادات الرواتب (hr_manage_salary_increments)');
+                alert('عذراً، لا تملك صلاحية إقرار وتطبيق زيادات الرواتب (hr_manage_salary_increments)');
                 return;
               }
               setTargetEmpId(selectedEmpId || activeEmployees[0]?.id || '');
@@ -3190,7 +3191,7 @@ export function HRScreen({
             title={canSalaryIncrements ? 'تسجيل زيادة راتب' : 'لا تملك صلاحية زيادات الرواتب (hr_manage_salary_increments)'}
           >
             <TrendingUp size={15} />
-            <span>تسجيل زيادة راتب 📈</span>
+            <span>تسجيل زيادة راتب</span>
           </button>
 
           <button
@@ -3198,7 +3199,7 @@ export function HRScreen({
             className="bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-colors cursor-pointer"
           >
             <History size={15} className="text-indigo-600" />
-            <span>سجل الزيادات 📜</span>
+            <span>سجل الزيادات</span>
           </button>
 
           {/* 3. تسجيل إجازة */}
@@ -3206,7 +3207,7 @@ export function HRScreen({
             disabled={!canManageLeaves}
             onClick={() => {
               if (!canManageLeaves) {
-                alert('⛔ عذراً، لا تملك صلاحية تسجيل واعتماد الإجازات (hr_manage_leaves)');
+                alert('عذراً، لا تملك صلاحية تسجيل واعتماد الإجازات (hr_manage_leaves)');
                 return;
               }
               handleOpenLeaveModal();
@@ -3219,7 +3220,7 @@ export function HRScreen({
             title={canManageLeaves ? 'تسجيل إجازة' : 'لا تملك صلاحية إدارة الإجازات (hr_manage_leaves)'}
           >
             <Palmtree size={15} />
-            <span>تسجيل إجازة 🏖️</span>
+            <span>تسجيل إجازة</span>
           </button>
 
           <button
@@ -3227,7 +3228,7 @@ export function HRScreen({
             className="bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 px-3 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-colors cursor-pointer"
           >
             <Calendar size={15} className="text-sky-600" />
-            <span>سجل الإجازات 📋</span>
+            <span>سجل الإجازات</span>
           </button>
 
           {/* 4. تسجيل استئذان */}
@@ -3235,7 +3236,7 @@ export function HRScreen({
             disabled={!canManagePermissions}
             onClick={() => {
               if (!canManagePermissions) {
-                alert('⛔ عذراً، لا تملك صلاحية تسجيل واعتماد أذونات الاستئذان (hr_manage_permissions)');
+                alert('عذراً، لا تملك صلاحية تسجيل واعتماد أذونات الاستئذان (hr_manage_permissions)');
                 return;
               }
               handleOpenPermissionModal();
@@ -3248,7 +3249,7 @@ export function HRScreen({
             title={canManagePermissions ? 'تسجيل استئذان' : 'لا تملك صلاحية إدارة الاستئذانات (hr_manage_permissions)'}
           >
             <Timer size={15} />
-            <span>تسجيل استئذان ⏱️</span>
+            <span>تسجيل استئذان</span>
           </button>
 
           <button
@@ -3256,7 +3257,7 @@ export function HRScreen({
             className="bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 px-3 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-colors cursor-pointer"
           >
             <DoorOpen size={15} className="text-teal-600" />
-            <span>سجل الاستئذانات 🚪</span>
+            <span>سجل الاستئذانات</span>
           </button>
 
           {/* 5. تدقيق الاستقطاعات والمسير */}
@@ -3267,7 +3268,7 @@ export function HRScreen({
               title="مراجعة وتدقيق الاستقطاعات وأرصدة الأذونات قبل اعتماد المسير"
             >
               <ShieldCheck size={15} />
-              <span>تدقيق الاستقطاعات والمسير 📑</span>
+              <span>تدقيق الاستقطاعات والمسير</span>
             </button>
           )}
 
@@ -3276,7 +3277,7 @@ export function HRScreen({
             disabled={!canDisburseCommissions}
             onClick={() => {
               if (!canDisburseCommissions) {
-                alert('⛔ عذراً، لا تملك صلاحية اعتماد وصرف العمولات (hr_manage_commissions)');
+                alert('عذراً، لا تملك صلاحية اعتماد وصرف العمولات (hr_manage_commissions)');
                 return;
               }
               handleOpenCommissionModal();
@@ -3289,7 +3290,7 @@ export function HRScreen({
             title={canDisburseCommissions ? 'صرف عمولة نقدية للموظف فوراً' : 'لا تملك صلاحية صرف العمولات (hr_manage_commissions)'}
           >
             <Coins size={16} className="text-amber-100" />
-            <span className="text-[13px] font-black">صرف عمولة 💵</span>
+            <span className="text-[13px] font-black">صرف عمولة</span>
           </button>
 
           {/* 7. صرف مسير الرواتب */}
@@ -3297,7 +3298,7 @@ export function HRScreen({
             disabled={!canDisburseSalaries}
             onClick={() => {
               if (!canDisburseSalaries) {
-                alert('⛔ عذراً، لا تملك صلاحية فتح واعتماد وصرف مسير الرواتب (hr_disburse_payroll)');
+                alert('عذراً، لا تملك صلاحية فتح واعتماد وصرف مسير الرواتب (hr_disburse_payroll)');
                 return;
               }
               handleOpenDisbursementModal();
@@ -3310,7 +3311,7 @@ export function HRScreen({
             title={canDisburseSalaries ? 'صرف مسير الرواتب' : 'لا تملك صلاحية صرف مسير الرواتب (hr_disburse_payroll)'}
           >
             <DollarSign size={16} />
-            <span>صرف مسير الرواتب 💰</span>
+            <span>صرف مسير الرواتب</span>
           </button>
 
           {/* 8. قسيمة الراتب */}
@@ -3318,7 +3319,7 @@ export function HRScreen({
             disabled={!canPrintSlips}
             onClick={() => {
               if (!canPrintSlips) {
-                alert('⛔ عذراً، لا تملك صلاحية طباعة قسائم الرواتب (hr_print_slips)');
+                alert('عذراً، لا تملك صلاحية طباعة قسائم الرواتب (hr_print_slips)');
                 return;
               }
               handleOpenSalarySlip();
@@ -3399,7 +3400,7 @@ export function HRScreen({
         )}
       </div>
 
-      {/* 📊 مربعات إحصائية علوية لمجاميع التايم شيت مرتبة بنفس ترتيب أعمدة الجدول */}
+      {/* مربعات إحصائية علوية لمجاميع التايم شيت مرتبة بنفس ترتيب أعمدة الجدول */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-11 gap-2.5 mb-3.5">
         {/* 1. أيام العمل */}
         <div className="bg-white p-3 rounded-2xl border border-slate-200/90 shadow-2xs flex flex-col justify-between transition-all hover:border-slate-300">
@@ -3565,7 +3566,8 @@ export function HRScreen({
       <div className="bg-white px-4 py-2.5 rounded-2xl border border-slate-200 shadow-2xs mb-3 flex flex-wrap items-center justify-between gap-3 select-none">
         <div className="flex items-center gap-2">
           <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
-            <span>📊 شريط تحكم وتصفح الجدول (أفقياً):</span>
+            <SlidersHorizontal size={14} className="text-indigo-600" />
+            <span>شريط تحكم وتصفح الجدول (أفقياً):</span>
           </span>
           <span className="text-[11px] text-slate-500 hidden sm:inline">
             (يمكنك التمرير بالأزرار، أو السحب بالماوس يميناً ويساراً، أو الضغط على Shift مع عجلة الماوس)
@@ -3584,7 +3586,7 @@ export function HRScreen({
             }`}
             title="تبديل حجم الصفوف ليظهر الشهر بالكامل في الشاشة دون تمرير كثير"
           >
-            <span>{isCompactDensity ? '↕ عرض عادي واسع' : '☰ إظهار الشهر بالكامل (عرض مكثف)'}</span>
+            <span>{isCompactDensity ? 'عرض عادي واسع' : 'إظهار الشهر بالكامل (عرض مكثف)'}</span>
           </button>
 
           {/* Fullscreen Table Mode */}
@@ -3667,9 +3669,10 @@ export function HRScreen({
             <h3 className="font-black text-sm text-slate-800">سجل الدوام والتايم شيت (وضع ملء الشاشة لعرض كامل أيام الشهر)</h3>
             <button
               onClick={() => setIsFullscreenTable(false)}
-              className="px-3 py-1 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 cursor-pointer"
+              className="px-3 py-1 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 cursor-pointer flex items-center gap-1.5"
             >
-              ✕ إغلاق ملء الشاشة
+              <X size={14} />
+              <span>إغلاق ملء الشاشة</span>
             </button>
           </div>
         )}
@@ -3766,7 +3769,10 @@ export function HRScreen({
                             {row.checkIn}
                           </span>
                         ) : (
-                          <span className="text-rose-500 font-bold">🔴 غياب</span>
+                          <span className="text-rose-500 font-bold inline-flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500 inline-block"></span>
+                            <span>غياب</span>
+                          </span>
                         )}
                         <button
                           type="button"
@@ -3801,8 +3807,9 @@ export function HRScreen({
                             <Clock size={12} className="text-slate-400" />
                             <span>{row.checkOut.replace(' (+1)', '')}</span>
                             {row.checkOut.includes('(+1)') && (
-                              <span className="inline-flex items-center px-1.5 py-0.2 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold" title="انصراف في اليوم التالي (بعد منتصف الليل)">
-                                🌙 +1
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold" title="انصراف في اليوم التالي (بعد منتصف الليل)">
+                                <Moon size={10} className="text-indigo-600" />
+                                <span>+1</span>
                               </span>
                             )}
                           </span>
@@ -3878,8 +3885,9 @@ export function HRScreen({
                           {row.statusLabel}
                         </button>
                         {row.administrativeAction === 'warning' && (
-                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 border border-amber-300 text-[9px] font-black" title={row.administrativeNotes}>
-                            ⚠️ إنذار إداري
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 border border-amber-300 text-[9px] font-black" title={row.administrativeNotes}>
+                            <AlertTriangle size={10} className="text-amber-700" />
+                            <span>إنذار إداري</span>
                           </span>
                         )}
                       </div>
@@ -4009,12 +4017,13 @@ export function HRScreen({
                             title={`صرف عمولة ${row.employee.name} فوراً عن يوم ${row.dateStr}`}
                           >
                             <Coins size={10} />
-                            <span>صرف 💵</span>
+                            <span>صرف</span>
                           </button>
                         )}
                         {(Number(row.commissionAmount || 0) + Number(row.dailyTargetCommission || 0)) > 0 && (Number(row.commissionPaid || 0) >= (Number(row.commissionAmount || 0) + Number(row.dailyTargetCommission || 0))) && (
                           <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            ✓ مسددة
+                            <Check size={11} className="inline ml-0.5" />
+                            <span>مسددة</span>
                           </span>
                         )}
                       </div>
@@ -4121,7 +4130,7 @@ export function HRScreen({
       )}
 
       {/* ========================================================================= */}
-      {/* 💰 COMMISSIONS DETAILED SECTION (قسم ملخص وتفاصيل العمولات المستحقة) */}
+      {/* COMMISSIONS DETAILED SECTION (قسم ملخص وتفاصيل العمولات المستحقة) */}
       {/* ========================================================================= */}
       {hrMainTab === 'commissions' && (
         <div className="space-y-6">
@@ -4156,7 +4165,7 @@ export function HRScreen({
                   title="صرف وتسجيل دفعة عمولة رسمية للموظف"
                 >
                   <Coins size={15} />
-                  <span>صرف عمولة 💵</span>
+                  <span>صرف عمولة</span>
                 </button>
               )}
 
@@ -4167,7 +4176,7 @@ export function HRScreen({
                 title="طباعة تقرير كشف العمولات"
               >
                 <Printer size={15} />
-                <span>طباعة الكشف 🖨️</span>
+                <span>طباعة الكشف</span>
               </button>
 
               <button
@@ -4177,7 +4186,7 @@ export function HRScreen({
                 title="تصدير كشف إكسل (CSV)"
               >
                 <FileSpreadsheet size={15} />
-                <span>تصدير Excel 📥</span>
+                <span>تصدير Excel</span>
               </button>
             </div>
           </div>
@@ -4339,9 +4348,9 @@ export function HRScreen({
                     <button
                       type="button"
                       onClick={() => setCommSearchQuery('')}
-                      className="absolute left-2.5 top-2 text-slate-400 hover:text-slate-600 text-xs"
+                      className="absolute left-2.5 top-2 text-slate-400 hover:text-slate-600 cursor-pointer"
                     >
-                      ✕
+                      <X size={13} />
                     </button>
                   )}
                 </div>
@@ -4445,7 +4454,7 @@ export function HRScreen({
               <div className={`text-[10px] font-bold mt-1 ${
                 detailedCommissionsData.unpaidCommissions > 0 ? 'text-rose-600' : 'text-emerald-600'
               }`}>
-                {detailedCommissionsData.unpaidCommissions > 0 ? 'مستحق للصرف ⏳' : 'تمت التسوية بالكامل ✅'}
+                {detailedCommissionsData.unpaidCommissions > 0 ? 'مستحق للصرف' : 'تمت التسوية بالكامل'}
               </div>
             </div>
           </div>
@@ -4587,7 +4596,7 @@ export function HRScreen({
                         {detailedCommissionsData.totalEarnedCommission.toFixed(2)} {settings.currency}
                       </td>
                       <td className="p-3 text-center text-emerald-700 font-black">
-                        مسددة ✅
+                        مسددة
                       </td>
                     </tr>
                   </tfoot>
@@ -4618,7 +4627,9 @@ export function HRScreen({
                 <Printer size={16} />
                 قسيمة الراتب 80mm
               </h3>
-              <button onClick={() => setShowSlipModal(false)} className="text-slate-400 hover:text-slate-600">✕</button>
+              <button onClick={() => setShowSlipModal(false)} className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer">
+                <X size={16} />
+              </button>
             </div>
 
             {/* The 80mm Thermal Component */}
@@ -4671,7 +4682,7 @@ export function HRScreen({
                 onClick={() => setShowDisbursementModal(false)}
                 className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 cursor-pointer"
               >
-                ✕
+                <X size={16} />
               </button>
             </div>
 
@@ -4799,8 +4810,9 @@ export function HRScreen({
                             <div className="font-bold text-slate-900 flex items-center gap-1.5">
                               <span>{item.emp.name}</span>
                               {item.isAlreadyPaid && (
-                                <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded">
-                                  تم الصرف ✅
+                                <span className="inline-flex items-center gap-1 text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded">
+                                  <Check size={10} className="text-emerald-700" />
+                                  <span>تم الصرف</span>
                                 </span>
                               )}
                             </div>
@@ -5002,10 +5014,11 @@ export function HRScreen({
                         <button
                           type="button"
                           onClick={() => setAttendanceForm({ ...attendanceForm, checkOut: '', isNextDayCheckout: false })}
-                          className="text-[10px] text-rose-600 hover:underline cursor-pointer font-bold"
+                          className="text-[10px] text-rose-600 hover:underline cursor-pointer font-bold inline-flex items-center gap-0.5"
                           title="إلغاء تسجيل الانصراف"
                         >
-                          مسح ✕
+                          <span>مسح</span>
+                          <X size={10} />
                         </button>
                       )}
                     </div>
@@ -5038,8 +5051,9 @@ export function HRScreen({
                         onChange={e => setAttendanceForm({ ...attendanceForm, isNextDayCheckout: e.target.checked })}
                         className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-indigo-300 cursor-pointer"
                       />
-                      <span className="text-xs font-black text-indigo-950 flex items-center gap-1">
-                        <span>🌙 انصراف في اليوم التالي (بعد منتصف الليل +1 يوم)</span>
+                      <span className="text-xs font-black text-indigo-950 flex items-center gap-1.5">
+                        <Moon size={13} className="text-indigo-600" />
+                        <span>انصراف في اليوم التالي (بعد منتصف الليل +1 يوم)</span>
                       </span>
                     </label>
 
@@ -5073,14 +5087,16 @@ export function HRScreen({
                   onClick={() => setAttendanceForm({ ...attendanceForm, checkIn: '13:00', checkOut: '02:00', isNextDayCheckout: true })}
                   className="text-[10px] font-black bg-indigo-100 hover:bg-indigo-200 text-indigo-800 border border-indigo-200 px-2 py-1 rounded-lg cursor-pointer transition-colors flex items-center gap-1"
                 >
-                  <span>🌙 شفت ليلي (1:00 ظ - 2:00 ص) [13 ساعة]</span>
+                  <Moon size={12} className="text-indigo-700" />
+                  <span>شفت ليلي (1:00 ظ - 2:00 ص) [13 ساعة]</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setAttendanceForm({ ...attendanceForm, checkIn: '16:00', checkOut: '02:00', isNextDayCheckout: true })}
                   className="text-[10px] font-black bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-2 py-1 rounded-lg cursor-pointer transition-colors flex items-center gap-1"
                 >
-                  <span>🌙 شفت سهرة (4:00 ع - 2:00 ص) [10 ساعات]</span>
+                  <Moon size={12} className="text-indigo-600" />
+                  <span>شفت سهرة (4:00 ع - 2:00 ص) [10 ساعات]</span>
                 </button>
                 <button
                   type="button"
@@ -5113,16 +5129,18 @@ export function HRScreen({
                 <button
                   type="button"
                   onClick={() => setAttendanceForm({ ...attendanceForm, checkIn: '09:00', checkOut: '18:00', isNextDayCheckout: false, notes: 'دوام مجدول' })}
-                  className="text-[10px] font-bold bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-300 px-2 py-1 rounded-lg cursor-pointer transition-colors"
+                  className="text-[10px] font-bold bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-300 px-2 py-1 rounded-lg cursor-pointer transition-colors flex items-center gap-1"
                 >
-                  📅 تعيين كـ "دوام مجدول" (تحديد صريح)
+                  <Calendar size={12} className="text-sky-700" />
+                  <span>تعيين كـ "دوام مجدول" (تحديد صريح)</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setAttendanceForm({ ...attendanceForm, checkIn: '', checkOut: '', isNextDayCheckout: false, notes: 'غياب بدون عذر' })}
-                  className="text-[10px] font-bold bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-300 px-2 py-1 rounded-lg cursor-pointer transition-colors"
+                  className="text-[10px] font-bold bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-300 px-2 py-1 rounded-lg cursor-pointer transition-colors flex items-center gap-1"
                 >
-                  ⚠️ تعيين كـ "غياب بدون عذر" (تحديد صريح)
+                  <AlertTriangle size={12} className="text-rose-700" />
+                  <span>تعيين كـ "غياب بدون عذر" (تحديد صريح)</span>
                 </button>
               </div>
 
@@ -5150,7 +5168,7 @@ export function HRScreen({
                     title="حذف البصمات المسجلة لهذا اليوم واعتباره غياب"
                   >
                     <Trash2 size={14} />
-                    <span>حذف وقت اليوم (تعيين غياب) 🗑️</span>
+                    <span>حذف وقت اليوم (تعيين غياب)</span>
                   </button>
                 ) : <div />}
 
@@ -5168,7 +5186,7 @@ export function HRScreen({
                     className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-5 py-2 rounded-xl text-xs font-black shadow-md shadow-indigo-600/20 flex items-center gap-1.5 cursor-pointer"
                   >
                     <Check size={14} />
-                    <span>{isSavingAttendance ? 'جاري الحفظ...' : 'حفظ وتحديث التايم شيت 💾'}</span>
+                    <span>{isSavingAttendance ? 'جاري الحفظ...' : 'حفظ وتحديث التايم شيت'}</span>
                   </button>
                 </div>
               </div>
@@ -5177,7 +5195,7 @@ export function HRScreen({
         </div>
       )}
 
-      {/* 📈 MODAL: SALARY INCREMENT (تسجيل وتطبيق زيادة راتب) */}
+      {/* MODAL: SALARY INCREMENT (تسجيل وتطبيق زيادة راتب) */}
       {showSalaryIncrementModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full p-6 space-y-5 max-h-[92vh] overflow-y-auto animate-in fade-in zoom-in duration-150" dir="rtl">
@@ -5200,7 +5218,7 @@ export function HRScreen({
                 onClick={() => setShowSalaryIncrementModal(false)}
                 className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 cursor-pointer"
               >
-                ✕
+                <X size={16} />
               </button>
             </div>
 
@@ -5441,7 +5459,7 @@ export function HRScreen({
                   className="flex-1 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-black rounded-xl text-xs transition-colors shadow-md shadow-purple-600/20 cursor-pointer flex items-center justify-center gap-1.5"
                 >
                   <Check size={15} />
-                  <span>اعتماد وتطبيق زيادة الراتب وحفظها 💾</span>
+                  <span>اعتماد وتطبيق زيادة الراتب وحفظها</span>
                 </button>
               </div>
             </form>
@@ -5449,7 +5467,7 @@ export function HRScreen({
         </div>
       )}
 
-      {/* 📜 MODAL: FULL SALARY HISTORY VIEWER (سجل وتاريخ زيادات الرواتب بالكامل) */}
+      {/* MODAL: FULL SALARY HISTORY VIEWER (سجل وتاريخ زيادات الرواتب بالكامل) */}
       {showSalaryHistoryModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-2xl max-w-5xl w-full p-6 space-y-5 max-h-[92vh] overflow-y-auto animate-in fade-in zoom-in duration-150" dir="rtl">
@@ -5483,7 +5501,7 @@ export function HRScreen({
                   onClick={() => setShowSalaryHistoryModal(false)}
                   className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 cursor-pointer"
                 >
-                  ✕
+                  <X size={16} />
                 </button>
               </div>
             </div>
@@ -5642,7 +5660,7 @@ export function HRScreen({
                 onClick={() => setShowCommissionModal(false)}
                 className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 cursor-pointer"
               >
-                ✕
+                <X size={16} />
               </button>
             </div>
 
@@ -5794,7 +5812,7 @@ export function HRScreen({
                   className="flex-1 py-2.5 rounded-xl text-xs font-black text-white bg-amber-600 hover:bg-amber-700 flex items-center justify-center gap-1.5 shadow-md shadow-amber-600/20 transition-all cursor-pointer disabled:opacity-50"
                 >
                   <Coins size={14} />
-                  <span>{isSavingCommissionPayout ? 'جارٍ الصرف...' : 'تأكيد وصرف العمولة 💵'}</span>
+                  <span>{isSavingCommissionPayout ? 'جارٍ الصرف...' : 'تأكيد وصرف العمولة'}</span>
                 </button>
               </div>
             </form>
@@ -5893,7 +5911,10 @@ export function HRScreen({
                         : 'bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100'
                     }`}
                   >
-                    <span>مدفوعة الأجر (براتب) 🟢</span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                      <span>مدفوعة الأجر (براتب)</span>
+                    </span>
                     <span className="text-[10px] font-normal opacity-90">يستحق راتب الأيام بالكامل</span>
                   </button>
 
@@ -5906,7 +5927,10 @@ export function HRScreen({
                         : 'bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100'
                     }`}
                   >
-                    <span>بدون أجر (بدون راتب) 🟡</span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                      <span>بدون أجر (بدون راتب)</span>
+                    </span>
                     <span className="text-[10px] font-normal opacity-90">خصم اليومية دون جزاء غياب</span>
                   </button>
                 </div>
@@ -5932,8 +5956,8 @@ export function HRScreen({
                   </div>
                   <div className="text-[11px] text-slate-500 pt-1 border-t border-slate-200">
                     {leaveType === 'paid' 
-                      ? 'ℹ️ سيتم إدراج الأيام في التايم شيت بحالة "إجازة براتب"، ولا يتم تطبيق أي خصومات غياب أو تأخير عليها.'
-                      : 'ℹ️ سيتم إدراج الأيام في التايم شيت بحالة "إجازة بدون راتب"، ولا يتم احتساب راتب ولا جزاء غياب (الصافي = 0).'
+                      ? 'سيتم إدراج الأيام في التايم شيت بحالة "إجازة براتب"، ولا يتم تطبيق أي خصومات غياب أو تأخير عليها.'
+                      : 'سيتم إدراج الأيام في التايم شيت بحالة "إجازة بدون راتب"، ولا يتم احتساب راتب ولا جزاء غياب (الصافي = 0).'
                     }
                   </div>
                 </div>
@@ -5965,7 +5989,7 @@ export function HRScreen({
                   className="flex-1 py-2.5 rounded-xl text-xs font-black text-white bg-sky-600 hover:bg-sky-700 flex items-center justify-center gap-1.5 shadow-md shadow-sky-600/20 transition-all cursor-pointer disabled:opacity-50"
                 >
                   <Palmtree size={14} />
-                  <span>{isSavingLeave ? 'جارٍ الحفظ...' : 'تأكيد واعتماد الإجازة 🏖️'}</span>
+                  <span>{isSavingLeave ? 'جارٍ الحفظ...' : 'تأكيد واعتماد الإجازة'}</span>
                 </button>
               </div>
             </form>
@@ -6010,7 +6034,7 @@ export function HRScreen({
                     <div className="text-center py-12 text-slate-400">
                       <Palmtree size={48} className="mx-auto mb-2 opacity-30" />
                       <p className="font-bold text-sm">لا توجد أي إجازات مسجلة حالياً</p>
-                      <p className="text-xs mt-1">يمكنك إضافة إجازة جديدة بالضغط على زر "تسجيل إجازة 🏖️"</p>
+                      <p className="text-xs mt-1">يمكنك إضافة إجازة جديدة بالضغط على زر "تسجيل إجازة"</p>
                     </div>
                   );
                 }
@@ -6179,7 +6203,8 @@ export function HRScreen({
                         : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                     }`}
                   >
-                    <span>🌅 بداية الدوام</span>
+                    <Sun size={14} className="mb-0.5 opacity-90" />
+                    <span>بداية الدوام</span>
                     <span className="text-[10px] font-normal opacity-90">تأخير مصرح به</span>
                   </button>
 
@@ -6196,7 +6221,8 @@ export function HRScreen({
                         : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                     }`}
                   >
-                    <span>⏱️ وسط الدوام</span>
+                    <Clock size={14} className="mb-0.5 opacity-90" />
+                    <span>وسط الدوام</span>
                     <span className="text-[10px] font-normal opacity-90">خروج وعودة</span>
                   </button>
 
@@ -6213,7 +6239,8 @@ export function HRScreen({
                         : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                     }`}
                   >
-                    <span>💼 مأمورية رسمية</span>
+                    <Briefcase size={14} className="mb-0.5 opacity-90" />
+                    <span>مأمورية رسمية</span>
                     <span className="text-[10px] font-normal opacity-90">معفاة من الخصم</span>
                   </button>
                 </div>
@@ -6272,7 +6299,7 @@ export function HRScreen({
                 {permDurationMinutes > 240 && permType !== 'official_mission' && (
                   <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-[11px] font-bold flex items-start gap-2">
                     <AlertTriangle size={16} className="text-rose-600 shrink-0 mt-0.5" />
-                    <span>⚠️ تنبيه لائحي (تجاوز 4 ساعات): تجاوز مدة الاستئذان 4 ساعات في اليوم يترتب عليه برمجياً تحويل اليوم إلى إجازة اعتيادية أو غياب كامل وفقاً للائحة العمل.</span>
+                    <span>تنبيه لائحي (تجاوز 4 ساعات): تجاوز مدة الاستئذان 4 ساعات في اليوم يترتب عليه برمجياً تحويل اليوم إلى إجازة اعتيادية أو غياب كامل وفقاً للائحة العمل.</span>
                   </div>
                 )}
 
@@ -6280,7 +6307,7 @@ export function HRScreen({
                 {permType === 'official_mission' && (
                   <div className="p-2.5 bg-purple-50 border border-purple-200 rounded-xl text-purple-900 text-[11px] font-bold flex items-start gap-2">
                     <Briefcase size={16} className="text-purple-600 shrink-0 mt-0.5" />
-                    <span>💼 مأمورية عمل رسمية: لن يتم خصم أي دقائق من رصيد الأذونات، ويُعتبر اليوم دواماً كاملاً مدفوع الأجر في قسيمة الراتب.</span>
+                    <span>مأمورية عمل رسمية: لن يتم خصم أي دقائق من رصيد الأذونات، ويُعتبر اليوم دواماً كاملاً مدفوع الأجر في قسيمة الراتب.</span>
                   </div>
                 )}
               </div>
@@ -6298,7 +6325,10 @@ export function HRScreen({
                         : 'bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100'
                     }`}
                   >
-                    <span>مقبول ومستثنى (بدون خصم) 🟢</span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-teal-300"></span>
+                      <span>مقبول ومستثنى (بدون خصم)</span>
+                    </span>
                     <span className="text-[10px] font-normal opacity-90">لا يتم خصم أي مبلغ من الراتب</span>
                   </button>
 
@@ -6311,7 +6341,10 @@ export function HRScreen({
                         : 'bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100'
                     }`}
                   >
-                    <span>غير مستثنى (خاضع للخصم) 🟡</span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                      <span>غير مستثنى (خاضع للخصم)</span>
+                    </span>
                     <span className="text-[10px] font-normal opacity-90">يخصم أجر الدقائق الزائدة</span>
                   </button>
                 </div>
@@ -6343,7 +6376,7 @@ export function HRScreen({
                   className="flex-1 py-2.5 rounded-xl text-xs font-black text-white bg-teal-600 hover:bg-teal-700 flex items-center justify-center gap-1.5 shadow-md shadow-teal-600/20 transition-all cursor-pointer disabled:opacity-50"
                 >
                   <Timer size={14} />
-                  <span>{isSavingPermission ? 'جارٍ الحفظ...' : 'تأكيد واعتماد الإذن ⏱️'}</span>
+                  <span>{isSavingPermission ? 'جارٍ الحفظ...' : 'تأكيد واعتماد الإذن'}</span>
                 </button>
               </div>
             </form>
@@ -6388,7 +6421,7 @@ export function HRScreen({
                     <div className="text-center py-12 text-slate-400">
                       <DoorOpen size={48} className="mx-auto mb-2 opacity-30" />
                       <p className="font-bold text-sm">لا توجد أي أذونات استئذان مسجلة حالياً</p>
-                      <p className="text-xs mt-1">يمكنك إضافة إذن جديد بالضغط على زر "تسجيل استئذان ⏱️"</p>
+                      <p className="text-xs mt-1">يمكنك إضافة إذن جديد بالضغط على زر "تسجيل استئذان"</p>
                     </div>
                   );
                 }
@@ -6412,7 +6445,7 @@ export function HRScreen({
                           perm.type === 'shift_start' ? 'bg-teal-100 text-teal-800 border border-teal-200' :
                           'bg-sky-100 text-sky-800 border border-sky-200'
                         }`}>
-                          {perm.type === 'official_mission' ? '💼 مأمورية رسمية' : perm.type === 'shift_start' ? '🌅 بداية الدوام' : '⏱️ وسط الدوام'}
+                          {perm.type === 'official_mission' ? 'مأمورية رسمية' : perm.type === 'shift_start' ? 'بداية الدوام' : 'وسط الدوام'}
                         </span>
                         <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
                           perm.isExcused ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
@@ -6624,7 +6657,7 @@ export function HRScreen({
                 className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
               >
                 <Printer size={14} />
-                <span>طباعة تقرير التدقيق 🖨️</span>
+                <span>طباعة تقرير التدقيق</span>
               </button>
 
               <button

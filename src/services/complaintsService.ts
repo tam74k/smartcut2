@@ -119,10 +119,10 @@ export const ComplaintsService = {
     if (idx === -1) return null;
 
     const statusLabels: Record<string, string> = {
-      open: 'مفتوحة 🟡',
-      in_progress: 'قيد المتابعة 🔵',
-      resolved: 'تم الحل 🟢',
-      rejected: 'مرفوضة 🔴'
+      open: 'مفتوحة',
+      in_progress: 'قيد المتابعة',
+      resolved: 'تم الحل',
+      rejected: 'مرفوضة'
     };
 
     const action: ComplaintAction = {
@@ -177,7 +177,7 @@ export const ComplaintsService = {
 
     let warningMessage = '';
     if (hasPreviousRemedy) {
-      warningMessage = `⚠️ تنبيه سجل العميل: تم عمل إصلاح مجاني (ضمان الصالون) سابقاً لهذا العميل${lastRemedy ? ` بتاريخ ${lastRemedy.date}` : ''} برصيد 0.00 ر.س. يرجى مراجعة سجل الشكاوى قبل تقديم أي تعويض جديد.`;
+      warningMessage = `تنبيه سجل العميل: تم عمل إصلاح مجاني (ضمان الصالون) سابقاً لهذا العميل${lastRemedy ? ` بتاريخ ${lastRemedy.date}` : ''} برصيد 0.00 ر.س. يرجى مراجعة سجل الشكاوى قبل تقديم أي تعويض جديد.`;
     }
 
     return {

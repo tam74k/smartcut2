@@ -252,12 +252,13 @@ export function TursoCloudSyncModal({
                 <h3 className="text-lg font-black text-white">إعدادات المزامنة السحابية</h3>
                 {isConnected ? (
                   <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                    🟢 متصل بالسحابة
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <span>متصل بالسحابة</span>
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-slate-800 text-slate-300 border border-slate-700">
-                    ⚪ غير متصل (يعمل محلياً)
+                    <span className="w-2 h-2 rounded-full bg-slate-400" />
+                    <span>غير متصل (يعمل محلياً)</span>
                   </span>
                 )}
               </div>
@@ -275,7 +276,7 @@ export function TursoCloudSyncModal({
               className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black flex items-center gap-2 transition-all shadow-md hover:shadow-indigo-500/25 cursor-pointer disabled:opacity-50"
             >
               <RefreshCw size={14} className={syncingNow ? 'animate-spin' : ''} />
-              <span>{syncingNow ? 'جاري المزامنة...' : 'مزامنة الآن ☁️'}</span>
+              <span>{syncingNow ? 'جاري المزامنة...' : 'مزامنة الآن'}</span>
             </button>
           )}
         </div>

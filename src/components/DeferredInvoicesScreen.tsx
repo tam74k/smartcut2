@@ -7,7 +7,7 @@ import {
   AlertTriangle, Hourglass, Phone, MessageCircle, Printer, X, 
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, 
   ArrowUpDown, ArrowUp, ArrowDown, FileText, Ban, RotateCcw, 
-  Eye, Wallet, CreditCard, User, Building, Info, ShieldAlert
+  Eye, Wallet, CreditCard, User, Building, Info, ShieldAlert, Zap
 } from 'lucide-react';
 import { DB } from '../services/db';
 import { executePrintInvoiceReceipt } from './InvoiceReceiptCard';
@@ -267,7 +267,7 @@ export function DeferredInvoicesScreen({
     setCurrentPage(1);
   };
 
-  // 💳 Action: Open Settlement Modal
+  // Action: Open Settlement Modal
   const handleOpenSettleModal = (inv: Invoice) => {
     const remaining = Number(inv.remaining) || Math.max(0, Number(inv.total) - Number(inv.paid || 0));
     setSettleModalInvoice(inv);
@@ -276,22 +276,22 @@ export function DeferredInvoicesScreen({
     setSettleNotes('');
   };
 
-  // 💾 Action: Confirm Settlement Payment
+  // Action: Confirm Settlement Payment
   const handleConfirmSettle = async () => {
     if (!settleModalInvoice) return;
     const payNum = Number(settleAmount);
     const currentRemaining = Number(settleModalInvoice.remaining) || Math.max(0, Number(settleModalInvoice.total) - Number(settleModalInvoice.paid || 0));
 
     if (isNaN(payNum) || payNum <= 0) {
-      alert('⚠️ الرجاء إدخال مبلغ سداد صحيح أكبر من الصفر.');
+      alert('الرجاء إدخال مبلغ سداد صحيح أكبر من الصفر.');
       return;
     }
     if (payNum > currentRemaining + 0.01) {
-      alert(`⚠️ المبلغ المدخل (${payNum}) أكبر من المتبقي المستحق على الفاتورة (${currentRemaining.toFixed(2)})!`);
+      alert(`المبلغ المدخل (${payNum}) أكبر من المتبقي المستحق على الفاتورة (${currentRemaining.toFixed(2)})!`);
       return;
     }
     if (!settleTreasury) {
-      alert('⚠️ الرجاء اختيار الخزينة المودع بها المبلغ.');
+      alert('الرجاء اختيار الخزينة المودع بها المبلغ.');
       return;
     }
 
@@ -352,21 +352,21 @@ export function DeferredInvoicesScreen({
       setTransactions(prev => [newTrx, ...prev]);
 
       if (isFullyPaid) {
-        alert(`✅ تم سداد الفاتورة (${updatedInvoice.invoiceNumber || updatedInvoice.id}) بالكامل بمبلغ ${payNum.toFixed(2)} ${settings.currency}، وتم تحويلها تلقائياً إلى شاشة الفواتير المكتملة.`);
+        alert(`تم سداد الفاتورة (${updatedInvoice.invoiceNumber || updatedInvoice.id}) بالكامل بمبلغ ${payNum.toFixed(2)} ${settings.currency}، وتم تحويلها تلقائياً إلى شاشة الفواتير المكتملة.`);
       } else {
-        alert(`✅ تم سداد دفعة بقيمة ${payNum.toFixed(2)} ${settings.currency} بنجاح وإيداعها في خزينة (${treasuryName}). المتبقي على الفاتورة: ${newRemaining.toFixed(2)} ${settings.currency}.`);
+        alert(`تم سداد دفعة بقيمة ${payNum.toFixed(2)} ${settings.currency} بنجاح وإيداعها في خزينة (${treasuryName}). المتبقي على الفاتورة: ${newRemaining.toFixed(2)} ${settings.currency}.`);
       }
 
       setSettleModalInvoice(null);
     } catch (err: any) {
       console.error('Error settling deferred invoice:', err);
-      alert('❌ حدث خطأ أثناء تسجيل السداد: ' + (err?.message || err));
+      alert('حدث خطأ أثناء تسجيل السداد: ' + (err?.message || err));
     } finally {
       setIsSubmittingSettle(false);
     }
   };
 
-  // ⚠️ Action: Write off as Bad Debt (تحويل لدين معدوم)
+  // Action: Write off as Bad Debt (تحويل لدين معدوم)
   const handleConfirmBadDebt = async () => {
     if (!badDebtModalInvoice) return;
     setIsSubmittingBadDebt(true);
@@ -382,17 +382,17 @@ export function DeferredInvoicesScreen({
       await DB.saveInvoice(updatedInvoice, settings.salonId);
       setInvoices(prev => prev.map(inv => inv.id === updatedInvoice.id ? updatedInvoice : inv));
 
-      alert(`⚠️ تم تحويل الفاتورة (${updatedInvoice.invoiceNumber || updatedInvoice.id}) إلى ديون معدومة وحفظ سبب الشطب في الأرشيف.`);
+      alert(`تم تحويل الفاتورة (${updatedInvoice.invoiceNumber || updatedInvoice.id}) إلى ديون معدومة وحفظ سبب الشطب في الأرشيف.`);
       setBadDebtModalInvoice(null);
     } catch (err: any) {
       console.error('Error writing off bad debt:', err);
-      alert('❌ حدث خطأ: ' + (err?.message || err));
+      alert('حدث خطأ: ' + (err?.message || err));
     } finally {
       setIsSubmittingBadDebt(false);
     }
   };
 
-  // 🔄 Action: Restore Bad Debt (استعادة دين معدوم إلى الآجل)
+  // Action: Restore Bad Debt (استعادة دين معدوم إلى الآجل)
   const handleRestoreBadDebt = async (inv: Invoice) => {
     if (!window.confirm(`هل أنت متأكد من استعادة الفاتورة (${inv.invoiceNumber || inv.id}) من الديون المعدومة إلى الفواتير الآجلة النشطة؟`)) {
       return;
@@ -408,27 +408,27 @@ export function DeferredInvoicesScreen({
       };
       await DB.saveInvoice(updatedInvoice, settings.salonId);
       setInvoices(prev => prev.map(i => i.id === updatedInvoice.id ? updatedInvoice : i));
-      alert('✅ تم استعادة الفاتورة بنجاح إلى قائمة الفواتير الآجلة.');
+      alert('تم استعادة الفاتورة بنجاح إلى قائمة الفواتير الآجلة.');
     } catch (e: any) {
-      alert('❌ فشلت الاستعادة: ' + e?.message);
+      alert('فشلت الاستعادة: ' + e?.message);
     }
   };
 
-  // 💬 Action: Send polite WhatsApp reminder to client
+  // Action: Send polite WhatsApp reminder to client
   const handleSendWhatsAppReminder = (clientName: string, phone: string, remainingDebt: number, invoicesCount: number) => {
     if (!phone || phone.length < 8) {
-      alert('⚠️ لا يتوفر رقم هاتف مسجل لهذا العميل لإرسال تذكير واتساب.');
+      alert('لا يتوفر رقم هاتف مسجل لهذا العميل لإرسال تذكير واتساب.');
       return;
     }
     const cleanPhone = phone.replace(/[^0-9]/g, '');
     const salonName = settings.salonName || 'صالونكم';
-    const message = `السلام عليكم ورحمة الله أستاذ ${clientName}،\nتحية طيبة من ${salonName} 🌺\n\nنود تذكير سيادتكم بلطف بوجود رصيد آجل مستحق بقيمة: ${remainingDebt.toFixed(2)} ${settings.currency} (عدد ${invoicesCount} فاتورة).\n\nنسعد بتشريفكم لسدادها بالصالون، أو يمكنكم التحويل عبر إنستاباي / فودافون كاش.\nشاكرين ومقدرين حسن تعاملكم معنا دائماً 🙏`;
+    const message = `السلام عليكم ورحمة الله أستاذ ${clientName}،\nتحية طيبة من ${salonName}.\n\nنود تذكير سيادتكم بلطف بوجود رصيد آجل مستحق بقيمة: ${remainingDebt.toFixed(2)} ${settings.currency} (عدد ${invoicesCount} فاتورة).\n\nنسعد بتشريفكم لسدادها بالصالون، أو يمكنكم التحويل عبر إنستاباي / فودافون كاش.\nشاكرين ومقدرين حسن تعاملكم معنا دائماً.`;
     
     const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
     window.open(waUrl, '_blank');
   };
 
-  // 🖨️ Action: Print Client Account Statement
+  // Action: Print Client Account Statement
   const handlePrintStatement = () => {
     window.print();
   };
@@ -631,12 +631,12 @@ export function DeferredInvoicesScreen({
                 {ledgerSortOrder === 'desc' ? (
                   <>
                     <ArrowDown size={14} className="text-amber-600" />
-                    <span>من الأكبر للأصغر 🔽</span>
+                    <span>من الأكبر للأصغر</span>
                   </>
                 ) : (
                   <>
                     <ArrowUp size={14} className="text-blue-600" />
-                    <span>من الأصغر للأكبر 🔼</span>
+                    <span>من الأصغر للأكبر</span>
                   </>
                 )}
               </button>
@@ -1164,9 +1164,10 @@ export function DeferredInvoicesScreen({
                 <button
                   type="button"
                   onClick={() => setSettleAmount(Number(settleModalInvoice.remaining) || Math.max(0, Number(settleModalInvoice.total) - Number(settleModalInvoice.paid || 0)))}
-                  className="mt-1 text-[11px] font-black text-emerald-600 hover:underline cursor-pointer"
+                  className="mt-1 text-[11px] font-black text-emerald-600 hover:underline cursor-pointer flex items-center gap-1"
                 >
-                  ⚡ سداد كامل المتبقي ({((Number(settleModalInvoice.remaining) || Math.max(0, Number(settleModalInvoice.total) - Number(settleModalInvoice.paid || 0)))).toFixed(2)} {settings.currency})
+                  <Zap size={13} className="text-emerald-500" />
+                  <span>سداد كامل المتبقي ({((Number(settleModalInvoice.remaining) || Math.max(0, Number(settleModalInvoice.total) - Number(settleModalInvoice.paid || 0)))).toFixed(2)} {settings.currency})</span>
                 </button>
               </div>
 
@@ -1346,7 +1347,7 @@ export function DeferredInvoicesScreen({
                   className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-black rounded-xl text-xs transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
                 >
                   <Printer size={15} />
-                  <span>طباعة الكشف 🖨️</span>
+                  <span>طباعة الكشف</span>
                 </button>
                 <button
                   onClick={() => setStatementClient(null)}

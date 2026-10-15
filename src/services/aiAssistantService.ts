@@ -329,15 +329,15 @@ export async function processAIChatMessage(
     const updatedBookings = [newBooking, ...context.bookings];
 
     return {
-      message: `✨ **تم تسجيل وتأكيد الحجز بنجاح في جدول الحجوزات والرزنامة!** ✅\n\n📋 **بيانات الحجز المسجل:**\n- **اسم العميل:** ${clientName}\n- **رقم الجوال:** ${phone}\n- **تاريخ الموعد:** ${dateStr}\n- **وقت الموعد:** ${timeStr}\n- **الفني / الموظف:** ${matchedTechnician.name}\n- **الخدمات:** ${selectedServices.map(s => `${s.serviceName} (${s.price} ${context.settings.currency})`).join(' + ')}\n- **إجمالي المبلغ:** **${totalAmount.toFixed(2)} ${context.settings.currency}**`,
+      message: `**تم تسجيل وتأكيد الحجز بنجاح في جدول الحجوزات والرزنامة!**\n\n**بيانات الحجز المسجل:**\n- **اسم العميل:** ${clientName}\n- **رقم الجوال:** ${phone}\n- **تاريخ الموعد:** ${dateStr}\n- **وقت الموعد:** ${timeStr}\n- **الفني / الموظف:** ${matchedTechnician.name}\n- **الخدمات:** ${selectedServices.map(s => `${s.serviceName} (${s.price} ${context.settings.currency})`).join(' + ')}\n- **إجمالي المبلغ:** **${totalAmount.toFixed(2)} ${context.settings.currency}**`,
       actionCard: {
         type: 'booking_created',
         title: `حجز موعد مؤكد #${newBooking.id} - ${clientName}`,
         data: newBooking,
         actions: [
-          { label: '🛒 تحويل للكاشير POS', actionType: 'to_pos', targetId: newBooking.id },
-          { label: '🖨️ طباعة إشعار الحجز', actionType: 'print_receipt', targetId: newBooking.id },
-          { label: '📅 فتح جدول الحجوزات', actionType: 'open_screen', screenName: 'bookings' }
+          { label: 'تحويل للكاشير POS', actionType: 'to_pos', targetId: newBooking.id },
+          { label: 'طباعة إشعار الحجز', actionType: 'print_receipt', targetId: newBooking.id },
+          { label: 'فتح جدول الحجوزات', actionType: 'open_screen', screenName: 'bookings' }
         ]
       },
       updatedData: {
@@ -394,7 +394,7 @@ export async function processAIChatMessage(
     const actualWorked = workedDaysCount > 0 ? workedDaysCount : Math.max(0, expectedWorkingDays - calculatedAbsenceDays);
 
     return {
-      message: `📊 **تقرير وسجل حضور وغياب الموظف (${targetEmp.name}):**\n\n- **الفترة الزمنية:** ${monthName} ${year} (${daysInMonth} يوماً)\n- **كود البصمة:** #${targetEmp.fingerprintCode || targetEmp.id}\n- **المسمى الوظيفي:** ${targetEmp.role}\n\n📌 **الإحصائيات المعتمدة من واقع السجلات:**\n- **عدد أيام الغياب غير المبرر / الخصم:** **${calculatedAbsenceDays} يوم**\n- **أيام الإجازات المسجلة:** ${paidLeaveDays + unpaidLeaveDays} يوم (${paidLeaveDays} براتب، ${unpaidLeaveDays} بدون راتب)\n- **أيام العمل الفعلية المسجلة:** **${actualWorked} يوم عمل**\n- **الراتب الأساسي المعتمد:** ${targetEmp.baseSalary?.toFixed(2) || '0.00'} ${context.settings.currency}\n- **معدل الراتب اليومي:** ${targetEmp.baseSalary > 0 ? (targetEmp.baseSalary / daysInMonth).toFixed(2) : '0.00'} ${context.settings.currency} / يوم`,
+      message: `**تقرير وسجل حضور وغياب الموظف (${targetEmp.name}):**\n\n- **الفترة الزمنية:** ${monthName} ${year} (${daysInMonth} يوماً)\n- **كود البصمة:** #${targetEmp.fingerprintCode || targetEmp.id}\n- **المسمى الوظيفي:** ${targetEmp.role}\n\n**الإحصائيات المعتمدة من واقع السجلات:**\n- **عدد أيام الغياب غير المبرر / الخصم:** **${calculatedAbsenceDays} يوم**\n- **أيام الإجازات المسجلة:** ${paidLeaveDays + unpaidLeaveDays} يوم (${paidLeaveDays} براتب، ${unpaidLeaveDays} بدون راتب)\n- **أيام العمل الفعلية المسجلة:** **${actualWorked} يوم عمل**\n- **الراتب الأساسي المعتمد:** ${targetEmp.baseSalary?.toFixed(2) || '0.00'} ${context.settings.currency}\n- **معدل الراتب اليومي:** ${targetEmp.baseSalary > 0 ? (targetEmp.baseSalary / daysInMonth).toFixed(2) : '0.00'} ${context.settings.currency} / يوم`,
       actionCard: {
         type: 'stats_summary',
         title: `كشف دوام الموظف: ${targetEmp.name} (${monthName} ${year})`,
@@ -405,7 +405,7 @@ export async function processAIChatMessage(
           workedDays: actualWorked
         },
         actions: [
-          { label: '⏱️ فتح شاشة شؤون العاملين والتايم شيت', actionType: 'open_screen', screenName: 'employees' }
+          { label: 'فتح شاشة شؤون العاملين والتايم شيت', actionType: 'open_screen', screenName: 'employees' }
         ]
       }
     };
@@ -460,12 +460,12 @@ export async function processAIChatMessage(
     const netSalary = Math.max(0, (baseSalary + commissions + bonuses) - (advances + penalties));
 
     return {
-      message: `💰 **كشف مستحقات وصافي راتب الموظف (${targetEmp.name}):**\n\n- **الفترة:** ${monthName} ${year}\n- **نظام الراتب:** ${targetEmp.salaryType === 'commission_only' ? 'بالعمولة فقط' : targetEmp.salaryType === 'salary_plus_commission' ? 'راتب + عمولة' : 'راتب أساسي ثابت'}\n\n💵 **تفاصيل البنود المالية:**\n- **الراتب الأساسي:** ${baseSalary.toFixed(2)} ${context.settings.currency}\n- **إجمالي المبيعات المحققة:** ${totalSales.toFixed(2)} ${context.settings.currency}\n- **العمولة المستحقة (${getCommissionModelLabel(targetEmp)}):** +${commissions.toFixed(2)} ${context.settings.currency}\n- **المكافآت والبدلات:** +${bonuses.toFixed(2)} ${context.settings.currency}\n- **السلف والمسحوبات:** -${advances.toFixed(2)} ${context.settings.currency}\n- **الخصومات والجزاءات:** -${penalties.toFixed(2)} ${context.settings.currency}\n\n💎 **الصافي النهائي المستحق للصرف:** **${netSalary.toFixed(2)} ${context.settings.currency}**`,
+      message: `**كشف مستحقات وصافي راتب الموظف (${targetEmp.name}):**\n\n- **الفترة:** ${monthName} ${year}\n- **نظام الراتب:** ${targetEmp.salaryType === 'commission_only' ? 'بالعمولة فقط' : targetEmp.salaryType === 'salary_plus_commission' ? 'راتب + عمولة' : 'راتب أساسي ثابت'}\n\n**تفاصيل البنود المالية:**\n- **الراتب الأساسي:** ${baseSalary.toFixed(2)} ${context.settings.currency}\n- **إجمالي المبيعات المحققة:** ${totalSales.toFixed(2)} ${context.settings.currency}\n- **العمولة المستحقة (${getCommissionModelLabel(targetEmp)}):** +${commissions.toFixed(2)} ${context.settings.currency}\n- **المكافآت والبدلات:** +${bonuses.toFixed(2)} ${context.settings.currency}\n- **السلف والمسحوبات:** -${advances.toFixed(2)} ${context.settings.currency}\n- **الخصومات والجزاءات:** -${penalties.toFixed(2)} ${context.settings.currency}\n\n**الصافي النهائي المستحق للصرف:** **${netSalary.toFixed(2)} ${context.settings.currency}**`,
       actionCard: {
         type: 'stats_summary',
         title: `صافي راتب ${targetEmp.name}: ${netSalary.toFixed(2)} ${context.settings.currency}`,
         actions: [
-          { label: '💰 مسير صرف الرواتب', actionType: 'open_screen', screenName: 'employees' }
+          { label: 'مسير صرف الرواتب', actionType: 'open_screen', screenName: 'employees' }
         ]
       }
     };
@@ -501,15 +501,15 @@ export async function processAIChatMessage(
     });
 
     const grandTotal = treasuriesInfo.reduce((s, t) => s + t.balance, 0);
-    const listStr = treasuriesInfo.map(t => `- **${t.name} ${t.isMain ? '(الرئيسية 🏦)' : ''}:** **${t.balance.toFixed(2)} ${context.settings.currency}**`).join('\n');
+    const listStr = treasuriesInfo.map(t => `- **${t.name} ${t.isMain ? '(الرئيسية)' : ''}:** **${t.balance.toFixed(2)} ${context.settings.currency}**`).join('\n');
 
     return {
-      message: `🏦 **الأرصدة النقدية المتوفرة في الخزائن حالياً:**\n\n${listStr}\n\n💰 **إجمالي السيولة النقدية المتاحة:** **${grandTotal.toFixed(2)} ${context.settings.currency}**`,
+      message: `**الأرصدة النقدية المتوفرة في الخزائن حالياً:**\n\n${listStr}\n\n**إجمالي السيولة النقدية المتاحة:** **${grandTotal.toFixed(2)} ${context.settings.currency}**`,
       actionCard: {
         type: 'stats_summary',
         title: `إجمالي رصيد الخزائن: ${grandTotal.toFixed(2)} ${context.settings.currency}`,
         actions: [
-          { label: '🏦 فتح شاشة الخزائن والماليات', actionType: 'open_screen', screenName: 'treasury' }
+          { label: 'فتح شاشة الخزائن والماليات', actionType: 'open_screen', screenName: 'treasury' }
         ]
       }
     };
@@ -535,13 +535,13 @@ export async function processAIChatMessage(
     const totalAllRevenue = context.invoices.filter(i => i.status !== 'cancelled').reduce((sum, i) => sum + (i.finalTotal || i.total || 0), 0);
 
     return {
-      message: `📊 **ملخص المبيعات والإيرادات من واقع الفواتير:**\n\n- **مبيعات اليوم (${todayStr}):** **${todayRevenue.toFixed(2)} ${context.settings.currency}** (${todayInvoices.length} فواتير)\n- **إجمالي المبيعات الكلية المسجلة:** **${totalAllRevenue.toFixed(2)} ${context.settings.currency}** (${context.invoices.length} فواتير)\n- **عدد الحجوزات المجدولة اليوم:** ${context.bookings.filter(b => b.date === todayStr).length} موعد`,
+      message: `**ملخص المبيعات والإيرادات من واقع الفواتير:**\n\n- **مبيعات اليوم (${todayStr}):** **${todayRevenue.toFixed(2)} ${context.settings.currency}** (${todayInvoices.length} فواتير)\n- **إجمالي المبيعات الكلية المسجلة:** **${totalAllRevenue.toFixed(2)} ${context.settings.currency}** (${context.invoices.length} فواتير)\n- **عدد الحجوزات المجدولة اليوم:** ${context.bookings.filter(b => b.date === todayStr).length} موعد`,
       actionCard: {
         type: 'stats_summary',
         title: `مبيعات اليوم: ${todayRevenue.toFixed(2)} ${context.settings.currency}`,
         actions: [
-          { label: '🛒 نقطة البيع POS', actionType: 'open_screen', screenName: 'pos' },
-          { label: '📈 التقارير المالية', actionType: 'open_screen', screenName: 'reports' }
+          { label: 'نقطة البيع POS', actionType: 'open_screen', screenName: 'pos' },
+          { label: 'التقارير المالية', actionType: 'open_screen', screenName: 'reports' }
         ]
       }
     };
@@ -567,26 +567,26 @@ export async function processAIChatMessage(
 
     if (shortages.length === 0) {
       return {
-        message: `✅ **حالة المخزون ممتازة!** لا توجد أي منتجات وصلت لحد النواقص أو إعادة الطلب حالياً.\nإجمالي الأصناف المعرفة في المستودع: **${context.products.length} صنف**.`,
+        message: `**حالة المخزون ممتازة!** لا توجد أي منتجات وصلت لحد النواقص أو إعادة الطلب حالياً.\nإجمالي الأصناف المعرفة في المستودع: **${context.products.length} صنف**.`,
         actionCard: {
           type: 'stats_summary',
-          title: 'المخزون متوفر بالكامل 🟢',
+          title: 'المخزون متوفر بالكامل',
           actions: [
-            { label: '📦 فتح المخزن والمستودع', actionType: 'open_screen', screenName: 'warehouse' }
+            { label: 'فتح المخزن والمستودع', actionType: 'open_screen', screenName: 'warehouse' }
           ]
         }
       };
     }
 
-    const shortList = shortages.map(p => `- ⚠️ **${p.name}:** الكمية المتبقية: **${p.stock || 0}** (حد إعادة الطلب: ${p.minStockAlert || 5})`).join('\n');
+    const shortList = shortages.map(p => `- **${p.name}:** الكمية المتبقية: **${p.stock || 0}** (حد إعادة الطلب: ${p.minStockAlert || 5})`).join('\n');
 
     return {
-      message: `⚠️ **تنبيه نواقص المخزن (عدد ${shortages.length} منتجات وصلت لحد إعادة الطلب):**\n\n${shortList}\n\n💡 يُنصح بإصدار فاتورة مشتريات لتفادي نفاد الكميات.`,
+      message: `**تنبيه نواقص المخزن (عدد ${shortages.length} منتجات وصلت لحد إعادة الطلب):**\n\n${shortList}\n\nيُنصح بإصدار فاتورة مشتريات لتفادي نفاد الكميات.`,
       actionCard: {
         type: 'stats_summary',
         title: `تنبيه: ${shortages.length} أصناف وصلت لحد النواقص`,
         actions: [
-          { label: '📦 إدارة المخزن والنواقص', actionType: 'open_screen', screenName: 'warehouse' }
+          { label: 'إدارة المخزن والنواقص', actionType: 'open_screen', screenName: 'warehouse' }
         ]
       }
     };
@@ -610,23 +610,23 @@ export async function processAIChatMessage(
       const totalSpent = clientInvoices.reduce((s, i) => s + (i.finalTotal || i.total || 0), 0);
 
       return {
-        message: `👤 **بيانات العميل (${matchedCl.name}):**\n\n- **رقم الجوال:** ${matchedCl.phone}\n- **رصيد نقاط الولاء:** **${matchedCl.loyaltyPoints || 0} نقطة**\n- **آخر زيارة:** ${matchedCl.lastVisit || 'غير مسجلة'}\n- **إجمالي المشتريات والإنفاق:** **${totalSpent.toFixed(2)} ${context.settings.currency}** (${clientInvoices.length} زيارات)`,
+        message: `**بيانات العميل (${matchedCl.name}):**\n\n- **رقم الجوال:** ${matchedCl.phone}\n- **رصيد نقاط الولاء:** **${matchedCl.loyaltyPoints || 0} نقطة**\n- **آخر زيارة:** ${matchedCl.lastVisit || 'غير مسجلة'}\n- **إجمالي المشتريات والإنفاق:** **${totalSpent.toFixed(2)} ${context.settings.currency}** (${clientInvoices.length} زيارات)`,
         actionCard: {
           type: 'stats_summary',
           title: `العميل: ${matchedCl.name} (${matchedCl.loyaltyPoints || 0} نقطة)`,
           actions: [
-            { label: '👥 فتح سجل العملاء', actionType: 'open_screen', screenName: 'clients' }
+            { label: 'فتح سجل العملاء', actionType: 'open_screen', screenName: 'clients' }
           ]
         }
       };
     } else {
       return {
-        message: `👥 **سجل العملاء ونقاط الولاء:**\n- إجمالي العملاء المسجلين: **${context.clients.length} عميل**\n- يمكنك البحث عن أي عميل بكتابة اسمه أو رقم جواله مباشرة!`,
+        message: `**سجل العملاء ونقاط الولاء:**\n- إجمالي العملاء المسجلين: **${context.clients.length} عميل**\n- يمكنك البحث عن أي عميل بكتابة اسمه أو رقم جواله مباشرة!`,
         actionCard: {
           type: 'stats_summary',
           title: `إجمالي العملاء: ${context.clients.length}`,
           actions: [
-            { label: '👥 فتح سجل العملاء', actionType: 'open_screen', screenName: 'clients' }
+            { label: 'فتح سجل العملاء', actionType: 'open_screen', screenName: 'clients' }
           ]
         }
       };
@@ -645,12 +645,12 @@ export async function processAIChatMessage(
     const totalEmpSales = empInvoices.reduce((s, i) => s + (i.finalTotal || i.total || 0), 0);
 
     return {
-      message: `👤 **ملف الموظف (${matchedEmp.name}):**\n\n- **المسمى الوظيفي:** ${matchedEmp.role}\n- **كود البصمة:** #${matchedEmp.fingerprintCode || matchedEmp.id}\n- **الراتب الأساسي:** ${matchedEmp.baseSalary?.toFixed(2) || '0.00'} ${context.settings.currency}\n- **نسبة / نظام العمولة:** ${getCommissionModelLabel(matchedEmp)}\n- **إجمالي المبيعات المحققة في النظام:** ${totalEmpSales.toFixed(2)} ${context.settings.currency}\n- **رصيد الإجازات المتبقي:** ${matchedEmp.availableVacations || 21} يوم\n\n💡 *يمكنك أن تسألني عن غياباته، راتب شهر محدد، أو حجوزاته القادمة!*`,
+      message: `**ملف الموظف (${matchedEmp.name}):**\n\n- **المسمى الوظيفي:** ${matchedEmp.role}\n- **كود البصمة:** #${matchedEmp.fingerprintCode || matchedEmp.id}\n- **الراتب الأساسي:** ${matchedEmp.baseSalary?.toFixed(2) || '0.00'} ${context.settings.currency}\n- **نسبة / نظام العمولة:** ${getCommissionModelLabel(matchedEmp)}\n- **إجمالي المبيعات المحققة في النظام:** ${totalEmpSales.toFixed(2)} ${context.settings.currency}\n- **رصيد الإجازات المتبقي:** ${matchedEmp.availableVacations || 21} يوم\n\n*يمكنك أن تسألني عن غياباته، راتب شهر محدد، أو حجوزاته القادمة!*`,
       actionCard: {
         type: 'stats_summary',
         title: `الموظف: ${matchedEmp.name}`,
         actions: [
-          { label: '👥 شؤون الموظفين', actionType: 'open_screen', screenName: 'employees' }
+          { label: 'شؤون الموظفين', actionType: 'open_screen', screenName: 'employees' }
         ]
       }
     };
@@ -755,13 +755,13 @@ ${query}`;
   const activeBookingsToday = context.bookings.filter(b => b.date === todayStr);
 
   return {
-    message: `📊 **ملخص النظام والعمليات الحالية في (${context.settings.salonName || 'SMART CUT'}):**\n\n` +
-      `- 👥 **الكادر والموظفون:** ${context.employees.filter(e => e.isActive !== false).length} موظف وفني نشط\n` +
-      `- 📅 **حجوزات اليوم (${todayStr}):** ${activeBookingsToday.length} موعد\n` +
-      `- 🧾 **إجمالي الفواتير المسجلة:** ${context.invoices.length} فاتورة\n` +
-      `- ✂️ **الخدمات المتاحة:** ${context.services.length} خدمة\n` +
-      `- 📦 **الأصناف في المخزن:** ${context.products.length} صنف\n\n` +
-      `💡 **أمثلة لما يمكنك كتابته وسأجيبك فوراً:**\n` +
+    message: `**ملخص النظام والعمليات الحالية في (${context.settings.salonName || 'SMART CUT'}):**\n\n` +
+      `- **الكادر والموظفون:** ${context.employees.filter(e => e.isActive !== false).length} موظف وفني نشط\n` +
+      `- **حجوزات اليوم (${todayStr}):** ${activeBookingsToday.length} موعد\n` +
+      `- **إجمالي الفواتير المسجلة:** ${context.invoices.length} فاتورة\n` +
+      `- **الخدمات المتاحة:** ${context.services.length} خدمة\n` +
+      `- **الأصناف في المخزن:** ${context.products.length} صنف\n\n` +
+      `**أمثلة لما يمكنك كتابته وسأجيبك فوراً:**\n` +
       `• *"كم غياب الموظف أحمد محمد لشهر أغسطس 2026؟"*\n` +
       `• *"احجز للعميل تامر مصطفى رقم 01014889704 يوم الخميس الساعة 7 مساء مع كريم ليعمل تنظيف بشرة"*\n` +
       `• *"كم صافي راتب الموظف كريم مع العمولات؟"*\n` +

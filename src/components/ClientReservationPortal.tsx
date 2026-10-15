@@ -4,7 +4,8 @@ import {
   MapPin, CheckCircle2, AlertCircle, Sparkles, Building2, 
   ChevronRight, ArrowRight, ShieldCheck, Check, X, 
   LogOut, Plus, Trash2, Smartphone, Send, Lock, KeyRound,
-  RefreshCw, MessageCircle, Star, Info, HelpCircle, Eye, EyeOff
+  RefreshCw, MessageCircle, Star, Info, HelpCircle, Eye, EyeOff,
+  Ticket, AlertTriangle, Gift, Globe, Mail
 } from 'lucide-react';
 import { 
   AppSettings, Branch, ServiceItem, Employee, Booking, 
@@ -431,7 +432,7 @@ export function ClientReservationPortal({
       // 1. Verify global uniqueness of username
       const isAvail = await DB.checkClientUsernameAvailable(cleanUsername);
       if (!isAvail) {
-        setAuthError('⚠️ اسم المستخدم هذا مستخدم مسبقاً، يرجى اختيار اسم مستخدم فريد آخر');
+        setAuthError('اسم المستخدم هذا مستخدم مسبقاً، يرجى اختيار اسم مستخدم فريد آخر');
         setIsSubmittingAuth(false);
         return;
       }
@@ -490,7 +491,7 @@ export function ClientReservationPortal({
         }
       }
 
-      setAuthSuccessMsg('تم إنشاء الحساب بنجاح! مرحباً بك ✨');
+      setAuthSuccessMsg('تم إنشاء الحساب بنجاح! مرحباً بك');
     } catch (err: any) {
       setAuthError('حدث خطأ أثناء حفظ الحساب: ' + (err.message || ''));
     } finally {
@@ -531,7 +532,7 @@ export function ClientReservationPortal({
       }
 
       if (!foundAccount) {
-        setAuthError('اسم المستخدم غير مسجل لدينا، يرجى التأكد أو إنشاء حساب جديد ✨');
+        setAuthError('اسم المستخدم غير مسجل لدينا، يرجى التأكد أو إنشاء حساب جديد');
         setIsSubmittingAuth(false);
         return;
       }
@@ -554,7 +555,7 @@ export function ClientReservationPortal({
         localStorage.setItem('smartcut_registered_salon_code', clientSalonCode);
       }
 
-      setAuthSuccessMsg(`أهلاً بك مجدداً يا ${foundAccount.name}! 🌟`);
+      setAuthSuccessMsg(`أهلاً بك مجدداً يا ${foundAccount.name}!`);
     } catch (err: any) {
       setAuthError('حدث خطأ أثناء تسجيل الدخول: ' + (err.message || ''));
     } finally {
@@ -787,7 +788,7 @@ export function ClientReservationPortal({
 
     // 3. Send WhatsApp confirmation message via Evolution API
     if (currentClient.phone) {
-      const waText = `✨ *${salonInfo.name || settings.salonName || 'صالون العناية'}*\n\nأهلاً بكِ ${currentClient.name} ✨\nتم استلام طلب حجزك بنجاح وسنقوم بتأكيده فوراً.\n\n🎟️ *رقم دورك المبدئي بالصالون:* B-${queueNumber}\n📍 *الفرع:* ${activeBranch?.name || 'الفرع المحدد'}\n📅 *الموعد:* ${selectedDate} • ${selectedTimeSlot}\n✂️ *الخبير:* ${assignedStaff?.name || 'طاقم العمل المتميز'}\n📋 *الخدمات:* ${selectedServicesList.map(s => s.name).join('، ')}\n💰 *الإجمالي:* ${totalBookingPrice} ${currency}\n🔖 *كود الحجز:* ${bookingCode}\n\nشكراً لثقتكم بنا ونسعد بخدمتكم دائماً! ❤️`;
+      const waText = `*${salonInfo.name || settings.salonName || 'صالون العناية'}*\n\nأهلاً بكِ ${currentClient.name}\nتم استلام طلب حجزك بنجاح وسنقوم بتأكيده فوراً.\n\n*رقم دورك المبدئي بالصالون:* B-${queueNumber}\n*الفرع:* ${activeBranch?.name || 'الفرع المحدد'}\n*الموعد:* ${selectedDate} • ${selectedTimeSlot}\n*الخبير:* ${assignedStaff?.name || 'طاقم العمل المتميز'}\n*الخدمات:* ${selectedServicesList.map(s => s.name).join('، ')}\n*الإجمالي:* ${totalBookingPrice} ${currency}\n*كود الحجز:* ${bookingCode}\n\nشكراً لثقتكم بنا ونسعد بخدمتكم دائماً!`;
 
       try {
         if (EvolutionApiService.isConfigured(settings, selectedBranchId)) {
@@ -837,8 +838,9 @@ export function ClientReservationPortal({
                 {salonInfo.name || settings.salonName || 'صالون العناية VIP'}
               </h1>
               <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-bold mt-0.5">
-                <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.2 rounded-md font-mono">
-                  🔒 كود: {scopedSalonCode}
+                <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.2 rounded-md font-mono flex items-center gap-1">
+                  <Lock size={10} />
+                  <span>كود: {scopedSalonCode}</span>
                 </span>
                 <span>•</span>
                 <span className="text-slate-300 font-semibold">{clientCountry}</span>
@@ -902,7 +904,7 @@ export function ClientReservationPortal({
               )}
               
               <h2 className="text-xl font-black text-white">
-                {authMode === 'login' ? 'تسجيل الدخول لبوابة الحجز 🔑' : 'إنشاء حساب عميل جديد ✨'}
+                {authMode === 'login' ? 'تسجيل الدخول لبوابة الحجز' : 'إنشاء حساب عميل جديد'}
               </h2>
               <p className="text-xs text-slate-400 mt-1 font-medium">
                 {authMode === 'login'
@@ -976,7 +978,7 @@ export function ClientReservationPortal({
               <form onSubmit={handleDirectLogin} className="space-y-3.5">
                 <div>
                   <label className="block text-xs font-bold text-slate-300 mb-1">
-                    اسم المستخدم (Username) 👤 *
+                    اسم المستخدم (Username) *
                   </label>
                   <input
                     type="text"
@@ -992,7 +994,7 @@ export function ClientReservationPortal({
 
                 <div>
                   <label className="block text-xs font-bold text-slate-300 mb-1">
-                    كلمة المرور 🔒 *
+                    كلمة المرور *
                   </label>
                   <div className="relative">
                     <input
@@ -1041,7 +1043,7 @@ export function ClientReservationPortal({
                       }}
                       className="text-emerald-400 hover:text-emerald-300 font-black underline cursor-pointer"
                     >
-                      إنشاء حساب جديد باسم مستخدم وكلمة مرور ✨
+                      إنشاء حساب جديد باسم مستخدم وكلمة مرور
                     </button>
                   </p>
                 </div>
@@ -1054,16 +1056,22 @@ export function ClientReservationPortal({
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label className="text-xs font-bold text-slate-300">
-                      اسم المستخدم الفريد (Username) 👤 *
+                      اسم المستخدم الفريد (Username) *
                     </label>
                     {usernameAvailability === 'checking' && (
-                      <span className="text-[10px] text-amber-400 font-medium">جاري فحص التوفر... ⏳</span>
+                      <span className="text-[10px] text-amber-400 font-medium">جاري فحص التوفر...</span>
                     )}
                     {usernameAvailability === 'available' && (
-                      <span className="text-[10px] text-emerald-400 font-black">متاح ومميز ✅</span>
+                      <span className="text-[10px] text-emerald-400 font-black flex items-center gap-1">
+                        <Check size={11} />
+                        <span>متاح ومميز</span>
+                      </span>
                     )}
                     {usernameAvailability === 'taken' && (
-                      <span className="text-[10px] text-rose-400 font-black">مستخدم مسبقاً ⚠️</span>
+                      <span className="text-[10px] text-rose-400 font-black flex items-center gap-1">
+                        <AlertTriangle size={11} />
+                        <span>مستخدم مسبقاً</span>
+                      </span>
                     )}
                   </div>
                   <input
@@ -1087,7 +1095,7 @@ export function ClientReservationPortal({
 
                 <div>
                   <label className="block text-xs font-bold text-slate-300 mb-1">
-                    كلمة المرور 🔒 *
+                    كلمة المرور *
                   </label>
                   <div className="relative">
                     <input
@@ -1111,7 +1119,7 @@ export function ClientReservationPortal({
 
                 <div>
                   <label className="block text-xs font-bold text-slate-300 mb-1">
-                    الاسم الكامل 👤 *
+                    الاسم الكامل *
                   </label>
                   <input
                     type="text"
@@ -1125,7 +1133,7 @@ export function ClientReservationPortal({
 
                 <div>
                   <label className="block text-xs font-bold text-slate-300 mb-1">
-                    الدولة (لعرض فروع الصالون في بلدك) 🌍 *
+                    الدولة (لعرض فروع الصالون في بلدك) *
                   </label>
                   <select
                     value={authForm.country}
@@ -1142,7 +1150,7 @@ export function ClientReservationPortal({
 
                 <div>
                   <label className="block text-xs font-bold text-slate-300 mb-1">
-                    رقم الجوال (اختياري / للتواصل وإشعارات الحجز) 📱
+                    رقم الجوال (اختياري / للتواصل وإشعارات الحجز)
                   </label>
                   <input
                     type="tel"
@@ -1157,7 +1165,7 @@ export function ClientReservationPortal({
 
                 <div>
                   <label className="block text-xs font-bold text-slate-300 mb-1">
-                    البريد الإلكتروني (اختياري) ✉️
+                    البريد الإلكتروني (اختياري)
                   </label>
                   <input
                     type="email"
@@ -1171,10 +1179,11 @@ export function ClientReservationPortal({
 
                 <div>
                   <label className="block text-xs font-bold text-amber-300 mb-1 flex items-center justify-between">
-                    <span>كود / جوال العميل الذي رشحك (اختياري) 🎁</span>
+                    <span>كود / جوال العميل الذي رشحك (اختياري)</span>
                     {referrerClientInPortal ? (
-                      <span className="text-[10px] text-emerald-400 font-extrabold bg-emerald-950/80 border border-emerald-500/30 px-2 py-0.5 rounded-md">
-                        تم التعرف على المرشِّح ✅
+                      <span className="text-[10px] text-emerald-400 font-extrabold bg-emerald-950/80 border border-emerald-500/30 px-2 py-0.5 rounded-md flex items-center gap-1">
+                        <Check size={10} />
+                        <span>تم التعرف على المرشِّح</span>
                       </span>
                     ) : (
                       <span className="text-[10px] text-amber-400/80 font-normal">كود الإحالة</span>
@@ -1197,7 +1206,7 @@ export function ClientReservationPortal({
                     <div className="mt-2 p-2.5 bg-emerald-950/40 border border-emerald-500/40 rounded-xl flex items-center justify-between gap-2 text-emerald-200 text-xs animate-in fade-in">
                       <div className="flex items-center gap-2 min-w-0">
                         <div className="w-6 h-6 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-bold text-[10px] shrink-0">
-                          ✓
+                          <Check size={12} />
                         </div>
                         <div className="min-w-0">
                           <span className="text-[10px] text-emerald-400 block font-normal leading-none mb-0.5">العميل الذي رشحك:</span>
@@ -1221,7 +1230,7 @@ export function ClientReservationPortal({
                   ) : (
                     <>
                       <CheckCircle2 size={16} />
-                      <span>إنشاء الحساب وبدء الحجز الآن ✨</span>
+                      <span>إنشاء الحساب وبدء الحجز الآن</span>
                     </>
                   )}
                 </button>
@@ -1238,7 +1247,7 @@ export function ClientReservationPortal({
                       }}
                       className="text-emerald-400 hover:text-emerald-300 font-black underline cursor-pointer"
                     >
-                      تسجيل الدخول 🔑
+                      تسجيل الدخول
                     </button>
                   </p>
                 </div>
@@ -1267,7 +1276,7 @@ export function ClientReservationPortal({
                     ? 'bg-emerald-950 text-emerald-400 border border-emerald-600'
                     : 'bg-slate-800 text-slate-500'
                 }`}>
-                  {currentStep > s.num ? '✓' : s.num}
+                  {currentStep > s.num ? <Check size={12} /> : s.num}
                 </span>
                 <span className={`hidden sm:inline ${currentStep === s.num ? 'text-white' : 'text-slate-500'}`}>
                   {s.label}
@@ -1304,7 +1313,12 @@ export function ClientReservationPortal({
                         <div>
                           <div className="flex items-center gap-2">
                             <h4 className="font-black text-white text-base">{b.name}</h4>
-                            {b.isMain && <span className="bg-amber-500/20 text-amber-300 text-[10px] font-black px-2 py-0.5 rounded-full">الفرع الرئيسي ⭐</span>}
+                            {b.isMain && (
+                              <span className="bg-amber-500/20 text-amber-300 text-[10px] font-black px-2 py-0.5 rounded-full flex items-center gap-1">
+                                <span>الفرع الرئيسي</span>
+                                <Star size={11} className="fill-amber-300 text-amber-300" />
+                              </span>
+                            )}
                           </div>
                           <p className="text-xs text-slate-400 mt-1 flex items-center gap-1.5">
                             <MapPin size={13} className="text-emerald-400 shrink-0" />
@@ -1498,8 +1512,8 @@ export function ClientReservationPortal({
                         : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700'
                     }`}
                   >
-                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white font-black text-lg shrink-0 shadow-md">
-                      ⭐
+                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shrink-0 shadow-md">
+                      <Star size={20} className="fill-white text-white" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-black text-xs sm:text-sm text-emerald-400">أي خبير متاح (الأسرع)</p>
@@ -1543,7 +1557,7 @@ export function ClientReservationPortal({
                             <div className={`absolute -bottom-1 -left-1 w-4 h-4 rounded-full border-2 border-slate-900 flex items-center justify-center text-[8px] font-black ${
                               isUnavailable ? 'bg-rose-500 text-white' : 'bg-emerald-500 text-slate-950'
                             }`}>
-                              {isUnavailable ? '✕' : '✓'}
+                              {isUnavailable ? <X size={8} /> : <Check size={8} />}
                             </div>
                           </div>
 
@@ -1556,15 +1570,17 @@ export function ClientReservationPortal({
                                   {staffAvail.reason || 'إجازة'}
                                 </span>
                               ) : isSelected ? (
-                                <span className="bg-emerald-500 text-slate-950 text-[9px] font-black px-2 py-0.5 rounded-full">
-                                  مختار ✓
+                                <span className="bg-emerald-500 text-slate-950 text-[9px] font-black px-2 py-0.5 rounded-full flex items-center gap-1">
+                                  <Check size={9} />
+                                  <span>مختار</span>
                                 </span>
                               ) : null}
                             </div>
                             <p className="text-[11px] text-emerald-400/90 font-bold mt-0.5 truncate">{emp.role || 'فني كوافير ومصفف'}</p>
                             {emp.checkInTime && (
-                              <p className="text-[9px] text-slate-400 font-mono mt-0.5">
-                                ⏰ دوامه: من {emp.checkInTime} إلى {emp.checkOutTime || '22:00'}
+                              <p className="text-[9px] text-slate-400 font-mono mt-0.5 flex items-center gap-1">
+                                <Clock size={10} className="text-slate-500" />
+                                <span>دوامه: من {emp.checkInTime} إلى {emp.checkOutTime || '22:00'}</span>
                               </p>
                             )}
                           </div>
@@ -1593,7 +1609,10 @@ export function ClientReservationPortal({
                 
                 {isSelectedDateBlocked ? (
                   <div className="bg-rose-500/10 border border-rose-500/30 text-rose-300 p-4 rounded-2xl text-xs font-bold text-center space-y-1">
-                    <p className="text-sm">⚠️ الصالون مغلق بالكامل في هذا اليوم</p>
+                    <p className="text-sm flex items-center justify-center gap-1.5">
+                      <AlertTriangle size={15} className="text-rose-400" />
+                      <span>الصالون مغلق بالكامل في هذا اليوم</span>
+                    </p>
                     <p className="text-[11px] text-rose-400/90 font-normal">
                       {effectiveSettings.bookingRules?.blockedDates?.find(b => b.date === selectedDate)?.reason || 'عطلة رسمية أو صيانة دورية - يرجى اختيار تاريخ آخر من الأعلى'}
                     </p>
@@ -1694,7 +1713,7 @@ export function ClientReservationPortal({
                       ) : null}
                       <div>
                         <span className="text-white font-black block">
-                          {selectedStaffId === 'any' ? '⭐ أي خبير متاح' : branchEmployees.find(e => e.id === selectedStaffId)?.name}
+                          {selectedStaffId === 'any' ? 'أي خبير متاح' : branchEmployees.find(e => e.id === selectedStaffId)?.name}
                         </span>
                         {selectedStaffId !== 'any' && branchEmployees.find(e => e.id === selectedStaffId)?.publicBio && (
                           <span className="text-[10px] text-amber-300 block font-medium">
@@ -1735,7 +1754,7 @@ export function ClientReservationPortal({
                   className="w-full bg-gradient-to-r from-emerald-600 via-teal-500 to-emerald-600 hover:from-emerald-500 hover:to-teal-400 text-slate-950 font-black py-4 rounded-2xl text-sm shadow-xl shadow-emerald-600/40 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.98]"
                 >
                   <Check size={18} strokeWidth={3} />
-                  <span>تأكيد الحجز الآن ✓</span>
+                  <span>تأكيد الحجز الآن</span>
                 </button>
               </div>
             </div>
@@ -1768,7 +1787,7 @@ export function ClientReservationPortal({
                 onClick={() => setActivePortalTab('wizard')}
                 className="mt-4 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs px-5 py-2.5 rounded-xl cursor-pointer"
               >
-                احجز الآن ✨
+                احجز الآن
               </button>
             </div>
           ) : (
@@ -1780,11 +1799,12 @@ export function ClientReservationPortal({
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-black text-white text-sm font-mono">{b.bookingCode || b.id.slice(0, 8)}</span>
                         {b.queueNumber && (
-                          <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 font-mono shadow-2xs">
-                            🎟️ دور B-{b.queueNumber}
+                          <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 font-mono shadow-2xs flex items-center gap-1">
+                            <Ticket size={11} />
+                            <span>دور B-{b.queueNumber}</span>
                           </span>
                         )}
-                        <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full ${
+                        <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full flex items-center gap-1 ${
                           b.status === 'confirmed'
                             ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                             : b.status === 'completed'
@@ -1793,11 +1813,35 @@ export function ClientReservationPortal({
                             ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
                             : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
                         }`}>
-                          {b.status === 'confirmed' ? '🟢 مؤكد' : b.status === 'completed' ? '✓ مكتمل' : b.status === 'cancelled' ? '🔴 ملغي' : '⏳ قيد الانتظار'}
+                          {b.status === 'confirmed' && (
+                            <>
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                              <span>مؤكد</span>
+                            </>
+                          )}
+                          {b.status === 'completed' && (
+                            <>
+                              <Check size={11} />
+                              <span>مكتمل</span>
+                            </>
+                          )}
+                          {b.status === 'cancelled' && (
+                            <>
+                              <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+                              <span>ملغي</span>
+                            </>
+                          )}
+                          {b.status === 'pending' && (
+                            <>
+                              <Clock size={11} />
+                              <span>قيد الانتظار</span>
+                            </>
+                          )}
                         </span>
                       </div>
-                      <p className="text-xs text-emerald-400 font-bold font-mono mt-1">
-                        📅 {b.date} • {b.time}
+                      <p className="text-xs text-emerald-400 font-bold font-mono mt-1 flex items-center gap-1.5">
+                        <CalendarIcon size={12} />
+                        <span>{b.date} • {b.time}</span>
                       </p>
                     </div>
 
@@ -1828,7 +1872,7 @@ export function ClientReservationPortal({
                       }}
                       className="text-[11px] text-rose-400 hover:text-rose-300 font-bold hover:underline cursor-pointer"
                     >
-                      إلغاء الموعد ✕
+                      إلغاء الموعد
                     </button>
                   )}
                 </div>
@@ -1847,21 +1891,28 @@ export function ClientReservationPortal({
             </div>
 
             <div>
-              <h3 className="text-lg font-black text-white">تم استلام حجزك بنجاح! 🎉</h3>
+              <h3 className="text-lg font-black text-white">تم استلام حجزك بنجاح!</h3>
               <p className="text-xs text-slate-400 mt-1">
                 كود الحجز الخاص بك: <strong className="text-emerald-400 font-mono text-sm">{completedBookingResult.bookingCode}</strong>
               </p>
               {completedBookingResult.queueNumber && (
-                <div className="mt-2.5 py-2 px-4 bg-indigo-500/15 border border-indigo-500/40 rounded-2xl inline-block text-indigo-300 font-bold text-xs shadow-sm">
-                  <span>🎟️ رقم دورك المبدئي بالصالون: </span>
+                <div className="mt-2.5 py-2 px-4 bg-indigo-500/15 border border-indigo-500/40 rounded-2xl inline-flex items-center gap-1.5 text-indigo-300 font-bold text-xs shadow-sm">
+                  <Ticket size={13} />
+                  <span>رقم دورك المبدئي بالصالون: </span>
                   <strong className="font-mono text-base text-indigo-400 font-black">B-{completedBookingResult.queueNumber}</strong>
                 </div>
               )}
             </div>
 
             <div className="bg-slate-950 p-3 rounded-2xl border border-slate-800 text-xs text-slate-300 space-y-1">
-              <p>📅 <strong>{completedBookingResult.date}</strong> الساعة <strong>{completedBookingResult.time}</strong></p>
-              <p>📍 الفرع: {activeBranch.name}</p>
+              <p className="flex items-center justify-center gap-1.5">
+                <CalendarIcon size={13} className="text-emerald-400" />
+                <span><strong>{completedBookingResult.date}</strong> الساعة <strong>{completedBookingResult.time}</strong></span>
+              </p>
+              <p className="flex items-center justify-center gap-1.5">
+                <MapPin size={13} className="text-emerald-400" />
+                <span>الفرع: {activeBranch.name}</span>
+              </p>
             </div>
 
             <div className="flex gap-2">

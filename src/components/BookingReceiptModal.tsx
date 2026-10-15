@@ -111,8 +111,9 @@ export function BookingReceiptModal({ booking, settings, onClose, onPrint }: Boo
             type="button"
             onClick={onClose}
             className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 cursor-pointer transition-colors"
+            title="إغلاق"
           >
-            ✕
+            <X size={16} />
           </button>
         </div>
 

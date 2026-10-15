@@ -427,7 +427,7 @@ export const SubscriptionService = {
     return {
       success: true,
       branch: newBranch,
-      message: 'تم تسجيل طلب الفرع بنجاح وهو الآن بانتظار التفعيل والاعتماد من قبل المبرمج وإدارة المنظومة ⏳'
+      message: 'تم تسجيل طلب الفرع بنجاح وهو الآن بانتظار التفعيل والاعتماد من قبل المبرمج وإدارة المنظومة'
     };
   },
 
@@ -775,7 +775,7 @@ export const SubscriptionService = {
       success: true,
       salon: updatedSalon || undefined,
       payment: paymentRecord,
-      message: `تم تجديد وتفعيل الاشتراك بنجاح حتى تاريخ ${endDateStr} (${durationLabel}) 🚀`
+      message: `تم تجديد وتفعيل الاشتراك بنجاح حتى تاريخ ${endDateStr} (${durationLabel})`
     };
   },
 
@@ -891,7 +891,7 @@ export const SubscriptionService = {
         isActive: false,
         isExpired: false,
         daysRemaining: 0,
-        badgeLabel: 'حساب موقوف ⛔',
+        badgeLabel: 'حساب موقوف',
         badgeColor: 'bg-rose-100 text-rose-800 border-rose-300'
       };
     }
@@ -907,7 +907,7 @@ export const SubscriptionService = {
         isActive: false,
         isExpired: true,
         daysRemaining: 0,
-        badgeLabel: 'منتهي الصلاحية ⚠️',
+        badgeLabel: 'منتهي الصلاحية',
         badgeColor: 'bg-rose-100 text-rose-800 border-rose-300'
       };
     }
@@ -917,7 +917,7 @@ export const SubscriptionService = {
         isActive: true,
         isExpired: false,
         daysRemaining: Math.max(0, daysRemaining),
-        badgeLabel: `تجريبي (${daysRemaining} يوم متبقي) ⏳`,
+        badgeLabel: `تجريبي (${daysRemaining} يوم متبقي)`,
         badgeColor: 'bg-amber-100 text-amber-800 border-amber-300'
       };
     }
@@ -926,7 +926,7 @@ export const SubscriptionService = {
       isActive: true,
       isExpired: false,
       daysRemaining: Math.max(0, daysRemaining),
-      badgeLabel: 'اشتراك نشط 🟢',
+      badgeLabel: 'اشتراك نشط',
       badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-300'
     };
   }

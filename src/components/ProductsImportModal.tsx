@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { AppSettings, Product, Category } from '../types';
 import { 
   X, UploadCloud, Download, CheckCircle2, AlertTriangle, 
-  FileSpreadsheet, Loader2, Package, RefreshCw, Plus, Sparkles 
+  FileSpreadsheet, Loader2, Package, RefreshCw, Plus, Sparkles, Zap 
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { DB } from '../services/db';
@@ -346,7 +346,7 @@ export function ProductsImportModal({
       const updatedProductsList = Array.from(savedProductsMap.values());
       setProducts(updatedProductsList);
 
-      setSaveSuccessMsg(`🎉 تم بنجاح استيراد وتحديث (${productsToProcess.length}) منتج في قاعدة البيانات والمخزون.`);
+      setSaveSuccessMsg(`تم بنجاح استيراد وتحديث (${productsToProcess.length}) منتج في قاعدة البيانات والمخزون.`);
       setTimeout(() => {
         handleClose();
       }, 1800);
@@ -498,20 +498,22 @@ export function ProductsImportModal({
                       <button
                         type="button"
                         onClick={() => setImportMode('upsert')}
-                        className={`py-1.5 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        className={`inline-flex items-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                           importMode === 'upsert' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
                         }`}
                       >
-                        ⚡ إضافة وتحديث الموجود (Upsert)
+                        <Zap size={13} />
+                        <span>إضافة وتحديث الموجود (Upsert)</span>
                       </button>
                       <button
                         type="button"
                         onClick={() => setImportMode('add_only')}
-                        className={`py-1.5 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        className={`inline-flex items-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                           importMode === 'add_only' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
                         }`}
                       >
-                        ➕ إضافة الجديد فقط
+                        <Plus size={13} />
+                        <span>إضافة الجديد فقط</span>
                       </button>
                     </div>
                   </div>
@@ -525,20 +527,22 @@ export function ProductsImportModal({
                         <button
                           type="button"
                           onClick={() => setStockUpdateMode('replace')}
-                          className={`py-1.5 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          className={`inline-flex items-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                             stockUpdateMode === 'replace' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
                           }`}
                         >
-                          🔄 استبدال الرصيد بالكمية الجديدة
+                          <RefreshCw size={13} />
+                          <span>استبدال الرصيد بالكمية الجديدة</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => setStockUpdateMode('add')}
-                          className={`py-1.5 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          className={`inline-flex items-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                             stockUpdateMode === 'add' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
                           }`}
                         >
-                          ➕ إضافة للرصيد الحالي
+                          <Plus size={13} />
+                          <span>إضافة للرصيد الحالي</span>
                         </button>
                       </div>
                     </div>
@@ -654,7 +658,7 @@ export function ProductsImportModal({
               ) : (
                 <>
                   <CheckCircle2 size={16} />
-                  <span>تنفيذ الاستيراد والتحديث ({stats.toCreate + stats.toUpdate}) الآن 🚀</span>
+                  <span>تنفيذ الاستيراد والتحديث ({stats.toCreate + stats.toUpdate}) الآن</span>
                 </>
               )}
             </button>

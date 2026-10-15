@@ -45,7 +45,7 @@ export function AIFloatingChat({
     {
       id: 'float-welcome',
       sender: 'assistant',
-      text: 'مرحباً بك! أنا المساعد الذكي، كيف أساعدك في إدارة الصالون أو الحجوزات أو الموظفين الآن؟ 🤖',
+      text: 'مرحباً بك! أنا المساعد الذكي، كيف أساعدك في إدارة الصالون أو الحجوزات أو الموظفين الآن؟',
       timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })
     }
   ]);
@@ -142,7 +142,10 @@ export function AIFloatingChat({
               <Bot size={20} />
               <div>
                 <h3 className="font-black text-xs">المساعد الذكي (Smart AI)</h3>
-                <span className="text-[9px] text-indigo-100">استعلام وتنفيذ فوري 🟢</span>
+                <span className="text-[9px] text-indigo-100 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  <span>استعلام وتنفيذ فوري</span>
+                </span>
               </div>
             </div>
             <div className="flex items-center gap-1">

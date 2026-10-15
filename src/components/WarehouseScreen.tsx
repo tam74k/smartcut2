@@ -4,7 +4,7 @@ import {
   PurchaseInvoice, Transaction, ItemMovement, InventoryCount 
 } from '../types';
 import { 
-  Package, Truck, ShoppingCart, ClipboardList, AlertTriangle, 
+  Package, Truck, ShoppingCart, ClipboardList, AlertTriangle, AlertCircle,
   Search, Plus, TrendingDown, ArrowRightLeft, DollarSign, 
   Boxes, ShieldCheck, Sparkles, Filter, ExternalLink, RefreshCw 
 } from 'lucide-react';
@@ -188,7 +188,7 @@ export function WarehouseScreen({
               title="تحديث البيانات فوراً من السحابة وقاعدة البيانات"
             >
               <RefreshCw size={13} className={isRefreshing ? 'animate-spin text-amber-600' : 'text-amber-600'} />
-              <span>{isRefreshing ? 'جاري التحديث...' : 'تحديث البيانات 🔄'}</span>
+              <span>{isRefreshing ? 'جاري التحديث...' : 'تحديث البيانات'}</span>
             </button>
           )}
         </div>
@@ -396,12 +396,14 @@ export function WarehouseScreen({
                         </td>
                         <td className="p-3 whitespace-nowrap">
                           {isZero ? (
-                            <span className="bg-rose-100 text-rose-900 px-2 py-0.5 rounded text-[10px] font-black border border-rose-200">
-                              نفد من المخزن ⛔
+                            <span className="bg-rose-100 text-rose-900 px-2 py-0.5 rounded text-[10px] font-black border border-rose-200 inline-flex items-center gap-1">
+                              <AlertCircle size={10} className="text-rose-700" />
+                              <span>نفد من المخزن</span>
                             </span>
                           ) : (
-                            <span className="bg-amber-100 text-amber-900 px-2 py-0.5 rounded text-[10px] font-black border border-amber-200">
-                              قارب على النفاد ⚠️
+                            <span className="bg-amber-100 text-amber-900 px-2 py-0.5 rounded text-[10px] font-black border border-amber-200 inline-flex items-center gap-1">
+                              <AlertTriangle size={10} className="text-amber-700" />
+                              <span>قارب على النفاد</span>
                             </span>
                           )}
                         </td>

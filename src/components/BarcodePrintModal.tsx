@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Product, AppSettings } from '../types';
-import { Printer } from 'lucide-react';
+import { Printer, X } from 'lucide-react';
 import JsBarcode from 'jsbarcode';
 
 interface BarcodePrintModalProps {
@@ -370,9 +370,10 @@ export function BarcodePrintModal({ product, settings, onClose }: BarcodePrintMo
           </h3>
           <button 
             onClick={onClose}
-            className="text-slate-400 hover:text-red-500 font-bold text-lg p-1 transition-colors"
+            className="text-slate-400 hover:text-red-500 font-bold p-1 rounded-lg hover:bg-slate-100 transition-colors"
+            title="إغلاق"
           >
-            ✕
+            <X size={18} />
           </button>
         </div>
 

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Scissors, Phone, CheckCircle2, User, UserPlus, Sparkles, 
   RotateCcw, Clock, Volume2, ArrowRight, Printer, AlertCircle, Maximize, Minimize, Lock, Wifi,
-  Eye, EyeOff, ShieldCheck, LogOut, Key, UserCheck, Unlock
+  Eye, EyeOff, ShieldCheck, LogOut, Key, UserCheck, Unlock, Ticket
 } from 'lucide-react';
 import { AppSettings, Branch, Client, QueueTicket, AppUser } from '../types';
 import { QueueService } from '../services/queueService';
@@ -320,13 +320,13 @@ export function KioskTabletScreen({
   const handleSavePrinterIp = () => {
     localStorage.setItem('smartcut_kiosk_printer_ip', kioskPrinterIp.trim());
     localStorage.setItem('smartcut_kiosk_printer_port', kioskPrinterPort.trim());
-    setKioskTestResult('✅ تم حفظ عنوان IP للطابعة بنجاح');
+    setKioskTestResult('تم حفظ عنوان IP للطابعة بنجاح');
     setTimeout(() => setKioskTestResult(null), 3500);
   };
 
   const handleTestKioskPrint = async () => {
     if (!kioskPrinterIp.trim()) {
-      setKioskTestResult('⚠️ يرجى كتابة عنوان IP أولاً');
+      setKioskTestResult('يرجى كتابة عنوان IP أولاً');
       return;
     }
     setKioskTestResult('جاري فحص الاتصال بالطابعة...');
@@ -340,7 +340,7 @@ export function KioskTabletScreen({
       ip: kioskPrinterIp.trim(),
       port: Number(kioskPrinterPort) || 8080
     });
-    setKioskTestResult(res.success ? '✅ تم الاتصال وإرسال تذكرة الفحص' : `❌ ${res.message}`);
+    setKioskTestResult(res.success ? 'تم الاتصال وإرسال تذكرة الفحص' : res.message);
   };
 
   useEffect(() => {
@@ -499,7 +499,7 @@ export function KioskTabletScreen({
     // تفريغ الحقول فوراً للعميل التالي مع إشعار نجاح علوي سريع
     const num = ticket.queueNumber;
     handleResetAll();
-    setSuccessNotice(`✅ تم استلام دورك بنجاح! رقمك هو #${num} وجارٍ طباعة إيصالك الحراري 🎟️`);
+    setSuccessNotice(`تم استلام دورك بنجاح! رقمك هو #${num} وجارٍ طباعة إيصالك الحراري.`);
     setTimeout(() => {
       setSuccessNotice(null);
     }, 4000);
@@ -733,7 +733,7 @@ export function KioskTabletScreen({
             title="إغلاق الشاشة وتسجيل الخروج لمنع العبث"
           >
             <Lock size={15} />
-            <span className="hidden sm:inline">إغلاق الشاشة وخروج 🔒</span>
+            <span className="hidden sm:inline">إغلاق الشاشة وخروج</span>
           </button>
         </div>
       </header>
@@ -984,7 +984,8 @@ export function KioskTabletScreen({
             onClick={handleConfirmCheckIn}
             className="w-full max-w-md py-4 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 text-slate-950 font-black text-lg sm:text-xl rounded-2xl shadow-xl shadow-amber-500/25 flex items-center justify-center gap-2 transition-all hover:brightness-110 active:scale-98 animate-in fade-in"
           >
-            <span>استلام رقم الدور الآن 🎟️</span>
+            <Ticket size={20} />
+            <span>استلام رقم الدور الآن</span>
           </button>
         )}
 
@@ -1126,7 +1127,7 @@ export function KioskTabletScreen({
                       className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white font-black text-xs flex items-center justify-center gap-2 shadow-lg shadow-rose-900/30 cursor-pointer transition-all"
                     >
                       <LogOut size={16} />
-                      <span>إغلاق الشاشة وتسجيل الخروج من النظام 🔒</span>
+                      <span>إغلاق الشاشة وتسجيل الخروج من النظام</span>
                     </button>
                   </div>
                 ) : (
@@ -1137,7 +1138,7 @@ export function KioskTabletScreen({
                       className="p-3 rounded-xl bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white font-black text-xs flex flex-col items-center justify-center gap-1.5 shadow cursor-pointer text-center"
                     >
                       <LogOut size={18} />
-                      <span>إغلاق الشاشة والخروج 🔒</span>
+                      <span>إغلاق الشاشة والخروج</span>
                       <span className="text-[10px] font-normal opacity-90">(تسجيل الخروج من النظام)</span>
                     </button>
 
@@ -1172,7 +1173,7 @@ export function KioskTabletScreen({
                     </select>
                   </div>
 
-                  {/* 🖨️ Network Printer IP for Tablet */}
+                  {/* Network Printer IP for Tablet */}
                   <div className="pt-2 border-t border-slate-800 space-y-2">
                     <label className="block text-[11px] font-bold text-amber-400 flex items-center gap-1.5">
                       <Printer size={13} />

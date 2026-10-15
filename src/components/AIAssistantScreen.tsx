@@ -6,7 +6,7 @@ import {
 import { 
   Bot, Send, Sparkles, User, Calendar, Clock, DollarSign, 
   Trash2, Settings, ShieldCheck, CheckCircle2, ChevronRight, 
-  Phone, ShoppingCart, Printer, Layers, AlertTriangle, Key, Cpu, HelpCircle
+  Phone, ShoppingCart, Printer, Layers, AlertTriangle, Key, Cpu, HelpCircle, X
 } from 'lucide-react';
 import { processAIChatMessage, SystemDataContext } from '../services/aiAssistantService';
 
@@ -51,7 +51,7 @@ export function AIAssistantScreen({
     {
       id: 'welcome-msg',
       sender: 'assistant',
-      text: `مرحباً بك يا **${currentUser?.name || 'مدير النظام'}**! 👋 أنا **المساعد الذكي لنظام SMART CUT**.\n\nيمكنك توجيه أي سؤال للاستعلام عن أي بيانات في النظام بالكامل، أو إعطائي أوامر لتنفيذ العمليات فوراً كالحجوزات، السلف، المصروفات، وأرصدة الخزائن!`,
+      text: `مرحباً بك يا **${currentUser?.name || 'مدير النظام'}**! أنا **المساعد الذكي لنظام SMART CUT**.\n\nيمكنك توجيه أي سؤال للاستعلام عن أي بيانات في النظام بالكامل، أو إعطائي أوامر لتنفيذ العمليات فوراً كالحجوزات، السلف، المصروفات، وأرصدة الخزائن!`,
       timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })
     }
   ]);
@@ -172,8 +172,9 @@ export function AIAssistantScreen({
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-base sm:text-lg font-black text-slate-900">المساعد الذكي (Smart AI Assistant)</h2>
-              <span className="bg-indigo-50 text-indigo-700 text-[10px] font-black px-2 py-0.5 rounded-full border border-indigo-200">
-                متصل 🟢
+              <span className="bg-indigo-50 text-indigo-700 text-[10px] font-black px-2.5 py-0.5 rounded-full border border-indigo-200 inline-flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span>متصل</span>
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
@@ -350,8 +351,9 @@ export function AIAssistantScreen({
               <button 
                 onClick={() => setShowConfigModal(false)}
                 className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 cursor-pointer"
+                title="إغلاق"
               >
-                ✕
+                <X size={16} />
               </button>
             </div>
 

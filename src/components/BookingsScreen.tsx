@@ -11,7 +11,8 @@ import {
   List, Grid3X3, Eye, CalendarDays, ArrowRight, Sliders, 
   CalendarOff, ShieldAlert, Trash2, Lock, ShieldCheck, Check,
   DollarSign, Wallet, CreditCard, Banknote, XCircle, FileSpreadsheet,
-  MapPin, ShoppingBag, Package, Pencil, AlertTriangle, RotateCcw, CheckCircle
+  MapPin, ShoppingBag, Package, Pencil, AlertTriangle, RotateCcw, CheckCircle,
+  Globe, Zap, Info, Tag, Landmark, BarChart3, ArrowLeft, Star
 } from 'lucide-react';
 import { 
   isDateBlocked, isHourBlocked, isStaffAvailableOnDate, 
@@ -1206,7 +1207,7 @@ export function BookingsScreen({
     if (!b) return;
 
     if (b.status === 'cancelled') {
-      alert('⚠️ هذا الحجز ملغي مسبقاً.');
+      alert('هذا الحجز ملغي مسبقاً.');
       return;
     }
 
@@ -1365,9 +1366,9 @@ export function BookingsScreen({
       setCancellingBooking(null);
 
       if (shouldRefund) {
-        alert(`✅ تم إلغاء الحجز بنجاح واسترجاع العربون بقيمة ${paidDeposit} ${settings.currency} وتوثيقه كمصروف في بند "مسترجع حجوزات" على الوردية الحالية.`);
+        alert(`تم إلغاء الحجز بنجاح واسترجاع العربون بقيمة ${paidDeposit} ${settings.currency} وتوثيقه كمصروف في بند "مسترجع حجوزات" على الوردية الحالية.`);
       } else {
-        alert(`✅ تم تأكيد إلغاء الحجز بنجاح كإجراء إداري دون أثر مالي.`);
+        alert(`تم تأكيد إلغاء الحجز بنجاح كإجراء إداري دون أثر مالي.`);
       }
     } catch (err: any) {
       console.error('Error in confirmCancelBooking:', err);
@@ -1379,7 +1380,7 @@ export function BookingsScreen({
 
   const handleDeleteBooking = (id: string) => {
     if (!canDeleteBooking) {
-      alert('⛔ عذراً، لا تملك صلاحية حذف الحجز نهائياً.');
+      alert('عذراً، لا تملك صلاحية حذف الحجز نهائياً.');
       return;
     }
     const target = bookings.find(b => b.id === id);
@@ -1413,7 +1414,7 @@ export function BookingsScreen({
       QueueService.updateTicket('QT-B-' + b.id, { status: 'cancelled' });
 
       setDeletingBooking(null);
-      alert('✅ تم حذف الحجز نهائياً وتصفير كافة الحركات المالية المرتبطة به بنجاح.');
+      alert('تم حذف الحجز نهائياً وتصفير كافة الحركات المالية المرتبطة به بنجاح.');
     } catch (err: any) {
       console.error('Error deleting booking:', err);
       alert('حدث خطأ أثناء حذف الحجز: ' + (err?.message || ''));
@@ -1682,7 +1683,7 @@ export function BookingsScreen({
             }`}
           >
             <List size={16} className={activeMainTab === 'table' ? 'text-indigo-600' : 'text-slate-500'} />
-            <span>📋 جدول الحجوزات (الرئيسي)</span>
+            <span>جدول الحجوزات (الرئيسي)</span>
             <span className="bg-indigo-50 text-indigo-700 text-[10px] px-2 py-0.5 rounded-full font-bold">
               {bookings.length}
             </span>
@@ -1697,7 +1698,7 @@ export function BookingsScreen({
             }`}
           >
             <CalendarDays size={16} className={activeMainTab === 'calendar' ? 'text-indigo-600' : 'text-slate-500'} />
-            <span>📅 رزنامة وتقويم الحجوزات</span>
+            <span>رزنامة وتقويم الحجوزات</span>
           </button>
         </div>
 
@@ -1710,7 +1711,7 @@ export function BookingsScreen({
               title="ضبط إغلاق الأيام والساعات وسعة الحجوزات"
             >
               <Sliders size={15} className="text-indigo-600" />
-              <span>إعدادات وتوافر الحجوزات ⚙️</span>
+              <span>إعدادات وتوافر الحجوزات</span>
             </button>
           )}
 
@@ -1796,7 +1797,7 @@ export function BookingsScreen({
                 <h4 className="text-xl font-black text-slate-900 mt-0.5">{bookings.length}</h4>
               </div>
               <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
-                📅
+                <CalendarIcon size={18} />
               </div>
             </div>
 
@@ -1816,7 +1817,7 @@ export function BookingsScreen({
                 </h4>
               </div>
               <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
-                ✓
+                <Check size={18} />
               </div>
             </div>
 
@@ -1836,7 +1837,7 @@ export function BookingsScreen({
                 </h4>
               </div>
               <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
-                ⏳
+                <Clock size={18} />
               </div>
             </div>
 
@@ -1856,7 +1857,7 @@ export function BookingsScreen({
                 </h4>
               </div>
               <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-                🛒
+                <ShoppingCart size={18} />
               </div>
             </div>
 
@@ -2003,8 +2004,9 @@ export function BookingsScreen({
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="font-bold text-slate-900">{b.clientName}</span>
                               {b.source === 'online' && (
-                                <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 text-[9px] font-black px-1.5 py-0.2 rounded-md shadow-2xs">
-                                  🌐 أونلاين
+                                <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 text-[9px] font-black px-1.5 py-0.5 rounded-md shadow-2xs inline-flex items-center gap-1">
+                                  <Globe size={10} className="text-emerald-700" />
+                                  <span>أونلاين</span>
                                 </span>
                               )}
                               {b.location && (
@@ -2530,8 +2532,9 @@ export function BookingsScreen({
                         )}
                       </div>
 
-                      <div className="text-[10px] text-slate-400 text-center font-bold opacity-0 hover:opacity-100">
-                        عرض اليومية ⬅
+                      <div className="text-[10px] text-slate-400 text-center font-bold opacity-0 hover:opacity-100 flex items-center justify-center gap-1">
+                        <span>عرض اليومية</span>
+                        <ArrowLeft size={11} />
                       </div>
                     </div>
                   );
@@ -2573,10 +2576,10 @@ export function BookingsScreen({
               <button
                 type="button"
                 onClick={() => setSelectedBookingDetails(null)}
-                className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 hover:text-slate-800 cursor-pointer transition-colors text-base font-bold"
+                className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 hover:text-slate-800 cursor-pointer transition-colors"
                 title="إغلاق النافذة"
               >
-                ✕
+                <X size={16} />
               </button>
             </div>
 
@@ -2623,8 +2626,9 @@ export function BookingsScreen({
                             <div>
                               <div className="font-bold text-slate-900 flex items-center gap-1.5">
                                 {isProd && (
-                                  <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.2 rounded font-bold">
-                                    🛍️ منتج
+                                  <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-bold inline-flex items-center gap-1">
+                                    <Package size={10} className="text-amber-800" />
+                                    <span>منتج</span>
                                   </span>
                                 )}
                                 <span>{s.serviceName}</span>
@@ -2822,7 +2826,8 @@ export function BookingsScreen({
                           <span>ملاحظات داخلية (خاصة بالإدارة):</span>
                         </div>
                         <span className="text-[9px] font-bold text-amber-800 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full flex items-center gap-1">
-                          <span>🔒 سرية • لا تظهر في الإيصال</span>
+                          <Lock size={10} className="text-amber-700" />
+                          <span>سرية • لا تظهر في الإيصال</span>
                         </span>
                       </div>
                       <p className="text-xs text-amber-950 font-medium whitespace-pre-wrap leading-relaxed pr-1">
@@ -2913,7 +2918,7 @@ export function BookingsScreen({
         </div>
       )}
 
-      {/* ⚠️ MODAL: CANCELLATION & DEPOSIT REFUND POLICY */}
+      {/* MODAL: CANCELLATION & DEPOSIT REFUND POLICY */}
       {cancellingBooking && (() => {
         const b = cancellingBooking;
         const paidDeposit = getBookingTotalAdvances(b);
@@ -3005,7 +3010,7 @@ export function BookingsScreen({
                     <div className="bg-emerald-50/70 border border-emerald-200 rounded-2xl p-4 space-y-3">
                       <div className="flex items-center gap-2 text-emerald-800 font-black text-xs">
                         <CheckCircle size={16} className="text-emerald-600 shrink-0" />
-                        <span>✅ الحجز مؤهل لاسترجاع العربون</span>
+                        <span>الحجز مؤهل لاسترجاع العربون</span>
                       </div>
                       <p className="text-[11px] text-emerald-700 leading-relaxed">
                         المهلة المسموحة بالنظام: <strong className="font-mono">{allowedDays} أيام</strong>.
@@ -3051,8 +3056,9 @@ export function BookingsScreen({
                           </div>
 
                           <div className="p-2 bg-emerald-100/50 rounded-lg text-[10px] text-emerald-800 space-y-0.5">
-                            <div className="font-bold flex items-center gap-1">
-                              <span>🏦 الوردية الحالية:</span>
+                            <div className="font-bold flex items-center gap-1.5">
+                              <Landmark size={12} className="text-emerald-700" />
+                              <span>الوردية الحالية:</span>
                               <span>{shiftData?.isOpen ? `مفتوحة (${shiftData.date})` : 'لا توجد وردية مفتوحة'}</span>
                             </div>
                             <div className="text-[10px] text-slate-600 font-mono line-clamp-2">
@@ -3067,7 +3073,7 @@ export function BookingsScreen({
                     <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 space-y-2 text-rose-800 text-xs">
                       <div className="flex items-center gap-2 font-black">
                         <AlertTriangle size={16} className="text-rose-600 shrink-0" />
-                        <span>⚠️ مهلة استرجاع العربون المحددة بالنظام قد انتهت</span>
+                        <span>مهلة استرجاع العربون المحددة بالنظام قد انتهت</span>
                       </div>
                       <p className="text-[11px] leading-relaxed text-rose-700">
                         {isZeroPolicy ? (
@@ -3080,8 +3086,9 @@ export function BookingsScreen({
                           </>
                         )}
                       </p>
-                      <div className="bg-white/80 p-2.5 rounded-xl border border-rose-100 text-[11px] text-slate-700 font-bold">
-                        ℹ️ الأثر المالي: سيتم تأكيد الإلغاء كإجراء إداري فقط وتغيير حالة الحجز إلى (ملغي)، ولن يتم استرجاع أي مبالغ مالية أو تسجيل أي مصروف في النظام.
+                      <div className="bg-white/80 p-2.5 rounded-xl border border-rose-100 text-[11px] text-slate-700 font-bold flex items-center gap-1.5">
+                        <Info size={14} className="text-slate-500 shrink-0" />
+                        <span>الأثر المالي: سيتم تأكيد الإلغاء كإجراء إداري فقط وتغيير حالة الحجز إلى (ملغي)، ولن يتم استرجاع أي مبالغ مالية أو تسجيل أي مصروف في النظام.</span>
                       </div>
                     </div>
                   )}
@@ -3134,7 +3141,7 @@ export function BookingsScreen({
         );
       })()}
 
-      {/* ⚠️ MODAL: FULL BOOKING DELETION & FINANCIAL VOIDING */}
+      {/* MODAL: FULL BOOKING DELETION & FINANCIAL VOIDING */}
       {deletingBooking && (() => {
         const b = deletingBooking;
         const paidDeposit = getBookingTotalAdvances(b);
@@ -3158,8 +3165,9 @@ export function BookingsScreen({
                   هل أنت متأكد من حذف الحجز رقم #{bookingNum} للعميل ({b.clientName}) نهائياً؟
                 </p>
                 {paidDeposit > 0 ? (
-                  <p className="text-[11px] text-rose-700">
-                    ⚠️ <strong>زوال الأثر المالي التام:</strong> يحتوي هذا الحجز على عربون مسدد بقيمة <strong>({paidDeposit} {settings.currency})</strong>. سيقوم النظام بحذف وتصفير كافة حركات القبض والمصروفات المسترجعة المرتبطة بهذا الحجز من الخزينة، الدرج، مبيعات اليوم، والتقارير المالية كمعاملة ذرية واحدة.
+                  <p className="text-[11px] text-rose-700 flex items-start gap-1.5">
+                    <AlertTriangle size={14} className="text-rose-600 shrink-0 mt-0.5" />
+                    <span><strong>زوال الأثر المالي التام:</strong> يحتوي هذا الحجز على عربون مسدد بقيمة <strong>({paidDeposit} {settings.currency})</strong>. سيقوم النظام بحذف وتصفير كافة حركات القبض والمصروفات المسترجعة المرتبطة بهذا الحجز من الخزينة، الدرج، مبيعات اليوم، والتقارير المالية كمعاملة ذرية واحدة.</span>
                   </p>
                 ) : (
                   <p className="text-[11px] text-slate-600">
@@ -3207,15 +3215,18 @@ export function BookingsScreen({
               </div>
               <button
                 onClick={() => setShowQuickAdvanceModal(false)}
-                className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 cursor-pointer text-xs"
+                className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 cursor-pointer"
               >
-                ✕
+                <X size={14} />
               </button>
             </div>
 
             <div className="space-y-3 text-xs">
               <div>
-                <label className="block font-bold text-slate-700 mb-1">المبلغ المدفوع * 💰</label>
+                <label className="block font-bold text-slate-700 mb-1 flex items-center gap-1">
+                  <DollarSign size={13} className="text-emerald-600" />
+                  <span>المبلغ المدفوع *</span>
+                </label>
                 <input
                   type="number"
                   step="0.01"
@@ -3245,7 +3256,10 @@ export function BookingsScreen({
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 mb-1">تاريخ سداد العربون * 📅</label>
+                <label className="block font-bold text-slate-700 mb-1 flex items-center gap-1">
+                  <CalendarIcon size={13} className="text-emerald-600" />
+                  <span>تاريخ سداد العربون *</span>
+                </label>
                 <input
                   type="date"
                   value={quickAdvDate}
@@ -3310,9 +3324,9 @@ export function BookingsScreen({
               </div>
               <button
                 onClick={() => setShowAddModal(false)}
-                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 hover:text-slate-800 transition-colors cursor-pointer text-sm font-bold"
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
               >
-                ✕
+                <X size={16} />
               </button>
             </div>
 
@@ -3356,7 +3370,7 @@ export function BookingsScreen({
                     <div className="flex items-center justify-between">
                       <label className="block text-xs font-bold text-slate-800 flex items-center gap-1.5">
                         <Phone size={13} className="text-indigo-600" />
-                        <span>رقم الموبايل (البحث والإكمال التلقائي) * 📱</span>
+                        <span>رقم الموبايل (البحث والإكمال التلقائي) *</span>
                       </label>
                       {phoneSuggestions.length > 0 && showPhoneSuggestions && (
                         <span className="text-[10px] text-indigo-600 bg-indigo-50 border border-indigo-200/80 px-2 py-0.5 rounded-full font-bold">
@@ -3417,7 +3431,7 @@ export function BookingsScreen({
                           className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-rose-500 p-1 rounded-md text-xs cursor-pointer transition-colors"
                           title="مسح الرقم"
                         >
-                          ✕
+                          <X size={12} />
                         </button>
                       )}
                     </div>
@@ -3432,7 +3446,7 @@ export function BookingsScreen({
                         <div className="absolute top-full right-0 left-0 mt-1.5 bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 overflow-hidden max-h-72 flex flex-col animate-in fade-in slide-in-from-top-1 duration-150">
                           <div className="p-2.5 bg-slate-50 border-b border-slate-100 flex items-center justify-between text-[11px] font-bold text-slate-600">
                             <span className="flex items-center gap-1.5">
-                              <span>⚡</span>
+                              <Zap size={13} className="text-amber-500" />
                               <span>اختر العميل لملء بياناته تلقائياً:</span>
                             </span>
                             <span className="text-[10px] text-slate-400 font-normal">
@@ -3458,12 +3472,12 @@ export function BookingsScreen({
                                 >
                                   <div className="flex items-center gap-2.5 min-w-0">
                                     <div className="w-8 h-8 rounded-xl bg-indigo-100/70 text-indigo-700 flex items-center justify-center font-black text-xs shrink-0">
-                                      {client.name ? client.name.charAt(0) : '👤'}
+                                      {client.name ? client.name.charAt(0) : <User size={13} />}
                                     </div>
                                     <div className="min-w-0 text-right">
                                       <p className="font-extrabold text-xs text-slate-900 truncate">{client.name}</p>
                                       <p className="text-[11px] text-slate-500 font-mono" dir="ltr">
-                                        📱 {client.phone}
+                                        {client.phone}
                                       </p>
                                     </div>
                                   </div>
@@ -3471,12 +3485,12 @@ export function BookingsScreen({
                                   <div className="flex items-center gap-1.5 shrink-0 text-[10px]">
                                     {(Number(client.loyaltyPoints) > 0 || Number(client.cashback) > 0) && (
                                       <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-md font-bold">
-                                        {Number(client.loyaltyPoints) > 0 ? `⭐ ${client.loyaltyPoints} نقطة` : ''}
+                                        {Number(client.loyaltyPoints) > 0 ? `${client.loyaltyPoints} نقطة` : ''}
                                         {Number(client.cashback) > 0 ? ` • ${client.cashback} ${settings.currency}` : ''}
                                       </span>
                                     )}
                                     <span className="bg-indigo-600 text-white text-[10px] px-2 py-0.5 rounded-lg font-bold">
-                                      اختيار ✓
+                                      اختيار
                                     </span>
                                   </div>
                                 </button>
@@ -3491,7 +3505,7 @@ export function BookingsScreen({
                     {matchingClientInfo ? (
                       <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-800 p-2 sm:p-2.5 rounded-xl text-xs flex items-center justify-between animate-in fade-in">
                         <div className="flex items-center gap-2">
-                          <span className="text-base">✨</span>
+                          <Sparkles size={16} className="text-emerald-600 shrink-0" />
                           <div>
                             <p className="font-black text-emerald-900">عميل مسجل: {matchingClientInfo.name}</p>
                             <p className="text-[10px] text-emerald-700 font-bold">
@@ -3499,20 +3513,25 @@ export function BookingsScreen({
                             </p>
                           </div>
                         </div>
-                        <span className="bg-emerald-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full shrink-0">
-                          تم ملء البيانات ✓
+                        <span className="bg-emerald-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full shrink-0 flex items-center gap-1">
+                          <Check size={11} />
+                          <span>تم ملء البيانات</span>
                         </span>
                       </div>
                     ) : newBooking.phone && newBooking.phone.trim().length >= 8 ? (
-                      <p className="text-[11px] text-indigo-600 font-bold">
-                        💡 عميل جديد — سيتم تسجيله تلقائياً في قاعدة عملاء الصالون عند حفظ الحجز
+                      <p className="text-[11px] text-indigo-600 font-bold flex items-center gap-1.5">
+                        <Sparkles size={12} className="text-indigo-500 shrink-0 inline" />
+                        <span>عميل جديد — سيتم تسجيله تلقائياً في قاعدة عملاء الصالون عند حفظ الحجز</span>
                       </p>
                     ) : null}
                   </div>
 
                   {/* Client Name */}
                   <div className="md:col-span-5 space-y-1.5">
-                    <label className="block text-xs font-bold text-slate-700">اسم العميل * 👤</label>
+                    <label className="block text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                      <User size={13} className="text-indigo-600" />
+                      <span>اسم العميل *</span>
+                    </label>
                     <input
                       type="text"
                       value={newBooking.clientName || ''}
@@ -3528,7 +3547,10 @@ export function BookingsScreen({
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-3 pt-2 border-t border-slate-200/60">
                   <div>
                     <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center justify-between">
-                      <span>تاريخ الموعد * 📅</span>
+                      <span className="flex items-center gap-1">
+                        <CalendarIcon size={12} className="text-indigo-600" />
+                        <span>تاريخ الموعد *</span>
+                      </span>
                       {!editingBooking && shiftData?.isOpen && (
                         <span className="text-[9px] text-emerald-700 font-bold bg-emerald-100/70 px-1 py-0.2 rounded">
                           الوردية
@@ -3550,7 +3572,10 @@ export function BookingsScreen({
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">وقت الموعد * ⏰</label>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                      <span>وقت الموعد *</span>
+                      <Clock size={12} className="text-slate-400" />
+                    </label>
                     <select
                       value={newBooking.time}
                       onChange={e => setNewBooking({ ...newBooking, time: e.target.value })}
@@ -3611,7 +3636,8 @@ export function BookingsScreen({
                         <span>ملاحظات داخلية (خاصة بالإدارة):</span>
                       </label>
                       <span className="text-[10px] font-black text-amber-800 bg-amber-100/90 border border-amber-200/80 px-2 py-0.5 rounded-full flex items-center gap-1">
-                        <span>🔒 سرية • لا تظهر نهائياً في الإيصال المطبوع</span>
+                        <Lock size={10} className="text-amber-700" />
+                        <span>سرية • لا تظهر نهائياً في الإيصال المطبوع</span>
                       </span>
                     </div>
                     <textarea
@@ -3632,10 +3658,13 @@ export function BookingsScreen({
                 <div className="lg:col-span-7 bg-white p-3 sm:p-4 rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
                   <h3 className="text-xs font-black text-slate-800 flex items-center justify-between">
                     <span className="flex items-center gap-1.5">
-                      <span>✂️</span>
+                      <Scissors size={14} className="text-indigo-600" />
                       <span>الخدمات والمنتجات المطلوبة في الموعد:</span>
                     </span>
-                    <span className="text-[10px] text-slate-400 font-normal">بحث ذكي وإكمال تلقائي 🔍</span>
+                    <span className="text-[10px] text-slate-400 font-normal flex items-center gap-1">
+                      <Search size={11} />
+                      <span>بحث ذكي وإكمال تلقائي</span>
+                    </span>
                   </h3>
 
                   {/* Switcher: إضافة خدمة / إضافة منتج */}
@@ -3653,7 +3682,8 @@ export function BookingsScreen({
                           : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
                       }`}
                     >
-                      <span>✂️ إضافة خدمة</span>
+                      <Scissors size={13} />
+                      <span>إضافة خدمة</span>
                     </button>
                     <button
                       type="button"
@@ -3669,7 +3699,7 @@ export function BookingsScreen({
                       }`}
                     >
                       <ShoppingBag size={14} />
-                      <span>🛍️ إضافة منتج</span>
+                      <span>إضافة منتج</span>
                     </button>
                   </div>
                   
@@ -3698,7 +3728,7 @@ export function BookingsScreen({
                                 }
                               }}
                               onFocus={() => setIsServiceDropdownOpen(true)}
-                              placeholder="🔍 اكتب اسم الخدمة أو السعر..."
+                              placeholder="اكتب اسم الخدمة أو السعر..."
                               className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none text-slate-900 shadow-xs"
                             />
                             {serviceSearchQuery && (
@@ -3711,7 +3741,7 @@ export function BookingsScreen({
                                 }}
                                 className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-md text-xs cursor-pointer"
                               >
-                                ✕
+                                <X size={12} />
                               </button>
                             )}
                           </div>
@@ -3847,7 +3877,7 @@ export function BookingsScreen({
                                 }
                               }}
                               onFocus={() => setIsProductDropdownOpen(true)}
-                              placeholder="🔍 اكتب اسم المنتج أو الباركود..."
+                              placeholder="اكتب اسم المنتج أو الباركود..."
                               className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none text-slate-900 shadow-xs"
                             />
                             {productSearchQuery && (
@@ -3860,7 +3890,7 @@ export function BookingsScreen({
                                 }}
                                 className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-md text-xs cursor-pointer"
                               >
-                                ✕
+                                <X size={12} />
                               </button>
                             )}
                           </div>
@@ -3987,7 +4017,7 @@ export function BookingsScreen({
                         {hasTotalDiscount && (
                           <div className="bg-amber-50/90 border border-amber-200 rounded-xl p-2 px-3 text-[11px] text-amber-800 flex items-center justify-between">
                             <div className="flex items-center gap-1.5 font-bold">
-                              <span>⚠️</span>
+                              <AlertTriangle size={14} className="text-amber-600 shrink-0" />
                               <span>خصومات بنود الخدمات والمنتجات معطلة لتفعيل الخصم على إجمالي الحجز (لا يجوز الجمع بين خصمين).</span>
                             </div>
                             <button
@@ -4207,7 +4237,7 @@ export function BookingsScreen({
                             <div className="bg-amber-50/80 p-2.5 rounded-xl border border-amber-200 space-y-1.5 text-xs">
                               <div className="flex flex-wrap items-center justify-between gap-2">
                                 <div className="font-bold text-amber-900 flex items-center gap-1.5">
-                                  <span>🏷️</span>
+                                  <Tag size={13} className="text-amber-700" />
                                   <span>خصم إجمالي الحجز (مبلغ أو نسبة):</span>
                                 </div>
                                 <div className="flex items-center gap-1.5">
@@ -4225,7 +4255,7 @@ export function BookingsScreen({
                               </div>
                               <div className="text-[11px] text-amber-800 flex items-center justify-between pt-1 border-t border-amber-200/60 font-bold">
                                 <span className="flex items-center gap-1">
-                                  <span>⚠️</span>
+                                  <AlertTriangle size={13} className="text-amber-700 shrink-0" />
                                   <span>لا يمكن تطبيق خصم إجمالي لوجود خصم على مستوى الخدمات أو المنتجات (لا يجوز الجمع بين خصمين).</span>
                                 </span>
                                 <button
@@ -4244,7 +4274,7 @@ export function BookingsScreen({
                           ) : (
                             <div className="bg-indigo-50/50 p-2.5 rounded-xl border border-indigo-100 flex flex-wrap items-center justify-between gap-2 text-xs">
                               <div className="font-bold text-indigo-950 flex items-center gap-1.5">
-                                <span>🏷️</span>
+                                <Tag size={13} className="text-indigo-600" />
                                 <span>خصم على إجمالي الحجز (مبلغ أو نسبة):</span>
                               </div>
                               <div className="flex items-center gap-1.5">
@@ -4300,7 +4330,10 @@ export function BookingsScreen({
                     {/* Form inputs for new advance */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                       <div>
-                        <label className="block text-[11px] font-bold text-slate-700 mb-1">المبلغ المدفوع * 💰</label>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                          <DollarSign size={12} className="text-emerald-600" />
+                          <span>المبلغ المدفوع *</span>
+                        </label>
                         <input
                           type="number"
                           step="0.01"
@@ -4329,7 +4362,10 @@ export function BookingsScreen({
                       </div>
 
                       <div>
-                        <label className="block text-[11px] font-bold text-slate-700 mb-1">تاريخ السداد * 📅</label>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                          <CalendarIcon size={12} className="text-emerald-600" />
+                          <span>تاريخ السداد *</span>
+                        </label>
                         <input
                           type="date"
                           value={advDateInput}
@@ -4397,7 +4433,7 @@ export function BookingsScreen({
                     return (
                       <div className="bg-slate-50 p-3 sm:p-3.5 rounded-2xl border border-slate-200 text-xs space-y-2">
                         <h4 className="font-black text-slate-800 flex items-center gap-1.5">
-                          <span>📊</span>
+                          <BarChart3 size={14} className="text-indigo-600" />
                           <span>ملخص المبالغ المالية للموعد:</span>
                         </h4>
                         <div className="space-y-1.5 text-slate-600 font-medium">
@@ -4499,8 +4535,9 @@ export function BookingsScreen({
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className="font-black text-lg sm:text-xl text-white">إعدادات وقواعد توافر الحجوزات</h3>
-                    <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-black px-2.5 py-0.5 rounded-full">
-                      نظام ذكي متقدم ⚡
+                    <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-black px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                      <Zap size={11} className="text-emerald-300" />
+                      <span>نظام ذكي متقدم</span>
                     </span>
                   </div>
                   <p className="text-xs text-slate-300 mt-1 font-medium">
@@ -4519,23 +4556,27 @@ export function BookingsScreen({
             {/* 2. Modal Sub-Tabs */}
             <div className="flex border-b border-slate-200 bg-slate-100/70 p-2 gap-2 overflow-x-auto">
               {[
-                { id: 'capacity', label: 'سعة الحجوزات ومواعيد العمل ⏱️' },
-                { id: 'blocked_dates', label: 'إغلاق أيام كاملة 📅' },
-                { id: 'blocked_hours', label: 'إغلاق ساعات معينة ⏰' },
-                { id: 'staff_unavail', label: 'إجازات وعدم إتاحة موظف 👤' }
-              ].map(tab => (
-                <button
-                  key={tab.id}
-                  onClick={() => setRulesActiveTab(tab.id as any)}
-                  className={`px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-black shrink-0 transition-all cursor-pointer flex items-center gap-2 ${
-                    rulesActiveTab === tab.id
-                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                      : 'bg-white text-slate-700 hover:bg-slate-200/80 border border-slate-200'
-                  }`}
-                >
-                  <span>{tab.label}</span>
-                </button>
-              ))}
+                { id: 'capacity', label: 'سعة الحجوزات ومواعيد العمل', icon: Clock },
+                { id: 'blocked_dates', label: 'إغلاق أيام كاملة', icon: CalendarDays },
+                { id: 'blocked_hours', label: 'إغلاق ساعات معينة', icon: Clock },
+                { id: 'staff_unavail', label: 'إجازات وعدم إتاحة موظف', icon: User }
+              ].map(tab => {
+                const TabIcon = tab.icon;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setRulesActiveTab(tab.id as any)}
+                    className={`px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-black shrink-0 transition-all cursor-pointer flex items-center gap-2 ${
+                      rulesActiveTab === tab.id
+                        ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+                        : 'bg-white text-slate-700 hover:bg-slate-200/80 border border-slate-200'
+                    }`}
+                  >
+                    <TabIcon size={14} />
+                    <span>{tab.label}</span>
+                  </button>
+                );
+              })}
             </div>
 
             {/* 3. Modal Content */}
@@ -4583,7 +4624,10 @@ export function BookingsScreen({
                           className="mt-1 text-indigo-600 focus:ring-indigo-500"
                         />
                         <div>
-                          <p className="font-black text-sm text-slate-900">1 حجز في الساعة (الافتراضي والموصى به) ⭐</p>
+                          <p className="font-black text-sm text-slate-900 flex items-center gap-1.5">
+                            <span>1 حجز في الساعة (الافتراضي والموصى به)</span>
+                            <Star size={13} className="text-amber-500 fill-amber-500/20" />
+                          </p>
                           <p className="text-xs text-slate-600 mt-1 leading-relaxed">
                             تُغلق الساعة بالكامل للموظف عند حجزه وتظهر للعملاء بكلمة <span className="font-bold text-rose-600">"محجوزة"</span>، لمنع التزاحم وضمان راحة الخدمة.
                           </p>
@@ -4613,7 +4657,10 @@ export function BookingsScreen({
                           className="mt-1 text-indigo-600 focus:ring-indigo-500"
                         />
                         <div>
-                          <p className="font-black text-sm text-slate-900">2 حجز في الساعة (تقسيم نصف ساعة) ⏱️</p>
+                          <p className="font-black text-sm text-slate-900 flex items-center gap-1.5">
+                            <span>2 حجز في الساعة (تقسيم نصف ساعة)</span>
+                            <Clock size={13} className="text-slate-400" />
+                          </p>
                           <p className="text-xs text-slate-600 mt-1 leading-relaxed">
                             يتم تقسيم كل ساعة إلى نصفين (كل 30 دقيقة)، مما يسمح للعميل باختيار موعد كل نصف ساعة وحجزين لنفس الموظف بالساعة.
                           </p>
@@ -4724,7 +4771,7 @@ export function BookingsScreen({
                         const newSettings = { ...settings, bookingRules: updatedRules };
                         setSettings(newSettings);
                         try { localStorage.setItem('smartcut_app_settings', JSON.stringify(newSettings)); } catch(e){}
-                        alert('تم حفظ إعدادات السعة ومواعيد العمل بنجاح ✓');
+                        alert('تم حفظ إعدادات السعة ومواعيد العمل بنجاح.');
                       }
                     }}
                     className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-3.5 rounded-2xl text-sm shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-98"
@@ -5051,8 +5098,9 @@ export function BookingsScreen({
 
             {/* 4. Modal Footer */}
             <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-between items-center">
-              <span className="text-xs text-slate-500 font-medium">
-                تطبق هذه القواعد فوراً على حجز الكاشير وبوابة الحجز الأونلاين للعملاء 🌐
+              <span className="text-xs text-slate-500 font-medium flex items-center gap-1.5">
+                <Globe size={13} className="text-slate-400" />
+                <span>تطبق هذه القواعد فوراً على حجز الكاشير وبوابة الحجز الأونلاين للعملاء</span>
               </span>
               <button
                 type="button"
@@ -5129,7 +5177,7 @@ export function BookingsScreen({
                   onClick={() => setPreviewBooking(null)}
                   className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 cursor-pointer transition-colors"
                 >
-                  ✕
+                  <X size={14} />
                 </button>
               </div>
 

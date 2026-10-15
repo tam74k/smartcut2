@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { 
   Shield, Users, KeyRound, Plus, Edit2, Trash2, CheckCircle2, XCircle, 
   Search, Lock, Unlock, Eye, Check, X, ShieldAlert, Sparkles, UserCheck, 
-  Layers, HelpCircle, Download
+  Layers, HelpCircle, Download, Building2, MapPin, Monitor, Zap, Crown, Lightbulb, Globe
 } from 'lucide-react';
 import { AppUser, UserRole, ActionPermission, CustomRole, AppSettings, Branch } from '../types';
 import { AuthService, ROLE_LABELS, SCREEN_CATALOG, ACTION_CATALOG, DEFAULT_ROLE_PRESETS } from '../services/auth';
@@ -217,7 +217,7 @@ export function PermissionsScreen({
     const cleanUsername = userForm.username.trim().toLowerCase();
     const isTaken = await AuthService.isUsernameTakenAsync(cleanUsername, editingUser?.id);
     if (isTaken) {
-      alert(`⚠️ اسم المستخدم (${userForm.username.trim()}) مستخدم مسبقاً في النظام. يرجى اختيار اسم مستخدم فريد غير مكرر.`);
+      alert(`اسم المستخدم (${userForm.username.trim()}) مستخدم مسبقاً في النظام. يرجى اختيار اسم مستخدم فريد غير مكرر.`);
       return;
     }
 
@@ -434,18 +434,22 @@ export function PermissionsScreen({
           <div className="px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
             {isOwnerOrProgrammer ? (
               <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-slate-500">🏢 تصفية بحسب الفرع:</span>
+                <span className="text-xs font-bold text-slate-500 flex items-center gap-1.5">
+                  <Building2 size={13} />
+                  <span>تصفية بحسب الفرع:</span>
+                </span>
                 <div className="flex flex-wrap gap-1.5">
                   <button
                     type="button"
                     onClick={() => setSelectedBranchFilter('all')}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                       selectedBranchFilter === 'all'
                         ? 'bg-indigo-600 text-white shadow-2xs'
                         : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
                     }`}
                   >
-                    🌐 جميع الفروع ({users.length})
+                    <Globe size={12} />
+                    <span>جميع الفروع ({users.length})</span>
                   </button>
                   {branches.map(b => {
                     const bCount = users.filter(u => {
@@ -478,7 +482,10 @@ export function PermissionsScreen({
               </div>
             ) : (
               <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
-                <span>🏢 مستخدمو فرع:</span>
+                <span className="flex items-center gap-1">
+                  <Building2 size={13} className="text-slate-500" />
+                  <span>مستخدمو فرع:</span>
+                </span>
                 <span className="text-indigo-600 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded-lg">
                   {branches.find(b => b.id === userBranchId)?.name || 'الفرع المخصص'}
                 </span>
@@ -489,8 +496,9 @@ export function PermissionsScreen({
             )}
 
             {isOwnerOrProgrammer && activeBranchId && (
-              <span className="text-[11px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200/60 px-2.5 py-1 rounded-lg">
-                📍 الفرع النشط حالياً: {branches.find(b => b.id === activeBranchId)?.name || activeBranchId}
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200/60 px-2.5 py-1 rounded-lg">
+                <MapPin size={12} />
+                <span>الفرع النشط حالياً: {branches.find(b => b.id === activeBranchId)?.name || activeBranchId}</span>
               </span>
             )}
           </div>
@@ -571,7 +579,7 @@ export function PermissionsScreen({
                       <td className="py-3.5 px-4">
                         {user.role === 'admin' || user.screens?.includes('*') ? (
                           <span className="text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                            كافة الشاشات ⭐
+                            كافة الشاشات
                           </span>
                         ) : (
                           <span className="text-slate-600 font-bold bg-slate-100 px-2 py-0.5 rounded">
@@ -582,7 +590,7 @@ export function PermissionsScreen({
                       <td className="py-3.5 px-4">
                         {user.role === 'admin' || user.actions?.includes('*') ? (
                           <span className="text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                            كافة العمليات ⭐
+                            كافة العمليات
                           </span>
                         ) : (
                           <span className="text-slate-600 font-bold bg-slate-100 px-2 py-0.5 rounded">
@@ -739,7 +747,7 @@ export function PermissionsScreen({
                               ? 'bg-amber-50 text-amber-800 border-amber-200' 
                               : 'bg-indigo-50 text-indigo-800 border-indigo-200'
                           }`}>
-                            {role.isSystem ? '👑 دور أساسي قياسي' : '💎 دور مخصص'}
+                            {role.isSystem ? 'دور أساسي قياسي' : 'دور مخصص'}
                           </span>
                         </div>
                         <div className="flex items-center gap-1">
@@ -840,17 +848,21 @@ export function PermissionsScreen({
 
                 {/* Stat pills */}
                 <div className="flex flex-wrap gap-2 text-xs">
-                  <span className="bg-indigo-500/20 border border-indigo-400/30 px-3 py-1.5 rounded-xl font-bold text-indigo-200">
-                    🏢 6 أقسام نظام
+                  <span className="bg-indigo-500/20 border border-indigo-400/30 px-3 py-1.5 rounded-xl font-bold text-indigo-200 inline-flex items-center gap-1.5">
+                    <Building2 size={13} />
+                    <span>6 أقسام نظام</span>
                   </span>
-                  <span className="bg-blue-500/20 border border-blue-400/30 px-3 py-1.5 rounded-xl font-bold text-blue-200">
-                    🖥️ {SCREEN_CATALOG.length} شاشة تشغيلية
+                  <span className="bg-blue-500/20 border border-blue-400/30 px-3 py-1.5 rounded-xl font-bold text-blue-200 inline-flex items-center gap-1.5">
+                    <Monitor size={13} />
+                    <span>{SCREEN_CATALOG.length} شاشة تشغيلية</span>
                   </span>
-                  <span className="bg-emerald-500/20 border border-emerald-400/30 px-3 py-1.5 rounded-xl font-bold text-emerald-200">
-                    ⚡ {ACTION_CATALOG.length} عملية تنفيذية
+                  <span className="bg-emerald-500/20 border border-emerald-400/30 px-3 py-1.5 rounded-xl font-bold text-emerald-200 inline-flex items-center gap-1.5">
+                    <Zap size={13} />
+                    <span>{ACTION_CATALOG.length} عملية تنفيذية</span>
                   </span>
-                  <span className="bg-amber-500/20 border border-amber-400/30 px-3 py-1.5 rounded-xl font-bold text-amber-200">
-                    ⭐ 3 صلاحيات جديدة
+                  <span className="bg-amber-500/20 border border-amber-400/30 px-3 py-1.5 rounded-xl font-bold text-amber-200 inline-flex items-center gap-1.5">
+                    <Sparkles size={13} />
+                    <span>3 صلاحيات جديدة</span>
                   </span>
                 </div>
               </div>
@@ -1051,7 +1063,7 @@ export function PermissionsScreen({
                                   <div className="flex flex-wrap items-center gap-1 pt-2 border-t border-slate-100 text-[10px]">
                                     <span className="text-slate-400 font-bold">ممنوحة افتراضياً لـ:</span>
                                     <span className="bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.2 rounded font-bold">
-                                      المالك والمدير ⭐
+                                      المالك والمدير
                                     </span>
                                     {allowedRoles.map(rName => (
                                       <span key={rName} className="bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded font-bold">
@@ -1160,7 +1172,7 @@ export function PermissionsScreen({
                   onChange={e => handleRoleSelect(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-indigo-500 font-bold text-slate-800"
                 >
-                  <optgroup label="👑 الأدوار القياسية الأساسية">
+                  <optgroup label="الأدوار القياسية الأساسية">
                     <option value="owner">مالك الصالون (Executive Owner - بوابة المالك التنفيذية)</option>
                     <option value="admin">مدير النظام (Admin - كافة الصلاحيات)</option>
                     <option value="supervisor">مشرف صالون عام (Supervisor)</option>
@@ -1169,10 +1181,10 @@ export function PermissionsScreen({
                     <option value="cashier">كاشير (Cashier)</option>
                     <option value="receptionist">موظف استقبال (Receptionist)</option>
                     <option value="barber">فني / حلاق (Barber)</option>
-                    <option value="kiosk">🎟️ جهاز حجز الأدوار وطابور الانتظار (Kiosk / تابلت الأرقام)</option>
+                    <option value="kiosk">جهاز حجز الأدوار وطابور الانتظار (Kiosk / تابلت الأرقام)</option>
                   </optgroup>
                   {roles.length > 0 && (
-                    <optgroup label="💎 الأدوار والصلاحيات المخصصة (Custom Roles)">
+                    <optgroup label="الأدوار والصلاحيات المخصصة (Custom Roles)">
                       {roles.map(r => (
                         <option key={r.id} value={`custom:${r.id}`}>
                           {r.name}
@@ -1184,7 +1196,10 @@ export function PermissionsScreen({
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 mb-1">الفرع المخصص للعمل 🏢</label>
+                <label className="font-bold text-slate-700 mb-1 flex items-center gap-1.5">
+                  <Building2 size={13} className="text-slate-500" />
+                  <span>الفرع المخصص للعمل</span>
+                </label>
                 {isOwnerOrProgrammer ? (
                   <>
                     <select
@@ -1199,27 +1214,30 @@ export function PermissionsScreen({
                       )}
                       {branches.map(b => (
                         <option key={b.id} value={b.id}>
-                          {b.name} ({b.code || b.country}) {b.isMain ? '⭐ رئيسي' : ''}
+                          {b.name} ({b.code || b.country}) {b.isMain ? '(رئيسي)' : ''}
                         </option>
                       ))}
                     </select>
                     <p className="text-[10px] text-slate-400 mt-1">
                       {userForm.role === 'kiosk' 
-                        ? '🎟️ سيتم ربط جهاز التابلت فوراً بهذا الفرع لسحب أرقام الانتظار وطباعتها.'
-                        : (userForm.branchId ? '⚠️ سيتم تقييد هذا المستخدم بالعمل والاطلاع فقط على هذا الفرع ومنع الانتقال لفروع أخرى.' : '👑 هذا المستخدم يملك صلاحية الاطلاع والتنقل بين كافة الفروع (المالك / الإدارة).')}
+                        ? 'سيتم ربط جهاز التابلت فوراً بهذا الفرع لسحب أرقام الانتظار وطباعتها.'
+                        : (userForm.branchId ? 'سيتم تقييد هذا المستخدم بالعمل والاطلاع فقط على هذا الفرع ومنع الانتقال لفروع أخرى.' : 'هذا المستخدم يملك صلاحية الاطلاع والتنقل بين كافة الفروع (المالك / الإدارة).')}
                     </p>
                   </>
                 ) : (
                   <div className="bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 font-bold flex items-center justify-between">
                     <span>{branches.find(b => b.id === userBranchId)?.name || 'الفرع المخصص'}</span>
-                    <span className="text-[10px] bg-slate-200 text-slate-700 px-2 py-0.5 rounded font-bold">🔒 مقفل تلقائياً لفرعك</span>
+                    <span className="inline-flex items-center gap-1 text-[10px] bg-slate-200 text-slate-700 px-2 py-0.5 rounded font-bold">
+                      <Lock size={10} />
+                      <span>مقفل تلقائياً لفرعك</span>
+                    </span>
                   </div>
                 )}
               </div>
 
               {userForm.role === 'kiosk' && (
                 <div className="sm:col-span-2 p-3 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-amber-900 text-xs font-bold leading-relaxed flex items-start gap-2.5">
-                  <span className="text-base shrink-0">💡</span>
+                  <Lightbulb size={16} className="text-amber-500 shrink-0 mt-0.5" />
                   <div>
                     <div className="font-extrabold text-amber-950 mb-0.5">حساب مخصص لجهاز حجز الأدوار (Kiosk / تابلت الأرقام):</div>
                     <span>

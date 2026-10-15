@@ -10,7 +10,8 @@ import {
   Gift, DollarSign, XCircle, CheckCircle, Clock, ShieldAlert, TrendingUp, 
   BarChart3, Settings, ShieldCheck, History, Award, Calendar, FileText, 
   AlertTriangle, Check, X, Printer, UserX, UserCheck, Sparkles, Sliders, Layers,
-  Camera, Image as ImageIcon, HeartHandshake, Fingerprint, Package, CheckCircle2, Eye
+  Camera, Image as ImageIcon, HeartHandshake, Fingerprint, Package, CheckCircle2, Eye,
+  Target, Users, Zap, Globe, Unlock, Info, Ban, Lightbulb
 } from 'lucide-react';
 import { processImageFile, MAX_IMAGE_SIZE_KB, compressEmployeeAvatar } from '../utils/imageUpload';
 import { HRScreen } from './HRScreen';
@@ -517,7 +518,7 @@ export function EmployeesScreen({
       return;
     }
     const empName = name || employees.find(e => e.id === id)?.name || 'الموظف';
-    if (window.confirm(`⚠️ تأكيد الحذف النهائي:\nهل أنت متأكد تماماً من حذف الموظف "${empName}" نهائياً من النظام وقاعدة البيانات؟\nلن يمكن التراجع عن هذه الخطوة وسيتم حذف ملف الموظف بالكامل.`)) {
+    if (window.confirm(`تأكيد الحذف النهائي:\nهل أنت متأكد تماماً من حذف الموظف "${empName}" نهائياً من النظام وقاعدة البيانات؟\nلن يمكن التراجع عن هذه الخطوة وسيتم حذف ملف الموظف بالكامل.`)) {
       try {
         await DB.deleteEmployee(id);
         setEmployees(employees.filter(e => e.id !== id));
@@ -549,7 +550,7 @@ export function EmployeesScreen({
 
     // فحص سقف الموظفين المسموح به في خطة الترخيص
     if (!editingId && maxAllowedEmployees !== null && currentActiveEmployeesCount >= maxAllowedEmployees) {
-      alert(`⚠️ لقد وصلت للحد الأقصى لعدد الموظفين المسموح به في خطة ترخيصك الحالية (${maxAllowedEmployees} موظفين).\n\nلإضافة موظفين جدد يرجى ترقية باقة الترخيص والتواصل مع إدارة النظام.`);
+      alert(`لقد وصلت للحد الأقصى لعدد الموظفين المسموح به في خطة ترخيصك الحالية (${maxAllowedEmployees} موظفين).\n\nلإضافة موظفين جدد يرجى ترقية باقة الترخيص والتواصل مع إدارة النظام.`);
       if (onOpenLicenseModal) onOpenLicenseModal();
       return;
     }
@@ -564,7 +565,7 @@ export function EmployeesScreen({
       );
 
       if (isBlocked) {
-        alert('❌ تنبيه: هذا الموظف مدرج في القائمة السوداء (Blacklist) ومحظور تسجيله إلا بعد فك الحظر من قبل الإدارة.');
+        alert('تنبيه: هذا الموظف مدرج في القائمة السوداء (Blacklist) ومحظور تسجيله إلا بعد فك الحظر من قبل الإدارة.');
         return;
       }
     }
@@ -585,7 +586,7 @@ export function EmployeesScreen({
 
       const isTaken = await AuthService.isUsernameTakenAsync(cleanUsername, undefined, editingId || undefined);
       if (isTaken) {
-        alert('❌ اسم المستخدم هذا مستخدم بالفعل في قاعدة البيانات! يرجى اختيار اسم مستخدم آخر فريد.');
+        alert('اسم المستخدم هذا مستخدم بالفعل في قاعدة البيانات! يرجى اختيار اسم مستخدم آخر فريد.');
         return;
       }
     }
@@ -1011,7 +1012,7 @@ export function EmployeesScreen({
       try { localStorage.setItem('smartcut_employees', JSON.stringify(updated)); } catch (e) {}
       const target = updated.find(e => e.id === empId);
       if (target) await DB.saveEmployee(target);
-      alert(`✅ تم فك الحظر وإلغاء إدراج "${empName}" من القائمة السوداء بنجاح!`);
+      alert(`تم فك الحظر وإلغاء إدراج "${empName}" من القائمة السوداء بنجاح!`);
     }
   };
 
@@ -1022,7 +1023,7 @@ export function EmployeesScreen({
       try { localStorage.setItem('smartcut_employees', JSON.stringify(updated)); } catch (e) {}
       const target = updated.find(e => e.id === empId);
       if (target) await DB.saveEmployee(target);
-      alert('✅ تم إلغاء إنهاء الخدمة وإعادة الموظف للعمل بنجاح!');
+      alert('تم إلغاء إنهاء الخدمة وإعادة الموظف للعمل بنجاح!');
     }
   };
 
@@ -1054,7 +1055,7 @@ export function EmployeesScreen({
               disabled={!canManageAdvances}
               onClick={() => {
                 if (!canManageAdvances) {
-                  alert('⛔ عذراً، لا تملك صلاحية صرف وإدارة السلف النقدية (hr_manage_advances)');
+                  alert('عذراً، لا تملك صلاحية صرف وإدارة السلف النقدية (hr_manage_advances)');
                   return;
                 }
                 handleOpenQuickAction('advance');
@@ -1073,7 +1074,7 @@ export function EmployeesScreen({
               disabled={!canManageBonuses}
               onClick={() => {
                 if (!canManageBonuses) {
-                  alert('⛔ عذراً، لا تملك صلاحية تسجيل وصرف المكافآت والحوافز (hr_manage_bonuses)');
+                  alert('عذراً، لا تملك صلاحية تسجيل وصرف المكافآت والحوافز (hr_manage_bonuses)');
                   return;
                 }
                 handleOpenQuickAction('bonus');
@@ -1092,7 +1093,7 @@ export function EmployeesScreen({
               disabled={!canManagePenalties}
               onClick={() => {
                 if (!canManagePenalties) {
-                  alert('⛔ عذراً، لا تملك صلاحية تسجيل وتطبيق الخصومات والجزاءات (hr_manage_penalties)');
+                  alert('عذراً، لا تملك صلاحية تسجيل وتطبيق الخصومات والجزاءات (hr_manage_penalties)');
                   return;
                 }
                 handleOpenQuickAction('penalty');
@@ -1269,7 +1270,7 @@ export function EmployeesScreen({
                   <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-sm shrink-0 ${
                     isEmployeeQuotaReached ? 'bg-rose-500 text-white' : 'bg-indigo-600 text-white'
                   }`}>
-                    👥
+                    <Users size={18} />
                   </div>
                   <div>
                     <div className="font-black text-[13px] flex items-center gap-2">
@@ -1294,9 +1295,10 @@ export function EmployeesScreen({
                   <button
                     type="button"
                     onClick={onOpenLicenseModal}
-                    className="px-3.5 py-1.5 bg-white hover:bg-slate-50 border border-slate-300 text-indigo-700 rounded-xl text-xs font-black shadow-xs cursor-pointer transition-all hover:scale-102 self-end sm:self-auto"
+                    className="px-3.5 py-1.5 bg-white hover:bg-slate-50 border border-slate-300 text-indigo-700 rounded-xl text-xs font-black shadow-xs cursor-pointer transition-all hover:scale-102 self-end sm:self-auto flex items-center gap-1.5"
                   >
-                    ترقية باقة الموظفين ⚡
+                    <Zap size={13} className="text-amber-500" />
+                    <span>ترقية باقة الموظفين</span>
                   </button>
                 )}
               </div>
@@ -1379,7 +1381,8 @@ export function EmployeesScreen({
                 <div className="sm:col-span-2 md:col-span-3">
                   <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
                     <span className="flex items-center gap-1.5 text-indigo-700">
-                      <span>🌟 نبذة وملاحظات الموظف (تظهر للعملاء في الحجز الأونلاين):</span>
+                      <Sparkles size={14} className="text-indigo-600" />
+                      <span>نبذة وملاحظات الموظف (تظهر للعملاء في الحجز الأونلاين):</span>
                     </span>
                     <span className="text-[10px] text-slate-400 font-normal">مثال: خبير صبغات وحاصل على جائزة أفضل حلاق</span>
                   </label>
@@ -1387,7 +1390,7 @@ export function EmployeesScreen({
                     type="text" 
                     value={formData.publicBio || ''} 
                     onChange={e => setFormData({ ...formData, publicBio: e.target.value })}
-                    placeholder="خبير صبغات وتصفيف عالمي، حاصل على جائزة أفضل حلاق 🏆"
+                    placeholder="خبير صبغات وتصفيف عالمي، حاصل على جائزة التميز"
                     className="w-full bg-slate-50 border border-indigo-200 rounded-xl px-3.5 py-2 text-xs font-bold focus:border-indigo-600 outline-none placeholder:text-slate-400"
                   />
                 </div>
@@ -1461,7 +1464,7 @@ export function EmployeesScreen({
                   <option value="none">بدون عمولة ثابتة (0%)</option>
                   <option value="fixed_rate">نسبة مئوية ثابتة (%)</option>
                   <option value="target_based">تارجت مبيعات محدد + نسبة عمولة</option>
-                  <option value="tiered_brackets">شرائح مبيعات متدرجة تصاعدية (Tiered Brackets) 📈</option>
+                  <option value="tiered_brackets">شرائح مبيعات متدرجة تصاعدية (Tiered Brackets)</option>
                 </select>
               </div>
 
@@ -1608,7 +1611,7 @@ export function EmployeesScreen({
                 <div className="flex items-center justify-between border-b border-indigo-100/70 pb-2">
                   <div className="flex items-center gap-2">
                     <div className="w-7 h-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-black text-xs">
-                      🎯
+                      <Target size={16} />
                     </div>
                     <div>
                       <h4 className="text-xs font-black text-indigo-950">نظام ومستهدفات التارجت وعمولة الأداء</h4>
@@ -1628,8 +1631,8 @@ export function EmployeesScreen({
                       className="w-full bg-white border border-indigo-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none text-slate-800"
                     >
                       <option value="none">بدون تارجت (عمولات عادية فورية فقط)</option>
-                      <option value="daily">📅 تارجت يومي (يحسب بالتايم شيت اليومي)</option>
-                      <option value="monthly">🗓️ تارجت شهري (يحسب شهرياً بتقرير التارجت والرواتب)</option>
+                      <option value="daily">تارجت يومي (يحسب بالتايم شيت اليومي)</option>
+                      <option value="monthly">تارجت شهري (يحسب شهرياً بتقرير التارجت والرواتب)</option>
                     </select>
                   </div>
 
@@ -1739,7 +1742,10 @@ export function EmployeesScreen({
                     {formData.dailyTargetMethod === 'salary_multiplier' && (
                       <div className="p-2.5 bg-indigo-50/90 border border-indigo-200 rounded-xl text-xs space-y-1">
                         <div className="flex items-center justify-between font-bold text-indigo-900">
-                          <span>💡 قيمة التارجت اليومي المطلوب تحقيقه:</span>
+                          <span className="flex items-center gap-1.5">
+                            <Info size={14} className="text-indigo-600" />
+                            <span>قيمة التارجت اليومي المطلوب تحقيقه:</span>
+                          </span>
                           <span className="font-mono text-indigo-700 bg-white px-2.5 py-0.5 rounded-lg border border-indigo-300 text-xs">
                             {Math.round(((Number(formData.baseSalary) || 0) / 30 * (formData.dailyTargetMultiplier ?? 1)) * 100) / 100} {settings.currency}
                           </span>
@@ -1751,7 +1757,7 @@ export function EmployeesScreen({
                     )}
 
                     <p className="text-[10px] text-slate-500">
-                      💡 في التارجت اليومي، يحسب التارجت يومياً بالتايم شيت بناءً على الخدمات الخاضعة للتارجت + تضاف عمولة الخدمات المعفاة من التارجت مباشرة.
+                      في التارجت اليومي، يحسب التارجت يومياً بالتايم شيت بناءً على الخدمات الخاضعة للتارجت + تضاف عمولة الخدمات المعفاة من التارجت مباشرة.
                     </p>
                   </div>
                 )}
@@ -1844,7 +1850,10 @@ export function EmployeesScreen({
                     {formData.monthlyTargetMethod === 'salary_multiplier' && (
                       <div className="p-2.5 bg-indigo-50/90 border border-indigo-200 rounded-xl text-xs space-y-1">
                         <div className="flex items-center justify-between font-bold text-indigo-900">
-                          <span>💡 قيمة التارجت الشهري المطلوب تحقيقه:</span>
+                          <span className="flex items-center gap-1.5">
+                            <Info size={14} className="text-indigo-600" />
+                            <span>قيمة التارجت الشهري المطلوب تحقيقه:</span>
+                          </span>
                           <span className="font-mono text-indigo-700 bg-white px-2.5 py-0.5 rounded-lg border border-indigo-300 text-xs">
                             {Math.round(((Number(formData.baseSalary) || 0) * (formData.monthlyTargetMultiplier ?? 1)) * 100) / 100} {settings.currency}
                           </span>
@@ -1856,7 +1865,7 @@ export function EmployeesScreen({
                     )}
 
                     <p className="text-[10px] text-indigo-800 font-bold bg-indigo-50 p-2 rounded-lg border border-indigo-200">
-                      ℹ️ في التارجت الشهري: لا يظهر بالتايم شيت اليومي أي عمولات إلا على الخدمات المعفاة من التارجت فقط، بينما يظهر استحقاق التارجت في تقرير التارجت ومسير الرواتب الشهري.
+                      في التارجت الشهري: لا يظهر بالتايم شيت اليومي أي عمولات إلا على الخدمات المعفاة من التارجت فقط، بينما يظهر استحقاق التارجت في تقرير التارجت ومسير الرواتب الشهري.
                     </p>
                   </div>
                 )}
@@ -1904,8 +1913,9 @@ export function EmployeesScreen({
                     onChange={e => setFormData({ ...formData, hasOnlineAccount: e.target.checked })}
                     className="w-4 h-4 text-indigo-600 rounded"
                   />
-                  <span className="text-xs font-black text-indigo-950 flex items-center gap-1">
-                    <span>🌐 إنشاء حساب مستخدم أونلاين للموظف للدخول على النظام</span>
+                  <span className="text-xs font-black text-indigo-950 flex items-center gap-1.5">
+                    <Globe size={14} className="text-indigo-600" />
+                    <span>إنشاء حساب مستخدم أونلاين للموظف للدخول على النظام</span>
                     <span className="text-[10px] bg-indigo-200/70 text-indigo-800 px-2 py-0.5 rounded-full font-bold">بوابة الموظف</span>
                   </span>
                 </label>
@@ -1986,7 +1996,7 @@ export function EmployeesScreen({
                   className="w-4 h-4 text-indigo-600 rounded"
                 />
                 <span className="text-xs font-bold text-slate-700">
-                  احتساب العمولتين معاً (العمولة الثابتة + عمولة الخدمات) لهذا الموظف (خاص بالإدارة 🛡️)
+                  احتساب العمولتين معاً (العمولة الثابتة + عمولة الخدمات) لهذا الموظف (خاص بالإدارة)
                 </span>
               </label>
 
@@ -2151,8 +2161,9 @@ export function EmployeesScreen({
 
                       {emp.hasOnlineAccount && (
                         <div className="flex items-center justify-between pt-1 border-t border-slate-200/50">
-                          <span className="text-indigo-600 font-bold flex items-center gap-1 text-[10px]">
-                            <span>🌐 حساب أونلاين</span>
+                          <span className="text-indigo-600 font-bold flex items-center gap-1.5 text-[10px]">
+                            <Globe size={11} className="text-indigo-600" />
+                            <span>حساب أونلاين</span>
                           </span>
                           <span className="text-[10px] font-mono font-bold text-slate-500 truncate" dir="ltr">
                             @{emp.username || (emp as any).username || 'مفعل'}
@@ -2181,8 +2192,8 @@ export function EmployeesScreen({
                         className="w-full py-1.5 mb-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer animate-pulse"
                         title="إلغاء الحظر وفك الموظف من القائمة السوداء"
                       >
-                        <ShieldCheck size={14} />
-                        <span>إلغاء الحظر (فك البلاك ليست) 🔓</span>
+                        <Unlock size={14} />
+                        <span>إلغاء الحظر (فك القائمة السوداء)</span>
                       </button>
                     )}
 
@@ -2196,7 +2207,7 @@ export function EmployeesScreen({
                         disabled={!canManageAdvances}
                         onClick={() => {
                           if (!canManageAdvances) {
-                            alert('⛔ عذراً، لا تملك صلاحية صرف وإدارة السلف النقدية (hr_manage_advances)');
+                            alert('عذراً، لا تملك صلاحية صرف وإدارة السلف النقدية (hr_manage_advances)');
                             return;
                           }
                           handleOpenActionModal(emp.id, 'advance');
@@ -2215,7 +2226,7 @@ export function EmployeesScreen({
                         disabled={!canManagePenalties}
                         onClick={() => {
                           if (!canManagePenalties) {
-                            alert('⛔ عذراً، لا تملك صلاحية تسجيل الجزاءات والخصومات (hr_manage_penalties)');
+                            alert('عذراً، لا تملك صلاحية تسجيل الجزاءات والخصومات (hr_manage_penalties)');
                             return;
                           }
                           handleOpenActionModal(emp.id, 'penalty');
@@ -2234,7 +2245,7 @@ export function EmployeesScreen({
                         disabled={!canManageBonuses}
                         onClick={() => {
                           if (!canManageBonuses) {
-                            alert('⛔ عذراً، لا تملك صلاحية تسجيل المكافآت والحوافز (hr_manage_bonuses)');
+                            alert('عذراً، لا تملك صلاحية تسجيل المكافآت والحوافز (hr_manage_bonuses)');
                             return;
                           }
                           handleOpenActionModal(emp.id, 'bonus');
@@ -2274,7 +2285,7 @@ export function EmployeesScreen({
                             type="button"
                             onClick={() => handleUnbanBlacklist(emp.id)}
                             className="p-1.5 bg-emerald-50 hover:bg-emerald-600 text-emerald-700 hover:text-white rounded-lg transition-colors cursor-pointer"
-                            title="إلغاء الحظر وفك البلاك ليست 🔓"
+                            title="إلغاء الحظر وفك البلاك ليست"
                           >
                             <ShieldCheck size={13} />
                           </button>
@@ -2535,8 +2546,9 @@ export function EmployeesScreen({
                       </td>
                       <td className="p-3">
                         {emp.isBlacklisted ? (
-                          <span className="bg-rose-100 text-rose-800 px-2 py-0.5 rounded text-[10px] font-black">
-                            مدرج في البلاك ليست ⛔
+                          <span className="bg-rose-100 text-rose-800 px-2 py-0.5 rounded text-[10px] font-black inline-flex items-center gap-1">
+                            <Ban size={11} className="text-rose-600" />
+                            <span>مدرج في البلاك ليست</span>
                           </span>
                         ) : (
                           <span className="text-slate-400">غير محظور</span>
@@ -2779,7 +2791,9 @@ export function EmployeesScreen({
                 {modalType === 'permission' && 'تسجيل إذن خروج مؤقت'}
                 {modalType === 'end_of_service' && 'تسجيل إنهاء خدمة وبلاك ليست'}
               </h3>
-              <button onClick={() => setModalType(null)} className="text-slate-400 hover:text-slate-600">✕</button>
+              <button onClick={() => setModalType(null)} className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer">
+                <X size={16} />
+              </button>
             </div>
 
             {/* Advance Form */}
@@ -3090,8 +3104,9 @@ export function EmployeesScreen({
             {/* Shift Schedule Modification Form */}
             {modalType === 'shift_schedule' && (
               <div className="space-y-3">
-                <div className="p-3 bg-indigo-50/70 border border-indigo-100 rounded-xl text-xs text-indigo-950 font-medium leading-relaxed">
-                  💡 <strong>قاعدة سريان التعديل:</strong> يسري تعديل مواعيد الحضور والانصراف ابتداءً من تاريخ السريان المحدد فقط وما يليه، وتظل الأيام السابقة على مواعيدها القديمة في التايم شيت دون تغيير.
+                <div className="p-3 bg-indigo-50/70 border border-indigo-100 rounded-xl text-xs text-indigo-950 font-medium leading-relaxed flex items-start gap-2">
+                  <Lightbulb size={15} className="text-indigo-600 shrink-0 mt-0.5" />
+                  <div><strong>قاعدة سريان التعديل:</strong> يسري تعديل مواعيد الحضور والانصراف ابتداءً من تاريخ السريان المحدد فقط وما يليه، وتظل الأيام السابقة على مواعيدها القديمة في التايم شيت دون تغيير.</div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
@@ -3203,7 +3218,7 @@ export function EmployeesScreen({
                       onChange={e => setEndOfServiceForm({ ...endOfServiceForm, isBlacklisted: e.target.checked })}
                       className="w-4 h-4 text-rose-600 rounded"
                     />
-                    <span>إدراج الموظف في القائمة السوداء (Blacklist ⛔)</span>
+                    <span>إدراج الموظف في القائمة السوداء (Blacklist)</span>
                   </label>
                   {endOfServiceForm.isBlacklisted && (
                     <input
@@ -3264,8 +3279,8 @@ export function EmployeesScreen({
                   <p className="text-xs text-slate-500">تسجيل وتأثير مباشر على الراتب والخزائن</p>
                 </div>
               </div>
-              <button onClick={() => setShowQuickActionModal(false)} className="text-slate-400 hover:text-slate-600 p-1">
-                ✕
+              <button onClick={() => setShowQuickActionModal(false)} className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer">
+                <X size={16} />
               </button>
             </div>
 

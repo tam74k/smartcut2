@@ -1,6 +1,10 @@
 import { useState, useMemo, useEffect } from 'react';
 import { Category, ServiceItem } from '../types';
-import { Plus, Edit, Trash2, X, Check, Search, FileSpreadsheet, Download, Upload, AlertCircle, Sparkles, Image as ImageIcon, Camera, Loader2, Scissors, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { 
+  Plus, Edit, Trash2, X, Check, Search, FileSpreadsheet, Download, Upload, 
+  AlertCircle, Sparkles, Image as ImageIcon, Camera, Loader2, Scissors, 
+  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Target, Zap, Gift, Star, Clock
+} from 'lucide-react';
 import { downloadServicesTemplate, readExcelFile } from '../utils/excelHelper';
 import { compressServiceImage } from '../utils/imageUpload';
 import { DB } from '../services/db';
@@ -680,14 +684,17 @@ export function ServicesScreen({
                               )}
                               <span className="font-extrabold">{service.name}</span>
                               {Boolean(service.isPriority) && (
-                                <span className="text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300 px-1.5 py-0.5 rounded-md flex items-center gap-0.5 shadow-2xs">
-                                  <span>⭐</span>
+                                <span className="text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300 px-1.5 py-0.5 rounded-md flex items-center gap-1 shadow-2xs">
+                                  <Star size={11} className="fill-amber-600 text-amber-600" />
                                   <span>أولوية POS</span>
                                 </span>
                               )}
                             </div>
                             {service.durationMinutes && (
-                              <span className="text-[10px] text-slate-400 font-medium">⏱️ {service.durationMinutes} دقيقة</span>
+                              <span className="text-[10px] text-slate-400 font-medium flex items-center gap-1 mt-0.5">
+                                <Clock size={11} className="text-slate-400" />
+                                <span>{service.durationMinutes} دقيقة</span>
+                              </span>
                             )}
                           </div>
                         </div>
@@ -729,8 +736,9 @@ export function ServicesScreen({
                             </span>
                           ) : null}
                           {service.isTargetExempt ? (
-                            <span className="block text-[10px] text-amber-800 font-bold bg-amber-50 rounded px-1.5 py-0.5 mt-0.5 border border-amber-200" title="تصرف عمولتها فوراً ولا تحسب ضمن التارجت">
-                              ⚡ عمولة فورية (معفاة من التارجت)
+                            <span className="inline-flex items-center gap-1 text-[10px] text-amber-800 font-bold bg-amber-50 rounded px-1.5 py-0.5 mt-0.5 border border-amber-200" title="تصرف عمولتها فوراً ولا تحسب ضمن التارجت">
+                              <Zap size={11} className="text-amber-600" />
+                              <span>عمولة فورية (معفاة من التارجت)</span>
                             </span>
                           ) : null}
                         </div>
@@ -1026,7 +1034,7 @@ export function ServicesScreen({
               <div className="p-3 bg-indigo-50/70 border border-indigo-200/80 rounded-xl space-y-1.5">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-black text-indigo-950 flex items-center gap-1.5">
-                    <span>🎯</span>
+                    <Target size={14} className="text-indigo-600" />
                     <span>المبلغ الخاضع للعمولة (اختياري):</span>
                   </span>
                   <span className="text-[10px] text-indigo-700 font-bold bg-white px-2 py-0.5 rounded-full border border-indigo-200">
@@ -1041,8 +1049,9 @@ export function ServicesScreen({
                     className="w-full bg-white border border-indigo-200 rounded-lg px-3 py-2 text-xs font-bold outline-none focus:border-indigo-600" 
                     placeholder={`اتركه فارغاً ليتم الحساب على كامل سعر الخدمة (${serviceFormData.price || 0} ${settings.currency})`}
                   />
-                  <p className="text-[10px] text-indigo-900/80 mt-1">
-                    💡 <strong>مثال:</strong> خدمة صبغة بسعر 2000 والعمولة تحسب على 500 فقط؛ اكتب هنا 500 ليتم تطبيق نسبة الفني عليها واستبعاد باقي المبلغ (تكلفة الخامات).
+                  <p className="text-[10px] text-indigo-900/80 mt-1 flex items-center gap-1">
+                    <Sparkles size={12} className="text-indigo-600 shrink-0" />
+                    <span><strong>مثال:</strong> خدمة صبغة بسعر 2000 والعمولة تحسب على 500 فقط؛ اكتب هنا 500 ليتم تطبيق نسبة الفني عليها واستبعاد باقي المبلغ (تكلفة الخامات).</span>
                   </p>
                 </div>
               </div>
@@ -1061,8 +1070,9 @@ export function ServicesScreen({
                       <span className="text-xs font-black text-amber-950">
                         صرف فوري للعمولة (مستثناة من التارجت اليومي والشهري)
                       </span>
-                      <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-300">
-                        ⚡ صرف مباشر
+                      <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-300 inline-flex items-center gap-1">
+                        <Zap size={10} className="text-amber-700" />
+                        <span>صرف مباشر</span>
                       </span>
                     </div>
                     <p className="text-[10px] text-amber-800/90 mt-1 leading-relaxed">
@@ -1076,7 +1086,7 @@ export function ServicesScreen({
               <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-black text-amber-900 flex items-center gap-1">
-                    <span>⚡</span>
+                    <Zap size={13} className="text-amber-600" />
                     <span>عمولة إحالة الموظف / فتح شغل (Employee Referral):</span>
                   </span>
                   <span className="text-[10px] text-amber-700 font-bold">للموظف الذي يقنع العميل بالخدمة</span>
@@ -1113,7 +1123,7 @@ export function ServicesScreen({
               <div className="p-3 bg-purple-50/70 border border-purple-200 rounded-xl space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-black text-purple-900 flex items-center gap-1">
-                    <span>🎁</span>
+                    <Gift size={13} className="text-purple-600" />
                     <span>كاش باك إحالة وترشيح العميل (Client Referral Cashback):</span>
                   </span>
                   <span className="text-[10px] text-purple-700 font-bold">تُمنح للمرشِح على أول فاتورة فقط</span>
@@ -1156,12 +1166,14 @@ export function ServicesScreen({
                       onChange={e => setServiceFormData({ ...serviceFormData, isPriority: e.target.checked })}
                       className="w-4 h-4 text-amber-600 accent-amber-600 rounded cursor-pointer"
                     />
-                    <span className="text-xs font-black text-slate-800 flex items-center gap-1">
-                      <span>⭐ خدمة ذات أولوية في نقطة البيع (POS)</span>
+                    <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                      <Star size={13} className="text-amber-500 fill-amber-500" />
+                      <span>خدمة ذات أولوية في نقطة البيع (POS)</span>
                     </span>
                   </label>
-                  <span className="text-[10px] font-bold bg-amber-200/80 text-amber-900 px-2 py-0.5 rounded-full">
-                    تظهر في المقدمة ⚡
+                  <span className="text-[10px] font-bold bg-amber-200/80 text-amber-900 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                    <span>تظهر في المقدمة</span>
+                    <Zap size={10} className="text-amber-700" />
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-600 leading-relaxed">

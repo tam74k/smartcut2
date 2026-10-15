@@ -5,7 +5,8 @@ import {
   RefreshCw, LogOut, ChevronDown, Sparkles, Wallet, PieChart, 
   BarChart3, Activity, Percent, ArrowUpRight, ArrowDownRight, 
   FileText, ShieldCheck, HelpCircle, EyeOff, UserCheck, UserX, 
-  Briefcase, Coffee, AlertCircle, Copy, MessageCircle, Building2
+  Briefcase, Coffee, AlertCircle, Copy, MessageCircle, Building2,
+  Target, Lock, Link2, Banknote, Shield
 } from 'lucide-react';
 import { 
   Booking, Invoice, Employee, AppSettings, Branch, AppUser, 
@@ -373,7 +374,7 @@ export function BarberPortalScreen({
           {/* Staff Info */}
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-emerald-500 flex items-center justify-center text-white font-black text-lg shadow-lg shadow-indigo-600/30 ring-2 ring-indigo-500/30">
-              {currentEmployee.name ? currentEmployee.name.charAt(0) : '✂️'}
+              {currentEmployee.name ? currentEmployee.name.charAt(0) : <Scissors size={20} className="text-white" />}
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -401,7 +402,7 @@ export function BarberPortalScreen({
               title="نسخ رابط صفحة الفني المباشر"
             >
               {showCopyFeedback ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
-              <span>{showCopyFeedback ? 'تم النسخ!' : '🔗 /barber'}</span>
+              <span>{showCopyFeedback ? 'تم النسخ!' : <span className="flex items-center gap-1"><Link2 size={12} /><span>/barber</span></span>}</span>
             </button>
 
             {/* Locked Branch Indicator */}
@@ -411,8 +412,9 @@ export function BarberPortalScreen({
             >
               <Building2 size={13} className="text-emerald-400" />
               <span>{activeBranch?.name || 'الفرع المخصص'}</span>
-              <span className="bg-slate-700 text-slate-300 text-[10px] px-1.5 py-0.2 rounded font-black flex items-center gap-1">
-                <span>🔒 فرعك</span>
+              <span className="bg-slate-700 text-slate-300 text-[10px] px-1.5 py-0.5 rounded font-black flex items-center gap-1">
+                <Lock size={10} />
+                <span>فرعك</span>
               </span>
             </div>
 
@@ -438,7 +440,7 @@ export function BarberPortalScreen({
                 { id: 'this_week', label: 'آخر 7 أيام' },
                 { id: 'this_month', label: 'هذا الشهر' },
                 { id: 'last_month', label: 'الشهر الماضي' },
-                { id: 'custom', label: 'تاريخ مخصص 📅' }
+                { id: 'custom', label: 'تاريخ مخصص' }
               ].map(item => (
                 <button
                   key={item.id}
@@ -500,8 +502,9 @@ export function BarberPortalScreen({
                   <Award size={18} />
                 </div>
                 <div>
-                  <h3 className="text-sm sm:text-base font-black text-white">
-                    {targetInfo.isDaily ? '🎯 تارجت اليوم اللحظي (Daily Target)' : '🎯 تارجت الشهر التراكمي (Monthly Target)'}
+                  <h3 className="text-sm sm:text-base font-black text-white flex items-center gap-1.5">
+                    <Target size={16} className="text-indigo-400" />
+                    <span>{targetInfo.isDaily ? 'تارجت اليوم اللحظي (Daily Target)' : 'تارجت الشهر التراكمي (Monthly Target)'}</span>
                   </h3>
                   <p className="text-[11px] text-slate-400 font-medium">
                     {targetInfo.isDaily ? 'يتجدد تلقائياً مع بداية كل يوم عمل جديد' : 'متابعة من أول الشهر وحتى نهايته'}
@@ -539,7 +542,10 @@ export function BarberPortalScreen({
                 {targetInfo.remaining > 0 ? (
                   <span>متبقي لتحقيق الهدف: <strong className="text-amber-400 font-mono">{targetInfo.remaining} {currency}</strong></span>
                 ) : (
-                  <span className="text-emerald-400 font-black">🎉 تم تجاوز التارجت بنجاح!</span>
+                  <span className="text-emerald-400 font-black flex items-center gap-1">
+                    <Sparkles size={13} className="text-emerald-400" />
+                    <span>تم تجاوز التارجت بنجاح!</span>
+                  </span>
                 )}
               </span>
             </div>
@@ -622,28 +628,32 @@ export function BarberPortalScreen({
         {/* 5. NAVIGATION TABS */}
         <div className="flex items-center bg-slate-900 p-1.5 rounded-2xl border border-slate-800 gap-1 overflow-x-auto scrollbar-none">
           {[
-            { id: 'bookings', label: '📅 حجوزاتي ومواعيدي', count: filteredBookings.length },
-            { id: 'services', label: '✂️ الخدمات والعمولات', count: performedServices.length },
-            { id: 'attendance', label: '⏰ سجل الحضور والدوام', count: attendanceStats.daysInPeriod },
-            { id: 'financials', label: '💼 السلف والمكافآت والخصومات', count: financialRecordsFiltered.length }
-          ].map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`flex-1 min-w-[130px] py-2.5 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                activeTab === tab.id
-                  ? 'bg-gradient-to-r from-indigo-600 to-emerald-600 text-white shadow-md shadow-indigo-600/30'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/80'
-              }`}
-            >
-              <span>{tab.label}</span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
-                activeTab === tab.id ? 'bg-white/20 text-white' : 'bg-slate-800 text-slate-400'
-              }`}>
-                {tab.count}
-              </span>
-            </button>
-          ))}
+            { id: 'bookings', label: 'حجوزاتي ومواعيدي', icon: Calendar, count: filteredBookings.length },
+            { id: 'services', label: 'الخدمات والعمولات', icon: Scissors, count: performedServices.length },
+            { id: 'attendance', label: 'سجل الحضور والدوام', icon: Clock, count: attendanceStats.daysInPeriod },
+            { id: 'financials', label: 'السلف والمكافآت والخصومات', icon: Briefcase, count: financialRecordsFiltered.length }
+          ].map(tab => {
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`flex-1 min-w-[130px] py-2.5 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  activeTab === tab.id
+                    ? 'bg-gradient-to-r from-indigo-600 to-emerald-600 text-white shadow-md shadow-indigo-600/30'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/80'
+                }`}
+              >
+                <Icon size={13} className={activeTab === tab.id ? 'text-white' : 'text-slate-400'} />
+                <span>{tab.label}</span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                  activeTab === tab.id ? 'bg-white/20 text-white' : 'bg-slate-800 text-slate-400'
+                }`}>
+                  {tab.count}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         {/* 6. TAB CONTENT */}
@@ -656,9 +666,9 @@ export function BarberPortalScreen({
               <div className="flex items-center gap-1.5">
                 {[
                   { id: 'all', label: 'كافة المواعيد' },
-                  { id: 'pending', label: 'قيد الانتظار ⏳' },
-                  { id: 'confirmed', label: 'مؤكد 🟢' },
-                  { id: 'completed', label: 'مكتمل ✓' }
+                  { id: 'pending', label: 'قيد الانتظار' },
+                  { id: 'confirmed', label: 'مؤكد' },
+                  { id: 'completed', label: 'مكتمل' }
                 ].map(f => (
                   <button
                     key={f.id}
@@ -720,7 +730,22 @@ export function BarberPortalScreen({
                             ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
                             : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
                         }`}>
-                          {b.status === 'completed' ? '✓ تم تنفيذ الخدمة' : b.status === 'confirmed' ? '🟢 حجز مؤكد' : '⏳ قيد الانتظار'}
+                          {b.status === 'completed' ? (
+                            <span className="flex items-center gap-1">
+                              <CheckCircle2 size={11} />
+                              <span>تم تنفيذ الخدمة</span>
+                            </span>
+                          ) : b.status === 'confirmed' ? (
+                            <span className="flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                              <span>حجز مؤكد</span>
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-1">
+                              <Clock size={11} />
+                              <span>قيد الانتظار</span>
+                            </span>
+                          )}
                         </span>
                       </div>
 
@@ -759,7 +784,7 @@ export function BarberPortalScreen({
                           className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black py-2.5 px-4 rounded-2xl text-xs shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.98]"
                         >
                           <CheckCircle2 size={15} />
-                          <span>إنهاء الخدمة وحفظ الإنجاز ✓</span>
+                          <span>إنهاء الخدمة وحفظ الإنجاز</span>
                         </button>
                       ) : (
                         <div className="text-center py-1.5 text-xs text-emerald-400 font-bold bg-emerald-950/30 border border-emerald-800/40 rounded-2xl flex items-center justify-center gap-1.5">
@@ -795,7 +820,10 @@ export function BarberPortalScreen({
               <div className="bg-gradient-to-br from-emerald-950/80 to-slate-900 p-4 rounded-3xl border border-emerald-600/40 shadow-lg">
                 <p className="text-xs text-emerald-300 font-bold mb-1">الرصيد المتبقي المستحق للصرف</p>
                 <p className="text-2xl font-black text-emerald-400 font-mono">{remainingCommissionBalance} <span className="text-xs font-normal text-slate-400">{currency}</span></p>
-                <p className="text-[10px] text-emerald-400 font-bold mt-1">جاهز للتسليم 💵</p>
+                <p className="text-[10px] text-emerald-400 font-bold mt-1 flex items-center gap-1">
+                  <Banknote size={11} />
+                  <span>جاهز للتسليم</span>
+                </p>
               </div>
             </div>
 
@@ -805,7 +833,10 @@ export function BarberPortalScreen({
                 <EyeOff size={15} className="text-indigo-400 shrink-0" />
                 <span>عرض الخدمات المنفذة ومبلغ عمولتك المستحق فقط (أسعار الفواتير محجوبة ومحمية بنظام الخصوصية).</span>
               </div>
-              <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-md font-bold">VIP Privacy 🛡️</span>
+              <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-md font-bold flex items-center gap-1">
+                <Shield size={11} />
+                <span>VIP Privacy</span>
+              </span>
             </div>
 
             {/* Performed Services Table / Cards */}
@@ -1032,7 +1063,10 @@ export function BarberPortalScreen({
               <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 shadow-lg">
                 <p className="text-xs text-slate-400 font-bold mb-1">المكافآت والتحفيزات</p>
                 <p className="text-2xl font-black text-emerald-400 font-mono">+{totalBonuses} <span className="text-xs font-normal text-slate-400">{currency}</span></p>
-                <p className="text-[10px] text-emerald-400 font-bold mt-1">حوافز إضافية 🌟</p>
+                <p className="text-[10px] text-emerald-400 font-bold mt-1 flex items-center gap-1">
+                  <Sparkles size={11} />
+                  <span>حوافز إضافية</span>
+                </p>
               </div>
             </div>
 
@@ -1060,7 +1094,7 @@ export function BarberPortalScreen({
                     >
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold">
-                          💵
+                          <Banknote size={16} />
                         </div>
                         <div>
                           <p className="font-bold text-white text-xs">سلفة نقدية</p>
@@ -1092,7 +1126,10 @@ export function BarberPortalScreen({
                 </h4>
 
                 {deductionsList.length === 0 ? (
-                  <div className="py-4 text-center text-slate-500 text-xs">سجل نظيف، لا توجد خصومات 🌟</div>
+                  <div className="py-4 text-center text-slate-500 text-xs flex items-center justify-center gap-1.5">
+                    <Sparkles size={13} className="text-emerald-400" />
+                    <span>سجل نظيف، لا توجد خصومات</span>
+                  </div>
                 ) : (
                   <div className="space-y-2">
                     {deductionsList.map(d => (
@@ -1154,9 +1191,10 @@ export function BarberPortalScreen({
             <div className="flex gap-2 pt-2">
               <button
                 onClick={() => handleConfirmComplete(completingBookingId)}
-                className="flex-1 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-black py-2.5 rounded-xl text-xs cursor-pointer shadow-lg shadow-emerald-600/30"
+                className="flex-1 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-black py-2.5 rounded-xl text-xs cursor-pointer shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-1.5"
               >
-                نعم، إنهاء الخدمة ✓
+                <Check size={14} />
+                <span>نعم، إنهاء الخدمة</span>
               </button>
               <button
                 onClick={() => setCompletingBookingId(null)}

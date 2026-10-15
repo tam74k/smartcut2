@@ -91,14 +91,14 @@ export function InvoicesScreen({
 
   const canDeleteInvoice = !currentUser || currentUser.role === 'admin' || currentUser.role === 'owner' || currentUser.role === 'programmer' || currentUser.actions?.includes('manage_invoices_delete') || currentUser.actions?.includes('*');
 
-  // 🗑️ حذف الفاتورة نهائياً لحساب الأدمن والمالك أو من يملك الصلاحية حتى لو كانت قديمة
+  // حذف الفاتورة نهائياً لحساب الأدمن والمالك أو من يملك الصلاحية حتى لو كانت قديمة
   const handleDeleteInvoice = async (inv: Invoice) => {
     if (!canDeleteInvoice) {
-      alert('⛔ عذراً، حذف الفواتير يتطلب صلاحية الحذف النهائي للفواتير.');
+      alert('عذراً، حذف الفواتير يتطلب صلاحية الحذف النهائي للفواتير.');
       return;
     }
 
-    if (window.confirm(`⚠️ تحذير: هل أنت متأكد من حذف الفاتورة رقم (${inv.id}) نهائياً من النظام وقاعدة البيانات؟ سيتم عكس وتعديل رصيد الخزائن المرتبطة بها.`)) {
+    if (window.confirm(`تحذير: هل أنت متأكد من حذف الفاتورة رقم (${inv.id}) نهائياً من النظام وقاعدة البيانات؟ سيتم عكس وتعديل رصيد الخزائن المرتبطة بها.`)) {
       // 1. Delete from DB
       await DB.deleteInvoice(inv.id);
       
@@ -108,7 +108,7 @@ export function InvoicesScreen({
       // 3. Reverse any financial transactions for this invoice
       setTransactions(transactions.filter(t => (t as any).invoiceId !== inv.id && !t.description?.includes(inv.id)));
       
-      alert(`✅ تم حذف الفاتورة ${inv.id} بنجاح.`);
+      alert(`تم حذف الفاتورة ${inv.id} بنجاح.`);
     }
   };
   
@@ -137,7 +137,7 @@ export function InvoicesScreen({
     setCancelInvoiceTarget(null);
   };
 
-  // ✅ إصلاح: التحقق من كلمة المرور الحقيقية للمستخدم الحالي بدلاً من الكلمة المشفرة ثابتة
+  // التحقق من كلمة المرور الحقيقية للمستخدم الحالي بدلاً من الكلمة المشفرة ثابتة
   const handleAdminPasswordSubmit = () => {
     const currentUserPassword = currentUser?.password || '';
     const isValid = 
@@ -154,12 +154,12 @@ export function InvoicesScreen({
     }
   };
 
-  // ✅ استعادة فاتورة ملغاة مع إعادة كل آثارها المالية والمخزنية
+  // استعادة فاتورة ملغاة مع إعادة كل آثارها المالية والمخزنية
   const handleRestoreInvoice = async (invoice: Invoice) => {
     const isAuthorized = !currentUser || ['admin', 'owner', 'programmer'].includes(currentUser.role) ||
       currentUser.actions?.includes('manage_invoices') || currentUser.actions?.includes('*');
     if (!isAuthorized) {
-      alert('⛔ عذراً، استعادة الفواتير تتطلب صلاحية الإدارة.');
+      alert('عذراً، استعادة الفواتير تتطلب صلاحية الإدارة.');
       return;
     }
     if (!window.confirm(`هل أنت متأكد من استعادة الفاتورة رقم (${invoice.id})؟ سيتم إعادة تفعيلها وإعادة تسجيل آثارها المالية وكميات المنتجات.`)) return;
@@ -234,7 +234,7 @@ export function InvoicesScreen({
       }
     }
 
-    alert(`✅ تم استعادة الفاتورة ${invoice.id} بنجاح وإعادة تسجيل آثارها المالية.`);
+    alert(`تم استعادة الفاتورة ${invoice.id} بنجاح وإعادة تسجيل آثارها المالية.`);
   };
   
   const handlePayInvoice = () => {

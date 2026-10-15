@@ -100,7 +100,7 @@ export default function App() {
     ) {
       setActiveTab('settings');
     } else {
-      alert('⛔ عذراً، الوصول إلى الإعدادات يتطلب صلاحية إدارة الإعدادات.');
+      alert('عذراً، الوصول إلى الإعدادات يتطلب صلاحية إدارة الإعدادات.');
     }
   };
   const [isCloudConnected, setIsCloudConnected] = useState(false);
@@ -1190,7 +1190,7 @@ export default function App() {
     // 15. Reactive Turso Cloud Sync Complete Listener (Phase 4.4 Distributed UX)
     // When cloud sync finishes, automatically refetch online bookings, clients, invoices & all active entities
     const unsubCloudSync = RealtimeSync.onCloudSyncComplete(async (payload) => {
-      console.log('⚡ [Cloud-Sync-Complete] Auto-refreshing bookings and distributed state:', payload);
+      console.log('[Cloud-Sync-Complete] Auto-refreshing bookings and distributed state:', payload);
       setIsTursoConnected(true);
       setIsCloudConnected(true);
       try {
@@ -1219,7 +1219,7 @@ export default function App() {
           })));
         }
       } catch (cloudErr) {
-        console.warn('⚠️ [Cloud-Sync] Refetch notice:', cloudErr);
+        console.warn('[Cloud-Sync] Refetch notice:', cloudErr);
       }
     });
 
@@ -1797,7 +1797,7 @@ export default function App() {
       if (!isOnlineSaaSMode) {
         setShowLicenseModal(true);
       }
-      alert('🔒 ' + (e.detail?.message || 'تم تحويل البرنامج إلى وضع القراءة فقط لانتهاء الترخيص / اشتراك الصالون. يُمنع تسجيل أو تعديل أي بيانات.'));
+      alert(e.detail?.message || 'تم تحويل البرنامج إلى وضع القراءة فقط لانتهاء الترخيص / اشتراك الصالون. يُمنع تسجيل أو تعديل أي بيانات.');
     };
     window.addEventListener('smartcut_license_blocked', handleBlocked);
     return () => window.removeEventListener('smartcut_license_blocked', handleBlocked);
@@ -1807,7 +1807,7 @@ export default function App() {
     if (isSubscriptionBlocked) {
       const salonName = subscription.organizationName || settings.salonName || 'الصالون';
       const endDate = subscription.endDate || settings.subscriptionEndDate || '';
-      alert(`🔒 تم تحويل البرنامج إلى وضع القراءة فقط: انتهت صلاحية اشتراك صالون (${salonName}) بتاريخ ${endDate}.\nيُمنع نهائياً أي إضافة أو تعديل أو حفظ بيانات جديدة لحين تجديد الاشتراك والتفعيل.`);
+      alert(`تم تحويل البرنامج إلى وضع القراءة فقط: انتهت صلاحية اشتراك صالون (${salonName}) بتاريخ ${endDate}.\nيُمنع نهائياً أي إضافة أو تعديل أو حفظ بيانات جديدة لحين تجديد الاشتراك والتفعيل.`);
       if (!isOnlineSaaSMode) {
         setShowLicenseModal(true);
       }
@@ -2198,7 +2198,7 @@ export default function App() {
   const handleOpenShift = async () => {
     if (checkReadOnlyAndWarn()) return;
     if (shiftData.isOpen || Object.values(branchShifts).some((s: any) => s && s.isOpen)) {
-      alert('⚠️ لا يمكن فتح وردية جديدة: توجد وردية مفتوحة بالفعل لهذا الصالون! يرجى إغلاق الوردية الحالية أولاً.');
+      alert('لا يمكن فتح وردية جديدة: توجد وردية مفتوحة بالفعل لهذا الصالون! يرجى إغلاق الوردية الحالية أولاً.');
       return;
     }
 
@@ -2207,7 +2207,7 @@ export default function App() {
       const activeDbShift = await DB.getActiveWorkShift(settings.salonId, activeBranchId);
       if (activeDbShift && (activeDbShift.status === 'open' || !activeDbShift.closedAt)) {
         applyActiveWorkShift(activeDbShift, activeBranchId);
-        alert(`⚠️ لا يمكن فتح وردية جديدة: توجد وردية أخرى مفتوحة بالفعل لهذا الصالون في قاعدة البيانات (كود الوردية: ${activeDbShift.shiftCode || activeDbShift.id}). يرجى إغلاقها أولاً.`);
+        alert(`لا يمكن فتح وردية جديدة: توجد وردية أخرى مفتوحة بالفعل لهذا الصالون في قاعدة البيانات (كود الوردية: ${activeDbShift.shiftCode || activeDbShift.id}). يرجى إغلاقها أولاً.`);
         setShowOpenModal(false);
         return;
       }
@@ -2733,7 +2733,7 @@ export default function App() {
       DB.patch('bookings', bookingId, { status: 'completed', is_paid: true, invoice_id: invoice.id });
     }
 
-    // 4. 🔄 حفظ فوري في Supabase لضمان بقاء وتوثيق البيانات
+    // 4. حفظ فوري في Supabase لضمان بقاء وتوثيق البيانات
     (async () => {
       try {
         const saved = await DB.saveInvoice(invoiceWithBranch, settings.salonId);
@@ -2891,6 +2891,14 @@ export default function App() {
           setPartnerTransactions={setPartnerTransactions}
           transactions={branchTransactions}
           setTransactions={handleSetTransactions}
+          invoices={branchInvoices}
+          employees={branchEmployees}
+          products={products}
+          purchases={branchPurchaseInvoices}
+          supplierPayments={branchSupplierPayments}
+          salesReturns={branchSalesReturns}
+          branches={branches}
+          activeBranchId={activeBranchId}
           currentUser={currentUser}
           shiftData={shiftData}
         />
@@ -2993,8 +3001,9 @@ export default function App() {
                   <Lock size={32} />
                 </div>
                 <h2 className="text-lg font-black text-slate-800 mb-2">شاشة الحجوزات مقفلة</h2>
-                <span className="inline-block bg-amber-100 text-amber-800 text-xs font-black px-3 py-1 rounded-full border border-amber-300/60 mb-3">
-                  الوردية مغلقة حالياً 🔒
+                <span className="inline-flex items-center gap-1.5 bg-amber-100 text-amber-800 text-xs font-black px-3 py-1 rounded-full border border-amber-300/60 mb-3">
+                  <Lock size={12} />
+                  <span>الوردية مغلقة حالياً</span>
                 </span>
                 <p className="text-xs text-slate-600 leading-relaxed font-medium mb-4">
                   لا يُسمح بفتح شاشة الحجوزات أو إجراء وحفظ أي حجوزات جديدة أثناء إغلاق الوردية.
@@ -3254,11 +3263,11 @@ export default function App() {
 
   const menuItems = [
     ...(currentUser?.role === 'owner' ? [
-      { id: 'owner_portal', icon: Smartphone, label: '📱 نبض المالك' }
+      { id: 'owner_portal', icon: Smartphone, label: 'نبض المالك' }
     ] : []),
     { id: 'pos', icon: Scissors, label: 'نقطة البيع (POS)' },
     { id: 'dashboard', icon: LayoutDashboard, label: 'لوحة التحكم' },
-    { id: 'queue_calling', icon: Radio, label: '📢 المناداة وطابور الانتظار' },
+    { id: 'queue_calling', icon: Radio, label: 'المناداة وطابور الانتظار' },
     { id: 'bookings', icon: Calendar, label: 'الحجوزات' },
     { id: 'expenses', icon: Banknote, label: 'المصروفات' },
     { id: 'treasury', icon: Wallet, label: 'الخزائن والماليات' },
@@ -3270,11 +3279,11 @@ export default function App() {
     { id: 'warehouse', icon: Boxes, label: 'المخزن والاصناف' },
     { id: 'employees', icon: UsersRound, label: 'إدارة الموظفين' },
     { id: 'hr', icon: Clock, label: 'شؤون العاملين وسجل الدوام' },
-    { id: 'partners', icon: Briefcase, label: 'الشركاء والمسحوبات' },
+    { id: 'partners', icon: Briefcase, label: 'الشركاء والأرباح والخسائر' },
     { id: 'reports', icon: FileText, label: 'التقارير الشاملة' },
     { id: 'tips', icon: HeartHandshake, label: 'البقشيش والإكراميات' },
     { id: 'promo_codes', icon: Tag, label: 'البرومو كود والكوبونات' },
-    { id: 'manager_ai_chat', icon: Bot, label: '🤖 المساعد الذكي' },
+    { id: 'manager_ai_chat', icon: Bot, label: 'المساعد الذكي' },
     { id: 'permissions', icon: Shield, label: 'الصلاحيات والمستخدمين' },
     { id: 'settings', icon: Settings, label: 'اعدادات النظام' },
   ];
@@ -3555,7 +3564,7 @@ export default function App() {
 
   const handleTabNavigation = (tabId: string) => {
     if (tabId === 'bookings' && !shiftData?.isOpen) {
-      alert('⚠️ الوردية مغلقة حالياً!\nلا يُسمح بفتح شاشة الحجوزات أو إجراء أي حجز إلا بعد فتح وردية عمل جديدة.');
+      alert('الوردية مغلقة حالياً!\nلا يُسمح بفتح شاشة الحجوزات أو إجراء أي حجز إلا بعد فتح وردية عمل جديدة.');
       return;
     }
     setActiveTab(tabId);
@@ -3619,14 +3628,14 @@ export default function App() {
                     >
                       <span>
                         {!licenseInfo.isLicensed || licenseInfo.status === 'expired'
-                          ? 'الترخيص منتهي ⛔'
+                          ? 'الترخيص منتهي'
                           : licenseInfo.mode === 'lifetime'
-                          ? 'مرخص دائم 👑'
+                          ? 'مرخص دائم'
                           : licenseInfo.daysLeft !== null
                           ? `متبقي ${licenseInfo.daysLeft} يوم للتفعيل`
                           : licenseInfo.runsLeft !== null
                           ? `متبقي ${licenseInfo.runsLeft} تشغيل`
-                          : 'مرخص ✅'}
+                          : 'مرخص'}
                       </span>
                     </button>
                   )}
@@ -3744,7 +3753,7 @@ export default function App() {
                           {licenseInfo.daysLeft !== null
                             ? `متبقي ${licenseInfo.daysLeft} يوم للتفعيل`
                             : licenseInfo.mode === 'lifetime'
-                            ? 'مرخص دائم 👑'
+                            ? 'مرخص دائم'
                             : 'مرخص'}
                         </span>
                       )}
@@ -3849,12 +3858,12 @@ export default function App() {
                   <ShieldCheck size={14} className={isSubscriptionBlocked ? 'text-rose-600' : isExpiringSoon ? 'text-amber-700' : 'text-emerald-700'} />
                   <span>
                     {isSubscriptionBlocked
-                      ? 'الاشتراك منتهي (قراءة فقط) ⛔'
+                      ? 'الاشتراك منتهي (قراءة فقط)'
                       : isExpiringSoon
-                      ? `متبقي ${onlineSubscriptionDaysLeft} ${onlineSubscriptionDaysLeft === 1 ? 'يوم' : 'أيام'} للتجديد ⏳`
+                      ? `متبقي ${onlineSubscriptionDaysLeft} ${onlineSubscriptionDaysLeft === 1 ? 'يوم' : 'أيام'} للتجديد`
                       : subscription.status === 'trial'
-                      ? `تجريبي (${onlineSubscriptionDaysLeft !== null ? `${onlineSubscriptionDaysLeft} يوم` : 'نشط'}) ⏳`
-                      : `اشتراك نشط (${onlineSubscriptionDaysLeft !== null ? `${onlineSubscriptionDaysLeft} يوم` : 'مفعل'}) ✅`}
+                      ? `تجريبي (${onlineSubscriptionDaysLeft !== null ? `${onlineSubscriptionDaysLeft} يوم` : 'نشط'})`
+                      : `اشتراك نشط (${onlineSubscriptionDaysLeft !== null ? `${onlineSubscriptionDaysLeft} يوم` : 'مفعل'})`}
                   </span>
                 </a>
               ) : (
@@ -3876,18 +3885,18 @@ export default function App() {
                     {!licenseInfo
                       ? 'فحص الترخيص...'
                       : licenseInfo.status === 'tampered'
-                      ? 'مراجعة الترخيص ⚠️'
+                      ? 'مراجعة الترخيص'
                       : !licenseInfo.isLicensed || licenseInfo.status === 'expired'
-                      ? 'مطلوب التفعيل 🔑'
+                      ? 'مطلوب التفعيل'
                       : licenseInfo.mode === 'lifetime'
-                      ? 'مفعل مدى الحياة 👑'
+                      ? 'مفعل مدى الحياة'
                       : licenseInfo.mode === 'days'
-                      ? `مفعل لمدة ${licenseInfo.daysLeft} يوم ✅`
+                      ? `مفعل لمدة ${licenseInfo.daysLeft} يوم`
                       : licenseInfo.mode === 'runs'
-                      ? `مفعل لـ ${licenseInfo.runsLeft} تشغيلة 🚀`
+                      ? `مفعل لـ ${licenseInfo.runsLeft} تشغيلة`
                       : licenseInfo.mode === 'trial_auto'
-                      ? `مفعل تجريبياً (${licenseInfo.daysLeft} يوم) ⏳`
-                      : `مفعل (${licenseInfo.daysLeft || 0} يوم) ✅`}
+                      ? `مفعل تجريبياً (${licenseInfo.daysLeft} يوم)`
+                      : `مفعل (${licenseInfo.daysLeft || 0} يوم)`}
                   </span>
                 </button>
               )}
@@ -3931,7 +3940,7 @@ export default function App() {
                       const activeDbShift = await DB.getActiveWorkShift(settings.salonId, activeBranchId);
                       if (activeDbShift && (activeDbShift.status === 'open' || !activeDbShift.closedAt)) {
                         applyActiveWorkShift(activeDbShift, activeBranchId);
-                        alert(`⚠️ توجد وردية مفتوحة بالفعل لهذا الصالون (كود الوردية: ${activeDbShift.shiftCode || activeDbShift.id}). يرجى إغلاقها أولاً قبل فتح وردية جديدة.`);
+                        alert(`توجد وردية مفتوحة بالفعل لهذا الصالون (كود الوردية: ${activeDbShift.shiftCode || activeDbShift.id}). يرجى إغلاقها أولاً قبل فتح وردية جديدة.`);
                         setShowCloseModal(true);
                         return;
                       }
@@ -3997,7 +4006,7 @@ export default function App() {
                 <div className="flex items-center gap-2.5">
                   <span className="w-2.5 h-2.5 rounded-full bg-white animate-ping shrink-0"></span>
                   <span className="leading-relaxed">
-                    🔒 <strong>تم تحويل البرنامج إلى وضع القراءة فقط:</strong> انتهت صلاحية اشتراك الصالون ({subscription.organizationName || settings.salonName}) بتاريخ {subscription.endDate || settings.subscriptionEndDate}. يُمنع نهائياً تسجيل أي فواتير جديدة أو إجراء أي إضافة أو تعديل في كافة بيانات النظام لحين تجديد الاشتراك.
+                    <strong>تم تحويل البرنامج إلى وضع القراءة فقط:</strong> انتهت صلاحية اشتراك الصالون ({subscription.organizationName || settings.salonName}) بتاريخ {subscription.endDate || settings.subscriptionEndDate}. يُمنع نهائياً تسجيل أي فواتير جديدة أو إجراء أي إضافة أو تعديل في كافة بيانات النظام لحين تجديد الاشتراك.
                   </span>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
@@ -4009,7 +4018,7 @@ export default function App() {
                       className="bg-amber-400 hover:bg-amber-300 text-slate-950 px-4 py-1.5 rounded-xl text-xs font-black shadow-md transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 animate-pulse"
                     >
                       <MessageSquare size={14} className="text-slate-900" />
-                      <span>تجديد الاشتراك الآن عبر واتساب 💬</span>
+                      <span>تجديد الاشتراك الآن عبر واتساب</span>
                     </a>
                   ) : (
                     <button
@@ -4017,11 +4026,11 @@ export default function App() {
                       className="bg-amber-400 hover:bg-amber-300 text-slate-950 px-4 py-1.5 rounded-xl text-xs font-black shadow-md transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 animate-pulse"
                     >
                       <Key size={14} className="text-slate-900" />
-                      <span>تجديد / تفعيل الترخيص الآن 🔑</span>
+                      <span>تجديد / تفعيل الترخيص الآن</span>
                     </button>
                   )}
                   <span className="bg-black/30 border border-white/20 text-white px-2.5 py-1 rounded-lg text-[11px] font-black shrink-0">
-                    وضع القراءة فقط ⛔
+                    وضع القراءة فقط
                   </span>
                 </div>
               </div>
@@ -4031,7 +4040,7 @@ export default function App() {
                 <div className="flex items-center gap-2.5">
                   <span className="w-2.5 h-2.5 rounded-full bg-amber-700 animate-pulse shrink-0"></span>
                   <span>
-                    ⚠️ <strong>تنبيه بقرب انتهاء الاشتراك:</strong> متبقي <strong>{isOnlineSaaSMode ? onlineSubscriptionDaysLeft : licenseInfo?.daysLeft}</strong> {(isOnlineSaaSMode ? onlineSubscriptionDaysLeft : licenseInfo?.daysLeft) === 1 ? 'يوم واحد' : (isOnlineSaaSMode ? onlineSubscriptionDaysLeft : licenseInfo?.daysLeft) === 2 ? 'يومان' : 'أيام'} على انتهاء صلاحية اشتراك الصالون (تاريخ الانتهاء: {subscription.endDate || settings.subscriptionEndDate}). يرجى سداد رسوم التجديد لضمان استمرار عمل النظام دون انقطاع وتجنب تحوله إلى وضع القراءة فقط.
+                    <strong>تنبيه بقرب انتهاء الاشتراك:</strong> متبقي <strong>{isOnlineSaaSMode ? onlineSubscriptionDaysLeft : licenseInfo?.daysLeft}</strong> {(isOnlineSaaSMode ? onlineSubscriptionDaysLeft : licenseInfo?.daysLeft) === 1 ? 'يوم واحد' : (isOnlineSaaSMode ? onlineSubscriptionDaysLeft : licenseInfo?.daysLeft) === 2 ? 'يومان' : 'أيام'} على انتهاء صلاحية اشتراك الصالون (تاريخ الانتهاء: {subscription.endDate || settings.subscriptionEndDate}). يرجى سداد رسوم التجديد لضمان استمرار عمل النظام دون انقطاع وتجنب تحوله إلى وضع القراءة فقط.
                   </span>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
@@ -4043,7 +4052,7 @@ export default function App() {
                       className="bg-slate-900 hover:bg-slate-800 text-amber-300 px-3.5 py-1.5 rounded-xl text-xs font-black shadow-sm transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
                     >
                       <Zap size={13} className="text-amber-400" />
-                      <span>تجديد الاشتراك الآن ⚡</span>
+                      <span>تجديد الاشتراك الآن</span>
                     </a>
                   ) : (
                     <button
@@ -4051,7 +4060,7 @@ export default function App() {
                       className="bg-slate-900 hover:bg-slate-800 text-amber-300 px-3.5 py-1.5 rounded-xl text-xs font-black shadow-sm transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
                     >
                       <Key size={13} className="text-amber-400" />
-                      <span>تجديد الاشتراك / إدخال كود التفعيل 🔑</span>
+                      <span>تجديد الاشتراك / إدخال كود التفعيل</span>
                     </button>
                   )}
                 </div>

@@ -555,14 +555,17 @@ export function EmployeeFullProfileView({
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-base font-black text-slate-900">{employee.name}</h2>
-              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${
+              <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black ${
                 employee.isBlacklisted
                   ? 'bg-rose-100 text-rose-800'
                   : employee.endOfService
                   ? 'bg-slate-200 text-slate-700'
                   : 'bg-emerald-100 text-emerald-800'
               }`}>
-                {employee.isBlacklisted ? 'محظور (Blacklist)' : employee.endOfService ? 'منتهي الخدمة' : 'نشط 🟢'}
+                {!employee.isBlacklisted && !employee.endOfService && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                )}
+                <span>{employee.isBlacklisted ? 'محظور (Blacklist)' : employee.endOfService ? 'منتهي الخدمة' : 'نشط'}</span>
               </span>
             </div>
             <p className="text-xs text-slate-500 font-semibold">{employee.role} | كود البصمة: #{employee.fingerprintCode || 'بدون بصمة'}</p>
@@ -579,7 +582,7 @@ export function EmployeeFullProfileView({
               title="فك الحظر وإلغاء الموظف من القائمة السوداء"
             >
               <ShieldCheck size={14} />
-              <span>إلغاء الحظر (فك البلاك ليست) 🔓</span>
+              <span>إلغاء الحظر (فك البلاك ليست)</span>
             </button>
           )}
           {onOpenActionModal && (
@@ -673,7 +676,7 @@ export function EmployeeFullProfileView({
                 {getCommissionModelLabel(employee)}
               </div>
               <div className="text-[10px] text-slate-400 mt-0.5">
-                {employee.allowDualCommission ? 'احتساب العمولتين 🛡️' : 'نظام قياسي'}
+                {employee.allowDualCommission ? 'احتساب العمولتين' : 'نظام قياسي'}
               </div>
             </div>
             <div className="p-3 bg-white/5 backdrop-blur-md rounded-2xl border border-white/10 text-center col-span-2 sm:col-span-1">
@@ -892,7 +895,10 @@ export function EmployeeFullProfileView({
                 {targetCalc.remainingToTarget > 0 ? (
                   <span>متبقي لتحقيق الهدف: <strong className="text-amber-400 font-mono">{targetCalc.remainingToTarget.toFixed(2)} {settings.currency}</strong></span>
                 ) : (
-                  <span className="text-emerald-400 font-black">🎉 تم تحقيق وتجاوز التارجت بنجاح!</span>
+                  <span className="text-emerald-400 font-black inline-flex items-center gap-1">
+                    <Sparkles size={13} className="text-emerald-400" />
+                    <span>تم تحقيق وتجاوز التارجت بنجاح!</span>
+                  </span>
                 )}
               </span>
             </div>
@@ -1361,23 +1367,27 @@ export function EmployeeFullProfileView({
                       </td>
                       <td className="p-3 text-center">
                         {d.status === 'present_ontime' && (
-                          <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 font-bold rounded-full text-[10px]">
-                            حاضر بالموعد 🟢
+                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-emerald-100 text-emerald-800 font-bold rounded-full text-[10px]">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                            <span>حاضر بالموعد</span>
                           </span>
                         )}
                         {d.status === 'present_late' && (
-                          <span className="px-2 py-0.5 bg-amber-100 text-amber-800 font-bold rounded-full text-[10px]">
-                            متأخر 🟡
+                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-amber-100 text-amber-800 font-bold rounded-full text-[10px]">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                            <span>متأخر</span>
                           </span>
                         )}
                         {d.status === 'absent' && (
-                          <span className="px-2 py-0.5 bg-rose-100 text-rose-800 font-bold rounded-full text-[10px]">
-                            غائب 🔴
+                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-rose-100 text-rose-800 font-bold rounded-full text-[10px]">
+                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                            <span>غائب</span>
                           </span>
                         )}
                         {d.status === 'day_off' && (
-                          <span className="px-2 py-0.5 bg-slate-100 text-slate-600 font-bold rounded-full text-[10px]">
-                            عطلة أسبوعية ⚪
+                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-slate-100 text-slate-600 font-bold rounded-full text-[10px]">
+                            <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                            <span>عطلة أسبوعية</span>
                           </span>
                         )}
                       </td>
@@ -1531,8 +1541,9 @@ export function EmployeeFullProfileView({
                         +{d.overtimeMinutes} دقيقة ({(d.overtimeMinutes / 60).toFixed(1)} س)
                       </td>
                       <td className="p-3">
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-100 text-indigo-800">
-                          إضافي موثق ✓
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-100 text-indigo-800">
+                          <Check size={11} className="stroke-[3]" />
+                          <span>إضافي موثق</span>
                         </span>
                       </td>
                     </tr>

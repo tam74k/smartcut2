@@ -194,7 +194,7 @@ export function AdvancedBackupManager() {
             <div className="flex items-center gap-2">
               <h3 className="text-lg font-black text-white">إدارة النسخ الاحتياطي التلقائي وضغط البيانات (.zip)</h3>
               <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-bold px-2.5 py-0.5 rounded-full border border-emerald-500/30">
-                ZIP Compressed 📦
+                ZIP Compressed
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-1">

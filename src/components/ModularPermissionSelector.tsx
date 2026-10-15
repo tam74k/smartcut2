@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { 
   ShoppingCart, Wallet, Package, UserCheck, Users, Shield, 
   Search, CheckSquare, Square, Check, X, Sparkles, Filter, 
-  Layers, CheckCircle2, ChevronRight
+  Layers, CheckCircle2, ChevronRight, Monitor, Zap
 } from 'lucide-react';
 import { ActionPermission } from '../types';
 import { SCREEN_CATALOG, ACTION_CATALOG, ScreenMeta, ActionMeta } from '../services/auth';
@@ -24,67 +24,67 @@ export interface SystemModule {
 
 export const NEW_PERMISSIONS: Record<string, { label: string; badgeClass: string; desc: string }> = {
   manage_expense_categories: {
-    label: '⭐ جديد: بنود وتصنيفات الصرف',
+    label: 'جديد: بنود وتصنيفات الصرف',
     badgeClass: 'bg-amber-100 text-amber-900 border-amber-300 font-extrabold',
     desc: 'إضافة وتعديل وحذف بنود وتصنيفات شجرة المصروفات بدقة'
   },
   export_excel: {
-    label: '⭐ جديد: تصدير Excel لكافة الشاشات',
+    label: 'جديد: تصدير Excel لكافة الشاشات',
     badgeClass: 'bg-emerald-100 text-emerald-900 border-emerald-300 font-extrabold',
     desc: 'تصدير وتحميل شيتات الإكسل والجداول في جميع الشاشات والتقارير'
   },
   manage_hr_actions: {
-    label: '⭐ شامل: كافة إجراءات شؤون العاملين (HR Actions)',
+    label: 'شامل: كافة إجراءات شؤون العاملين (HR Actions)',
     badgeClass: 'bg-purple-100 text-purple-900 border-purple-300 font-extrabold',
     desc: 'صلاحية شاملة لكافة إجراءات HR: السلف، الجزاءات، المكافآت، الإجازات، والأذونات'
   },
   hr_manage_advances: {
-    label: '💵 صرف وإدارة السلف النقدية',
+    label: 'صرف وإدارة السلف النقدية',
     badgeClass: 'bg-amber-100 text-amber-900 border-amber-300 font-extrabold',
     desc: 'السماح بصرف السلف النقدية السريعة وسندات السلف على حساب الراتب من الخزائن'
   },
   hr_manage_penalties: {
-    label: '⚠️ تطبيق الجزاءات والخصومات',
+    label: 'تطبيق الجزاءات والخصومات',
     badgeClass: 'bg-rose-100 text-rose-900 border-rose-300 font-extrabold',
     desc: 'السماح بخصم مبالغ نقدية أو خصم أيام جزاءات إدارية من الموظفين'
   },
   hr_manage_bonuses: {
-    label: '🎁 تسجيل وصرف المكافآت والحوافز',
+    label: 'تسجيل وصرف المكافآت والحوافز',
     badgeClass: 'bg-emerald-100 text-emerald-900 border-emerald-300 font-extrabold',
     desc: 'السماح بصرف مكافآت التميز وحوافز الأداء والتقدير المالي للموظفين'
   },
   hr_manage_leaves: {
-    label: '🏖️ إدارة وتسجيل الإجازات',
+    label: 'إدارة وتسجيل الإجازات',
     badgeClass: 'bg-sky-100 text-sky-900 border-sky-300 font-extrabold',
     desc: 'تسجيل واعتماد وحذف إجازات الموظفين (مدفوعة وبدون أجر) في التايم شيت'
   },
   hr_manage_permissions: {
-    label: '⏱️ أذونات الاستئذان والمأموريات',
+    label: 'أذونات الاستئذان والمأموريات',
     badgeClass: 'bg-indigo-100 text-indigo-900 border-indigo-300 font-extrabold',
     desc: 'تسجيل وإقرار أذونات الخروج المؤقت والمأموريات الرسمية'
   },
   hr_manage_attendance: {
-    label: '🕒 تعديل الحضور والدوام اليدوي',
+    label: 'تعديل الحضور والدوام اليدوي',
     badgeClass: 'bg-cyan-100 text-cyan-900 border-cyan-300 font-extrabold',
     desc: 'تسجيل وتعديل بصمات الحضور والانصراف يدوياً وضبط سجلات الدوام'
   },
   hr_approve_delays_overtime: {
-    label: '✨ العفو عن التأخيرات والأوفرتايم',
+    label: 'العفو عن التأخيرات والأوفرتايم',
     badgeClass: 'bg-fuchsia-100 text-fuchsia-900 border-fuchsia-300 font-extrabold',
     desc: 'العفو عن دقائق التأخير واعتماد أو رفض ساعات العمل الإضافي (الأوفرتايم)'
   },
   hr_manage_salary_increments: {
-    label: '📈 إقرار وتعديل زيادات الرواتب',
+    label: 'إقرار وتعديل زيادات الرواتب',
     badgeClass: 'bg-blue-100 text-blue-900 border-blue-300 font-extrabold',
     desc: 'منح وتطبيق زيادات الرواتب الأساسية وتوثيقها في السجل التاريخي'
   },
   hr_disburse_payroll: {
-    label: '💳 صرف مسير الرواتب الشهرية',
+    label: 'صرف مسير الرواتب الشهرية',
     badgeClass: 'bg-teal-100 text-teal-900 border-teal-300 font-extrabold',
     desc: 'اعتماد وصرف مسير الرواتب الشهرية وإخراج السيولة النقدية من الخزائن'
   },
   hr_manage_commissions: {
-    label: '💎 تصفية وصرف العمولات',
+    label: 'تصفية وصرف العمولات',
     badgeClass: 'bg-violet-100 text-violet-900 border-violet-300 font-extrabold',
     desc: 'اعتماد وتصفية وصرف عمولات الخدمات والمبيعات المستحقة للموظفين'
   }
@@ -135,7 +135,7 @@ export const SYSTEM_MODULES: SystemModule[] = [
       'treasury_transfer',
       'treasury_view_balance',
       'manage_expenses',
-      'manage_expense_categories' // ⭐ جديد: إضافة وتعديل بنود الصرف
+      'manage_expense_categories' // جديد: إضافة وتعديل بنود الصرف
     ]
   },
   {
@@ -174,17 +174,17 @@ export const SYSTEM_MODULES: SystemModule[] = [
       'manage_employees',
       'manage_salaries',
       'manage_hr',
-      'manage_hr_actions', // ⭐ شامل: كافة إجراءات شؤون العاملين
-      'hr_manage_advances', // 💵 صرف وإدارة السلف
-      'hr_manage_penalties', // ⚠️ تطبيق الجزاءات والخصومات
-      'hr_manage_bonuses', // 🎁 تسجيل وصرف المكافآت
-      'hr_manage_leaves', // 🏖️ إدارة وتسجيل الإجازات
-      'hr_manage_permissions', // ⏱️ أذونات الاستئذان والمأموريات
-      'hr_manage_attendance', // 🕒 تعديل الحضور والدوام اليدوي
-      'hr_approve_delays_overtime', // ✨ العفو عن التأخيرات والأوفرتايم
-      'hr_manage_salary_increments', // 📈 إقرار وتعديل زيادات الرواتب
-      'hr_disburse_payroll', // 💳 صرف مسير الرواتب الشهرية
-      'hr_manage_commissions' // 💎 تصفية وصرف العمولات
+      'manage_hr_actions', // شامل: كافة إجراءات شؤون العاملين
+      'hr_manage_advances', // صرف وإدارة السلف
+      'hr_manage_penalties', // تطبيق الجزاءات والخصومات
+      'hr_manage_bonuses', // تسجيل وصرف المكافآت
+      'hr_manage_leaves', // إدارة وتسجيل الإجازات
+      'hr_manage_permissions', // أذونات الاستئذان والمأموريات
+      'hr_manage_attendance', // تعديل الحضور والدوام اليدوي
+      'hr_approve_delays_overtime', // العفو عن التأخيرات والأوفرتايم
+      'hr_manage_salary_increments', // إقرار وتعديل زيادات الرواتب
+      'hr_disburse_payroll', // صرف مسير الرواتب الشهرية
+      'hr_manage_commissions' // تصفية وصرف العمولات
     ]
   },
   {
@@ -219,7 +219,7 @@ export const SYSTEM_MODULES: SystemModule[] = [
       'view_reports',
       'view_system_analytics',
       'view_employee_analytics',
-      'export_excel', // ⭐ جديد: تصدير الجداول والتقارير إلى Excel
+      'export_excel', // جديد: تصدير الجداول والتقارير إلى Excel
       'manage_settings',
       'manage_rbac'
     ]
@@ -351,11 +351,13 @@ export function ModularPermissionSelector({
       <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 sm:p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <span className="font-extrabold text-slate-800">إجمالي الصلاحيات المختارة:</span>
-          <span className="bg-indigo-100 text-indigo-900 border border-indigo-200 px-2.5 py-0.5 rounded-lg font-bold">
-            🖥️ {selectedScreens.length} من {SCREEN_CATALOG.length} شاشة
+          <span className="bg-indigo-100 text-indigo-900 border border-indigo-200 px-2.5 py-0.5 rounded-lg font-bold inline-flex items-center gap-1.5">
+            <Monitor size={12} />
+            <span>{selectedScreens.length} من {SCREEN_CATALOG.length} شاشة</span>
           </span>
-          <span className="bg-emerald-100 text-emerald-900 border border-emerald-200 px-2.5 py-0.5 rounded-lg font-bold">
-            ⚡ {selectedActions.length} من {ACTION_CATALOG.length} عملية
+          <span className="bg-emerald-100 text-emerald-900 border border-emerald-200 px-2.5 py-0.5 rounded-lg font-bold inline-flex items-center gap-1.5">
+            <Zap size={12} />
+            <span>{selectedActions.length} من {ACTION_CATALOG.length} عملية</span>
           </span>
         </div>
 
@@ -520,7 +522,8 @@ export function ModularPermissionSelector({
                     <div>
                       <div className="flex items-center justify-between mb-2 pb-1 border-b border-slate-100">
                         <span className="font-black text-xs text-slate-800 flex items-center gap-1.5">
-                          <span>🖥️ الشاشات المسموح بالدخول إليها</span>
+                          <Monitor size={14} className="text-indigo-600" />
+                          <span>الشاشات المسموح بالدخول إليها</span>
                           <span className="text-[10px] text-slate-400 font-bold">({selScreensCount} من {module.screenIds.length})</span>
                         </span>
                       </div>
@@ -561,7 +564,8 @@ export function ModularPermissionSelector({
                     <div>
                       <div className="flex items-center justify-between mb-2 pb-1 border-b border-slate-100">
                         <span className="font-black text-xs text-slate-800 flex items-center gap-1.5">
-                          <span>⚡ العمليات والإجراءات الحساسة المسموح بها</span>
+                          <Zap size={14} className="text-amber-500" />
+                          <span>العمليات والإجراءات الحساسة المسموح بها</span>
                           <span className="text-[10px] text-slate-400 font-bold">({selActionsCount} من {module.actionIds.length})</span>
                         </span>
                       </div>

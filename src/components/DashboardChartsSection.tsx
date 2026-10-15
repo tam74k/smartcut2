@@ -488,8 +488,8 @@ export function DashboardChartsSection({
                   <div className="flex justify-between items-center mb-1.5">
                     <span className="font-black text-sm text-slate-900 flex items-center gap-1">
                       {day.name}
-                      {isPeak && <span title="اليوم الأكثر نشاطاً">🔥</span>}
-                      {isSlowest && <span title="اليوم الأقل نشاطاً">❄️</span>}
+                      {isPeak && <Flame size={12} className="text-amber-500 inline" title="اليوم الأكثر نشاطاً" />}
+                      {isSlowest && <Snowflake size={12} className="text-sky-500 inline" title="اليوم الأقل نشاطاً" />}
                     </span>
                     <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
                       isPeak 
@@ -555,8 +555,9 @@ export function DashboardChartsSection({
         <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm flex flex-col justify-between">
           <div className="flex justify-between items-start mb-4">
             <div>
-              <span className="text-[11px] font-black text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-lg">
-                📈 حركة المبيعات
+              <span className="text-[11px] font-black text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-lg inline-flex items-center gap-1.5">
+                <TrendingUp size={13} />
+                <span>حركة المبيعات</span>
               </span>
               <h4 className="text-base font-black text-slate-900 mt-2">
                 مقارنة المبيعات ({salesTimelineData.totalSales.toFixed(2)} {settings.currency})
@@ -617,8 +618,9 @@ export function DashboardChartsSection({
         <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm flex flex-col justify-between">
           <div className="flex justify-between items-start mb-4">
             <div>
-              <span className="text-[11px] font-black text-rose-600 bg-rose-50 px-2.5 py-1 rounded-lg">
-                📉 حركة المصروفات
+              <span className="text-[11px] font-black text-rose-600 bg-rose-50 px-2.5 py-1 rounded-lg inline-flex items-center gap-1.5">
+                <TrendingDown size={13} />
+                <span>حركة المصروفات</span>
               </span>
               <h4 className="text-base font-black text-slate-900 mt-2">
                 مقارنة المصروفات ({expensesTimelineData.totalExpenses.toFixed(2)} {settings.currency})
@@ -659,8 +661,9 @@ export function DashboardChartsSection({
         <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm">
           <div className="flex justify-between items-start mb-4">
             <div>
-              <span className="text-[11px] font-black text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-lg">
-                💳 طرق الدفع والتحصيل
+              <span className="text-[11px] font-black text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-lg inline-flex items-center gap-1.5">
+                <DollarSign size={13} />
+                <span>طرق الدفع والتحصيل</span>
               </span>
               <h4 className="text-base font-black text-slate-900 mt-2">مقارنة طرق الدفع خلال الفترة</h4>
             </div>
@@ -702,8 +705,9 @@ export function DashboardChartsSection({
         <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm">
           <div className="flex justify-between items-start mb-4">
             <div>
-              <span className="text-[11px] font-black text-rose-600 bg-rose-50 px-2.5 py-1 rounded-lg">
-                💸 بنود الصرف
+              <span className="text-[11px] font-black text-rose-600 bg-rose-50 px-2.5 py-1 rounded-lg inline-flex items-center gap-1.5">
+                <TrendingDown size={13} />
+                <span>بنود الصرف</span>
               </span>
               <h4 className="text-base font-black text-slate-900 mt-2">أعلى 10 بنود صرف خلال المدة</h4>
             </div>
@@ -743,8 +747,9 @@ export function DashboardChartsSection({
         <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm">
           <div className="flex justify-between items-start mb-4">
             <div>
-              <span className="text-[11px] font-black text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg">
-                🛒 المشتريات والتوريدات
+              <span className="text-[11px] font-black text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg inline-flex items-center gap-1.5">
+                <ShoppingCart size={13} />
+                <span>المشتريات والتوريدات</span>
               </span>
               <h4 className="text-base font-black text-slate-900 mt-2">
                 أكثر الأصناف شراءً (الإجمالي: {topPurchasedItems.totalPurchasesCost.toFixed(2)} {settings.currency})
@@ -781,8 +786,9 @@ export function DashboardChartsSection({
         <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm">
           <div className="flex justify-between items-start mb-4">
             <div>
-              <span className="text-[11px] font-black text-purple-600 bg-purple-50 px-2.5 py-1 rounded-lg">
-                ✂️ مبيعات الخدمات
+              <span className="text-[11px] font-black text-purple-600 bg-purple-50 px-2.5 py-1 rounded-lg inline-flex items-center gap-1.5">
+                <Scissors size={13} />
+                <span>مبيعات الخدمات</span>
               </span>
               <h4 className="text-base font-black text-slate-900 mt-2">أفضل وأقل 10 خدمات طلباً</h4>
             </div>
@@ -791,8 +797,9 @@ export function DashboardChartsSection({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 text-xs">
             {/* Top 10 */}
             <div className="space-y-2">
-              <p className="font-black text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg text-center">
-                ⭐ الأعلى طلباً
+              <p className="font-black text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg text-center inline-flex items-center justify-center gap-1 w-full">
+                <Award size={13} />
+                <span>الأعلى طلباً</span>
               </p>
               {topServices.slice(0, 5).map((srv, idx) => (
                 <div key={srv.name} className="flex justify-between items-center p-2 rounded-xl bg-slate-50 border border-slate-100 font-bold">
@@ -821,8 +828,9 @@ export function DashboardChartsSection({
         <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm">
           <div className="flex justify-between items-start mb-4">
             <div>
-              <span className="text-[11px] font-black text-amber-600 bg-amber-50 px-2.5 py-1 rounded-lg">
-                📅 الحجوزات والمواعيد
+              <span className="text-[11px] font-black text-amber-600 bg-amber-50 px-2.5 py-1 rounded-lg inline-flex items-center gap-1.5">
+                <Calendar size={13} />
+                <span>الحجوزات والمواعيد</span>
               </span>
               <h4 className="text-base font-black text-slate-900 mt-2">أكثر الخدمات طلباً في الحجوزات</h4>
             </div>
@@ -860,8 +868,9 @@ export function DashboardChartsSection({
         <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm">
           <div className="flex justify-between items-start mb-4">
             <div>
-              <span className="text-[11px] font-black text-teal-600 bg-teal-50 px-2.5 py-1 rounded-lg">
-                🧴 استهلاك المستلزمات
+              <span className="text-[11px] font-black text-teal-600 bg-teal-50 px-2.5 py-1 rounded-lg inline-flex items-center gap-1.5">
+                <Package size={13} />
+                <span>استهلاك المستلزمات</span>
               </span>
               <h4 className="text-base font-black text-slate-900 mt-2">أكثر 10 منتجات استهلاكاً وصرفاً للموظفين</h4>
             </div>

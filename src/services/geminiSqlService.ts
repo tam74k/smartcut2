@@ -2,7 +2,7 @@ import { AppSettings } from '../types';
 import { SupabaseService } from './supabase';
 
 // ==============================================================================
-// 🤖 Gemini Text-to-SQL Service for Supabase Cloud Database
+// Gemini Text-to-SQL Service for Supabase Cloud Database
 // Strict Multi-Tenant Enforcement: Queries MUST strictly scope to current salon_id
 // ==============================================================================
 
@@ -20,7 +20,7 @@ export interface ChatMessage {
 }
 
 export const POPULAR_GEMINI_MODELS = [
-  { id: 'gemini-1.5-flash', name: 'Google Gemini 1.5 Flash (الأسرع والأدق في استعلامات SQL - موصى به 🌟)' },
+  { id: 'gemini-1.5-flash', name: 'Google Gemini 1.5 Flash (الأسرع والأدق في استعلامات SQL - موصى به)' },
   { id: 'gemini-2.0-flash', name: 'Google Gemini 2.0 Flash (الجيل الأحدث فائق السرعة)' },
   { id: 'gemini-1.5-pro', name: 'Google Gemini 1.5 Pro (أعلى قدرات استدلال وتحليل)' }
 ];

@@ -568,7 +568,7 @@ export type ClientTierLevel = 'standard' | 'distinguished' | 'vip' | 'royal';
 export interface ClientTierConfig {
   id: ClientTierLevel;
   name: string; // قياسي / متميز / VIP / ملكي
-  icon: string; // ⚪ / 🔷 / 👑 / 💎
+  icon: string; // 'star' | 'shield' | 'crown' | 'gem'
   spendingThreshold: number; // الحد الأدنى للإنفاق
   discountPercentage: number; // نسبة الخصم المخصصة للمستوى %
   color: string; // لون الشارة
@@ -589,7 +589,7 @@ export const DEFAULT_CLIENT_TIERS: ClientTierConfig[] = [
   {
     id: 'standard',
     name: 'قياسي',
-    icon: '⭐',
+    icon: 'star',
     spendingThreshold: 0,
     discountPercentage: 0,
     color: 'slate',
@@ -601,7 +601,7 @@ export const DEFAULT_CLIENT_TIERS: ClientTierConfig[] = [
   {
     id: 'distinguished',
     name: 'متميز',
-    icon: '🔷',
+    icon: 'shield',
     spendingThreshold: 300,
     discountPercentage: 5,
     color: 'blue',
@@ -613,7 +613,7 @@ export const DEFAULT_CLIENT_TIERS: ClientTierConfig[] = [
   {
     id: 'vip',
     name: 'VIP',
-    icon: '👑',
+    icon: 'crown',
     spendingThreshold: 800,
     discountPercentage: 10,
     color: 'amber',
@@ -625,7 +625,7 @@ export const DEFAULT_CLIENT_TIERS: ClientTierConfig[] = [
   {
     id: 'royal',
     name: 'ملكي',
-    icon: '💎',
+    icon: 'gem',
     spendingThreshold: 1500,
     discountPercentage: 15,
     color: 'purple',
@@ -1219,7 +1219,7 @@ export interface SalesReturn {
 }
 
 // ============================================================
-// 👥 1. نظام إدارة الشركاء ورأس المال (Partners Management)
+// 1. نظام إدارة الشركاء ورأس المال (Partners Management)
 // ============================================================
 export interface Partner {
   id: string;
@@ -1286,6 +1286,8 @@ export interface ProfitDistribution {
   distributableProfitPool: number;
   partnerSharePercentage: number;
   grossProfitShare: number;
+  capitalAdditionAmount?: number; // المبلغ المضاف لزيادة رأس مال الشريك
+  newCapitalShare?: number; // رأس مال الشريك الجديد بعد التعلية
   drawingsDeducted: number;
   priorDebitDeducted: number;
   netPayableAmount: number;
@@ -1313,7 +1315,7 @@ export interface PartnerExitInstallment {
 }
 
 // ============================================================
-// 🏷️ 2. نظام البرومو كود وأكواد المشاهير (Promo Codes System)
+// 2. نظام البرومو كود وأكواد المشاهير (Promo Codes System)
 // ============================================================
 export interface PromoCode {
   id: string;
@@ -1345,7 +1347,7 @@ export interface PromoCodeUsage {
 }
 
 // ============================================================
-// 💵 3. نظام البقشيش (Tips Management)
+// 3. نظام البقشيش (Tips Management)
 // ============================================================
 export interface TipRecord {
   id: string;
@@ -1368,7 +1370,7 @@ export interface TipRecord {
 
 
 // ============================================================
-// 📦 4. نظام عهد الموظفين (Employee Custodies)
+// 4. نظام عهد الموظفين (Employee Custodies)
 // ============================================================
 export interface EmployeeCustody {
   id: string;
@@ -1387,7 +1389,7 @@ export interface EmployeeCustody {
 }
 
 // ============================================================
-// ⏱️ 5. سجل حركات وسحوبات البصمة (Fingerprint Logs)
+// 5. سجل حركات وسحوبات البصمة (Fingerprint Logs)
 // ============================================================
 export interface FingerprintLog {
   id: string;
@@ -1551,7 +1553,7 @@ export interface ItemMovement {
 }
 
 // ==============================================================================
-// 💳 وحدة الاشتراكات والفوترة والباقات (Subscription & Billing Module)
+// وحدة الاشتراكات والفوترة والباقات (Subscription & Billing Module)
 // ==============================================================================
 export type BillingCycle = '1m' | '3m' | '6m' | '12m';
 export type BillingCurrency = 'EGP' | 'USD';
@@ -1571,7 +1573,7 @@ export interface SubscriptionPlan {
   priceUsd3m: number;
   priceUsd6m: number;
   priceUsd12m: number;
-  // 🏢 أسعار إضافة الفرع المرخص المرتبطة بهذه الباقة
+  // أسعار إضافة الفرع المرخص المرتبطة بهذه الباقة
   branchPriceEgp1m?: number;
   branchPriceEgp3m?: number;
   branchPriceEgp6m?: number;

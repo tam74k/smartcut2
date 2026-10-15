@@ -612,7 +612,7 @@ export function InvoicesImportModal({
 
       // إخطار الشاشة الرئيسية باكتمال الاستيراد
       onImportComplete(finalInvoices, newClientsList);
-      alert(`🎉 تم بنجاح استيراد (${finalInvoices.length}) فاتورة سابقة و (${newClientsList.length}) عميل جديد إلى النظام وقاعدة البيانات السحابية!`);
+      alert(`تم بنجاح استيراد (${finalInvoices.length}) فاتورة سابقة و (${newClientsList.length}) عميل جديد إلى النظام وقاعدة البيانات السحابية.`);
       onClose();
     } catch (err: any) {
       console.error('Error during invoice batch import:', err);
@@ -879,7 +879,7 @@ export function InvoicesImportModal({
                                 <span>{cand.clientName}</span>
                                 {cand.isNewClient && (
                                   <span className="text-[8px] font-bold px-1 bg-purple-50 text-purple-700 rounded border border-purple-200">
-                                    جديد ✨
+                                    جديد
                                   </span>
                                 )}
                               </span>

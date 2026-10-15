@@ -4,7 +4,8 @@ import {
   Tag, X, Package, Clock, UserCog, Calendar, CheckCircle2, Image as ImageIcon,
   Wrench, ShieldAlert, Camera, Crown, Sparkles, PauseCircle, PlayCircle,
   FilePlus2, Layers, Zap, AlertCircle, DollarSign, Coffee, Sliders, Save, AlertTriangle, Loader2,
-  Printer, Eye, FileText, RotateCcw, Barcode, Hourglass, CheckCircle
+  Printer, Eye, FileText, RotateCcw, Barcode, Hourglass, CheckCircle, Check,
+  Wallet, Ticket, Edit3, Gift, Lock, Info, Star
 } from 'lucide-react';
 import { 
   AppSettings, CartItem, ServiceItem, Booking, Invoice, Client, Category, Employee,
@@ -645,7 +646,7 @@ export function POSScreen({
           });
         }
         if (deletedId && (activeBookingId === deletedId || initialHeldInvoice?.id === deletedId || activeHeldInvoiceId === deletedId)) {
-          alert('⚠️ تنبيه: تم سداد أو إلغاء هذه الفاتورة المعلقة للتو من جهاز كاشير آخر لتفادي تكرار المحاسبة.');
+          alert('تنبيه: تم سداد أو إلغاء هذه الفاتورة المعلقة للتو من جهاز كاشير آخر لتفادي تكرار المحاسبة.');
           clearBooking();
         }
       }
@@ -729,12 +730,12 @@ export function POSScreen({
 
     setEmployees(updatedEmployees);
     setShowScheduleModal(false);
-    alert(`✅ تم تحديث وتوثيق مواعيد دوام الموظفين بنجاح وسريانها من تاريخ ${scheduleEffectiveDate}`);
+    alert(`تم تحديث وتوثيق مواعيد دوام الموظفين بنجاح وسريانها من تاريخ ${scheduleEffectiveDate}`);
   };
 
 
 
-  // ⏸️ تعليق الفاتورة الحالية يدوياً (Hold Current Bill)
+  // تعليق الفاتورة الحالية يدوياً (Hold Current Bill)
   const handleHoldCurrentInvoice = () => {
     if (cart.length === 0) {
       alert('لا توجد عناصر في الفاتورة الحالية لتعليقها.');
@@ -782,7 +783,7 @@ export function POSScreen({
     if (onClearInitial) onClearInitial();
   };
 
-  // ⚡ إعادة ضبط شاشة نقطة البيع وبدء فاتورة جديدة فوراً مع تحميل جميع الخدمات دون أي تأخير
+  // إعادة ضبط شاشة نقطة البيع وبدء فاتورة جديدة فوراً مع تحميل جميع الخدمات دون أي تأخير
   const resetToNewInvoice = (options?: { holdCurrentCart?: boolean }) => {
     // 1. إذا طلب تعليق الفاتورة الحالية وكانت السلة تحتوي عناصر
     if (options?.holdCurrentCart && cart.length > 0) {
@@ -855,12 +856,12 @@ export function POSScreen({
     }
   };
 
-  // ➕ بدء فاتورة جديدة (New Invoice) مع تعليق الفاتورة السابقة إن وجدت
+  // بدء فاتورة جديدة (New Invoice) مع تعليق الفاتورة السابقة إن وجدت
   const handleNewInvoice = () => {
     resetToNewInvoice({ holdCurrentCart: true });
   };
 
-  // ▶ استكمال الفاتورة المعلقة (Resume Held Bill)
+  // استكمال الفاتورة المعلقة (Resume Held Bill)
   const handleResumeHeldInvoice = (held: HeldInvoice) => {
     if (cart.length > 0 && activeHeldInvoiceId !== held.id) {
       // تعليق الفاتورة الحالية أولاً وحفظها في قاعدة البيانات
@@ -915,7 +916,7 @@ export function POSScreen({
     setShowHeldInvoicesModal(false);
   };
 
-  // 🗑️ حذف / إلغاء فاتورة معلقة
+  // حذف / إلغاء فاتورة معلقة
   const handleDeleteHeldInvoice = (heldId: string) => {
     if (window.confirm('هل أنت متأكد من رغبتك في حذف / إلغاء هذه الفاتورة المعلقة؟')) {
       setHeldInvoices(prev => {
@@ -1139,7 +1140,7 @@ export function POSScreen({
   const handleConfirmPayment = async (shouldPrint: boolean = false) => {
     if (isSubmittingPayment) return;
     if (isSubscriptionBlocked) {
-      alert('⛔ الحساب موقوف أو انتهت فترة الاشتراك. النظام يعمل الآن بوضع الاطلاع فقط (Read-Only) ولا يمكن إنشاء أو سداد فواتير جديدة.');
+      alert('الحساب موقوف أو انتهت فترة الاشتراك. النظام يعمل الآن بوضع الاطلاع فقط (Read-Only) ولا يمكن إنشاء أو سداد فواتير جديدة.');
       return;
     }
 
@@ -1148,7 +1149,7 @@ export function POSScreen({
     if (targetBookingId) {
       const alreadyPaid = invoices.some(inv => inv.bookingId === targetBookingId);
       if (alreadyPaid) {
-        alert('⚠️ تنبيه: تم سداد هذا الحجز بالفعل عبر فاتورة أخرى لتفادي ازدواجية المحاسبة.');
+        alert('تنبيه: تم سداد هذا الحجز بالفعل عبر فاتورة أخرى لتفادي ازدواجية المحاسبة.');
         setShowPaymentModal(false);
         clearBooking();
         return;
@@ -1166,7 +1167,7 @@ export function POSScreen({
       const clientName = selectedClient ? selectedClient.name : clientSearch?.trim();
       const clientPhone = selectedClient ? selectedClient.phone : '';
       if (!clientName || clientName === 'عميل نقدي' || !clientPhone) {
-        alert('⚠️ تنبيه: الفواتير الآجلة والسداد الجزئي يتطلبان اختيار عميل مسجل وتحديد رقم هاتفه لمتابعة الذمة والمطالبات بدقة.');
+        alert('تنبيه: الفواتير الآجلة والسداد الجزئي يتطلبان اختيار عميل مسجل وتحديد رقم هاتفه لمتابعة الذمة والمطالبات بدقة.');
         setIsSubmittingPayment(false);
         return;
       }
@@ -1184,7 +1185,7 @@ export function POSScreen({
     } else if (paymentMode === 'partial') {
       const partialVal = Number(partialPaidAmount) || 0;
       if (partialVal <= 0 || partialVal >= finalTotal) {
-        alert('⚠️ المبلغ المسدد جزئياً يجب أن يكون أكبر من صفر وأقل من إجمالي الفاتورة!');
+        alert('المبلغ المسدد جزئياً يجب أن يكون أكبر من صفر وأقل من إجمالي الفاتورة!');
         setIsSubmittingPayment(false);
         return;
       }
@@ -1337,7 +1338,7 @@ export function POSScreen({
       paymentMethods: splits
     };
 
-    // 🇸🇦 ZATCA Phase 1 & 2 QR Code Generation & Reporting (ONLY for Saudi Arabia)
+    // ZATCA Phase 1 & 2 QR Code Generation & Reporting (ONLY for Saudi Arabia)
     let zatcaQr = '';
     let zatcaReportingStatus: Invoice['zatcaReportingStatus'] = 'not_submitted';
     const isSaudi = isSaudiSalon(settings, branches, activeBranchId);
@@ -1353,7 +1354,7 @@ export function POSScreen({
       }
     }
 
-    // 🇪🇬 ETA Egypt e-Receipt Submission
+    // ETA Egypt e-Receipt Submission
     let etaSubmissionUuid: string | undefined = undefined;
     let etaStatus: Invoice['etaStatus'] = 'not_submitted';
     try {
@@ -1907,7 +1908,7 @@ export function POSScreen({
     });
   }, [categories, itemTypeFilter, items, products]);
 
-  // ⚡ قائمة الخدمات الافتراضية النشطة المجهزة مسبقاً في الذاكرة (Ultra Fast-Path Cache) لنزول الخدمات فوراً دون أي تأخير
+  // قائمة الخدمات الافتراضية النشطة المجهزة مسبقاً في الذاكرة (Ultra Fast-Path Cache) لنزول الخدمات فوراً دون أي تأخير
   const defaultActiveServices = useMemo(() => {
     const active = (items || []).filter(i => i.isActive !== false);
     return active.sort((a: any, b: any) => {
@@ -1936,7 +1937,7 @@ export function POSScreen({
   const filteredItems = useMemo(() => {
     const q = (searchQuery || '').trim().toLowerCase();
 
-    // ⚡ مسار فائق السرعة (Ultra Fast Path): استرجاع الخدمات فوراً بدون إعادة فرز أو معالجة عند بدء فاتورة جديدة
+    // مسار فائق السرعة (Ultra Fast Path): استرجاع الخدمات فوراً بدون إعادة فرز أو معالجة عند بدء فاتورة جديدة
     if (itemTypeFilter === 'service' && (!selectedCategory || selectedCategory === 'all') && !q) {
       return defaultActiveServices;
     }
@@ -2126,11 +2127,11 @@ export function POSScreen({
 
   const addToCart = (item: any) => {
     if (isSubscriptionBlocked) {
-      alert('⛔ الحساب موقوف أو انتهت فترة الاشتراك. النظام يعمل الآن بوضع الاطلاع فقط (Read-Only) ولا يمكن إضافة عناصر للسلة.');
+      alert('الحساب موقوف أو انتهت فترة الاشتراك. النظام يعمل الآن بوضع الاطلاع فقط (Read-Only) ولا يمكن إضافة عناصر للسلة.');
       return;
     }
     if (item.productType === 'raw_material' || (item._isProduct && products.find(p => p.id === item.id)?.productType === 'raw_material')) {
-      alert('⚠️ هذا الصنف مسجل كمادة خام داخلية وغير متاح للبيع المباشر في نقطة البيع.');
+      alert('هذا الصنف مسجل كمادة خام داخلية وغير متاح للبيع المباشر في نقطة البيع.');
       return;
     }
     const finalPrice = item.displayPrice !== undefined ? item.displayPrice : (item.price ?? item.sellPrice ?? 0);
@@ -2155,7 +2156,7 @@ export function POSScreen({
       const matchedProduct = products.find(p => p.barcode && p.barcode.trim().toLowerCase() === q);
       if (matchedProduct) {
         if (matchedProduct.productType === 'raw_material') {
-          alert('⚠️ هذا الصنف مسجل كمادة خام (استهلاك صالون) وغير متاح للبيع المباشر.');
+          alert('هذا الصنف مسجل كمادة خام (استهلاك صالون) وغير متاح للبيع المباشر.');
           return;
         }
         addToCart({
@@ -2276,7 +2277,7 @@ export function POSScreen({
 
   const removeFromCart = (cartId: string) => {
     if (!canVoidCart) {
-      alert('⛔ عذراً، حذف البنود من السلة أو إلغاء الفاتورة يتطلب صلاحية الإلغاء وحذف البنود.');
+      alert('عذراً، حذف البنود من السلة أو إلغاء الفاتورة يتطلب صلاحية الإلغاء وحذف البنود.');
       return;
     }
     setCart(cart.filter(c => c.cartId !== cartId));
@@ -2413,7 +2414,7 @@ export function POSScreen({
                         borderColor: isLight ? 'rgba(0, 0, 0, 0.25)' : 'rgba(255, 255, 255, 0.4)'
                       }}
                     >
-                      <span className={isLight ? 'text-amber-600' : 'text-amber-300'}>⭐</span>
+                      <Star size={11} className={isLight ? 'text-amber-600 fill-amber-600' : 'text-amber-300 fill-amber-300'} />
                       <span>سريعة</span>
                     </div>
                   )}
@@ -2551,8 +2552,9 @@ export function POSScreen({
             <div className="flex items-center gap-2 min-w-0">
               <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-ping shrink-0" />
               <div className="truncate">
-                <span className="font-black text-amber-900">
-                  ⚡ فاتورة معلقة مفتوحة: 
+                <span className="font-black text-amber-900 inline-flex items-center gap-1">
+                  <Zap size={13} className="text-amber-600 shrink-0" />
+                  <span>فاتورة معلقة مفتوحة:</span>
                 </span>
                 <span className="mr-1 text-slate-800 font-semibold">
                   {selectedClient?.name || clientSearch || 'عميل نقدي'}
@@ -2620,8 +2622,8 @@ export function POSScreen({
                   {showSuggestions && clientSearch.trim().length > 0 && (
                     <div className="absolute top-full right-0 left-0 mt-1.5 bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 overflow-hidden max-h-72 flex flex-col animate-in fade-in-50 slide-in-from-top-2 duration-150">
                       <div className="p-2 bg-slate-50 border-b border-slate-100 flex items-center justify-between text-[11px] font-bold text-slate-500">
-                        <span className="flex items-center gap-1">
-                          <span>⚡</span>
+                        <span className="flex items-center gap-1.5">
+                          <Zap size={12} className="text-amber-500" />
                           <span>عملاء الصالون المطابقون:</span>
                         </span>
                         <span className="px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-700 font-mono text-[10px]">
@@ -2650,7 +2652,7 @@ export function POSScreen({
                             >
                               <div className="flex items-center gap-2.5 min-w-0">
                                 <div className="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center font-bold text-xs text-slate-700 shrink-0">
-                                  {tier?.icon || client.name.charAt(0) || '👤'}
+                                  {client.name.charAt(0) || <User size={14} className="text-slate-400" />}
                                 </div>
                                 <div className="min-w-0">
                                   <div className="flex items-center gap-1.5">
@@ -2726,7 +2728,7 @@ export function POSScreen({
                         )}
                         {clientTierProgression && !clientTierProgression.isMaxTier && clientTierProgression.nextTier && (
                           <span className="text-[8px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200/80 px-1.5 py-0.2 rounded-md truncate max-w-[180px]" title={`متبقي ${clientTierProgression.amountNeeded.toFixed(0)} ${settings.currency} للترقية إلى ${clientTierProgression.nextTier.name}`}>
-                            متبقي {clientTierProgression.amountNeeded.toFixed(0)} {settings.currency} ➔ {clientTierProgression.nextTier.name}
+                            متبقي {clientTierProgression.amountNeeded.toFixed(0)} {settings.currency} إلى {clientTierProgression.nextTier.name}
                           </span>
                         )}
                       </div>
@@ -2740,18 +2742,21 @@ export function POSScreen({
                           title="انقر لتعديل تفضيلات العميل"
                         >
                           {selectedClient.preferences.shavingMethod && (
-                            <span className="text-[8px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 px-1.5 py-0.5 rounded-md">
-                              {selectedClient.preferences.shavingMethod === 'machine' ? '⚡ ماكينة' : selectedClient.preferences.shavingMethod === 'blade' ? '🪒 موس' : selectedClient.preferences.shavingMethod === 'scissors_only' ? '✂️ مقص' : '✨ مدمج'}
+                            <span className="text-[8px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 px-1.5 py-0.5 rounded-md flex items-center gap-1">
+                              <Scissors size={10} className="text-indigo-600" />
+                              <span>{selectedClient.preferences.shavingMethod === 'machine' ? 'ماكينة' : selectedClient.preferences.shavingMethod === 'blade' ? 'موس' : selectedClient.preferences.shavingMethod === 'scissors_only' ? 'مقص' : 'مدمج'}</span>
                             </span>
                           )}
                           {selectedClient.preferences.favoriteBeverage && (
-                            <span className="text-[8px] font-bold bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded-md">
-                              ☕ {selectedClient.preferences.favoriteBeverage}
+                            <span className="text-[8px] font-bold bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded-md flex items-center gap-1">
+                              <Coffee size={10} className="text-amber-700" />
+                              <span>{selectedClient.preferences.favoriteBeverage}</span>
                             </span>
                           )}
                           {selectedClient.preferences.skinSensitivities && (
-                            <span className="text-[8px] font-bold bg-rose-50 text-rose-700 border border-rose-200 px-1.5 py-0.5 rounded-md">
-                              ⚠️ حساسية بشرة
+                            <span className="text-[8px] font-bold bg-rose-50 text-rose-700 border border-rose-200 px-1.5 py-0.5 rounded-md flex items-center gap-1">
+                              <AlertTriangle size={10} className="text-rose-600" />
+                              <span>حساسية بشرة</span>
                             </span>
                           )}
                         </div>
@@ -2774,9 +2779,9 @@ export function POSScreen({
                     <Sliders size={11} className="text-indigo-600 shrink-0" />
                     <span>تفضيلات العميل</span>
                     {selectedClient.preferences && Object.values(selectedClient.preferences).some(v => !!v) ? (
-                      <span className="bg-emerald-100 text-emerald-800 text-[8px] px-1 rounded-full font-black">✓ مسجلة</span>
+                      <span className="bg-emerald-100 text-emerald-800 text-[8px] px-1 rounded-full font-black">مسجلة</span>
                     ) : (
-                      <span className="text-slate-400 text-[9px]">✏️</span>
+                      <Edit3 size={10} className="text-slate-400" />
                     )}
                   </button>
 
@@ -2789,7 +2794,8 @@ export function POSScreen({
             
             {activeQueueNumber && (
               <div className="flex items-center gap-1.5 bg-amber-500/10 text-amber-700 px-2.5 py-1 rounded-xl border border-amber-500/30 text-xs font-black font-mono">
-                <span>🎟️ دور #{activeQueueNumber}</span>
+                <Ticket size={12} className="text-amber-700" />
+                <span>دور #{activeQueueNumber}</span>
                 <button 
                   type="button" 
                   onClick={() => setActiveQueueNumber(null)} 
@@ -2810,8 +2816,8 @@ export function POSScreen({
           {(initialBooking || activeBookingId || advanceDeduction > 0) && (
             <div className="flex flex-col gap-1 mt-1.5">
               <div className="bg-emerald-50 text-emerald-800 text-[11px] px-3 py-1.5 rounded-xl font-bold flex justify-between items-center border border-emerald-200">
-                <span className="flex items-center gap-1">
-                  <span>💰</span>
+                <span className="flex items-center gap-1.5">
+                  <Wallet size={13} className="text-emerald-700" />
                   <span>المدفوع مقدماً (عربون الحجز):</span>
                 </span>
                 <span className="font-mono text-xs font-black text-emerald-700">-{(Number(advanceDeduction) || 0).toFixed(2)} {settings.currency}</span>
@@ -2847,8 +2853,9 @@ export function POSScreen({
                   <div className="flex justify-between items-start">
                     <div className="flex-1">
                       <div className="flex items-center gap-1.5">
-                        <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md ${c.type === 'product' ? 'bg-amber-100 text-amber-800' : 'bg-indigo-100 text-indigo-800'}`}>
-                          {c.type === 'product' ? 'منتج 📦' : 'خدمة ✂️'}
+                        <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md flex items-center gap-1 ${c.type === 'product' ? 'bg-amber-100 text-amber-800' : 'bg-indigo-100 text-indigo-800'}`}>
+                          {c.type === 'product' ? <Package size={10} /> : <Scissors size={10} />}
+                          <span>{c.type === 'product' ? 'منتج' : 'خدمة'}</span>
                         </span>
                         <h5 className="font-extrabold text-slate-900 text-xs leading-tight">{c.item.name}</h5>
                       </div>
@@ -2872,15 +2879,15 @@ export function POSScreen({
                             </button>
                             <button
                               onClick={() => setEditingCartId(null)}
-                              className="px-1 py-0.5 text-slate-400 hover:text-slate-600 text-[10px]"
+                              className="px-1 py-0.5 text-slate-400 hover:text-slate-600 cursor-pointer flex items-center justify-center"
                             >
-                              ✕
+                              <X size={10} />
                             </button>
                           </div>
                         ) : (
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <p 
-                              className={`text-primary font-black text-xs ${canEditItemPrice ? 'cursor-pointer hover:underline' : ''}`}
+                              className={`text-primary font-black text-xs ${canEditItemPrice ? 'cursor-pointer hover:underline flex items-center' : ''}`}
                               onClick={() => {
                                 if (canEditItemPrice) {
                                   setEditingCartId(c.cartId);
@@ -2889,8 +2896,8 @@ export function POSScreen({
                               }}
                               title={canEditItemPrice ? "انقر لتعديل السعر في الفاتورة" : undefined}
                             >
-                              {getCartItemPrice(c)} {settings.currency}
-                              {canEditItemPrice && <span className="text-[9px] text-slate-400 mr-1">✏️</span>}
+                              <span>{getCartItemPrice(c)} {settings.currency}</span>
+                              {canEditItemPrice && <Edit3 size={10} className="text-slate-400 mr-1" />}
                             </p>
                             {((c.item?.originalPrice && c.item.originalPrice > getCartItemPrice(c)) || (Number(c.discount || c.item?.discount) > 0)) && (
                               <span className="text-[10px] text-slate-400 line-through font-mono">
@@ -2948,7 +2955,8 @@ export function POSScreen({
                     {/* 1. Performer */}
                     <div>
                       <label className="block text-[9px] font-bold text-slate-500 mb-0.5 flex items-center gap-1">
-                        <span>✂️ الفني المنفذ:</span>
+                        <Scissors size={10} className="text-slate-400" />
+                        <span>الفني المنفذ:</span>
                       </label>
                       <select 
                         className="text-[11px] bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 w-full outline-none focus:border-primary cursor-pointer transition-colors font-semibold"
@@ -2971,8 +2979,8 @@ export function POSScreen({
                     {c.type === 'service' ? (
                       <div>
                         <label className="block text-[9px] font-bold text-amber-800 mb-0.5 flex items-center justify-between">
-                          <span className="flex items-center gap-0.5">
-                            <span>⚡</span>
+                          <span className="flex items-center gap-1">
+                            <Zap size={10} className="text-amber-600" />
                             <span>إحالة (فتح شغل):</span>
                           </span>
                           {hasReferralCommission ? (
@@ -2998,8 +3006,9 @@ export function POSScreen({
                         </select>
                       </div>
                     ) : (
-                      <div className="flex items-center text-[10px] text-slate-400 self-end pb-1 font-bold">
-                        📦 منتج بيع مباشر
+                      <div className="flex items-center gap-1 text-[10px] text-slate-400 self-end pb-1 font-bold">
+                        <Package size={11} className="text-slate-400" />
+                        <span>منتج بيع مباشر</span>
                       </div>
                     )}
                   </div>
@@ -3008,7 +3017,8 @@ export function POSScreen({
                   {(c.type === 'service' || c.type === 'product') && (
                     <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-slate-100 text-xs">
                       <label className="text-[10px] font-bold text-rose-700 flex items-center gap-1 shrink-0">
-                        <span>🏷️ خصم {c.type === 'product' ? 'المنتج' : 'الخدمة'}:</span>
+                        <Tag size={10} className="text-rose-600" />
+                        <span>خصم {c.type === 'product' ? 'المنتج' : 'الخدمة'}:</span>
                         {hasOverallDiscount && (
                           <span className="text-[9px] text-amber-700 bg-amber-100/90 font-bold px-1.5 py-0.5 rounded border border-amber-300">
                             معطل (خصم شامل)
@@ -3056,12 +3066,14 @@ export function POSScreen({
             </label>
 
             <div className="flex items-center gap-1.5">
-              <label className={`cursor-pointer px-1.5 py-0.5 rounded-lg text-[9px] font-black border transition-colors ${beforePhotoUrl ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
-                <span>{beforePhotoUrl ? '📷 قبل ✓' : '+ صورة قبل'}</span>
+              <label className={`cursor-pointer px-1.5 py-0.5 rounded-lg text-[9px] font-black border transition-colors flex items-center gap-1 ${beforePhotoUrl ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
+                <Camera size={11} className={beforePhotoUrl ? 'text-emerald-700' : 'text-slate-500'} />
+                <span>{beforePhotoUrl ? <span className="inline-flex items-center gap-0.5"><span>قبل</span><Check size={10} /></span> : '+ صورة قبل'}</span>
                 <input type="file" accept="image/*" onChange={e => handleInvoicePhotoUpload(e, 'before')} className="hidden" />
               </label>
-              <label className={`cursor-pointer px-1.5 py-0.5 rounded-lg text-[9px] font-black border transition-colors ${afterPhotoUrl ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
-                <span>{afterPhotoUrl ? '📷 بعد ✓' : '+ صورة بعد'}</span>
+              <label className={`cursor-pointer px-1.5 py-0.5 rounded-lg text-[9px] font-black border transition-colors flex items-center gap-1 ${afterPhotoUrl ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
+                <Camera size={11} className={afterPhotoUrl ? 'text-emerald-700' : 'text-slate-500'} />
+                <span>{afterPhotoUrl ? <span className="inline-flex items-center gap-0.5"><span>بعد</span><Check size={10} /></span> : '+ صورة بعد'}</span>
                 <input type="file" accept="image/*" onChange={e => handleInvoicePhotoUpload(e, 'after')} className="hidden" />
               </label>
             </div>
@@ -3160,10 +3172,10 @@ export function POSScreen({
                   <button
                     type="button"
                     onClick={handleRemovePromo}
-                    className="text-purple-600 hover:text-red-600 p-0.5"
+                    className="text-purple-600 hover:text-red-600 p-0.5 cursor-pointer flex items-center justify-center"
                     title="إلغاء البرومو كود"
                   >
-                    ✕
+                    <X size={12} />
                   </button>
                 </div>
                 <div className="text-[10px] text-purple-700 bg-purple-50 px-2 py-0.5 rounded font-bold">
@@ -3200,7 +3212,7 @@ export function POSScreen({
             disabled={cart.length === 0 || isSubscriptionBlocked}
             onClick={() => {
               if (isSubscriptionBlocked) {
-                alert('⚠️ عذراً، لا يمكن إصدار فواتير جديدة نظراً لانتهاء الفترة التجريبية للصالون. يرجى تجديد الاشتراك مع الإدارة.');
+                alert('عذراً، لا يمكن إصدار فواتير جديدة نظراً لانتهاء الفترة التجريبية للصالون. يرجى تجديد الاشتراك مع الإدارة.');
                 return;
               }
               if (cart.length > 0) {
@@ -3451,7 +3463,7 @@ export function POSScreen({
                             onChange={e => setTipEmployeeId(e.target.value)}
                             className="w-full bg-white border border-purple-300 rounded-xl px-3 py-1.5 text-xs font-bold text-purple-950 outline-none focus:border-purple-600 shadow-2xs"
                           >
-                            <option value="unspecified">✨ غير محدد (إكرامية عامة للصالون)</option>
+                            <option value="unspecified">غير محدد (إكرامية عامة للصالون)</option>
                             {employees.filter(e => e.isActive !== false).map(emp => (
                               <option key={emp.id} value={emp.id}>{emp.name}</option>
                             ))}
@@ -3461,7 +3473,7 @@ export function POSScreen({
                         {(tipEmployeeId === 'unspecified' || !tipEmployeeId) ? (
                           <div className="text-[11px] font-semibold p-2.5 rounded-xl border flex items-center gap-1.5 bg-purple-100/70 border-purple-300 text-purple-950">
                             <Sparkles size={14} className="text-purple-700 shrink-0" />
-                            <span>✨ إكرامية عامة للصالون: لا تُخصص لأي موظف وتُسجل كإيراد عام للصالون (لن يتم خصم أي مبالغ من درج الكاش).</span>
+                            <span>إكرامية عامة للصالون: لا تُخصص لأي موظف وتُسجل كإيراد عام للصالون (لن يتم خصم أي مبالغ من درج الكاش).</span>
                           </div>
                         ) : (
                           <div className="text-[11px] font-semibold p-2.5 rounded-xl border flex items-center gap-1.5" style={{
@@ -3472,12 +3484,18 @@ export function POSScreen({
                             {(settings.tipPayoutMethod || 'instant_cash') === 'instant_cash' ? (
                               <>
                                 <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />
-                                <span>🟢 الصرف الفوري: يُخصم البقشيش فوراً نقداً من درج الكاش لتسليمه للموظف، وتُسجل الفيزا بكامل المبلغ ({receivedNum.toFixed(2)} {settings.currency}).</span>
+                                <span className="flex items-center gap-1.5">
+                                  <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block shrink-0"></span>
+                                  <span>الصرف الفوري: يُخصم البقشيش فوراً نقداً من درج الكاش لتسليمه للموظف، وتُسجل الفيزا بكامل المبلغ ({receivedNum.toFixed(2)} {settings.currency}).</span>
+                                </span>
                               </>
                             ) : (
                               <>
                                 <Clock size={14} className="text-indigo-600 shrink-0" />
-                                <span>🟡 الصرف المؤجل: يُسجل البقشيش كرصيد مجمع للموظف ويُصرف لاحقاً من الخزينة المحددة.</span>
+                                <span className="flex items-center gap-1.5">
+                                  <span className="w-2 h-2 rounded-full bg-amber-500 inline-block shrink-0"></span>
+                                  <span>الصرف المؤجل: يُسجل البقشيش كرصيد مجمع للموظف ويُصرف لاحقاً من الخزينة المحددة.</span>
+                                </span>
                               </>
                             )}
                           </div>
@@ -3516,7 +3534,7 @@ export function POSScreen({
                             />
                             {settings.tierSettings?.allowTierDiscountWithCashback === false && discount.value > 0 && (
                               <p className="text-[10px] text-amber-800 font-bold mt-1.5 flex items-center gap-1">
-                                <span>ℹ️</span>
+                                <AlertCircle size={12} className="text-amber-700 shrink-0" />
                                 <span>سياسة الصالون: لا يُجمع بين خصم المستوى التلقائي ({discount.value}%) وسداد كامل الفاتورة بالكاش باك.</span>
                               </p>
                             )}
@@ -3558,7 +3576,7 @@ export function POSScreen({
                           <div className="flex items-center gap-2">
                             <input 
                               type="number" 
-                              min="0"
+                              min="0" 
                               placeholder="0"
                               className="w-24 px-3 py-1.5 border border-slate-300 rounded-lg text-left outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
                               value={splitAmounts[t.id] || ''}
@@ -3629,10 +3647,10 @@ export function POSScreen({
                     <Printer size={17} />
                     <span>
                       {paymentMode === 'deferred' 
-                        ? 'تأجيل الفاتورة وطباعتها ⏳' 
+                        ? 'تأجيل الفاتورة وطباعتها' 
                         : paymentMode === 'partial' 
-                        ? 'سداد الدفعة وطباعة الفاتورة ⚖️' 
-                        : 'سداد وطباعة الفاتورة 🖨️'}
+                        ? 'سداد الدفعة وطباعة الفاتورة' 
+                        : 'سداد وطباعة الفاتورة'}
                     </span>
                   </>
                 )}
@@ -3703,7 +3721,7 @@ export function POSScreen({
                 title="طباعة تقرير اليومية مباشرة على الطابعة الافتراضية بدون صناديق حوارية"
               >
                 <Printer size={16} />
-                <span>طباعة مباشرة 🖨️</span>
+                <span>طباعة مباشرة</span>
               </button>
             </div>
           </div>
@@ -3925,8 +3943,9 @@ export function POSScreen({
                             {item.displayPrice} {settings.currency}
                           </span>
                         )}
-                        <span className="text-[9px] font-bold text-slate-400 mt-0.5">
-                          معاينة فقط 👁️
+                        <span className="text-[9px] font-bold text-slate-400 mt-0.5 flex items-center gap-1">
+                          <Eye size={11} className="text-slate-400" />
+                          <span>معاينة فقط</span>
                         </span>
                       </div>
                     </div>
@@ -3943,8 +3962,9 @@ export function POSScreen({
                   {priceCheckFilteredItems.length}
                 </span>
                 <span className="hidden sm:inline text-slate-400">•</span>
-                <span className="text-[11px] text-slate-400 hidden sm:inline">
-                  🔒 نافذة استعلام سريعة للأسعار دون إدخال أي خدمة إلى سلة الفاتورة الحالية.
+                <span className="text-[11px] text-slate-400 hidden sm:inline-flex items-center gap-1">
+                  <Lock size={11} className="text-slate-400" />
+                  <span>نافذة استعلام سريعة للأسعار دون إدخال أي خدمة إلى سلة الفاتورة الحالية.</span>
                 </span>
               </div>
 
@@ -3964,8 +3984,8 @@ export function POSScreen({
       {/* Mobile/Tablet Silent Print Success Notification Toast */}
       {mobilePrintNotice && (
         <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 text-white px-5 py-3 rounded-2xl shadow-2xl border border-emerald-500/50 flex items-center gap-3 backdrop-blur-md transition-all animate-bounce">
-          <div className="w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center font-black text-sm shrink-0 shadow-md shadow-emerald-500/30">
-            ✓
+          <div className="w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-md shadow-emerald-500/30">
+            <Check size={16} />
           </div>
           <span className="text-xs sm:text-sm font-black">{mobilePrintNotice}</span>
         </div>
@@ -4063,12 +4083,13 @@ export function POSScreen({
               <div>
                 <label className="block text-sm font-bold text-amber-700 mb-1 flex items-center justify-between">
                   <span className="flex items-center gap-1.5">
-                    <span>🎁</span>
+                    <Gift size={14} className="text-amber-600" />
                     <span>رقم جوال العميل الذي رشحه (اختياري)</span>
                   </span>
                   {referrerClientInModal && (
-                    <span className="text-[11px] text-emerald-700 font-extrabold bg-emerald-100/90 px-2 py-0.5 rounded-md">
-                      تم التعرف على العميل ✅
+                    <span className="text-[11px] text-emerald-700 font-extrabold bg-emerald-100/90 px-2 py-0.5 rounded-md flex items-center gap-1">
+                      <Check size={11} className="text-emerald-700" />
+                      <span>تم التعرف على العميل</span>
                     </span>
                   )}
                 </label>
@@ -4100,7 +4121,7 @@ export function POSScreen({
                 {/* التحقق من عدم ترشيح العميل لنفسه */}
                 {newClientForm.referredByPhone && newClientForm.phone && newClientForm.referredByPhone.trim().replace(/\D/g, '') === newClientForm.phone.trim().replace(/\D/g, '') && (
                   <p className="text-xs text-red-500 font-bold mt-1.5 flex items-center gap-1">
-                    <span>⚠️</span>
+                    <AlertTriangle size={12} className="text-red-500" />
                     <span>لا يمكن إدخال رقم العميل نفسه كمرشِح</span>
                   </p>
                 )}
@@ -4130,7 +4151,7 @@ export function POSScreen({
                 {/* إشعار في حال كتابة رقم كامل غير مسجل مسبقاً */}
                 {!referrerClientInModal && newClientForm.referredByPhone && newClientForm.referredByPhone.trim().replace(/\D/g, '').length >= 9 && (
                   <div className="mt-1.5 p-2 bg-amber-50 border border-amber-200/80 rounded-xl flex items-center gap-1.5 text-amber-800 text-[11px] font-medium">
-                    <span>ℹ️</span>
+                    <Info size={13} className="shrink-0 text-amber-700" />
                     <span>لم يتم العثور على عميل مسجل بهذا الرقم مسبقاً (سيتم حفظ الرقم كجهة ترشيح)</span>
                   </div>
                 )}
@@ -4192,7 +4213,7 @@ export function POSScreen({
                 onClick={() => setShowScheduleModal(false)}
                 className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 cursor-pointer"
               >
-                ✕
+                <X size={16} />
               </button>
             </div>
 
@@ -4321,7 +4342,7 @@ export function POSScreen({
         </div>
       )}
 
-      {/* ⏸️ Held / Suspended Invoices Modal */}
+      {/* Held / Suspended Invoices Modal */}
       {showHeldInvoicesModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xl overflow-hidden flex flex-col max-h-[85vh] animate-in fade-in zoom-in-95 border border-slate-200">
@@ -4371,12 +4392,14 @@ export function POSScreen({
                               </h4>
                               {held.bookingId && (
                                 <span className="text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-full flex items-center gap-1">
-                                  <span>📅 حجز مكتمل</span>
+                                  <Calendar size={11} className="text-indigo-600" />
+                                  <span>حجز مكتمل</span>
                                 </span>
                               )}
                               {held.queueNumber && (
-                                <span className="text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-full font-mono">
-                                  🎟️ دور #{held.queueNumber}
+                                <span className="text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-full font-mono flex items-center gap-1">
+                                  <Ticket size={11} className="text-amber-800" />
+                                  <span>دور #{held.queueNumber}</span>
                                 </span>
                               )}
                               {held.client?.phone && (
@@ -4388,13 +4411,14 @@ export function POSScreen({
                                 </span>
                               )}
                               {held.id === activeHeldInvoiceId ? (
-                                <span className="text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                <span className="text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full flex items-center gap-1.5">
                                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
-                                  <span>🟢 مفتوحة حالياً على الكاشير</span>
+                                  <span>مفتوحة حالياً على الكاشير</span>
                                 </span>
                               ) : (held.isOpen && held.openedBy ? (
-                                <span className="text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-full">
-                                  👤 مفتوحة بواسطة ({held.openedBy})
+                                <span className="text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                  <User size={11} className="text-amber-800" />
+                                  <span>مفتوحة بواسطة ({held.openedBy})</span>
                                 </span>
                               ) : null)}
                             </div>
@@ -4479,7 +4503,7 @@ export function POSScreen({
         </div>
       )}
 
-      {/* ✂️☕ نافذة تفضيلات العميل وإمكانية التعديل عليها */}
+      {/* نافذة تفضيلات العميل وإمكانية التعديل عليها */}
       {showPreferencesModal && selectedClient && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
           <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-150">
@@ -4513,7 +4537,7 @@ export function POSScreen({
               {savePrefSuccess && (
                 <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-800 p-3 rounded-2xl text-xs font-black flex items-center gap-2 animate-in fade-in">
                   <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
-                  <span>تم حفظ وتحديث تفضيلات العميل بنجاح في قاعدة البيانات وتظهر لجميع الفروع ✓</span>
+                  <span>تم حفظ وتحديث تفضيلات العميل بنجاح في قاعدة البيانات وتظهر لجميع الفروع</span>
                 </div>
               )}
 
@@ -4521,7 +4545,7 @@ export function POSScreen({
               <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/90 shadow-2xs space-y-3.5">
                 <h4 className="text-xs sm:text-sm font-black text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-2.5">
                   <Scissors size={16} className="text-indigo-600" />
-                  <span>تفضيلات الحلاقة وقصة الشعر واللحية ✂️</span>
+                  <span>تفضيلات الحلاقة وقصة الشعر واللحية</span>
                 </h4>
 
                 {/* Shaving Method Cards */}
@@ -4529,10 +4553,10 @@ export function POSScreen({
                   <label className="block text-xs font-bold text-slate-700 mb-2">أداة وطريقة الحلاقة المفضلة للعميل:</label>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     {[
-                      { id: 'machine', label: 'ماكينة ⚡', desc: 'تجنب الموس الحاد' },
-                      { id: 'blade', label: 'موس كلاسيكي 🪒', desc: 'تنعيم بالموس' },
-                      { id: 'scissors_only', label: 'مقص فقط ✂️', desc: 'قص هادئ بالمقص' },
-                      { id: 'both', label: 'ماكينة + موس ✨', desc: 'حلاقة مدمجة' }
+                      { id: 'machine', label: 'ماكينة', desc: 'تجنب الموس الحاد' },
+                      { id: 'blade', label: 'موس كلاسيكي', desc: 'تنعيم بالموس' },
+                      { id: 'scissors_only', label: 'مقص فقط', desc: 'قص هادئ بالمقص' },
+                      { id: 'both', label: 'ماكينة + موس', desc: 'حلاقة مدمجة' }
                     ].map(opt => (
                       <label
                         key={opt.id}
@@ -4608,7 +4632,7 @@ export function POSScreen({
               <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/90 shadow-2xs space-y-3.5">
                 <h4 className="text-xs sm:text-sm font-black text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-2.5">
                   <Coffee size={16} className="text-amber-700" />
-                  <span>تفضيلات الضيافة والمشروبات ☕</span>
+                  <span>تفضيلات الضيافة والمشروبات</span>
                 </h4>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -4619,14 +4643,14 @@ export function POSScreen({
                       onChange={e => setPrefForm({ ...prefForm, favoriteBeverage: e.target.value })}
                       className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-indigo-600 focus:bg-white"
                     >
-                      <option value="قهوة تركي">☕ قهوة تركي</option>
-                      <option value="إسبريسو">☕ إسبريسو</option>
-                      <option value="قهوة عربية">☕ قهوة عربية</option>
-                      <option value="شاي كرك">🫖 شاي كرك</option>
-                      <option value="شاي أحمر">🫖 شاي أحمر كلاسيكي</option>
-                      <option value="شاي أخضر">🍵 شاي أخضر بالنعناع</option>
-                      <option value="ماء فقط">💧 ماء فقط</option>
-                      <option value="عصير برتقال">🍊 عصير طازج</option>
+                      <option value="قهوة تركي">قهوة تركي</option>
+                      <option value="إسبريسو">إسبريسو</option>
+                      <option value="قهوة عربية">قهوة عربية</option>
+                      <option value="شاي كرك">شاي كرك</option>
+                      <option value="شاي أحمر">شاي أحمر كلاسيكي</option>
+                      <option value="شاي أخضر">شاي أخضر بالنعناع</option>
+                      <option value="ماء فقط">ماء فقط</option>
+                      <option value="عصير برتقال">عصير طازج</option>
                     </select>
                   </div>
 
@@ -4637,11 +4661,11 @@ export function POSScreen({
                       onChange={e => setPrefForm({ ...prefForm, sugarLevel: e.target.value as any })}
                       className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-indigo-600 focus:bg-white"
                     >
-                      <option value="none">🚫 بدون سكر (سادة)</option>
-                      <option value="half">🥄 نصف ملعقة (سكر خفيف)</option>
-                      <option value="one_spoon">🥄 ملعقة واحدة (مضبوط)</option>
-                      <option value="two_spoons">🥄🥄 ملعقتين</option>
-                      <option value="extra">🍯 زيادة سكر (حلو)</option>
+                      <option value="none">بدون سكر (سادة)</option>
+                      <option value="half">نصف ملعقة (سكر خفيف)</option>
+                      <option value="one_spoon">ملعقة واحدة (مضبوط)</option>
+                      <option value="two_spoons">ملعقتين</option>
+                      <option value="extra">زيادة سكر (حلو)</option>
                     </select>
                   </div>
 
@@ -4652,8 +4676,8 @@ export function POSScreen({
                       onChange={e => setPrefForm({ ...prefForm, waterTemperature: e.target.value as any })}
                       className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-indigo-600 focus:bg-white"
                     >
-                      <option value="cold">❄️ ماء بارد</option>
-                      <option value="room">💧 ماء عادي (حرارة الغرفة)</option>
+                      <option value="cold">ماء بارد</option>
+                      <option value="room">ماء عادي (حرارة الغرفة)</option>
                       <option value="none">لا يطلب ماء</option>
                     </select>
                   </div>
@@ -4690,7 +4714,7 @@ export function POSScreen({
                 className="px-5 py-2 rounded-xl text-xs font-black bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-600/20 flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
               >
                 <Save size={15} />
-                <span>حفظ التفضيلات وتطبيقها فوراً ✓</span>
+                <span>حفظ التفضيلات وتطبيقها فوراً</span>
               </button>
             </div>
           </div>
@@ -4722,7 +4746,7 @@ export function POSScreen({
                   className="bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-xl text-xs font-black shadow-xs cursor-pointer transition-all active:scale-95 flex items-center gap-1.5"
                 >
                   <Package size={14} />
-                  <span>مرتجع أصناف عام (بدون فاتورة) 📦</span>
+                  <span>مرتجع أصناف عام (بدون فاتورة)</span>
                 </button>
                 <button 
                   onClick={() => setShowPOSReturnInvoicePicker(false)}

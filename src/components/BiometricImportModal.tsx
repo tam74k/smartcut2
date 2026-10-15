@@ -262,7 +262,7 @@ export function BiometricImportModal({
         });
       }
 
-      setSaveSuccessMsg(`🎉 تم بنجاح استيراد ${parsedLogs.length} حركة بصمة وتحديث سجلات التايم شيت وساعات العمل فوراً.`);
+      setSaveSuccessMsg(`تم بنجاح استيراد ${parsedLogs.length} حركة بصمة وتحديث سجلات التايم شيت وساعات العمل فوراً.`);
       setTimeout(() => {
         handleClose();
       }, 1800);
@@ -307,7 +307,7 @@ export function BiometricImportModal({
               className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
             >
               <Download size={14} className="text-emerald-600" />
-              <span>تحميل ملف العينة 📥</span>
+              <span>تحميل ملف العينة</span>
             </button>
 
             <button
@@ -361,7 +361,7 @@ export function BiometricImportModal({
                   </p>
                 </div>
                 <span className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl text-xs font-black shadow-md shadow-emerald-600/20 transition-all">
-                  تحديد ملف البصمات 📂
+                  تحديد ملف البصمات
                 </span>
               </label>
             </div>
@@ -441,7 +441,17 @@ export function BiometricImportModal({
                                 ? 'bg-blue-100 text-blue-700 border border-blue-200' 
                                 : 'bg-purple-100 text-purple-700 border border-purple-200'
                             }`}>
-                              {log.type === 'check_in' ? '🟢 دخول (Check-In)' : '🔴 خروج (Check-Out)'}
+                              {log.type === 'check_in' ? (
+                                <span className="inline-flex items-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
+                                  <span>دخول (Check-In)</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-purple-600"></span>
+                                  <span>خروج (Check-Out)</span>
+                                </span>
+                              )}
                             </span>
                           </td>
                           <td className="p-3 font-mono text-slate-500">
@@ -481,7 +491,7 @@ export function BiometricImportModal({
               ) : (
                 <>
                   <CheckCircle2 size={16} />
-                  <span>حفظ واستيراد {parsedLogs.length} حركة بصمة 🚀</span>
+                  <span>حفظ واستيراد {parsedLogs.length} حركة بصمة</span>
                 </>
               )}
             </button>
