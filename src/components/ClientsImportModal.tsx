@@ -21,6 +21,7 @@ interface ParsedClientCandidate {
   phone: string;
   email: string;
   dob: string;
+  clientType?: 'citizen' | 'foreigner';
   isVip: boolean;
   loyaltyPoints: number;
   cashback: number;
@@ -164,6 +165,15 @@ export function ClientsImportModal({
           row['Notes'] || ''
         ).trim();
 
+        // نوع العميل / الصفة (مواطن / أجنبي)
+        const typeRaw = String(
+          row['نوع العميل (مواطن/أجنبي)'] ||
+          row['نوع العميل'] ||
+          row['الصفة'] ||
+          row['clientType'] || ''
+        ).trim().toLowerCase();
+        const clientType: 'citizen' | 'foreigner' = (typeRaw.includes('أجنبي') || typeRaw.includes('اجنبي') || typeRaw === 'foreigner') ? 'foreigner' : 'citizen';
+
         const validationErrors: string[] = [];
         if (!nameRaw) validationErrors.push('اسم العميل مفقود');
         if (!phoneRaw || phoneRaw.length < 5) validationErrors.push('رقم الجوال غير صالح أو مفقود');
@@ -179,6 +189,7 @@ export function ClientsImportModal({
           phone: phoneRaw,
           email: emailRaw,
           dob: dobStr,
+          clientType,
           isVip,
           loyaltyPoints,
           cashback,
@@ -250,6 +261,7 @@ export function ClientsImportModal({
           name: c.name || existing!.name,
           email: c.email || existing!.email,
           dob: c.dob || existing!.dob,
+          clientType: c.clientType || existing!.clientType || 'citizen',
           isVip: c.isVip || existing!.isVip,
           loyaltyPoints: c.loyaltyPoints > 0 ? c.loyaltyPoints : existing!.loyaltyPoints,
           cashback: c.cashback > 0 ? c.cashback : existing!.cashback,
@@ -269,6 +281,7 @@ export function ClientsImportModal({
           phone: c.phone,
           email: c.email || undefined,
           dob: c.dob || undefined,
+          clientType: c.clientType || 'citizen',
           isVip: c.isVip,
           vipSince: c.isVip ? getTodayLocalDateString() : undefined,
           loyaltyPoints: c.loyaltyPoints,

@@ -2062,6 +2062,38 @@ export function SettingsScreen({
           </div>
         </div>
 
+        {/* Dual Pricing for Citizen / Foreigner */}
+        <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
+          <div className="flex items-center gap-2 mb-4 border-b border-slate-100 pb-3">
+            <div className="w-8 h-8 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center">
+              <Globe size={16} />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-800">تفعيل سعرين للخدمة (مواطن وأجنبي)</h3>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                تحديد تسعيرتين منفصلتين لكل خدمة (سعر للمواطن وسعر للأجنبي)، واحتساب السعر تلقائياً على الفاتورة حسب نوع العميل
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100">
+            <div>
+              <p className="font-bold text-[13px] text-slate-800">تفعيل التسعير المزدوج (مواطن / أجنبي)</p>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                عند التفعيل، يمكن تحديد سعر خاص للأجنبي لكل خدمة، وعند اختيار العميل في الفاتورة يتم تطبيق سعر المواطن أو الأجنبي تلقائياً. والخدمة التي لها سعر واحد تظهر للجميع بنفس السعر.
+              </p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer shrink-0">
+              <input 
+                type="checkbox" 
+                className="sr-only peer"
+                checked={Boolean(settings.enableDualPricing)}
+                onChange={(e) => handleChange('enableDualPricing', e.target.checked)}
+              />
+              <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+            </label>
+          </div>
+        </div>
+
         {/* VAT Settings */}
         <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
           <div className="flex items-center gap-2 mb-4 border-b border-slate-100 pb-3">

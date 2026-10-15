@@ -51,15 +51,28 @@ export function ClientsScreen({
   const [savePrefSuccess, setSavePrefSuccess] = useState(false);
 
   // Add Client Form
-  const [clientForm, setClientForm] = useState({
+  const [clientForm, setClientForm] = useState<{
+    name: string;
+    phone: string;
+    referredByPhone: string;
+    dob: string;
+    notes: string;
+    loyaltyPoints: number;
+    isVip: boolean;
+    clientType: 'citizen' | 'foreigner';
+  }>({
     name: '',
     phone: '',
     referredByPhone: '',
     dob: '',
     notes: '',
     loyaltyPoints: 0,
-    isVip: false
+    isVip: false,
+    clientType: 'citizen'
   });
+
+  // Client Type Filter
+  const [clientTypeFilter, setClientTypeFilter] = useState<'all' | 'citizen' | 'foreigner'>('all');
 
   // العميل المرشِّح المستنتج من رقم الهاتف المدخل في نافذة إضافة عميل جديد
   const referrerClientInModal = useMemo(() => {
@@ -79,14 +92,20 @@ export function ClientsScreen({
 
   // Filtered Clients List
   const filteredClients = useMemo(() => {
-    if (!searchTerm.trim()) return clients;
+    let result = clients;
+    if (clientTypeFilter === 'citizen') {
+      result = result.filter(c => c.clientType !== 'foreigner');
+    } else if (clientTypeFilter === 'foreigner') {
+      result = result.filter(c => c.clientType === 'foreigner');
+    }
+    if (!searchTerm.trim()) return result;
     const term = searchTerm.toLowerCase().trim();
-    return clients.filter(c => 
+    return result.filter(c => 
       c.name.toLowerCase().includes(term) || 
       (c.phone && c.phone.includes(term)) ||
       (c.notes && c.notes.toLowerCase().includes(term))
     );
-  }, [clients, searchTerm]);
+  }, [clients, searchTerm, clientTypeFilter]);
 
   // Helper to get client's invoices across all branches
   const getClientInvoices = (client: Client) => {
@@ -174,6 +193,7 @@ export function ClientsScreen({
       id: 'cli-' + Math.random().toString(36).substring(2, 9),
       name: clientForm.name.trim(),
       phone: cleanPhone,
+      clientType: clientForm.clientType || 'citizen',
       referredByPhone: cleanReferredBy,
       dob: clientForm.dob || undefined,
       notes: clientForm.notes || undefined,
@@ -188,7 +208,7 @@ export function ClientsScreen({
     setClients([...clients, newClient]);
     DB.saveClient(newClient);
     setShowAddModal(false);
-    setClientForm({ name: '', phone: '', referredByPhone: '', dob: '', notes: '', loyaltyPoints: 0, isVip: false });
+    setClientForm({ name: '', phone: '', referredByPhone: '', dob: '', notes: '', loyaltyPoints: 0, isVip: false, clientType: 'citizen' });
   };
 
   const vipThreshold = settings.vipSettings?.spendingThreshold || 1000;
@@ -212,7 +232,44 @@ export function ClientsScreen({
         </div>
 
         <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
-          <div className="relative flex-1 sm:w-72">
+          {/* Nationality Filter: All | Citizens | Foreigners */}
+          <div className="flex bg-slate-200/80 p-0.5 rounded-xl text-xs font-bold shrink-0">
+            <button
+              type="button"
+              onClick={() => setClientTypeFilter('all')}
+              className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                clientTypeFilter === 'all'
+                  ? 'bg-white text-indigo-950 font-black shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              الكل ({clients.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setClientTypeFilter('citizen')}
+              className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                clientTypeFilter === 'citizen'
+                  ? 'bg-white text-emerald-900 font-black shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              مواطنون ({clients.filter(c => c.clientType !== 'foreigner').length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setClientTypeFilter('foreigner')}
+              className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                clientTypeFilter === 'foreigner'
+                  ? 'bg-white text-amber-900 font-black shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              أجانب ({clients.filter(c => c.clientType === 'foreigner').length})
+            </button>
+          </div>
+
+          <div className="relative flex-1 sm:w-64">
             <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
             <input 
               type="text" 
@@ -281,6 +338,13 @@ export function ClientsScreen({
                         <div>
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="font-extrabold text-slate-900 text-xs">{client.name}</span>
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${
+                              client.clientType === 'foreigner' 
+                                ? 'bg-amber-50 text-amber-800 border border-amber-200' 
+                                : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                            }`}>
+                              {client.clientType === 'foreigner' ? 'أجنبي' : 'مواطن'}
+                            </span>
                             <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border shadow-2xs flex items-center gap-1 ${clientTier.badgeBg} ${clientTier.badgeText} ${clientTier.badgeBorder}`}>
                               {renderTierIcon(clientTier.id, 11)}
                               <span>{clientTier.name}</span>
@@ -417,6 +481,13 @@ export function ClientsScreen({
                         {renderTierIcon(clientTier.id, 13)}
                         <span>مستوى {clientTier.name}</span>
                         {clientTier.discountPercentage > 0 && <span>({clientTier.discountPercentage}% خصم)</span>}
+                      </span>
+                      <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full border ${
+                        client.clientType === 'foreigner'
+                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                          : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                      }`}>
+                        {client.clientType === 'foreigner' ? 'أجنبي' : 'مواطن'}
                       </span>
                     </div>
                     <div className="flex flex-wrap items-center gap-3 mt-1 text-xs text-slate-300">
@@ -1112,6 +1183,39 @@ export function ClientsScreen({
                     onChange={e => setClientForm({ ...clientForm, loyaltyPoints: Number(e.target.value) })}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-indigo-600 font-bold"
                   />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
+                  <User size={13} className="text-indigo-600" />
+                  <span>نوع العميل / الصفة (مواطن - أجنبي) *</span>
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setClientForm({ ...clientForm, clientType: 'citizen' })}
+                    className={`py-2 px-3 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 border transition-all cursor-pointer ${
+                      clientForm.clientType !== 'foreigner'
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <Check size={13} className={clientForm.clientType !== 'foreigner' ? 'opacity-100' : 'opacity-0'} />
+                    <span>مواطن</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setClientForm({ ...clientForm, clientType: 'foreigner' })}
+                    className={`py-2 px-3 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 border transition-all cursor-pointer ${
+                      clientForm.clientType === 'foreigner'
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <Check size={13} className={clientForm.clientType === 'foreigner' ? 'opacity-100' : 'opacity-0'} />
+                    <span>أجنبي</span>
+                  </button>
                 </div>
               </div>
 

@@ -252,6 +252,7 @@ export function ServicesScreen({
       durationMinutes: 30,
       cashbackPercentage: 0,
       commissionableAmount: undefined,
+      foreignerPrice: undefined,
       isTargetExempt: false,
       imageUrl: '',
       isPriority: false,
@@ -473,6 +474,7 @@ export function ServicesScreen({
         cardColor: serviceFormData.cardColor || '#10b981',
         priorityOrder: serviceFormData.priorityOrder ?? 0,
         price: Number(serviceFormData.price) || 0,
+        foreignerPrice: (serviceFormData.foreignerPrice !== undefined && serviceFormData.foreignerPrice !== null && String(serviceFormData.foreignerPrice).trim() !== '' && Number(serviceFormData.foreignerPrice) > 0) ? Number(serviceFormData.foreignerPrice) : undefined,
         commissionableAmount: (serviceFormData.commissionableAmount !== undefined && serviceFormData.commissionableAmount !== null && Number(serviceFormData.commissionableAmount) > 0) ? Number(serviceFormData.commissionableAmount) : undefined,
         isTargetExempt: Boolean(serviceFormData.isTargetExempt),
         isActive: serviceFormData.isActive !== false,
@@ -640,7 +642,7 @@ export function ServicesScreen({
                   <tr>
                     <th className="px-4 py-3">الاسم</th>
                     <th className="px-4 py-3">التصنيف</th>
-                    <th className="px-4 py-3">السعر الشامل</th>
+                    <th className="px-4 py-3">{settings.enableDualPricing ? 'السعر (مواطن / أجنبي)' : 'السعر الشامل'}</th>
                     {settings.vatEnabled && <th className="px-4 py-3 text-slate-500">بدون ضريبة</th>}
                     {settings.vatEnabled && <th className="px-4 py-3 text-slate-500">قيمة الضريبة</th>}
                     <th className="px-4 py-3">سعر الخصم</th>
@@ -704,7 +706,15 @@ export function ServicesScreen({
                           {categories.find(c => c.id === service.categoryId || c.name === service.categoryId)?.name || service.categoryId || 'خدمات عامة'}
                         </span>
                       </td>
-                      <td className="px-4 py-4 font-bold">{service.price}</td>
+                      <td className="px-4 py-4 font-bold">
+                        <div className="text-slate-900">{service.price} {settings.currency}</div>
+                        {Boolean(settings.enableDualPricing && service.foreignerPrice && service.foreignerPrice > 0) && (
+                          <div className="text-[11px] text-amber-800 font-bold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 mt-1 inline-flex items-center gap-1">
+                            <span>أجنبي:</span>
+                            <span>{service.foreignerPrice} {settings.currency}</span>
+                          </div>
+                        )}
+                      </td>
                       {settings.vatEnabled && (
                         <>
                           <td className="px-4 py-4 text-slate-500">{calculateVatDetails(service.price).base.toFixed(2)}</td>
@@ -978,12 +988,14 @@ export function ServicesScreen({
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">السعر الأساسي</label>
+                  <label className="block text-sm font-bold text-slate-700 mb-1">
+                    {settings.enableDualPricing ? `سعر المواطن (الأساسي) (${settings.currency})` : `السعر الأساسي (${settings.currency})`}
+                  </label>
                   <input 
                     type="number" 
                     value={serviceFormData.price || ''}
                     onChange={e => setServiceFormData({...serviceFormData, price: Number(e.target.value)})}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 outline-none focus:border-primary" 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 outline-none focus:border-primary font-bold" 
                   />
                 </div>
                 <div>
@@ -992,10 +1004,33 @@ export function ServicesScreen({
                     type="number" 
                     value={serviceFormData.discountPrice || ''}
                     onChange={e => setServiceFormData({...serviceFormData, discountPrice: e.target.value ? Number(e.target.value) : undefined})}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 outline-none focus:border-primary" 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 outline-none focus:border-primary font-bold" 
                   />
                 </div>
               </div>
+
+              {Boolean(settings.enableDualPricing) && (
+                <div className="bg-amber-50/70 p-3.5 rounded-xl border border-amber-200 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-black text-amber-900">
+                      سعر الخدمة للأجنبي ({settings.currency})
+                    </label>
+                    <span className="text-[10px] text-amber-700 font-bold bg-amber-100 px-2 py-0.5 rounded-md">
+                      اختياري
+                    </span>
+                  </div>
+                  <input 
+                    type="number" 
+                    value={serviceFormData.foreignerPrice || ''}
+                    onChange={e => setServiceFormData({...serviceFormData, foreignerPrice: e.target.value ? Number(e.target.value) : undefined})}
+                    placeholder={`اتركه فارغاً ليطبق السعر الأساسي (${serviceFormData.price || 0} ${settings.currency})`}
+                    className="w-full bg-white border border-amber-300 rounded-lg px-3 py-2 text-xs font-bold text-amber-950 outline-none focus:border-amber-500" 
+                  />
+                  <p className="text-[11px] text-amber-800 leading-relaxed">
+                    عند اختيار عميل (أجنبي) في شاشة الكاشير سيتم اعتماد هذا السعر تلقائياً، وفي حال عدم إدخال سعر أجنبي سيتم استخدام السعر الأساسي.
+                  </p>
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-bold text-slate-700 mb-1">كاش باك للعميل (%)</label>
                 <input 

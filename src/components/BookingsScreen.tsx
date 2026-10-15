@@ -12,7 +12,7 @@ import {
   CalendarOff, ShieldAlert, Trash2, Lock, ShieldCheck, Check,
   DollarSign, Wallet, CreditCard, Banknote, XCircle, FileSpreadsheet,
   MapPin, ShoppingBag, Package, Pencil, AlertTriangle, RotateCcw, CheckCircle,
-  Globe, Zap, Info, Tag, Landmark, BarChart3, ArrowLeft, Star
+  Globe, Zap, Info, Tag, Landmark, BarChart3, ArrowLeft, Star, Gift
 } from 'lucide-react';
 import { 
   isDateBlocked, isHourBlocked, isStaffAvailableOnDate, 
@@ -257,6 +257,101 @@ export function BookingsScreen({
   const [matchingClientInfo, setMatchingClientInfo] = useState<Client | null>(null);
   const [showPhoneSuggestions, setShowPhoneSuggestions] = useState(false);
   const [highlightedPhoneIndex, setHighlightedPhoneIndex] = useState(-1);
+
+  // Add Client Modal State (مطابقة لنافذة إضافة عميل جديد المعتادة مع يوم وشهر الميلاد)
+  const [showAddClientModal, setShowAddClientModal] = useState(false);
+  const [newClientForm, setNewClientForm] = useState<{
+    name: string;
+    phone: string;
+    referredByPhone: string;
+    dobDay: string;
+    dobMonth: string;
+    clientType: 'citizen' | 'foreigner';
+  }>({
+    name: '',
+    phone: '',
+    referredByPhone: '',
+    dobDay: '',
+    dobMonth: '',
+    clientType: 'citizen'
+  });
+
+  const referrerClientInModal = useMemo(() => {
+    const p = (newClientForm.referredByPhone || '').trim();
+    const cleanDigits = p.replace(/\D/g, '');
+    if (!cleanDigits || cleanDigits.length < 8) return null;
+    const selfDigits = (newClientForm.phone || '').trim().replace(/\D/g, '');
+    if (selfDigits && cleanDigits === selfDigits) return null;
+    return clients.find(c => {
+      if (!c.phone) return false;
+      const cd = c.phone.trim().replace(/\D/g, '');
+      return cd === cleanDigits || (cleanDigits.length >= 8 && cd.endsWith(cleanDigits));
+    }) || null;
+  }, [newClientForm.referredByPhone, newClientForm.phone, clients]);
+
+  const openAddClientModal = (initialPhone?: string, initialName?: string) => {
+    setNewClientForm({
+      name: (initialName || '').trim(),
+      phone: (initialPhone || '').trim(),
+      referredByPhone: '',
+      dobDay: '',
+      dobMonth: '',
+      clientType: 'citizen'
+    });
+    setShowPhoneSuggestions(false);
+    setShowAddClientModal(true);
+  };
+
+  const handleSaveNewClientFromBooking = async () => {
+    if (!newClientForm.name.trim() || !newClientForm.phone.trim()) {
+      alert('الرجاء إدخال اسم العميل ورقم الجوال');
+      return;
+    }
+    const cleanPhone = newClientForm.phone.trim();
+    const cleanReferredBy = (newClientForm.referredByPhone && newClientForm.referredByPhone.trim() !== cleanPhone)
+      ? newClientForm.referredByPhone.trim()
+      : undefined;
+    const dob = (newClientForm.dobDay && newClientForm.dobMonth) 
+      ? `${newClientForm.dobMonth}-${newClientForm.dobDay}` 
+      : undefined;
+
+    const newClient: Client = {
+      id: 'c-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
+      salonId: settings.salonId,
+      branchId: activeBranchId,
+      name: newClientForm.name.trim(),
+      phone: cleanPhone,
+      clientType: newClientForm.clientType || 'citizen',
+      referredByPhone: cleanReferredBy,
+      dobDay: newClientForm.dobDay || undefined,
+      dobMonth: newClientForm.dobMonth || undefined,
+      dob: dob,
+      loyaltyPoints: 0,
+      cashback: 0,
+      createdAt: new Date().toISOString()
+    };
+
+    if (setClients) {
+      setClients([newClient, ...clients]);
+    }
+    try {
+      await DB.saveClient(newClient, settings.salonId);
+    } catch (err) {
+      console.warn('Error saving new client to DB:', err);
+    }
+
+    // تحديث بيانات الحجز بالعميل الجديد مباشرة
+    setNewBooking(prev => ({
+      ...prev,
+      phone: newClient.phone,
+      clientName: newClient.name,
+      customerId: newClient.id
+    }));
+    setMatchingClientInfo(newClient);
+    setShowPhoneSuggestions(false);
+    setShowAddClientModal(false);
+    setNewClientForm({ name: '', phone: '', referredByPhone: '', dobDay: '', dobMonth: '', clientType: 'citizen' });
+  };
 
   // Cancellation & Deposit Refund Policy Modal State
   const [cancellingBooking, setCancellingBooking] = useState<Booking | null>(null);
@@ -685,6 +780,33 @@ export function BookingsScreen({
     setShowAddModal(true);
   };
 
+  // تحديث أسعار خدمات الحجز تلقائياً وفق نوع العميل (مواطن / أجنبي) عند تفعيل التسعير المزدوج
+  useEffect(() => {
+    if (!settings.enableDualPricing || !newBooking.services || newBooking.services.length === 0) return;
+    const isFore = Boolean(matchingClientInfo?.clientType === 'foreigner');
+    let changed = false;
+    const updatedServices = newBooking.services.map(bs => {
+      if (bs.type === 'product') return bs;
+      const srv = services.find(s => s.id === bs.serviceId);
+      if (!srv) return bs;
+      const targetPrice = (isFore && srv.foreignerPrice && Number(srv.foreignerPrice) > 0) ? Number(srv.foreignerPrice) : srv.price;
+      if (bs.price !== targetPrice) {
+        changed = true;
+        return { ...bs, price: targetPrice };
+      }
+      return bs;
+    });
+
+    if (changed) {
+      const totals = calculateBookingTotals({ ...newBooking, services: updatedServices });
+      setNewBooking(prev => ({
+        ...prev,
+        services: updatedServices,
+        totalAmount: totals.netTotal
+      }));
+    }
+  }, [matchingClientInfo?.id, matchingClientInfo?.clientType, settings.enableDualPricing, services]);
+
   // Add Service to Booking Form
   const addServiceToBooking = () => {
     const srv = services.find(s => s.id === serviceToAdd);
@@ -692,13 +814,18 @@ export function BookingsScreen({
     const emp = employees.find(e => e.id === techToAdd);
     const parsedQty = parseInt(serviceQtyToAdd, 10);
     const qty = (!isNaN(parsedQty) && parsedQty > 0) ? parsedQty : 1;
+    const isForeignerBooking = Boolean(settings.enableDualPricing && matchingClientInfo?.clientType === 'foreigner');
+    const effectivePrice = (isForeignerBooking && srv.foreignerPrice && Number(srv.foreignerPrice) > 0)
+      ? Number(srv.foreignerPrice)
+      : srv.price;
+
     const bs: BookingService = {
       id: Math.random().toString(36).substr(2, 9),
       serviceId: srv.id,
       serviceName: srv.name,
       technicianId: emp ? emp.id : '',
       technicianName: emp ? emp.name : 'غير محدد',
-      price: srv.price,
+      price: effectivePrice,
       quantity: qty,
       type: 'service',
       discountType: 'fixed',
@@ -1112,7 +1239,7 @@ export function BookingsScreen({
     }
 
     // Auto add client to overall salon clients database if new
-    let matchedClient = clients.find(c => c.phone && c.phone.trim() === newBooking.phone!.trim());
+    let matchedClient = clients.find(c => (c.phone && c.phone.trim() === newBooking.phone!.trim()) || (newBooking.customerId && c.id === newBooking.customerId));
     if (setClients && newBooking.phone && !matchedClient) {
       const cleanInput = newBooking.phone.trim();
       matchedClient = {
@@ -1126,6 +1253,11 @@ export function BookingsScreen({
         createdAt: new Date().toISOString()
       };
       setClients([matchedClient, ...clients]);
+      try {
+        await DB.saveClient(matchedClient, settings.salonId);
+      } catch (err) {
+        console.warn('DB.saveClient fallback error:', err);
+      }
     }
 
     // إذا كان الحجز بتاريخ اليوم، يتم إدراجه في شاشة المناداة دون فتح فاتورة معلقة نهائياً
@@ -3372,11 +3504,22 @@ export function BookingsScreen({
                         <Phone size={13} className="text-indigo-600" />
                         <span>رقم الموبايل (البحث والإكمال التلقائي) *</span>
                       </label>
-                      {phoneSuggestions.length > 0 && showPhoneSuggestions && (
-                        <span className="text-[10px] text-indigo-600 bg-indigo-50 border border-indigo-200/80 px-2 py-0.5 rounded-full font-bold">
-                          {phoneSuggestions.length} عميل مطابق
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1.5">
+                        {phoneSuggestions.length > 0 && showPhoneSuggestions && (
+                          <span className="text-[10px] text-indigo-600 bg-indigo-50 border border-indigo-200/80 px-2 py-0.5 rounded-full font-bold">
+                            {phoneSuggestions.length} عميل مطابق
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => openAddClientModal(newBooking.phone, newBooking.clientName)}
+                          className="text-[11px] font-black text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200/80 px-2.5 py-0.5 rounded-lg flex items-center gap-1 transition-all cursor-pointer"
+                          title="إضافة عميل جديد وتسجيل يوم وشهر الميلاد"
+                        >
+                          <Plus size={12} />
+                          <span>+ عميل جديد</span>
+                        </button>
+                      </div>
                     </div>
 
                     <div className="relative">
@@ -3406,6 +3549,9 @@ export function BookingsScreen({
                             if (showPhoneSuggestions && highlightedPhoneIndex >= 0 && phoneSuggestions[highlightedPhoneIndex]) {
                               e.preventDefault();
                               handleSelectClientSuggestion(phoneSuggestions[highlightedPhoneIndex]);
+                            } else if (!matchingClientInfo && (newBooking.phone || '').trim().length >= 8) {
+                              e.preventDefault();
+                              openAddClientModal(newBooking.phone, newBooking.clientName);
                             }
                           } else if (e.key === 'Escape') {
                             setShowPhoneSuggestions(false);
@@ -3497,6 +3643,20 @@ export function BookingsScreen({
                               );
                             })}
                           </div>
+
+                          <div className="p-2 bg-slate-50 border-t border-slate-100">
+                            <button
+                              type="button"
+                              onMouseDown={e => {
+                                e.preventDefault();
+                                openAddClientModal(newBooking.phone, newBooking.clientName);
+                              }}
+                              className="w-full text-center py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                            >
+                              <Plus size={14} />
+                              <span>تسجيل كعميل جديد (مع تحديد يوم وشهر الميلاد)</span>
+                            </button>
+                          </div>
                         </div>
                       </>
                     )}
@@ -3507,31 +3667,89 @@ export function BookingsScreen({
                         <div className="flex items-center gap-2">
                           <Sparkles size={16} className="text-emerald-600 shrink-0" />
                           <div>
-                            <p className="font-black text-emerald-900">عميل مسجل: {matchingClientInfo.name}</p>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <p className="font-black text-emerald-900">عميل مسجل: {matchingClientInfo.name}</p>
+                              <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-md ${
+                                matchingClientInfo.clientType === 'foreigner' 
+                                  ? 'bg-amber-100 text-amber-900 border border-amber-300' 
+                                  : 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                              }`}>
+                                {matchingClientInfo.clientType === 'foreigner' ? 'أجنبي' : 'مواطن'}
+                              </span>
+                            </div>
                             <p className="text-[10px] text-emerald-700 font-bold">
                               نقاط الولاء: {matchingClientInfo.loyaltyPoints || 0} نقطة • الكاش باك: {matchingClientInfo.cashback || 0} {settings.currency}
+                              {(matchingClientInfo.dob || (matchingClientInfo.dobDay && matchingClientInfo.dobMonth)) && (
+                                <span className="mr-1.5 text-indigo-800 font-black bg-indigo-50 px-1.5 py-0.5 rounded">
+                                  • يوم وشهر الميلاد: {matchingClientInfo.dobDay ? `${matchingClientInfo.dobDay}/${matchingClientInfo.dobMonth}` : matchingClientInfo.dob}
+                                </span>
+                              )}
                             </p>
                           </div>
                         </div>
-                        <span className="bg-emerald-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full shrink-0 flex items-center gap-1">
-                          <Check size={11} />
-                          <span>تم ملء البيانات</span>
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setNewClientForm({
+                                name: matchingClientInfo.name,
+                                phone: matchingClientInfo.phone,
+                                referredByPhone: matchingClientInfo.referredByPhone || '',
+                                dobDay: matchingClientInfo.dobDay || (matchingClientInfo.dob ? matchingClientInfo.dob.split('-')[1] || '' : ''),
+                                dobMonth: matchingClientInfo.dobMonth || (matchingClientInfo.dob ? matchingClientInfo.dob.split('-')[0] || '' : ''),
+                                clientType: matchingClientInfo.clientType === 'foreigner' ? 'foreigner' : 'citizen'
+                              });
+                              setShowAddClientModal(true);
+                            }}
+                            className="text-[10px] text-indigo-700 hover:text-indigo-900 bg-white border border-indigo-200 px-2 py-0.5 rounded-md font-bold transition-colors cursor-pointer"
+                            title="تعديل بيانات العميل أو تاريخ الميلاد"
+                          >
+                            تعديل الميلاد
+                          </button>
+                          <span className="bg-emerald-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full shrink-0 flex items-center gap-1">
+                            <Check size={11} />
+                            <span>تم ملء البيانات</span>
+                          </span>
+                        </div>
                       </div>
                     ) : newBooking.phone && newBooking.phone.trim().length >= 8 ? (
-                      <p className="text-[11px] text-indigo-600 font-bold flex items-center gap-1.5">
-                        <Sparkles size={12} className="text-indigo-500 shrink-0 inline" />
-                        <span>عميل جديد — سيتم تسجيله تلقائياً في قاعدة عملاء الصالون عند حفظ الحجز</span>
-                      </p>
+                      <div className="bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-200/90 rounded-xl p-2.5 flex items-center justify-between gap-2 text-indigo-900 animate-in fade-in">
+                        <div className="flex items-center gap-2">
+                          <Sparkles size={16} className="text-indigo-600 shrink-0" />
+                          <div>
+                            <p className="text-xs font-black text-indigo-950">عميل جديد غير مسجل</p>
+                            <p className="text-[10px] text-indigo-700">اضغط لفتح نافذة إضافة العميل وتسجيل يوم وشهر الميلاد فوراً</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => openAddClientModal(newBooking.phone, newBooking.clientName)}
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs px-3 py-1.5 rounded-lg shadow-xs transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
+                        >
+                          <Plus size={13} />
+                          <span>إضافة عميل جديد</span>
+                        </button>
+                      </div>
                     ) : null}
                   </div>
 
                   {/* Client Name */}
                   <div className="md:col-span-5 space-y-1.5">
-                    <label className="block text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                      <User size={13} className="text-indigo-600" />
-                      <span>اسم العميل *</span>
-                    </label>
+                    <div className="flex items-center justify-between">
+                      <label className="block text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                        <User size={13} className="text-indigo-600" />
+                        <span>اسم العميل *</span>
+                      </label>
+                      {!matchingClientInfo && (
+                        <button
+                          type="button"
+                          onClick={() => openAddClientModal(newBooking.phone, newBooking.clientName)}
+                          className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold cursor-pointer"
+                        >
+                          + تسجيل ميلاد العميل
+                        </button>
+                      )}
+                    </div>
                     <input
                       type="text"
                       value={newBooking.clientName || ''}
@@ -3779,9 +3997,15 @@ export function BookingsScreen({
                                           )}
                                         </div>
                                         <div className="flex items-center gap-2">
-                                          <span className="bg-emerald-50 text-emerald-700 font-mono font-black px-2 py-0.5 rounded-lg text-[11px] border border-emerald-200">
-                                            {s.price} {settings.currency}
-                                          </span>
+                                          {Boolean(settings.enableDualPricing && matchingClientInfo?.clientType === 'foreigner' && s.foreignerPrice && Number(s.foreignerPrice) > 0) ? (
+                                            <span className="bg-amber-50 text-amber-800 font-mono font-black px-2 py-0.5 rounded-lg text-[11px] border border-amber-200">
+                                              {s.foreignerPrice} {settings.currency} (أجنبي)
+                                            </span>
+                                          ) : (
+                                            <span className="bg-emerald-50 text-emerald-700 font-mono font-black px-2 py-0.5 rounded-lg text-[11px] border border-emerald-200">
+                                              {s.price} {settings.currency}
+                                            </span>
+                                          )}
                                           {s.durationMinutes && (
                                             <span className="bg-slate-100 text-slate-500 text-[10px] px-1.5 py-0.5 rounded-md font-medium">
                                               {s.durationMinutes} د
@@ -4518,6 +4742,212 @@ export function BookingsScreen({
           </div>
         </div>
       )}
+
+      {/* ========================================================================= */}
+      {/* ADD NEW CLIENT MODAL DIRECTLY FROM BOOKING (نافذة إضافة عميل جديد المعتادة) */}
+      {/* ========================================================================= */}
+      {showAddClientModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 border border-slate-200" dir="rtl">
+            <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center">
+                  <User size={18} />
+                </div>
+                <h3 className="font-bold text-base sm:text-lg text-slate-800">إضافة عميل جديد للحجز</h3>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setShowAddClientModal(false)} 
+                className="text-slate-400 hover:text-red-500 transition-colors p-1 rounded-lg cursor-pointer"
+              >
+                <X size={20}/>
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs sm:text-sm font-bold text-slate-700 mb-1">اسم العميل *</label>
+                <input 
+                  type="text"
+                  value={newClientForm.name}
+                  onChange={(e) => setNewClientForm({...newClientForm, name: e.target.value})}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2 outline-none focus:border-indigo-600 font-bold text-slate-800 text-sm"
+                  placeholder="اسم العميل الكامل..."
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-xs sm:text-sm font-bold text-slate-700 mb-1">رقم الجوال *</label>
+                <input 
+                  type="text"
+                  value={newClientForm.phone}
+                  onChange={(e) => setNewClientForm({...newClientForm, phone: e.target.value})}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2 outline-none focus:border-indigo-600 font-mono font-bold text-slate-800 text-sm"
+                  placeholder="05XXXXXXXX"
+                  dir="ltr"
+                />
+              </div>
+              <div>
+                <label className="block text-xs sm:text-sm font-bold text-amber-700 mb-1 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <Gift size={14} className="text-amber-600" />
+                    <span>رقم جوال العميل الذي رشحه (اختياري)</span>
+                  </span>
+                  {referrerClientInModal && (
+                    <span className="text-[11px] text-emerald-700 font-extrabold bg-emerald-100/90 px-2 py-0.5 rounded-md flex items-center gap-1">
+                      <Check size={11} className="text-emerald-700" />
+                      <span>تم التعرف على العميل</span>
+                    </span>
+                  )}
+                </label>
+                <div className="relative">
+                  <input 
+                    type="text"
+                    value={newClientForm.referredByPhone}
+                    onChange={(e) => setNewClientForm({...newClientForm, referredByPhone: e.target.value})}
+                    className={`w-full border rounded-xl px-4 py-2.5 outline-none font-mono text-sm transition-all ${
+                      referrerClientInModal 
+                        ? 'border-emerald-500 ring-2 ring-emerald-500/20 bg-emerald-50/40 text-emerald-950 font-bold' 
+                        : 'bg-amber-50 border-amber-200 focus:border-amber-500'
+                    }`}
+                    placeholder="رقم جوال العميل المرشِح..."
+                    dir="ltr"
+                  />
+                  {newClientForm.referredByPhone && (
+                    <button 
+                      type="button"
+                      onClick={() => setNewClientForm({...newClientForm, referredByPhone: ''})}
+                      className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 p-1 rounded-full transition-colors cursor-pointer"
+                      title="مسح الرقم"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+
+                {/* التحقق من عدم ترشيح العميل لنفسه */}
+                {newClientForm.referredByPhone && newClientForm.phone && newClientForm.referredByPhone.trim().replace(/\D/g, '') === newClientForm.phone.trim().replace(/\D/g, '') && (
+                  <p className="text-xs text-red-500 font-bold mt-1.5 flex items-center gap-1">
+                    <AlertTriangle size={12} className="text-red-500" />
+                    <span>لا يمكن إدخال رقم العميل نفسه كمرشِح</span>
+                  </p>
+                )}
+
+                {/* إظهار اسم العميل المرشِح فور العثور عليه برقم هاتفه */}
+                {referrerClientInModal && (
+                  <div className="mt-2 p-2.5 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-300/90 rounded-xl flex items-center justify-between gap-2 text-emerald-950 shadow-2xs animate-in fade-in zoom-in-95 duration-150">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black text-xs shrink-0 shadow-xs">
+                        <User size={16} />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] text-emerald-700 font-bold">العميل الذي رشح الصالون:</span>
+                        </div>
+                        <p className="text-xs font-black text-emerald-950 truncate">{referrerClientInModal.name}</p>
+                      </div>
+                    </div>
+                    <div className="text-left shrink-0">
+                      <span className="text-[11px] font-mono font-bold bg-white/90 border border-emerald-200 text-emerald-800 px-2 py-0.5 rounded-lg" dir="ltr">
+                        {referrerClientInModal.phone}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* إشعار في حال كتابة رقم كامل غير مسجل مسبقاً */}
+                {!referrerClientInModal && newClientForm.referredByPhone && newClientForm.referredByPhone.trim().replace(/\D/g, '').length >= 9 && (
+                  <div className="mt-1.5 p-2 bg-amber-50 border border-amber-200/80 rounded-xl flex items-center gap-1.5 text-amber-800 text-[11px] font-medium">
+                    <Info size={13} className="shrink-0 text-amber-700" />
+                    <span>لم يتم العثور على عميل مسجل بهذا الرقم مسبقاً (سيتم حفظ الرقم كجهة ترشيح)</span>
+                  </div>
+                )}
+              </div>
+              <div>
+                <label className="block text-xs sm:text-sm font-bold text-slate-700 mb-1 flex items-center gap-1.5">
+                  <CalendarIcon size={14} className="text-indigo-600" />
+                  <span>تاريخ الميلاد (يوم وشهر الميلاد)</span>
+                </label>
+                <div className="flex gap-3">
+                  <select 
+                    value={newClientForm.dobDay}
+                    onChange={(e) => setNewClientForm({...newClientForm, dobDay: e.target.value})}
+                    className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-4 py-2 outline-none focus:border-indigo-600 font-bold text-slate-800 text-sm"
+                  >
+                    <option value="">اليوم</option>
+                    {Array.from({length: 31}, (_, i) => i + 1).map(d => (
+                      <option key={d} value={d.toString().padStart(2, '0')}>{d}</option>
+                    ))}
+                  </select>
+                  <select 
+                    value={newClientForm.dobMonth}
+                    onChange={(e) => setNewClientForm({...newClientForm, dobMonth: e.target.value})}
+                    className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-4 py-2 outline-none focus:border-indigo-600 font-bold text-slate-800 text-sm"
+                  >
+                    <option value="">الشهر</option>
+                    {Array.from({length: 12}, (_, i) => i + 1).map(m => (
+                      <option key={m} value={m.toString().padStart(2, '0')}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs sm:text-sm font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
+                  <User size={14} className="text-indigo-600" />
+                  <span>نوع العميل / الصفة (مواطن - أجنبي) *</span>
+                </label>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setNewClientForm({...newClientForm, clientType: 'citizen'})}
+                    className={`py-2 px-3 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 border transition-all cursor-pointer ${
+                      newClientForm.clientType !== 'foreigner'
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <Check size={13} className={newClientForm.clientType !== 'foreigner' ? 'opacity-100' : 'opacity-0'} />
+                    <span>مواطن</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewClientForm({...newClientForm, clientType: 'foreigner'})}
+                    className={`py-2 px-3 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 border transition-all cursor-pointer ${
+                      newClientForm.clientType === 'foreigner'
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <Check size={13} className={newClientForm.clientType === 'foreigner' ? 'opacity-100' : 'opacity-0'} />
+                    <span>أجنبي</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-2">
+              <button 
+                type="button"
+                onClick={() => setShowAddClientModal(false)}
+                className="flex-1 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-bold py-2.5 rounded-xl transition-colors text-sm cursor-pointer"
+              >
+                إلغاء
+              </button>
+              <button 
+                type="button"
+                onClick={handleSaveNewClientFromBooking}
+                className="flex-2 bg-indigo-600 hover:bg-indigo-700 text-white font-black py-2.5 rounded-xl transition-colors shadow-md shadow-indigo-600/20 text-sm flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Check size={16} />
+                <span>حفظ العميل وتثبيته بالحجز</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
 
       {/* ========================================================================= */}
       {/* ========================================================================= */}

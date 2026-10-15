@@ -3210,6 +3210,7 @@ export default function App() {
           setTransactions={handleSetTransactions}
           salesReturns={branchSalesReturns}
           clients={salonClients}
+          setClients={handleSetClients}
         />
 
       );

@@ -341,7 +341,14 @@ export function POSScreen({
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const [showAddClientModal, setShowAddClientModal] = useState(false);
   const [showDailyReportModal, setShowDailyReportModal] = useState(false);
-  const [newClientForm, setNewClientForm] = useState({ name: '', phone: '', referredByPhone: '', dobDay: '', dobMonth: '' });
+  const [newClientForm, setNewClientForm] = useState<{
+    name: string;
+    phone: string;
+    referredByPhone: string;
+    dobDay: string;
+    dobMonth: string;
+    clientType: 'citizen' | 'foreigner';
+  }>({ name: '', phone: '', referredByPhone: '', dobDay: '', dobMonth: '', clientType: 'citizen' });
 
   // نافذة استعلام أسعار الخدمات (معاينة فقط دون إضافة للفاتورة)
   const [showPriceCheckModal, setShowPriceCheckModal] = useState(false);
@@ -1608,6 +1615,7 @@ export function POSScreen({
       id: 'C-' + Math.random().toString(36).substr(2, 9),
       name: newClientForm.name.trim(),
       phone: cleanPhone,
+      clientType: newClientForm.clientType || 'citizen',
       referredByPhone: cleanReferredBy,
       loyaltyPoints: 0,
       cashback: 0,
@@ -1618,7 +1626,7 @@ export function POSScreen({
     setSelectedClient(newClient);
     setClientSearch(newClient.name);
     setShowAddClientModal(false);
-    setNewClientForm({ name: '', phone: '', referredByPhone: '', dobDay: '', dobMonth: '' });
+    setNewClientForm({ name: '', phone: '', referredByPhone: '', dobDay: '', dobMonth: '', clientType: 'citizen' });
   };
 
   useEffect(() => {
@@ -1908,6 +1916,47 @@ export function POSScreen({
     });
   }, [categories, itemTypeFilter, items, products]);
 
+  const isForeignerClient = Boolean(settings.enableDualPricing && selectedClient?.clientType === 'foreigner');
+
+  // مزامنة وتحديث أسعار الخدمات داخل السلة تلقائياً عند تغيير نوع العميل (مواطن / أجنبي)
+  useEffect(() => {
+    if (!settings.enableDualPricing) return;
+    setCart(prevCart => {
+      if (!prevCart || prevCart.length === 0) return prevCart;
+      let changed = false;
+      const updated = prevCart.map(cartItem => {
+        if (cartItem.type === 'product' || cartItem.item?._isProduct) return cartItem;
+        const srvId = cartItem.item?.id;
+        const srv = (items || []).find(s => s.id === srvId);
+        if (!srv) return cartItem;
+
+        const isFore = Boolean(selectedClient?.clientType === 'foreigner');
+        const hasForePrice = Boolean(isFore && srv.foreignerPrice && Number(srv.foreignerPrice) > 0);
+        const rawDisc = Number(srv.discountPrice);
+        const hasDisc = !hasForePrice && !isNaN(rawDisc) && rawDisc > 0 && rawDisc < Number(srv.price);
+        const targetPrice = hasForePrice ? Number(srv.foreignerPrice) : (hasDisc ? rawDisc : Number(srv.price) || 0);
+        const origPrice = hasForePrice ? Number(srv.foreignerPrice) : (Number(srv.price) || 0);
+
+        if (cartItem.price !== targetPrice || cartItem.item?.isForeignerPrice !== hasForePrice) {
+          changed = true;
+          return {
+            ...cartItem,
+            price: targetPrice,
+            originalPrice: origPrice,
+            item: {
+              ...cartItem.item,
+              displayPrice: targetPrice,
+              originalPrice: origPrice,
+              isForeignerPrice: hasForePrice
+            }
+          };
+        }
+        return cartItem;
+      });
+      return changed ? updated : prevCart;
+    });
+  }, [selectedClient?.id, selectedClient?.clientType, settings.enableDualPricing, items]);
+
   // قائمة الخدمات الافتراضية النشطة المجهزة مسبقاً في الذاكرة (Ultra Fast-Path Cache) لنزول الخدمات فوراً دون أي تأخير
   const defaultActiveServices = useMemo(() => {
     const active = (items || []).filter(i => i.isActive !== false);
@@ -1919,20 +1968,22 @@ export function POSScreen({
       const bOrder = b.priorityOrder ?? 0;
       return aOrder - bOrder;
     }).map(i => {
-      const originalPrice = Number(i.price) || 0;
+      const isForePrice = Boolean(isForeignerClient && i.foreignerPrice && Number(i.foreignerPrice) > 0);
+      const originalPrice = isForePrice ? Number(i.foreignerPrice) : (Number(i.price) || 0);
       const rawDiscount = Number(i.discountPrice);
-      const hasDiscount = !isNaN(rawDiscount) && rawDiscount > 0 && rawDiscount < originalPrice;
+      const hasDiscount = !isForePrice && !isNaN(rawDiscount) && rawDiscount > 0 && rawDiscount < originalPrice;
       const effectivePrice = hasDiscount ? rawDiscount : originalPrice;
       return {
         ...i,
         _isProduct: false,
+        isForeignerPrice: isForePrice,
         hasDiscount,
         discountPrice: hasDiscount ? rawDiscount : undefined,
         originalPrice,
         displayPrice: effectivePrice
       };
     });
-  }, [items]);
+  }, [items, isForeignerClient]);
 
   const filteredItems = useMemo(() => {
     const q = (searchQuery || '').trim().toLowerCase();
@@ -2033,21 +2084,23 @@ export function POSScreen({
       const isProduct = (i as any)._isProduct !== undefined 
         ? Boolean((i as any)._isProduct) 
         : itemTypeFilter === 'product' || Boolean((i as any).sellPrice !== undefined && (i as any).price === undefined);
-      const originalPrice = isProduct ? (Number(i.sellPrice) || 0) : (Number(i.price) || 0);
+      const isForePrice = Boolean(!isProduct && isForeignerClient && i.foreignerPrice && Number(i.foreignerPrice) > 0);
+      const originalPrice = isProduct ? (Number(i.sellPrice) || 0) : (isForePrice ? Number(i.foreignerPrice) : (Number(i.price) || 0));
       const rawDiscount = Number(i.discountPrice);
-      const hasDiscount = !isProduct && !isNaN(rawDiscount) && rawDiscount > 0 && rawDiscount < originalPrice;
+      const hasDiscount = !isProduct && !isForePrice && !isNaN(rawDiscount) && rawDiscount > 0 && rawDiscount < originalPrice;
       const effectivePrice = hasDiscount ? rawDiscount : originalPrice;
 
       return {
         ...i,
         _isProduct: isProduct,
+        isForeignerPrice: isForePrice,
         hasDiscount,
         discountPrice: hasDiscount ? rawDiscount : undefined,
         originalPrice: originalPrice,
         displayPrice: effectivePrice
       };
     });
-  }, [selectedCategory, searchQuery, items, products, itemTypeFilter, categories]);
+  }, [selectedCategory, searchQuery, items, products, itemTypeFilter, categories, isForeignerClient, defaultActiveServices]);
 
   // تصفية الخدمات والمنتجات لنافذة استعلام الأسعار (معاينة وقراءة فقط دون إضافة للفاتورة)
   const priceCheckFilteredItems = useMemo(() => {
@@ -2172,11 +2225,18 @@ export function POSScreen({
       // 2. فحص باركود الخدمة
       const matchedService = items.find(s => s.barcode && s.barcode.trim().toLowerCase() === q);
       if (matchedService) {
+        const isForePrice = Boolean(isForeignerClient && matchedService.foreignerPrice && Number(matchedService.foreignerPrice) > 0);
+        const origPrice = isForePrice ? Number(matchedService.foreignerPrice) : (Number(matchedService.price) || 0);
+        const rawDisc = Number(matchedService.discountPrice);
+        const hasDisc = !isForePrice && !isNaN(rawDisc) && rawDisc > 0 && rawDisc < origPrice;
+        const effPrice = hasDisc ? rawDisc : origPrice;
+
         addToCart({
           ...matchedService,
           _isProduct: false,
-          displayPrice: matchedService.discountPrice || matchedService.price || 0,
-          originalPrice: matchedService.price || 0
+          isForeignerPrice: isForePrice,
+          displayPrice: effPrice,
+          originalPrice: origPrice
         });
         setSearchQuery('');
         return;
@@ -2457,7 +2517,25 @@ export function POSScreen({
                         </span>
                       </div>
                     )}
-                    {item.hasDiscount ? (
+                    {item.isForeignerPrice ? (
+                      <div className="flex flex-col items-center">
+                        <p 
+                          className="font-black text-xs font-mono"
+                          style={{ color: isPriority ? (isLight ? '#047857' : '#a7f3d0') : '#0f766e' }}
+                        >
+                          {item.displayPrice} {settings.currency}
+                        </p>
+                        <span 
+                          className="text-[9px] font-bold px-1.5 py-0.2 rounded mt-0.5"
+                          style={{
+                            backgroundColor: isPriority ? (isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.25)') : '#fef3c7',
+                            color: isPriority ? (isLight ? '#78350f' : '#fef3c7') : '#92400e'
+                          }}
+                        >
+                          سعر أجنبي
+                        </span>
+                      </div>
+                    ) : item.hasDiscount ? (
                       <div className="flex flex-col items-center">
                         <p 
                           className="font-black text-xs font-mono"
@@ -2719,6 +2797,13 @@ export function POSScreen({
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <p className="text-xs font-black text-slate-900 truncate">{selectedClient.name}</p>
+                        <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded-md ${
+                          selectedClient.clientType === 'foreigner' 
+                            ? 'bg-amber-100/90 text-amber-900 border border-amber-300' 
+                            : 'bg-emerald-100/90 text-emerald-900 border border-emerald-300'
+                        }`}>
+                          {selectedClient.clientType === 'foreigner' ? 'أجنبي' : 'مواطن'}
+                        </span>
                         {clientTier && (
                           <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full border shadow-2xs flex items-center gap-0.5 ${clientTier.badgeBg} ${clientTier.badgeText} ${clientTier.badgeBorder}`}>
                             <span>{clientTier.icon}</span>
@@ -3924,7 +4009,18 @@ export function POSScreen({
 
                       {/* السعر البارز */}
                       <div className="flex flex-col items-end shrink-0 pl-1">
-                        {item.hasDiscount ? (
+                        {Boolean(settings.enableDualPricing && !item._isProduct && item.foreignerPrice && Number(item.foreignerPrice) > 0) ? (
+                          <>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-bold text-slate-700 font-mono">
+                                مواطن: {item.displayPrice} {settings.currency}
+                              </span>
+                            </div>
+                            <span className="text-xs sm:text-sm font-black text-amber-800 font-mono bg-amber-50 px-2 py-0.5 rounded border border-amber-200 mt-0.5">
+                              أجنبي: {item.foreignerPrice} {settings.currency}
+                            </span>
+                          </>
+                        ) : item.hasDiscount ? (
                           <>
                             <div className="flex items-center gap-1">
                               <span className="text-[10px] text-slate-400 line-through font-bold">
@@ -4179,6 +4275,38 @@ export function POSScreen({
                       <option key={m} value={m.toString().padStart(2, '0')}>{m}</option>
                     ))}
                   </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
+                  <User size={14} className="text-primary" />
+                  <span>نوع العميل / الصفة (مواطن - أجنبي) *</span>
+                </label>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setNewClientForm({...newClientForm, clientType: 'citizen'})}
+                    className={`py-2 px-3 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 border transition-all cursor-pointer ${
+                      newClientForm.clientType !== 'foreigner'
+                        ? 'bg-primary text-white border-primary shadow-xs'
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <Check size={13} className={newClientForm.clientType !== 'foreigner' ? 'opacity-100' : 'opacity-0'} />
+                    <span>مواطن</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewClientForm({...newClientForm, clientType: 'foreigner'})}
+                    className={`py-2 px-3 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 border transition-all cursor-pointer ${
+                      newClientForm.clientType === 'foreigner'
+                        ? 'bg-primary text-white border-primary shadow-xs'
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <Check size={13} className={newClientForm.clientType === 'foreigner' ? 'opacity-100' : 'opacity-0'} />
+                    <span>أجنبي</span>
+                  </button>
                 </div>
               </div>
             </div>

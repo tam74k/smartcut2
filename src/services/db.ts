@@ -273,6 +273,9 @@ export async function ensureCoreSchema(): Promise<void> {
       ensureColumn('clients', 'dob', 'VARCHAR(50)'),
       ensureColumn('clients', 'dob_day', 'INT'),
       ensureColumn('clients', 'dob_month', 'INT'),
+      ensureColumn('clients', 'client_type', 'VARCHAR(50)'),
+      ensureColumn('clients', 'last_birthday_greeting_at', 'TIMESTAMPTZ'),
+      ensureColumn('clients', 'last_reactivation_message_at', 'TIMESTAMPTZ'),
       ensureColumn('clients', 'tier_level', 'VARCHAR(50)'),
       ensureColumn('clients', 'vip_since', 'VARCHAR(50)'),
       ensureColumn('clients', 'vip_notes', 'TEXT'),
@@ -321,6 +324,8 @@ export async function ensureCoreSchema(): Promise<void> {
       ensureColumn('services', 'employee_commission_amount', 'NUMERIC(10,2)'),
       ensureColumn('services', 'commissionable_amount', 'NUMERIC(10,2)'),
       ensureColumn('services', 'is_target_exempt', 'BOOLEAN'),
+      ensureColumn('services', 'foreigner_price', 'NUMERIC(10,2)'),
+      ensureColumn('app_settings', 'enable_dual_pricing', 'BOOLEAN'),
       ensureColumn('employees', 'daily_target_method', 'VARCHAR(50)'),
       ensureColumn('employees', 'monthly_target_method', 'VARCHAR(50)'),
       ensureColumn('employees', 'daily_target_multiplier', 'NUMERIC(5,2)'),
@@ -1359,6 +1364,7 @@ export const DB = {
         : (uiSet.instantCommissionFromDrawer !== undefined ? toBool(uiSet.instantCommissionFromDrawer) : false);
       res.tipPayoutMethod = data.tip_payout_method || uiSet.tipPayoutMethod || 'instant_cash';
       res.allowNonCashTips = data.allow_non_cash_tips !== undefined ? toBool(data.allow_non_cash_tips) : (uiSet.allowNonCashTips !== undefined ? toBool(uiSet.allowNonCashTips) : true);
+      res.enableDualPricing = data.enable_dual_pricing !== undefined ? toBool(data.enable_dual_pricing) : (uiSet.enableDualPricing !== undefined ? toBool(uiSet.enableDualPricing) : false);
 
       return res;
     } catch (e) { return null; }
@@ -1388,7 +1394,8 @@ export const DB = {
         openrouterModel: settings.openrouterModel || existingUiSettings.openrouterModel || null,
         instantCommissionFromDrawer: settings.instantCommissionFromDrawer !== undefined ? Boolean(settings.instantCommissionFromDrawer) : (existingUiSettings.instantCommissionFromDrawer ?? false),
         tipPayoutMethod: settings.tipPayoutMethod || existingUiSettings.tipPayoutMethod || 'instant_cash',
-        allowNonCashTips: settings.allowNonCashTips !== undefined ? Boolean(settings.allowNonCashTips) : (existingUiSettings.allowNonCashTips ?? true)
+        allowNonCashTips: settings.allowNonCashTips !== undefined ? Boolean(settings.allowNonCashTips) : (existingUiSettings.allowNonCashTips ?? true),
+        enableDualPricing: settings.enableDualPricing !== undefined ? Boolean(settings.enableDualPricing) : (existingUiSettings.enableDualPricing ?? false)
       };
 
       // Allowed columns strictly corresponding to public.app_settings in Supabase
@@ -1407,6 +1414,7 @@ export const DB = {
         vat_enabled: settings.vatEnabled !== undefined ? toBool(settings.vatEnabled) : true,
         vat_rate: settings.vatRate ?? settings.vatPercentage ?? 15,
         zatca_enabled: settings.zatcaEnabled ?? false,
+        enable_dual_pricing: settings.enableDualPricing !== undefined ? Boolean(settings.enableDualPricing) : (existingUiSettings.enableDualPricing ?? false),
         zatca_settings: settings.zatcaSettings || null,
         eta_egypt_settings: settings.etaEgyptSettings || null,
         receipt_header_note: settings.receiptHeaderNote || '',
@@ -1502,6 +1510,9 @@ export const DB = {
         birth_date: toDateOrNull(c.dob || c.birthDate),
         dob_day: c.dobDay || null,
         dob_month: c.dobMonth || null,
+        client_type: c.clientType || 'citizen',
+        last_birthday_greeting_at: toDateOrNull(c.lastBirthdayGreetingAt || c.last_birthday_greeting_at),
+        last_reactivation_message_at: toDateOrNull(c.lastReactivationMessageAt || c.last_reactivation_message_at),
         cashback_balance: Number(c.cashback ?? c.cashbackBalance ?? 0),
         loyalty_points: Number(c.loyaltyPoints ?? 0),
         tier_level: c.tierLevel || 'standard',
@@ -2235,6 +2246,7 @@ export const DB = {
         category_id: s.categoryId || null, 
         name: s.name,
         price: s.price ?? 0, 
+        foreigner_price: (s.foreignerPrice !== undefined && s.foreignerPrice !== null && s.foreignerPrice !== '') ? Number(s.foreignerPrice) : null,
         discount_price: s.discountPrice ?? 0,
         commission_rate: s.employeeCommissionPercentage ?? s.commissionRate ?? 0,
         commission_amount: s.employeeCommissionAmount ?? s.commissionAmount ?? 0,
@@ -4383,6 +4395,11 @@ export function dbClientToApp(row: any) {
     phone: row.phone,
     email: row.email || '',
     dob: row.dob || '',
+    dobDay: row.dobDay || row.dob_day || (row.dob ? String(new Date(row.dob).getDate()) : undefined),
+    dobMonth: row.dobMonth || row.dob_month || (row.dob ? String(new Date(row.dob).getMonth() + 1) : undefined),
+    clientType: (row.clientType || row.client_type) === 'foreigner' ? 'foreigner' : 'citizen',
+    lastBirthdayGreetingAt: row.lastBirthdayGreetingAt || row.last_birthday_greeting_at || undefined,
+    lastReactivationMessageAt: row.lastReactivationMessageAt || row.last_reactivation_message_at || undefined,
     loyaltyPoints: Number(row.loyaltyPoints ?? row.loyalty_points ?? 0),
     cashback: Number(row.cashbackBalance ?? row.cashback_balance ?? row.cashback ?? 0),
     tierLevel: row.tierLevel || row.tier_level || 'standard',
@@ -4481,6 +4498,9 @@ export function dbServiceToApp(row: any) {
     categoryId: row.categoryId || row.category_id || row.category || '',
     name: row.name, 
     price: price, 
+    foreignerPrice: (row.foreignerPrice !== undefined && row.foreignerPrice !== null && row.foreignerPrice !== '') 
+      ? Number(row.foreignerPrice) 
+      : ((row.foreigner_price !== undefined && row.foreigner_price !== null && row.foreigner_price !== '') ? Number(row.foreigner_price) : undefined),
     discountPrice: validDiscount,
     employeeCommissionPercentage: Number(row.employeeCommissionPercentage ?? row.employee_commission_percentage ?? row.commissionRate ?? row.commission_rate ?? 0),
     employeeCommissionAmount: Number(row.employeeCommissionAmount ?? row.employee_commission_amount ?? row.commissionAmount ?? row.commission_amount ?? 0),

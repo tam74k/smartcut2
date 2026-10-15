@@ -320,6 +320,7 @@ export interface ServiceItem {
   categoryId: string; 
   name: string; 
   price: number; 
+  foreignerPrice?: number; // سعر الخدمة للأجنبي في حال تفعيل التسعير المزدوج
   discountPrice?: number;
   commissionableAmount?: number; // المبلغ الخاضع للعمولة (لحساب عمولة الفني على جزء من السعر فقط واستبعاد تكلفة الخامات)
   isTargetExempt?: boolean; // هل الخدمة معفاة من التارجت وتصرف عمولتها فورياً للموظف دون احتسابها في التارجت؟
@@ -804,6 +805,9 @@ export interface Client {
   preferences?: ClientPreferences;
   debt?: number;
   totalDebt?: number;
+  clientType?: 'citizen' | 'foreigner'; // مواطن / أجنبي
+  lastBirthdayGreetingAt?: string; // تاريخ ووقت آخر رسالة تهنئة بعيد الميلاد تم إرسالها للعميل
+  lastReactivationMessageAt?: string; // تاريخ ووقت آخر رسالة تنشيط واستعادة تم إرسالها للعميل المنقطع
   createdAt?: string;
 }
 
@@ -1066,6 +1070,7 @@ export interface AppSettings {
   inactiveClientsDays?: number; // مدة متابعة العملاء الذين لم يحضروا بالأيام (افتراضياً 60 يوم وقابل للتعديل)
   depositRefundAllowedDays?: number; // مهلة استرجاع العربون بالأيام (0 = عدم السماح نهائياً)
   deposit_refund_allowed_days?: number;
+  enableDualPricing?: boolean; // تفعيل سعرين للخدمة (مواطن وأجنبي)
 }
 
 export type TargetCalculationPolicy = 1 | 2 | 3 | 4 | 5;

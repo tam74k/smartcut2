@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { AppSettings, Transaction, Invoice, Branch, TipRecord, AppUser, Booking, SalesReturn } from '../types';
-import { Calendar, FileBarChart, Download, TrendingUp, TrendingDown, DollarSign, Printer, CheckCircle2, Clock, Wallet, Coins, ShoppingCart, Truck, Edit2, Trash2, RefreshCw, AlertTriangle, User, X, Check, Save, RotateCcw, UserX, MessageSquare, Phone, Copy, Search, Award, Sparkles, UserCheck, Target, ArrowLeft, MapPin } from 'lucide-react';
+import { Calendar, FileBarChart, Download, TrendingUp, TrendingDown, DollarSign, Printer, CheckCircle2, Clock, Wallet, Coins, ShoppingCart, Truck, Edit2, Trash2, RefreshCw, AlertTriangle, User, X, Check, Save, RotateCcw, UserX, MessageSquare, Phone, Copy, Search, Award, Sparkles, UserCheck, Target, ArrowLeft, MapPin, Cake, Gift, Send, CheckCheck, CheckSquare, Square, ExternalLink } from 'lucide-react';
+import { EvolutionApiService } from '../services/evolutionApiService';
 import { ClosingReportReceipt } from './ClosingReportReceipt';
 import { ServicesReportReceipt } from './ServicesReportReceipt';
 import { EmployeesReportReceipt } from './EmployeesReportReceipt';
@@ -51,6 +52,7 @@ export function ReportsScreen({
   setTransactions,
   salesReturns = [],
   clients = [],
+  setClients,
 }: { 
   settings: AppSettings, 
   transactions: Transaction[], 
@@ -72,6 +74,7 @@ export function ReportsScreen({
   setTransactions?: (transactions: any[]) => void,
   salesReturns?: SalesReturn[],
   clients?: any[],
+  setClients?: (clients: any[] | ((prev: any[]) => any[])) => void,
 }) {
   const canExportExcel = AuthService.canDo('export_excel', currentUser);
 
@@ -96,9 +99,29 @@ export function ReportsScreen({
   const [inactiveDaysFilter, setInactiveDaysFilter] = useState<number>(defaultInactiveDays);
   const [inactiveStatusFilter, setInactiveStatusFilter] = useState<'all' | 'visited' | 'never_visited'>('all');
   const [inactiveSortBy, setInactiveSortBy] = useState<'days_desc' | 'days_asc' | 'spend_desc' | 'visits_desc'>('days_desc');
+  const [inactiveSentFilter, setInactiveSentFilter] = useState<'all' | 'not_sent_only' | 'sent_only'>('all');
+  const [selectedInactiveClientIds, setSelectedInactiveClientIds] = useState<string[]>([]);
+  const [inactiveMessageText, setInactiveMessageText] = useState<string>(
+    'أهلاً بك يا {name}، اشتقنا لزيارتك في {salonName}! ✂️✨\nيسعدنا تقديم خصم حصري خاص على زيارتك القادمة بمناسبة عودتك لنا. نسعد دائماً بخدمتك ولقائك مجدداً في أي وقت! 🌟'
+  );
+  const [isSendingInactiveWhatsApp, setIsSendingInactiveWhatsApp] = useState<boolean>(false);
+  const [inactiveSendProgress, setInactiveSendProgress] = useState<{ current: number; total: number; success: number; failed: number } | null>(null);
+  const [bulkInactiveSelectCountInput, setBulkInactiveSelectCountInput] = useState<string>('10');
   const [targetReportSearch, setTargetReportSearch] = useState<string>('');
   const [targetTypeFilter, setTargetTypeFilter] = useState<'all' | 'daily' | 'monthly' | 'none'>('all');
   const [targetStatusFilter, setTargetStatusFilter] = useState<'all' | 'achieved' | 'not_achieved'>('all');
+
+  // Birthday Report State
+  const [birthdaySearch, setBirthdaySearch] = useState<string>('');
+  const [birthdaySortBy, setBirthdaySortBy] = useState<'date_asc' | 'date_desc' | 'name_asc' | 'greeting_status' | 'spend_desc'>('date_asc');
+  const [birthdaySentFilter, setBirthdaySentFilter] = useState<'all' | 'sent_only' | 'not_sent_only'>('all');
+  const [selectedBirthdayClientIds, setSelectedBirthdayClientIds] = useState<string[]>([]);
+  const [birthdayMessageText, setBirthdayMessageText] = useState<string>(
+    'أهلاً بك يا {name}، صالون {salonName} يتمنى لك عيد ميلاد سعيد وكل عام وأنت بألف خير! 🎉🎂 يسعدنا تقديم خصم خاص وهدية لك بمناسبة عيد ميلادك عند زيارتك القادمة. نسعد دائماً بخدمتك! ✂️✨'
+  );
+  const [isSendingBirthdayWhatsApp, setIsSendingBirthdayWhatsApp] = useState<boolean>(false);
+  const [birthdaySendProgress, setBirthdaySendProgress] = useState<{ current: number; total: number; success: number; failed: number } | null>(null);
+  const [bulkSelectCountInput, setBulkSelectCountInput] = useState<string>('10');
 
   useEffect(() => {
     if (Number(settings.inactiveClientsDays) > 0) {
@@ -769,7 +792,9 @@ export function ReportsScreen({
         tier: (c as any).tier || (c as any).membershipLevel || (c.isVip ? 'vip' : 'standard'),
         isVip: Boolean(c.isVip),
         notes: c.notes || (c as any).generalNotes || '',
-        daysAbsent: 0
+        daysAbsent: 0,
+        rawClient: c,
+        lastReactivationMessageAt: c.lastReactivationMessageAt || (c as any).last_reactivation_message_at
       });
     });
 
@@ -826,7 +851,9 @@ export function ReportsScreen({
           tier: 'standard',
           isVip: false,
           notes: '',
-          daysAbsent: 0
+          daysAbsent: 0,
+          rawClient: null,
+          lastReactivationMessageAt: undefined
         });
       }
     });
@@ -873,6 +900,29 @@ export function ReportsScreen({
       c.daysAbsent = daysAbsent;
       c.avgInvoice = c.totalVisits > 0 ? (c.totalSpend / c.totalVisits) : 0;
 
+      // Reactivation message tracking
+      const lastReactivationRaw = c.lastReactivationMessageAt || (c.rawClient && (c.rawClient.lastReactivationMessageAt || (c.rawClient as any).last_reactivation_message_at));
+      const hasBeenSent = Boolean(lastReactivationRaw);
+      let lastReactivationFormatted = '';
+      if (lastReactivationRaw) {
+        try {
+          const sentDate = new Date(lastReactivationRaw);
+          lastReactivationFormatted = sentDate.toLocaleDateString('ar-EG', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          });
+        } catch {
+          lastReactivationFormatted = String(lastReactivationRaw).split('T')[0];
+        }
+      }
+
+      c.hasBeenSent = hasBeenSent;
+      c.lastReactivationRaw = lastReactivationRaw;
+      c.lastReactivationFormatted = lastReactivationFormatted;
+
       if (daysAbsent >= thresholdDays) {
         qualifiedInactiveList.push(c);
         totalSpendAllInactive += (c.totalSpend || 0);
@@ -885,12 +935,20 @@ export function ReportsScreen({
       }
     });
 
-    // 5. Apply status filter (all / visited / never_visited) and search query
+    const totalInactiveCount = qualifiedInactiveList.length;
+    const sentCount = qualifiedInactiveList.filter(c => c.hasBeenSent).length;
+    const notSentCount = totalInactiveCount - sentCount;
+
+    // 5. Apply status filter (all / visited / never_visited), sent filter (all / not_sent_only / sent_only), and search query
     const searchQuery = (inactiveClientsSearch || '').trim().toLowerCase();
 
-    const filteredInactiveList = qualifiedInactiveList.filter(c => {
+    let filteredInactiveList = qualifiedInactiveList.filter(c => {
       if (inactiveStatusFilter === 'visited' && c.isNeverVisited) return false;
       if (inactiveStatusFilter === 'never_visited' && !c.isNeverVisited) return false;
+
+      // Sent filter (الذين لم يرسل لهم / تم الإرسال)
+      if (inactiveSentFilter === 'sent_only' && !c.hasBeenSent) return false;
+      if (inactiveSentFilter === 'not_sent_only' && c.hasBeenSent) return false;
 
       if (searchQuery) {
         const matchName = c.name && c.name.toLowerCase().includes(searchQuery);
@@ -925,6 +983,8 @@ export function ReportsScreen({
       allInactiveClients: qualifiedInactiveList,
       inactiveClients: filteredInactiveList,
       inactiveCount,
+      sentCount,
+      notSentCount,
       totalClientsCount,
       totalPreviousSpend: totalSpendAllInactive,
       avgDaysAbsent,
@@ -932,7 +992,651 @@ export function ReportsScreen({
       vipInactiveCount,
       thresholdDays
     };
-  }, [clients, invoices, bookings, inactiveDaysThreshold, inactiveStatusFilter, inactiveSortBy, inactiveClientsSearch]);
+  }, [clients, invoices, bookings, inactiveDaysThreshold, inactiveStatusFilter, inactiveSortBy, inactiveSentFilter, inactiveClientsSearch]);
+
+  // ---- حسابات تقرير أعياد ميلاد العملاء ومراسلات الواتساب (Birthday Celebrations Report) ----
+  const birthdaysReportData = useMemo(() => {
+    if (!activeFrom || !activeTo) {
+      return {
+        allPeriodClients: [],
+        filteredClients: [],
+        totalInPeriod: 0,
+        todayCount: 0,
+        sentCount: 0,
+        notSentCount: 0
+      };
+    }
+
+    const start = new Date(activeFrom + 'T00:00:00');
+    const end = new Date(activeTo + 'T23:59:59');
+    const startYr = start.getFullYear();
+    const endYr = end.getFullYear();
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    const ARABIC_MONTH_NAMES = [
+      'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+      'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'
+    ];
+
+    // Helper to extract client birthday (month, day, year)
+    const getClientBday = (c: any) => {
+      const day = parseInt(String(c.dobDay ?? c.dob_day ?? ''), 10);
+      const month = parseInt(String(c.dobMonth ?? c.dob_month ?? ''), 10);
+      if (!isNaN(day) && !isNaN(month) && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+        let year: number | undefined = undefined;
+        const dobStr = String(c.dob || c.birthDate || '').trim();
+        if (dobStr && dobStr.includes('-')) {
+          const y = parseInt(dobStr.split('-')[0], 10);
+          if (!isNaN(y) && y > 1900 && y < 2100) year = y;
+        }
+        return { month, day, year };
+      }
+
+      const dobStr = String(c.dob || c.birthDate || '').trim();
+      if (!dobStr) return null;
+
+      if (dobStr.includes('-')) {
+        const parts = dobStr.split('T')[0].split('-');
+        if (parts.length === 3) {
+          const y = parseInt(parts[0], 10);
+          const m = parseInt(parts[1], 10);
+          const d = parseInt(parts[2], 10);
+          if (!isNaN(m) && !isNaN(d) && m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+            return { month: m, day: d, year: (!isNaN(y) && y > 1900 && y < 2100) ? y : undefined };
+          }
+        } else if (parts.length === 2) {
+          const m = parseInt(parts[0], 10);
+          const d = parseInt(parts[1], 10);
+          if (!isNaN(m) && !isNaN(d) && m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+            return { month: m, day: d };
+          }
+        }
+      } else if (dobStr.includes('/')) {
+        const parts = dobStr.split('/');
+        if (parts.length >= 2) {
+          const d = parseInt(parts[0], 10);
+          const m = parseInt(parts[1], 10);
+          const y = parts.length >= 3 ? parseInt(parts[2], 10) : undefined;
+          if (!isNaN(m) && !isNaN(d) && m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+            return { month: m, day: d, year: (y && !isNaN(y) && y > 1900 && y < 2100) ? y : undefined };
+          }
+        }
+      }
+      return null;
+    };
+
+    // Calculate spend and visits per client from invoices
+    const clientSpendMap = new Map<string, { totalSpend: number; visitsCount: number }>();
+    (invoices || []).forEach(inv => {
+      if (inv.status === 'cancelled' || inv.status === 'refunded') return;
+      const cId = inv.clientId;
+      const cPhone = (inv.clientPhone || '').replace(/\D/g, '');
+      const key = cId || (cPhone.length >= 7 ? cPhone : null);
+      if (!key) return;
+
+      const existing = clientSpendMap.get(key) || { totalSpend: 0, visitsCount: 0 };
+      existing.totalSpend += Number(inv.total || inv.finalTotal || inv.paid || 0);
+      existing.visitsCount += 1;
+      clientSpendMap.set(key, existing);
+    });
+
+    const matchedList: any[] = [];
+
+    (clients || []).forEach(c => {
+      const bday = getClientBday(c);
+      if (!bday) return;
+
+      // Find occurrence in [start, end]
+      let occurrenceDate: Date | null = null;
+      for (let yr = startYr; yr <= endYr + 1; yr++) {
+        const daysInMonth = new Date(yr, bday.month, 0).getDate();
+        const safeDay = Math.min(bday.day, daysInMonth);
+        const cand = new Date(yr, bday.month - 1, safeDay, 12, 0, 0);
+        if (cand >= start && cand <= end) {
+          occurrenceDate = cand;
+          break;
+        }
+      }
+
+      if (!occurrenceDate) return;
+
+      const occurrenceDateStr = `${occurrenceDate.getFullYear()}-${String(bday.month).padStart(2, '0')}-${String(bday.day).padStart(2, '0')}`;
+      const isToday = occurrenceDateStr === todayStr;
+
+      const cPhoneDigits = (c.phone || '').replace(/\D/g, '');
+      const spendInfo = clientSpendMap.get(c.id) || (cPhoneDigits.length >= 7 ? clientSpendMap.get(cPhoneDigits) : null) || { totalSpend: 0, visitsCount: 0 };
+
+      const lastSentRaw = c.lastBirthdayGreetingAt || (c as any).last_birthday_greeting_at;
+      const hasBeenSent = Boolean(lastSentRaw);
+
+      let lastSentFormatted = '';
+      if (lastSentRaw) {
+        try {
+          const sentDate = new Date(lastSentRaw);
+          lastSentFormatted = sentDate.toLocaleDateString('ar-EG', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          });
+        } catch {
+          lastSentFormatted = String(lastSentRaw).split('T')[0];
+        }
+      }
+
+      const nowTime = new Date().setHours(0, 0, 0, 0);
+      const occTime = new Date(occurrenceDate).setHours(0, 0, 0, 0);
+      const daysUntil = Math.round((occTime - nowTime) / (1000 * 3600 * 24));
+
+      matchedList.push({
+        id: c.id,
+        name: c.name || 'عميل بدون اسم',
+        phone: c.phone || '',
+        tierLevel: c.tierLevel || 'standard',
+        clientType: c.clientType || 'citizen',
+        birthdayDay: bday.day,
+        birthdayMonth: bday.month,
+        birthYear: bday.year,
+        age: bday.year ? (occurrenceDate.getFullYear() - bday.year) : undefined,
+        occurrenceDate,
+        occurrenceDateStr,
+        birthdayDisplay: `${bday.day} ${ARABIC_MONTH_NAMES[bday.month - 1]}`,
+        isToday,
+        daysUntil,
+        hasBeenSent,
+        lastSentRaw,
+        lastSentFormatted,
+        totalSpend: spendInfo.totalSpend,
+        visitsCount: spendInfo.visitsCount,
+        loyaltyPoints: c.loyaltyPoints || 0,
+        notes: c.notes || '',
+        rawClient: c
+      });
+    });
+
+    const totalInPeriod = matchedList.length;
+    const todayCount = matchedList.filter(c => c.isToday).length;
+    const sentCount = matchedList.filter(c => c.hasBeenSent).length;
+    const notSentCount = totalInPeriod - sentCount;
+
+    // Apply sub-filters
+    let filtered = matchedList;
+
+    if (birthdaySentFilter === 'sent_only') {
+      filtered = filtered.filter(c => c.hasBeenSent);
+    } else if (birthdaySentFilter === 'not_sent_only') {
+      filtered = filtered.filter(c => !c.hasBeenSent);
+    }
+
+    const q = birthdaySearch.trim().toLowerCase();
+    if (q) {
+      filtered = filtered.filter(c => 
+        (c.name && c.name.toLowerCase().includes(q)) || 
+        (c.phone && c.phone.toLowerCase().includes(q))
+      );
+    }
+
+    filtered = [...filtered].sort((a, b) => {
+      if (birthdaySortBy === 'date_asc') {
+        return a.occurrenceDate.getTime() - b.occurrenceDate.getTime();
+      }
+      if (birthdaySortBy === 'date_desc') {
+        return b.occurrenceDate.getTime() - a.occurrenceDate.getTime();
+      }
+      if (birthdaySortBy === 'name_asc') {
+        return a.name.localeCompare(b.name, 'ar');
+      }
+      if (birthdaySortBy === 'greeting_status') {
+        if (a.hasBeenSent !== b.hasBeenSent) {
+          return a.hasBeenSent ? 1 : -1;
+        }
+        return a.occurrenceDate.getTime() - b.occurrenceDate.getTime();
+      }
+      if (birthdaySortBy === 'spend_desc') {
+        return b.totalSpend - a.totalSpend;
+      }
+      return 0;
+    });
+
+    return {
+      allPeriodClients: matchedList,
+      filteredClients: filtered,
+      totalInPeriod,
+      todayCount,
+      sentCount,
+      notSentCount
+    };
+  }, [activeFrom, activeTo, clients, invoices, birthdaySearch, birthdaySortBy, birthdaySentFilter]);
+
+  const setBirthdayQuickPeriod = (mode: 'today' | 'this_week' | 'this_month' | 'next_month') => {
+    const now = new Date();
+    const yr = now.getFullYear();
+    const mo = now.getMonth();
+
+    if (mode === 'today') {
+      const todayStr = now.toISOString().split('T')[0];
+      setFromDate(todayStr);
+      setToDate(todayStr);
+      setActiveFrom(todayStr);
+      setActiveTo(todayStr);
+      setIsGenerated(true);
+    } else if (mode === 'this_week') {
+      const dayOfWeek = now.getDay();
+      const startOfWeek = new Date(now);
+      startOfWeek.setDate(now.getDate() - dayOfWeek);
+      const endOfWeek = new Date(startOfWeek);
+      endOfWeek.setDate(startOfWeek.getDate() + 6);
+      const fStr = startOfWeek.toISOString().split('T')[0];
+      const tStr = endOfWeek.toISOString().split('T')[0];
+      setFromDate(fStr);
+      setToDate(tStr);
+      setActiveFrom(fStr);
+      setActiveTo(tStr);
+      setIsGenerated(true);
+    } else if (mode === 'this_month') {
+      const lastDay = new Date(yr, mo + 1, 0).getDate();
+      const fStr = `${yr}-${String(mo + 1).padStart(2, '0')}-01`;
+      const tStr = `${yr}-${String(mo + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+      setFromDate(fStr);
+      setToDate(tStr);
+      setActiveFrom(fStr);
+      setActiveTo(tStr);
+      setIsGenerated(true);
+    } else if (mode === 'next_month') {
+      const nextMo = mo + 1;
+      const nextYr = nextMo > 11 ? yr + 1 : yr;
+      const normalizedMo = nextMo % 12;
+      const lastDay = new Date(nextYr, normalizedMo + 1, 0).getDate();
+      const fStr = `${nextYr}-${String(normalizedMo + 1).padStart(2, '0')}-01`;
+      const tStr = `${nextYr}-${String(normalizedMo + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+      setFromDate(fStr);
+      setToDate(tStr);
+      setActiveFrom(fStr);
+      setActiveTo(tStr);
+      setIsGenerated(true);
+    }
+  };
+
+  const handleSelectFirstN = (count: number) => {
+    const ids = birthdaysReportData.filteredClients.slice(0, count).map((c: any) => c.id);
+    setSelectedBirthdayClientIds(ids);
+  };
+
+  const handleSelectAllBirthdays = () => {
+    const ids = birthdaysReportData.filteredClients.map((c: any) => c.id);
+    setSelectedBirthdayClientIds(ids);
+  };
+
+  const handleSelectNotSentOnly = () => {
+    const ids = birthdaysReportData.filteredClients.filter((c: any) => !c.hasBeenSent).map((c: any) => c.id);
+    setSelectedBirthdayClientIds(ids);
+  };
+
+  const handleDeselectAllBirthdays = () => {
+    setSelectedBirthdayClientIds([]);
+  };
+
+  const toggleSelectClient = (id: string) => {
+    setSelectedBirthdayClientIds(prev => 
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  const handleSendBulkBirthdayWhatsApp = async () => {
+    if (selectedBirthdayClientIds.length === 0) {
+      alert('يرجى تحديد عميل واحد على الأقل لإرسال التهنئة.');
+      return;
+    }
+
+    if (!EvolutionApiService.isConfigured(settings, activeBranchId)) {
+      alert('بيانات Evolution API غير مهيأة بعد في إعدادات النظام. يرجى إدخال الرابط، اسم الجلسة ومفتاح API في شاشة الإعدادات للتمكن من الإرسال المباشر.');
+      return;
+    }
+
+    if (!birthdayMessageText.trim()) {
+      alert('يرجى كتابة نص رسالة التهنئة.');
+      return;
+    }
+
+    const confirmed = window.confirm(`هل أنت متأكد من رغبتك في إرسال رسائل التهنئة عبر الواتساب إلى (${selectedBirthdayClientIds.length}) عميل؟`);
+    if (!confirmed) return;
+
+    setIsSendingBirthdayWhatsApp(true);
+    let successCount = 0;
+    let failedCount = 0;
+    const updatedClientsMap = new Map<string, any>();
+
+    setBirthdaySendProgress({
+      current: 0,
+      total: selectedBirthdayClientIds.length,
+      success: 0,
+      failed: 0
+    });
+
+    const salonName = settings.salonName || 'صالون سمارت كت';
+
+    for (let i = 0; i < selectedBirthdayClientIds.length; i++) {
+      const clientId = selectedBirthdayClientIds[i];
+      const item = birthdaysReportData.allPeriodClients.find((c: any) => c.id === clientId) || (clients || []).find(c => c.id === clientId);
+      if (!item || !item.phone) {
+        failedCount++;
+        setBirthdaySendProgress(prev => prev ? { ...prev, current: i + 1, failed: failedCount } : null);
+        continue;
+      }
+
+      const personalized = birthdayMessageText
+        .replace(/{name}/g, item.name || 'عميلنا العزيز')
+        .replace(/{salonName}/g, salonName)
+        .replace(/{points}/g, String(item.loyaltyPoints || 0))
+        .replace(/{tier}/g, item.tierLevel === 'royal' ? 'ملكي' : item.tierLevel === 'vip' ? 'VIP' : item.tierLevel === 'distinguished' ? 'متميز' : 'قياسي')
+        .replace(/{birthday}/g, item.birthdayDisplay || (item.birthdayDay && item.birthdayMonth ? `${item.birthdayDay}/${item.birthdayMonth}` : ''));
+
+      try {
+        const res = await EvolutionApiService.sendTextMessage(
+          settings,
+          item.phone,
+          personalized,
+          activeBranchId
+        );
+
+        if (res.success) {
+          successCount++;
+          const nowIso = new Date().toISOString();
+          const baseClient = item.rawClient || item;
+          const updated = {
+            ...baseClient,
+            lastBirthdayGreetingAt: nowIso,
+            last_birthday_greeting_at: nowIso
+          };
+          updatedClientsMap.set(item.id, updated);
+          await DB.saveClient(updated);
+        } else {
+          console.warn(`Failed to send to ${item.phone}:`, res.error);
+          failedCount++;
+        }
+      } catch (err) {
+        console.error(err);
+        failedCount++;
+      }
+
+      setBirthdaySendProgress(prev => prev ? {
+        ...prev,
+        current: i + 1,
+        success: successCount,
+        failed: failedCount
+      } : null);
+
+      if (i < selectedBirthdayClientIds.length - 1) {
+        await new Promise(r => setTimeout(r, 1200));
+      }
+    }
+
+    if (setClients && updatedClientsMap.size > 0) {
+      setClients((prev: any[]) => prev.map(c => updatedClientsMap.get(c.id) || c));
+    }
+
+    setIsSendingBirthdayWhatsApp(false);
+    alert(`اكتملت عملية الإرسال بنجاح!\n• تم إرسال التهنئة إلى: ${successCount} عميل\n• تعذر الإرسال إلى: ${failedCount} عميل`);
+  };
+
+  const handleSendSingleBirthdayGreeting = async (targetClient: any) => {
+    if (!targetClient.phone) {
+      alert('هذا العميل ليس لديه رقم هاتف مسجل.');
+      return;
+    }
+
+    if (!EvolutionApiService.isConfigured(settings, activeBranchId)) {
+      alert('بيانات Evolution API غير مهيأة بعد في إعدادات النظام. يرجى إدخال الرابط، اسم الجلسة ومفتاح API في الإعدادات.');
+      return;
+    }
+
+    const salonName = settings.salonName || 'صالون سمارت كت';
+    const personalized = birthdayMessageText
+      .replace(/{name}/g, targetClient.name || 'عميلنا العزيز')
+      .replace(/{salonName}/g, salonName)
+      .replace(/{points}/g, String(targetClient.loyaltyPoints || 0))
+      .replace(/{tier}/g, targetClient.tierLevel === 'royal' ? 'ملكي' : targetClient.tierLevel === 'vip' ? 'VIP' : targetClient.tierLevel === 'distinguished' ? 'متميز' : 'قياسي')
+      .replace(/{birthday}/g, targetClient.birthdayDisplay || '');
+
+    const confirmed = window.confirm(`إرسال تهنئة عيد الميلاد إلى ${targetClient.name} (${targetClient.phone})؟`);
+    if (!confirmed) return;
+
+    try {
+      const res = await EvolutionApiService.sendTextMessage(settings, targetClient.phone, personalized, activeBranchId);
+      if (res.success) {
+        const nowIso = new Date().toISOString();
+        const baseClient = targetClient.rawClient || targetClient;
+        const updated = {
+          ...baseClient,
+          lastBirthdayGreetingAt: nowIso,
+          last_birthday_greeting_at: nowIso
+        };
+        await DB.saveClient(updated);
+        if (setClients) {
+          setClients((prev: any[]) => prev.map(c => c.id === targetClient.id ? updated : c));
+        }
+        alert(`تم إرسال رسالة التهنئة بنجاح إلى ${targetClient.name}!`);
+      } else {
+        alert(`تعذر الإرسال: ${res.error || 'خطأ غير معروف'}`);
+      }
+    } catch (err: any) {
+      alert(`خطأ أثناء الإرسال: ${err?.message || ''}`);
+    }
+  };
+
+  const getBirthdayWhatsAppWebUrl = (targetClient: any) => {
+    const phoneDigits = (targetClient.phone || '').replace(/\D/g, '');
+    if (!phoneDigits) return null;
+    let fullPhone = phoneDigits;
+    if (fullPhone.startsWith('05') && fullPhone.length === 10) {
+      fullPhone = '966' + fullPhone.slice(1);
+    } else if (fullPhone.startsWith('01') && fullPhone.length === 11) {
+      fullPhone = '20' + fullPhone.slice(1);
+    }
+    const salonName = settings.salonName || 'صالون سمارت كت';
+    const msg = birthdayMessageText
+      .replace(/{name}/g, targetClient.name || 'عميلنا العزيز')
+      .replace(/{salonName}/g, salonName)
+      .replace(/{points}/g, String(targetClient.loyaltyPoints || 0))
+      .replace(/{tier}/g, targetClient.tierLevel === 'royal' ? 'ملكي' : targetClient.tierLevel === 'vip' ? 'VIP' : targetClient.tierLevel === 'distinguished' ? 'متميز' : 'قياسي')
+      .replace(/{birthday}/g, targetClient.birthdayDisplay || '');
+    return `https://wa.me/${fullPhone}?text=${encodeURIComponent(msg)}`;
+  };
+
+  // ---- دوال التحديد والإرسال لتقرير العملاء المنقطعين (Inactive Winback Actions) ----
+  const handleSelectFirstNInactive = (count: number) => {
+    const ids = (inactiveClientsReportData.inactiveClients || []).slice(0, count).map((c: any) => c.id);
+    setSelectedInactiveClientIds(ids);
+  };
+
+  const handleSelectAllInactive = () => {
+    const ids = (inactiveClientsReportData.inactiveClients || []).map((c: any) => c.id);
+    setSelectedInactiveClientIds(ids);
+  };
+
+  const handleSelectNotSentOnlyInactive = () => {
+    const ids = (inactiveClientsReportData.inactiveClients || []).filter((c: any) => !c.hasBeenSent).map((c: any) => c.id);
+    setSelectedInactiveClientIds(ids);
+  };
+
+  const handleDeselectAllInactive = () => {
+    setSelectedInactiveClientIds([]);
+  };
+
+  const toggleSelectInactiveClient = (id: string) => {
+    setSelectedInactiveClientIds(prev => 
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  const handleSendBulkInactiveWhatsApp = async () => {
+    if (selectedInactiveClientIds.length === 0) {
+      alert('يرجى تحديد عميل واحد على الأقل لإرسال رسالة التنشيط.');
+      return;
+    }
+
+    if (!EvolutionApiService.isConfigured(settings, activeBranchId)) {
+      alert('بيانات Evolution API غير مهيأة بعد في إعدادات النظام. يرجى إدخال الرابط، اسم الجلسة ومفتاح API في شاشة الإعدادات للتمكن من الإرسال المباشر.');
+      return;
+    }
+
+    if (!inactiveMessageText.trim()) {
+      alert('يرجى كتابة نص رسالة التنشيط.');
+      return;
+    }
+
+    const confirmed = window.confirm(`هل أنت متأكد من رغبتك في إرسال رسائل التنشيط والاستعادة عبر الواتساب إلى (${selectedInactiveClientIds.length}) عميل؟`);
+    if (!confirmed) return;
+
+    setIsSendingInactiveWhatsApp(true);
+    let successCount = 0;
+    let failedCount = 0;
+    const updatedClientsMap = new Map<string, any>();
+
+    setInactiveSendProgress({
+      current: 0,
+      total: selectedInactiveClientIds.length,
+      success: 0,
+      failed: 0
+    });
+
+    const salonName = settings.salonName || 'صالون سمارت كت';
+
+    for (let i = 0; i < selectedInactiveClientIds.length; i++) {
+      const clientId = selectedInactiveClientIds[i];
+      const item = inactiveClientsReportData.allInactiveClients.find((c: any) => c.id === clientId) || (clients || []).find(c => c.id === clientId);
+      if (!item || !item.phone) {
+        failedCount++;
+        setInactiveSendProgress(prev => prev ? { ...prev, current: i + 1, failed: failedCount } : null);
+        continue;
+      }
+
+      const personalized = inactiveMessageText
+        .replace(/{name}/g, item.name || 'عميلنا العزيز')
+        .replace(/{salonName}/g, salonName)
+        .replace(/{days}/g, String(item.daysAbsent || 0))
+        .replace(/{points}/g, String(item.loyaltyPoints || 0))
+        .replace(/{cashback}/g, Number(item.cashback || 0).toFixed(2))
+        .replace(/{tier}/g, item.tier === 'royal' ? 'ملكي' : item.tier === 'vip' ? 'VIP' : item.tier === 'distinguished' ? 'متميز' : 'قياسي');
+
+      try {
+        const res = await EvolutionApiService.sendTextMessage(
+          settings,
+          item.phone,
+          personalized,
+          activeBranchId
+        );
+
+        if (res.success) {
+          successCount++;
+          const nowIso = new Date().toISOString();
+          const baseClient = item.rawClient || (clients || []).find(c => c.id === item.id) || item;
+          const updated = {
+            ...baseClient,
+            lastReactivationMessageAt: nowIso,
+            last_reactivation_message_at: nowIso
+          };
+          updatedClientsMap.set(item.id, updated);
+          await DB.saveClient(updated);
+        } else {
+          console.warn(`Failed to send to ${item.phone}:`, res.error);
+          failedCount++;
+        }
+      } catch (err) {
+        console.error(err);
+        failedCount++;
+      }
+
+      setInactiveSendProgress(prev => prev ? {
+        ...prev,
+        current: i + 1,
+        success: successCount,
+        failed: failedCount
+      } : null);
+
+      if (i < selectedInactiveClientIds.length - 1) {
+        await new Promise(r => setTimeout(r, 1200));
+      }
+    }
+
+    if (setClients && updatedClientsMap.size > 0) {
+      setClients((prev: any[]) => prev.map(c => updatedClientsMap.get(c.id) || c));
+    }
+
+    setIsSendingInactiveWhatsApp(false);
+    alert(`اكتملت عملية الإرسال بنجاح!\n• تم إرسال رسائل التنشيط إلى: ${successCount} عميل\n• تعذر الإرسال إلى: ${failedCount} عميل`);
+  };
+
+  const handleSendSingleInactiveGreeting = async (targetClient: any) => {
+    if (!targetClient.phone) {
+      alert('هذا العميل ليس لديه رقم هاتف مسجل.');
+      return;
+    }
+
+    if (!EvolutionApiService.isConfigured(settings, activeBranchId)) {
+      alert('بيانات Evolution API غير مهيأة بعد في إعدادات النظام. يرجى إدخال الرابط، اسم الجلسة ومفتاح API في الإعدادات.');
+      return;
+    }
+
+    const salonName = settings.salonName || 'صالون سمارت كت';
+    const personalized = inactiveMessageText
+      .replace(/{name}/g, targetClient.name || 'عميلنا العزيز')
+      .replace(/{salonName}/g, salonName)
+      .replace(/{days}/g, String(targetClient.daysAbsent || 0))
+      .replace(/{points}/g, String(targetClient.loyaltyPoints || 0))
+      .replace(/{cashback}/g, Number(targetClient.cashback || 0).toFixed(2))
+      .replace(/{tier}/g, targetClient.tier === 'royal' ? 'ملكي' : targetClient.tier === 'vip' ? 'VIP' : targetClient.tier === 'distinguished' ? 'متميز' : 'قياسي');
+
+    const confirmed = window.confirm(`إرسال رسالة تنشيط واستعادة إلى ${targetClient.name} (${targetClient.phone})؟`);
+    if (!confirmed) return;
+
+    try {
+      setIsSendingInactiveWhatsApp(true);
+      const res = await EvolutionApiService.sendTextMessage(settings, targetClient.phone, personalized, activeBranchId);
+      if (res.success) {
+        const nowIso = new Date().toISOString();
+        const baseClient = targetClient.rawClient || (clients || []).find(c => c.id === targetClient.id) || targetClient;
+        const updated = {
+          ...baseClient,
+          lastReactivationMessageAt: nowIso,
+          last_reactivation_message_at: nowIso
+        };
+        await DB.saveClient(updated);
+        if (setClients) {
+          setClients((prev: any[]) => prev.map(c => c.id === updated.id ? updated : c));
+        }
+        alert(`تم إرسال رسالة التنشيط بنجاح إلى ${targetClient.name}!`);
+      } else {
+        alert(`تعذر الإرسال: ${res.error || 'خطأ غير معروف'}`);
+      }
+    } catch (err: any) {
+      alert(`خطأ أثناء الإرسال: ${err?.message || ''}`);
+    } finally {
+      setIsSendingInactiveWhatsApp(false);
+    }
+  };
+
+  const getInactiveWhatsAppWebUrl = (targetClient: any) => {
+    const phoneDigits = (targetClient.phone || '').replace(/\D/g, '');
+    if (!phoneDigits) return null;
+    let fullPhone = phoneDigits;
+    if (fullPhone.startsWith('05') && fullPhone.length === 10) {
+      fullPhone = '966' + fullPhone.slice(1);
+    } else if (fullPhone.startsWith('01') && fullPhone.length === 11) {
+      fullPhone = '20' + fullPhone.slice(1);
+    }
+    const salonName = settings.salonName || 'صالون سمارت كت';
+    const msg = inactiveMessageText
+      .replace(/{name}/g, targetClient.name || 'عميلنا العزيز')
+      .replace(/{salonName}/g, salonName)
+      .replace(/{days}/g, String(targetClient.daysAbsent || 0))
+      .replace(/{points}/g, String(targetClient.loyaltyPoints || 0))
+      .replace(/{cashback}/g, Number(targetClient.cashback || 0).toFixed(2))
+      .replace(/{tier}/g, targetClient.tier === 'royal' ? 'ملكي' : targetClient.tier === 'vip' ? 'VIP' : targetClient.tier === 'distinguished' ? 'متميز' : 'قياسي');
+
+    return `https://wa.me/${fullPhone}?text=${encodeURIComponent(msg)}`;
+  };
 
   const overtimeReportData = useMemo(() => {
     if (!activeFrom || !activeTo) return { detailedRows: [], summaryRows: [], totalHours: 0, totalAmount: 0, totalEmployees: 0, otCount: 0 };
@@ -1825,8 +2529,8 @@ export function ReportsScreen({
       ]);
       exportToExcel(filename, 'تقرير_التارجت_والعمولات_المستهدفة', headers, rows);
     } else if (activeReportType === 'inactive_clients') {
-      const headers = ['م', 'اسم العميل', 'المستوى', 'حالة الزيارة', 'رقم الموبايل', 'تاريخ آخر زيارة / تسجيل', 'مدة الانقطاع (يوم)', 'الزيارات السابقة', 'إجمالي الإنفاق السابق', 'متوسط الفاتورة', 'نقاط الولاء', 'رصيد الكاش باك', 'الملاحظات'];
-      const rows = inactiveClientsReportData.inactiveClients.map((c: any, idx: number) => [
+      const headers = ['م', 'اسم العميل', 'المستوى', 'حالة الزيارة', 'رقم الموبايل', 'تاريخ آخر زيارة / تسجيل', 'مدة الانقطاع (يوم)', 'حالة إرسال التنشيط', 'تاريخ آخر رسالة تنشيط', 'الزيارات السابقة', 'إجمالي الإنفاق السابق', 'متوسط الفاتورة', 'نقاط الولاء', 'رصيد الكاش باك', 'الملاحظات'];
+      const rows = (inactiveClientsReportData.inactiveClients || []).map((c: any, idx: number) => [
         idx + 1,
         c.name,
         c.tier === 'royal' ? 'ملكي' : c.tier === 'vip' ? 'VIP' : c.tier === 'distinguished' ? 'متميز' : 'قياسي',
@@ -1834,6 +2538,8 @@ export function ReportsScreen({
         c.phone || '-',
         c.lastVisitDate ? c.lastVisitDate : (c.createdAtDate ? `${c.createdAtDate} (تاريخ التسجيل)` : '-'),
         c.daysAbsent,
+        c.hasBeenSent ? 'تم الإرسال' : 'لم يتم الإرسال',
+        c.lastReactivationFormatted || 'لم يسبق الإرسال',
         c.totalVisits || 0,
         Number(c.totalSpend || 0).toFixed(2),
         Number(c.avgInvoice || 0).toFixed(2),
@@ -1842,6 +2548,21 @@ export function ReportsScreen({
         c.notes || '-'
       ]);
       exportToExcel(`تقرير_العملاء_المنقطعين_${inactiveClientsReportData.thresholdDays}_يوم`, `العملاء_المنقطعين_${inactiveClientsReportData.thresholdDays}_يوم`, headers, rows);
+    } else if (activeReportType === 'birthdays') {
+      const headers = ['م', 'اسم العميل', 'رقم الجوال', 'تاريخ الميلاد (يوم/شهر)', 'تاريخ المناسبة القادم', 'أيام متبقية', 'حالة التهنئة', 'تاريخ آخر إرسال', 'إجمالي الإنفاق', 'عدد الزيارات'];
+      const rows = (birthdaysReportData?.filteredClients || []).map((c: any, idx: number) => [
+        idx + 1,
+        c.name,
+        c.phone || '-',
+        `${c.birthdayDay}/${c.birthdayMonth}`,
+        c.occurrenceDateStr,
+        c.daysUntil === 0 ? 'اليوم 🎉' : (c.daysUntil < 0 ? `مضى منذ ${Math.abs(c.daysUntil)} يوم` : `بعد ${c.daysUntil} يوم`),
+        c.hasBeenSent ? 'تم الإرسال' : 'لم يتم الإرسال',
+        c.lastSentFormatted || 'لم يسبق الإرسال',
+        Number(c.totalSpend || 0).toFixed(2),
+        c.visitsCount || 0
+      ]);
+      exportToExcel(`تقرير_أعياد_ميلاد_العملاء_${activeFrom}_إلى_${activeTo}`, `أعياد_ميلاد_العملاء`, headers, rows);
     } else {
       const headers = ['البيان', 'القيمة'];
       const rows = [
@@ -1895,6 +2616,7 @@ export function ReportsScreen({
               <option value="sales_returns">تقرير مرتجعات المبيعات (تفصيلي وتحليلي)</option>
               <option value="target_report">تقرير التارجت والعمولات المستهدفة للموظفين</option>
               <option value="inactive_clients">تقرير العملاء المنقطعين عن الزيارة (إعادة التنشيط)</option>
+              <option value="birthdays">تقرير مناسبات أعياد ميلاد العملاء (تهنئة ورسائل واتساب)</option>
               <option value="unpaid_bookings">تقرير المبالغ المتبقية والغير مسددة في الحجوزات</option>
               <option value="income">تقرير الدخل التفصيلي</option>
               <option value="closing">تقرير إغلاق اليوم</option>
@@ -2151,11 +2873,11 @@ export function ReportsScreen({
               </button>
             </div>
 
-            {/* Visit Status Filter + Search + Sort */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              {/* Visit Status Filter */}
+            {/* Visit Status Filter + Sent Filter + Search + Sort */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              {/* Visit Status */}
               <div>
-                <label className="block text-xs font-bold text-slate-600 mb-1">تصفية حالة العميل:</label>
+                <label className="block text-xs font-bold text-slate-600 mb-1">تصفية حالة الزيارة:</label>
                 <div className="flex bg-slate-100 p-1 rounded-xl gap-1">
                   <button
                     type="button"
@@ -2173,7 +2895,7 @@ export function ReportsScreen({
                       inactiveStatusFilter === 'visited' ? 'bg-white text-rose-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    سبق لهم الزيارة وانقطعوا
+                    سبق الزيارة
                   </button>
                   <button
                     type="button"
@@ -2182,7 +2904,41 @@ export function ReportsScreen({
                       inactiveStatusFilter === 'never_visited' ? 'bg-white text-rose-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    مسجلين جدد ولم يزوروا بعد
+                    جدد لم يزوروا
+                  </button>
+                </div>
+              </div>
+
+              {/* Sent Filter (ويمكن التصفية بالذين لم يرسل لهم) */}
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">حالة إرسال رسالة التنشيط:</label>
+                <div className="flex bg-slate-100 p-1 rounded-xl gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setInactiveSentFilter('all')}
+                    className={`flex-1 py-1.5 px-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                      inactiveSentFilter === 'all' ? 'bg-white text-primary shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    الكل ({inactiveClientsReportData?.inactiveCount || 0})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInactiveSentFilter('not_sent_only')}
+                    className={`flex-1 py-1.5 px-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                      inactiveSentFilter === 'not_sent_only' ? 'bg-white text-amber-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    لم يرسل ({inactiveClientsReportData?.notSentCount || 0})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInactiveSentFilter('sent_only')}
+                    className={`flex-1 py-1.5 px-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                      inactiveSentFilter === 'sent_only' ? 'bg-white text-emerald-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    تم ({inactiveClientsReportData?.sentCount || 0})
                   </button>
                 </div>
               </div>
@@ -2195,7 +2951,7 @@ export function ReportsScreen({
                     type="text"
                     value={inactiveClientsSearch}
                     onChange={(e) => setInactiveClientsSearch(e.target.value)}
-                    placeholder="ابحث بالاسم، أو رقم الجوال، أو الملاحظات..."
+                    placeholder="ابحث بالاسم، الجوال، الملاحظات..."
                     className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-rose-500 shadow-2xs pr-8"
                   />
                   <Search size={14} className="absolute right-2.5 top-2.5 text-slate-400" />
@@ -2214,6 +2970,118 @@ export function ReportsScreen({
                   <option value="days_asc">الأحدث انقطاعاً أولاً (تصاعدي)</option>
                   <option value="spend_desc">الأعلى إنفاقاً تاريخياً أولاً (كبار العملاء)</option>
                   <option value="visits_desc">الأكثر زيارات سابقة أولاً</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Sub-filters for Birthday Celebrations Report */}
+        {reportType === 'birthdays' && (
+          <div className="mt-4 pt-4 border-t border-slate-100 space-y-4 animate-in fade-in">
+            {/* Quick Period Buttons Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-pink-50/80 p-3 rounded-2xl border border-pink-200/80">
+              <div className="flex items-center gap-2">
+                <Cake size={16} className="text-pink-600" />
+                <span className="text-xs font-black text-pink-950">فترات سريعة للمناسبات:</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setBirthdayQuickPeriod('today')}
+                  className="px-3 py-1.5 rounded-xl text-xs font-black bg-white hover:bg-pink-100/70 text-pink-800 border border-pink-200 shadow-2xs transition-all cursor-pointer flex items-center gap-1.5"
+                >
+                  <Sparkles size={12} className="text-amber-500" />
+                  <span>أعياد اليوم</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBirthdayQuickPeriod('this_week')}
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold bg-white hover:bg-pink-100/70 text-pink-800 border border-pink-200 shadow-2xs transition-all cursor-pointer"
+                >
+                  الأسبوع الحالي
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBirthdayQuickPeriod('this_month')}
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold bg-white hover:bg-pink-100/70 text-pink-800 border border-pink-200 shadow-2xs transition-all cursor-pointer"
+                >
+                  الشهر الحالي
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBirthdayQuickPeriod('next_month')}
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold bg-white hover:bg-pink-100/70 text-pink-800 border border-pink-200 shadow-2xs transition-all cursor-pointer"
+                >
+                  الشهر القادم
+                </button>
+              </div>
+            </div>
+
+            {/* Sub Filter Controls Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {/* Sent Filter */}
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">حالة إرسال التهنئة:</label>
+                <div className="flex bg-slate-100 p-1 rounded-xl gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setBirthdaySentFilter('all')}
+                    className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                      birthdaySentFilter === 'all' ? 'bg-white text-primary shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    الكل ({birthdaysReportData?.totalInPeriod || 0})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBirthdaySentFilter('not_sent_only')}
+                    className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                      birthdaySentFilter === 'not_sent_only' ? 'bg-white text-amber-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    لم يتم الإرسال ({birthdaysReportData?.notSentCount || 0})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBirthdaySentFilter('sent_only')}
+                    className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                      birthdaySentFilter === 'sent_only' ? 'bg-white text-emerald-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    تم الإرسال ({birthdaysReportData?.sentCount || 0})
+                  </button>
+                </div>
+              </div>
+
+              {/* Text Search */}
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">بحث في عملاء الفترة:</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={birthdaySearch}
+                    onChange={(e) => setBirthdaySearch(e.target.value)}
+                    placeholder="ابحث بالاسم أو رقم الجوال..."
+                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-pink-500 shadow-2xs pr-8"
+                  />
+                  <Search size={14} className="absolute right-2.5 top-2.5 text-slate-400" />
+                </div>
+              </div>
+
+              {/* Sort By */}
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">ترتيب العملاء المعروضين:</label>
+                <select
+                  value={birthdaySortBy}
+                  onChange={(e: any) => setBirthdaySortBy(e.target.value)}
+                  className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-pink-500 shadow-2xs"
+                >
+                  <option value="date_asc">تاريخ المناسبة (الأقرب تاريخاً أولاً)</option>
+                  <option value="date_desc">تاريخ المناسبة (الأبعد تاريخاً أولاً)</option>
+                  <option value="name_asc">اسم العميل (أبجدياً أ-ي)</option>
+                  <option value="greeting_status">حالة التهنئة (غير المرسل لهم أولاً)</option>
+                  <option value="spend_desc">إجمالي الإنفاق التاريخي (الأعلى أولاً)</option>
                 </select>
               </div>
             </div>
@@ -2587,6 +3455,108 @@ export function ReportsScreen({
             </div>
           </div>
         </div>
+      ) : isGenerated && activeReportType === 'birthdays' ? (
+        <div className="space-y-6 mb-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          {/* Gradient Banner */}
+          <div className="bg-gradient-to-r from-slate-900 via-pink-950 to-slate-900 rounded-3xl p-6 text-white shadow-xl border border-pink-900/40 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-72 h-72 bg-pink-500/10 rounded-full blur-3xl pointer-events-none"></div>
+            <div className="absolute bottom-0 left-0 w-48 h-48 bg-amber-500/10 rounded-full blur-2xl pointer-events-none"></div>
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative z-10">
+              <div>
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-pink-500/20 text-pink-300 border border-pink-500/30 text-xs font-black mb-2">
+                  <Cake size={14} className="text-pink-400" />
+                  <span>مناسبات أعياد ميلاد العملاء (Birthday Celebrations)</span>
+                </div>
+                <h3 className="text-xl sm:text-2xl font-black text-white">
+                  تقرير مناسبات أعياد الميلاد ومراسلات الواتساب
+                </h3>
+                <p className="text-xs text-slate-300 mt-1 max-w-2xl font-medium leading-relaxed">
+                  حصر وتصنيف العملاء الذين تصادف تواريخ ميلادهم خلال الفترة المحددة ({activeFrom} إلى {activeTo}) للتواصل وإرسال التهنئة والعروض الخاصة عبر WhatsApp.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3 shrink-0">
+                <div className="bg-white/10 backdrop-blur-md px-5 py-3 rounded-2xl border border-white/20 text-center">
+                  <div className="text-[11px] text-slate-300 font-bold mb-0.5">مناسبات الفترة</div>
+                  <div className="text-xl font-mono font-black text-white">
+                    {birthdaysReportData?.totalInPeriod || 0} <span className="text-xs font-normal text-slate-300">عميل</span>
+                  </div>
+                </div>
+                <div className="bg-pink-500/20 backdrop-blur-md px-5 py-3 rounded-2xl border border-pink-400/30 text-center">
+                  <div className="text-[11px] text-pink-200 font-bold mb-0.5">أعياد اليوم</div>
+                  <div className="text-xl font-mono font-black text-pink-300">
+                    {birthdaysReportData?.todayCount || 0} <span className="text-xs font-normal text-pink-200">عميل</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 4 KPI Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+            {/* 1. إجمالي أعياد الميلاد بالفترة */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm border-r-4 border-r-pink-500 flex justify-between items-center">
+              <div>
+                <p className="text-slate-500 text-xs font-bold mb-1">إجمالي أعياد ميلاد الفترة</p>
+                <h4 className="text-2xl font-black text-pink-700 font-mono">
+                  {birthdaysReportData?.totalInPeriod || 0} <span className="text-xs font-normal text-slate-400">عميل</span>
+                </h4>
+                <p className="text-[10px] text-pink-600 font-bold mt-1">
+                  الفترة: {activeFrom} إلى {activeTo}
+                </p>
+              </div>
+              <div className="w-12 h-12 rounded-2xl bg-pink-50 flex items-center justify-center text-pink-600 shadow-xs">
+                <Cake size={22} />
+              </div>
+            </div>
+
+            {/* 2. أعياد ميلاد اليوم */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm border-r-4 border-r-amber-500 flex justify-between items-center">
+              <div>
+                <p className="text-slate-500 text-xs font-bold mb-1">أعياد ميلاد اليوم 🎉</p>
+                <h4 className="text-2xl font-black text-amber-700 font-mono">
+                  {birthdaysReportData?.todayCount || 0} <span className="text-xs font-normal text-slate-400">عميل</span>
+                </h4>
+                <p className="text-[10px] text-amber-600 font-bold mt-1">
+                  بحاجة لمعايدة وتهنئة فورية اليوم
+                </p>
+              </div>
+              <div className="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center text-amber-600 shadow-xs">
+                <Sparkles size={22} />
+              </div>
+            </div>
+
+            {/* 3. تم إرسال التهنئة لهم */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm border-r-4 border-r-emerald-500 flex justify-between items-center">
+              <div>
+                <p className="text-slate-500 text-xs font-bold mb-1">تمت التهنئة والإرسال لهم</p>
+                <h4 className="text-2xl font-black text-emerald-700 font-mono">
+                  {birthdaysReportData?.sentCount || 0} <span className="text-xs font-normal text-slate-400">عميل</span>
+                </h4>
+                <p className="text-[10px] text-emerald-600 font-bold mt-1">
+                  نسبة الإنجاز: {Math.round(((birthdaysReportData?.sentCount || 0) / (birthdaysReportData?.totalInPeriod || 1)) * 100)}%
+                </p>
+              </div>
+              <div className="w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center text-emerald-600 shadow-xs">
+                <CheckCheck size={22} />
+              </div>
+            </div>
+
+            {/* 4. لم يتم الإرسال بعد */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm border-r-4 border-r-indigo-500 flex justify-between items-center">
+              <div>
+                <p className="text-slate-500 text-xs font-bold mb-1">لم يتم إرسال تهنئة بعد</p>
+                <h4 className="text-2xl font-black text-indigo-700 font-mono">
+                  {birthdaysReportData?.notSentCount || 0} <span className="text-xs font-normal text-slate-400">عميل</span>
+                </h4>
+                <p className="text-[10px] text-indigo-600 font-bold mt-1">جاهزون للإرسال المجمع أو الفردي</p>
+              </div>
+              <div className="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-600 shadow-xs">
+                <Gift size={22} />
+              </div>
+            </div>
+          </div>
+        </div>
       ) : isGenerated && activeReportType === 'target_report' ? (
         <div className="space-y-4 mb-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
           <div className="bg-gradient-to-r from-indigo-900 via-indigo-800 to-slate-900 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden">
@@ -2950,6 +3920,24 @@ export function ReportsScreen({
             inactiveClientsReportData={inactiveClientsReportData}
             inactiveClientsSearch={inactiveClientsSearch}
             setInactiveClientsSearch={setInactiveClientsSearch}
+            inactiveSentFilter={inactiveSentFilter}
+            setInactiveSentFilter={setInactiveSentFilter}
+            selectedInactiveClientIds={selectedInactiveClientIds}
+            setSelectedInactiveClientIds={setSelectedInactiveClientIds}
+            inactiveMessageText={inactiveMessageText}
+            setInactiveMessageText={setInactiveMessageText}
+            isSendingInactiveWhatsApp={isSendingInactiveWhatsApp}
+            inactiveSendProgress={inactiveSendProgress}
+            bulkInactiveSelectCountInput={bulkInactiveSelectCountInput}
+            setBulkInactiveSelectCountInput={setBulkInactiveSelectCountInput}
+            handleSelectFirstNInactive={handleSelectFirstNInactive}
+            handleSelectAllInactive={handleSelectAllInactive}
+            handleSelectNotSentOnlyInactive={handleSelectNotSentOnlyInactive}
+            handleDeselectAllInactive={handleDeselectAllInactive}
+            toggleSelectInactiveClient={toggleSelectInactiveClient}
+            handleSendBulkInactiveWhatsApp={handleSendBulkInactiveWhatsApp}
+            handleSendSingleInactiveGreeting={handleSendSingleInactiveGreeting}
+            getInactiveWhatsAppWebUrl={getInactiveWhatsAppWebUrl}
             targetReportData={targetReportData}
             targetReportSearch={targetReportSearch}
             setTargetReportSearch={setTargetReportSearch}
@@ -2957,6 +3945,30 @@ export function ReportsScreen({
             setTargetTypeFilter={setTargetTypeFilter}
             targetStatusFilter={targetStatusFilter}
             setTargetStatusFilter={setTargetStatusFilter}
+            birthdaysReportData={birthdaysReportData}
+            birthdaySearch={birthdaySearch}
+            setBirthdaySearch={setBirthdaySearch}
+            birthdaySortBy={birthdaySortBy}
+            setBirthdaySortBy={setBirthdaySortBy}
+            birthdaySentFilter={birthdaySentFilter}
+            setBirthdaySentFilter={setBirthdaySentFilter}
+            selectedBirthdayClientIds={selectedBirthdayClientIds}
+            setSelectedBirthdayClientIds={setSelectedBirthdayClientIds}
+            birthdayMessageText={birthdayMessageText}
+            setBirthdayMessageText={setBirthdayMessageText}
+            isSendingBirthdayWhatsApp={isSendingBirthdayWhatsApp}
+            birthdaySendProgress={birthdaySendProgress}
+            bulkSelectCountInput={bulkSelectCountInput}
+            setBulkSelectCountInput={setBulkSelectCountInput}
+            handleSelectFirstN={handleSelectFirstN}
+            handleSelectAllBirthdays={handleSelectAllBirthdays}
+            handleSelectNotSentOnly={handleSelectNotSentOnly}
+            handleDeselectAllBirthdays={handleDeselectAllBirthdays}
+            toggleSelectClient={toggleSelectClient}
+            handleSendBulkBirthdayWhatsApp={handleSendBulkBirthdayWhatsApp}
+            handleSendSingleBirthdayGreeting={handleSendSingleBirthdayGreeting}
+            getBirthdayWhatsAppWebUrl={getBirthdayWhatsAppWebUrl}
+            setBirthdayQuickPeriod={setBirthdayQuickPeriod}
           />
         </div>
       )}
@@ -3007,13 +4019,55 @@ function ReportTable({
   inactiveClientsReportData,
   inactiveClientsSearch = '',
   setInactiveClientsSearch,
+  inactiveSentFilter = 'all',
+  setInactiveSentFilter,
+  selectedInactiveClientIds = [],
+  setSelectedInactiveClientIds,
+  inactiveMessageText = '',
+  setInactiveMessageText,
+  isSendingInactiveWhatsApp = false,
+  inactiveSendProgress = null,
+  bulkInactiveSelectCountInput = '10',
+  setBulkInactiveSelectCountInput,
+  handleSelectFirstNInactive,
+  handleSelectAllInactive,
+  handleSelectNotSentOnlyInactive,
+  handleDeselectAllInactive,
+  toggleSelectInactiveClient,
+  handleSendBulkInactiveWhatsApp,
+  handleSendSingleInactiveGreeting,
+  getInactiveWhatsAppWebUrl,
   targetReportData,
   targetReportSearch = '',
   setTargetReportSearch,
   targetTypeFilter = 'all',
   setTargetTypeFilter,
   targetStatusFilter = 'all',
-  setTargetStatusFilter
+  setTargetStatusFilter,
+  birthdaysReportData,
+  birthdaySearch = '',
+  setBirthdaySearch,
+  birthdaySortBy = 'date_asc',
+  setBirthdaySortBy,
+  birthdaySentFilter = 'all',
+  setBirthdaySentFilter,
+  selectedBirthdayClientIds = [],
+  setSelectedBirthdayClientIds,
+  birthdayMessageText = '',
+  setBirthdayMessageText,
+  isSendingBirthdayWhatsApp = false,
+  birthdaySendProgress = null,
+  bulkSelectCountInput = '10',
+  setBulkSelectCountInput,
+  handleSelectFirstN,
+  handleSelectAllBirthdays,
+  handleSelectNotSentOnly,
+  handleDeselectAllBirthdays,
+  toggleSelectClient,
+  handleSendBulkBirthdayWhatsApp,
+  handleSendSingleBirthdayGreeting,
+  getBirthdayWhatsAppWebUrl,
+  setBirthdayQuickPeriod
 }: any) {
   const start = new Date(activeFrom);
   const end = new Date(activeTo);
@@ -5342,11 +6396,559 @@ function ReportTable({
     );
   }
 
+  if (reportType === 'birthdays') {
+    const data = birthdaysReportData || {
+      allPeriodClients: [],
+      filteredClients: [],
+      totalInPeriod: 0,
+      todayCount: 0,
+      sentCount: 0,
+      notSentCount: 0
+    };
+
+    const filteredClients = data.filteredClients || [];
+    const isEvolutionConfigured = Boolean(
+      settings?.evolutionApiUrl?.trim() && 
+      settings?.evolutionApiKey?.trim() && 
+      settings?.evolutionInstanceName?.trim()
+    );
+
+    const isAllSelected = filteredClients.length > 0 && filteredClients.every((c: any) => selectedBirthdayClientIds.includes(c.id));
+    const isSomeSelected = filteredClients.some((c: any) => selectedBirthdayClientIds.includes(c.id));
+
+    const totalDisplayedSpend = filteredClients.reduce((sum: number, c: any) => sum + (c.totalSpend || 0), 0);
+    const totalDisplayedVisits = filteredClients.reduce((sum: number, c: any) => sum + (c.visitsCount || 0), 0);
+
+    const handleCopyPhone = (phone: string) => {
+      if (!phone) return;
+      navigator.clipboard.writeText(phone);
+      alert(`تم نسخ رقم الجوال: ${phone}`);
+    };
+
+    const insertTag = (tag: string) => {
+      if (!setBirthdayMessageText) return;
+      setBirthdayMessageText((prev: string) => (prev ? prev + ' ' + tag : tag));
+    };
+
+    const sampleClient = filteredClients[0] || { 
+      name: 'أحمد محمود', 
+      birthdayDisplay: '15 أكتوبر', 
+      tierLevel: 'vip', 
+      loyaltyPoints: 150 
+    };
+
+    const previewMessage = (birthdayMessageText || '')
+      .replace(/\{name\}/g, sampleClient.name || 'أحمد')
+      .replace(/\{birthday\}/g, sampleClient.birthdayDisplay || '15 أكتوبر')
+      .replace(/\{salonName\}/g, settings?.salonName || 'صالون سمارت كت')
+      .replace(/\{tier\}/g, sampleClient.tierLevel === 'royal' ? 'الملكي' : sampleClient.tierLevel === 'vip' ? 'VIP' : sampleClient.tierLevel === 'distinguished' ? 'المتميز' : 'القياسي')
+      .replace(/\{points\}/g, String(sampleClient.loyaltyPoints || 0));
+
+    return (
+      <div id="report-receipt-container" className="space-y-6 p-4 sm:p-6 bg-slate-50/50">
+        
+        {/* Evolution API Notice if not configured */}
+        {!isEvolutionConfigured && (
+          <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-4 flex items-start gap-3 print:hidden">
+            <AlertTriangle className="text-amber-600 shrink-0 mt-0.5" size={20} />
+            <div className="text-xs text-amber-900 leading-relaxed">
+              <span className="font-black text-amber-950 block mb-0.5">تنبيه: تكامل Evolution API غير مكتمل في الإعدادات</span>
+              لتمكين الإرسال التلقائي المجمع والمباشر بنقرة واحدة عبر الواتساب، يرجى التوجه إلى <span className="font-bold underline">الإعدادات &gt; إعدادات WhatsApp (Evolution API)</span> وتعبئة رابط السيرفر ومفتاح API واسم النسخة.
+              يمكنك في الوقت الحالي استخدام زر «فتح في واتساب ويب» بجوار كل عميل كحل بديل.
+            </div>
+          </div>
+        )}
+
+        {/* Message Composer & Live Preview Card (Collapsible / Full) */}
+        <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm overflow-hidden print:hidden">
+          <div className="p-4 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+            <div className="flex items-center gap-2">
+              <MessageSquare size={18} className="text-pink-400" />
+              <h3 className="font-black text-sm">محرر رسالة تهنئة عيد الميلاد والمعاينة الحية</h3>
+            </div>
+            <div className="text-[11px] text-slate-300 flex items-center gap-1.5">
+              <Sparkles size={13} className="text-amber-400" />
+              <span>يتم تخصيص الاسم والبيانات تلقائياً لكل عميل أثناء الإرسال</span>
+            </div>
+          </div>
+
+          <div className="p-5 grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Editor Side */}
+            <div className="lg:col-span-7 space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-black text-slate-700 flex items-center gap-1.5">
+                  <Edit2 size={14} className="text-pink-600" />
+                  <span>نص الرسالة المرسلة:</span>
+                </label>
+                <span className="text-[11px] text-slate-400 font-mono font-bold">
+                  {birthdayMessageText.length} حرف
+                </span>
+              </div>
+
+              <textarea
+                value={birthdayMessageText}
+                onChange={(e) => setBirthdayMessageText && setBirthdayMessageText(e.target.value)}
+                rows={5}
+                placeholder="اكتب رسالة التهنئة هنا واستخدم وسوم الاستبدال بالأسفل..."
+                className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-3.5 text-xs text-slate-800 leading-relaxed font-medium outline-none focus:border-pink-500 focus:bg-white transition-all shadow-inner"
+              />
+
+              {/* Tag Insertion Buttons */}
+              <div className="space-y-1.5">
+                <span className="text-[10px] font-bold text-slate-500 block">اضغط لإدراج وسم ذكي في نص الرسالة:</span>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => insertTag('{name}')}
+                    className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-pink-50 hover:bg-pink-100 text-pink-700 border border-pink-200 transition-all cursor-pointer"
+                  >
+                    + اسم العميل {'{name}'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => insertTag('{birthday}')}
+                    className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 transition-all cursor-pointer"
+                  >
+                    + تاريخ الميلاد {'{birthday}'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => insertTag('{salonName}')}
+                    className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition-all cursor-pointer"
+                  >
+                    + اسم الصالون {'{salonName}'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => insertTag('{tier}')}
+                    className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 transition-all cursor-pointer"
+                  >
+                    + المستوى {'{tier}'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => insertTag('{points}')}
+                    className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 transition-all cursor-pointer"
+                  >
+                    + نقاط الولاء {'{points}'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* WhatsApp Live Bubble Preview Side */}
+            <div className="lg:col-span-5 flex flex-col justify-between">
+              <div>
+                <span className="text-xs font-black text-slate-700 block mb-2">معاينة شكل الرسالة في تطبيق WhatsApp:</span>
+                
+                {/* Mock Phone / WhatsApp Chat Bubble */}
+                <div className="bg-[#0b141a] rounded-2xl overflow-hidden border border-slate-300 shadow-md">
+                  {/* WhatsApp Header */}
+                  <div className="bg-[#1f2c34] px-3.5 py-2.5 flex items-center gap-2.5 border-b border-[#2a3942]">
+                    <div className="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center text-white font-black text-xs">
+                      {settings?.salonName ? settings.salonName.substring(0, 1) : 'S'}
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-[#e9edef] leading-tight">
+                        {settings?.salonName || 'Smart Cut'}
+                      </div>
+                      <div className="text-[10px] text-[#8696a0]">متصل الآن عبر Evolution API</div>
+                    </div>
+                  </div>
+
+                  {/* Chat Area Background */}
+                  <div className="p-3.5 bg-[#0b141a] min-h-[130px] flex items-end justify-end">
+                    {/* Outgoing Message Bubble */}
+                    <div className="max-w-[92%] bg-[#005c4b] text-[#e9edef] p-2.5 rounded-2xl rounded-tr-none text-xs leading-relaxed shadow-sm space-y-1">
+                      <p className="whitespace-pre-line text-[11px]">{previewMessage || 'أهلاً بك، كل عام وأنت بخير بمناسبة عيد ميلادك 🎉'}</p>
+                      <div className="flex items-center justify-end gap-1 text-[9px] text-[#8696a0]">
+                        <span>{new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</span>
+                        <CheckCheck size={13} className="text-[#53bdeb]" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <p className="text-[10px] text-slate-400 mt-2 font-medium">
+                * المعاينة بالأعلى مبنية على بيانات نموذجية للعميل الأول ({sampleClient.name}).
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Selection & Bulk Sending Action Bar */}
+        <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 print:hidden">
+          {/* Selection Controls */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Master Select/Deselect All Checkbox Button */}
+            <button
+              type="button"
+              onClick={isAllSelected ? handleDeselectAllBirthdays : handleSelectAllBirthdays}
+              className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 border ${
+                isAllSelected 
+                  ? 'bg-primary text-white border-primary shadow-xs' 
+                  : 'bg-white text-slate-700 hover:bg-slate-100 border-slate-300'
+              }`}
+            >
+              {isAllSelected ? <CheckSquare size={14} /> : <Square size={14} />}
+              <span>{isAllSelected ? 'إلغاء تحديد الكل' : 'تحديد جميع المعروضين'}</span>
+            </button>
+
+            {/* Select Not Sent Only Button */}
+            <button
+              type="button"
+              onClick={handleSelectNotSentOnly}
+              className="px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 transition-all cursor-pointer flex items-center gap-1"
+              title="تحديد العملاء الذين لم ترسل لهم تهنئة بعد في هذه القائمة"
+            >
+              <Gift size={13} className="text-amber-600" />
+              <span>تحديد غير المرسل لهم فقط</span>
+            </button>
+
+            {/* Select First N Clients */}
+            <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-xl px-2 py-1">
+              <span className="text-[11px] font-bold text-slate-600">تحديد أول:</span>
+              <input
+                type="number"
+                min="1"
+                max={filteredClients.length || 100}
+                value={bulkSelectCountInput}
+                onChange={(e) => setBulkSelectCountInput && setBulkSelectCountInput(e.target.value)}
+                className="w-12 bg-white border border-slate-300 rounded-lg px-1.5 py-0.5 text-xs text-center font-bold text-slate-800 outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => handleSelectFirstN && handleSelectFirstN(parseInt(bulkSelectCountInput, 10) || 10)}
+                className="px-2 py-0.5 rounded-lg text-[11px] font-black bg-slate-800 hover:bg-slate-900 text-white transition-all cursor-pointer"
+              >
+                تطبيق
+              </button>
+            </div>
+
+            {/* Deselect All */}
+            {selectedBirthdayClientIds.length > 0 && (
+              <button
+                type="button"
+                onClick={handleDeselectAllBirthdays}
+                className="px-2.5 py-1.5 rounded-xl text-xs font-bold text-rose-600 hover:bg-rose-50 border border-rose-200 transition-all cursor-pointer"
+              >
+                مسح التحديد ({selectedBirthdayClientIds.length})
+              </button>
+            )}
+          </div>
+
+          {/* Bulk Send Button & Status */}
+          <div className="flex items-center gap-3">
+            <div className="text-left">
+              <span className="text-xs font-black text-slate-800 block">
+                تم تحديد: <span className="font-mono text-primary font-black">{selectedBirthdayClientIds.length}</span> من أصل <span className="font-mono text-slate-600">{filteredClients.length}</span> عميل
+              </span>
+              {birthdaySendProgress && (
+                <span className="text-[11px] font-bold text-indigo-600 font-mono block">
+                  جاري الإرسال ({birthdaySendProgress.current}/{birthdaySendProgress.total}) • نجح: {birthdaySendProgress.success} • فشل: {birthdaySendProgress.failed}
+                </span>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={handleSendBulkBirthdayWhatsApp}
+              disabled={selectedBirthdayClientIds.length === 0 || isSendingBirthdayWhatsApp || !birthdayMessageText.trim()}
+              className={`px-5 py-2.5 rounded-xl text-xs font-black flex items-center gap-2 shadow-md transition-all cursor-pointer ${
+                selectedBirthdayClientIds.length === 0 || isSendingBirthdayWhatsApp || !birthdayMessageText.trim()
+                  ? 'bg-slate-300 text-slate-500 cursor-not-allowed shadow-none'
+                  : 'bg-emerald-600 hover:bg-emerald-700 text-white hover:shadow-lg active:scale-98'
+              }`}
+            >
+              {isSendingBirthdayWhatsApp ? (
+                <>
+                  <RefreshCw size={15} className="animate-spin text-white" />
+                  <span>جاري الإرسال المجمع...</span>
+                </>
+              ) : (
+                <>
+                  <Send size={15} />
+                  <span>إرسال واتساب للمحددين ({selectedBirthdayClientIds.length})</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Detailed Birthdays Table */}
+        <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-2xs">
+          <div className="p-3.5 bg-slate-900 text-white font-black text-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+            <div className="flex items-center gap-2">
+              <Cake size={16} className="text-pink-400" />
+              <span>قائمة العملاء الذين تصادف أعياد ميلادهم خلال الفترة ({activeFrom} إلى {activeTo})</span>
+              <span className="text-[11px] bg-slate-800 text-pink-300 px-2.5 py-0.5 rounded-full font-mono">
+                {filteredClients.length} عميل معروض
+              </span>
+            </div>
+            <div className="text-[11px] text-slate-400 font-normal flex items-center gap-1.5">
+              <Sparkles size={13} className="text-amber-400 shrink-0" />
+              <span>يتم تحديث علامة "تمت التهنئة" وتاريخ آخر إرسال تلقائياً بعد كل عملية إرسال ناجحة</span>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-right text-xs">
+              <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                <tr>
+                  <th className="py-3 px-3 text-center w-10 print:hidden">
+                    <input
+                      type="checkbox"
+                      checked={isAllSelected}
+                      ref={(el) => {
+                        if (el) el.indeterminate = !isAllSelected && isSomeSelected;
+                      }}
+                      onChange={isAllSelected ? handleDeselectAllBirthdays : handleSelectAllBirthdays}
+                      className="w-4 h-4 rounded text-primary focus:ring-primary cursor-pointer"
+                    />
+                  </th>
+                  <th className="py-3 px-3 text-center w-12">#</th>
+                  <th className="py-3 px-3">العميل والمستوى</th>
+                  <th className="py-3 px-3">رقم الموبايل</th>
+                  <th className="py-3 px-3 text-center">تاريخ الميلاد</th>
+                  <th className="py-3 px-3 text-center">موعد المناسبة بالفترة</th>
+                  <th className="py-3 px-3 text-left">إجمالي الإنفاق</th>
+                  <th className="py-3 px-3 text-center">الزيارات</th>
+                  <th className="py-3 px-3 text-center">حالة إرسال التهنئة</th>
+                  <th className="py-3 px-3 text-center print:hidden">إجراءات الإرسال</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-semibold">
+                {filteredClients.map((c: any, idx: number) => {
+                  const isSelected = selectedBirthdayClientIds.includes(c.id);
+                  const isBdayToday = c.daysUntil === 0;
+
+                  return (
+                    <tr 
+                      key={c.id || idx} 
+                      className={`transition-colors ${
+                        isSelected 
+                          ? 'bg-pink-50/40 hover:bg-pink-50/70' 
+                          : isBdayToday 
+                          ? 'bg-amber-50/30 hover:bg-amber-50/60' 
+                          : 'hover:bg-slate-50/80'
+                      }`}
+                    >
+                      {/* Checkbox */}
+                      <td className="py-3 px-3 text-center print:hidden">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelectClient && toggleSelectClient(c.id)}
+                          className="w-4 h-4 rounded text-primary focus:ring-primary cursor-pointer"
+                        />
+                      </td>
+
+                      {/* Row Index */}
+                      <td className="py-3 px-3 text-center font-mono text-slate-400">
+                        {idx + 1}
+                      </td>
+
+                      {/* Name & Badges */}
+                      <td className="py-3 px-3 font-bold text-slate-900">
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center gap-1.5">
+                            <User size={14} className="text-slate-400 shrink-0" />
+                            <span className="font-bold text-slate-900">{c.name}</span>
+                          </div>
+                          <div className="flex items-center gap-1 flex-wrap">
+                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-black border ${
+                              c.tierLevel === 'royal'
+                                ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                : c.tierLevel === 'vip'
+                                ? 'bg-purple-100 text-purple-900 border-purple-300'
+                                : c.tierLevel === 'distinguished'
+                                ? 'bg-blue-100 text-blue-900 border-blue-300'
+                                : 'bg-slate-100 text-slate-700 border-slate-200'
+                            }`}>
+                              {c.tierLevel === 'royal' ? 'ملكي' : c.tierLevel === 'vip' ? 'VIP' : c.tierLevel === 'distinguished' ? 'متميز' : 'قياسي'}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${
+                              c.clientType === 'foreigner' 
+                                ? 'bg-indigo-50 text-indigo-700 border-indigo-200' 
+                                : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                            }`}>
+                              {c.clientType === 'foreigner' ? 'مقيم / أجنبي' : 'مواطن'}
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Phone */}
+                      <td className="py-3 px-3 font-mono text-slate-700" dir="ltr">
+                        <div className="flex items-center gap-1.5 justify-end">
+                          <span>{c.phone || '-'}</span>
+                          {c.phone && (
+                            <button
+                              type="button"
+                              onClick={() => handleCopyPhone(c.phone)}
+                              className="text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 print:hidden"
+                              title="نسخ رقم الموبايل"
+                            >
+                              <Copy size={12} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Birthday Date */}
+                      <td className="py-3 px-3 text-center">
+                        <div className="flex flex-col items-center">
+                          <span className="font-bold text-slate-800 text-xs">{c.birthdayDisplay}</span>
+                          {c.age && (
+                            <span className="text-[10px] font-bold text-slate-400">{c.age} سنة</span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Occurrence Date in Period */}
+                      <td className="py-3 px-3 text-center">
+                        <div className="flex flex-col items-center gap-1">
+                          <span className="font-mono text-slate-700 font-bold text-xs">{c.occurrenceDateStr}</span>
+                          {isBdayToday ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs animate-pulse">
+                              اليوم 🎉
+                            </span>
+                          ) : c.daysUntil > 0 ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200">
+                              بعد {c.daysUntil} يوم
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">
+                              مضى منذ {Math.abs(c.daysUntil)} يوم
+                            </span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Spend */}
+                      <td className="py-3 px-3 font-mono font-bold text-left text-slate-900">
+                        {Number(c.totalSpend || 0).toFixed(2)} <span className="text-[10px] font-normal text-slate-400">{settings?.currency}</span>
+                      </td>
+
+                      {/* Visits */}
+                      <td className="py-3 px-3 text-center font-mono font-bold text-slate-700">
+                        {c.visitsCount || 0}
+                      </td>
+
+                      {/* Greeting Status Badge with Last Sent Date */}
+                      <td className="py-3 px-3 text-center">
+                        {c.hasBeenSent ? (
+                          <div className="inline-flex flex-col items-center gap-0.5 bg-emerald-50 border border-emerald-300 px-2.5 py-1 rounded-xl text-emerald-800">
+                            <div className="flex items-center gap-1 text-[11px] font-black">
+                              <CheckCheck size={13} className="text-emerald-600" />
+                              <span>تمت التهنئة</span>
+                            </div>
+                            {c.lastSentFormatted && (
+                              <span className="text-[9px] text-emerald-700 font-mono" title={c.lastSentRaw}>
+                                {c.lastSentFormatted}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="inline-flex items-center gap-1 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-xl text-slate-600 text-[11px] font-bold">
+                            <Gift size={13} className="text-slate-400" />
+                            <span>لم يتم الإرسال بعد</span>
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Actions */}
+                      <td className="py-3 px-3 text-center print:hidden">
+                        <div className="flex items-center justify-center gap-1.5">
+                          {/* Direct Send via Evolution API */}
+                          <button
+                            type="button"
+                            onClick={() => handleSendSingleBirthdayGreeting && handleSendSingleBirthdayGreeting(c)}
+                            disabled={isSendingBirthdayWhatsApp || !c.phone}
+                            className={`px-2.5 py-1 rounded-xl text-xs font-black flex items-center gap-1 transition-all cursor-pointer ${
+                              !c.phone 
+                                ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                : c.hasBeenSent
+                                ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                : 'bg-primary hover:bg-primary-dark text-white shadow-2xs'
+                            }`}
+                            title={c.phone ? "إرسال رسالة التهنئة مباشرة عبر Evolution API" : "لا يوجد رقم هاتف"}
+                          >
+                            <Send size={12} />
+                            <span>{c.hasBeenSent ? 'إعادة إرسال' : 'إرسال مباشر'}</span>
+                          </button>
+
+                          {/* WhatsApp Web Fallback */}
+                          {c.phone && (
+                            <a
+                              href={getBirthdayWhatsAppWebUrl ? getBirthdayWhatsAppWebUrl(c) : '#'}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="p-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors"
+                              title="فتح المحادثة والرسالة في واتساب ويب"
+                            >
+                              <ExternalLink size={13} />
+                            </a>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+
+                {filteredClients.length === 0 && (
+                  <tr>
+                    <td colSpan={10} className="py-16 text-center text-slate-500">
+                      <div className="flex flex-col items-center justify-center space-y-3">
+                        <div className="w-14 h-14 rounded-full bg-pink-50 border border-pink-200 flex items-center justify-center text-pink-500 shadow-xs">
+                          <Cake size={28} />
+                        </div>
+                        <p className="text-sm font-black text-slate-800">
+                          {birthdaySearch
+                            ? `لا توجد نتائج مطابقة لبحثك "${birthdaySearch}"`
+                            : `لا توجد أعياد ميلاد للعملاء مسجلة خلال الفترة من (${activeFrom}) إلى (${activeTo}).`}
+                        </p>
+                        <p className="text-xs text-slate-400 max-w-md">
+                          تأكد من تسجيل يوم وشهر الميلاد في ملف العميل أو قم بتوسيع نطاق التواريخ من شريط الفلاتر بالأعلى.
+                        </p>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+
+              {filteredClients.length > 0 && (
+                <tfoot className="bg-slate-100 font-black text-slate-900 border-t-2 border-slate-300">
+                  <tr>
+                    <td colSpan={6} className="py-3.5 px-4 text-center font-black">
+                      إجمالي العملاء المعروضين ({filteredClients.length} عميل) • تم تهنئة ({filteredClients.filter((c: any) => c.hasBeenSent).length}) عميل
+                    </td>
+                    <td className="py-3.5 px-3 font-mono text-slate-900 font-black text-sm text-left">
+                      {totalDisplayedSpend.toFixed(2)} {settings?.currency}
+                    </td>
+                    <td className="py-3.5 px-3 text-center font-mono">
+                      {totalDisplayedVisits} زيارة
+                    </td>
+                    <td colSpan={2}></td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        </div>
+
+      </div>
+    );
+  }
+
   if (reportType === 'inactive_clients') {
     const data = inactiveClientsReportData || {
       allInactiveClients: [],
       inactiveClients: [],
       inactiveCount: 0,
+      sentCount: 0,
+      notSentCount: 0,
       totalClientsCount: 0,
       totalPreviousSpend: 0,
       avgDaysAbsent: 0,
@@ -5356,9 +6958,17 @@ function ReportTable({
     };
 
     const filteredClients = data.inactiveClients || [];
+    const isEvolutionConfigured = Boolean(
+      settings?.evolutionApiUrl?.trim() && 
+      settings?.evolutionApiKey?.trim() && 
+      settings?.evolutionInstanceName?.trim()
+    );
+
+    const isAllSelected = filteredClients.length > 0 && filteredClients.every((c: any) => selectedInactiveClientIds.includes(c.id));
+    const isSomeSelected = filteredClients.some((c: any) => selectedInactiveClientIds.includes(c.id));
 
     const handleExportExcel = () => {
-      const headers = ['م', 'اسم العميل', 'المستوى', 'حالة الزيارة', 'رقم الموبايل', 'تاريخ آخر زيارة / تسجيل', 'مدة الانقطاع (يوم)', 'الزيارات السابقة', 'إجمالي الإنفاق السابق', 'متوسط الفاتورة', 'نقاط الولاء', 'رصيد الكاش باك', 'الملاحظات'];
+      const headers = ['م', 'اسم العميل', 'المستوى', 'حالة الزيارة', 'رقم الموبايل', 'تاريخ آخر زيارة / تسجيل', 'مدة الانقطاع (يوم)', 'حالة إرسال التنشيط', 'تاريخ آخر رسالة تنشيط', 'الزيارات السابقة', 'إجمالي الإنفاق السابق', 'متوسط الفاتورة', 'نقاط الولاء', 'رصيد الكاش باك', 'الملاحظات'];
       const rows = filteredClients.map((c: any, idx: number) => [
         idx + 1,
         c.name,
@@ -5367,6 +6977,8 @@ function ReportTable({
         c.phone || '-',
         c.lastVisitDate ? c.lastVisitDate : (c.createdAtDate ? `${c.createdAtDate} (تاريخ التسجيل)` : '-'),
         c.daysAbsent,
+        c.hasBeenSent ? 'تم الإرسال' : 'لم يتم الإرسال',
+        c.lastReactivationFormatted || 'لم يسبق الإرسال',
         c.totalVisits || 0,
         Number(c.totalSpend || 0).toFixed(2),
         Number(c.avgInvoice || 0).toFixed(2),
@@ -5383,19 +6995,26 @@ function ReportTable({
       alert(`تم نسخ رقم الموبايل: ${phone}`);
     };
 
-    const getWhatsAppUrl = (client: any) => {
-      const phoneDigits = (client.phone || '').replace(/\D/g, '');
-      if (!phoneDigits) return null;
-      let fullPhone = phoneDigits;
-      if (fullPhone.startsWith('05') && fullPhone.length === 10) {
-        fullPhone = '966' + fullPhone.slice(1);
-      } else if (fullPhone.startsWith('01') && fullPhone.length === 11) {
-        fullPhone = '20' + fullPhone.slice(1);
-      }
-      const salonName = settings.salonName || 'صالون سمارت كت';
-      const msg = `مرحباً أستاذ ${client.name}\nاشتقنا لزيارتك في ${salonName}!\nيسعدنا أن نقدم لك عرضاً وخصماً خاصاً وحصرياً بمناسبة عودتك لزيارتنا.\nهل تود حجز موعدك القادم معنا اليوم؟`;
-      return `https://wa.me/${fullPhone}?text=${encodeURIComponent(msg)}`;
+    const insertTag = (tag: string) => {
+      if (!setInactiveMessageText) return;
+      setInactiveMessageText((prev: string) => (prev ? prev + ' ' + tag : tag));
     };
+
+    const sampleClient = filteredClients[0] || { 
+      name: 'خالد عبد الله', 
+      daysAbsent: 75,
+      tier: 'vip', 
+      loyaltyPoints: 120,
+      cashback: 45
+    };
+
+    const previewMessage = (inactiveMessageText || '')
+      .replace(/\{name\}/g, sampleClient.name || 'خالد')
+      .replace(/\{salonName\}/g, settings?.salonName || 'صالون سمارت كت')
+      .replace(/\{days\}/g, String(sampleClient.daysAbsent || 60))
+      .replace(/\{tier\}/g, sampleClient.tier === 'royal' ? 'الملكي' : sampleClient.tier === 'vip' ? 'VIP' : sampleClient.tier === 'distinguished' ? 'المتميز' : 'القياسي')
+      .replace(/\{points\}/g, String(sampleClient.loyaltyPoints || 0))
+      .replace(/\{cashback\}/g, Number(sampleClient.cashback || 0).toFixed(2));
 
     const totalDisplayedVisits = filteredClients.reduce((sum: number, c: any) => sum + (c.totalVisits || 0), 0);
     const totalDisplayedSpend = filteredClients.reduce((sum: number, c: any) => sum + Number(c.totalSpend || 0), 0);
@@ -5410,14 +7029,14 @@ function ReportTable({
             <div className="flex items-center gap-2">
               <span className="text-xl font-black text-slate-800 flex items-center gap-2">
                 <UserX size={24} className="text-rose-600" />
-                <span>تقرير العملاء المنقطعين عن الزيارة (إعادة التنشيط)</span>
+                <span>تقرير العملاء المنقطعين عن الزيارة (إعادة التنشيط والاستعادة)</span>
                 <span className="text-xs font-bold text-rose-700 bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200">
                   معيار الانقطاع: {data.thresholdDays} يوم فأكثر
                 </span>
               </span>
             </div>
             <p className="text-slate-500 text-xs mt-1">
-              متابعة وإعادة استهداف العملاء الغائبين لتعزيز نسبة الولاء والعودة للصالون • {settings.salonName}
+              متابعة وإعادة استهداف العملاء الغائبين عبر WhatsApp لتعزيز نسبة الولاء والعودة للصالون • {settings?.salonName}
             </p>
           </div>
 
@@ -5438,11 +7057,24 @@ function ReportTable({
           </div>
         </div>
 
-        {/* 4 Summary KPI Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Evolution API Notice if not configured */}
+        {!isEvolutionConfigured && (
+          <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-4 flex items-start gap-3 print:hidden">
+            <AlertTriangle className="text-amber-600 shrink-0 mt-0.5" size={20} />
+            <div className="text-xs text-amber-900 leading-relaxed">
+              <span className="font-black text-amber-950 block mb-0.5">تنبيه: تكامل Evolution API غير مكتمل في الإعدادات</span>
+              لتمكين الإرسال التلقائي المجمع والمباشر بنقرة واحدة عبر الواتساب، يرجى التوجه إلى <span className="font-bold underline">الإعدادات &gt; إعدادات WhatsApp (Evolution API)</span> وتعبئة رابط السيرفر ومفتاح API واسم النسخة.
+              يمكنك في الوقت الحالي استخدام زر «فتح في واتساب ويب» بجوار كل عميل كحل بديل.
+            </div>
+          </div>
+        )}
+
+        {/* 5 Summary KPI Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+          {/* 1. إجمالي المنقطعين */}
           <div className="p-4 rounded-2xl bg-white border-2 border-rose-200 shadow-xs flex items-center justify-between border-r-4 border-r-rose-600">
             <div>
-              <p className="text-xs font-bold text-rose-800">إجمالي العملاء المنقطعين</p>
+              <p className="text-xs font-bold text-rose-800">إجمالي المنقطعين</p>
               <p className="text-2xl font-black text-rose-950 mt-1 font-mono">
                 {data.inactiveCount} <span className="text-xs font-sans">عميل</span>
               </p>
@@ -5450,50 +7082,291 @@ function ReportTable({
                 نسبة الغياب: {data.inactiveRate}% من {data.totalClientsCount} عميل
               </p>
             </div>
-            <div className="w-12 h-12 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center">
-              <UserX size={22} />
+            <div className="w-11 h-11 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center">
+              <UserX size={20} />
             </div>
           </div>
 
-          <div className="p-4 rounded-2xl bg-white border-2 border-amber-200 shadow-xs flex items-center justify-between border-r-4 border-r-amber-500">
-            <div>
-              <p className="text-xs font-bold text-amber-800">متوسط فترة الغياب والانقطاع</p>
-              <p className="text-2xl font-black text-amber-950 mt-1 font-mono">
-                {data.avgDaysAbsent} <span className="text-xs font-sans">يوم</span>
-              </p>
-              <p className="text-[10px] text-amber-700 font-bold mt-0.5">
-                الحد الأدنى: {data.thresholdDays} يوم
-              </p>
-            </div>
-            <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
-              <Clock size={22} />
-            </div>
-          </div>
-
+          {/* 2. تم إرسال رسائل استعادة لهم */}
           <div className="p-4 rounded-2xl bg-white border-2 border-emerald-200 shadow-xs flex items-center justify-between border-r-4 border-r-emerald-500">
             <div>
-              <p className="text-xs font-bold text-emerald-800">إجمالي إنفاقهم التاريخي</p>
+              <p className="text-xs font-bold text-emerald-800">تمت المراسلة سابقاً</p>
               <p className="text-2xl font-black text-emerald-950 mt-1 font-mono">
-                {Number(data.totalPreviousSpend || 0).toFixed(2)} <span className="text-xs">{settings.currency}</span>
+                {data.sentCount || 0} <span className="text-xs font-sans">عميل</span>
               </p>
-              <p className="text-[10px] text-emerald-700 font-bold mt-0.5">مبيعات سابقة معرضة للفقدان</p>
+              <p className="text-[10px] text-emerald-600 font-bold mt-0.5">
+                نسبة الإنجاز: {Math.round(((data.sentCount || 0) / (data.inactiveCount || 1)) * 100)}%
+              </p>
             </div>
-            <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-              <DollarSign size={22} />
+            <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+              <CheckCheck size={20} />
             </div>
           </div>
 
+          {/* 3. لم يتم الإرسال بعد */}
+          <div className="p-4 rounded-2xl bg-white border-2 border-amber-200 shadow-xs flex items-center justify-between border-r-4 border-r-amber-500">
+            <div>
+              <p className="text-xs font-bold text-amber-800">لم يتم الإرسال بعد</p>
+              <p className="text-2xl font-black text-amber-950 mt-1 font-mono">
+                {data.notSentCount || 0} <span className="text-xs font-sans">عميل</span>
+              </p>
+              <p className="text-[10px] text-amber-600 font-bold mt-0.5">جاهزون للمراسلة الفورية</p>
+            </div>
+            <div className="w-11 h-11 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+              <Clock size={20} />
+            </div>
+          </div>
+
+          {/* 4. إجمالي إنفاقهم التاريخي */}
+          <div className="p-4 rounded-2xl bg-white border-2 border-slate-200 shadow-xs flex items-center justify-between border-r-4 border-r-slate-700">
+            <div>
+              <p className="text-xs font-bold text-slate-700">الإنفاق التاريخي</p>
+              <p className="text-xl font-black text-slate-900 mt-1 font-mono">
+                {Number(data.totalPreviousSpend || 0).toFixed(0)} <span className="text-xs">{settings?.currency}</span>
+              </p>
+              <p className="text-[10px] text-slate-500 font-bold mt-0.5">مبيعات سابقة معرضة للفقد</p>
+            </div>
+            <div className="w-11 h-11 rounded-xl bg-slate-50 text-slate-700 flex items-center justify-center">
+              <DollarSign size={20} />
+            </div>
+          </div>
+
+          {/* 5. عملاء VIP ومميزين منقطعين */}
           <div className="p-4 rounded-2xl bg-white border-2 border-purple-200 shadow-xs flex items-center justify-between border-r-4 border-r-purple-500">
             <div>
-              <p className="text-xs font-bold text-purple-800">عملاء VIP ومميزين منقطعين</p>
+              <p className="text-xs font-bold text-purple-800">عملاء VIP ومميزين</p>
               <p className="text-2xl font-black text-purple-950 mt-1 font-mono">
                 {data.vipInactiveCount || 0} <span className="text-xs font-sans">عميل</span>
               </p>
-              <p className="text-[10px] text-purple-600 font-bold mt-0.5">أولوية قصوى للمتابعة</p>
+              <p className="text-[10px] text-purple-600 font-bold mt-0.5">أولوية قصوى للاستعادة</p>
             </div>
-            <div className="w-12 h-12 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
-              <Award size={22} />
+            <div className="w-11 h-11 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
+              <Award size={20} />
             </div>
+          </div>
+        </div>
+
+        {/* Message Composer & Live Preview Card */}
+        <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm overflow-hidden print:hidden">
+          <div className="p-4 bg-gradient-to-r from-slate-900 via-rose-950 to-slate-900 text-white flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+            <div className="flex items-center gap-2">
+              <MessageSquare size={18} className="text-rose-400" />
+              <h3 className="font-black text-sm">محرر رسالة استعادة العميل المنقطع والمعاينة الحية</h3>
+            </div>
+            <div className="text-[11px] text-slate-300 flex items-center gap-1.5">
+              <Sparkles size={13} className="text-amber-400" />
+              <span>يتم تخصيص الاسم والبيانات تلقائياً لكل عميل أثناء الإرسال</span>
+            </div>
+          </div>
+
+          <div className="p-5 grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Editor Side */}
+            <div className="lg:col-span-7 space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-black text-slate-700 flex items-center gap-1.5">
+                  <Edit2 size={14} className="text-rose-600" />
+                  <span>نص الرسالة المرسلة:</span>
+                </label>
+                <span className="text-[11px] text-slate-400 font-mono font-bold">
+                  {inactiveMessageText.length} حرف
+                </span>
+              </div>
+
+              <textarea
+                value={inactiveMessageText}
+                onChange={(e) => setInactiveMessageText && setInactiveMessageText(e.target.value)}
+                rows={5}
+                placeholder="اكتب رسالة التنشيط ودعوة العودة هنا واستخدم وسوم الاستبدال بالأسفل..."
+                className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-3.5 text-xs text-slate-800 leading-relaxed font-medium outline-none focus:border-rose-500 focus:bg-white transition-all shadow-inner"
+              />
+
+              {/* Tag Insertion Buttons */}
+              <div className="space-y-1.5">
+                <span className="text-[10px] font-bold text-slate-500 block">اضغط لإدراج وسم ذكي في نص الرسالة:</span>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => insertTag('{name}')}
+                    className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-all cursor-pointer"
+                  >
+                    + اسم العميل {'{name}'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => insertTag('{salonName}')}
+                    className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition-all cursor-pointer"
+                  >
+                    + اسم الصالون {'{salonName}'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => insertTag('{days}')}
+                    className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 transition-all cursor-pointer"
+                  >
+                    + أيام الانقطاع {'{days}'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => insertTag('{tier}')}
+                    className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 transition-all cursor-pointer"
+                  >
+                    + المستوى {'{tier}'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => insertTag('{points}')}
+                    className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 transition-all cursor-pointer"
+                  >
+                    + نقاط الولاء {'{points}'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => insertTag('{cashback}')}
+                    className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition-all cursor-pointer"
+                  >
+                    + رصيد الكاش باك {'{cashback}'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* WhatsApp Live Bubble Preview Side */}
+            <div className="lg:col-span-5 flex flex-col justify-between">
+              <div>
+                <span className="text-xs font-black text-slate-700 block mb-2">معاينة شكل الرسالة في تطبيق WhatsApp:</span>
+                
+                {/* Mock Phone / WhatsApp Chat Bubble */}
+                <div className="bg-[#0b141a] rounded-2xl overflow-hidden border border-slate-300 shadow-md">
+                  {/* WhatsApp Header */}
+                  <div className="bg-[#1f2c34] px-3.5 py-2.5 flex items-center gap-2.5 border-b border-[#2a3942]">
+                    <div className="w-8 h-8 rounded-full bg-rose-600 flex items-center justify-center text-white font-black text-xs">
+                      {settings?.salonName ? settings.salonName.substring(0, 1) : 'S'}
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-[#e9edef] leading-tight">
+                        {settings?.salonName || 'Smart Cut'}
+                      </div>
+                      <div className="text-[10px] text-[#8696a0]">متصل الآن عبر Evolution API</div>
+                    </div>
+                  </div>
+
+                  {/* Chat Area Background */}
+                  <div className="p-3.5 bg-[#0b141a] min-h-[130px] flex items-end justify-end">
+                    {/* Outgoing Message Bubble */}
+                    <div className="max-w-[92%] bg-[#005c4b] text-[#e9edef] p-2.5 rounded-2xl rounded-tr-none text-xs leading-relaxed shadow-sm space-y-1">
+                      <p className="whitespace-pre-line text-[11px]">{previewMessage || 'أهلاً بك، اشتقنا لزيارتك في صالوننا! ✂️✨'}</p>
+                      <div className="flex items-center justify-end gap-1 text-[9px] text-[#8696a0]">
+                        <span>{new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</span>
+                        <CheckCheck size={13} className="text-[#53bdeb]" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <p className="text-[10px] text-slate-400 mt-2 font-medium">
+                * المعاينة مبنية على بيانات نموذجية للعميل ({sampleClient.name}).
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Selection & Bulk Sending Action Bar */}
+        <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 print:hidden">
+          {/* Selection Controls */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Master Select/Deselect All Checkbox Button */}
+            <button
+              type="button"
+              onClick={isAllSelected ? handleDeselectAllInactive : handleSelectAllInactive}
+              className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 border ${
+                isAllSelected 
+                  ? 'bg-rose-600 text-white border-rose-600 shadow-xs' 
+                  : 'bg-white text-slate-700 hover:bg-slate-100 border-slate-300'
+              }`}
+            >
+              {isAllSelected ? <CheckSquare size={14} /> : <Square size={14} />}
+              <span>{isAllSelected ? 'إلغاء تحديد الكل' : 'تحديد جميع المعروضين'}</span>
+            </button>
+
+            {/* Select Not Sent Only Button */}
+            <button
+              type="button"
+              onClick={handleSelectNotSentOnlyInactive}
+              className="px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 transition-all cursor-pointer flex items-center gap-1"
+              title="تحديد العملاء المنقطعين الذين لم ترسل لهم رسائل استعادة بعد"
+            >
+              <Clock size={13} className="text-amber-600" />
+              <span>تحديد غير المرسل لهم فقط</span>
+            </button>
+
+            {/* Select First N Clients */}
+            <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-xl px-2 py-1">
+              <span className="text-[11px] font-bold text-slate-600">تحديد أول:</span>
+              <input
+                type="number"
+                min="1"
+                max={filteredClients.length || 100}
+                value={bulkInactiveSelectCountInput}
+                onChange={(e) => setBulkInactiveSelectCountInput && setBulkInactiveSelectCountInput(e.target.value)}
+                className="w-12 bg-white border border-slate-300 rounded-lg px-1.5 py-0.5 text-xs text-center font-bold text-slate-800 outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => handleSelectFirstNInactive && handleSelectFirstNInactive(parseInt(bulkInactiveSelectCountInput, 10) || 10)}
+                className="px-2 py-0.5 rounded-lg text-[11px] font-black bg-slate-800 hover:bg-slate-900 text-white transition-all cursor-pointer"
+              >
+                تطبيق
+              </button>
+            </div>
+
+            {/* Deselect All */}
+            {selectedInactiveClientIds.length > 0 && (
+              <button
+                type="button"
+                onClick={handleDeselectAllInactive}
+                className="px-2.5 py-1.5 rounded-xl text-xs font-bold text-rose-600 hover:bg-rose-50 border border-rose-200 transition-all cursor-pointer"
+              >
+                مسح التحديد ({selectedInactiveClientIds.length})
+              </button>
+            )}
+          </div>
+
+          {/* Bulk Send Button & Status */}
+          <div className="flex items-center gap-3">
+            <div className="text-left">
+              <span className="text-xs font-black text-slate-800 block">
+                تم تحديد: <span className="font-mono text-rose-600 font-black">{selectedInactiveClientIds.length}</span> من أصل <span className="font-mono text-slate-600">{filteredClients.length}</span> عميل
+              </span>
+              {inactiveSendProgress && (
+                <span className="text-[11px] font-bold text-indigo-600 font-mono block">
+                  جاري الإرسال ({inactiveSendProgress.current}/{inactiveSendProgress.total}) • نجح: {inactiveSendProgress.success} • فشل: {inactiveSendProgress.failed}
+                </span>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={handleSendBulkInactiveWhatsApp}
+              disabled={selectedInactiveClientIds.length === 0 || isSendingInactiveWhatsApp || !inactiveMessageText.trim()}
+              className={`px-5 py-2.5 rounded-xl text-xs font-black flex items-center gap-2 shadow-md transition-all cursor-pointer ${
+                selectedInactiveClientIds.length === 0 || isSendingInactiveWhatsApp || !inactiveMessageText.trim()
+                  ? 'bg-slate-300 text-slate-500 cursor-not-allowed shadow-none'
+                  : 'bg-emerald-600 hover:bg-emerald-700 text-white hover:shadow-lg active:scale-98'
+              }`}
+            >
+              {isSendingInactiveWhatsApp ? (
+                <>
+                  <RefreshCw size={15} className="animate-spin text-white" />
+                  <span>جاري الإرسال المجمع...</span>
+                </>
+              ) : (
+                <>
+                  <Send size={15} />
+                  <span>إرسال واتساب للمحددين ({selectedInactiveClientIds.length})</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
 
@@ -5501,14 +7374,15 @@ function ReportTable({
         <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-2xs">
           <div className="p-3.5 bg-slate-900 text-white font-black text-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
             <div className="flex items-center gap-2">
+              <UserX size={16} className="text-rose-400" />
               <span>قائمة العملاء الذين لم يحضروا منذ {data.thresholdDays} يوماً فأكثر</span>
               <span className="text-[11px] bg-slate-800 text-slate-300 px-2.5 py-0.5 rounded-full font-mono">
                 {filteredClients.length} عميل معروض
               </span>
             </div>
-            <div className="text-[11px] text-slate-400 font-normal flex items-center gap-1">
-              <Sparkles size={12} className="text-amber-400 shrink-0" />
-              <span>اضغط على زر «دعوة عودة» لإرسال رسالة ترحيبية وعرض مخصص عبر واتساب مباشرة</span>
+            <div className="text-[11px] text-slate-400 font-normal flex items-center gap-1.5">
+              <Sparkles size={13} className="text-amber-400 shrink-0" />
+              <span>يتم تحديث علامة "تم الإرسال" وتاريخ آخر رسالة تنشيط تلقائياً بعد كل عملية إرسال</span>
             </div>
           </div>
 
@@ -5516,6 +7390,17 @@ function ReportTable({
             <table className="w-full text-right text-xs">
               <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
                 <tr>
+                  <th className="py-3 px-3 text-center w-10 print:hidden">
+                    <input
+                      type="checkbox"
+                      checked={isAllSelected}
+                      ref={(el) => {
+                        if (el) el.indeterminate = !isAllSelected && isSomeSelected;
+                      }}
+                      onChange={isAllSelected ? handleDeselectAllInactive : handleSelectAllInactive}
+                      className="w-4 h-4 rounded text-rose-600 focus:ring-rose-500 cursor-pointer"
+                    />
+                  </th>
                   <th className="py-3 px-3 text-center w-12">#</th>
                   <th className="py-3 px-3">العميل والمستوى</th>
                   <th className="py-3 px-3">رقم الجوال</th>
@@ -5525,18 +7410,36 @@ function ReportTable({
                   <th className="py-3 px-3 text-left">إجمالي الإنفاق</th>
                   <th className="py-3 px-3 text-left">متوسط الفاتورة</th>
                   <th className="py-3 px-3 text-center">النقاط والكاش باك</th>
+                  <th className="py-3 px-3 text-center">حالة إرسال التنشيط</th>
                   <th className="py-3 px-3">الملاحظات</th>
                   <th className="py-3 px-3 text-center print:hidden">إجراءات المتابعة</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-semibold">
                 {filteredClients.map((c: any, idx: number) => {
-                  const waUrl = getWhatsAppUrl(c);
+                  const isSelected = selectedInactiveClientIds.includes(c.id);
                   const isCriticalAbsent = c.daysAbsent >= 120;
                   const isMediumAbsent = c.daysAbsent >= 60 && c.daysAbsent < 120;
 
                   return (
-                    <tr key={c.id || idx} className="hover:bg-rose-50/25 transition-colors">
+                    <tr 
+                      key={c.id || idx} 
+                      className={`transition-colors ${
+                        isSelected 
+                          ? 'bg-rose-50/50 hover:bg-rose-50/70' 
+                          : 'hover:bg-rose-50/25'
+                      }`}
+                    >
+                      {/* Checkbox */}
+                      <td className="py-3 px-3 text-center print:hidden">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelectInactiveClient && toggleSelectInactiveClient(c.id)}
+                          className="w-4 h-4 rounded text-rose-600 focus:ring-rose-500 cursor-pointer"
+                        />
+                      </td>
+
                       <td className="py-3 px-3 text-center font-mono text-slate-400">{idx + 1}</td>
                       <td className="py-3 px-3 font-bold text-slate-900">
                         <div className="flex flex-col gap-1">
@@ -5607,39 +7510,80 @@ function ReportTable({
                         {c.totalVisits || 0}
                       </td>
                       <td className="py-3 px-3 font-mono font-black text-slate-800 text-left">
-                        {Number(c.totalSpend || 0).toFixed(2)} {settings.currency}
+                        {Number(c.totalSpend || 0).toFixed(2)} {settings?.currency}
                       </td>
                       <td className="py-3 px-3 font-mono font-black text-slate-700 text-left">
-                        {Number(c.avgInvoice || 0).toFixed(2)} {settings.currency}
+                        {Number(c.avgInvoice || 0).toFixed(2)} {settings?.currency}
                       </td>
                       <td className="py-3 px-3 text-center">
                         <div className="flex flex-col items-center gap-0.5 text-[11px]">
                           <span className="font-mono font-bold text-indigo-700">{c.loyaltyPoints || 0} نقطة</span>
                           {Number(c.cashback || 0) > 0 && (
                             <span className="font-mono text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
-                              {Number(c.cashback).toFixed(2)} {settings.currency}
+                              {Number(c.cashback).toFixed(2)} {settings?.currency}
                             </span>
                           )}
                         </div>
                       </td>
+
+                      {/* حالة إرسال التنشيط وتاريخ آخر رسالة */}
+                      <td className="py-3 px-3 text-center">
+                        {c.hasBeenSent ? (
+                          <div className="inline-flex flex-col items-center gap-0.5 bg-emerald-50 border border-emerald-300 px-2.5 py-1 rounded-xl text-emerald-800">
+                            <div className="flex items-center gap-1 text-[11px] font-black">
+                              <CheckCheck size={13} className="text-emerald-600" />
+                              <span>تم الإرسال</span>
+                            </div>
+                            {c.lastReactivationFormatted && (
+                              <span className="text-[9px] text-emerald-700 font-mono" title={c.lastReactivationRaw}>
+                                {c.lastReactivationFormatted}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="inline-flex items-center gap-1 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-xl text-slate-600 text-[11px] font-bold">
+                            <Clock size={13} className="text-slate-400" />
+                            <span>لم يتم الإرسال بعد</span>
+                          </div>
+                        )}
+                      </td>
+
                       <td className="py-3 px-3 text-slate-600 max-w-[150px] truncate" title={c.notes || ''}>
                         {c.notes || '-'}
                       </td>
+
+                      {/* الإجراءات */}
                       <td className="py-3 px-3 text-center print:hidden">
                         <div className="flex items-center justify-center gap-1.5">
-                          {waUrl ? (
+                          {/* Direct Send via Evolution API */}
+                          <button
+                            type="button"
+                            onClick={() => handleSendSingleInactiveGreeting && handleSendSingleInactiveGreeting(c)}
+                            disabled={isSendingInactiveWhatsApp || !c.phone}
+                            className={`px-2.5 py-1 rounded-xl text-xs font-black flex items-center gap-1 transition-all cursor-pointer ${
+                              !c.phone 
+                                ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                : c.hasBeenSent
+                                ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                : 'bg-rose-600 hover:bg-rose-700 text-white shadow-2xs'
+                            }`}
+                            title={c.phone ? "إرسال رسالة التنشيط مباشرة عبر Evolution API" : "لا يوجد رقم هاتف"}
+                          >
+                            <Send size={12} />
+                            <span>{c.hasBeenSent ? 'إعادة إرسال' : 'إرسال مباشر'}</span>
+                          </button>
+
+                          {/* WhatsApp Web Fallback */}
+                          {c.phone && (
                             <a
-                              href={waUrl}
+                              href={getInactiveWhatsAppWebUrl ? getInactiveWhatsAppWebUrl(c) : '#'}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs flex items-center gap-1.5 shadow-2xs transition-colors"
-                              title="إرسال رسالة ترحيبية ودعوة عودة مع خصم حصري عبر واتساب"
+                              className="p-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors"
+                              title="فتح المحادثة والرسالة في واتساب ويب"
                             >
-                              <MessageSquare size={13} />
-                              <span>دعوة عودة</span>
+                              <ExternalLink size={13} />
                             </a>
-                          ) : (
-                            <span className="text-slate-400 text-[10px]">لا يوجد هاتف</span>
                           )}
                         </div>
                       </td>
@@ -5649,7 +7593,7 @@ function ReportTable({
 
                 {filteredClients.length === 0 && (
                   <tr>
-                    <td colSpan={11} className="py-16 text-center text-slate-500">
+                    <td colSpan={13} className="py-16 text-center text-slate-500">
                       <div className="flex flex-col items-center justify-center space-y-3">
                         <div className="w-14 h-14 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 shadow-xs">
                           <UserCheck size={28} />
@@ -5670,8 +7614,8 @@ function ReportTable({
               {filteredClients.length > 0 && (
                 <tfoot className="bg-slate-100 font-black text-slate-900 border-t-2 border-slate-300">
                   <tr>
-                    <td colSpan={4} className="py-3.5 px-4 text-center font-black">
-                      إجمالي العملاء المنقطعين المعروضين ({filteredClients.length} عميل)
+                    <td colSpan={5} className="py-3.5 px-4 text-center font-black">
+                      إجمالي العملاء المنقطعين المعروضين ({filteredClients.length} عميل) • تم إرسال رسائل لـ ({filteredClients.filter((c: any) => c.hasBeenSent).length}) عميل
                     </td>
                     <td className="py-3.5 px-3 text-center font-mono text-rose-700 font-black">
                       متوسط {avgDisplayedDays} يوم
@@ -5680,12 +7624,12 @@ function ReportTable({
                       {totalDisplayedVisits} زيارة
                     </td>
                     <td className="py-3.5 px-3 font-mono text-slate-900 font-black text-sm text-left">
-                      {totalDisplayedSpend.toFixed(2)} {settings.currency}
+                      {totalDisplayedSpend.toFixed(2)} {settings?.currency}
                     </td>
                     <td className="py-3.5 px-3 font-mono text-slate-900 font-black text-sm text-left">
-                      {avgInvoiceOverall.toFixed(2)} {settings.currency}
+                      {avgInvoiceOverall.toFixed(2)} {settings?.currency}
                     </td>
-                    <td colSpan={3}></td>
+                    <td colSpan={4}></td>
                   </tr>
                 </tfoot>
               )}
