@@ -196,6 +196,8 @@ export function ClosingReportReceipt({
       t.category === 'مقدم حجز'
     )).reduce((s, x) => s + (Number(x.amount) || 0), 0);
 
+    const income = invoiceSales + recordedSales;
+
     const isTipTrx = (t: any) => {
       const cat = (t.category || '').toLowerCase();
       const desc = (t.description || '').toLowerCase();
