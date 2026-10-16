@@ -635,10 +635,13 @@ Generate the PostgreSQL query for salon '${salonId}':`;
     systemInstruction: sqlSystemInstruction
   });
 
-  const cleanSql = rawSqlResponse.text
+  let cleanSql = rawSqlResponse.text
     .replace(/```(?:sql)?/gi, '')
     .replace(/```/g, '')
     .trim();
+
+  // Auto-sanitize: replace placeholder dots like '...' with actual salon UUID
+  cleanSql = cleanSql.replace(/salon_id\s*=\s*'(\.\.\.|\.\.\.|xxx|<salon_id>|your_salon_id|salon_id)'/gi, `salon_id = '${salonId}'`);
 
   // If general conversation without database need
   if (cleanSql === 'NO_QUERY_NEEDED' || (!cleanSql.toUpperCase().startsWith('SELECT') && !cleanSql.toUpperCase().startsWith('WITH'))) {
@@ -691,7 +694,8 @@ Instructions:
         systemInstruction: retryInstruction
       });
 
-      const fixedSql = retryResponse.text.replace(/```(?:sql)?/gi, '').replace(/```/g, '').trim();
+      let fixedSql = retryResponse.text.replace(/```(?:sql)?/gi, '').replace(/```/g, '').trim();
+      fixedSql = fixedSql.replace(/salon_id\s*=\s*'(\.\.\.|\.\.\.|xxx|<salon_id>|your_salon_id|salon_id)'/gi, `salon_id = '${salonId}'`);
       if (fixedSql.toUpperCase().startsWith('SELECT') || fixedSql.toUpperCase().startsWith('WITH')) {
         const retryExec = await executeSupabaseAiSql(fixedSql, salonId);
         if (retryExec.success && !retryExec.error) {
