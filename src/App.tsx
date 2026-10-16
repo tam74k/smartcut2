@@ -39,6 +39,7 @@ import { FingerprintLogsScreen } from './components/FingerprintLogsScreen';
 import { LoginScreen } from './components/LoginScreen';
 import { BarberLoginScreen } from './components/BarberLoginScreen';
 import { BarberPortalScreen } from './components/BarberPortalScreen';
+import { SaaSProgrammerPortal } from './components/SaaSProgrammerPortal';
 import { ClientReservationPortal } from './components/ClientReservationPortal';
 import { KioskTabletScreen } from './components/KioskTabletScreen';
 import { QueueCallingScreen } from './components/QueueCallingScreen';
@@ -511,6 +512,14 @@ export default function App() {
   const [isClosingShift, setIsClosingShift] = useState(false);
   const [licenseInfo, setLicenseInfo] = useState<LicenseInfo | null>(null);
   const [showLicenseModal, setShowLicenseModal] = useState<boolean>(false);
+  const [isProgrammerPortalActive, setIsProgrammerPortalActive] = useState<boolean>(() => {
+    try {
+      const u = AuthService.getCurrentUser();
+      return u?.role === 'programmer';
+    } catch {
+      return false;
+    }
+  });
   const [showInitialSalonModal, setShowInitialSalonModal] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem('smartcut_app_settings');
@@ -674,6 +683,7 @@ export default function App() {
         if (user) {
           setCurrentUser(user);
           if (user.role === 'programmer') {
+            setIsProgrammerPortalActive(true);
             setActiveTab('saas_subscriptions');
           } else if (user.role === 'owner') {
             setActiveTab('owner_portal');
@@ -1481,7 +1491,7 @@ export default function App() {
       console.error('[Security Violation] Unauthorized attempt to switch salon blocked.');
       return;
     }
-    const s = allSalons.find(item => item.id === targetSalonId);
+    const s = allSalons.find(item => item.id === targetSalonId) || SubscriptionService.getSalons().find(item => item.id === targetSalonId);
     if (!s) return;
     
     setIsDbLoading(true);
@@ -3297,6 +3307,9 @@ export default function App() {
   };
 
   const menuItems = [
+    ...(currentUser?.role === 'programmer' ? [
+      { id: 'saas_subscriptions', icon: Sliders, label: 'لوحة تحكم المطور' }
+    ] : []),
     ...(currentUser?.role === 'owner' ? [
       { id: 'owner_portal', icon: Smartphone, label: 'نبض المالك' }
     ] : []),
@@ -3456,6 +3469,7 @@ export default function App() {
     }
 
     if (u.role === 'programmer') {
+      setIsProgrammerPortalActive(true);
       setActiveTab('saas_subscriptions');
     } else if (u.role === 'owner') {
       setActiveTab('owner_portal');
@@ -3597,7 +3611,35 @@ export default function App() {
   }
 
 
+  // 3C. STANDALONE SAAS PROGRAMMER PORTAL (لوحة تحكم المطور)
+  if (currentUser?.role === 'programmer' && (isProgrammerPortalActive || activeTab === 'saas_subscriptions')) {
+    return (
+      <SaaSProgrammerPortal
+        onSwitchSalon={async (salon) => {
+          await handleSwitchSalon(salon.id);
+          setIsProgrammerPortalActive(false);
+          setActiveTab('dashboard');
+        }}
+        onExitPortal={() => {
+          setIsProgrammerPortalActive(false);
+          setActiveTab('dashboard');
+        }}
+        onLogout={() => {
+          AuthService.logout();
+          setCurrentUser(null);
+          setIsProgrammerPortalActive(false);
+          setActiveTab('pos');
+        }}
+      />
+    );
+  }
+
   const handleTabNavigation = (tabId: string) => {
+    if (tabId === 'saas_subscriptions') {
+      setIsProgrammerPortalActive(true);
+      setActiveTab('saas_subscriptions');
+      return;
+    }
     if (tabId === 'bookings' && !shiftData?.isOpen) {
       alert('الوردية مغلقة حالياً!\nلا يُسمح بفتح شاشة الحجوزات أو إجراء أي حجز إلا بعد فتح وردية عمل جديدة.');
       return;
@@ -3626,6 +3668,10 @@ export default function App() {
         onOpenLicenseModal={() => setShowLicenseModal(true)}
         isTursoConnected={isTursoConnected}
         onOpenTursoModal={() => setShowTursoModal(true)}
+        onOpenProgrammerPortal={() => {
+          setIsProgrammerPortalActive(true);
+          setActiveTab('saas_subscriptions');
+        }}
       />
 
       <div className="flex flex-1 overflow-hidden relative">
@@ -3738,6 +3784,11 @@ export default function App() {
                   }}
                   onSettingsClick={handleOpenSettingsFromUserMenu}
                   onLogoutClick={handleLogout}
+                  onProgrammerPortalClick={() => {
+                    setShowUserSidebarMenu(false);
+                    setIsProgrammerPortalActive(true);
+                    setActiveTab('saas_subscriptions');
+                  }}
                   align="top-start"
                 />
               </div>
@@ -4026,6 +4077,11 @@ export default function App() {
                   }}
                   onSettingsClick={handleOpenSettingsFromUserMenu}
                   onLogoutClick={handleLogout}
+                  onProgrammerPortalClick={() => {
+                    setShowUserHeaderMenu(false);
+                    setIsProgrammerPortalActive(true);
+                    setActiveTab('saas_subscriptions');
+                  }}
                   align="bottom-start"
                 />
               </div>

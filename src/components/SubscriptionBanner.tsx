@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Sparkles, Building2, Cloud, CloudOff, CheckCircle2, ChevronDown, X, Smartphone, Lock, Home, CreditCard, Crown, AlertCircle } from 'lucide-react';
+import { Sparkles, Building2, Cloud, CloudOff, CheckCircle2, ChevronDown, X, Smartphone, Lock, Home, CreditCard, Crown, AlertCircle, Sliders } from 'lucide-react';
 import { SaaSSubscription, Branch, AppUser } from '../types';
 
 interface SubscriptionBannerProps {
@@ -13,6 +13,7 @@ interface SubscriptionBannerProps {
   allSalons?: any[];
   onSelectSalon?: (salonId: string) => void;
   onOpenPricingModal?: () => void;
+  onOpenProgrammerPortal?: () => void;
 }
 
 export function SubscriptionBanner({ 
@@ -25,7 +26,8 @@ export function SubscriptionBanner({
   currentUser,
   allSalons = [],
   onSelectSalon,
-  onOpenPricingModal
+  onOpenPricingModal,
+  onOpenProgrammerPortal
 }: SubscriptionBannerProps) {
   const [showBranchesMenu, setShowBranchesMenu] = useState(false);
   const [showSalonsMenu, setShowSalonsMenu] = useState(false);
@@ -168,6 +170,17 @@ export function SubscriptionBanner({
 
       {/* Center/End: Branch Selector */}
       <div className="flex items-center gap-2">
+        {currentUser?.role === 'programmer' && onOpenProgrammerPortal && (
+          <button
+            type="button"
+            onClick={onOpenProgrammerPortal}
+            className="flex items-center gap-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white px-3 py-1 rounded-lg text-xs font-black shadow-md border border-purple-400/40 transition-all cursor-pointer animate-pulse"
+            title="العودة إلى لوحة تحكم المطور وإدارة الاشتراكات"
+          >
+            <Sliders size={13} className="text-amber-300" />
+            <span>لوحة تحكم المطور</span>
+          </button>
+        )}
 
         {canSwitchBranches ? (
           <div className="relative">

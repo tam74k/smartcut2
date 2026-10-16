@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { AppUser } from '../types';
 import { ROLE_LABELS } from '../services/auth';
-import { User, Key, Settings, LogOut } from 'lucide-react';
+import { User, Key, Settings, LogOut, Sliders } from 'lucide-react';
 
 interface UserAccountMenuProps {
   isOpen: boolean;
@@ -11,6 +11,7 @@ interface UserAccountMenuProps {
   onChangePasswordClick: () => void;
   onSettingsClick: () => void;
   onLogoutClick: () => void;
+  onProgrammerPortalClick?: () => void;
   align?: 'bottom-start' | 'top-start' | 'bottom-end' | 'top-end';
 }
 
@@ -22,6 +23,7 @@ export const UserAccountMenu: React.FC<UserAccountMenuProps> = ({
   onChangePasswordClick,
   onSettingsClick,
   onLogoutClick,
+  onProgrammerPortalClick,
   align = 'bottom-start'
 }) => {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -124,6 +126,20 @@ export const UserAccountMenu: React.FC<UserAccountMenuProps> = ({
           <Settings size={16} className="text-slate-600 shrink-0" />
           <span>الإعدادات</span>
         </button>
+
+        {currentUser.role === 'programmer' && onProgrammerPortalClick && (
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              onProgrammerPortalClick();
+            }}
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-purple-700 hover:bg-purple-50 transition-colors text-right cursor-pointer border-t border-slate-100"
+          >
+            <Sliders size={16} className="text-purple-600 shrink-0" />
+            <span>لوحة تحكم المطور (SaaS)</span>
+          </button>
+        )}
       </div>
 
       {/* Divider */}
