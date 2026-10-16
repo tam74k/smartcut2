@@ -728,9 +728,15 @@ ${JSON.stringify(systemSnapshot, null, 2)}
 سؤال المستخدم:
 ${query}`;
 
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${context.settings.aiModel || 'gemini-1.5-flash'}:generateContent?key=${context.settings.aiApiKey}`, {
+      const targetModel = (!context.settings.aiModel || context.settings.aiModel.includes('1.5') || context.settings.aiModel.includes('2.0') || context.settings.aiModel.includes('2.5')) 
+        ? 'gemini-3.8-flash' 
+        : context.settings.aiModel;
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${context.settings.aiApiKey}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-goog-api-key': context.settings.aiApiKey || ''
+        },
         body: JSON.stringify({
           contents: [{
             parts: [{ text: systemPrompt }]

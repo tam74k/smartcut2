@@ -31,33 +31,26 @@ export interface AiModelOption {
 
 export const POPULAR_AI_MODELS: AiModelOption[] = [
   { 
-    id: 'gemini-2.5-flash', 
-    name: 'Google Gemini 2.5 Flash',
+    id: 'gemini-3.8-flash', 
+    name: 'Google Gemini 3.8 Flash',
     provider: 'gemini',
     badge: 'الافتراضي - الأحدث وموصى به',
-    description: 'الجيل الأحدث من Google فائق السرعة والأعلى دقة في استعلامات SQL وقراءة سوبابيز',
+    description: 'الجيل الأحدث 3.8 فائق السرعة والأعلى دقة في استعلامات SQL وقراءة سوبابيز',
     isDefault: true
   },
   { 
-    id: 'gemini-2.0-flash', 
-    name: 'Google Gemini 2.0 Flash',
-    provider: 'gemini',
-    badge: 'فائق السرعة',
-    description: 'استجابة فورية وخفيفة للتقارير والعمليات اليومية'
-  },
-  { 
-    id: 'gemini-2.5-pro', 
-    name: 'Google Gemini 2.5 Pro',
+    id: 'gemini-3.8-pro', 
+    name: 'Google Gemini 3.8 Pro',
     provider: 'gemini',
     badge: 'تحليل مالي عميق',
-    description: 'أعلى قدرات استدلال وتحليل للقوائم المالية وهوامش الأرباح المعقدة'
+    description: 'أعلى قدرات استدلال وتحليل للقوائم المالية والعمليات الحسابية المعقدة'
   },
   { 
-    id: 'gemini-1.5-flash', 
-    name: 'Google Gemini 1.5 Flash',
+    id: 'gemini-3.5-flash', 
+    name: 'Google Gemini 3.5 Flash',
     provider: 'gemini',
-    badge: 'إصدار كلاسيكي',
-    description: 'نموذج Flash الكلاسيكي (يتم توجيهه تلقائياً للإصدار المتوافق في API)'
+    badge: 'سريع وخفيف',
+    description: 'استجابة فائقة السرعة للعمليات اليومية واسترجاع البيانات'
   },
   {
     id: 'openai/gpt-4o-mini',
@@ -89,8 +82,8 @@ export const POPULAR_AI_MODELS: AiModelOption[] = [
   }
 ];
 
-export const DEFAULT_AI_MODEL = 'gemini-2.5-flash';
-export const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash';
+export const DEFAULT_AI_MODEL = 'gemini-3.8-flash';
+export const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
 
 // Backward compatibility export
 export const POPULAR_GEMINI_MODELS = POPULAR_AI_MODELS.map(m => ({
@@ -108,7 +101,8 @@ export function getAiCredentials(settings?: AppSettings): {
   if (!model && typeof window !== 'undefined') {
     model = localStorage.getItem('smartcut_ai_model') || localStorage.getItem('smartcut_gemini_model') || '';
   }
-  if (!model) {
+  // Automatically migrate legacy/deprecated model names to gemini-3.8-flash
+  if (!model || model.includes('1.5') || model.includes('2.0') || model.includes('2.5') || model === 'gemini-flash') {
     model = DEFAULT_AI_MODEL;
   }
 
@@ -359,15 +353,17 @@ async function callGeminiApiWithSmartFallback({
   }
 
   // Candidate models in priority order
+  const normalizedModel = (!model || model.includes('1.5') || model.includes('2.0') || model.includes('2.5')) 
+    ? 'gemini-3.8-flash' 
+    : model;
+
   const candidates = [
-    model,
+    normalizedModel,
+    'gemini-3.8-flash',
+    'gemini-3.8-pro',
+    'gemini-3.5-flash',
     'gemini-2.5-flash',
-    'gemini-2.0-flash',
-    'gemini-1.5-flash-latest',
-    'gemini-1.5-flash-002',
-    'gemini-1.5-flash',
-    'gemini-2.5-pro',
-    'gemini-1.5-pro'
+    'gemini-2.0-flash'
   ].filter((v, idx, arr) => v && arr.indexOf(v) === idx);
 
   let lastErrorMsg = '';
@@ -380,7 +376,10 @@ async function callGeminiApiWithSmartFallback({
         const endpoint = `https://generativelanguage.googleapis.com/${ver}/models/${candidate}:generateContent?key=${apiKey}`;
         const response = await fetch(endpoint, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'x-goog-api-key': apiKey
+          },
           body: JSON.stringify(requestBody)
         });
 
@@ -420,20 +419,22 @@ async function callGeminiApiWithSmartFallback({
 
   // If all hardcoded candidates failed, try dynamic ListModels lookup
   try {
-    const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+    const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`, {
+      headers: { 'x-goog-api-key': apiKey }
+    });
     if (listRes.ok) {
       const listData = await listRes.json();
       if (Array.isArray(listData?.models)) {
-        const validModelObj = listData.models.find((m: any) => 
-          Array.isArray(m.supportedGenerationMethods) && 
-          m.supportedGenerationMethods.includes('generateContent')
-        );
-        if (validModelObj?.name) {
-          const dynamicName = validModelObj.name.replace(/^models\//, '');
+        const availableNames: string[] = listData.models.map((m: any) => (m.name || '').replace(/^models\//, '')).filter(Boolean);
+        const dynamicName = availableNames.find(n => n.includes('3.8') || n.includes('flash')) || availableNames[0];
+        if (dynamicName) {
           const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${dynamicName}:generateContent?key=${apiKey}`;
           const res = await fetch(endpoint, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+              'Content-Type': 'application/json',
+              'x-goog-api-key': apiKey
+            },
             body: JSON.stringify(requestBody)
           });
           if (res.ok) {

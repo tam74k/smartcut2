@@ -733,7 +733,7 @@ export const DB = {
         master_programmer_key: settings.masterProgrammerKey || 'dev@smartcut2026',
         ai_provider: settings.aiProvider || 'builtin',
         ai_api_key: settings.aiApiKey || null,
-        ai_model: settings.aiModel || 'gemini-1.5-flash',
+        ai_model: settings.aiModel || 'gemini-3.8-flash',
         updated_at: new Date().toISOString()
       };
       if (logoVal) {

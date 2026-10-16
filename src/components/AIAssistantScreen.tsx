@@ -62,7 +62,7 @@ export function AIAssistantScreen({
   const [configForm, setConfigForm] = useState({
     aiProvider: settings.aiProvider || 'builtin',
     aiApiKey: settings.aiApiKey || '',
-    aiModel: settings.aiModel || 'gemini-1.5-flash'
+    aiModel: settings.aiModel || 'gemini-3.8-flash'
   });
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -406,8 +406,9 @@ export function AIAssistantScreen({
                       onChange={e => setConfigForm({ ...configForm, aiModel: e.target.value })}
                       className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold outline-none"
                     >
-                      <option value="gemini-1.5-flash">Gemini 1.5 Flash (سريع ومثالي)</option>
-                      <option value="gemini-1.5-pro">Gemini 1.5 Pro (تحليلي متقدم)</option>
+                      <option value="gemini-3.8-flash">Gemini 3.8 Flash (الأحدث فائق السرعة - موصى به)</option>
+                      <option value="gemini-3.8-pro">Gemini 3.8 Pro (تحليلي متقدم)</option>
+                      <option value="gemini-3.5-flash">Gemini 3.5 Flash (سريع وخفيف)</option>
                     </select>
                   </div>
                 </div>
