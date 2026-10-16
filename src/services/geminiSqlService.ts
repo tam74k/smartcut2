@@ -31,26 +31,33 @@ export interface AiModelOption {
 
 export const POPULAR_AI_MODELS: AiModelOption[] = [
   { 
-    id: 'gemini-1.5-flash', 
-    name: 'Google Gemini 1.5 Flash',
+    id: 'gemini-2.5-flash', 
+    name: 'Google Gemini 2.5 Flash',
     provider: 'gemini',
-    badge: 'الافتراضي - موصى به',
-    description: 'الأسرع والأدق في استعلامات SQL وقراءة قاعدة بيانات الصالون بسوبابيز (موصى به)',
+    badge: 'الافتراضي - الأحدث وموصى به',
+    description: 'الجيل الأحدث من Google فائق السرعة والأعلى دقة في استعلامات SQL وقراءة سوبابيز',
     isDefault: true
   },
   { 
     id: 'gemini-2.0-flash', 
     name: 'Google Gemini 2.0 Flash',
     provider: 'gemini',
-    badge: 'الجيل الأحدث',
-    description: 'فائق السرعة واستجابة فورية للتقارير والعمليات اليومية'
+    badge: 'فائق السرعة',
+    description: 'استجابة فورية وخفيفة للتقارير والعمليات اليومية'
   },
   { 
-    id: 'gemini-1.5-pro', 
-    name: 'Google Gemini 1.5 Pro',
+    id: 'gemini-2.5-pro', 
+    name: 'Google Gemini 2.5 Pro',
     provider: 'gemini',
     badge: 'تحليل مالي عميق',
     description: 'أعلى قدرات استدلال وتحليل للقوائم المالية وهوامش الأرباح المعقدة'
+  },
+  { 
+    id: 'gemini-1.5-flash', 
+    name: 'Google Gemini 1.5 Flash',
+    provider: 'gemini',
+    badge: 'إصدار كلاسيكي',
+    description: 'نموذج Flash الكلاسيكي (يتم توجيهه تلقائياً للإصدار المتوافق في API)'
   },
   {
     id: 'openai/gpt-4o-mini',
@@ -82,8 +89,8 @@ export const POPULAR_AI_MODELS: AiModelOption[] = [
   }
 ];
 
-export const DEFAULT_AI_MODEL = 'gemini-1.5-flash';
-export const DEFAULT_GEMINI_MODEL = 'gemini-1.5-flash';
+export const DEFAULT_AI_MODEL = 'gemini-2.5-flash';
+export const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash';
 
 // Backward compatibility export
 export const POPULAR_GEMINI_MODELS = POPULAR_AI_MODELS.map(m => ({
@@ -320,6 +327,130 @@ export async function executeSupabaseAiSql(
   }
 }
 
+// Smart Fallback Google Gemini Caller
+async function callGeminiApiWithSmartFallback({
+  apiKey,
+  model,
+  prompt,
+  systemInstruction
+}: {
+  apiKey: string;
+  model: string;
+  prompt: string;
+  systemInstruction?: string;
+}): Promise<{ text: string; resolvedModel: string }> {
+  const requestBody: any = {
+    contents: [
+      {
+        parts: [{ text: prompt }]
+      }
+    ],
+    generationConfig: {
+      temperature: 0.1,
+      topK: 20,
+      topP: 0.8
+    }
+  };
+
+  if (systemInstruction) {
+    requestBody.systemInstruction = {
+      parts: [{ text: systemInstruction }]
+    };
+  }
+
+  // Candidate models in priority order
+  const candidates = [
+    model,
+    'gemini-2.5-flash',
+    'gemini-2.0-flash',
+    'gemini-1.5-flash-latest',
+    'gemini-1.5-flash-002',
+    'gemini-1.5-flash',
+    'gemini-2.5-pro',
+    'gemini-1.5-pro'
+  ].filter((v, idx, arr) => v && arr.indexOf(v) === idx);
+
+  let lastErrorMsg = '';
+
+  for (const candidate of candidates) {
+    // Try v1beta first, then v1
+    const versions = ['v1beta', 'v1'];
+    for (const ver of versions) {
+      try {
+        const endpoint = `https://generativelanguage.googleapis.com/${ver}/models/${candidate}:generateContent?key=${apiKey}`;
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody)
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (text) {
+            return { text: text.trim(), resolvedModel: candidate };
+          }
+        }
+
+        const errText = await response.text();
+        try {
+          const errJson = JSON.parse(errText);
+          lastErrorMsg = errJson?.error?.message || errText;
+        } catch {
+          lastErrorMsg = errText;
+        }
+
+        // If it's a 404 (model not found), proceed to next version/candidate immediately
+        if (response.status === 404 || lastErrorMsg.includes('not found') || lastErrorMsg.includes('not supported')) {
+          continue;
+        }
+
+        // If it's an authentication error, throw immediately
+        if (lastErrorMsg.includes('API_KEY_INVALID') || (response.status === 400 && lastErrorMsg.includes('API key'))) {
+          throw new Error(`مفتاح Google Gemini API غير صالح: ${lastErrorMsg}`);
+        }
+      } catch (networkErr: any) {
+        if (networkErr.message?.includes('Google Gemini API')) {
+          throw networkErr;
+        }
+        lastErrorMsg = networkErr?.message || 'Network error';
+      }
+    }
+  }
+
+  // If all hardcoded candidates failed, try dynamic ListModels lookup
+  try {
+    const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+    if (listRes.ok) {
+      const listData = await listRes.json();
+      if (Array.isArray(listData?.models)) {
+        const validModelObj = listData.models.find((m: any) => 
+          Array.isArray(m.supportedGenerationMethods) && 
+          m.supportedGenerationMethods.includes('generateContent')
+        );
+        if (validModelObj?.name) {
+          const dynamicName = validModelObj.name.replace(/^models\//, '');
+          const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${dynamicName}:generateContent?key=${apiKey}`;
+          const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody)
+          });
+          if (res.ok) {
+            const data = await res.json();
+            const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (text) {
+              return { text: text.trim(), resolvedModel: dynamicName };
+            }
+          }
+        }
+      }
+    }
+  } catch (e) {}
+
+  throw new Error(`خطأ Google Gemini API: ${lastErrorMsg || 'تعذر العثور على نموذج متوافق مع مفتاح API الحالي.'}`);
+}
+
 // Unified LLM Caller (Google Gemini or OpenRouter)
 export async function callLlmApi({
   apiKey,
@@ -331,7 +462,7 @@ export async function callLlmApi({
   model: string;
   prompt: string;
   systemInstruction?: string;
-}): Promise<string> {
+}): Promise<{ text: string; resolvedModel: string }> {
   const targetModel = model || DEFAULT_AI_MODEL;
 
   // OpenRouter Provider (Models with '/')
@@ -372,54 +503,16 @@ export async function callLlmApi({
     if (!content) {
       throw new Error('لم يتم استلام أي رد من نموذج OpenRouter.');
     }
-    return content.trim();
+    return { text: content.trim(), resolvedModel: targetModel };
   }
 
-  // Google Gemini Provider (Default)
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${apiKey}`;
-
-  const requestBody: any = {
-    contents: [
-      {
-        parts: [{ text: prompt }]
-      }
-    ],
-    generationConfig: {
-      temperature: 0.1,
-      topK: 20,
-      topP: 0.8
-    }
-  };
-
-  if (systemInstruction) {
-    requestBody.systemInstruction = {
-      parts: [{ text: systemInstruction }]
-    };
-  }
-
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(requestBody)
+  // Google Gemini Provider with Smart Fallback
+  return await callGeminiApiWithSmartFallback({
+    apiKey,
+    model: targetModel,
+    prompt,
+    systemInstruction
   });
-
-  if (!response.ok) {
-    const errText = await response.text();
-    let parsedMsg = `HTTP ${response.status}`;
-    try {
-      const errJson = JSON.parse(errText);
-      parsedMsg = errJson?.error?.message || parsedMsg;
-    } catch {}
-    throw new Error(`خطأ Google Gemini API: ${parsedMsg}`);
-  }
-
-  const data = await response.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) {
-    throw new Error('لم يتم استلام أي رد من نموذج Gemini الذكي.');
-  }
-
-  return text.trim();
 }
 
 // Test live connectivity with the selected AI model & API key
@@ -429,7 +522,7 @@ export async function testAiConnection({
 }: {
   apiKey: string;
   model: string;
-}): Promise<{ success: boolean; latencyMs?: number; error?: string }> {
+}): Promise<{ success: boolean; latencyMs?: number; error?: string; activeModel?: string }> {
   if (!apiKey || !apiKey.trim()) {
     return { success: false, error: 'يرجى إدخال مفتاح API أولاً قبل الاختبار.' };
   }
@@ -442,8 +535,8 @@ export async function testAiConnection({
       prompt: 'أجب بكلمة واحدة فقط: جاهز'
     });
     const latencyMs = Math.round(performance.now() - t0);
-    if (reply) {
-      return { success: true, latencyMs };
+    if (reply?.text) {
+      return { success: true, latencyMs, activeModel: reply.resolvedModel };
     }
     return { success: false, error: 'لم يتم استلام رد من النموذج.' };
   } catch (err: any) {
@@ -515,7 +608,7 @@ Generate the PostgreSQL query for salon '${salonId}':`;
     systemInstruction: sqlSystemInstruction
   });
 
-  const cleanSql = rawSqlResponse
+  const cleanSql = rawSqlResponse.text
     .replace(/```(?:sql)?/gi, '')
     .replace(/```/g, '')
     .trim();
@@ -525,18 +618,18 @@ Generate the PostgreSQL query for salon '${salonId}':`;
     const conversationalPrompt = `أنت مساعد الإدارة الذكي لصالون (${salonName}). أجب بلطف واحترافية باللغة العربية على الرسالة التالية:\n${userMessage}`;
     const directReply = await callLlmApi({
       apiKey,
-      model,
+      model: rawSqlResponse.resolvedModel || model,
       prompt: conversationalPrompt
     });
 
     const updatedHistory: ChatMessage[] = [
       ...conversationHistory,
       { role: 'user', content: userMessage },
-      { role: 'assistant', content: directReply }
+      { role: 'assistant', content: directReply.text }
     ];
 
     return {
-      reply: directReply,
+      reply: directReply.text,
       updatedHistory
     };
   }
@@ -572,7 +665,7 @@ ${JSON.stringify(sqlExecution.rows || (sqlExecution.error ? { error: sqlExecutio
 
   const finalAnswer = await callLlmApi({
     apiKey,
-    model,
+    model: rawSqlResponse.resolvedModel || model,
     prompt: answerPrompt,
     systemInstruction: answerSystemInstruction
   });
@@ -582,14 +675,14 @@ ${JSON.stringify(sqlExecution.rows || (sqlExecution.error ? { error: sqlExecutio
     { role: 'user', content: userMessage },
     { 
       role: 'assistant', 
-      content: finalAnswer,
+      content: finalAnswer.text,
       executedSql: cleanSql,
       sqlResultCount: sqlExecution.rowCount ?? 0
     }
   ];
 
   return {
-    reply: finalAnswer,
+    reply: finalAnswer.text,
     executedSql: cleanSql,
     sqlResultCount: sqlExecution.rowCount ?? 0,
     updatedHistory

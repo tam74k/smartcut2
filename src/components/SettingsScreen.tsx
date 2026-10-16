@@ -1795,7 +1795,11 @@ export function SettingsScreen({
                             const res = await testAiConnection({ apiKey: key, model: currentModel });
                             setTestAiResult(res);
                             if (res.success) {
-                              saveAiCredentials(key, currentModel);
+                              const activeModel = res.activeModel || currentModel;
+                              if (res.activeModel && res.activeModel !== currentModel) {
+                                handleChange('aiModel', res.activeModel);
+                              }
+                              saveAiCredentials(key, activeModel);
                             }
                           } catch (err: any) {
                             setTestAiResult({ success: false, error: err?.message || 'فشل الاتصال' });
@@ -1842,7 +1846,7 @@ export function SettingsScreen({
                           <>
                             <CheckCircle2 size={15} className="text-emerald-600 shrink-0" />
                             <span className="font-bold">
-                              تم التحقق بنجاح! سرعة الاستجابة: ({testAiResult.latencyMs} ms). النموذج جاهز للعمل.
+                              تم التحقق بنجاح! تم الاتصال بنموذج ({testAiResult.activeModel || settings.aiModel}) بسرعة ({testAiResult.latencyMs} ms). النموذج جاهز للعمل.
                             </span>
                           </>
                         ) : (
