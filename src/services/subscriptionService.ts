@@ -111,8 +111,17 @@ export const SubscriptionService = {
   saveSalons(salons: SalonTenant[]): void {
     try {
       localStorage.setItem(STORAGE_KEYS.SALONS, JSON.stringify(salons));
-    } catch (e) {
-      console.error('Failed to save salons:', e);
+    } catch (e: any) {
+      if (e?.name === 'QuotaExceededError' || e?.code === 22) {
+        try {
+          localStorage.removeItem('smartcut_invoices_cache');
+          localStorage.removeItem('smartcut_transactions');
+          localStorage.removeItem('smartcut_last_print_job');
+          localStorage.setItem(STORAGE_KEYS.SALONS, JSON.stringify(salons));
+          return;
+        } catch (_) {}
+      }
+      console.warn('Failed to save salons to localStorage:', e?.message || e);
     }
   },
 
