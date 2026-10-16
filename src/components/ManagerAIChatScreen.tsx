@@ -107,11 +107,21 @@ export function ManagerAIChatScreen({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
 
+  // Microphone permission state
+  const [micPermission, setMicPermission] = useState<'checking' | 'granted' | 'prompt' | 'denied' | 'unsupported'>('checking');
+  const [isRequestingMic, setIsRequestingMic] = useState(false);
+  const [micSuccessMessage, setMicSuccessMessage] = useState<string | null>(null);
+
   // Initialize Web Speech Recognition
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      if (SpeechRecognition) {
+  const initSpeechRecognition = () => {
+    if (typeof window === 'undefined') return;
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      try {
+        if (recognitionRef.current) {
+          try { recognitionRef.current.abort(); } catch (e) {}
+        }
+
         const recognition = new SpeechRecognition();
         recognition.lang = 'ar-SA';
         recognition.continuous = false;
@@ -140,7 +150,8 @@ export function ManagerAIChatScreen({
           console.warn('Speech recognition error:', event.error);
           setIsListening(false);
           if (event.error === 'not-allowed') {
-            setSpeechError('تم رفض إذن الوصول إلى الميكروفون في المتصفح. يرجى السماح بالوصول.');
+            setMicPermission('denied');
+            setSpeechError('تم رفض إذن الوصول إلى الميكروفون في المتصفح. اضغط على زر تفعيل الميكروفون بالأعلى للسماح به.');
           } else if (event.error === 'no-speech') {
             // Quietly reset
           } else {
@@ -153,8 +164,94 @@ export function ManagerAIChatScreen({
         };
 
         recognitionRef.current = recognition;
+      } catch (e) {
+        console.warn('Failed to initialize speech recognition:', e);
       }
     }
+  };
+
+  // Check microphone permission across modern browsers
+  const checkMicPermission = async () => {
+    if (typeof window === 'undefined') return;
+
+    const hasGetUserMedia = Boolean(navigator?.mediaDevices?.getUserMedia);
+    const hasSpeech = Boolean((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+
+    if (!hasGetUserMedia && !hasSpeech) {
+      setMicPermission('unsupported');
+      return;
+    }
+
+    try {
+      if (navigator.permissions && navigator.permissions.query) {
+        const status = await navigator.permissions.query({ name: 'microphone' as any });
+        setMicPermission(status.state as any);
+        status.onchange = () => {
+          setMicPermission(status.state as any);
+          if (status.state === 'granted') {
+            initSpeechRecognition();
+          }
+        };
+        return;
+      }
+    } catch (e) {
+      // Ignored for iOS Safari
+    }
+
+    const cached = localStorage.getItem('smartcut_mic_permission');
+    if (cached === 'granted') {
+      setMicPermission('granted');
+    } else {
+      setMicPermission('prompt');
+    }
+  };
+
+  // Request microphone permission on demand
+  const requestMicPermission = async () => {
+    setSpeechError(null);
+    setIsRequestingMic(true);
+
+    try {
+      if (!navigator?.mediaDevices?.getUserMedia) {
+        if (recognitionRef.current) {
+          recognitionRef.current.start();
+          setMicPermission('granted');
+          return;
+        }
+        setMicPermission('unsupported');
+        setSpeechError('المتصفح الحالي لا يدعم الوصول المباشر للمايكروفون.');
+        return;
+      }
+
+      // Triggers the native browser permission prompt!
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Stop tracks immediately after granting
+      stream.getTracks().forEach(track => track.stop());
+
+      setMicPermission('granted');
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('smartcut_mic_permission', 'granted');
+      }
+
+      initSpeechRecognition();
+      setMicSuccessMessage('تم تفعيل إذن الميكروفون بنجاح! يمكنك الآن التحدث مباشرة عبر زر المايك.');
+      setTimeout(() => setMicSuccessMessage(null), 3500);
+    } catch (err: any) {
+      console.warn('Microphone permission request failed:', err);
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        setMicPermission('denied');
+        setSpeechError('تم رفض إذن المايكروفون. لتفعيله: اضغط على رمز القفل 🔒 أو الكاميرا/المايك بجوار شريط العنوان في المتصفح واسمح بالمايكروفون ثم حدّث الصفحة.');
+      } else {
+        setSpeechError(`تعذر تفعيل المايكروفون: ${err.message || 'خطأ غير معروف'}`);
+      }
+    } finally {
+      setIsRequestingMic(false);
+    }
+  };
+
+  useEffect(() => {
+    checkMicPermission();
+    initSpeechRecognition();
 
     return () => {
       if (recognitionRef.current) {
@@ -165,10 +262,21 @@ export function ManagerAIChatScreen({
     };
   }, []);
 
-  const toggleListening = () => {
+  const toggleListening = async () => {
     setSpeechError(null);
+
+    // If permission not granted yet, ask for it first!
+    if (micPermission !== 'granted') {
+      await requestMicPermission();
+      return;
+    }
+
     if (!recognitionRef.current) {
-      setSpeechError('ميزة الإدخال الصوتي غير مدعومة في هذا المتصفح. يرجى استخدام Google Chrome أو Edge.');
+      initSpeechRecognition();
+    }
+
+    if (!recognitionRef.current) {
+      setSpeechError('ميزة الإدخال الصوتي غير متوفرة في هذا المتصفح. يرجى استخدام Google Chrome أو Edge.');
       return;
     }
 
@@ -325,7 +433,7 @@ export function ManagerAIChatScreen({
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-5rem)] max-w-6xl mx-auto p-2 sm:p-4 gap-3">
+    <div className="flex flex-col h-[calc(100dvh-4.5rem)] sm:h-[calc(100vh-5rem)] max-w-6xl mx-auto p-2 sm:p-4 gap-2 sm:gap-3">
       {/* Alert when assistant is disabled in settings */}
       {settings.aiAssistantEnabled === false && (
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-3 px-4 flex flex-wrap items-center justify-between gap-3 text-xs text-amber-800 dark:text-amber-200">
@@ -361,33 +469,33 @@ export function ManagerAIChatScreen({
       )}
 
       {/* Top Header Card */}
-      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 shadow-xs flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-indigo-600 via-primary to-teal-500 flex items-center justify-center text-white shadow-md shadow-indigo-600/20">
-            <Bot className="w-7 h-7" />
+      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-3 sm:p-4 shadow-xs flex flex-wrap items-center justify-between gap-2.5">
+        <div className="flex items-center gap-2.5 sm:gap-3">
+          <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-gradient-to-tr from-indigo-600 via-primary to-teal-500 flex items-center justify-center text-white shadow-md shadow-indigo-600/20 shrink-0">
+            <Bot className="w-6 h-6 sm:w-7 sm:h-7" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg sm:text-xl font-bold text-zinc-900 dark:text-zinc-100">
-                المساعد الذكي (Google Gemini & Supabase SQL)
+            <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+              <h1 className="text-base sm:text-xl font-bold text-zinc-900 dark:text-zinc-100">
+                المساعد الذكي (Gemini & Supabase)
               </h1>
-              <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800 flex items-center gap-1 shadow-2xs">
-                <Lock className="w-3 h-3 text-emerald-600" />
-                معزول حصراً للصالون الحالي
+              <span className="px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800 flex items-center gap-1 shadow-2xs">
+                <Lock className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-emerald-600" />
+                معزول للصالون
               </span>
             </div>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-              استعلام SQL فوري من الجداول السحابية مع منع الوصول لبيانات أي صالونات أخرى نهائياً
+            <p className="text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+              استعلام SQL فوري من الجداول السحابية مع عزل كامل للبيانات
             </p>
           </div>
         </div>
 
         {/* Model & Config Badges */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 text-xs">
-            <Zap className="w-3.5 h-3.5 text-amber-500" />
-            <span className="text-zinc-500 dark:text-zinc-400">المحرك:</span>
-            <span className="font-mono font-medium text-zinc-800 dark:text-zinc-200 max-w-[150px] truncate" title={activeModel}>
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap w-full sm:w-auto justify-end">
+          <div className="flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 text-[11px] sm:text-xs">
+            <Zap className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+            <span className="text-zinc-500 dark:text-zinc-400">الموديل:</span>
+            <span className="font-mono font-medium text-zinc-800 dark:text-zinc-200 max-w-[110px] sm:max-w-[150px] truncate" title={activeModel}>
               {activeModel}
             </span>
           </div>
@@ -395,25 +503,25 @@ export function ManagerAIChatScreen({
           {isKeyConfigured ? (
             <button
               onClick={() => setShowConfigModal(true)}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400 text-xs font-medium hover:bg-emerald-100 transition cursor-pointer"
+              className="flex items-center gap-1.5 px-2.5 py-1 sm:py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400 text-[11px] sm:text-xs font-medium hover:bg-emerald-100 transition cursor-pointer"
               title="تعديل مفتاح Gemini"
             >
-              <ShieldCheck className="w-3.5 h-3.5" />
-              <span>Gemini مفعل</span>
+              <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+              <span>مفعل</span>
             </button>
           ) : (
             <button
               onClick={() => setShowConfigModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs font-medium hover:bg-rose-100 dark:hover:bg-rose-900/60 transition cursor-pointer animate-pulse"
+              className="flex items-center gap-1.5 px-2.5 py-1 sm:py-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-[11px] sm:text-xs font-medium hover:bg-rose-100 dark:hover:bg-rose-900/60 transition cursor-pointer animate-pulse"
             >
-              <Key className="w-3.5 h-3.5 text-rose-500" />
-              <span>مفتاح Gemini API غير مضبوط (اضغط للضبط)</span>
+              <Key className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+              <span>ضبط المفتاح</span>
             </button>
           )}
 
           <button
             onClick={handleClearHistory}
-            className="p-2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition cursor-pointer"
+            className="p-1.5 sm:p-2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition cursor-pointer"
             title="مسح المحادثة بالكامل"
           >
             <Trash2 className="w-4 h-4" />
@@ -421,7 +529,7 @@ export function ManagerAIChatScreen({
 
           <button
             onClick={() => setShowConfigModal(true)}
-            className="p-2 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition cursor-pointer"
+            className="p-1.5 sm:p-2 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition cursor-pointer"
             title="إعدادات Google Gemini"
           >
             <Settings className="w-4 h-4" />
@@ -429,16 +537,81 @@ export function ManagerAIChatScreen({
         </div>
       </div>
 
+      {/* Microphone Permission Prompt Banner */}
+      {micPermission !== 'granted' && micPermission !== 'unsupported' && (
+        <div className="bg-gradient-to-r from-indigo-50 via-sky-50 to-emerald-50 dark:from-indigo-950/40 dark:via-sky-950/30 dark:to-emerald-950/40 border border-indigo-200 dark:border-indigo-800 rounded-2xl p-3 sm:p-3.5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+              <Mic className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
+                <span>تفعيل الإدخال الصوتي للمساعد الذكي</span>
+                {micPermission === 'denied' ? (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 dark:bg-rose-900/60 text-rose-700 dark:text-rose-300">
+                    الإذن محظور
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300">
+                    مطلوب إذن المايك
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-zinc-600 dark:text-zinc-400 mt-0.5">
+                {micPermission === 'denied'
+                  ? 'إذن المايك محظور في المتصفح. اضغط رمز القفل 🔒 بجوار الرابط واسمح بالمايك ثم اضغط إعادة المحاولة.'
+                  : 'اضغط الزر لتفعيل الميكروفون وسؤال المساعد بالصوت مباشرة في أي وقت من الموبايل أو الكمبيوتر.'}
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={requestMicPermission}
+            disabled={isRequestingMic}
+            className="w-full sm:w-auto shrink-0 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-bold px-4 py-2 rounded-xl transition text-xs flex items-center justify-center gap-2 shadow-sm cursor-pointer disabled:opacity-50"
+          >
+            {isRequestingMic ? (
+              <>
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                <span>جاري طلب الإذن...</span>
+              </>
+            ) : (
+              <>
+                <Mic className="w-3.5 h-3.5" />
+                <span>{micPermission === 'denied' ? 'إعادة طلب وتفعيل الإذن' : 'طلب سماحية المايك وتفعيلها'}</span>
+              </>
+            )}
+          </button>
+        </div>
+      )}
+
+      {/* Mic Success Toast */}
+      {micSuccessMessage && (
+        <div className="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 p-2.5 rounded-xl text-xs flex items-center justify-between animate-fade-in shadow-xs">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+            <span className="font-medium">{micSuccessMessage}</span>
+          </div>
+          <button 
+            onClick={() => setMicSuccessMessage(null)}
+            className="text-emerald-600 dark:text-emerald-400 hover:text-emerald-800 p-1 cursor-pointer"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
       {/* Speech Error Banner if any */}
       {speechError && (
         <div className="bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 p-2.5 rounded-xl text-xs flex items-center justify-between">
           <div className="flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
-            <span>{speechError}</span>
+            <span className="break-words">{speechError}</span>
           </div>
           <button 
             onClick={() => setSpeechError(null)}
-            className="text-rose-500 hover:text-rose-700 p-1 cursor-pointer flex items-center justify-center"
+            className="text-rose-500 hover:text-rose-700 p-1 cursor-pointer flex items-center justify-center shrink-0"
           >
             <X size={14} />
           </button>
@@ -446,7 +619,7 @@ export function ManagerAIChatScreen({
       )}
 
       {/* Messages Scroll Area */}
-      <div className="flex-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 overflow-y-auto space-y-4 shadow-inner">
+      <div className="flex-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-3 sm:p-4 overflow-y-auto space-y-3 sm:space-y-4 shadow-inner">
         {messages.map((msg, index) => {
           const isUser = msg.role === 'user';
           const isExpanded = expandedSqlIndex === index;
@@ -454,11 +627,11 @@ export function ManagerAIChatScreen({
           return (
             <div
               key={index}
-              className={`flex gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'} items-start`}
+              className={`flex gap-2 sm:gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'} items-start`}
             >
               {/* Avatar */}
               <div
-                className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-sm ${
+                className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center shrink-0 shadow-sm ${
                   isUser
                     ? 'bg-zinc-800 dark:bg-zinc-700 text-amber-400'
                     : msg.error
@@ -469,18 +642,18 @@ export function ManagerAIChatScreen({
                 {isUser ? (
                   <span className="font-bold text-xs">{currentUser?.name?.[0] || 'م'}</span>
                 ) : (
-                  <Bot className="w-5 h-5" />
+                  <Bot className="w-4 h-4 sm:w-5 sm:h-5" />
                 )}
               </div>
 
               {/* Message Bubble Container */}
-              <div className={`flex flex-col max-w-[85%] sm:max-w-[78%] ${isUser ? 'items-end' : 'items-start'}`}>
-                <div className="text-[11px] text-zinc-400 mb-1 px-1">
+              <div className={`flex flex-col max-w-[88%] sm:max-w-[78%] ${isUser ? 'items-end' : 'items-start'}`}>
+                <div className="text-[10px] sm:text-[11px] text-zinc-400 mb-1 px-1">
                   {isUser ? (currentUser?.name || 'المدير') : 'المساعد الذكي (Gemini & Supabase)'}
                 </div>
 
                 <div
-                  className={`rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
+                  className={`rounded-2xl px-3.5 py-2.5 sm:px-4 sm:py-3 text-xs sm:text-sm leading-relaxed whitespace-pre-wrap break-words ${
                     isUser
                       ? 'bg-indigo-600 text-white dark:bg-indigo-600 rounded-tr-none shadow-sm'
                       : msg.error
@@ -493,35 +666,35 @@ export function ManagerAIChatScreen({
 
                 {/* Collapsible Executed SQL Query Card */}
                 {msg.executedSql && (
-                  <div className="mt-2 w-full max-w-lg bg-zinc-50 dark:bg-zinc-950/60 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden shadow-2xs">
+                  <div className="mt-2 w-full max-w-full sm:max-w-lg bg-zinc-50 dark:bg-zinc-950/60 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden shadow-2xs">
                     <button
                       onClick={() => setExpandedSqlIndex(isExpanded ? null : index)}
-                      className="w-full flex items-center justify-between p-2.5 text-xs text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800/50 transition cursor-pointer"
+                      className="w-full flex items-center justify-between p-2 sm:p-2.5 text-[11px] sm:text-xs text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800/50 transition cursor-pointer"
                     >
-                      <div className="flex items-center gap-1.5 font-medium">
-                        <Terminal className="w-3.5 h-3.5 text-indigo-500" />
-                        <span>استعلام SQL المنفذ على جداول Supabase</span>
+                      <div className="flex items-center gap-1.5 font-medium truncate">
+                        <Terminal className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                        <span className="truncate">استعلام SQL المنفذ</span>
                         {msg.sqlResultCount !== undefined && (
-                          <span className="px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-950/60 text-indigo-800 dark:text-indigo-300 text-[10px]">
+                          <span className="px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-950/60 text-indigo-800 dark:text-indigo-300 text-[10px] shrink-0">
                             {msg.sqlResultCount} سجل
                           </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-1 text-zinc-400">
+                      <div className="flex items-center gap-1 text-zinc-400 shrink-0">
                         {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                       </div>
                     </button>
 
                     {isExpanded && (
-                      <div className="p-3 bg-zinc-900 text-zinc-200 border-t border-zinc-200 dark:border-zinc-800 text-xs font-mono relative">
-                        <div className="flex justify-between items-center mb-1 text-[11px] text-zinc-400">
-                          <span className="flex items-center gap-1">
-                            <Code2 className="w-3 h-3 text-emerald-400" />
-                            PostgreSQL Read-Only (Restricted to Salon ID)
+                      <div className="p-2.5 sm:p-3 bg-zinc-900 text-zinc-200 border-t border-zinc-200 dark:border-zinc-800 text-xs font-mono relative">
+                        <div className="flex justify-between items-center mb-1 text-[10px] sm:text-[11px] text-zinc-400">
+                          <span className="flex items-center gap-1 truncate">
+                            <Code2 className="w-3 h-3 text-emerald-400 shrink-0" />
+                            PostgreSQL Read-Only (Restricted)
                           </span>
                           <button
                             onClick={() => copyToClipboard(msg.executedSql!, index)}
-                            className="flex items-center gap-1 text-[11px] text-zinc-400 hover:text-white transition px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 cursor-pointer"
+                            className="flex items-center gap-1 text-[11px] text-zinc-400 hover:text-white transition px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 cursor-pointer shrink-0"
                             title="نسخ الاستعلام"
                           >
                             {copiedIndex === index ? (
@@ -537,7 +710,7 @@ export function ManagerAIChatScreen({
                             )}
                           </button>
                         </div>
-                        <pre className="overflow-x-auto p-2 bg-zinc-950/80 rounded border border-zinc-800 text-teal-300 font-mono text-[11px] leading-relaxed">
+                        <pre className="overflow-x-auto p-2 bg-zinc-950/80 rounded border border-zinc-800 text-teal-300 font-mono text-[10px] sm:text-[11px] leading-relaxed">
                           {msg.executedSql}
                         </pre>
                       </div>
@@ -551,15 +724,15 @@ export function ManagerAIChatScreen({
 
         {/* Loading Indicator */}
         {isLoading && (
-          <div className="flex gap-3 items-start animate-fade-in">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-teal-500 text-white flex items-center justify-center shrink-0 shadow-sm animate-pulse">
-              <Bot className="w-5 h-5" />
+          <div className="flex gap-2 sm:gap-3 items-start animate-fade-in">
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-teal-500 text-white flex items-center justify-center shrink-0 shadow-sm animate-pulse">
+              <Bot className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
             <div className="flex flex-col items-start">
-              <div className="text-[11px] text-zinc-400 mb-1 px-1">المساعد الذكي (Gemini)</div>
-              <div className="bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-2xl rounded-tl-none px-4 py-3 flex items-center gap-2 text-zinc-600 dark:text-zinc-300 text-xs shadow-sm">
-                <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-600" />
-                <span>جاري تحويل السؤال لاستعلام SQL وتنفيذه على جداول Supabase...</span>
+              <div className="text-[10px] sm:text-[11px] text-zinc-400 mb-1 px-1">المساعد الذكي (Gemini)</div>
+              <div className="bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-2xl rounded-tl-none px-3.5 py-2.5 sm:px-4 sm:py-3 flex items-center gap-2 text-zinc-600 dark:text-zinc-300 text-xs shadow-sm">
+                <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-600 shrink-0" />
+                <span>جاري إعداد استعلام SQL وتنفيذه على جداول Supabase...</span>
               </div>
             </div>
           </div>
@@ -569,17 +742,17 @@ export function ManagerAIChatScreen({
       </div>
 
       {/* Suggested Query Chips */}
-      <div className="flex items-center gap-2 overflow-x-auto py-1 px-0.5 scrollbar-thin">
-        <span className="text-[11px] font-semibold text-zinc-400 dark:text-zinc-500 shrink-0 flex items-center gap-1">
+      <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto py-1 px-0.5 scrollbar-thin">
+        <span className="text-[10px] sm:text-[11px] font-semibold text-zinc-400 dark:text-zinc-500 shrink-0 flex items-center gap-1">
           <Sparkles className="w-3 h-3 text-indigo-500" />
-          أسئلة مقترحة:
+          مقترحات:
         </span>
         {SUGGESTED_QUERIES.map((chip, i) => (
           <button
             key={i}
             onClick={() => handleSendMessage(chip.query)}
             disabled={isLoading}
-            className="shrink-0 px-3 py-1.5 rounded-full text-xs bg-slate-100 hover:bg-indigo-50 dark:bg-zinc-800/80 dark:hover:bg-indigo-950/50 text-slate-700 dark:text-zinc-300 hover:text-indigo-800 dark:hover:text-indigo-300 border border-slate-200 dark:border-zinc-700 hover:border-indigo-300 transition-all cursor-pointer disabled:opacity-50"
+            className="shrink-0 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-full text-[11px] sm:text-xs bg-slate-100 hover:bg-indigo-50 dark:bg-zinc-800/80 dark:hover:bg-indigo-950/50 text-slate-700 dark:text-zinc-300 hover:text-indigo-800 dark:hover:text-indigo-300 border border-slate-200 dark:border-zinc-700 hover:border-indigo-300 transition-all cursor-pointer disabled:opacity-50"
           >
             {chip.label}
           </button>
@@ -607,20 +780,40 @@ export function ManagerAIChatScreen({
           </div>
         )}
 
-        <div className="flex items-end gap-2">
+        <div className="flex items-end gap-1.5 sm:gap-2">
           {/* Voice Input Mic Button */}
-          <button
-            type="button"
-            onClick={toggleListening}
-            title={isListening ? 'إيقاف التسجيل الصوتي' : 'تحدث بالصوت بدلاً من الكتابة'}
-            className={`p-3 rounded-xl transition-all duration-200 shrink-0 cursor-pointer ${
-              isListening
-                ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/30 scale-105 animate-pulse'
-                : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 hover:text-indigo-600'
-            }`}
-          >
-            {isListening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
-          </button>
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              onClick={toggleListening}
+              disabled={isRequestingMic}
+              title={
+                micPermission !== 'granted'
+                  ? 'طلب سماحية المايكروفون وتفعيلها'
+                  : isListening
+                  ? 'إيقاف التسجيل الصوتي'
+                  : 'تحدث بالصوت بدلاً من الكتابة'
+              }
+              className={`p-2.5 sm:p-3 min-w-[44px] min-h-[44px] rounded-xl flex items-center justify-center transition-all duration-200 cursor-pointer ${
+                isListening
+                  ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/30 scale-105 animate-pulse'
+                  : micPermission !== 'granted'
+                  ? 'bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800 hover:bg-amber-200'
+                  : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 hover:text-indigo-600'
+              }`}
+            >
+              {isRequestingMic ? (
+                <RefreshCw className="w-5 h-5 animate-spin" />
+              ) : isListening ? (
+                <MicOff className="w-5 h-5" />
+              ) : (
+                <Mic className="w-5 h-5" />
+              )}
+            </button>
+            {micPermission !== 'granted' && (
+              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-500 rounded-full border-2 border-white dark:border-zinc-900 animate-ping" />
+            )}
+          </div>
 
           {/* Text Area */}
           <div className="flex-1 relative">
@@ -630,9 +823,13 @@ export function ManagerAIChatScreen({
               value={inputQuery}
               onChange={e => setInputQuery(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={isListening ? 'جاري الاستماع لصوتك وتسجيل الكلمات...' : 'اكتب سؤالك هنا أو اضغط زر الميكروفون... (مثال: كم إجمالي المبيعات وعدد الزبائن اليوم؟)'}
+              placeholder={
+                isListening
+                  ? 'جاري الاستماع لصوتك وتسجيل الكلمات...'
+                  : 'اكتب سؤالك هنا أو تحدث بالمايك... (مثال: كم إجمالي المبيعات اليوم؟)'
+              }
               disabled={isLoading}
-              className="w-full resize-none bg-transparent px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-0 leading-relaxed max-h-32"
+              className="w-full resize-none bg-transparent px-2.5 sm:px-3 py-2 text-xs sm:text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-0 leading-relaxed max-h-32"
             />
           </div>
 
@@ -641,7 +838,7 @@ export function ManagerAIChatScreen({
             type="button"
             onClick={() => handleSendMessage()}
             disabled={!inputQuery.trim() || isLoading}
-            className={`p-3 rounded-xl font-bold flex items-center justify-center transition-all duration-200 shrink-0 cursor-pointer ${
+            className={`p-2.5 sm:p-3 min-w-[44px] min-h-[44px] rounded-xl font-bold flex items-center justify-center transition-all duration-200 shrink-0 cursor-pointer ${
               !inputQuery.trim() || isLoading
                 ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 cursor-not-allowed opacity-60'
                 : 'bg-gradient-to-r from-indigo-600 to-teal-500 text-white hover:from-indigo-700 hover:to-teal-600 shadow-md shadow-indigo-600/25 active:scale-95'
@@ -653,12 +850,12 @@ export function ManagerAIChatScreen({
         </div>
 
         {/* Footer Subtext */}
-        <div className="mt-2 pt-2 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between text-[11px] text-zinc-400">
-          <div className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-            <span>استعلام SQL آمن ومباشر على Supabase مقيد بـ salon_id فقط</span>
+        <div className="mt-2 pt-2 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between text-[10px] sm:text-[11px] text-zinc-400">
+          <div className="flex items-center gap-1.5 truncate">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
+            <span className="truncate">استعلام آمن مقيد برقم صالونك فقط</span>
           </div>
-          <span>اضغط Shift + Enter لسطر جديد</span>
+          <span className="shrink-0 hidden sm:inline">Shift + Enter لسطر جديد</span>
         </div>
       </div>
 
