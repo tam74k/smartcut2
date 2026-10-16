@@ -55,7 +55,8 @@ export function SettingsScreen({
   branches = [],
   setBranches,
   activeBranchId,
-  currentUser
+  currentUser,
+  onNavigateScreen
 }: { 
   settings: AppSettings;
   setSettings: (s: AppSettings) => void;
