@@ -3,6 +3,8 @@ import {
   ServiceItem, Product, AIChatMessage 
 } from '../types';
 import { calculateEmployeeCommission, getCommissionModelLabel } from '../utils/commissionHelper';
+import { DB } from './db';
+import { callLlmApi } from './geminiSqlService';
 
 export interface SystemDataContext {
   settings: AppSettings;
@@ -325,6 +327,13 @@ export async function processAIChatMessage(
       advancePayments: [],
       totalAmount
     };
+
+    // Persist immediately to Supabase
+    try {
+      await DB.saveBooking(newBooking, context.settings.salonId);
+    } catch (saveErr) {
+      console.warn('aiAssistantService DB.saveBooking error:', saveErr);
+    }
 
     const updatedBookings = [newBooking, ...context.bookings];
 
@@ -731,26 +740,18 @@ ${query}`;
       const targetModel = (!context.settings.aiModel || context.settings.aiModel.includes('1.5') || context.settings.aiModel.includes('2.0') || context.settings.aiModel.includes('2.5')) 
         ? 'gemini-3.8-flash' 
         : context.settings.aiModel;
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${context.settings.aiApiKey}`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'x-goog-api-key': context.settings.aiApiKey || ''
-        },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{ text: systemPrompt }]
-          }]
-        })
+
+      const llmResult = await callLlmApi({
+        apiKey: context.settings.aiApiKey || '',
+        model: targetModel,
+        prompt: systemPrompt
       });
 
-      const data = await response.json();
-      const generatedText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (generatedText) {
-        return { message: generatedText };
+      if (llmResult?.text) {
+        return { message: llmResult.text };
       }
     } catch (err) {
-      console.warn('Gemini API Error, falling back to built-in response', err);
+      console.warn('AI API Error, falling back to built-in response', err);
     }
   }
 

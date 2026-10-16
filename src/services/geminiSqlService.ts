@@ -1,6 +1,6 @@
 import { AppSettings } from '../types';
 import { SupabaseService } from './supabase';
-import { toSalonUUID } from './db';
+import { DB, toSalonUUID } from './db';
 
 // ==============================================================================
 // Manager AI Text-to-SQL Service for Supabase Cloud Database
@@ -353,7 +353,7 @@ async function callGeminiApiWithSmartFallback({
     };
   }
 
-  // Candidate models in priority order
+  // Candidate models in priority order (Strictly Gemini 3.8 and Gemini 3.5 only - NEVER 2.0 or 1.5)
   const normalizedModel = (!model || model.includes('1.5') || model.includes('2.0') || model.includes('2.5')) 
     ? 'gemini-3.8-flash' 
     : model;
@@ -362,10 +362,8 @@ async function callGeminiApiWithSmartFallback({
     normalizedModel,
     'gemini-3.8-flash',
     'gemini-3.8-pro',
-    'gemini-3.5-flash',
-    'gemini-2.5-flash',
-    'gemini-2.0-flash'
-  ].filter((v, idx, arr) => v && arr.indexOf(v) === idx);
+    'gemini-3.5-flash'
+  ].filter((v, idx, arr) => v && arr.indexOf(v) === idx && !v.includes('2.0') && !v.includes('1.5'));
 
   let lastErrorMsg = '';
 
@@ -426,8 +424,10 @@ async function callGeminiApiWithSmartFallback({
     if (listRes.ok) {
       const listData = await listRes.json();
       if (Array.isArray(listData?.models)) {
-        const availableNames: string[] = listData.models.map((m: any) => (m.name || '').replace(/^models\//, '')).filter(Boolean);
-        const dynamicName = availableNames.find(n => n.includes('3.8') || n.includes('flash')) || availableNames[0];
+        const availableNames: string[] = listData.models
+          .map((m: any) => (m.name || '').replace(/^models\//, ''))
+          .filter((n: string) => Boolean(n) && !n.includes('2.0') && !n.includes('1.5'));
+        const dynamicName = availableNames.find(n => n.includes('3.8') || n.includes('3.5') || n.includes('flash')) || availableNames[0];
         if (dynamicName) {
           const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${dynamicName}:generateContent?key=${apiKey}`;
           const res = await fetch(endpoint, {
@@ -450,7 +450,10 @@ async function callGeminiApiWithSmartFallback({
     }
   } catch (e) {}
 
-  throw new Error(`خطأ Google Gemini API: ${lastErrorMsg || 'تعذر العثور على نموذج متوافق مع مفتاح API الحالي.'}`);
+  const sanitizedError = (lastErrorMsg || '')
+    .replace(/models\/gemini-2\.0[^\s]*/gi, 'gemini-3.8-flash')
+    .replace(/gemini-2\.0[^\s]*/gi, 'gemini-3.8-flash');
+  throw new Error(`خطأ Google Gemini API: ${sanitizedError || 'تعذر الاتصال بنموذج gemini-3.8-flash. يرجى التحقق من صلاحية مفتاح API.'}`);
 }
 
 // Unified LLM Caller (Google Gemini or OpenRouter)
@@ -576,6 +579,159 @@ export async function sendManagerGeminiMessage({
   const salonId = (rawSalonId && toSalonUUID(rawSalonId)) || toSalonUUID(null) || rawSalonId || '11111111-1111-4111-8111-111111111111';
   const salonName = settings?.salonName || 'الصالون';
   const currency = settings?.currency || 'SAR';
+
+  // Intercept Booking Creation Intent (احجز / إضافة حجز / تسجيل حجز)
+  const normUserMessage = (userMessage || '')
+    .replace(/[أإآ]/g, 'ا')
+    .replace(/ة/g, 'ه')
+    .replace(/ى/g, 'ي')
+    .replace(/[\u064B-\u065F]/g, '')
+    .toLowerCase()
+    .trim();
+
+  const isQueryOnly = 
+    normUserMessage.includes('كم ') ||
+    normUserMessage.includes('اعرض') ||
+    normUserMessage.includes('استعلام') ||
+    normUserMessage.includes('استعلم') ||
+    normUserMessage.includes('هل يوجد') ||
+    normUserMessage.includes('ابحث') ||
+    normUserMessage.includes('بحث عن') ||
+    normUserMessage.includes('جدول الحجوزات') ||
+    normUserMessage.includes('قائمه الحجوزات') ||
+    normUserMessage.includes('حجوزات اليوم') ||
+    normUserMessage.includes('حجوزات امس') ||
+    normUserMessage.includes('حجوزات غدا');
+
+  const isBookingAction = !isQueryOnly && (
+    normUserMessage.includes('احجز') ||
+    normUserMessage.includes('حجز موعد') ||
+    normUserMessage.includes('تسجيل حجز') ||
+    normUserMessage.includes('سجل حجز') ||
+    normUserMessage.includes('اضف حجز') ||
+    normUserMessage.includes('ضيف حجز') ||
+    normUserMessage.includes('انشاء حجز') ||
+    normUserMessage.includes('اضافة حجز') ||
+    (normUserMessage.includes('حجز') && (
+      normUserMessage.includes('للعميل') ||
+      normUserMessage.includes('باسم') ||
+      normUserMessage.includes('رقم') ||
+      normUserMessage.includes('يوم') ||
+      normUserMessage.includes('الساعه') ||
+      normUserMessage.includes('الساعة')
+    ))
+  );
+
+  if (isBookingAction) {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const extractPrompt = `أنت مساعد إدارة الصالونات الذكي. قام المدير بطلب تسجيل أو إضافة حجز موعد جديد في النظام.
+نص رسالة المدير: "${userMessage}"
+تاريخ اليوم الحالي: ${todayStr}
+
+المطلوب: استخراج بيانات الحجز وإرجاع كائن JSON فقط بدون أي نصوص قبلها أو بعدها:
+{
+  "clientName": "اسم العميل أو عميل حجز",
+  "phone": "رقم الجوال إن وجد أو فارغ",
+  "date": "YYYY-MM-DD تاريخ الموعد (احسبه بدقة، مثلاً إذا قال غداً أو اليوم أو اسم يوم في الأسبوع)",
+  "time": "HH:MM وقت الموعد بنظام 24 ساعة (مثلاً 17:00 أو 19:30)",
+  "employeeName": "اسم الفني أو الموظف إن وجد أو غير محدد",
+  "serviceName": "اسم الخدمة أو الخدمات المطلوبة",
+  "totalAmount": 0,
+  "notes": "ملاحظات إن وجدت"
+}
+أرجع كائن JSON فقط بدون أي شرح أو markdown.`;
+
+    try {
+      const extractRes = await callLlmApi({
+        apiKey,
+        model,
+        prompt: extractPrompt
+      });
+
+      let jsonStr = extractRes.text.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
+      const firstBrace = jsonStr.indexOf('{');
+      const lastBrace = jsonStr.lastIndexOf('}');
+      if (firstBrace !== -1 && lastBrace !== -1) {
+        jsonStr = jsonStr.substring(firstBrace, lastBrace + 1);
+      }
+      const parsed = JSON.parse(jsonStr);
+
+      const bookingId = 'B-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+      const bookingDate = parsed.date && /^\d{4}-\d{2}-\d{2}$/.test(parsed.date) ? parsed.date : todayStr;
+      const bookingTime = parsed.time || '14:00';
+      const clientName = parsed.clientName || 'عميل حجز';
+      const phone = parsed.phone || '0500000000';
+      const serviceName = parsed.serviceName || 'خدمات الصالون';
+      const employeeName = parsed.employeeName || 'غير محدد';
+      const totalAmount = Number(parsed.totalAmount) || 0;
+
+      const newBooking = {
+        id: bookingId,
+        salon_id: salonId,
+        salonId: salonId,
+        client_name: clientName,
+        clientName: clientName,
+        client_phone: phone,
+        phone: phone,
+        date: bookingDate,
+        time: bookingTime,
+        status: 'confirmed',
+        source: 'pos',
+        total_amount: totalAmount,
+        totalAmount: totalAmount,
+        employee_name: employeeName,
+        service_name: serviceName,
+        services: [
+          {
+            id: Math.random().toString(36).substring(2, 9),
+            serviceId: 'srv-' + Math.random().toString(36).substring(2, 6),
+            serviceName: serviceName,
+            technicianName: employeeName,
+            price: totalAmount
+          }
+        ],
+        advance_payments: [],
+        advancePayments: [],
+        notes: parsed.notes || 'تم الإنشاء بواسطة المساعد الذكي'
+      };
+
+      // Save directly to Supabase via DB.saveBooking!
+      await DB.saveBooking(newBooking, salonId);
+
+      const confirmationMsg = `✅ **تم تسجيل وحفظ الحجز بنجاح في النظام وقاعدة البيانات سوبابيز!**
+
+📋 **تفاصيل الحجز المسجل:**
+- **رقم الحجز:** \`#${bookingId}\`
+- **اسم العميل:** ${clientName}
+- **رقم الجوال / الهاتف:** ${phone}
+- **تاريخ الموعد:** ${bookingDate}
+- **وقت الموعد:** ${bookingTime}
+- **الفني / الموظف:** ${employeeName}
+- **الخدمات:** ${serviceName}${totalAmount > 0 ? ` (${totalAmount} ${currency})` : ''}
+${parsed.notes ? `- **ملاحظات:** ${parsed.notes}` : ''}
+
+> الحجز متاح ومزامن الآن في شاشة **الحجوزات (Bookings)** ونقطة البيع **(POS)** ويمكن تحويله لفاتورة مباشرة.`;
+
+      const updatedHistory: ChatMessage[] = [
+        ...conversationHistory,
+        { role: 'user', content: userMessage },
+        {
+          role: 'assistant',
+          content: confirmationMsg
+        }
+      ];
+
+      return {
+        answer: confirmationMsg,
+        updatedHistory
+      };
+    } catch (bookingErr: any) {
+      console.warn('AI Booking extraction failed or user error, proceeding with standard flow:', bookingErr);
+      if (bookingErr.message?.includes('Google Gemini API') || bookingErr.message?.includes('API_KEY_INVALID')) {
+        throw bookingErr;
+      }
+    }
+  }
 
   // Step 1: Prompt AI to convert Question to SQL
   const schemaPrompt = getSupabaseSchemaPrompt(salonId);
