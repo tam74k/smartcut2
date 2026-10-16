@@ -2898,6 +2898,7 @@ export default function App() {
           setBranches={setBranches}
           activeBranchId={activeBranchId}
           currentUser={currentUser}
+          onNavigateScreen={(screenName) => setActiveTab(screenName)}
         />
       );
       case 'employees': return (

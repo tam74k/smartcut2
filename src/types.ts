@@ -1053,8 +1053,9 @@ export interface AppSettings {
   bookingRules?: BookingRulesSettings;
   vipSettings?: VIPSettings;
   tierSettings?: ClientTierSettings;
-  aiProvider?: 'builtin' | 'gemini' | 'openai';
+  aiProvider?: 'builtin' | 'gemini' | 'openai' | 'openrouter';
   aiApiKey?: string;
+  aiModel?: string; // الموديل المختار: gemini-1.5-flash (الافتراضي), gemini-2.0-flash, gemini-1.5-pro, openai/gpt-4o-mini, etc.
   aiAssistantEnabled?: boolean; // تفعيل أو إلغاء تفعيل المساعد الذكي
   // OpenRouter Integration for Manager AI Chat
   openrouterApiKey?: string;

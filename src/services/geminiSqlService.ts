@@ -1,8 +1,9 @@
 import { AppSettings } from '../types';
 import { SupabaseService } from './supabase';
+import { toSalonUUID } from './db';
 
 // ==============================================================================
-// Gemini Text-to-SQL Service for Supabase Cloud Database
+// Manager AI Text-to-SQL Service for Supabase Cloud Database
 // Strict Multi-Tenant Enforcement: Queries MUST strictly scope to current salon_id
 // ==============================================================================
 
@@ -19,100 +20,198 @@ export interface ChatMessage {
   error?: boolean;
 }
 
-export const POPULAR_GEMINI_MODELS = [
-  { id: 'gemini-1.5-flash', name: 'Google Gemini 1.5 Flash (الأسرع والأدق في استعلامات SQL - موصى به)' },
-  { id: 'gemini-2.0-flash', name: 'Google Gemini 2.0 Flash (الجيل الأحدث فائق السرعة)' },
-  { id: 'gemini-1.5-pro', name: 'Google Gemini 1.5 Pro (أعلى قدرات استدلال وتحليل)' }
+export interface AiModelOption {
+  id: string;
+  name: string;
+  provider: 'gemini' | 'openrouter';
+  badge: string;
+  description: string;
+  isDefault?: boolean;
+}
+
+export const POPULAR_AI_MODELS: AiModelOption[] = [
+  { 
+    id: 'gemini-1.5-flash', 
+    name: 'Google Gemini 1.5 Flash',
+    provider: 'gemini',
+    badge: 'الافتراضي - موصى به',
+    description: 'الأسرع والأدق في استعلامات SQL وقراءة قاعدة بيانات الصالون بسوبابيز (موصى به)',
+    isDefault: true
+  },
+  { 
+    id: 'gemini-2.0-flash', 
+    name: 'Google Gemini 2.0 Flash',
+    provider: 'gemini',
+    badge: 'الجيل الأحدث',
+    description: 'فائق السرعة واستجابة فورية للتقارير والعمليات اليومية'
+  },
+  { 
+    id: 'gemini-1.5-pro', 
+    name: 'Google Gemini 1.5 Pro',
+    provider: 'gemini',
+    badge: 'تحليل مالي عميق',
+    description: 'أعلى قدرات استدلال وتحليل للقوائم المالية وهوامش الأرباح المعقدة'
+  },
+  {
+    id: 'openai/gpt-4o-mini',
+    name: 'OpenAI GPT-4o Mini',
+    provider: 'openrouter',
+    badge: 'اقتصادي وسريع',
+    description: 'نموذج OpenAI المصغر عالي الدقة في التوليد المنطقي للاستعلامات'
+  },
+  {
+    id: 'openai/gpt-4o',
+    name: 'OpenAI GPT-4o',
+    provider: 'openrouter',
+    badge: 'النموذج القيادي الشامل',
+    description: 'النموذج الأكثر ذكاءً وقدرة على فهم الأسئلة الإدارية المعقدة'
+  },
+  {
+    id: 'deepseek/deepseek-chat',
+    name: 'DeepSeek Chat V3',
+    provider: 'openrouter',
+    badge: 'كفاءة فائقة واقتصادي',
+    description: 'نموذج DeepSeek الشهير بسرعة فائقة ودقة ممتازة في البيانات'
+  },
+  {
+    id: 'anthropic/claude-sonnet-4',
+    name: 'Anthropic Claude Sonnet 4',
+    provider: 'openrouter',
+    badge: 'دقة فائقة في المنطق',
+    description: 'النموذج الأفضل في فهم السياقات الإدارية والمالية المتشعبة'
+  }
 ];
 
+export const DEFAULT_AI_MODEL = 'gemini-1.5-flash';
 export const DEFAULT_GEMINI_MODEL = 'gemini-1.5-flash';
 
-// Get credentials from settings or localStorage
-export function getGeminiCredentials(settings?: AppSettings): GeminiConfig {
+// Backward compatibility export
+export const POPULAR_GEMINI_MODELS = POPULAR_AI_MODELS.map(m => ({
+  id: m.id,
+  name: `${m.name} (${m.badge})`
+}));
+
+// Resolve credentials safely from settings or local storage
+export function getAiCredentials(settings?: AppSettings): {
+  apiKey: string;
+  model: string;
+  provider: 'gemini' | 'openrouter';
+} {
+  let model = settings?.aiModel || '';
+  if (!model && typeof window !== 'undefined') {
+    model = localStorage.getItem('smartcut_ai_model') || localStorage.getItem('smartcut_gemini_model') || '';
+  }
+  if (!model) {
+    model = DEFAULT_AI_MODEL;
+  }
+
+  const isGemini = !model.includes('/');
   let apiKey = '';
-  let model = DEFAULT_GEMINI_MODEL;
 
-  if (settings?.aiApiKey) {
-    apiKey = settings.aiApiKey.trim();
-  }
-  if (!apiKey && typeof window !== 'undefined') {
-    apiKey = (localStorage.getItem('smartcut_gemini_api_key') || localStorage.getItem('smartcut_ai_api_key') || '').trim();
-  }
-
-  if (settings?.aiModel && settings.aiModel.includes('gemini')) {
-    model = settings.aiModel.trim();
-  } else if (typeof window !== 'undefined') {
-    const local = localStorage.getItem('smartcut_gemini_model') || localStorage.getItem('smartcut_ai_model');
-    if (local && local.includes('gemini')) {
-      model = local.trim();
+  if (isGemini) {
+    apiKey = settings?.aiApiKey || '';
+    if (!apiKey && typeof window !== 'undefined') {
+      apiKey = localStorage.getItem('smartcut_ai_api_key') || localStorage.getItem('smartcut_gemini_api_key') || '';
+    }
+  } else {
+    apiKey = settings?.openrouterApiKey || settings?.aiApiKey || '';
+    if (!apiKey && typeof window !== 'undefined') {
+      apiKey = localStorage.getItem('smartcut_openrouter_api_key') || localStorage.getItem('smartcut_ai_api_key') || '';
     }
   }
 
-  return { apiKey, model };
+  return {
+    apiKey: apiKey.trim(),
+    model: model.trim(),
+    provider: isGemini ? 'gemini' : 'openrouter'
+  };
 }
 
-// Save credentials locally and in state
-export function saveGeminiCredentials(apiKey: string, model: string): void {
+// Backward compatibility helper
+export function getGeminiCredentials(settings?: AppSettings): GeminiConfig {
+  const creds = getAiCredentials(settings);
+  return { apiKey: creds.apiKey, model: creds.model };
+}
+
+// Save credentials locally
+export function saveAiCredentials(apiKey: string, model: string): void {
+  const cleanKey = apiKey.trim();
+  const cleanModel = model.trim();
   if (typeof window !== 'undefined') {
-    localStorage.setItem('smartcut_gemini_api_key', apiKey.trim());
-    localStorage.setItem('smartcut_ai_api_key', apiKey.trim());
-    localStorage.setItem('smartcut_gemini_model', model.trim());
-    localStorage.setItem('smartcut_ai_model', model.trim());
+    localStorage.setItem('smartcut_ai_api_key', cleanKey);
+    localStorage.setItem('smartcut_ai_model', cleanModel);
+    if (!cleanModel.includes('/')) {
+      localStorage.setItem('smartcut_gemini_api_key', cleanKey);
+      localStorage.setItem('smartcut_gemini_model', cleanModel);
+    } else {
+      localStorage.setItem('smartcut_openrouter_api_key', cleanKey);
+      localStorage.setItem('smartcut_openrouter_model', cleanModel);
+    }
   }
 }
 
-// PostgreSQL Schema on Supabase for Gemini
+// Backward compatibility helper
+export function saveGeminiCredentials(apiKey: string, model: string): void {
+  saveAiCredentials(apiKey, model);
+}
+
+// PostgreSQL Schema on Supabase for AI Text-to-SQL
 export function getSupabaseSchemaPrompt(salonId: string): string {
   return `
 You have direct read-only SQL access to PostgreSQL database on Supabase for the current salon.
-STRICT TENANT ISOLATION RULE:
-Every queried table MUST include the filter: salon_id = '${salonId}'
-IT IS STRICTLY FORBIDDEN to query or access any data with a different salon_id or without filtering by salon_id.
 
-Supabase Tables and Columns:
-1. "invoices":
+STRICT TENANT ISOLATION RULE:
+Every single queried table MUST explicitly include: salon_id = '${salonId}'
+IT IS STRICTLY FORBIDDEN to query or access any data with a different salon_id or without filtering by salon_id = '${salonId}'.
+
+Supabase Tables and Exact Columns:
+1. "invoices" (فواتير المبيعات):
    - "id" (TEXT/UUID, PK), "salon_id" (UUID), "branch_id" (UUID), "invoice_number" (TEXT), "date" (DATE), "client_name" (TEXT), "client_phone" (TEXT), "subtotal" (NUMERIC), "discount" (NUMERIC), "vat_amount" (NUMERIC), "total" (NUMERIC), "paid" (NUMERIC), "remaining" (NUMERIC), "payment_method" (TEXT: 'cash', 'card', 'online', 'mixed'), "status" (TEXT: 'completed', 'cancelled'), "cashier_name" (TEXT), "shift_code" (TEXT), "created_at" (TIMESTAMPTZ).
 
-2. "clients":
+2. "clients" (العملاء والولاء):
    - "id" (TEXT, PK), "salon_id" (UUID), "branch_id" (UUID), "name" (TEXT), "phone" (TEXT), "email" (TEXT), "total_spend" (NUMERIC), "visits_count" (INTEGER), "cashback_balance" (NUMERIC), "tier_level" (TEXT: 'standard', 'distinguished', 'vip', 'royal'), "is_vip" (BOOLEAN), "last_visit" (DATE), "notes" (TEXT), "is_blacklisted" (BOOLEAN).
 
-3. "employees":
+3. "employees" (الموظفين والكادر الفني):
    - "id" (TEXT, PK), "salon_id" (UUID), "branch_id" (UUID), "name" (TEXT), "phone" (TEXT), "role" (TEXT: 'barber', 'technician', 'cashier', 'cleaner', 'manager'), "base_salary" (NUMERIC), "salary_type" (TEXT: 'salary', 'commission_only', 'salary_plus_commission'), "commission_rate" (NUMERIC), "target" (NUMERIC), "target_type" (TEXT: 'daily', 'monthly'), "is_active" (BOOLEAN).
 
-4. "products":
+4. "products" (المخزون والمنتجات للبيع والاستخدام الداخلي):
    - "id" (TEXT, PK), "salon_id" (UUID), "branch_id" (UUID), "name" (TEXT), "barcode" (TEXT), "cost_price" (NUMERIC), "sell_price" (NUMERIC), "stock_quantity" (NUMERIC), "reorder_limit" (INTEGER), "category" (TEXT), "unit" (TEXT), "is_active" (BOOLEAN).
 
-5. "services":
+5. "services" (الخدمات المقدمة):
    - "id" (TEXT, PK), "salon_id" (UUID), "category_id" (TEXT), "name" (TEXT), "price" (NUMERIC), "duration_minutes" (INTEGER), "type" (TEXT), "is_active" (BOOLEAN).
 
-6. "categories":
+6. "categories" (أقسام وتصنيفات الخدمات):
    - "id" (TEXT, PK), "salon_id" (UUID), "name" (TEXT), "icon" (TEXT), "type" (TEXT).
 
-7. "transactions":
-   - "id" (TEXT, PK), "salon_id" (UUID), "branch_id" (UUID), "type" (TEXT: 'income', 'expense'), "amount" (NUMERIC), "category" (TEXT: 'sales', 'expense', 'advance', 'salary', 'commission'), "description" (TEXT), "payment_method" (TEXT), "treasury" (TEXT), "treasury_id" (TEXT), "shift_date" (DATE), "date" (DATE).
+7. "transactions" (الحركات المالية، المصروفات، السلف، وسندات الصرف):
+   - "id" (TEXT, PK), "salon_id" (UUID), "branch_id" (UUID), "type" (TEXT: 'income', 'expense'), "amount" (NUMERIC), "category" (TEXT: 'sales', 'expense', 'advance', 'salary', 'commission', 'general'), "description" (TEXT), "payment_method" (TEXT), "treasury" (TEXT), "treasury_id" (TEXT), "shift_date" (DATE), "date" (DATE).
+   - Note: Employee advances are stored as category='advance'.
 
-8. "bookings":
+8. "bookings" (الحجوزات والمواعيد والعربون):
    - "id" (TEXT, PK), "salon_id" (UUID), "booking_code" (TEXT), "customer_name" (TEXT), "customer_phone" (TEXT), "employee_name" (TEXT), "date" (DATE), "time" (TEXT), "total_amount" (NUMERIC), "status" (TEXT: 'pending', 'confirmed', 'completed', 'cancelled'), "deposit_paid" (NUMERIC), "notes" (TEXT).
 
-9. "work_shifts":
+9. "work_shifts" (ورديات العمل وإغلاق الكاشير):
    - "id" (TEXT, PK), "salon_id" (UUID), "branch_id" (UUID), "shift_code" (TEXT), "shift_date" (DATE), "opened_at" (TIMESTAMPTZ), "closed_at" (TIMESTAMPTZ), "opened_by_user_name" (TEXT), "status" (TEXT: 'open', 'closed'), "initial_cash" (NUMERIC), "total_sales" (NUMERIC), "total_expenses" (NUMERIC), "expected_cash" (NUMERIC), "actual_cash" (NUMERIC), "cash_difference" (NUMERIC).
 
-10. "customer_complaints":
+10. "treasuries" (الخزائن وأرصدة الصندوق):
+    - "id" (TEXT, PK), "salon_id" (UUID), "name" (TEXT), "type" (TEXT: 'cash', 'bank', 'drawer'), "balance" (NUMERIC), "is_default" (BOOLEAN).
+
+11. "customer_complaints" (شكاوى واقتراحات العملاء):
     - "id" (TEXT, PK), "salon_id" (UUID), "client_name" (TEXT), "client_phone" (TEXT), "category" (TEXT), "complaint_text" (TEXT), "status" (TEXT: 'open', 'resolved', 'closed'), "created_at" (TIMESTAMPTZ).
 
-11. "tips":
+12. "tips" (البقشيش والإكراميات):
     - "id" (TEXT, PK), "salon_id" (UUID), "employee_name" (TEXT), "client_name" (TEXT), "amount" (NUMERIC), "status" (TEXT: 'pending_payout', 'paid_out'), "created_at" (TIMESTAMPTZ).
 
-12. "suppliers":
+13. "suppliers" (الموردين وأرصدتهم):
     - "id" (TEXT, PK), "salon_id" (UUID), "name" (TEXT), "phone" (TEXT), "current_balance" (NUMERIC).
 
-13. "purchase_invoices":
+14. "purchase_invoices" (فواتير المشتريات):
     - "id" (TEXT, PK), "salon_id" (UUID), "supplier_id" (TEXT), "invoice_number" (TEXT), "date" (DATE), "total_amount" (NUMERIC), "paid_amount" (NUMERIC), "remaining_amount" (NUMERIC).
 
-14. "branches":
+15. "branches" (فروع الصالون):
     - "id" (UUID, PK), "salon_id" (UUID), "name" (TEXT), "code" (TEXT), "country" (TEXT), "currency" (TEXT), "phone" (TEXT), "is_main" (BOOLEAN).
 
-15. "salons":
+16. "salons" (بيانات المنشأة):
     - "id" (UUID, PK), "name" (TEXT), "code" (TEXT), "country" (TEXT), "currency" (TEXT), "phone" (TEXT), "tax_number" (TEXT), "commercial_reg" (TEXT).
 `;
 }
@@ -192,6 +291,16 @@ export async function executeSupabaseAiSql(
 
     if (error) {
       console.error('rpc_execute_ai_sql error:', error.message);
+      if (
+        error.message.includes('Could not find the function') || 
+        error.message.includes('function rpc_execute_ai_sql') || 
+        (error as any).code === 'PGRST202'
+      ) {
+        return {
+          success: false,
+          error: 'دالة rpc_execute_ai_sql غير مثبتة في قاعدة بيانات Supabase. يرجى تنفيذ كود الإنشاء من ملف supabase_schema.sql في Supabase SQL Editor.'
+        };
+      }
       return { success: false, error: `خطأ قاعدة البيانات: ${error.message}` };
     }
 
@@ -211,8 +320,8 @@ export async function executeSupabaseAiSql(
   }
 }
 
-// Call Google Gemini API
-async function callGeminiApi({
+// Unified LLM Caller (Google Gemini or OpenRouter)
+export async function callLlmApi({
   apiKey,
   model,
   prompt,
@@ -223,7 +332,50 @@ async function callGeminiApi({
   prompt: string;
   systemInstruction?: string;
 }): Promise<string> {
-  const targetModel = model || DEFAULT_GEMINI_MODEL;
+  const targetModel = model || DEFAULT_AI_MODEL;
+
+  // OpenRouter Provider (Models with '/')
+  if (targetModel.includes('/')) {
+    const messages: any[] = [];
+    if (systemInstruction) {
+      messages.push({ role: 'system', content: systemInstruction });
+    }
+    messages.push({ role: 'user', content: prompt });
+
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://smartcut.app',
+        'X-Title': 'SmartCut AI Manager'
+      },
+      body: JSON.stringify({
+        model: targetModel,
+        messages,
+        temperature: 0.1
+      })
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      let parsed = `HTTP ${response.status}`;
+      try {
+        const j = JSON.parse(errText);
+        parsed = j?.error?.message || parsed;
+      } catch {}
+      throw new Error(`خطأ OpenRouter (${targetModel}): ${parsed}`);
+    }
+
+    const data = await response.json();
+    const content = data?.choices?.[0]?.message?.content;
+    if (!content) {
+      throw new Error('لم يتم استلام أي رد من نموذج OpenRouter.');
+    }
+    return content.trim();
+  }
+
+  // Google Gemini Provider (Default)
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${apiKey}`;
 
   const requestBody: any = {
@@ -258,7 +410,7 @@ async function callGeminiApi({
       const errJson = JSON.parse(errText);
       parsedMsg = errJson?.error?.message || parsedMsg;
     } catch {}
-    throw new Error(`خطأ في Gemini API: ${parsedMsg}`);
+    throw new Error(`خطأ Google Gemini API: ${parsedMsg}`);
   }
 
   const data = await response.json();
@@ -270,7 +422,36 @@ async function callGeminiApi({
   return text.trim();
 }
 
-// Main Function: Question -> Gemini SQL Generation -> Supabase Execution -> Gemini Natural Language Answer
+// Test live connectivity with the selected AI model & API key
+export async function testAiConnection({
+  apiKey,
+  model
+}: {
+  apiKey: string;
+  model: string;
+}): Promise<{ success: boolean; latencyMs?: number; error?: string }> {
+  if (!apiKey || !apiKey.trim()) {
+    return { success: false, error: 'يرجى إدخال مفتاح API أولاً قبل الاختبار.' };
+  }
+
+  const t0 = performance.now();
+  try {
+    const reply = await callLlmApi({
+      apiKey: apiKey.trim(),
+      model: model || DEFAULT_AI_MODEL,
+      prompt: 'أجب بكلمة واحدة فقط: جاهز'
+    });
+    const latencyMs = Math.round(performance.now() - t0);
+    if (reply) {
+      return { success: true, latencyMs };
+    }
+    return { success: false, error: 'لم يتم استلام رد من النموذج.' };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'فشل الاتصال بالنموذج' };
+  }
+}
+
+// Main Function: Question -> AI SQL Generation -> Supabase Execution -> AI Natural Language Answer
 export async function sendManagerGeminiMessage({
   userMessage,
   conversationHistory,
@@ -287,17 +468,21 @@ export async function sendManagerGeminiMessage({
   sqlResultCount?: number;
   updatedHistory: ChatMessage[];
 }> {
-  const { apiKey, model } = getGeminiCredentials(settings);
+  const creds = getAiCredentials(settings);
+  const apiKey = creds.apiKey;
+  const model = creds.model;
 
   if (!apiKey) {
-    throw new Error('يرجى إدخال وتفعيل مفتاح Google Gemini API Key في إعدادات المساعد الذكي أولاً.');
+    throw new Error('يرجى إدخال وتفعيل مفتاح الذكاء الاصطناعي (API Key) في إعدادات المساعد الذكي أولاً.');
   }
 
-  const salonId = settings?.salonId || '11111111-1111-4111-8111-111111111111';
+  // Strictly enforce canonical salon UUID
+  const rawSalonId = settings?.salonId;
+  const salonId = (rawSalonId && toSalonUUID(rawSalonId)) || toSalonUUID(null) || rawSalonId || '11111111-1111-4111-8111-111111111111';
   const salonName = settings?.salonName || 'الصالون';
-  const currency = settings?.currency || 'EGP';
+  const currency = settings?.currency || 'SAR';
 
-  // Step 1: Prompt Gemini to convert Question to SQL
+  // Step 1: Prompt AI to convert Question to SQL
   const schemaPrompt = getSupabaseSchemaPrompt(salonId);
   const sqlSystemInstruction = `You are a PostgreSQL Text-to-SQL Generator for Supabase.
 Your ONLY task is to convert the manager's question into a single valid, read-only PostgreSQL SELECT query.
@@ -323,7 +508,7 @@ ${schemaPrompt}
   const sqlPrompt = `Manager Question: ${userMessage}
 Generate the PostgreSQL query for salon '${salonId}':`;
 
-  const rawSqlResponse = await callGeminiApi({
+  const rawSqlResponse = await callLlmApi({
     apiKey,
     model,
     prompt: sqlPrompt,
@@ -338,7 +523,7 @@ Generate the PostgreSQL query for salon '${salonId}':`;
   // If general conversation without database need
   if (cleanSql === 'NO_QUERY_NEEDED' || (!cleanSql.toUpperCase().startsWith('SELECT') && !cleanSql.toUpperCase().startsWith('WITH'))) {
     const conversationalPrompt = `أنت مساعد الإدارة الذكي لصالون (${salonName}). أجب بلطف واحترافية باللغة العربية على الرسالة التالية:\n${userMessage}`;
-    const directReply = await callGeminiApi({
+    const directReply = await callLlmApi({
       apiKey,
       model,
       prompt: conversationalPrompt
@@ -363,7 +548,7 @@ Generate the PostgreSQL query for salon '${salonId}':`;
     onSqlExecuted(cleanSql, sqlExecution.rowCount ?? 0);
   }
 
-  // Step 3: Prompt Gemini to synthesize answer based on real Supabase data
+  // Step 3: Prompt AI to synthesize answer based on real Supabase data
   const answerSystemInstruction = `أنت المساعد المالي والتحليلي الذكي لمدير صالون (${salonName}).
 لديك سؤال المدير، واستعلام SQL الذي نُفذ على قاعدة بيانات Supabase، والنتائج الفعلية المسترجعة من قاعدة البيانات.
 
@@ -385,7 +570,7 @@ ${JSON.stringify(sqlExecution.rows || (sqlExecution.error ? { error: sqlExecutio
 
 صغ إجابتك الاحترافية للمدير الآن:`;
 
-  const finalAnswer = await callGeminiApi({
+  const finalAnswer = await callLlmApi({
     apiKey,
     model,
     prompt: answerPrompt,

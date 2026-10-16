@@ -5,7 +5,8 @@ import {
   Edit2, Shield, Cloud, Sparkles, RefreshCw, X, Check, Database, Download, 
   Upload, HardDrive, AlertTriangle, FileCheck, RefreshCcw, Landmark, FileSpreadsheet,
   QrCode, Key, Send, CheckCircle2, ShieldCheck, HelpCircle, Building2, Layers, Clock, DollarSign, Coins,
-  Printer, Wifi, Laptop, Lock, UserX, CalendarCheck, Calendar, Settings, Smartphone, Copy, Package, Scissors, Crown, Award, MapPin, ExternalLink
+  Printer, Wifi, Laptop, Lock, UserX, CalendarCheck, Calendar, Settings, Smartphone, Copy, Package, Scissors, Crown, Award, MapPin, ExternalLink,
+  Bot, Eye, EyeOff, Zap, AlertCircle
 } from 'lucide-react';
 
 import { AuthService, ROLE_LABELS } from '../services/auth';
@@ -13,8 +14,14 @@ import { SupabaseService } from '../services/supabase';
 import { ZatcaService } from '../services/zatcaService';
 import { EtaEgyptService } from '../services/etaEgyptService';
 import { SubscriptionService, COUNTRY_CURRENCY_MAP, getCountryMeta } from '../services/subscriptionService';
-import { DB } from '../services/db';
+import { DB, toSalonUUID } from '../services/db';
 import { sendToNetworkPrinter } from '../services/networkPrinterService';
+import { 
+  POPULAR_AI_MODELS, 
+  DEFAULT_AI_MODEL, 
+  testAiConnection, 
+  saveAiCredentials 
+} from '../services/geminiSqlService';
 
 export function SettingsScreen({ 
   settings, 
@@ -82,12 +89,18 @@ export function SettingsScreen({
   setBranches?: (branches: Branch[]) => void;
   activeBranchId?: string;
   currentUser?: AppUser | null;
+  onNavigateScreen?: (screen: string) => void;
 }) {
   const activeBranch = branches.find(b => b.id === activeBranchId) || branches.find(b => b.isMain) || branches[0];
   const isMainBranch = !activeBranch || activeBranch.isMain !== false;
   const isOwnerOrProgrammer = currentUser?.role === 'programmer' || ((currentUser?.role === 'admin' || currentUser?.role === 'owner' || !currentUser?.role) && isMainBranch);
   type SettingsTab = 'general' | 'bookings' | 'invoicing' | 'finance' | 'hr' | 'clients' | 'backup';
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
+
+  // AI Assistant State
+  const [isTestingAi, setIsTestingAi] = useState(false);
+  const [testAiResult, setTestAiResult] = useState<{ success: boolean; latencyMs?: number; error?: string } | null>(null);
+  const [showAiKey, setShowAiKey] = useState(false);
 
   const SETTINGS_TABS: { id: SettingsTab; label: string; icon: any; desc: string }[] = [
     {
@@ -1589,6 +1602,276 @@ export function SettingsScreen({
               </label>
             </div>
 
+          </div>
+        </div>
+
+        {/* ========================================================================= */}
+        {/* TAB 1 - AI ASSISTANT SETTINGS (إعدادات المساعد الذكي للإدارة وسوبابيز) */}
+        {/* ========================================================================= */}
+        <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/90 shadow-sm relative overflow-hidden">
+          {/* Subtle background glow */}
+          <div className="absolute top-0 left-0 w-72 h-72 bg-gradient-to-br from-indigo-500/5 via-purple-500/5 to-transparent rounded-full blur-2xl pointer-events-none" />
+
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4 mb-5 relative">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-indigo-600 via-indigo-700 to-purple-600 text-white flex items-center justify-center shadow-md shadow-indigo-200">
+                <Bot size={22} className="animate-pulse" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base sm:text-lg font-black text-slate-900">المساعد الذكي للصالون (AI Manager Assistant)</h3>
+                  <span className="text-[10px] bg-gradient-to-r from-indigo-50 to-purple-50 text-indigo-700 border border-indigo-200/60 font-black px-2.5 py-0.5 rounded-full">
+                    Supabase Text-to-SQL Engine
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  تحويل استفساراتك اليومية لتقارير وإحصائيات مباشرة من قاعدة بيانات الصالون السحابية بدقة وعزل تام
+                </p>
+              </div>
+            </div>
+
+            {/* Enable/Disable Toggle */}
+            <div className="flex items-center gap-3 bg-slate-50 border border-slate-200/80 px-4 py-2 rounded-2xl self-start sm:self-auto">
+              <span className="text-xs font-bold text-slate-700">حالة التفعيل:</span>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  className="sr-only peer"
+                  checked={Boolean(settings.aiAssistantEnabled)}
+                  onChange={(e) => {
+                    const enabled = e.target.checked;
+                    handleChange('aiAssistantEnabled', enabled);
+                    if (!settings.aiModel) {
+                      handleChange('aiModel', DEFAULT_AI_MODEL);
+                    }
+                  }}
+                />
+                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+              </label>
+              <span className={`text-xs font-black px-2 py-0.5 rounded-md ${
+                settings.aiAssistantEnabled 
+                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' 
+                  : 'bg-slate-200 text-slate-600'
+              }`}>
+                {settings.aiAssistantEnabled ? 'مفعل' : 'معطل'}
+              </span>
+            </div>
+          </div>
+
+          {/* Model Selection & Configuration */}
+          <div className="space-y-5 relative">
+            {/* Model Selector */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                  <Sparkles size={14} className="text-indigo-600" />
+                  <span>نموذج الذكاء الاصطناعي (AI Model):</span>
+                </label>
+                <span className="text-[11px] text-slate-400 font-bold">
+                  (Google Gemini هو الافتراضي والأسرع في استعلامات SQL)
+                </span>
+              </div>
+
+              <select
+                value={settings.aiModel || DEFAULT_AI_MODEL}
+                onChange={(e) => {
+                  const selectedId = e.target.value;
+                  const opt = POPULAR_AI_MODELS.find(m => m.id === selectedId);
+                  handleChange('aiModel', selectedId);
+                  if (opt) {
+                    handleChange('aiProvider', opt.provider);
+                  }
+                  setTestAiResult(null);
+                }}
+                className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all cursor-pointer"
+              >
+                <optgroup label="⭐ نماذج Google Gemini (الافتراضية - اتصال مباشر وسريع)">
+                  {POPULAR_AI_MODELS.filter(m => m.provider === 'gemini').map(m => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} - [{m.badge}]
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="🌐 نماذج عالمية إضافية (عبر OpenRouter)">
+                  {POPULAR_AI_MODELS.filter(m => m.provider === 'openrouter').map(m => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} - [{m.badge}]
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+
+              {/* Selected Model Description Pill */}
+              {(() => {
+                const currentModelId = settings.aiModel || DEFAULT_AI_MODEL;
+                const modelMeta = POPULAR_AI_MODELS.find(m => m.id === currentModelId) || POPULAR_AI_MODELS[0];
+                return (
+                  <div className="mt-2 p-2.5 bg-indigo-50/70 border border-indigo-100 rounded-xl flex items-center justify-between text-xs text-indigo-950">
+                    <span className="font-medium text-[11px] leading-relaxed">
+                      💡 <strong>وصف الموديل:</strong> {modelMeta.description}
+                    </span>
+                    <span className="shrink-0 text-[10px] bg-white border border-indigo-200 px-2 py-0.5 rounded-md font-mono font-bold text-indigo-700">
+                      {modelMeta.id}
+                    </span>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* API Key Input */}
+            {(() => {
+              const currentModelId = settings.aiModel || DEFAULT_AI_MODEL;
+              const isGemini = !currentModelId.includes('/');
+
+              return (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                  {/* Key Field */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                        <Key size={13} className="text-amber-500" />
+                        <span>{isGemini ? 'مفتاح Google Gemini API Key:' : 'مفتاح OpenRouter API Key:'}</span>
+                      </label>
+                      <a 
+                        href={isGemini ? 'https://aistudio.google.com/app/apikey' : 'https://openrouter.ai/keys'}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[11px] text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1 hover:underline"
+                      >
+                        <span>{isGemini ? 'احصل على مفتاح Gemini مجاناً' : 'احصل على مفتاح OpenRouter'}</span>
+                        <ExternalLink size={11} />
+                      </a>
+                    </div>
+
+                    <div className="relative">
+                      <input
+                        type={showAiKey ? 'text' : 'password'}
+                        value={isGemini ? (settings.aiApiKey || '') : (settings.openrouterApiKey || settings.aiApiKey || '')}
+                        onChange={(e) => {
+                          const val = e.target.value.trim();
+                          if (isGemini) {
+                            handleChange('aiApiKey', val);
+                          } else {
+                            handleChange('openrouterApiKey', val);
+                            handleChange('aiApiKey', val);
+                          }
+                          setTestAiResult(null);
+                        }}
+                        placeholder={isGemini ? 'AIzaSy...' : 'sk-or-v1-...'}
+                        className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs font-mono text-slate-800 pl-10 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
+                        dir="ltr"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowAiKey(!showAiKey)}
+                        className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer"
+                        title={showAiKey ? 'إخفاء' : 'إظهار'}
+                      >
+                        {showAiKey ? <EyeOff size={15} /> : <Eye size={15} />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Actions & Connection Test */}
+                  <div className="flex flex-col justify-end gap-2">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={isTestingAi}
+                        onClick={async () => {
+                          const currentModel = settings.aiModel || DEFAULT_AI_MODEL;
+                          const key = isGemini 
+                            ? (settings.aiApiKey || '') 
+                            : (settings.openrouterApiKey || settings.aiApiKey || '');
+                          if (!key) {
+                            alert('الرجاء إدخال مفتاح API أولاً');
+                            return;
+                          }
+                          setIsTestingAi(true);
+                          setTestAiResult(null);
+                          try {
+                            const res = await testAiConnection({ apiKey: key, model: currentModel });
+                            setTestAiResult(res);
+                            if (res.success) {
+                              saveAiCredentials(key, currentModel);
+                            }
+                          } catch (err: any) {
+                            setTestAiResult({ success: false, error: err?.message || 'فشل الاتصال' });
+                          } finally {
+                            setIsTestingAi(false);
+                          }
+                        }}
+                        className="flex-1 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white font-bold px-4 py-2.5 rounded-xl text-xs flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer disabled:opacity-50"
+                      >
+                        {isTestingAi ? (
+                          <>
+                            <RefreshCw size={14} className="animate-spin text-white" />
+                            <span>جاري اختبار الاتصال...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Zap size={14} className="text-amber-300" />
+                            <span>اختبار الاتصال بالذكاء الاصطناعي</span>
+                          </>
+                        )}
+                      </button>
+
+                      {onNavigateScreen && (
+                        <button
+                          type="button"
+                          onClick={() => onNavigateScreen('manager_ai_chat')}
+                          className="bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold px-3.5 py-2.5 rounded-xl text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                          title="فتح شاشة المحادثة الكاملة"
+                        >
+                          <Bot size={15} className="text-indigo-600" />
+                          <span>فتح الشاشة</span>
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Test Result Message */}
+                    {testAiResult && (
+                      <div className={`p-2.5 rounded-xl text-xs flex items-center gap-2 ${
+                        testAiResult.success 
+                          ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' 
+                          : 'bg-rose-50 text-rose-800 border border-rose-200'
+                      }`}>
+                        {testAiResult.success ? (
+                          <>
+                            <CheckCircle2 size={15} className="text-emerald-600 shrink-0" />
+                            <span className="font-bold">
+                              تم التحقق بنجاح! سرعة الاستجابة: ({testAiResult.latencyMs} ms). النموذج جاهز للعمل.
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <AlertCircle size={15} className="text-rose-600 shrink-0" />
+                            <span className="font-bold">{testAiResult.error}</span>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Strict Multi-Tenant Enforcement Notice */}
+            <div className="bg-gradient-to-br from-slate-900 to-indigo-950 text-white p-4 rounded-xl border border-indigo-900/40 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs font-black text-indigo-300">
+                  <ShieldCheck size={16} className="text-emerald-400" />
+                  <span>ضمان العزل التام لبيانات الصالون (Strict Multi-Tenant Isolation):</span>
+                </div>
+                <span className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-full font-bold">
+                  محمي ومقيد بـ SQL Read-Only
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-300 leading-relaxed">
+                يتم ربط كل استعلام أو تقرير ينفذه المساعد الذكي بكود صالونك الثابت <strong className="text-indigo-300 font-mono">({toSalonUUID(settings.salonId) || settings.salonId || 'معرف الصالون الحقيقي'})</strong> إجبارياً في شرط <code className="bg-black/30 px-1 py-0.5 rounded text-amber-300 font-mono">WHERE salon_id = ...</code>. يُمنع ويستحيل كلياً الوصول لأي بيانات تخص صالونات أخرى في نفس قاعدة البيانات.
+              </p>
+            </div>
           </div>
         </div>
 

@@ -9,10 +9,10 @@ import { AppSettings, AppUser } from '../types';
 import { 
   ChatMessage, 
   sendManagerGeminiMessage, 
-  getGeminiCredentials, 
-  saveGeminiCredentials,
-  DEFAULT_GEMINI_MODEL,
-  POPULAR_GEMINI_MODELS 
+  getAiCredentials, 
+  saveAiCredentials,
+  DEFAULT_AI_MODEL,
+  POPULAR_AI_MODELS 
 } from '../services/geminiSqlService';
 import { DB } from '../services/db';
 
@@ -38,15 +38,15 @@ export function ManagerAIChatScreen({
   currentUser,
   onNavigateScreen
 }: ManagerAIChatScreenProps) {
-  const credentials = getGeminiCredentials(settings);
+  const credentials = getAiCredentials(settings);
   const [geminiApiKey, setGeminiApiKey] = useState(credentials.apiKey);
-  const [geminiModel, setGeminiModel] = useState(credentials.model || DEFAULT_GEMINI_MODEL);
+  const [geminiModel, setGeminiModel] = useState(credentials.model || DEFAULT_AI_MODEL);
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [showKeyText, setShowKeyText] = useState(false);
   const [saveSuccessNotice, setSaveSuccessNotice] = useState(false);
 
   const isKeyConfigured = Boolean(geminiApiKey && geminiApiKey.trim().length > 10);
-  const activeModel = geminiModel || DEFAULT_GEMINI_MODEL;
+  const activeModel = geminiModel || DEFAULT_AI_MODEL;
 
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     if (typeof window !== 'undefined') {
@@ -81,11 +81,14 @@ export function ManagerAIChatScreen({
 
   // Sync settings when changed externally
   useEffect(() => {
-    const creds = getGeminiCredentials(settings);
+    const creds = getAiCredentials(settings);
     if (creds.apiKey && creds.apiKey !== geminiApiKey) {
       setGeminiApiKey(creds.apiKey);
     }
-  }, [settings.aiApiKey]);
+    if (creds.model && creds.model !== geminiModel) {
+      setGeminiModel(creds.model);
+    }
+  }, [settings.aiApiKey, settings.aiModel, settings.openrouterApiKey]);
 
   // Persist history to localStorage
   useEffect(() => {
@@ -188,18 +191,21 @@ export function ManagerAIChatScreen({
   const handleSaveGeminiConfig = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!geminiApiKey.trim()) {
-      alert('الرجاء إدخال مفتاح Google Gemini API Key');
+      alert('الرجاء إدخال مفتاح API');
       return;
     }
 
     const cleanKey = geminiApiKey.trim();
-    saveGeminiCredentials(cleanKey, geminiModel);
+    saveAiCredentials(cleanKey, geminiModel);
 
+    const isGem = !geminiModel.includes('/');
     const updatedSettings: AppSettings = {
       ...settings,
       aiApiKey: cleanKey,
-      aiProvider: 'gemini',
-      aiModel: geminiModel
+      aiProvider: isGem ? 'gemini' : 'openrouter',
+      aiModel: geminiModel,
+      aiAssistantEnabled: true,
+      ...(isGem ? {} : { openrouterApiKey: cleanKey })
     };
 
     if (setSettings) {
@@ -244,11 +250,14 @@ export function ManagerAIChatScreen({
     setIsLoading(true);
 
     try {
+      const isGem = !geminiModel.includes('/');
       const activeSettingsWithKey: AppSettings = {
         ...settings,
         aiApiKey: geminiApiKey,
-        aiProvider: 'gemini',
-        aiModel: geminiModel
+        aiProvider: isGem ? 'gemini' : 'openrouter',
+        aiModel: geminiModel,
+        aiAssistantEnabled: true,
+        ...(isGem ? {} : { openrouterApiKey: geminiApiKey })
       };
 
       const response = await sendManagerGeminiMessage({
@@ -317,6 +326,40 @@ export function ManagerAIChatScreen({
 
   return (
     <div className="flex flex-col h-[calc(100vh-5rem)] max-w-6xl mx-auto p-2 sm:p-4 gap-3">
+      {/* Alert when assistant is disabled in settings */}
+      {settings.aiAssistantEnabled === false && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-3 px-4 flex flex-wrap items-center justify-between gap-3 text-xs text-amber-800 dark:text-amber-200">
+          <div className="flex items-center gap-2">
+            <AlertCircle size={16} className="text-amber-500 shrink-0" />
+            <span>المساعد الذكي غير مفعّل حالياً في الإعدادات العامة للصالون.</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={async () => {
+                const updated = { ...settings, aiAssistantEnabled: true };
+                if (setSettings) setSettings(updated);
+                try {
+                  await DB.saveSettings(settings.salonId, updated);
+                } catch (e) {}
+              }}
+              className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-1.5 rounded-xl transition text-[11px] cursor-pointer"
+            >
+              تفعيل المساعد الآن
+            </button>
+            {onNavigateScreen && (
+              <button
+                type="button"
+                onClick={() => onNavigateScreen('settings')}
+                className="bg-zinc-200 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 font-bold px-3 py-1.5 rounded-xl transition text-[11px] cursor-pointer"
+              >
+                الانتقال للإعدادات
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Top Header Card */}
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 shadow-xs flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
@@ -666,12 +709,12 @@ export function ManagerAIChatScreen({
                 <div className="mt-1.5 flex items-center justify-between text-[11px]">
                   <span className="text-zinc-500">احصل على مفتاح مجاني:</span>
                   <a
-                    href="https://aistudio.google.com/app/apikey"
+                    href={!geminiModel.includes('/') ? 'https://aistudio.google.com/app/apikey' : 'https://openrouter.ai/keys'}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-semibold"
                   >
-                    Google AI Studio
+                    {!geminiModel.includes('/') ? 'Google AI Studio' : 'OpenRouter Keys'}
                     <ExternalLink size={12} />
                   </a>
                 </div>
@@ -686,9 +729,16 @@ export function ManagerAIChatScreen({
                   onChange={e => setGeminiModel(e.target.value)}
                   className="w-full bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-xs font-bold text-zinc-800 dark:text-zinc-100 focus:border-indigo-600 outline-none"
                 >
-                  {POPULAR_GEMINI_MODELS.map(m => (
-                    <option key={m.id} value={m.id}>{m.name}</option>
-                  ))}
+                  <optgroup label="⭐ نماذج Google Gemini (الافتراضية)">
+                    {POPULAR_AI_MODELS.filter(m => m.provider === 'gemini').map(m => (
+                      <option key={m.id} value={m.id}>{m.name} - [{m.badge}]</option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="🌐 نماذج إضافية (عبر OpenRouter)">
+                    {POPULAR_AI_MODELS.filter(m => m.provider === 'openrouter').map(m => (
+                      <option key={m.id} value={m.id}>{m.name} - [{m.badge}]</option>
+                    ))}
+                  </optgroup>
                 </select>
               </div>
 
