@@ -167,16 +167,17 @@ IT IS STRICTLY FORBIDDEN to query or access any data with a different salon_id o
 
 Supabase Tables and Exact Columns:
 1. "invoices" (فواتير المبيعات):
-   - "id" (TEXT/UUID, PK), "salon_id" (UUID), "branch_id" (UUID), "invoice_number" (TEXT), "date" (DATE), "client_name" (TEXT), "client_phone" (TEXT), "subtotal" (NUMERIC), "discount" (NUMERIC), "vat_amount" (NUMERIC), "total" (NUMERIC), "paid" (NUMERIC), "remaining" (NUMERIC), "payment_method" (TEXT: 'cash', 'card', 'online', 'mixed'), "status" (TEXT: 'completed', 'cancelled'), "cashier_name" (TEXT), "shift_code" (TEXT), "created_at" (TIMESTAMPTZ).
+   - "id" (TEXT/UUID, PK), "salon_id" (UUID), "branch_id" (UUID), "date" (TIMESTAMPTZ), "client_name" (TEXT), "client_phone" (TEXT), "subtotal" (NUMERIC), "discount" (NUMERIC), "vat" (NUMERIC), "total" (NUMERIC), "paid" (NUMERIC), "remaining" (NUMERIC), "payment_method" (TEXT: 'cash', 'card', 'online', 'mixed'), "shift_code" (TEXT), "created_at" (TIMESTAMPTZ).
+   - Note: For date queries on invoices, cast timestamp to date: "date::date = CURRENT_DATE".
 
 2. "clients" (العملاء والولاء):
-   - "id" (TEXT, PK), "salon_id" (UUID), "branch_id" (UUID), "name" (TEXT), "phone" (TEXT), "email" (TEXT), "total_spend" (NUMERIC), "visits_count" (INTEGER), "cashback_balance" (NUMERIC), "tier_level" (TEXT: 'standard', 'distinguished', 'vip', 'royal'), "is_vip" (BOOLEAN), "last_visit" (DATE), "notes" (TEXT), "is_blacklisted" (BOOLEAN).
+   - "id" (TEXT, PK), "salon_id" (UUID), "branch_id" (UUID), "name" (TEXT), "phone" (TEXT), "email" (TEXT), "total_spend" (NUMERIC), "visits_count" (INTEGER), "cashback_balance" (NUMERIC), "tier_level" (TEXT: 'standard', 'distinguished', 'vip', 'royal'), "is_vip" (BOOLEAN), "notes" (TEXT).
 
 3. "employees" (الموظفين والكادر الفني):
-   - "id" (TEXT, PK), "salon_id" (UUID), "branch_id" (UUID), "name" (TEXT), "phone" (TEXT), "role" (TEXT: 'barber', 'technician', 'cashier', 'cleaner', 'manager'), "base_salary" (NUMERIC), "salary_type" (TEXT: 'salary', 'commission_only', 'salary_plus_commission'), "commission_rate" (NUMERIC), "target" (NUMERIC), "target_type" (TEXT: 'daily', 'monthly'), "is_active" (BOOLEAN).
+   - "id" (TEXT, PK), "salon_id" (UUID), "branch_id" (UUID), "name" (TEXT), "phone" (TEXT), "role" (TEXT: 'barber', 'technician', 'cashier', 'cleaner', 'manager'), "base_salary" (NUMERIC), "commission_rate" (NUMERIC), "is_active" (BOOLEAN).
 
 4. "products" (المخزون والمنتجات للبيع والاستخدام الداخلي):
-   - "id" (TEXT, PK), "salon_id" (UUID), "branch_id" (UUID), "name" (TEXT), "barcode" (TEXT), "cost_price" (NUMERIC), "sell_price" (NUMERIC), "stock_quantity" (NUMERIC), "reorder_limit" (INTEGER), "category" (TEXT), "unit" (TEXT), "is_active" (BOOLEAN).
+   - "id" (TEXT, PK), "salon_id" (UUID), "branch_id" (UUID), "name" (TEXT), "barcode" (TEXT), "cost_price" (NUMERIC), "sell_price" (NUMERIC), "current_stock" (INTEGER), "reorder_limit" (INTEGER), "is_active" (BOOLEAN).
 
 5. "services" (الخدمات المقدمة):
    - "id" (TEXT, PK), "salon_id" (UUID), "category_id" (TEXT), "name" (TEXT), "price" (NUMERIC), "duration_minutes" (INTEGER), "type" (TEXT), "is_active" (BOOLEAN).
@@ -185,14 +186,14 @@ Supabase Tables and Exact Columns:
    - "id" (TEXT, PK), "salon_id" (UUID), "name" (TEXT), "icon" (TEXT), "type" (TEXT).
 
 7. "transactions" (الحركات المالية، المصروفات، السلف، وسندات الصرف):
-   - "id" (TEXT, PK), "salon_id" (UUID), "branch_id" (UUID), "type" (TEXT: 'income', 'expense'), "amount" (NUMERIC), "category" (TEXT: 'sales', 'expense', 'advance', 'salary', 'commission', 'general'), "description" (TEXT), "payment_method" (TEXT), "treasury" (TEXT), "treasury_id" (TEXT), "shift_date" (DATE), "date" (DATE).
-   - Note: Employee advances are stored as category='advance'.
+   - "id" (TEXT, PK), "salon_id" (UUID), "branch_id" (UUID), "date" (TIMESTAMPTZ), "type" (TEXT: 'in', 'out' - where 'out' is expenses/advances/withdrawals, 'in' is income/sales), "amount" (NUMERIC), "category" (TEXT: 'expense', 'advance', 'salary', 'commission', 'general'), "expense_category" (TEXT), "description" (TEXT), "treasury" (TEXT), "treasury_id" (TEXT), "shift_code" (TEXT), "shift_id" (TEXT), "shift_date" (DATE), "user_name" (TEXT).
+   - Note: Employee advances are stored with category = 'advance' or type = 'out'.
 
 8. "bookings" (الحجوزات والمواعيد والعربون):
    - "id" (TEXT, PK), "salon_id" (UUID), "booking_code" (TEXT), "customer_name" (TEXT), "customer_phone" (TEXT), "employee_name" (TEXT), "date" (DATE), "time" (TEXT), "total_amount" (NUMERIC), "status" (TEXT: 'pending', 'confirmed', 'completed', 'cancelled'), "deposit_paid" (NUMERIC), "notes" (TEXT).
 
 9. "work_shifts" (ورديات العمل وإغلاق الكاشير):
-   - "id" (TEXT, PK), "salon_id" (UUID), "branch_id" (UUID), "shift_code" (TEXT), "shift_date" (DATE), "opened_at" (TIMESTAMPTZ), "closed_at" (TIMESTAMPTZ), "opened_by_user_name" (TEXT), "status" (TEXT: 'open', 'closed'), "initial_cash" (NUMERIC), "total_sales" (NUMERIC), "total_expenses" (NUMERIC), "expected_cash" (NUMERIC), "actual_cash" (NUMERIC), "cash_difference" (NUMERIC).
+   - "id" (TEXT, PK), "salon_id" (UUID), "branch_id" (TEXT), "shift_code" (TEXT), "shift_date" (VARCHAR - NOTE: Stored as VARCHAR(50). When comparing with DATE columns like transactions.shift_date, ALWAYS explicitly cast: "t.shift_date::text = ws.shift_date::text" or use "t.shift_code = ws.shift_code" or "t.shift_id = ws.id"!), "opened_at" (TIMESTAMPTZ), "closed_at" (TIMESTAMPTZ), "opened_by_user_name" (TEXT), "status" (TEXT: 'open' for the active shift, 'closed' for closed shifts), "initial_cash" (NUMERIC), "total_sales" (NUMERIC), "total_cash_sales" (NUMERIC), "total_card_sales" (NUMERIC), "total_expenses" (NUMERIC), "total_advances" (NUMERIC), "expected_cash" (NUMERIC), "actual_cash" (NUMERIC), "cash_difference" (NUMERIC).
 
 10. "treasuries" (الخزائن وأرصدة الصندوق):
     - "id" (TEXT, PK), "salon_id" (UUID), "name" (TEXT), "type" (TEXT: 'cash', 'bank', 'drawer'), "balance" (NUMERIC), "is_default" (BOOLEAN).
@@ -578,10 +579,10 @@ export async function sendManagerGeminiMessage({
 
   // Step 1: Prompt AI to convert Question to SQL
   const schemaPrompt = getSupabaseSchemaPrompt(salonId);
-  const sqlSystemInstruction = `You are a PostgreSQL Text-to-SQL Generator for Supabase.
+  const sqlSystemInstruction = `You are an expert PostgreSQL Text-to-SQL Generator for Supabase.
 Your ONLY task is to convert the manager's question into a single valid, read-only PostgreSQL SELECT query.
 
-CRITICAL NON-NEGOTIABLE SECURITY RULES:
+CRITICAL NON-NEGOTIABLE SECURITY & POSTGRESQL RULES:
 1. STRICT SALON ISOLATION:
    You MUST include "WHERE salon_id = '${salonId}'" (or "AND salon_id = '${salonId}'") on EVERY table being queried.
    NEVER query across all salons. Only salon '${salonId}'.
@@ -590,9 +591,34 @@ CRITICAL NON-NEGOTIABLE SECURITY RULES:
 3. OUTPUT FORMAT:
    Return ONLY the raw SQL query. Do NOT add explanation, markdown formatting, or preamble. Just the SQL.
    If the user's message is a greeting or general pleasantry that requires no database query, return: NO_QUERY_NEEDED
-4. DATE HANDLING:
+4. DATE & TIMESTAMP HANDLING:
    Use CURRENT_DATE for today. For month start: date_trunc('month', CURRENT_DATE).
-5. LIMITS:
+   For invoices, transactions, and shifts with TIMESTAMPTZ columns:
+   To filter by today's date: "date::date = CURRENT_DATE" or "opened_at::date = CURRENT_DATE".
+5. POSTGRESQL STRICT TYPING & CASTING (PREVENTS 'operator does not exist: date = character varying'):
+   - PostgreSQL CANNOT compare a DATE or TIMESTAMPTZ column directly with a VARCHAR column.
+   - ALWAYS use explicit casting:
+     * e.g. "t.shift_date::text = ws.shift_date::text"
+     * e.g. "t.shift_code = ws.shift_code" (both are TEXT/VARCHAR)
+     * e.g. "t.shift_id = ws.id" (both are TEXT/VARCHAR)
+     * e.g. "t.date::date = CURRENT_DATE"
+6. SHIFT QUERIES & CURRENT SHIFT EXPENSES (الوردية الحالية ومصروفاتها):
+   - Current active shift is in "work_shifts" where "status = 'open'".
+   - To query current shift expenses:
+     SELECT t.id, t.date, t.amount, t.description, t.category, t.expense_category, t.user_name
+     FROM transactions t
+     JOIN work_shifts ws ON ws.salon_id = '${salonId}' AND ws.status = 'open'
+     WHERE t.salon_id = '${salonId}'
+       AND t.type = 'out'
+       AND (
+         t.shift_id = ws.id 
+         OR t.shift_code = ws.shift_code 
+         OR t.shift_date::text = ws.shift_date::text 
+         OR (t.date >= ws.opened_at AND (ws.closed_at IS NULL OR t.date <= ws.closed_at))
+       )
+     ORDER BY t.date DESC
+     LIMIT 50;
+7. LIMITS:
    For lists, always append LIMIT 50.
 
 Database Schema:
@@ -635,11 +661,52 @@ Generate the PostgreSQL query for salon '${salonId}':`;
     };
   }
 
-  // Step 2: Validate and Execute SQL on Supabase
-  const sqlExecution = await executeSupabaseAiSql(cleanSql, salonId);
+  // Step 2: Validate and Execute SQL on Supabase (with Self-Healing Retry)
+  let activeSql = cleanSql;
+  let sqlExecution = await executeSupabaseAiSql(activeSql, salonId);
+
+  // Self-Healing SQL Retry: If PostgreSQL query execution fails, automatically prompt AI with exact error to fix it
+  if (!sqlExecution.success || sqlExecution.error) {
+    console.warn('[AI Text-to-SQL] Initial query failed, attempting self-healing correction...', sqlExecution.error);
+    const retryInstruction = `You are an expert PostgreSQL DBA for Supabase.
+The previous SQL query failed with this exact PostgreSQL error:
+"${sqlExecution.error}"
+
+Failed Query:
+${activeSql}
+
+Database Schema & Exact Types:
+${schemaPrompt}
+
+Instructions:
+1. Fix the error completely (e.g. resolve type mismatches with explicit type casts like ::text or ::date, verify exact column names).
+2. Strict isolation: MUST keep salon_id = '${salonId}' on every table.
+3. Return ONLY the single corrected read-only SELECT query. No explanations, no markdown.`;
+
+    try {
+      const retryResponse = await callLlmApi({
+        apiKey,
+        model: rawSqlResponse.resolvedModel || model,
+        prompt: `Fix this PostgreSQL query so it runs successfully without PostgreSQL error:\n${activeSql}\nPostgreSQL Error: ${sqlExecution.error}`,
+        systemInstruction: retryInstruction
+      });
+
+      const fixedSql = retryResponse.text.replace(/```(?:sql)?/gi, '').replace(/```/g, '').trim();
+      if (fixedSql.toUpperCase().startsWith('SELECT') || fixedSql.toUpperCase().startsWith('WITH')) {
+        const retryExec = await executeSupabaseAiSql(fixedSql, salonId);
+        if (retryExec.success && !retryExec.error) {
+          activeSql = fixedSql;
+          sqlExecution = retryExec;
+          console.log('[AI Text-to-SQL] Self-healing retry succeeded with query:', fixedSql);
+        }
+      }
+    } catch (retryErr) {
+      console.warn('[AI Text-to-SQL] Self-healing retry failed:', retryErr);
+    }
+  }
 
   if (onSqlExecuted && sqlExecution.success) {
-    onSqlExecuted(cleanSql, sqlExecution.rowCount ?? 0);
+    onSqlExecuted(activeSql, sqlExecution.rowCount ?? 0);
   }
 
   // Step 3: Prompt AI to synthesize answer based on real Supabase data
@@ -649,15 +716,16 @@ Generate the PostgreSQL query for salon '${salonId}':`;
 تعليمات الإجابة الصارمة:
 1. انعدام التخمين (Zero Hallucination): اعتمد حصراً وبشكل تام على أرقام وبيانات JSON المسترجعة. لا تخترع أرقاماً أبداً.
 2. إذا كانت البيانات فارغة ([] أو 0 سجلات): اذكر بوضوح: "لم يتم العثور على أي بيانات مطابقة في قاعدة البيانات لهذا الاستفسار."
-3. استخدم العملة المعتمدة (${currency}) مع أي مبالغ مالية.
-4. نسق الإجابة بتنسيق Markdown جميل (عناوين، نقاط، جداول، خط عريض للأرقام الهامة).
-5. كن مختصراً ودقيقاً ومباشراً.`;
+3. إذا كان هناك خطأ في قاعدة البيانات، اشرح المشكلة بلطف واقترح صياغة أخرى مبسطة للسؤال دون إظهار أخطاء برمجية معقدة.
+4. استخدم العملة المعتمدة (${currency}) مع أي مبالغ مالية.
+5. نسق الإجابة بتنسيق Markdown جميل (عناوين، نقاط، جداول، خط عريض للأرقام الهامة).
+6. كن مختصراً ودقيقاً ومباشراً.`;
 
   const answerPrompt = `سؤال المدير:
 ${userMessage}
 
 استعلام SQL المنفذ على Supabase:
-${cleanSql}
+${activeSql}
 
 نتائج قاعدة البيانات الفعلية (JSON):
 ${JSON.stringify(sqlExecution.rows || (sqlExecution.error ? { error: sqlExecution.error } : []))}
@@ -677,14 +745,14 @@ ${JSON.stringify(sqlExecution.rows || (sqlExecution.error ? { error: sqlExecutio
     { 
       role: 'assistant', 
       content: finalAnswer.text,
-      executedSql: cleanSql,
+      executedSql: activeSql,
       sqlResultCount: sqlExecution.rowCount ?? 0
     }
   ];
 
   return {
     reply: finalAnswer.text,
-    executedSql: cleanSql,
+    executedSql: activeSql,
     sqlResultCount: sqlExecution.rowCount ?? 0,
     updatedHistory
   };
