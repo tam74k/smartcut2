@@ -433,13 +433,13 @@ export function ManagerAIChatScreen({
   };
 
   return (
-    <div className="flex flex-col h-[calc(100dvh-4.5rem)] sm:h-[calc(100vh-5rem)] max-w-6xl mx-auto p-2 sm:p-4 gap-2 sm:gap-3">
+    <div className="flex flex-col h-full w-full max-w-5xl mx-auto p-1.5 sm:p-4 gap-1.5 sm:gap-3 overflow-hidden select-none">
       {/* Alert when assistant is disabled in settings */}
       {settings.aiAssistantEnabled === false && (
-        <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-3 px-4 flex flex-wrap items-center justify-between gap-3 text-xs text-amber-800 dark:text-amber-200">
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-2.5 sm:p-3 px-3 sm:px-4 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-800 dark:text-amber-200 shrink-0">
           <div className="flex items-center gap-2">
             <AlertCircle size={16} className="text-amber-500 shrink-0" />
-            <span>المساعد الذكي غير مفعّل حالياً في الإعدادات العامة للصالون.</span>
+            <span className="text-[11px] sm:text-xs">المساعد الذكي غير مفعّل حالياً في الإعدادات العامة للصالون.</span>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -461,7 +461,7 @@ export function ManagerAIChatScreen({
                 onClick={() => onNavigateScreen('settings')}
                 className="bg-zinc-200 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 font-bold px-3 py-1.5 rounded-xl transition text-[11px] cursor-pointer"
               >
-                الانتقال للإعدادات
+                الإعدادات
               </button>
             )}
           </div>
@@ -469,53 +469,64 @@ export function ManagerAIChatScreen({
       )}
 
       {/* Top Header Card */}
-      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-3 sm:p-4 shadow-xs flex flex-wrap items-center justify-between gap-2.5">
-        <div className="flex items-center gap-2.5 sm:gap-3">
-          <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-gradient-to-tr from-indigo-600 via-primary to-teal-500 flex items-center justify-center text-white shadow-md shadow-indigo-600/20 shrink-0">
-            <Bot className="w-6 h-6 sm:w-7 sm:h-7" />
+      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-2.5 sm:p-3.5 shadow-xs flex items-center justify-between gap-2 shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          {/* Back button on mobile to quickly exit chat */}
+          {onNavigateScreen && (
+            <button
+              type="button"
+              onClick={() => onNavigateScreen('dashboard')}
+              className="p-1.5 sm:p-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 sm:hidden shrink-0 cursor-pointer"
+              title="العودة"
+            >
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          )}
+
+          <div className="w-8 h-8 sm:w-11 sm:h-11 rounded-xl bg-gradient-to-tr from-indigo-600 via-primary to-teal-500 flex items-center justify-center text-white shadow-md shadow-indigo-600/20 shrink-0">
+            <Bot className="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
-          <div>
-            <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
-              <h1 className="text-base sm:text-xl font-bold text-zinc-900 dark:text-zinc-100">
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <h1 className="text-xs sm:text-lg font-bold text-zinc-900 dark:text-zinc-100 truncate">
                 المساعد الذكي (Gemini & Supabase)
               </h1>
-              <span className="px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800 flex items-center gap-1 shadow-2xs">
-                <Lock className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-emerald-600" />
+              <span className="hidden sm:inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800 items-center gap-1 shadow-2xs">
+                <Lock className="w-2.5 h-2.5 text-emerald-600" />
                 معزول للصالون
               </span>
             </div>
-            <p className="text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+            <p className="hidden sm:block text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5 truncate">
               استعلام SQL فوري من الجداول السحابية مع عزل كامل للبيانات
             </p>
           </div>
         </div>
 
         {/* Model & Config Badges */}
-        <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap w-full sm:w-auto justify-end">
-          <div className="flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 text-[11px] sm:text-xs">
-            <Zap className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-            <span className="text-zinc-500 dark:text-zinc-400">الموديل:</span>
-            <span className="font-mono font-medium text-zinc-800 dark:text-zinc-200 max-w-[110px] sm:max-w-[150px] truncate" title={activeModel}>
-              {activeModel}
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+          <div className="flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 text-[10px] sm:text-xs">
+            <Zap className="w-3 h-3 text-amber-500 shrink-0" />
+            <span className="font-mono font-medium text-zinc-800 dark:text-zinc-200 max-w-[80px] sm:max-w-[140px] truncate" title={activeModel}>
+              {activeModel.replace(/^gemini-/, '')}
             </span>
           </div>
 
           {isKeyConfigured ? (
             <button
               onClick={() => setShowConfigModal(true)}
-              className="flex items-center gap-1.5 px-2.5 py-1 sm:py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400 text-[11px] sm:text-xs font-medium hover:bg-emerald-100 transition cursor-pointer"
+              className="flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400 text-[10px] sm:text-xs font-medium hover:bg-emerald-100 transition cursor-pointer"
               title="تعديل مفتاح Gemini"
             >
-              <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
-              <span>مفعل</span>
+              <ShieldCheck className="w-3 h-3 shrink-0" />
+              <span className="hidden sm:inline">مفعل</span>
             </button>
           ) : (
             <button
               onClick={() => setShowConfigModal(true)}
-              className="flex items-center gap-1.5 px-2.5 py-1 sm:py-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-[11px] sm:text-xs font-medium hover:bg-rose-100 dark:hover:bg-rose-900/60 transition cursor-pointer animate-pulse"
+              className="flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-[10px] sm:text-xs font-medium hover:bg-rose-100 transition cursor-pointer animate-pulse"
             >
-              <Key className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-              <span>ضبط المفتاح</span>
+              <Key className="w-3 h-3 text-rose-500 shrink-0" />
+              <span>ضبط</span>
             </button>
           )}
 
@@ -524,7 +535,7 @@ export function ManagerAIChatScreen({
             className="p-1.5 sm:p-2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition cursor-pointer"
             title="مسح المحادثة بالكامل"
           >
-            <Trash2 className="w-4 h-4" />
+            <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </button>
 
           <button
@@ -532,35 +543,35 @@ export function ManagerAIChatScreen({
             className="p-1.5 sm:p-2 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition cursor-pointer"
             title="إعدادات Google Gemini"
           >
-            <Settings className="w-4 h-4" />
+            <Settings className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </button>
         </div>
       </div>
 
       {/* Microphone Permission Prompt Banner */}
       {micPermission !== 'granted' && micPermission !== 'unsupported' && (
-        <div className="bg-gradient-to-r from-indigo-50 via-sky-50 to-emerald-50 dark:from-indigo-950/40 dark:via-sky-950/30 dark:to-emerald-950/40 border border-indigo-200 dark:border-indigo-800 rounded-2xl p-3 sm:p-3.5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-              <Mic className="w-4 h-4" />
+        <div className="bg-gradient-to-r from-indigo-50 via-sky-50 to-emerald-50 dark:from-indigo-950/40 dark:via-sky-950/30 dark:to-emerald-950/40 border border-indigo-200 dark:border-indigo-800 rounded-2xl p-2 sm:p-3 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs shrink-0">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+              <Mic className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </div>
-            <div>
-              <div className="font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
-                <span>تفعيل الإدخال الصوتي للمساعد الذكي</span>
+            <div className="min-w-0">
+              <div className="font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5 text-xs">
+                <span>تفعيل الميكروفون</span>
                 {micPermission === 'denied' ? (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 dark:bg-rose-900/60 text-rose-700 dark:text-rose-300">
-                    الإذن محظور
+                  <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-rose-100 dark:bg-rose-900/60 text-rose-700 dark:text-rose-300">
+                    محظور
                   </span>
                 ) : (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300">
-                    مطلوب إذن المايك
+                  <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300">
+                    مطلوب الإذن
                   </span>
                 )}
               </div>
-              <p className="text-[11px] text-zinc-600 dark:text-zinc-400 mt-0.5">
+              <p className="text-[10px] sm:text-[11px] text-zinc-600 dark:text-zinc-400 mt-0.5 line-clamp-1">
                 {micPermission === 'denied'
-                  ? 'إذن المايك محظور في المتصفح. اضغط رمز القفل 🔒 بجوار الرابط واسمح بالمايك ثم اضغط إعادة المحاولة.'
-                  : 'اضغط الزر لتفعيل الميكروفون وسؤال المساعد بالصوت مباشرة في أي وقت من الموبايل أو الكمبيوتر.'}
+                  ? 'اضغط رمز القفل 🔒 بجانب الرابط واسمح بالمايك ثم أعد المحاولة.'
+                  : 'اضغط لتفعيل الميكروفون وسؤال المساعد بالصوت.'}
               </p>
             </div>
           </div>
@@ -569,17 +580,17 @@ export function ManagerAIChatScreen({
             type="button"
             onClick={requestMicPermission}
             disabled={isRequestingMic}
-            className="w-full sm:w-auto shrink-0 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-bold px-4 py-2 rounded-xl transition text-xs flex items-center justify-center gap-2 shadow-sm cursor-pointer disabled:opacity-50"
+            className="w-full sm:w-auto shrink-0 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-bold px-3 py-1.5 rounded-xl transition text-[11px] sm:text-xs flex items-center justify-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-50"
           >
             {isRequestingMic ? (
               <>
-                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                <span>جاري طلب الإذن...</span>
+                <RefreshCw className="w-3 h-3 animate-spin" />
+                <span>جاري الطلب...</span>
               </>
             ) : (
               <>
-                <Mic className="w-3.5 h-3.5" />
-                <span>{micPermission === 'denied' ? 'إعادة طلب وتفعيل الإذن' : 'طلب سماحية المايك وتفعيلها'}</span>
+                <Mic className="w-3 h-3" />
+                <span>{micPermission === 'denied' ? 'إعادة طلب الإذن' : 'طلب وتفعيل الإذن الآن'}</span>
               </>
             )}
           </button>
@@ -588,10 +599,10 @@ export function ManagerAIChatScreen({
 
       {/* Mic Success Toast */}
       {micSuccessMessage && (
-        <div className="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 p-2.5 rounded-xl text-xs flex items-center justify-between animate-fade-in shadow-xs">
+        <div className="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 p-2 sm:p-2.5 rounded-xl text-xs flex items-center justify-between animate-fade-in shadow-xs shrink-0">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-            <span className="font-medium">{micSuccessMessage}</span>
+            <span className="font-medium text-[11px] sm:text-xs">{micSuccessMessage}</span>
           </div>
           <button 
             onClick={() => setMicSuccessMessage(null)}
@@ -604,10 +615,10 @@ export function ManagerAIChatScreen({
 
       {/* Speech Error Banner if any */}
       {speechError && (
-        <div className="bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 p-2.5 rounded-xl text-xs flex items-center justify-between">
-          <div className="flex items-center gap-2">
+        <div className="bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 p-2 sm:p-2.5 rounded-xl text-xs flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
             <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
-            <span className="break-words">{speechError}</span>
+            <span className="text-[11px] sm:text-xs truncate">{speechError}</span>
           </div>
           <button 
             onClick={() => setSpeechError(null)}
@@ -619,7 +630,7 @@ export function ManagerAIChatScreen({
       )}
 
       {/* Messages Scroll Area */}
-      <div className="flex-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-3 sm:p-4 overflow-y-auto space-y-3 sm:space-y-4 shadow-inner">
+      <div className="flex-1 min-h-0 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-2.5 sm:p-4 overflow-y-auto space-y-2.5 sm:space-y-4 shadow-inner">
         {messages.map((msg, index) => {
           const isUser = msg.role === 'user';
           const isExpanded = expandedSqlIndex === index;
@@ -631,7 +642,7 @@ export function ManagerAIChatScreen({
             >
               {/* Avatar */}
               <div
-                className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center shrink-0 shadow-sm ${
+                className={`w-7 h-7 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center shrink-0 shadow-sm ${
                   isUser
                     ? 'bg-zinc-800 dark:bg-zinc-700 text-amber-400'
                     : msg.error
@@ -640,20 +651,20 @@ export function ManagerAIChatScreen({
                 }`}
               >
                 {isUser ? (
-                  <span className="font-bold text-xs">{currentUser?.name?.[0] || 'م'}</span>
+                  <span className="font-bold text-[10px] sm:text-xs">{currentUser?.name?.[0] || 'م'}</span>
                 ) : (
                   <Bot className="w-4 h-4 sm:w-5 sm:h-5" />
                 )}
               </div>
 
               {/* Message Bubble Container */}
-              <div className={`flex flex-col max-w-[88%] sm:max-w-[78%] ${isUser ? 'items-end' : 'items-start'}`}>
+              <div className={`flex flex-col max-w-[90%] sm:max-w-[78%] ${isUser ? 'items-end' : 'items-start'}`}>
                 <div className="text-[10px] sm:text-[11px] text-zinc-400 mb-1 px-1">
                   {isUser ? (currentUser?.name || 'المدير') : 'المساعد الذكي (Gemini & Supabase)'}
                 </div>
 
                 <div
-                  className={`rounded-2xl px-3.5 py-2.5 sm:px-4 sm:py-3 text-xs sm:text-sm leading-relaxed whitespace-pre-wrap break-words ${
+                  className={`rounded-2xl px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm leading-relaxed whitespace-pre-wrap break-words ${
                     isUser
                       ? 'bg-indigo-600 text-white dark:bg-indigo-600 rounded-tr-none shadow-sm'
                       : msg.error
@@ -666,16 +677,16 @@ export function ManagerAIChatScreen({
 
                 {/* Collapsible Executed SQL Query Card */}
                 {msg.executedSql && (
-                  <div className="mt-2 w-full max-w-full sm:max-w-lg bg-zinc-50 dark:bg-zinc-950/60 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden shadow-2xs">
+                  <div className="mt-1.5 w-full max-w-full sm:max-w-lg bg-zinc-50 dark:bg-zinc-950/60 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden shadow-2xs">
                     <button
                       onClick={() => setExpandedSqlIndex(isExpanded ? null : index)}
-                      className="w-full flex items-center justify-between p-2 sm:p-2.5 text-[11px] sm:text-xs text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800/50 transition cursor-pointer"
+                      className="w-full flex items-center justify-between p-2 sm:p-2.5 text-[10px] sm:text-xs text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800/50 transition cursor-pointer"
                     >
                       <div className="flex items-center gap-1.5 font-medium truncate">
                         <Terminal className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
                         <span className="truncate">استعلام SQL المنفذ</span>
                         {msg.sqlResultCount !== undefined && (
-                          <span className="px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-950/60 text-indigo-800 dark:text-indigo-300 text-[10px] shrink-0">
+                          <span className="px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-950/60 text-indigo-800 dark:text-indigo-300 text-[9px] sm:text-[10px] shrink-0">
                             {msg.sqlResultCount} سجل
                           </span>
                         )}
@@ -686,15 +697,15 @@ export function ManagerAIChatScreen({
                     </button>
 
                     {isExpanded && (
-                      <div className="p-2.5 sm:p-3 bg-zinc-900 text-zinc-200 border-t border-zinc-200 dark:border-zinc-800 text-xs font-mono relative">
+                      <div className="p-2 sm:p-3 bg-zinc-900 text-zinc-200 border-t border-zinc-200 dark:border-zinc-800 text-xs font-mono relative">
                         <div className="flex justify-between items-center mb-1 text-[10px] sm:text-[11px] text-zinc-400">
                           <span className="flex items-center gap-1 truncate">
                             <Code2 className="w-3 h-3 text-emerald-400 shrink-0" />
-                            PostgreSQL Read-Only (Restricted)
+                            PostgreSQL Read-Only
                           </span>
                           <button
                             onClick={() => copyToClipboard(msg.executedSql!, index)}
-                            className="flex items-center gap-1 text-[11px] text-zinc-400 hover:text-white transition px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 cursor-pointer shrink-0"
+                            className="flex items-center gap-1 text-[10px] sm:text-[11px] text-zinc-400 hover:text-white transition px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 cursor-pointer shrink-0"
                             title="نسخ الاستعلام"
                           >
                             {copiedIndex === index ? (
@@ -725,14 +736,14 @@ export function ManagerAIChatScreen({
         {/* Loading Indicator */}
         {isLoading && (
           <div className="flex gap-2 sm:gap-3 items-start animate-fade-in">
-            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-teal-500 text-white flex items-center justify-center shrink-0 shadow-sm animate-pulse">
+            <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-teal-500 text-white flex items-center justify-center shrink-0 shadow-sm animate-pulse">
               <Bot className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
             <div className="flex flex-col items-start">
               <div className="text-[10px] sm:text-[11px] text-zinc-400 mb-1 px-1">المساعد الذكي (Gemini)</div>
-              <div className="bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-2xl rounded-tl-none px-3.5 py-2.5 sm:px-4 sm:py-3 flex items-center gap-2 text-zinc-600 dark:text-zinc-300 text-xs shadow-sm">
+              <div className="bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-2xl rounded-tl-none px-3 py-2 sm:px-4 sm:py-3 flex items-center gap-2 text-zinc-600 dark:text-zinc-300 text-xs shadow-sm">
                 <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-600 shrink-0" />
-                <span>جاري إعداد استعلام SQL وتنفيذه على جداول Supabase...</span>
+                <span className="text-[11px] sm:text-xs">جاري إعداد استعلام SQL وتنفيذه على جداول Supabase...</span>
               </div>
             </div>
           </div>
@@ -742,7 +753,7 @@ export function ManagerAIChatScreen({
       </div>
 
       {/* Suggested Query Chips */}
-      <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto py-1 px-0.5 scrollbar-thin">
+      <div className="flex items-center gap-1.5 overflow-x-auto py-1 px-0.5 scrollbar-none shrink-0">
         <span className="text-[10px] sm:text-[11px] font-semibold text-zinc-400 dark:text-zinc-500 shrink-0 flex items-center gap-1">
           <Sparkles className="w-3 h-3 text-indigo-500" />
           مقترحات:
@@ -752,7 +763,7 @@ export function ManagerAIChatScreen({
             key={i}
             onClick={() => handleSendMessage(chip.query)}
             disabled={isLoading}
-            className="shrink-0 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-full text-[11px] sm:text-xs bg-slate-100 hover:bg-indigo-50 dark:bg-zinc-800/80 dark:hover:bg-indigo-950/50 text-slate-700 dark:text-zinc-300 hover:text-indigo-800 dark:hover:text-indigo-300 border border-slate-200 dark:border-zinc-700 hover:border-indigo-300 transition-all cursor-pointer disabled:opacity-50"
+            className="shrink-0 px-2.5 sm:px-3 py-1 rounded-full text-[10px] sm:text-xs bg-slate-100 hover:bg-indigo-50 dark:bg-zinc-800/80 dark:hover:bg-indigo-950/50 text-slate-700 dark:text-zinc-300 hover:text-indigo-800 dark:hover:text-indigo-300 border border-slate-200 dark:border-zinc-700 hover:border-indigo-300 transition-all cursor-pointer disabled:opacity-50"
           >
             {chip.label}
           </button>
@@ -760,22 +771,22 @@ export function ManagerAIChatScreen({
       </div>
 
       {/* Input Box & Voice Controls */}
-      <div className="relative bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-2 sm:p-3 shadow-md">
+      <div className="shrink-0 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-1.5 sm:p-3 shadow-md">
         {/* Active Listening Visual Banner */}
         {isListening && (
-          <div className="mb-2 px-3 py-1.5 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-between animate-pulse">
-            <div className="flex items-center gap-2 text-xs font-semibold text-rose-600 dark:text-rose-400">
-              <span className="relative flex h-2.5 w-2.5">
+          <div className="mb-1.5 px-2.5 py-1 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-between animate-pulse">
+            <div className="flex items-center gap-1.5 text-[11px] sm:text-xs font-semibold text-rose-600 dark:text-rose-400">
+              <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
               </span>
-              <span>جاري الاستماع لصوتك باللغة العربية... تحدث الآن</span>
+              <span>جاري الاستماع لصوتك... تحدث الآن</span>
             </div>
             <button
               onClick={toggleListening}
-              className="text-xs font-bold text-rose-600 dark:text-rose-400 hover:underline cursor-pointer"
+              className="text-[11px] sm:text-xs font-bold text-rose-600 dark:text-rose-400 hover:underline cursor-pointer"
             >
-              إيقاف التسجيل
+              إيقاف
             </button>
           </div>
         )}
@@ -794,7 +805,7 @@ export function ManagerAIChatScreen({
                   ? 'إيقاف التسجيل الصوتي'
                   : 'تحدث بالصوت بدلاً من الكتابة'
               }
-              className={`p-2.5 sm:p-3 min-w-[44px] min-h-[44px] rounded-xl flex items-center justify-center transition-all duration-200 cursor-pointer ${
+              className={`p-2 sm:p-2.5 min-w-[42px] min-h-[42px] rounded-xl flex items-center justify-center transition-all duration-200 cursor-pointer ${
                 isListening
                   ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/30 scale-105 animate-pulse'
                   : micPermission !== 'granted'
@@ -803,15 +814,15 @@ export function ManagerAIChatScreen({
               }`}
             >
               {isRequestingMic ? (
-                <RefreshCw className="w-5 h-5 animate-spin" />
+                <RefreshCw className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" />
               ) : isListening ? (
-                <MicOff className="w-5 h-5" />
+                <MicOff className="w-4 h-4 sm:w-5 sm:h-5" />
               ) : (
-                <Mic className="w-5 h-5" />
+                <Mic className="w-4 h-4 sm:w-5 sm:h-5" />
               )}
             </button>
             {micPermission !== 'granted' && (
-              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-500 rounded-full border-2 border-white dark:border-zinc-900 animate-ping" />
+              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-amber-500 rounded-full border border-white dark:border-zinc-900 animate-ping" />
             )}
           </div>
 
@@ -819,17 +830,17 @@ export function ManagerAIChatScreen({
           <div className="flex-1 relative">
             <textarea
               ref={textareaRef}
-              rows={2}
+              rows={1}
               value={inputQuery}
               onChange={e => setInputQuery(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder={
                 isListening
-                  ? 'جاري الاستماع لصوتك وتسجيل الكلمات...'
-                  : 'اكتب سؤالك هنا أو تحدث بالمايك... (مثال: كم إجمالي المبيعات اليوم؟)'
+                  ? 'جاري الاستماع لصوتك...'
+                  : 'اكتب سؤالك أو تحدث بالمايك...'
               }
               disabled={isLoading}
-              className="w-full resize-none bg-transparent px-2.5 sm:px-3 py-2 text-xs sm:text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-0 leading-relaxed max-h-32"
+              className="w-full resize-none bg-transparent px-2.5 sm:px-3 py-2 text-xs sm:text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-0 leading-relaxed max-h-28"
             />
           </div>
 
@@ -838,24 +849,24 @@ export function ManagerAIChatScreen({
             type="button"
             onClick={() => handleSendMessage()}
             disabled={!inputQuery.trim() || isLoading}
-            className={`p-2.5 sm:p-3 min-w-[44px] min-h-[44px] rounded-xl font-bold flex items-center justify-center transition-all duration-200 shrink-0 cursor-pointer ${
+            className={`p-2 sm:p-2.5 min-w-[42px] min-h-[42px] rounded-xl font-bold flex items-center justify-center transition-all duration-200 shrink-0 cursor-pointer ${
               !inputQuery.trim() || isLoading
                 ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 cursor-not-allowed opacity-60'
                 : 'bg-gradient-to-r from-indigo-600 to-teal-500 text-white hover:from-indigo-700 hover:to-teal-600 shadow-md shadow-indigo-600/25 active:scale-95'
             }`}
-            title="إرسال (Enter)"
+            title="إرسال"
           >
-            <Send className="w-5 h-5 rtl:rotate-180" />
+            <Send className="w-4 h-4 sm:w-5 sm:h-5 rtl:rotate-180" />
           </button>
         </div>
 
         {/* Footer Subtext */}
-        <div className="mt-2 pt-2 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between text-[10px] sm:text-[11px] text-zinc-400">
+        <div className="hidden sm:flex mt-2 pt-2 border-t border-zinc-100 dark:border-zinc-800/80 items-center justify-between text-[11px] text-zinc-400">
           <div className="flex items-center gap-1.5 truncate">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
             <span className="truncate">استعلام آمن مقيد برقم صالونك فقط</span>
           </div>
-          <span className="shrink-0 hidden sm:inline">Shift + Enter لسطر جديد</span>
+          <span className="shrink-0">Shift + Enter لسطر جديد</span>
         </div>
       </div>
 

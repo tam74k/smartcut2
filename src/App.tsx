@@ -4163,37 +4163,41 @@ export default function App() {
           </div>
 
           {/* Application Global Footer */}
-          <footer className="h-7 bg-white/95 border-t border-slate-200 px-4 flex items-center justify-between text-[11px] text-slate-500 shrink-0 select-none z-10 print:hidden font-sans" dir="ltr">
-            <div className="flex items-center gap-1.5 font-mono text-slate-700">
-              <span className="font-bold text-slate-900">By Eng. Tamer Mostafa</span>
-              <span className="text-slate-400">|</span>
-              <a 
-                href={`https://wa.me/201014889704?text=${encodeURIComponent('ارغب في الاستفسار عن برنامج Smart Cut V2')}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-emerald-600 hover:text-emerald-700 font-bold transition-colors hover:underline inline-flex items-center gap-1"
-                dir="ltr"
-                title="تواصل عبر واتساب"
-              >
-                +201014889704
-              </a>
-            </div>
-            <div className="hidden sm:flex items-center gap-2 text-[10px] text-slate-400" dir="rtl">
-              <span>{settings.salonName || 'Smart Cut'}</span>
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span>
-              <span>الإصدار V2.0</span>
-            </div>
-          </footer>
+          {activeTab !== 'manager_ai_chat' && activeTab !== 'ai_assistant' && (
+            <footer className="h-7 bg-white/95 border-t border-slate-200 px-4 flex items-center justify-between text-[11px] text-slate-500 shrink-0 select-none z-10 print:hidden font-sans" dir="ltr">
+              <div className="flex items-center gap-1.5 font-mono text-slate-700">
+                <span className="font-bold text-slate-900">By Eng. Tamer Mostafa</span>
+                <span className="text-slate-400">|</span>
+                <a 
+                  href={`https://wa.me/201014889704?text=${encodeURIComponent('ارغب في الاستفسار عن برنامج Smart Cut V2')}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-emerald-600 hover:text-emerald-700 font-bold transition-colors hover:underline inline-flex items-center gap-1"
+                  dir="ltr"
+                  title="تواصل عبر واتساب"
+                >
+                  +201014889704
+                </a>
+              </div>
+              <div className="hidden sm:flex items-center gap-2 text-[10px] text-slate-400" dir="rtl">
+                <span>{settings.salonName || 'Smart Cut'}</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span>
+                <span>الإصدار V2.0</span>
+              </div>
+            </footer>
+          )}
         </main>
       </div>
 
       {/* 5. MOBILE BOTTOM NAVIGATION */}
-      <MobileBottomNav
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        onOpenMobileMenu={() => setShowMobileSidebar(true)}
-        canAccess={screen => AuthService.canAccess(screen, currentUser)}
-      />
+      {activeTab !== 'manager_ai_chat' && activeTab !== 'ai_assistant' && (
+        <MobileBottomNav
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          onOpenMobileMenu={() => setShowMobileSidebar(true)}
+          canAccess={screen => AuthService.canAccess(screen, currentUser)}
+        />
+      )}
 
       {/* 6. CLOSE SHIFT MODAL & Z-REPORT */}
       {showCloseModal && (
