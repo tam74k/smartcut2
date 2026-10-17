@@ -629,7 +629,7 @@ export const SubscriptionService = {
       notes: `تمديد الفترة بمقدار (${additionalDays} يوم) بواسطة المبرمج`
     });
 
-    DB.saveSettings(salonId, {
+    DB.updateSalonSubscription(salonId, {
       subscriptionEndDate: newEndStr,
       subscriptionStatus: targetStatus,
       isSalonActive: true
@@ -751,7 +751,7 @@ export const SubscriptionService = {
     });
 
     // 2. Sync app_settings in Supabase
-    DB.saveSettings(salon.id, {
+    DB.updateSalonSubscription(salon.id, {
       subscriptionEndDate: endDateStr,
       subscriptionStatus: 'active',
       isSalonActive: true
@@ -825,7 +825,7 @@ export const SubscriptionService = {
         notes: `تفعيل فترة تجريبية (${trialDays} أيام) بواسطة المبرمج`
       });
 
-      DB.saveSettings(salonId, {
+      DB.updateSalonSubscription(salonId, {
         subscriptionEndDate: newEndStr,
         subscriptionStatus: 'trial',
         isSalonActive: true
@@ -858,7 +858,7 @@ export const SubscriptionService = {
         notes: `تفعيل وتنشيط اشتراك رسمي (${months} شهور) بواسطة المبرمج`
       });
 
-      DB.saveSettings(salonId, {
+      DB.updateSalonSubscription(salonId, {
         subscriptionEndDate: newEndStr,
         subscriptionStatus: 'active',
         isSalonActive: true

@@ -959,32 +959,56 @@ export const DB = {
     if (!client) return false;
     try {
       const validSalonId = toSalonUUID(s.id);
+      
+      // Fetch existing salon to merge and protect actual salon name and credentials from being overwritten by defaults
+      const { data: existingSalon } = await client
+        .from('salons')
+        .select('*')
+        .eq('id', validSalonId)
+        .maybeSingle();
+
+      const safeName = (s.name && s.name !== 'صالون سمارت كت' && s.name !== 'الصالون')
+        ? s.name
+        : (existingSalon?.name || s.name || 'صالون سمارت كت');
+
+      const safePhone = (s.phone && s.phone !== '0500000000')
+        ? s.phone
+        : (existingSalon?.phone || s.phone || '');
+
+      const safeTaxNumber = (s.taxNumber || s.tax_number) && (s.taxNumber !== '300000000000003' && s.tax_number !== '300000000000003')
+        ? (s.taxNumber || s.tax_number)
+        : (existingSalon?.tax_number || s.taxNumber || s.tax_number || '300000000000003');
+
+      const safeCommercialReg = (s.commercialReg || s.commercial_reg) && (s.commercialReg !== '1010000000' && s.commercial_reg !== '1010000000')
+        ? (s.commercialReg || s.commercial_reg)
+        : (existingSalon?.commercial_reg || s.commercialReg || s.commercial_reg || '1010000000');
+
       const snap: any = {
         id: validSalonId,
-        code: s.code,
-        name: s.name,
-        salon_type: s.salonType || 'men',
-        tax_number: s.taxNumber || '300000000000003',
-        commercial_reg: s.commercialReg || '1010000000',
-        phone: s.phone,
-        email: s.email,
-        owner_name: s.ownerName || s.name,
-        owner_email: s.email,
-        country: s.country || 'المملكة العربية السعودية',
-        currency: s.currency || 'SAR',
-        address: s.address || s.country,
-        logo_url: s.logoUrl || null,
-        is_active: s.isActive !== false,
-        subscription_status: s.subscriptionStatus || 'trial',
-        subscription_plan: s.subscriptionPlan || 'pro',
-        subscription_start_date: toDateOrNull(s.subscriptionStartDate) || new Date().toISOString().split('T')[0],
-        subscription_end_date: toDateOrNull(s.subscriptionEndDate) || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
-        trial_days: s.trialDays || 7,
-        max_branches: s.maxBranches || 3,
-        max_users: s.maxUsers || 10,
-        evolution_instance_name: s.evolutionInstanceName ?? s.waInstantName ?? null,
-        evolution_api_key: s.evolutionApiKey ?? s.waApiKey ?? null,
-        evolution_api_url: s.evolutionApiUrl ?? null,
+        code: s.code || existingSalon?.code,
+        name: safeName,
+        salon_type: s.salonType || existingSalon?.salon_type || 'men',
+        tax_number: safeTaxNumber,
+        commercial_reg: safeCommercialReg,
+        phone: safePhone,
+        email: s.email || existingSalon?.email,
+        owner_name: (s.ownerName && s.ownerName !== 'صالون سمارت كت') ? s.ownerName : (existingSalon?.owner_name || s.ownerName || safeName),
+        owner_email: s.ownerEmail || s.email || existingSalon?.owner_email,
+        country: s.country || existingSalon?.country || 'المملكة العربية السعودية',
+        currency: s.currency || existingSalon?.currency || 'SAR',
+        address: s.address || existingSalon?.address || s.country,
+        logo_url: s.logoUrl !== undefined ? s.logoUrl : (existingSalon?.logo_url || null),
+        is_active: s.isActive !== undefined ? s.isActive : (existingSalon?.is_active ?? true),
+        subscription_status: s.subscriptionStatus || existingSalon?.subscription_status || 'trial',
+        subscription_plan: s.subscriptionPlan || existingSalon?.subscription_plan || 'pro',
+        subscription_start_date: toDateOrNull(s.subscriptionStartDate) || existingSalon?.subscription_start_date || new Date().toISOString().split('T')[0],
+        subscription_end_date: toDateOrNull(s.subscriptionEndDate) || existingSalon?.subscription_end_date || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
+        trial_days: s.trialDays || existingSalon?.trial_days || 7,
+        max_branches: s.maxBranches || existingSalon?.max_branches || 3,
+        max_users: s.maxUsers || existingSalon?.max_users || 10,
+        evolution_instance_name: s.evolutionInstanceName ?? s.waInstantName ?? existingSalon?.evolution_instance_name ?? null,
+        evolution_api_key: s.evolutionApiKey ?? s.waApiKey ?? existingSalon?.evolution_api_key ?? null,
+        evolution_api_url: s.evolutionApiUrl ?? existingSalon?.evolution_api_url ?? null,
         updated_at: new Date().toISOString()
       };
       const { error } = await client.from('salons').upsert(snap, { onConflict: 'id' });
@@ -1377,10 +1401,22 @@ export const DB = {
       const validSalonId = toSalonUUID(salonId);
       const validBranchId = toBranchUUID(settings.branchId);
 
-      const existingBRules = typeof settings.bookingRules === 'object' && settings.bookingRules ? settings.bookingRules : {};
-      const existingUiSettings = typeof settings.uiSettings === 'object' && settings.uiSettings ? settings.uiSettings : {};
+      // Check if existing record exists for this salon - Fetch full record to merge and prevent overwriting!
+      const { data: existing } = await client
+        .from('app_settings')
+        .select('*')
+        .eq('salon_id', validSalonId)
+        .limit(1)
+        .maybeSingle();
 
-      const depositRefundDays = Number(settings.depositRefundAllowedDays ?? settings.deposit_refund_allowed_days ?? 0);
+      const existingBRules = typeof settings.bookingRules === 'object' && settings.bookingRules 
+        ? settings.bookingRules 
+        : (typeof existing?.booking_rules === 'object' && existing?.booking_rules ? existing.booking_rules : {});
+      const existingUiSettings = typeof settings.uiSettings === 'object' && settings.uiSettings 
+        ? settings.uiSettings 
+        : (typeof existing?.ui_settings === 'object' && existing?.ui_settings ? existing.ui_settings : {});
+
+      const depositRefundDays = Number(settings.depositRefundAllowedDays ?? settings.deposit_refund_allowed_days ?? existing?.deposit_refund_allowed_days ?? 0);
 
       const bookingRulesMerged = {
         ...existingBRules,
@@ -1398,64 +1434,84 @@ export const DB = {
         enableDualPricing: settings.enableDualPricing !== undefined ? Boolean(settings.enableDualPricing) : (existingUiSettings.enableDualPricing ?? false)
       };
 
+      const safeSalonName = (settings.salonName && settings.salonName !== 'صالون سمارت كت')
+        ? settings.salonName
+        : (existing?.salon_name || settings.salonName || 'صالون سمارت كت');
+
+      const safePhone = (settings.phone && settings.phone !== '0500000000')
+        ? settings.phone
+        : (existing?.phone || settings.phone || '0500000000');
+
+      const safeAddress = settings.address !== undefined
+        ? settings.address
+        : (existing?.address || '');
+
+      const safeTaxNumber = (settings.taxNumber && settings.taxNumber !== '300000000000003')
+        ? settings.taxNumber
+        : (existing?.tax_number || settings.taxNumber || '300000000000003');
+
+      const safeCommercialReg = (settings.commercialReg && settings.commercialReg !== '1010000000')
+        ? settings.commercialReg
+        : (existing?.commercial_reg || settings.commercialReg || '1010000000');
+
+      const safeTreasuries = (Array.isArray(settings.treasuries) && settings.treasuries.length > 0)
+        ? settings.treasuries
+        : (existing?.treasuries || []);
+
+      const safeExpenseCategories = (Array.isArray(settings.expenseCategories) && settings.expenseCategories.length > 0)
+        ? settings.expenseCategories
+        : (existing?.expense_categories || []);
+
       // Allowed columns strictly corresponding to public.app_settings in Supabase
       const snap: any = {
         salon_id: validSalonId,
-        branch_id: validBranchId,
-        salon_name: settings.salonName || 'صالون سمارت كت',
-        salon_type: settings.salonType || settings.salon_type || 'men',
-        logo_url: settings.logoUrl || null,
-        phone: settings.phone || '0500000000',
-        address: settings.address || '',
-        currency: settings.currency || 'EGP',
-        country: settings.country || 'جمهورية مصر العربية',
-        tax_number: settings.taxNumber || '300000000000003',
-        commercial_reg: settings.commercialReg || '1010000000',
-        vat_enabled: settings.vatEnabled !== undefined ? toBool(settings.vatEnabled) : true,
-        vat_rate: settings.vatRate ?? settings.vatPercentage ?? 15,
-        zatca_enabled: settings.zatcaEnabled ?? false,
-        enable_dual_pricing: settings.enableDualPricing !== undefined ? Boolean(settings.enableDualPricing) : (existingUiSettings.enableDualPricing ?? false),
-        zatca_settings: settings.zatcaSettings || null,
-        eta_egypt_settings: settings.etaEgyptSettings || null,
-        receipt_header_note: settings.receiptHeaderNote || '',
-        receipt_footer_note: settings.receiptFooterNote || '',
-        booking_notes: settings.bookingNotes || '',
-        treasuries: settings.treasuries || [],
-        expense_categories: settings.expenseCategories || [],
-        printer_name: settings.printerName || 'طابعة الكاشير',
-        paper_size: settings.paperSize || '80mm',
-        print_automatically: settings.printAutomatically ?? false,
-        thermal_printer_ip: settings.thermalPrinterIp || null,
-        thermal_printer_port: settings.thermalPrinterPort ? Number(settings.thermalPrinterPort) : 9100,
-        evolution_api_url: settings.evolutionApiUrl || null,
-        evolution_api_key: settings.evolutionApiKey || settings.waApiKey || null,
-        evolution_instance_name: settings.evolutionInstanceName || settings.waInstantName || null,
-        wa_instant_name: settings.evolutionInstanceName || settings.waInstantName || null,
-        wa_api_key: settings.evolutionApiKey || settings.waApiKey || null,
-        evolution_branch_instances: settings.evolutionBranchInstances || {},
-        supabase_url: settings.supabaseUrl || null,
-        supabase_anon_key: settings.supabaseAnonKey || null,
-        supabase_enabled: settings.supabaseEnabled ?? false,
-        hr_settings: settings.hrSettings || null,
+        branch_id: validBranchId || existing?.branch_id || null,
+        salon_name: safeSalonName,
+        salon_type: settings.salonType || settings.salon_type || existing?.salon_type || 'men',
+        logo_url: settings.logoUrl !== undefined ? settings.logoUrl : (existing?.logo_url || null),
+        phone: safePhone,
+        address: safeAddress,
+        currency: settings.currency || existing?.currency || 'EGP',
+        country: settings.country || existing?.country || 'جمهورية مصر العربية',
+        tax_number: safeTaxNumber,
+        commercial_reg: safeCommercialReg,
+        vat_enabled: settings.vatEnabled !== undefined ? toBool(settings.vatEnabled) : (existing?.vat_enabled !== undefined ? toBool(existing.vat_enabled) : true),
+        vat_rate: settings.vatRate ?? settings.vatPercentage ?? existing?.vat_rate ?? 15,
+        zatca_enabled: settings.zatcaEnabled ?? existing?.zatca_enabled ?? false,
+        enable_dual_pricing: settings.enableDualPricing !== undefined ? Boolean(settings.enableDualPricing) : (existing?.enable_dual_pricing ?? false),
+        zatca_settings: settings.zatcaSettings || existing?.zatca_settings || null,
+        eta_egypt_settings: settings.etaEgyptSettings || existing?.eta_egypt_settings || null,
+        receipt_header_note: settings.receiptHeaderNote !== undefined ? settings.receiptHeaderNote : (existing?.receipt_header_note || ''),
+        receipt_footer_note: settings.receiptFooterNote !== undefined ? settings.receiptFooterNote : (existing?.receipt_footer_note || ''),
+        booking_notes: settings.bookingNotes !== undefined ? settings.bookingNotes : (existing?.booking_notes || ''),
+        treasuries: safeTreasuries,
+        expense_categories: safeExpenseCategories,
+        printer_name: settings.printerName || existing?.printer_name || 'طابعة الكاشير',
+        paper_size: settings.paperSize || existing?.paper_size || '80mm',
+        print_automatically: settings.printAutomatically !== undefined ? settings.printAutomatically : (existing?.print_automatically ?? false),
+        thermal_printer_ip: settings.thermalPrinterIp || existing?.thermal_printer_ip || null,
+        thermal_printer_port: settings.thermalPrinterPort ? Number(settings.thermalPrinterPort) : (existing?.thermal_printer_port || 9100),
+        evolution_api_url: settings.evolutionApiUrl || existing?.evolution_api_url || null,
+        evolution_api_key: settings.evolutionApiKey || settings.waApiKey || existing?.evolution_api_key || null,
+        evolution_instance_name: settings.evolutionInstanceName || settings.waInstantName || existing?.evolution_instance_name || null,
+        wa_instant_name: settings.evolutionInstanceName || settings.waInstantName || existing?.wa_instant_name || null,
+        wa_api_key: settings.evolutionApiKey || settings.waApiKey || existing?.wa_api_key || null,
+        evolution_branch_instances: settings.evolutionBranchInstances || existing?.evolution_branch_instances || {},
+        supabase_url: settings.supabaseUrl || existing?.supabase_url || null,
+        supabase_anon_key: settings.supabaseAnonKey || existing?.supabase_anon_key || null,
+        supabase_enabled: settings.supabaseEnabled ?? existing?.supabase_enabled ?? false,
+        hr_settings: settings.hrSettings || existing?.hr_settings || null,
         booking_rules: bookingRulesMerged,
-        vip_settings: settings.vipSettings || null,
-        tier_settings: settings.tierSettings || null,
+        vip_settings: settings.vipSettings || existing?.vip_settings || null,
+        tier_settings: settings.tierSettings || existing?.tier_settings || null,
         ui_settings: uiSettingsMerged,
-        show_dashboard_analytics: settings.showDashboardAnalytics ?? true,
-        show_employee_analytics: settings.showEmployeeAnalytics ?? true,
-        ai_provider: settings.aiProvider || 'builtin',
-        ai_api_key: settings.aiApiKey || null,
-        ai_model: settings.aiModel || null,
+        show_dashboard_analytics: settings.showDashboardAnalytics !== undefined ? settings.showDashboardAnalytics : (existing?.show_dashboard_analytics ?? true),
+        show_employee_analytics: settings.showEmployeeAnalytics !== undefined ? settings.showEmployeeAnalytics : (existing?.show_employee_analytics ?? true),
+        ai_provider: settings.aiProvider || existing?.ai_provider || 'builtin',
+        ai_api_key: settings.aiApiKey || existing?.ai_api_key || null,
+        ai_model: settings.aiModel || existing?.ai_model || null,
         updated_at: new Date().toISOString()
       };
-
-      // Check if existing record exists for this salon
-      const { data: existing } = await client
-        .from('app_settings')
-        .select('id')
-        .eq('salon_id', validSalonId)
-        .limit(1)
-        .maybeSingle();
 
       let error: any = null;
       if (existing && existing.id) {
@@ -1470,23 +1526,63 @@ export const DB = {
         return false; 
       }
       
-      // Keep salons table synchronized as well
+      // Keep salons table synchronized as well - ONLY with non-default real values
       const salonUpdate: any = { updated_at: new Date().toISOString() };
       if (settings.salonType) salonUpdate.salon_type = settings.salonType;
-      if (settings.salonName) salonUpdate.name = settings.salonName;
-      if (settings.phone) salonUpdate.phone = settings.phone;
+      if (settings.salonName && settings.salonName !== 'صالون سمارت كت') salonUpdate.name = settings.salonName;
+      if (settings.phone && settings.phone !== '0500000000') salonUpdate.phone = settings.phone;
       if (settings.address) salonUpdate.address = settings.address;
-      if (settings.taxNumber) salonUpdate.tax_number = settings.taxNumber;
-      if (settings.commercialReg) salonUpdate.commercial_reg = settings.commercialReg;
+      if (settings.taxNumber && settings.taxNumber !== '300000000000003') salonUpdate.tax_number = settings.taxNumber;
+      if (settings.commercialReg && settings.commercialReg !== '1010000000') salonUpdate.commercial_reg = settings.commercialReg;
       if (settings.country) salonUpdate.country = settings.country;
       if (settings.currency) salonUpdate.currency = settings.currency;
-      if (settings.logoUrl !== undefined) salonUpdate.logo_url = settings.logoUrl;
-      await client.from('salons').update(salonUpdate).eq('id', validSalonId);
+      if (settings.logoUrl !== undefined && settings.logoUrl) salonUpdate.logo_url = settings.logoUrl;
+      if (Object.keys(salonUpdate).length > 1) {
+        await client.from('salons').update(salonUpdate).eq('id', validSalonId);
+      }
 
       return true;
     } catch (e) { 
       console.error('DB.saveSettings exception:', e);
       return false; 
+    }
+  },
+
+  // --- التحديث المباشر للاشتراكات بدون المساس بإعدادات الصالون نهائياً ---
+  async updateSalonSubscription(salonId: string, updates: {
+    subscriptionStatus?: string;
+    subscriptionPlan?: string;
+    subscriptionStartDate?: string;
+    subscriptionEndDate?: string;
+    isSalonActive?: boolean;
+    maxBranches?: number;
+    maxUsers?: number;
+  }): Promise<boolean> {
+    const client = sb();
+    if (!client || !salonId) return false;
+    const validSalonId = toSalonUUID(salonId);
+    try {
+      const salonPatch: any = { updated_at: new Date().toISOString() };
+      if (updates.subscriptionStatus) salonPatch.subscription_status = updates.subscriptionStatus;
+      if (updates.subscriptionPlan) salonPatch.subscription_plan = updates.subscriptionPlan;
+      if (updates.subscriptionStartDate) salonPatch.subscription_start_date = toDateOrNull(updates.subscriptionStartDate);
+      if (updates.subscriptionEndDate) salonPatch.subscription_end_date = toDateOrNull(updates.subscriptionEndDate);
+      if (updates.isSalonActive !== undefined) salonPatch.is_active = updates.isSalonActive;
+      if (updates.maxBranches) salonPatch.max_branches = updates.maxBranches;
+      if (updates.maxUsers) salonPatch.max_users = updates.maxUsers;
+
+      await client.from('salons').update(salonPatch).eq('id', validSalonId);
+
+      const settingsPatch: any = { updated_at: new Date().toISOString() };
+      if (updates.subscriptionStatus) settingsPatch.subscription_status = updates.subscriptionStatus;
+      if (updates.subscriptionEndDate) settingsPatch.subscription_end_date = toDateOrNull(updates.subscriptionEndDate);
+      if (updates.isSalonActive !== undefined) settingsPatch.is_salon_active = updates.isSalonActive;
+
+      await client.from('app_settings').update(settingsPatch).eq('salon_id', validSalonId);
+      return true;
+    } catch (e) {
+      console.error('DB.updateSalonSubscription error:', e);
+      return false;
     }
   },
 
@@ -3860,7 +3956,7 @@ export const DB = {
       }
     }
 
-    await this.saveSettings(validSalonId || salonId, {
+    await this.updateSalonSubscription(validSalonId || salonId, {
       subscriptionStatus: 'trial',
       subscriptionEndDate: newEndStr,
       isSalonActive: true
@@ -4021,7 +4117,7 @@ export const DB = {
         .eq('id', validSalonId);
 
       // 4. Update app_settings
-      await DB.saveSettings(validSalonId, {
+      await this.updateSalonSubscription(validSalonId, {
         subscriptionStatus: 'active',
         subscriptionEndDate: subEnd,
         isSalonActive: true
@@ -4091,7 +4187,7 @@ export const DB = {
       }
     }
 
-    await DB.saveSettings(validSalonId, {
+    await this.updateSalonSubscription(validSalonId, {
       subscriptionStatus: 'trial',
       subscriptionEndDate: endDate,
       isSalonActive: true
@@ -4131,7 +4227,7 @@ export const DB = {
       }
     }
 
-    await DB.saveSettings(validSalonId, {
+    await this.updateSalonSubscription(validSalonId, {
       subscriptionStatus: 'expired',
       subscriptionEndDate: yesterday,
       isSalonActive: false

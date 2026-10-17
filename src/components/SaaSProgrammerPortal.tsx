@@ -368,8 +368,7 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
       subscriptionStatus: newStatus
     });
 
-    await DB.saveSalon(updatedSalon);
-    await DB.saveSettings(salon.id, {
+    await DB.updateSalonSubscription(salon.id, {
       isSalonActive: newActive,
       subscriptionStatus: newStatus,
       subscriptionEndDate: salon.subscriptionEndDate
@@ -405,8 +404,7 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
     } else {
       updated = SubscriptionService.extendDays(showExtendModal.id, extendDaysCount);
       if (updated) {
-        await DB.saveSalon(updated);
-        await DB.saveSettings(updated.id, {
+        await DB.updateSalonSubscription(updated.id, {
           subscriptionEndDate: updated.subscriptionEndDate,
           subscriptionStatus: 'active',
           isSalonActive: true
@@ -514,10 +512,13 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
 
     setSalons(prev => prev.map(s => s.id === salonId ? updatedSalon : s));
     SubscriptionService.updateSalon(salonId, updatedSalon);
-    await DB.saveSalon(updatedSalon);
-    await DB.saveSettings(salonId, {
+    await DB.updateSalonSubscription(salonId, {
       subscriptionStatus: controlForm.status,
+      subscriptionPlan: controlForm.plan,
+      subscriptionStartDate: controlForm.startDate,
       subscriptionEndDate: controlForm.endDate,
+      maxBranches: Number(controlForm.maxBranches) || selectedControlSalon.maxBranches || 3,
+      maxUsers: Number(controlForm.maxUsers) || selectedControlSalon.maxUsers || 10,
       isSalonActive: controlForm.isActive
     });
 
