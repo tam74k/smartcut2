@@ -5,7 +5,7 @@ import {
   Wrench, ShieldAlert, Camera, Crown, Sparkles, PauseCircle, PlayCircle,
   FilePlus2, Layers, Zap, AlertCircle, DollarSign, Coffee, Sliders, Save, AlertTriangle, Loader2,
   Printer, Eye, FileText, RotateCcw, Barcode, Hourglass, CheckCircle, Check,
-  Wallet, Ticket, Edit3, Gift, Lock, Info, Star
+  Wallet, Ticket, Edit3, Gift, Lock, Info, Star, UserCheck
 } from 'lucide-react';
 import { 
   AppSettings, CartItem, ServiceItem, Booking, Invoice, Client, Category, Employee,
@@ -26,6 +26,7 @@ import { InvoiceReceiptCard, executePrintInvoiceReceipt, isSaudiSalon } from './
 import { SalesReturnModal } from './SalesReturnModal';
 import { SalesReturnVoucherModal } from './SalesReturnVoucherModal';
 import { generateBarcodeSvgString } from '../utils/barcodeGenerator';
+import { POSAttendanceModal } from './POSAttendanceModal';
 
 const getCartItemPrice = (c: CartItem | any): number => {
   if (!c) return 0;
@@ -221,6 +222,7 @@ export function POSScreen({
   transactions = [],
   shiftData,
   fingerprintLogs = [],
+  setFingerprintLogs,
   setInvoices,
   salesReturns = [],
   setSalesReturns,
@@ -257,6 +259,7 @@ export function POSScreen({
   transactions?: Transaction[],
   shiftData?: { isOpen: boolean; date: string; initialCash?: number },
   fingerprintLogs?: FingerprintLog[],
+  setFingerprintLogs?: (updater: FingerprintLog[] | ((prev: FingerprintLog[]) => FingerprintLog[])) => void,
   salesReturns?: SalesReturn[],
   setSalesReturns?: (returns: SalesReturn[] | ((prev: SalesReturn[]) => SalesReturn[])) => void,
   setProducts?: (p: any[] | ((prev: any[]) => any[])) => void,
@@ -411,6 +414,9 @@ export function POSScreen({
   // Remedy / Warranty Fix on Salon Expense (0.00 SAR)
   const [isRemedyInvoice, setIsRemedyInvoice] = useState(false);
   const [remedyReason, setRemedyReason] = useState('إصلاح مجاني بناءً على ضمان الصالون');
+
+  // Fast Attendance & Timesheet Modal State
+  const [showAttendanceModal, setShowAttendanceModal] = useState(false);
 
   // Fast Shift Schedule Modal State
   const [showScheduleModal, setShowScheduleModal] = useState(false);
@@ -2378,6 +2384,16 @@ export function POSScreen({
             />
           </div>
 
+          {/* زر حضور وانصراف السريع للوردية كجزء من التايم شيت */}
+          <button
+            onClick={() => setShowAttendanceModal(true)}
+            className="h-11 bg-white hover:bg-emerald-50/80 border border-slate-200 hover:border-emerald-300 text-slate-700 hover:text-emerald-900 px-3 sm:px-4 rounded-xl text-xs font-black flex items-center gap-2 shadow-xs transition-all cursor-pointer whitespace-nowrap active:scale-95"
+            title="تسجيل حضور وانصراف الموظفين في التايم شيت لوردية اليوم"
+          >
+            <UserCheck size={16} className="text-emerald-600" />
+            <span>حضور وانصراف</span>
+          </button>
+
           {/* زر تقرير اليومية بين البحث وتعديل مواعيد الدوام وبنفس الارتفاع */}
           <button
             onClick={() => setShowDailyReportModal(true)}
@@ -4322,6 +4338,19 @@ export function POSScreen({
           </div>
         </div>
       )}
+
+      {/* Fast Attendance & Timesheet Modal */}
+      <POSAttendanceModal 
+        isOpen={showAttendanceModal}
+        onClose={() => setShowAttendanceModal(false)}
+        employees={employees}
+        setEmployees={setEmployees}
+        fingerprintLogs={fingerprintLogs}
+        setFingerprintLogs={setFingerprintLogs}
+        shiftDate={effectiveIsShiftOpen ? effectiveShiftDate : (shiftDate || new Date().toISOString().split('T')[0])}
+        settings={settings}
+        currentUser={currentUser}
+      />
 
       {/* Fast Shift Schedule Modal */}
       {showScheduleModal && (

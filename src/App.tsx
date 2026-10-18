@@ -2852,6 +2852,7 @@ export default function App() {
           transactions={branchTransactions}
           shiftData={shiftData}
           fingerprintLogs={fingerprintLogs}
+          setFingerprintLogs={setFingerprintLogs}
         />
       );
       case 'services': return (
