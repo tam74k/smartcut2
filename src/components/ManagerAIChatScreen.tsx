@@ -63,7 +63,7 @@ export function ManagerAIChatScreen({
     return [
       {
         role: 'assistant',
-        content: `مرحباً بك يا مدير الصالون.\n\nأنا **مساعد الإدارة الذكي (Google Gemini & Supabase)**.\nأقوم بتحويل استفساراتك إلى استعلامات **SQL مباشرة** وتطبيقها حصراً على بيانات صالونك في **سوبابيز (Supabase)** مع عزل كامل وصارم يمنع الوصول لأي بيانات صالونات أخرى نهائياً.\n\nيمكنك السؤال كتابةً أو **بالصوت** عن المبيعات، أداء الفنيين، المصروفات، الخزائن، المخزون، أو كبار العملاء.`
+        content: `مرحباً بك يا مدير الصالون.\n\nأنا **مساعد الإدارة الذكي** الخاص بصالونك.\nيمكنني مساعدتك في الإجابة على استفساراتك وتقديم تقارير دقيقة وتحليلات وإحصائيات فورية لأداء الصالون.\n\nيمكنك سؤالي كتابةً أو **بالصوت** عن المبيعات، أداء الفنيين، الحجوزات، المصروفات، الخزائن، المخزون، أو كبار العملاء.`
       }
     ];
   });
@@ -489,15 +489,15 @@ export function ManagerAIChatScreen({
           <div className="min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
               <h1 className="text-xs sm:text-lg font-bold text-zinc-900 dark:text-zinc-100 truncate">
-                المساعد الذكي (Gemini & Supabase)
+                المساعد الذكي لإدارة الصالون
               </h1>
               <span className="hidden sm:inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800 items-center gap-1 shadow-2xs">
                 <Lock className="w-2.5 h-2.5 text-emerald-600" />
-                معزول للصالون
+                آمن ومخصص لصالونك
               </span>
             </div>
             <p className="hidden sm:block text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5 truncate">
-              استعلام SQL فوري من الجداول السحابية مع عزل كامل للبيانات
+              تحليلات وتقارير ذكية وإحصائيات فورية لأداء الصالون بدقة عالية
             </p>
           </div>
         </div>
@@ -660,7 +660,7 @@ export function ManagerAIChatScreen({
               {/* Message Bubble Container */}
               <div className={`flex flex-col max-w-[90%] sm:max-w-[78%] ${isUser ? 'items-end' : 'items-start'}`}>
                 <div className="text-[10px] sm:text-[11px] text-zinc-400 mb-1 px-1">
-                  {isUser ? (currentUser?.name || 'المدير') : 'المساعد الذكي (Gemini & Supabase)'}
+                  {isUser ? (currentUser?.name || 'المدير') : 'المساعد الذكي'}
                 </div>
 
                 <div
@@ -684,10 +684,10 @@ export function ManagerAIChatScreen({
                     >
                       <div className="flex items-center gap-1.5 font-medium truncate">
                         <Terminal className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                        <span className="truncate">استعلام SQL المنفذ</span>
+                        <span className="truncate">تفاصيل الاستعلام</span>
                         {msg.sqlResultCount !== undefined && (
                           <span className="px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-950/60 text-indigo-800 dark:text-indigo-300 text-[9px] sm:text-[10px] shrink-0">
-                            {msg.sqlResultCount} سجل
+                            {msg.sqlResultCount} نتيجة
                           </span>
                         )}
                       </div>
@@ -701,7 +701,7 @@ export function ManagerAIChatScreen({
                         <div className="flex justify-between items-center mb-1 text-[10px] sm:text-[11px] text-zinc-400">
                           <span className="flex items-center gap-1 truncate">
                             <Code2 className="w-3 h-3 text-emerald-400 shrink-0" />
-                            PostgreSQL Read-Only
+                            استعلام آمن ومحمي
                           </span>
                           <button
                             onClick={() => copyToClipboard(msg.executedSql!, index)}
@@ -740,10 +740,10 @@ export function ManagerAIChatScreen({
               <Bot className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
             <div className="flex flex-col items-start">
-              <div className="text-[10px] sm:text-[11px] text-zinc-400 mb-1 px-1">المساعد الذكي (Gemini)</div>
+              <div className="text-[10px] sm:text-[11px] text-zinc-400 mb-1 px-1">المساعد الذكي</div>
               <div className="bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-2xl rounded-tl-none px-3 py-2 sm:px-4 sm:py-3 flex items-center gap-2 text-zinc-600 dark:text-zinc-300 text-xs shadow-sm">
                 <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-600 shrink-0" />
-                <span className="text-[11px] sm:text-xs">جاري إعداد استعلام SQL وتنفيذه على جداول Supabase...</span>
+                <span className="text-[11px] sm:text-xs">جاري تحليل البيانات وإعداد الإجابة...</span>
               </div>
             </div>
           </div>

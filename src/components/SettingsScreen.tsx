@@ -1623,11 +1623,11 @@ export function SettingsScreen({
                 <div className="flex items-center gap-2">
                   <h3 className="text-base sm:text-lg font-black text-slate-900">المساعد الذكي للصالون (AI Manager Assistant)</h3>
                   <span className="text-[10px] bg-gradient-to-r from-indigo-50 to-purple-50 text-indigo-700 border border-indigo-200/60 font-black px-2.5 py-0.5 rounded-full">
-                    Supabase Text-to-SQL Engine
+                    ذكاء اصطناعي متقدم
                   </span>
                 </div>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  تحويل استفساراتك اليومية لتقارير وإحصائيات مباشرة من قاعدة بيانات الصالون السحابية بدقة وعزل تام
+                  تحويل استفساراتك اليومية لتقارير وإحصائيات ومؤشرات أداء دقيقة وفورية لصالح صالونك
                 </p>
               </div>
             </div>
@@ -1670,7 +1670,7 @@ export function SettingsScreen({
                   <span>نموذج الذكاء الاصطناعي (AI Model):</span>
                 </label>
                 <span className="text-[11px] text-slate-400 font-bold">
-                  (Google Gemini هو الافتراضي والأسرع في استعلامات SQL)
+                  (Google Gemini هو النموذج الافتراضي الموصى به لسرعته الفائقة)
                 </span>
               </div>
 
@@ -1861,22 +1861,6 @@ export function SettingsScreen({
                 </div>
               );
             })()}
-
-            {/* Strict Multi-Tenant Enforcement Notice */}
-            <div className="bg-gradient-to-br from-slate-900 to-indigo-950 text-white p-4 rounded-xl border border-indigo-900/40 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-xs font-black text-indigo-300">
-                  <ShieldCheck size={16} className="text-emerald-400" />
-                  <span>ضمان العزل التام لبيانات الصالون (Strict Multi-Tenant Isolation):</span>
-                </div>
-                <span className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-full font-bold">
-                  محمي ومقيد بـ SQL Read-Only
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-300 leading-relaxed">
-                يتم ربط كل استعلام أو تقرير ينفذه المساعد الذكي بكود صالونك الثابت <strong className="text-indigo-300 font-mono">({toSalonUUID(settings.salonId) || settings.salonId || 'معرف الصالون الحقيقي'})</strong> إجبارياً في شرط <code className="bg-black/30 px-1 py-0.5 rounded text-amber-300 font-mono">WHERE salon_id = ...</code>. يُمنع ويستحيل كلياً الوصول لأي بيانات تخص صالونات أخرى في نفس قاعدة البيانات.
-              </p>
-            </div>
           </div>
         </div>
 
