@@ -885,14 +885,20 @@ export function HRScreen({
           return false;
         });
 
-        // Get check_in log and check_out log accurately
-        const checkInLogs = dayLogs.filter(l => l.type === 'check_in');
-        const rawCheckOutLogs = dayLogs.filter(l => l.type === 'check_out');
+        // Exclude logs that represent absence or scheduled shift placeholder
+        const validAttendanceLogs = dayLogs.filter(l => 
+          !l.notes?.includes('غياب') && 
+          !l.notes?.includes('دوام مجدول')
+        );
 
-        const checkInLog = checkInLogs[checkInLogs.length - 1] || (dayLogs.length > 0 && !rawCheckOutLogs.includes(dayLogs[0]) ? dayLogs[0] : null);
+        // Get check_in log and check_out log accurately
+        const checkInLogs = validAttendanceLogs.filter(l => l.type === 'check_in');
+        const rawCheckOutLogs = validAttendanceLogs.filter(l => l.type === 'check_out');
+
+        const checkInLog = checkInLogs[checkInLogs.length - 1] || (validAttendanceLogs.length > 0 && !rawCheckOutLogs.includes(validAttendanceLogs[0]) ? validAttendanceLogs[0] : null);
 
         let checkOutLog = rawCheckOutLogs[rawCheckOutLogs.length - 1] || 
-          (dayLogs.length > 1 && dayLogs[dayLogs.length - 1] !== checkInLog && !rawCheckOutLogs.includes(dayLogs[dayLogs.length - 1]) ? dayLogs[dayLogs.length - 1] : null);
+          (validAttendanceLogs.length > 1 && validAttendanceLogs[validAttendanceLogs.length - 1] !== checkInLog && !rawCheckOutLogs.includes(validAttendanceLogs[validAttendanceLogs.length - 1]) ? validAttendanceLogs[validAttendanceLogs.length - 1] : null);
 
         // If no checkout found in dayLogs, use the next day early checkout if available (from overnight shift)
         let isNextDayLog = false;
@@ -1206,31 +1212,17 @@ export function HRScreen({
             workedHoursFormatted = '08:00:00';
           }
         } else {
-          // فحص ما إذا تم إدخال وتحديد حالة صريحة من قبل المستخدمين
-          const hasExplicitScheduled = dayLogs.some(l => l.notes?.includes('دوام مجدول') || l.notes?.includes('حضور')) || 
+          // فحص ما إذا تم إدخال وتحديد حالة صريحة كـ "حضور" فقط (بدون وسم دوام مجدول أو غياب)
+          const hasExplicitPresence = dayLogs.some(l => l.notes?.includes('حضور') && !l.notes?.includes('دوام مجدول') && !l.notes?.includes('غياب')) || 
                                        (override as any).statusLabel === 'حضور' ||
-                                       (override as any).statusLabel === 'دوام مجدول' ||
-                                       dayPermissions.some(p => p.notes?.includes('دوام مجدول') || p.notes?.includes('حضور'));
-          const hasExplicitUnexcused = dayLogs.some(l => l.notes?.includes('غياب بدون عذر') || l.notes?.includes('غياب بدون إذن') || l.notes?.includes('غياب')) || 
-                                       (override as any).statusLabel === 'غياب بدون عذر' ||
-                                       (override as any).statusLabel === 'غياب بدون إذن' ||
-                                       (override as any).statusLabel === 'غياب';
+                                       dayPermissions.some(p => p.notes?.includes('حضور') && !p.notes?.includes('دوام مجدول'));
 
-          if (hasExplicitScheduled) {
+          if (hasExplicitPresence) {
             status = 'regular';
             statusLabel = 'حضور';
             absenceDeduction = 0;
-          } else if (hasExplicitUnexcused) {
-            status = 'absent';
-            statusLabel = 'غياب';
-            absenceDeduction = dailyRate * absenceMultiplier;
-          } else if (!isTodayOrPast) {
-            // الأيام المستقبلية في الشهر لا تحتسب كغياب برصيد مالي ولا يطبق عليها خصم غياب
-            status = 'absent';
-            statusLabel = 'غياب';
-            absenceDeduction = 0;
           } else {
-            // الحالة الافتراضية الصارمة للموظف غير الحاضر في يوم مضى أو اليوم الحالي هي "غياب"، ويتم احتساب خصم الغياب آلياً بناءً على القاعدة والمعادلة المحددة مسبقاً في الإعدادات
+            // الحالة هي "غياب" ويتم تطبيق خصم الغياب آلياً على جميع أيام الغياب
             status = 'absent';
             statusLabel = 'غياب';
             absenceDeduction = dailyRate * absenceMultiplier;
@@ -1688,13 +1680,10 @@ export function HRScreen({
     try {
       const dateStr = attendanceForm.date;
       const nextDateStr = getNextDateStr(dateStr);
-      const inTimestamp = `${dateStr}T${attendanceForm.checkIn || '09:00'}:00`;
       
-      // Save check-out timestamp strictly on the target dateStr so it belongs exclusively to this selected day
-      let outTimestamp: string | undefined;
-      if (attendanceForm.checkOut) {
-        outTimestamp = `${dateStr}T${attendanceForm.checkOut}:00`;
-      }
+      const isAbsentAction = attendanceForm.status === 'absent' || 
+                             Boolean(attendanceForm.notes?.includes('غياب')) || 
+                             (!attendanceForm.checkIn && !attendanceForm.checkOut);
 
       // Existing logs for this employee on dateStr via processedDate or raw timestamp
       const sameDayLogs = (effectiveFingerprintLogs || []).filter(l => 
@@ -1718,52 +1707,57 @@ export function HRScreen({
 
       const generateId = () => (DB.generateUUID ? DB.generateUUID() : 'FP-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7));
 
-      const checkInId = sameDayLogs.find(l => l.type === 'check_in')?.id || generateId();
-      const checkOutId = sameDayLogs.find(l => l.type === 'check_out')?.id || nextDayEarlyCheckOut[0]?.id || generateId();
+      const newLogsToSave: FingerprintLog[] = [];
 
-      const inLog: FingerprintLog = {
-        id: checkInId,
-        salonId: targetEmp.salonId || settings.salonId,
-        branchId: targetEmp.branchId || (settings as any).branchId,
-        employeeId: targetEmp.id,
-        employeeName: targetEmp.name,
-        fingerprintCode: targetEmp.fingerprintCode || 'FP-' + targetEmp.id.slice(0, 4),
-        timestamp: inTimestamp,
-        type: 'check_in',
-        status: 'manual',
-        processedDate: dateStr,
-        processed_date: dateStr,
-        notes: attendanceForm.notes || 'تسجيل يدوي / تعديل من TimeSheet'
-      };
+      if (!isAbsentAction) {
+        const inTimestamp = `${dateStr}T${attendanceForm.checkIn || '09:00'}:00`;
+        const checkInId = sameDayLogs.find(l => l.type === 'check_in')?.id || generateId();
+        const checkOutId = sameDayLogs.find(l => l.type === 'check_out')?.id || nextDayEarlyCheckOut[0]?.id || generateId();
 
-      const newLogsToSave: FingerprintLog[] = [inLog];
-
-      if (outTimestamp) {
-        const isOvernight = Boolean(
-          attendanceForm.isNextDayCheckout || 
-          (attendanceForm.checkIn && attendanceForm.checkOut && attendanceForm.checkOut <= attendanceForm.checkIn)
-        );
-        const actualOutTs = (isOvernight && !outTimestamp.startsWith(nextDateStr))
-          ? `${nextDateStr}T${attendanceForm.checkOut}:00`
-          : outTimestamp;
-
-        const outLog: FingerprintLog = {
-          id: checkOutId,
+        const inLog: FingerprintLog = {
+          id: checkInId,
           salonId: targetEmp.salonId || settings.salonId,
           branchId: targetEmp.branchId || (settings as any).branchId,
           employeeId: targetEmp.id,
           employeeName: targetEmp.name,
           fingerprintCode: targetEmp.fingerprintCode || 'FP-' + targetEmp.id.slice(0, 4),
-          timestamp: actualOutTs,
-          type: 'check_out',
+          timestamp: inTimestamp,
+          type: 'check_in',
           status: 'manual',
           processedDate: dateStr,
           processed_date: dateStr,
-          notes: isOvernight 
-            ? `${attendanceForm.notes ? attendanceForm.notes.trim() + ' - ' : ''}انصراف بعد منتصف الليل (+1 يوم)`
-            : (attendanceForm.notes || 'تسجيل يدوي / تعديل من TimeSheet')
+          notes: attendanceForm.notes || 'تسجيل يدوي / تعديل من TimeSheet'
         };
-        newLogsToSave.push(outLog);
+        newLogsToSave.push(inLog);
+
+        if (attendanceForm.checkOut) {
+          const outTimestamp = `${dateStr}T${attendanceForm.checkOut}:00`;
+          const isOvernight = Boolean(
+            attendanceForm.isNextDayCheckout || 
+            (attendanceForm.checkIn && attendanceForm.checkOut && attendanceForm.checkOut <= attendanceForm.checkIn)
+          );
+          const actualOutTs = (isOvernight && !outTimestamp.startsWith(nextDateStr))
+            ? `${nextDateStr}T${attendanceForm.checkOut}:00`
+            : outTimestamp;
+
+          const outLog: FingerprintLog = {
+            id: checkOutId,
+            salonId: targetEmp.salonId || settings.salonId,
+            branchId: targetEmp.branchId || (settings as any).branchId,
+            employeeId: targetEmp.id,
+            employeeName: targetEmp.name,
+            fingerprintCode: targetEmp.fingerprintCode || 'FP-' + targetEmp.id.slice(0, 4),
+            timestamp: actualOutTs,
+            type: 'check_out',
+            status: 'manual',
+            processedDate: dateStr,
+            processed_date: dateStr,
+            notes: isOvernight 
+              ? `${attendanceForm.notes ? attendanceForm.notes.trim() + ' - ' : ''}انصراف بعد منتصف الليل (+1 يوم)`
+              : (attendanceForm.notes || 'تسجيل يدوي / تعديل من TimeSheet')
+          };
+          newLogsToSave.push(outLog);
+        }
       }
 
       // 1. Delete any old logs from DB that are no longer in newLogsToSave (e.g. if checkout was removed or moved to next day)
@@ -1788,6 +1782,15 @@ export function HRScreen({
         setFingerprintLogs(updateFn);
       }
       setLocalLogs(updateFn);
+
+      const rowKey = `${targetEmp.id}_${dateStr}`;
+      setOverrides(prev => ({
+        ...prev,
+        [rowKey]: {
+          ...prev[rowKey],
+          statusLabel: isAbsentAction ? 'غياب' : 'حضور'
+        }
+      }));
 
       setShowAttendanceModal(false);
       alert('تم حفظ وتحديث التايم شيت بنجاح في قاعدة البيانات.');
@@ -5003,7 +5006,6 @@ export function HRScreen({
                         const willBeOvernight = attendanceForm.checkOut && newIn ? attendanceForm.checkOut <= newIn : attendanceForm.isNextDayCheckout;
                         setAttendanceForm({ ...attendanceForm, checkIn: newIn, isNextDayCheckout: willBeOvernight });
                       }}
-                      required
                       className="w-full bg-white border border-indigo-200 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-800 focus:border-indigo-600 outline-none shadow-2xs text-center"
                     />
                   </div>
