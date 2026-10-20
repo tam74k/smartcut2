@@ -859,14 +859,14 @@ export function HRScreen({
         let delayDeduction = 0;
         let overtimeMinutes = 0;
         let overtimeAmount = 0;
-        let absenceDeduction = dailyRate * absenceMultiplier;
+        let absenceDeduction = 0;
 
         // Check actual fingerprint / attendance logs for this employee on dateStr using processed_date
         const dayLogs = (effectiveFingerprintLogs || []).filter(l => {
-          const isEmp = (l.employeeId === emp.id || (emp.fingerprintCode && (l.fingerprintCode === emp.fingerprintCode || (l as any).fingerprint_code === emp.fingerprintCode)));
+          const isEmp = (l.employeeId === emp.id || (emp.fingerprintCode && (String(l.fingerprintCode).trim() === String(emp.fingerprintCode).trim() || String((l as any).fingerprint_code).trim() === String(emp.fingerprintCode).trim())));
           if (!isEmp) return false;
           const pDate = getFingerprintProcessedDate(l);
-          return pDate === dateStr;
+          return pDate === dateStr || isSameDay(l.timestamp, dateStr) || (l.timestamp && l.timestamp.startsWith(dateStr));
         }).sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
 
         // Also check if there is an early-morning check_out on the NEXT day (belonging to overnight shift) as fallback
@@ -939,10 +939,12 @@ export function HRScreen({
         if (isTerminated) {
           status = 'terminated';
           statusLabel = 'إنهاء خدمة';
+          absenceDeduction = 0;
         } else if (leave) {
           if (leave.type === 'paid') {
             status = 'paid_leave';
             statusLabel = 'إجازة براتب';
+            absenceDeduction = 0;
           } else {
             status = 'unpaid_leave';
             statusLabel = 'إجازة بدون راتب';
@@ -980,13 +982,12 @@ export function HRScreen({
         } else if (isWeeklyOff && !hasManualOrDeviceLog) {
           status = 'weekly_off';
           statusLabel = 'عطلة أسبوعية';
-          if (!isWeeklyOffPaid) {
-            absenceDeduction = 0;
-          }
+          absenceDeduction = 0;
         } else if (hasManualOrDeviceLog) {
           // Present via fingerprint or registered attendance
           status = 'regular';
           statusLabel = 'حضور';
+          absenceDeduction = 0;
 
           const inTimeStr = extractTime(checkInLog?.timestamp) || scheduledCheckIn;
           checkIn = `${inTimeStr}:00`;
@@ -1221,8 +1222,13 @@ export function HRScreen({
             status = 'absent';
             statusLabel = 'غياب بدون عذر';
             absenceDeduction = dailyRate * absenceMultiplier;
+          } else if (!isTodayOrPast) {
+            // الأيام المستقبلية في الشهر لا تحتسب كغياب ولا يطبق عليها خصم غياب
+            status = 'regular';
+            statusLabel = 'دوام مجدول';
+            absenceDeduction = 0;
           } else {
-            // الحالة الافتراضية الصارمة للموظف هي "غائب"، ويتم احتساب خصم الغياب آلياً بناءً على القاعدة والمعادلة المحددة مسبقاً في الإعدادات
+            // الحالة الافتراضية الصارمة للموظف غير الحاضر في يوم مضى أو اليوم الحالي هي "غائب"، ويتم احتساب خصم الغياب آلياً بناءً على القاعدة والمعادلة المحددة مسبقاً في الإعدادات
             status = 'absent';
             statusLabel = 'غائب';
             absenceDeduction = dailyRate * absenceMultiplier;
@@ -1414,6 +1420,8 @@ export function HRScreen({
           const baseAbsentNet = r.dailyRate - r.absenceDeduction;
           r.netDaily = Math.min(0, baseAbsentNet - r.advances - r.specialPenalty - r.commissionPaid);
         } else {
+          // Extra safeguard: if status is not absent, absenceDeduction MUST be 0
+          r.absenceDeduction = 0;
           r.netDaily = isTerminated ? 0 : (
             earnedDaily +
             r.overtimeAmount +
@@ -1423,7 +1431,6 @@ export function HRScreen({
             (r.permissionDeduction || 0) -
             r.specialPenalty -
             r.advances -
-            r.absenceDeduction -
             r.commissionPaid
           );
         }
@@ -1443,7 +1450,7 @@ export function HRScreen({
       permissionDeductionSum: acc.permissionDeductionSum + (row.permissionDeduction || 0),
       overtimeMinutesSum: acc.overtimeMinutesSum + row.overtimeMinutes,
       overtimeAmountSum: acc.overtimeAmountSum + row.overtimeAmount,
-      absenceDeductionSum: acc.absenceDeductionSum + row.absenceDeduction,
+      absenceDeductionSum: acc.absenceDeductionSum + (row.status === 'absent' ? (row.absenceDeduction || 0) : 0),
       specialPenaltySum: acc.specialPenaltySum + row.specialPenalty,
       advancesSum: acc.advancesSum + row.advances,
       bonusesSum: acc.bonusesSum + row.bonuses,
