@@ -849,9 +849,9 @@ export function HRScreen({
         const absenceMultiplier = typeof hrConfig.absenceDeductionDays === 'number' ? hrConfig.absenceDeductionDays : 1;
 
         // Determine Status, Attendance, Delays, Overtime
-        // الحالة الافتراضية للموظف هي "غائب" واحتساب خصم الغياب آلياً بناءً على إعدادات النظام
+        // الحالة الافتراضية للموظف هي "غياب" واحتساب خصم الغياب آلياً بناءً على إعدادات النظام
         let status: DayTimesheetRow['status'] = 'absent';
-        let statusLabel = 'غائب';
+        let statusLabel = 'غياب';
         let checkIn: string | null = null;
         let checkOut: string | null = null;
         let workedHoursFormatted = '--:--:--';
@@ -1207,30 +1207,32 @@ export function HRScreen({
           }
         } else {
           // فحص ما إذا تم إدخال وتحديد حالة صريحة من قبل المستخدمين
-          const hasExplicitScheduled = dayLogs.some(l => l.notes?.includes('دوام مجدول')) || 
+          const hasExplicitScheduled = dayLogs.some(l => l.notes?.includes('دوام مجدول') || l.notes?.includes('حضور')) || 
+                                       (override as any).statusLabel === 'حضور' ||
                                        (override as any).statusLabel === 'دوام مجدول' ||
-                                       dayPermissions.some(p => p.notes?.includes('دوام مجدول'));
-          const hasExplicitUnexcused = dayLogs.some(l => l.notes?.includes('غياب بدون عذر') || l.notes?.includes('غياب بدون إذن')) || 
+                                       dayPermissions.some(p => p.notes?.includes('دوام مجدول') || p.notes?.includes('حضور'));
+          const hasExplicitUnexcused = dayLogs.some(l => l.notes?.includes('غياب بدون عذر') || l.notes?.includes('غياب بدون إذن') || l.notes?.includes('غياب')) || 
                                        (override as any).statusLabel === 'غياب بدون عذر' ||
-                                       (override as any).statusLabel === 'غياب بدون إذن';
+                                       (override as any).statusLabel === 'غياب بدون إذن' ||
+                                       (override as any).statusLabel === 'غياب';
 
           if (hasExplicitScheduled) {
             status = 'regular';
-            statusLabel = 'دوام مجدول';
+            statusLabel = 'حضور';
             absenceDeduction = 0;
           } else if (hasExplicitUnexcused) {
             status = 'absent';
-            statusLabel = 'غياب بدون عذر';
+            statusLabel = 'غياب';
             absenceDeduction = dailyRate * absenceMultiplier;
           } else if (!isTodayOrPast) {
-            // الأيام المستقبلية في الشهر لا تحتسب كغياب ولا يطبق عليها خصم غياب
-            status = 'regular';
-            statusLabel = 'دوام مجدول';
+            // الأيام المستقبلية في الشهر لا تحتسب كغياب برصيد مالي ولا يطبق عليها خصم غياب
+            status = 'absent';
+            statusLabel = 'غياب';
             absenceDeduction = 0;
           } else {
-            // الحالة الافتراضية الصارمة للموظف غير الحاضر في يوم مضى أو اليوم الحالي هي "غائب"، ويتم احتساب خصم الغياب آلياً بناءً على القاعدة والمعادلة المحددة مسبقاً في الإعدادات
+            // الحالة الافتراضية الصارمة للموظف غير الحاضر في يوم مضى أو اليوم الحالي هي "غياب"، ويتم احتساب خصم الغياب آلياً بناءً على القاعدة والمعادلة المحددة مسبقاً في الإعدادات
             status = 'absent';
-            statusLabel = 'غائب';
+            statusLabel = 'غياب';
             absenceDeduction = dailyRate * absenceMultiplier;
           }
         }
@@ -3880,14 +3882,9 @@ export function HRScreen({
                             isOff ? 'bg-emerald-100 text-emerald-800' :
                             isAbsent ? 'bg-rose-100 text-rose-800 hover:bg-rose-200' :
                             isLeave ? 'bg-blue-100 text-blue-800' :
-                            row.statusLabel === 'دوام مجدول' ? 'bg-sky-100 text-sky-800 border border-sky-300 hover:bg-sky-200 shadow-2xs' :
-                            'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                            'bg-emerald-100 text-emerald-800 border border-emerald-300 hover:bg-emerald-200 shadow-2xs'
                           }`}
-                          title={
-                            row.statusLabel === 'دوام مجدول'
-                              ? 'دوام مجدول: تم تحديده صراحة من قِبل المستخدمين.'
-                              : canManageAttendance ? `الحالة: ${row.statusLabel} - اضغط للتعديل` : `الحالة: ${row.statusLabel}`
-                          }
+                          title={canManageAttendance ? `الحالة: ${row.statusLabel} - اضغط للتعديل` : `الحالة: ${row.statusLabel}`}
                         >
                           {row.statusLabel}
                         </button>
@@ -5135,19 +5132,19 @@ export function HRScreen({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setAttendanceForm({ ...attendanceForm, checkIn: '09:00', checkOut: '18:00', isNextDayCheckout: false, notes: 'دوام مجدول' })}
-                  className="text-[10px] font-bold bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-300 px-2 py-1 rounded-lg cursor-pointer transition-colors flex items-center gap-1"
+                  onClick={() => setAttendanceForm({ ...attendanceForm, checkIn: '09:00', checkOut: '18:00', isNextDayCheckout: false, notes: 'حضور' })}
+                  className="text-[10px] font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-1 rounded-lg cursor-pointer transition-colors flex items-center gap-1"
                 >
-                  <Calendar size={12} className="text-sky-700" />
-                  <span>تعيين كـ "دوام مجدول" (تحديد صريح)</span>
+                  <Calendar size={12} className="text-emerald-700" />
+                  <span>تعيين كـ "حضور" (دوام كامل)</span>
                 </button>
                 <button
                   type="button"
-                  onClick={() => setAttendanceForm({ ...attendanceForm, checkIn: '', checkOut: '', isNextDayCheckout: false, notes: 'غياب بدون عذر' })}
+                  onClick={() => setAttendanceForm({ ...attendanceForm, checkIn: '', checkOut: '', isNextDayCheckout: false, notes: 'غياب' })}
                   className="text-[10px] font-bold bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-300 px-2 py-1 rounded-lg cursor-pointer transition-colors flex items-center gap-1"
                 >
                   <AlertTriangle size={12} className="text-rose-700" />
-                  <span>تعيين كـ "غياب بدون عذر" (تحديد صريح)</span>
+                  <span>تعيين كـ "غياب"</span>
                 </button>
               </div>
 
