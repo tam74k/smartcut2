@@ -298,6 +298,7 @@ export interface Branch {
   tipPayoutMethod?: 'instant_cash' | 'pooled_deferred';
   createdAt?: string;
   evolutionInstanceName?: string;
+  timezone?: string; // IANA Time Zone string (e.g. Asia/Riyadh, Africa/Cairo)
   storageLimitMb?: number; // الحد الأقصى للمساحة التخزينية بالميجابايت (افتراضي 50MB)
   usedStorageBytes?: number; // المساحة المستخدمة الفعلية بالبايت
 }
@@ -861,6 +862,11 @@ export interface Booking {
   customerEmail?: string;
   date: string; 
   time: string; 
+  startTime?: string; // UTC ISO string
+  endTime?: string; // UTC ISO string
+  start_time?: string; // Supabase column mapping
+  end_time?: string; // Supabase column mapping
+  timezone?: string; // IANA Time Zone string
   status: 'pending' | 'confirmed' | 'cancelled' | 'completed'; 
   advancePayments: AdvancePayment[]; 
   services: BookingService[]; 
@@ -1017,6 +1023,7 @@ export interface AppSettings {
   vatRate: number; 
   currency: string; 
   country: string; 
+  timezone?: string; // المنطقة الزمنية المعتمدة للصالون (مثل Asia/Riyadh, Africa/Cairo)
   phone: string; 
   address: string; 
   logoUrl: string; 

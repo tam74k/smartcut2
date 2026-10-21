@@ -2,6 +2,7 @@ import { SupabaseService } from './supabase';
 import { dataUrlToBlob } from '../utils/imageUpload';
 import { HeldInvoice } from '../types';
 import { sealUserRecord } from '../utils/securityCrypto';
+import { localSalonTimeToUtcIso, utcToSalonLocal, getSalonTimezone } from '../utils/timezone';
 
 // ============================================================
 // SmartCut DB Service — طبقة البيانات الموحدة
@@ -996,6 +997,7 @@ export const DB = {
         owner_email: s.ownerEmail || s.email || existingSalon?.owner_email,
         country: s.country || existingSalon?.country || 'المملكة العربية السعودية',
         currency: s.currency || existingSalon?.currency || 'SAR',
+        timezone: s.timezone || existingSalon?.timezone || getSalonTimezone(s) || 'Asia/Riyadh',
         address: s.address || existingSalon?.address || s.country,
         logo_url: s.logoUrl !== undefined ? s.logoUrl : (existingSalon?.logo_url || null),
         is_active: s.isActive !== undefined ? s.isActive : (existingSalon?.is_active ?? true),
@@ -1086,6 +1088,7 @@ export const DB = {
         city: b.city || null,
         country: b.country || 'المملكة العربية السعودية',
         currency: b.currency || 'SAR',
+        timezone: b.timezone || null,
         vat_rate: b.vatRate ?? 15,
         vat_enabled: b.vatEnabled !== false,
         tax_number: b.taxNumber || null,
@@ -2138,6 +2141,37 @@ export const DB = {
       if (b.updatedBy || b.updatedByName) snap.updated_by = b.updatedBy || b.updatedByName;
       if (b.updatedByName || b.updatedBy) snap.updated_by_name = b.updatedByName || b.updatedBy;
 
+      // Timezone-aware UTC start_time & end_time
+      try {
+        const salonTz = b.timezone || (b as any).timeZone || getSalonTimezone();
+        let startTimeUtc = b.startTime || b.start_time;
+        if (startTimeUtc && !String(startTimeUtc).endsWith('Z')) {
+          const timePart = String(startTimeUtc).includes('T') ? String(startTimeUtc).split('T')[1].slice(0, 5) : String(startTimeUtc).slice(0, 5);
+          startTimeUtc = localSalonTimeToUtcIso(safeDate, timePart, salonTz);
+        } else if (!startTimeUtc) {
+          startTimeUtc = localSalonTimeToUtcIso(safeDate, safeTime, salonTz);
+        }
+        if (startTimeUtc) snap.start_time = startTimeUtc;
+
+        let endTimeUtc = b.endTime || b.end_time;
+        if (endTimeUtc && !String(endTimeUtc).endsWith('Z')) {
+          const timePart = String(endTimeUtc).includes('T') ? String(endTimeUtc).split('T')[1].slice(0, 5) : String(endTimeUtc).slice(0, 5);
+          endTimeUtc = localSalonTimeToUtcIso(safeDate, timePart, salonTz);
+        } else if (!endTimeUtc && (b.duration || b.durationMinutes)) {
+          const durMin = Number(b.duration || b.durationMinutes || 30);
+          if (startTimeUtc) {
+            const sMs = new Date(startTimeUtc).getTime();
+            if (!isNaN(sMs)) {
+              endTimeUtc = new Date(sMs + durMin * 60 * 1000).toISOString();
+            }
+          }
+        }
+        if (endTimeUtc) snap.end_time = endTimeUtc;
+        if (b.timezone) snap.timezone = b.timezone;
+      } catch (tzErr) {
+        console.warn('DB.saveBooking timezone conversion warning:', tzErr);
+      }
+
       // Resilient local storage update
       try {
         const stored = localStorage.getItem('smartcut_bookings');
@@ -2198,7 +2232,8 @@ export const DB = {
           'created_by', 'created_by_name', 'updated_at', 'updated_by', 'updated_by_name',
           'internal_notes', 'location', 'queue_number', 'is_paid', 'invoice_id',
           'discount_type', 'discount_value', 'discount_amount',
-          'employee_id', 'employee_name', 'service_id', 'service_name', 'branch_code'
+          'employee_id', 'employee_name', 'service_id', 'service_name', 'branch_code',
+          'start_time', 'end_time', 'timezone'
         ];
         for (const col of optionalCols) {
           if (errMsg.includes(col) && snap[col] !== undefined) {
@@ -4716,20 +4751,28 @@ export function dbBookingToApp(row: any): any {
   }
   if (!Array.isArray(advancePayments)) advancePayments = [];
 
-  // Date formatting: normalize "2026-09-22T00:00:00.000Z" -> "2026-09-22"
+  // Date & Time formatting with Timezone support
   let date = c.date || row.date || '';
   if (typeof date === 'string' && date.includes('T')) {
     date = date.split('T')[0];
   }
 
-  // Time formatting: fallback to start_time if time is empty
   let time = c.time || row.time || '';
-  if (!time) {
-    const st = c.startTime || row.start_time;
-    if (typeof st === 'string' && st.includes('T')) {
-      time = st.split('T')[1]?.slice(0, 5) || '10:00';
-    } else if (typeof st === 'string') {
-      time = st.slice(0, 5);
+  const rawStartTime = c.startTime || row.start_time;
+  const rawEndTime = c.endTime || row.end_time;
+  const tz = c.timezone || row.timezone || getSalonTimezone();
+
+  if (rawStartTime && typeof rawStartTime === 'string' && (rawStartTime.endsWith('Z') || rawStartTime.includes('+'))) {
+    try {
+      const local = utcToSalonLocal(rawStartTime, tz);
+      if (!date) date = local.date;
+      if (!time) time = local.time;
+    } catch {}
+  } else if (!time) {
+    if (typeof rawStartTime === 'string' && rawStartTime.includes('T')) {
+      time = rawStartTime.split('T')[1]?.slice(0, 5) || '10:00';
+    } else if (typeof rawStartTime === 'string') {
+      time = rawStartTime.slice(0, 5);
     } else {
       time = '10:00';
     }
@@ -4774,7 +4817,10 @@ export function dbBookingToApp(row: any): any {
     depositRefundAmount: c.depositRefundAmount !== undefined ? Number(c.depositRefundAmount) : (row.deposit_refund_amount !== null && row.deposit_refund_amount !== undefined ? Number(row.deposit_refund_amount) : undefined),
     refundExpenseId: c.refundExpenseId || row.refund_expense_id || undefined,
     cancelledAt: c.cancelledAt || row.cancelled_at || (row.cancelled_at ? new Date(row.cancelled_at).toISOString() : undefined),
-    cancelledBy: c.cancelledBy || row.cancelled_by || undefined
+    cancelledBy: c.cancelledBy || row.cancelled_by || undefined,
+    startTime: rawStartTime,
+    endTime: rawEndTime,
+    timezone: tz
   };
 }
 
