@@ -573,37 +573,44 @@ const getLocalTodayDateString = (d: Date = new Date()): string => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
-// استخراج التاريخ الفعلي لسداد مقدم الحجز (تاريخ الدفعة الفعلي أو تاريخ الوردية أو تاريخ الإنشاء) دون الاعتماد على موعد تنفيذ الحجز المستقبلي
+// استخراج التاريخ الفعلي لسداد مقدم الحجز بناء على تاريخ الإنشاء الفعلي للحجز (وليس موعد تنفيذ الحجز)
 const getAdvanceEffectiveDate = (adv: any, b: any): string => {
-  const shiftDateVal = adv?.shiftDate || (adv as any)?.shift_date || b?.shiftDate || (b as any)?.shift_date;
-  if (shiftDateVal && typeof shiftDateVal === 'string' && shiftDateVal.trim()) {
-    return shiftDateVal.includes('T') ? shiftDateVal.split('T')[0].trim() : shiftDateVal.split(' ')[0].trim();
-  }
-  const advDate = adv?.paymentDate || (adv as any)?.payment_date || adv?.date;
-  if (advDate && typeof advDate === 'string' && advDate.trim()) {
-    const cleanAdv = advDate.includes('T') ? advDate.split('T')[0].trim() : advDate.split(' ')[0].trim();
-    if (new Date(cleanAdv).getTime() <= Date.now() + 86400000) {
-      return cleanAdv;
-    }
-  }
-  const created = (b as any)?.createdAt || (b as any)?.created_at;
+  // 1. الأولوية المطلقة لتاريخ إنشاء الحجز (createdAt / created_at)
+  const created = (b as any)?.createdAt || (b as any)?.created_at || (adv as any)?.createdAt || (adv as any)?.created_at;
   if (created && typeof created === 'string' && created.trim()) {
     const cleanCreated = created.includes('T') ? created.split('T')[0].trim() : created.split(' ')[0].trim();
-    if (new Date(cleanCreated).getTime() <= Date.now() + 86400000) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(cleanCreated)) {
       return cleanCreated;
     }
   }
-  if (advDate && typeof advDate === 'string' && advDate.trim()) {
-    return advDate.includes('T') ? advDate.split('T')[0].trim() : advDate.split(' ')[0].trim();
+
+  // 2. تاريخ الوردية التي تم فيها إنشاء الحجز أو تحصيل الدفعة
+  const shiftDateVal = adv?.shiftDate || (adv as any)?.shift_date || b?.shiftDate || (b as any)?.shift_date;
+  if (shiftDateVal && typeof shiftDateVal === 'string' && shiftDateVal.trim()) {
+    const cleanShift = shiftDateVal.includes('T') ? shiftDateVal.split('T')[0].trim() : shiftDateVal.split(' ')[0].trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(cleanShift)) {
+      return cleanShift;
+    }
   }
-  // الموعد المجدول كحل أخير فقط إذا كان في الماضي أو اليوم وليس موعداً مستقبلياً
+
+  // 3. تاريخ سداد الدفعة (paymentDate / date) إذا كان موجوداً
+  const advDate = adv?.paymentDate || (adv as any)?.payment_date || adv?.date;
+  if (advDate && typeof advDate === 'string' && advDate.trim()) {
+    const cleanAdv = advDate.includes('T') ? advDate.split('T')[0].trim() : advDate.split(' ')[0].trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(cleanAdv)) {
+      return cleanAdv;
+    }
+  }
+
+  // 4. الحجوزات القديمة كحل أخير إذا لم يتوفر تاريخ إنشاء
   const scheduled = b?.date;
   if (scheduled && typeof scheduled === 'string' && scheduled.trim()) {
     const cleanSched = scheduled.includes('T') ? scheduled.split('T')[0].trim() : scheduled.split(' ')[0].trim();
-    if (new Date(cleanSched).getTime() <= Date.now() + 86400000) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(cleanSched)) {
       return cleanSched;
     }
   }
+
   return getLocalTodayDateString();
 };
 
@@ -625,25 +632,30 @@ const getBookingAdvancesList = (b: any): any[] => {
     : (typeof b.advance_payments === 'string'
       ? (() => { try { return JSON.parse(b.advance_payments); } catch { return []; } })()
       : []);
-  const effectiveCreationDate = (b as any)?.createdAt || (b as any)?.created_at || b?.date || '';
+
   if (advances.length > 0) {
-    return advances.map((a: any, idx: number) => ({
-      id: a.id || `${b.id}-adv-${idx}`,
-      amount: Number(a.amount) || 0,
-      treasuryId: a.treasuryId,
-      treasuryName: a.treasuryName,
-      date: a.date ? (a.date.includes('T') ? a.date.split('T')[0].trim() : a.date.split(' ')[0].trim()) : (effectiveCreationDate.includes('T') ? effectiveCreationDate.split('T')[0].trim() : effectiveCreationDate),
-      time: a.time,
-      paymentMethod: a.paymentMethod || a.payment_method || 'cash',
-      notes: a.notes
-    }));
+    return advances.map((a: any, idx: number) => {
+      const effDate = getAdvanceEffectiveDate(a, b);
+      return {
+        id: a.id || `${b.id}-adv-${idx}`,
+        amount: Number(a.amount) || 0,
+        treasuryId: a.treasuryId,
+        treasuryName: a.treasuryName,
+        date: effDate,
+        time: a.time || ((b as any)?.createdAt && (b as any).createdAt.includes('T') ? (b as any).createdAt.split('T')[1]?.slice(0, 5) : b.time),
+        paymentMethod: a.paymentMethod || a.payment_method || 'cash',
+        notes: a.notes
+      };
+    });
   }
   if (Number(b.advancePayment || 0) > 0) {
     return [{
       id: `adv-${b.id || 'legacy'}`,
       amount: Number(b.advancePayment),
-      date: effectiveCreationDate.includes('T') ? effectiveCreationDate.split('T')[0].trim() : effectiveCreationDate,
+      date: getAdvanceEffectiveDate({}, b),
+      time: (b as any)?.createdAt && (b as any).createdAt.includes('T') ? (b as any).createdAt.split('T')[1]?.slice(0, 5) : b.time,
       paymentMethod: b.paymentMethod || 'cash',
+      treasuryId: 'cash',
       notes: b.notes
     }];
   }
@@ -996,10 +1008,19 @@ export function OwnerExecutivePortal({
       const isBranchMatch = matchesActiveBranch((t as any).branchId);
       if (!isBranchMatch) return false;
 
+      // إذا كانت المعاملة المالية تخص مقدم حجز، نعتمد تاريخ إنشاء الحجز بدلاً من تاريخ تنفيذ الحجز
+      if (isBookingAdvanceTrx(t)) {
+        const matchedBooking = findBookingForAdvanceTrx(t, bookings || []);
+        if (matchedBooking) {
+          const advEffectiveDate = getAdvanceEffectiveDate(t, matchedBooking);
+          return isDateInSelectedPeriod(advEffectiveDate);
+        }
+      }
+
       const tDate = (t.shiftDate || (t as any).shift_date || t.date || '').split('T')[0].split(' ')[0].trim();
       return isDateInSelectedPeriod(tDate);
     });
-  }, [transactions, dateRange, activeBranchId, isMainBranch, period, shiftData]);
+  }, [transactions, dateRange, activeBranchId, isMainBranch, period, shiftData, bookings]);
 
   const todayTransactions = filteredTransactions;
 
@@ -1029,6 +1050,9 @@ export function OwnerExecutivePortal({
       const targetId = t.treasury || (t as any).treasuryId || '';
       const treasuryObj = (settings.treasuries || []).find(tr => tr.id === targetId || tr.name === targetId);
       const matchedBooking = findBookingForAdvanceTrx(t, bookings || []);
+      const effectiveDate = matchedBooking
+        ? getAdvanceEffectiveDate(t, matchedBooking)
+        : (t.shiftDate || (t as any).shift_date || t.date || '').split('T')[0].split(' ')[0].trim();
 
       list.push({
         id: t.id,
@@ -1037,7 +1061,7 @@ export function OwnerExecutivePortal({
         clientName: matchedBooking?.clientName || extractClientFromDesc(t.description || ''),
         clientPhone: matchedBooking?.phone || matchedBooking?.clientPhone || '',
         amount: amt,
-        date: (t.shiftDate || (t as any).shift_date || t.date || '').split('T')[0].split(' ')[0].trim(),
+        date: effectiveDate,
         time: t.date?.split('T')[1]?.substring(0, 5) || matchedBooking?.time || '',
         paymentMethod: t.paymentMethod || treasuryObj?.name || 'نقدي',
         treasuryName: treasuryObj?.name || t.treasury || 'الخزنة',
