@@ -1,4 +1,4 @@
-import { Treasury } from '../types';
+import { Treasury, Transaction } from '../types';
 
 /**
  * Resolves the primary/main treasury from the list of treasuries.
@@ -22,6 +22,80 @@ export function resolveMainTreasury(treasuries?: Treasury[]): Treasury {
 }
 
 /**
+ * يحدد بشكل صارم وقطعي ومطلق الخزينة الوحيدة التي تنتمي إليها الحركة المالية
+ * يمنع منعاً باتاً أي تداخل أو تسرب مالي بين الخزائن المختلفة
+ */
+export function getTransactionTargetTreasuryId(
+  trx: Partial<Transaction> | any,
+  treasuries: Treasury[] = []
+): string {
+  const mainTreasury = resolveMainTreasury(treasuries);
+  const cashTreasury = treasuries.find(t => t.id === 'cash') || 
+                       treasuries.find(t => t.name.includes('كاش') || t.name.includes('الدرج'));
+
+  const raw = (
+    trx?.treasury || 
+    trx?.treasuryId || 
+    trx?.treasury_id || 
+    ''
+  ).toString().trim();
+
+  // 1. التطابق المباشر مع ID الخزينة
+  const byId = treasuries.find(t => t.id === raw);
+  if (byId) return byId.id;
+
+  // 2. التطابق التام مع اسم الخزينة العربي أو الإنجليزي (مثل: "اورانج" أو "فودافون" أو "انستاباي")
+  const byName = treasuries.find(t => t.name.trim() === raw || t.name.trim().toLowerCase() === raw.toLowerCase());
+  if (byName) return byName.id;
+
+  // 3. التحقق من treasuryName إذا كان مسجلاً صراحة مع الحركة
+  const tName = (trx?.treasuryName || '').toString().trim();
+  if (tName) {
+    const byTName = treasuries.find(t => t.name.trim() === tName || t.id === tName);
+    if (byTName) return byTName.id;
+  }
+
+  // 4. مرادفات الخزينة الرئيسية (تخص الخزينة الرئيسية فقط ولا تمس الكاش نهائياً)
+  if (raw === 'main' || raw === 'الرئيسية' || raw === 'الخزنة الرئيسية' || raw === 'الخزينة الرئيسية') {
+    return mainTreasury.id;
+  }
+
+  // 5. مرادفات كاش الدرج (تخص كاش الدرج فقط ولا تمس الخزينة الرئيسية نهائياً)
+  if (raw === 'cash' || raw === 'كاش' || raw === 'درج' || raw === 'cash_drawer' || raw === 'نقدي') {
+    if (cashTreasury) return cashTreasury.id;
+    return mainTreasury.id;
+  }
+
+  // 6. مرادفات البطاقات والتحويلات المسجلة كمعرف للخزينة
+  if (raw === 'card' || raw === 'mada' || raw === 'visa' || raw === 'شبكة' || raw === 'فيزا') {
+    const cardT = treasuries.find(t => t.id === 'card' || t.name.includes('شبكة') || t.name.includes('فيزا') || t.name.includes('مدى'));
+    if (cardT) return cardT.id;
+  }
+
+  if (raw === 'bank_transfer' || raw === 'transfer' || raw === 'تحويل بنكي' || raw === 'تحويل') {
+    const transferT = treasuries.find(t => t.id === 'bank_transfer' || t.id === 'transfer' || t.name.includes('تحويل'));
+    if (transferT) return transferT.id;
+  }
+
+  // 7. فقط إذا كان حقل treasury فارغاً تماماً في الحركة (حركات قديمة جداً بدون خزينة محددة)
+  if (!raw) {
+    const pMethod = (trx?.paymentMethod || trx?.payment_method || '').toString().trim();
+    if (pMethod) {
+      const pmTreasury = treasuries.find(t => t.id === pMethod || t.name.trim() === pMethod);
+      if (pmTreasury) return pmTreasury.id;
+      if (pMethod === 'cash' && cashTreasury) return cashTreasury.id;
+      if (pMethod === 'card' || pMethod === 'mada' || pMethod === 'visa') {
+        const cardT = treasuries.find(t => t.id === 'card' || t.name.includes('شبكة') || t.name.includes('فيزا'));
+        if (cardT) return cardT.id;
+      }
+    }
+    return cashTreasury ? cashTreasury.id : mainTreasury.id;
+  }
+
+  return raw;
+}
+
+/**
  * Normalizes treasury matching so aliases like 'cash', 'نقدي', 'كاش',
  * 'card', 'mada', 'visa', 'شبكة' match the appropriate target treasury ID.
  */
@@ -31,87 +105,8 @@ export function isMatchingTreasury(
   allTreasuries?: Treasury[]
 ): boolean {
   if (!targetId) return false;
-
-  // 1. Direct ID match
-  if (tId && tId === targetId) return true;
-
-  const treasuries = allTreasuries || [];
-  const targetObj = treasuries.find(t => t.id === targetId || t.name === targetId);
-  const sourceObj = tId ? treasuries.find(t => t.id === tId || t.name === tId) : undefined;
-
-  // 2. Both resolve to the exact same configured treasury
-  if (targetObj && sourceObj && targetObj.id === sourceObj.id) return true;
-
-  // 3. Match by name or ID (case & whitespace insensitive)
-  if (targetObj && tId) {
-    const cleanT = tId.trim();
-    if (cleanT === targetObj.name.trim() || cleanT.toLowerCase() === targetObj.id.toLowerCase()) {
-      return true;
-    }
-  }
-
-  const hasCashTreasury = treasuries.some(t => t.id === 'cash');
-  const hasMainTreasury = treasuries.some(t => t.id === 'main' || t.isMain);
-
-  // 4. Handling undefined or empty treasury ID
-  if (!tId) {
-    if (hasCashTreasury) {
-      return targetId === 'cash';
-    }
-    if (hasMainTreasury) {
-      const mainObj = treasuries.find(t => t.id === targetId && (t.isMain || t.id === 'main'));
-      return Boolean(mainObj);
-    }
-    return targetId === treasuries[0]?.id || targetId === 'cash';
-  }
-
-  // 5. Normalized cash aliases
-  if (tId === 'cash' || tId === 'نقدي' || tId === 'كاش' || tId === 'cash_drawer' || tId === 'درج') {
-    if (targetId === 'cash') return true;
-    if (targetObj?.name?.includes('كاش') || targetObj?.name?.includes('درج')) return true;
-    if (!hasCashTreasury && (targetId === 'main' || targetObj?.isMain)) {
-      return true;
-    }
-    return false;
-  }
-
-  // 6. Normalized main treasury aliases
-  if (tId === 'main' || tId === 'الرئيسية' || tId === 'الخزنة الرئيسية') {
-    if (targetId === 'main') return true;
-    if (targetObj?.isMain) return true;
-    return false;
-  }
-
-  // 7. Normalized card aliases
-  if (targetId === 'card' || targetObj?.name?.includes('شبكة') || targetObj?.name?.includes('مدى') || targetObj?.name?.includes('فيزا')) {
-    const isCardAlias = (
-      tId === 'card' ||
-      tId === 'mada' ||
-      tId === 'visa' ||
-      tId === 'mastercard' ||
-      tId === 'شبكة' ||
-      tId === 'شبكة / مدى' ||
-      tId === 'بطاقة' ||
-      tId === 'فيزا'
-    );
-    if (isCardAlias && (targetId === 'card' || targetObj?.name?.includes('شبكة') || targetObj?.name?.includes('فيزا'))) {
-      return true;
-    }
-  }
-
-  // 8. Normalized bank transfer aliases
-  if (targetId === 'bank_transfer' || targetId === 'transfer' || targetObj?.name?.includes('تحويل')) {
-    const isTransferAlias = (
-      tId === 'bank_transfer' ||
-      tId === 'transfer' ||
-      tId === 'bank' ||
-      tId === 'تحويل بنكي' ||
-      tId === 'تحويل'
-    );
-    if (isTransferAlias) return true;
-  }
-
-  return false;
+  const assigned = getTransactionTargetTreasuryId({ treasury: tId }, allTreasuries || []);
+  return assigned === targetId;
 }
 
 /**
@@ -122,7 +117,7 @@ export function getTreasuryLabel(tId: string | undefined, allTreasuries?: Treasu
     const cashT = (allTreasuries || []).find(t => t.id === 'cash');
     return cashT ? cashT.name : 'كاش (الدرج)';
   }
-  const found = (allTreasuries || []).find(t => t.id === tId);
+  const found = (allTreasuries || []).find(t => t.id === tId || t.name.trim() === tId.trim());
   if (found) return found.name;
   if (tId === 'cash') return 'كاش (الدرج)';
   if (tId === 'main') return 'الخزنة الرئيسية';

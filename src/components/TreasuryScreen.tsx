@@ -6,7 +6,7 @@ import { AuthService } from '../services/auth';
 import { DB } from '../services/db';
 import { getBookingAdvances } from './BookingsScreen';
 import { printThermalFinancialVoucher } from './ThermalFinancialVoucher';
-import { resolveMainTreasury, isMatchingTreasury } from '../utils/treasury';
+import { resolveMainTreasury, isMatchingTreasury, getTransactionTargetTreasuryId, getTreasuryLabel } from '../utils/treasury';
 
 export function TreasuryScreen({ 
   settings, 
@@ -402,20 +402,10 @@ export function TreasuryScreen({
   }, [bookings, shiftData?.date, settings.treasuries]);
 
   const getTreasuryTotals = (tId: string) => {
-    const targetTreasury = settings.treasuries.find(t => t.id === tId);
-    const targetName = targetTreasury ? targetTreasury.name : '';
-
+    // كل حركة مالية تنتمي بشكل قطعي وحصري لخزينة واحدة فقط - فصل صارم يمنع أي تسرب مالي نهائياً
     const trxs = unifiedTransactions.filter(t => {
-      const val = (t.treasury || (t as any).treasuryId || (t as any).treasury_id || '').trim();
-      const pMethod = ((t as any).paymentMethod || (t as any).payment_method || '').trim();
-      const tName = ((t as any).treasuryName || '').trim();
-
-      if (val === tId || (targetName && val === targetName)) return true;
-      if (tName && (tName === targetName || tName === tId)) return true;
-      if (pMethod && (pMethod === tId || (targetName && pMethod === targetName))) return true;
-
-      return isMatchingTreasury(val, tId, settings.treasuries) ||
-             (pMethod ? isMatchingTreasury(pMethod, tId, settings.treasuries) : false);
+      const assignedId = getTransactionTargetTreasuryId(t, settings.treasuries);
+      return assignedId === tId;
     });
 
     // Inflows (المقبوضات والإيرادات)
@@ -601,7 +591,7 @@ export function TreasuryScreen({
     const rows = filteredTransactions.map(t => [
       t.id,
       t.date ? new Date(t.date).toLocaleString('ar-SA') : '-',
-      settings.treasuries.find(tr => tr.id === t.treasury)?.name || t.treasury,
+      getTreasuryLabel(getTransactionTargetTreasuryId(t, settings.treasuries), settings.treasuries),
       (t as any).userName || (t as any).createdBy || '-',
       t.type === 'in' ? 'إيداع / وارد' : 'صرف / صادر',
       translateCategory(t.category),
@@ -1017,7 +1007,7 @@ export function TreasuryScreen({
                     <td className="py-3.5 px-4 text-slate-500 font-semibold">{new Date(trx.date).toLocaleString('ar-SA')}</td>
                     <td className="py-3.5 px-4">
                       <span className="bg-slate-100 text-slate-800 font-bold px-2 py-0.5 rounded-lg border border-slate-200">
-                        {settings.treasuries.find(t => t.id === trx.treasury)?.name || trx.treasury}
+                        {getTreasuryLabel(getTransactionTargetTreasuryId(trx, settings.treasuries), settings.treasuries)}
                       </span>
                     </td>
                     <td className="py-3.5 px-4">
