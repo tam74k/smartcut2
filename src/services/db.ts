@@ -2013,7 +2013,7 @@ export const DB = {
     const validBranchId = toBranchUUID((t as any).branchId);
     try {
       const snap: any = {
-        id: t.id, 
+        id: t.id || ('TRX-' + Math.random().toString(36).substring(2, 9)), 
         salon_id: validSalonId, 
         branch_id: validBranchId,
         branch_code: (t as any).branchCode || null,
@@ -2035,25 +2035,83 @@ export const DB = {
         user_id: t.userId || null,
         user_name: t.userName || null
       };
-      let { error } = await client.from('transactions').upsert(snap, { onConflict: 'id' });
-      if (error && error.code === '23503') {
-        if (error.message?.includes('invoice_id') || error.details?.includes('invoices')) {
-          console.warn('DB.saveTransaction FK warning on invoice_id, retrying with invoice_id = null:', error.message);
-          snap.invoice_id = null;
+
+      let attempts = 0;
+      let lastError: any = null;
+
+      while (attempts < 8) {
+        attempts++;
+        const { error } = await client.from('transactions').upsert(snap, { onConflict: 'id' });
+        if (!error) {
+          lastError = null;
+          break;
         }
-        if (error.message?.includes('branch_id') || error.details?.includes('branches')) {
-          console.warn('DB.saveTransaction FK warning on branch_id, retrying with branch_id = null:', error.message);
-          snap.branch_id = null;
+
+        lastError = error;
+        const errMsg = error.message || '';
+
+        // 1. Foreign Key constraints
+        if (error.code === '23503' || errMsg.includes('foreign key')) {
+          if (snap.invoice_id && (errMsg.includes('invoice_id') || error.details?.includes('invoices'))) {
+            snap.invoice_id = null;
+            continue;
+          }
+          if (snap.booking_id && (errMsg.includes('booking_id') || error.details?.includes('bookings'))) {
+            snap.booking_id = null;
+            continue;
+          }
+          if (snap.branch_id && (errMsg.includes('branch_id') || error.details?.includes('branches'))) {
+            snap.branch_id = null;
+            continue;
+          }
+          if (snap.shift_id && (errMsg.includes('shift_id') || error.details?.includes('shifts') || error.details?.includes('daily_shifts') || error.details?.includes('work_shifts'))) {
+            snap.shift_id = null;
+            continue;
+          }
         }
-        const retry = await client.from('transactions').upsert(snap, { onConflict: 'id' });
-        error = retry.error;
+
+        // 2. Missing Column in Schema Cache (PGRST204 or PostgreSQL 42703)
+        const missingColMatch = errMsg.match(/Could not find the '([^']+)' column of '([^']+)'/i)
+          || errMsg.match(/column "([^"]+)" of relation "([^"]+)" does not exist/i);
+
+        if (missingColMatch) {
+          const missingCol = missingColMatch[1];
+          console.warn(`DB.saveTransaction stripping unknown column '${missingCol}' and retrying...`);
+          delete snap[missingCol];
+          continue;
+        }
+
+        // 3. Fallback for specific optional columns that might not exist in older tables
+        let pruned = false;
+        const optionalCols = [
+          'treasury_id', 'payment_method', 'booking_id', 'shift_id', 'shift_code',
+          'expense_category', 'branch_code', 'user_id', 'user_name', 'created_by'
+        ];
+        for (const col of optionalCols) {
+          if (errMsg.includes(col) && snap[col] !== undefined) {
+            delete snap[col];
+            pruned = true;
+          }
+        }
+        if (pruned) continue;
+
+        break;
       }
-      if (error) { console.error('DB.saveTransaction error:', error.message); return null; }
+
+      if (lastError) {
+        console.error('DB.saveTransaction final error:', lastError.message);
+        return null;
+      }
+
       return t;
-    } catch (e) { console.error('DB.saveTransaction exception:', e); return null; }
+    } catch (e) {
+      console.error('DB.saveTransaction exception:', e);
+      return null;
+    }
   },
   async saveTransactions(list: any[], salonId?: string) {
-    for (const t of list) await DB.saveTransaction(t, salonId);
+    if (!list || !list.length) return true;
+    for (const t of list) await this.saveTransaction(t, salonId);
     return true;
   },
 

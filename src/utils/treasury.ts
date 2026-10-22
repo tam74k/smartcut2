@@ -30,14 +30,30 @@ export function isMatchingTreasury(
   targetId: string,
   allTreasuries?: Treasury[]
 ): boolean {
+  if (!targetId) return false;
+
   // 1. Direct ID match
   if (tId && tId === targetId) return true;
 
   const treasuries = allTreasuries || [];
+  const targetObj = treasuries.find(t => t.id === targetId || t.name === targetId);
+  const sourceObj = tId ? treasuries.find(t => t.id === tId || t.name === tId) : undefined;
+
+  // 2. Both resolve to the exact same configured treasury
+  if (targetObj && sourceObj && targetObj.id === sourceObj.id) return true;
+
+  // 3. Match by name or ID (case & whitespace insensitive)
+  if (targetObj && tId) {
+    const cleanT = tId.trim();
+    if (cleanT === targetObj.name.trim() || cleanT.toLowerCase() === targetObj.id.toLowerCase()) {
+      return true;
+    }
+  }
+
   const hasCashTreasury = treasuries.some(t => t.id === 'cash');
   const hasMainTreasury = treasuries.some(t => t.id === 'main' || t.isMain);
 
-  // 2. Handling undefined or empty treasury ID
+  // 4. Handling undefined or empty treasury ID
   if (!tId) {
     if (hasCashTreasury) {
       return targetId === 'cash';
@@ -49,26 +65,26 @@ export function isMatchingTreasury(
     return targetId === treasuries[0]?.id || targetId === 'cash';
   }
 
-  // 3. Normalized cash aliases
+  // 5. Normalized cash aliases
   if (tId === 'cash' || tId === 'نقدي' || tId === 'كاش' || tId === 'cash_drawer' || tId === 'درج') {
     if (targetId === 'cash') return true;
-    if (!hasCashTreasury && (targetId === 'main' || treasuries.find(t => t.id === targetId)?.isMain)) {
+    if (targetObj?.name?.includes('كاش') || targetObj?.name?.includes('درج')) return true;
+    if (!hasCashTreasury && (targetId === 'main' || targetObj?.isMain)) {
       return true;
     }
     return false;
   }
 
-  // 4. Normalized main treasury aliases
+  // 6. Normalized main treasury aliases
   if (tId === 'main' || tId === 'الرئيسية' || tId === 'الخزنة الرئيسية') {
     if (targetId === 'main') return true;
-    const targetObj = treasuries.find(t => t.id === targetId);
-    if (targetObj?.isMain && !hasCashTreasury) return true;
-    return Boolean(targetObj?.isMain && targetId !== 'cash');
+    if (targetObj?.isMain) return true;
+    return false;
   }
 
-  // 5. Normalized card aliases
-  if (targetId === 'card') {
-    return (
+  // 7. Normalized card aliases
+  if (targetId === 'card' || targetObj?.name?.includes('شبكة') || targetObj?.name?.includes('مدى') || targetObj?.name?.includes('فيزا')) {
+    const isCardAlias = (
       tId === 'card' ||
       tId === 'mada' ||
       tId === 'visa' ||
@@ -78,17 +94,21 @@ export function isMatchingTreasury(
       tId === 'بطاقة' ||
       tId === 'فيزا'
     );
+    if (isCardAlias && (targetId === 'card' || targetObj?.name?.includes('شبكة') || targetObj?.name?.includes('فيزا'))) {
+      return true;
+    }
   }
 
-  // 6. Normalized bank transfer aliases
-  if (targetId === 'bank_transfer' || targetId === 'transfer') {
-    return (
+  // 8. Normalized bank transfer aliases
+  if (targetId === 'bank_transfer' || targetId === 'transfer' || targetObj?.name?.includes('تحويل')) {
+    const isTransferAlias = (
       tId === 'bank_transfer' ||
       tId === 'transfer' ||
       tId === 'bank' ||
       tId === 'تحويل بنكي' ||
       tId === 'تحويل'
     );
+    if (isTransferAlias) return true;
   }
 
   return false;

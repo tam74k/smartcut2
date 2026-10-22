@@ -6,6 +6,7 @@ import { AuthService } from '../services/auth';
 import { DB } from '../services/db';
 import { getBookingAdvances } from './BookingsScreen';
 import { printThermalFinancialVoucher } from './ThermalFinancialVoucher';
+import { resolveMainTreasury, isMatchingTreasury } from '../utils/treasury';
 
 export function TreasuryScreen({ 
   settings, 
@@ -21,7 +22,7 @@ export function TreasuryScreen({
   settings: AppSettings, 
   shiftData: { isOpen: boolean, date: string, initialCash: number },
   transactions: Transaction[],
-  setTransactions: (t: Transaction[]) => void,
+  setTransactions: (t: any) => void,
   activeBranchId?: string,
   branches?: Branch[],
   currentUser?: AppUser | null,
@@ -29,6 +30,7 @@ export function TreasuryScreen({
   bookings?: Booking[]
 }) {
   const [modalType, setModalType] = useState<'deposit' | 'withdraw' | 'transfer' | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   const [amount, setAmount] = useState<number>(0);
   const [treasuryId, setTreasuryId] = useState<string>(settings.treasuries[0]?.id || '');
@@ -43,19 +45,37 @@ export function TreasuryScreen({
 
   const activeBranch = branches.find(b => b.id === activeBranchId);
 
-  const handleOpenModal = (type: 'deposit' | 'withdraw' | 'transfer') => {
+  const handleOpenModal = (type: 'deposit' | 'withdraw' | 'transfer', specificTreasuryId?: string) => {
     setModalType(type);
     setAmount(0);
-    setTreasuryId(settings.treasuries[0]?.id || '');
-    if (type === 'transfer') {
-      setToTreasuryId(settings.treasuries[1]?.id || settings.treasuries[0]?.id || '');
-    }
     setNote('');
     setCategory(type === 'deposit' ? 'deposit' : type === 'withdraw' ? 'expense' : 'transfer');
     setTransactionDate(shiftData.isOpen ? shiftData.date : new Date().toISOString().split('T')[0]);
+
+    const mainTreasury = resolveMainTreasury(settings.treasuries);
+    const firstNonMain = settings.treasuries.find(t => t.id !== mainTreasury.id) || settings.treasuries[0];
+
+    if (type === 'transfer') {
+      if (specificTreasuryId) {
+        if (specificTreasuryId === mainTreasury.id) {
+          setTreasuryId(mainTreasury.id);
+          setToTreasuryId(firstNonMain?.id || '');
+        } else {
+          // التحويل من الخزينة الرئيسية إلى الخزينة المحددة (مثلاً: أورانج)
+          setTreasuryId(mainTreasury.id);
+          setToTreasuryId(specificTreasuryId);
+        }
+      } else {
+        setTreasuryId(mainTreasury.id);
+        setToTreasuryId(firstNonMain?.id || '');
+      }
+    } else {
+      setTreasuryId(specificTreasuryId || settings.treasuries[0]?.id || '');
+    }
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    if (isSubmitting) return;
     if (amount <= 0) {
       alert('المبلغ غير صحيح');
       return;
@@ -77,70 +97,99 @@ export function TreasuryScreen({
     const sDate = isMatchingCurrentShift ? shiftData.date : effectiveDay;
     const sId = isMatchingCurrentShift ? ((shiftData as any).shiftId || (shiftData as any).id) : undefined;
     
-    if (modalType === 'transfer') {
-      if (treasuryId === toTreasuryId) {
-        alert('لا يمكن التحويل لنفس الخزينة');
-        return;
+    setIsSubmitting(true);
+    try {
+      if (modalType === 'transfer') {
+        if (treasuryId === toTreasuryId) {
+          alert('لا يمكن التحويل لنفس الخزينة');
+          setIsSubmitting(false);
+          return;
+        }
+        
+        const sourceTreasuryObj = settings.treasuries.find(t => t.id === treasuryId);
+        const targetTreasuryObj = settings.treasuries.find(t => t.id === toTreasuryId);
+
+        const trxOut: Transaction = {
+          id: 'TRX-TRF-OUT-' + Date.now() + '-' + Math.random().toString(36).substring(2,7),
+          salonId: settings.salonId,
+          date,
+          createdAt: nowIso,
+          type: 'out',
+          amount,
+          category: 'transfer',
+          description: note || `تحويل إلى ${targetTreasuryObj?.name || toTreasuryId}`,
+          treasury: treasuryId,
+          treasuryId: treasuryId,
+          treasuryName: sourceTreasuryObj?.name,
+          branchId: activeBranchId,
+          branchCode: activeBranch?.code,
+          createdBy: currentUser?.name || 'الكاشير',
+          userId: currentUser?.id,
+          userName: currentUser?.name || 'الكاشير',
+          shiftDate: sDate,
+          shiftId: sId
+        } as any;
+
+        const trxIn: Transaction = {
+          id: 'TRX-TRF-IN-' + Date.now() + '-' + Math.random().toString(36).substring(2,7),
+          salonId: settings.salonId,
+          date,
+          createdAt: nowIso,
+          type: 'in',
+          amount,
+          category: 'transfer',
+          description: note || `تحويل من ${sourceTreasuryObj?.name || treasuryId}`,
+          treasury: toTreasuryId,
+          treasuryId: toTreasuryId,
+          treasuryName: targetTreasuryObj?.name,
+          branchId: activeBranchId,
+          branchCode: activeBranch?.code,
+          createdBy: currentUser?.name || 'الكاشير',
+          userId: currentUser?.id,
+          userName: currentUser?.name || 'الكاشير',
+          shiftDate: sDate,
+          shiftId: sId
+        } as any;
+        
+        // حفظ فوري ومؤكد في قاعدة بيانات Supabase
+        await DB.saveTransaction(trxOut, settings.salonId);
+        await DB.saveTransaction(trxIn, settings.salonId);
+
+        setTransactions((prev: Transaction[]) => [...prev, trxOut, trxIn]);
+      } else {
+        const selectedTreasuryObj = settings.treasuries.find(t => t.id === treasuryId);
+        const trx: Transaction = {
+          id: `TRX-${modalType.toUpperCase()}-` + Date.now() + '-' + Math.random().toString(36).substring(2,7),
+          salonId: settings.salonId,
+          date,
+          createdAt: nowIso,
+          type: modalType === 'deposit' ? 'in' : 'out',
+          amount,
+          category,
+          description: note,
+          treasury: treasuryId,
+          treasuryId: treasuryId,
+          treasuryName: selectedTreasuryObj?.name,
+          branchId: activeBranchId,
+          branchCode: activeBranch?.code,
+          createdBy: currentUser?.name || 'الكاشير',
+          userId: currentUser?.id,
+          userName: currentUser?.name || 'الكاشير',
+          shiftDate: sDate,
+          shiftId: sId
+        } as any;
+
+        await DB.saveTransaction(trx, settings.salonId);
+        setTransactions((prev: Transaction[]) => [...prev, trx]);
       }
       
-      const trxOut: Transaction = {
-        id: 'TRX-TRF-OUT-' + Math.random().toString(36).substring(2,9),
-        date,
-        createdAt: nowIso,
-        type: 'out',
-        amount,
-        category: 'transfer',
-        description: note || `تحويل إلى ${settings.treasuries.find(t => t.id === toTreasuryId)?.name}`,
-        treasury: treasuryId,
-        branchId: activeBranchId,
-        branchCode: activeBranch?.code,
-        createdBy: currentUser?.name || 'الكاشير',
-        userId: currentUser?.id,
-        userName: currentUser?.name || 'الكاشير',
-        shiftDate: sDate,
-        shiftId: sId
-      } as any;
-      const trxIn: Transaction = {
-        id: 'TRX-TRF-IN-' + Math.random().toString(36).substring(2,9),
-        date,
-        createdAt: nowIso,
-        type: 'in',
-        amount,
-        category: 'transfer',
-        description: note || `تحويل من ${settings.treasuries.find(t => t.id === treasuryId)?.name}`,
-        treasury: toTreasuryId,
-        branchId: activeBranchId,
-        branchCode: activeBranch?.code,
-        createdBy: currentUser?.name || 'الكاشير',
-        userId: currentUser?.id,
-        userName: currentUser?.name || 'الكاشير',
-        shiftDate: sDate,
-        shiftId: sId
-      } as any;
-      
-      setTransactions([...transactions, trxOut, trxIn]);
-    } else {
-      const trx: Transaction = {
-        id: `TRX-${modalType.toUpperCase()}-` + Math.random().toString(36).substring(2,9),
-        date,
-        createdAt: nowIso,
-        type: modalType === 'deposit' ? 'in' : 'out',
-        amount,
-        category,
-        description: note,
-        treasury: treasuryId,
-        branchId: activeBranchId,
-        branchCode: activeBranch?.code,
-        createdBy: currentUser?.name || 'الكاشير',
-        userId: currentUser?.id,
-        userName: currentUser?.name || 'الكاشير',
-        shiftDate: sDate,
-        shiftId: sId
-      } as any;
-      setTransactions([...transactions, trx]);
+      setModalType(null);
+    } catch (err) {
+      console.error('Error saving transaction in TreasuryScreen:', err);
+      alert('حدث خطأ أثناء حفظ الحركة المالية. يرجى المحاولة مرة أخرى.');
+    } finally {
+      setIsSubmitting(false);
     }
-    
-    setModalType(null);
   };
 
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -353,7 +402,21 @@ export function TreasuryScreen({
   }, [bookings, shiftData?.date, settings.treasuries]);
 
   const getTreasuryTotals = (tId: string) => {
-    const trxs = unifiedTransactions.filter(t => t.treasury === tId || (t as any).treasuryId === tId);
+    const targetTreasury = settings.treasuries.find(t => t.id === tId);
+    const targetName = targetTreasury ? targetTreasury.name : '';
+
+    const trxs = unifiedTransactions.filter(t => {
+      const val = (t.treasury || (t as any).treasuryId || (t as any).treasury_id || '').trim();
+      const pMethod = ((t as any).paymentMethod || (t as any).payment_method || '').trim();
+      const tName = ((t as any).treasuryName || '').trim();
+
+      if (val === tId || (targetName && val === targetName)) return true;
+      if (tName && (tName === targetName || tName === tId)) return true;
+      if (pMethod && (pMethod === tId || (targetName && pMethod === targetName))) return true;
+
+      return isMatchingTreasury(val, tId, settings.treasuries) ||
+             (pMethod ? isMatchingTreasury(pMethod, tId, settings.treasuries) : false);
+    });
 
     // Inflows (المقبوضات والإيرادات)
     const totalCustody = trxs
@@ -703,21 +766,21 @@ export function TreasuryScreen({
               {/* Actions */}
               <div className="flex gap-2 mt-4 pt-4 border-t border-white/10">
                 <button
-                  onClick={() => handleOpenModal('deposit')}
+                  onClick={() => handleOpenModal('deposit', treasury.id)}
                   className="flex-1 bg-white/10 hover:bg-white/20 text-white font-bold py-2 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <ArrowDownRight size={14} />
                   <span>إيداع</span>
                 </button>
                 <button
-                  onClick={() => handleOpenModal('withdraw')}
+                  onClick={() => handleOpenModal('withdraw', treasury.id)}
                   className="flex-1 bg-white/10 hover:bg-white/20 text-white font-bold py-2 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <ArrowUpRight size={14} />
                   <span>صرف</span>
                 </button>
                 <button
-                  onClick={() => handleOpenModal('transfer')}
+                  onClick={() => handleOpenModal('transfer', treasury.id)}
                   className="flex-1 bg-white/10 hover:bg-white/20 text-white font-bold py-2 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <ArrowRightLeft size={14} />
@@ -1114,9 +1177,17 @@ export function TreasuryScreen({
             <div className="p-4 bg-slate-50 border-t border-slate-100">
               <button 
                 onClick={handleSubmit}
-                className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-3 rounded-xl transition-colors"
+                disabled={isSubmitting}
+                className="w-full bg-primary hover:bg-primary-dark disabled:opacity-50 text-white font-bold py-3 rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-2"
               >
-                تأكيد وتسجيل
+                {isSubmitting ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" />
+                    <span>جاري الحفظ والتسجيل...</span>
+                  </>
+                ) : (
+                  <span>تأكيد وتسجيل</span>
+                )}
               </button>
             </div>
           </div>

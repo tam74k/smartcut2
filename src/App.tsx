@@ -1925,7 +1925,19 @@ export default function App() {
       const tagged = next.map(t => ({ ...t, salonId: (t as any).salonId || currentSalonId, branchId: (t as any).branchId || activeBranchId } as any));
       const other = prev.filter(t => (t as any).salonId && (t as any).salonId !== currentSalonId && (t as any).salon_id !== currentSalonId);
       const res = [...other, ...tagged];
-      DB.saveTransactions(tagged);
+
+      // Save only new or modified transactions instead of re-saving the entire database
+      const prevMap = new Map(currentSalonTrxs.map(t => [t.id, t]));
+      const changed = tagged.filter(t => {
+        const old = prevMap.get(t.id);
+        if (!old) return true;
+        return t.amount !== old.amount || t.treasury !== old.treasury || t.type !== old.type || t.category !== old.category;
+      });
+
+      if (changed.length > 0) {
+        DB.saveTransactions(changed, currentSalonId);
+      }
+
       return res;
     });
   };
