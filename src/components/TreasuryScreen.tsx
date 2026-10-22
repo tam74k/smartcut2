@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { AppSettings, Transaction, Treasury, Branch, AppUser, Invoice, Booking } from '../types';
-import { Wallet, ArrowDownRight, ArrowUpRight, ArrowRightLeft, XCircle, Download, Building2, Trash2, Loader2, CalendarCheck, Printer, Banknote, CreditCard, Landmark, Coins, User, X } from 'lucide-react';
+import { Wallet, ArrowDownRight, ArrowUpRight, ArrowRightLeft, XCircle, Download, Building2, Trash2, Loader2, CalendarCheck, Printer, Banknote, CreditCard, Landmark, Coins, User, X, AlertCircle } from 'lucide-react';
 import { exportToExcel } from '../utils/exportExcel';
 import { AuthService } from '../services/auth';
 import { DB } from '../services/db';
@@ -697,9 +697,21 @@ export function TreasuryScreen({
                   <Wallet size={18} className={isPrimary ? 'text-emerald-200' : 'text-slate-400'} />
                 </div>
                 
-                <h3 className="text-3xl sm:text-4xl font-black tracking-tight my-2">
-                  {balance.toFixed(2)} <span className="text-base sm:text-lg font-bold opacity-80">{settings.currency}</span>
-                </h3>
+                <div className="my-2">
+                  <h3 className={`text-3xl sm:text-4xl font-black tracking-tight flex items-baseline gap-2 ${
+                    balance < 0 ? 'text-rose-300' : 'text-white'
+                  }`}>
+                    <span dir="ltr" className="font-mono">
+                      {balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                    <span className="text-base sm:text-lg font-bold opacity-80">{settings.currency}</span>
+                  </h3>
+                  {balance < 0 && (
+                    <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-rose-500/30 text-rose-200 border border-rose-400/40 text-[11px] font-black mt-1">
+                      <span>⚠️ رصيد بالسالب (عجز / مديونية)</span>
+                    </div>
+                  )}
+                </div>
 
                 {/* Custody Breakdown Tag */}
                 {totalCustody > 0 && (
@@ -1105,6 +1117,34 @@ export function TreasuryScreen({
                   تنبيه: لا توجد وردية مفتوحة حالياً. سيتم تسجيل الحركة بتاريخ اليوم الافتراضي.
                 </div>
               )}
+              {modalType === 'withdraw' && (() => {
+                const targetBalance = getTreasuryTotals(treasuryId).balance;
+                if (targetBalance <= 0) {
+                  return (
+                    <div className="p-3 bg-rose-50 text-rose-800 text-xs rounded-xl border border-rose-200 font-bold space-y-1">
+                      <div className="flex items-center gap-1.5 font-black text-rose-900">
+                        <AlertCircle size={15} />
+                        <span>تنبيه: رصيد هذه الخزينة حالياً ({targetBalance.toFixed(2)} {settings.currency})</span>
+                      </div>
+                      <p className="text-[11px] text-rose-700 font-normal">
+                        الرصيد بالفعل صفر أو بالسالب. إجراء عملية صرف جديدة سيزيد العجز بالسالب! لتصفير أي رصيد سالب يتم عمل إيداع تسوية وليس صرف.
+                      </p>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+              {modalType === 'deposit' && (() => {
+                const targetBalance = getTreasuryTotals(treasuryId).balance;
+                if (targetBalance < 0) {
+                  return (
+                    <div className="p-3 bg-emerald-50 text-emerald-800 text-xs rounded-xl border border-emerald-200 font-bold">
+                      <span>💡 الخزينة بها عجز بالسالب ({targetBalance.toFixed(2)} {settings.currency}). يمكنك إيداع {Math.abs(targetBalance).toFixed(2)} لتصفيرها تماماً للوصول إلى 0.00.</span>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
               <div>
                 <label className="block text-sm font-bold text-slate-700 mb-1">التاريخ (الوردية المفتوحة)</label>
                 <input type="date" value={transactionDate} onChange={e => setTransactionDate(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary" />
