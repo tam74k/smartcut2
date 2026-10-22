@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { AppSettings, Transaction, Invoice, Treasury, Employee, FingerprintLog } from '../types';
 import { calculateFingerprintProcessedDate } from '../services/db';
+import { resolveMainTreasury, getTransactionTargetTreasuryId } from '../utils/treasury';
 
 function extractDatesFromLabel(label: string): string[] {
   const matches = label.match(/\d{4}-\d{2}-\d{2}/g);
@@ -170,7 +171,10 @@ export function ClosingReportReceipt({
   }, [dateLabel, employees, fingerprintLogs, attendanceSummary]);
   // Helper to categorize
   const getStats = (treasuryId: string) => {
-    const tTrx = transactions.filter(t => t.treasury === treasuryId || (t as any).treasuryId === treasuryId);
+    const tTrx = transactions.filter(t => {
+      const assigned = getTransactionTargetTreasuryId(t, settings.treasuries);
+      return assigned === treasuryId;
+    });
 
     // Track invoice IDs that already exist as transactions in tTrx to avoid double counting
     const invoiceIdsInTrx = new Set(
@@ -185,7 +189,10 @@ export function ClosingReportReceipt({
       const methods = inv.paymentMethods && inv.paymentMethods.length > 0
         ? inv.paymentMethods
         : [{ amount: Number(inv.total) || 0, treasuryId: inv.paymentMethod || 'cash' }];
-      const matched = methods.filter((pm: any) => pm.treasuryId === treasuryId);
+      const matched = methods.filter((pm: any) => {
+        const pmTarget = getTransactionTargetTreasuryId({ treasury: pm.treasuryId || pm.paymentMethod }, settings.treasuries);
+        return pmTarget === treasuryId;
+      });
       return sum + matched.reduce((s: number, m: any) => s + (Number(m.amount) || 0), 0);
     }, 0);
 
@@ -218,13 +225,13 @@ export function ClosingReportReceipt({
       );
     };
 
-    const tips = tTrx.filter(t => t.type === 'out' && isTipTrx(t)).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    const expenses = tTrx.filter(t => t.type === 'out' && !isTipTrx(t) && (t.category === 'expense' || t.category === 'مصروفات')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    const salaries = tTrx.filter(t => t.type === 'out' && (t.category === 'salary' || t.category === 'رواتب')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    const advances = tTrx.filter(t => t.type === 'out' && (t.category === 'hr_advance' || t.category === 'staff_advance' || t.category === 'advance' || t.category === 'سلف')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    const purchases = tTrx.filter(t => t.type === 'out' && (t.category === 'purchase' || t.category === 'مشتريات')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    const supplierPayments = tTrx.filter(t => t.type === 'out' && (t.category === 'supplier_payment' || t.category === 'supplier' || t.category === 'سداد مورد')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    const commissions = tTrx.filter(t => t.type === 'out' && (
+    const tips = tTrx.filter(t => (t.type === 'out' || (t.type as string) === 'expense') && isTipTrx(t)).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    const expenses = tTrx.filter(t => (t.type === 'out' || (t.type as string) === 'expense') && !isTipTrx(t) && (t.category === 'expense' || t.category === 'مصروفات')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    const salaries = tTrx.filter(t => (t.type === 'out' || (t.type as string) === 'expense') && (t.category === 'salary' || t.category === 'رواتب' || t.category === 'راتب')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    const advances = tTrx.filter(t => (t.type === 'out' || (t.type as string) === 'expense') && (t.category === 'hr_advance' || t.category === 'staff_advance' || t.category === 'advance' || t.category === 'سلف' || t.category === 'سلفة')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    const purchases = tTrx.filter(t => (t.type === 'out' || (t.type as string) === 'expense') && (t.category === 'purchase' || t.category === 'مشتريات')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    const supplierPayments = tTrx.filter(t => (t.type === 'out' || (t.type as string) === 'expense') && (t.category === 'supplier_payment' || t.category === 'supplier' || t.category === 'سداد مورد')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    const commissions = tTrx.filter(t => (t.type === 'out' || (t.type as string) === 'expense') && (
       t.category === 'commission' || 
       t.category === 'commissions' || 
       t.category === 'commission_payout' || 
@@ -235,9 +242,9 @@ export function ClosingReportReceipt({
     )).reduce((s, x) => s + (Number(x.amount) || 0), 0);
     
     const transfersIn = tTrx.filter(t => t.type === 'in' && t.category === 'transfer').reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    const transfersOut = tTrx.filter(t => t.type === 'out' && t.category === 'transfer').reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    const withdrawals = tTrx.filter(t => t.type === 'out' && (t.category === 'withdrawal' || t.category === 'سحب')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    const deposits = tTrx.filter(t => t.type === 'in' && (t.category === 'deposit' || t.category === 'إيداع')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    const transfersOut = tTrx.filter(t => (t.type === 'out' || (t.type as string) === 'expense') && t.category === 'transfer').reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    const withdrawals = tTrx.filter(t => (t.type === 'out' || (t.type as string) === 'expense') && (t.category === 'withdrawal' || t.category === 'سحب' || t.category === 'partner_withdrawal')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    const deposits = tTrx.filter(t => t.type === 'in' && (t.category === 'deposit' || t.category === 'إيداع' || t.category === 'partner_deposit')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
     const initialCashSum = tTrx.filter(t => t.type === 'in' && (t.category === 'عهدة افتتاحية' || t.category === 'initial_cash')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
 
     const net = (income + transfersIn + deposits + initialCashSum) - (expenses + salaries + advances + purchases + supplierPayments + commissions + tips + transfersOut + withdrawals);
@@ -305,64 +312,169 @@ export function ClosingReportReceipt({
               <span>إجمالي ساعات العمل:</span>
               <span className="font-mono font-bold">{attendanceStats.workedHoursStr}</span>
             </div>
-            <div className="flex justify-between">
-              <span>إجمالي دقائق التأخير:</span>
-              <span className={`font-mono font-bold ${attendanceStats.totalDelayMinutes > 0 ? 'text-red-700' : ''}`}>
-                {attendanceStats.totalDelayMinutes} دقيقة
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span>ساعات العمل الإضافي:</span>
-              <span className="font-mono font-bold text-emerald-700">{attendanceStats.overtimeHoursStr}</span>
-            </div>
+            {attendanceStats.totalDelayMinutes > 0 && (
+              <div className="flex justify-between">
+                <span>إجمالي دقائق التأخير:</span>
+                <span className="font-mono font-bold text-red-700">
+                  {attendanceStats.totalDelayMinutes} دقيقة
+                </span>
+              </div>
+            )}
+            {attendanceStats.totalOvertimeMinutes > 0 && (
+              <div className="flex justify-between">
+                <span>ساعات العمل الإضافي:</span>
+                <span className="font-mono font-bold text-emerald-700">{attendanceStats.overtimeHoursStr}</span>
+              </div>
+            )}
           </div>
         </div>
       )}
 
-      {(settings.treasuries || []).map(treasury => {
-        const stats = getStats(treasury.id);
-        
-        // Skip rendering if treasury has absolutely no activity, to save space? 
-        // User asked "لكل طريقة دفع على حدى" - it's better to show it if there's any activity or it's the main one.
-        // Let's show all for completeness, or only those with non-zero net/income? Show all.
+      {(() => {
+        const mainTreasury = resolveMainTreasury(settings.treasuries);
 
-        return (
-          <div key={treasury.id} className="mb-6">
-            <h3 className="font-bold text-center border-b border-black border-dashed pb-1 mb-2 bg-gray-100">{treasury.name}</h3>
-            
-            <div className="space-y-1 text-xs">
-              {stats.initialCashSum > 0 && (
-                <div className="flex justify-between font-bold text-slate-800 bg-emerald-50 mb-1 px-1"><span>العهدة الافتتاحية:</span><span>{stats.initialCashSum.toFixed(2)}</span></div>
-              )}
-              <div className="flex justify-between"><span>إجمالي الدخل:</span><span>{stats.income.toFixed(2)}</span></div>
-              <div className="flex justify-between"><span>مبالغ الإضافة (بدون تحويل):</span><span>{stats.deposits.toFixed(2)}</span></div>
-              <div className="flex justify-between"><span>مبالغ الإضافة بالتحويل:</span><span>{stats.transfersIn.toFixed(2)}</span></div>
-              
-              <div className="flex justify-between mt-1 text-gray-700"><span>إجمالي المصروفات:</span><span>{stats.expenses.toFixed(2)}</span></div>
-              <div className="flex justify-between text-gray-700"><span>إجمالي رواتب:</span><span>{stats.salaries.toFixed(2)}</span></div>
-              <div className="flex justify-between text-gray-700"><span>إجمالي سلف:</span><span>{stats.advances.toFixed(2)}</span></div>
-              <div className="flex justify-between text-gray-700"><span>إجمالي مشتروات:</span><span>{stats.purchases.toFixed(2)}</span></div>
-              <div className="flex justify-between text-gray-700"><span>دفعات وسداد موردين:</span><span>{stats.supplierPayments.toFixed(2)}</span></div>
-              <div className="flex justify-between text-gray-700"><span>نسب الموظفين (العمولات):</span><span>{stats.commissions.toFixed(2)}</span></div>
-              {stats.tips > 0 && (
-                <div className="flex justify-between text-gray-700"><span>إكراميات وبقشيش (الدرج):</span><span>{stats.tips.toFixed(2)}</span></div>
-              )}
-              <div className="flex justify-between text-gray-700"><span>مبالغ السحب (بدون تحويل):</span><span>{stats.withdrawals.toFixed(2)}</span></div>
-              <div className="flex justify-between text-gray-700"><span>مبالغ السحب بالتحويل:</span><span>{stats.transfersOut.toFixed(2)}</span></div>
-              
-              <div className="flex justify-between font-bold border-t border-black border-dashed pt-1 mt-1 text-sm">
-                <span>الصافي:</span>
-                <span dir="ltr">{stats.net.toFixed(2)}</span>
-              </div>
-              {!treasury.isMain && stats.net > 0 && (
-                <div className="text-[10px] text-emerald-800 bg-emerald-50 rounded p-1 mt-1 text-center font-bold">
-                  سيتم تصفير هذا الصافي ونقله تلقائياً إلى الخزينة الرئيسية
-                </div>
-              )}
+        const visibleTreasuries = (settings.treasuries || []).filter(treasury => {
+          const stats = getStats(treasury.id);
+          const isMain = treasury.isMain || treasury.id === 'main' || treasury.id === mainTreasury.id;
+
+          if (isMain) {
+            // الخزنة الرئيسية: تظهر فقط لو حصل سحب منها أو تحويلات إليها أو منها فقط
+            return stats.withdrawals > 0 || stats.transfersIn > 0 || stats.transfersOut > 0;
+          }
+
+          // بقية الخزائن: إخفاء أي خزينة قيمتها صفر أو لا توجد بها حركات
+          const hasActivity = (
+            stats.income > 0 ||
+            stats.net !== 0 ||
+            stats.initialCashSum > 0 ||
+            stats.deposits > 0 ||
+            stats.transfersIn > 0 ||
+            stats.expenses > 0 ||
+            stats.salaries > 0 ||
+            stats.advances > 0 ||
+            stats.purchases > 0 ||
+            stats.supplierPayments > 0 ||
+            stats.commissions > 0 ||
+            stats.tips > 0 ||
+            stats.withdrawals > 0 ||
+            stats.transfersOut > 0
+          );
+          return hasActivity;
+        });
+
+        if (visibleTreasuries.length === 0) {
+          return (
+            <div className="text-center py-4 my-2 border-y border-black border-dashed text-xs text-gray-500 font-bold">
+              لا توجد حركات مالية مسجلة بالخزائن خلال هذه الوردية
             </div>
-          </div>
-        );
-      })}
+          );
+        }
+
+        return visibleTreasuries.map(treasury => {
+          const stats = getStats(treasury.id);
+          const isMain = treasury.isMain || treasury.id === 'main' || treasury.id === mainTreasury.id;
+
+          return (
+            <div key={treasury.id} className="mb-6">
+              <h3 className="font-bold text-center border-b border-black border-dashed pb-1 mb-2 bg-gray-100">
+                {treasury.name} {isMain ? '(الخزينة الرئيسية)' : ''}
+              </h3>
+              
+              <div className="space-y-1 text-xs">
+                {stats.initialCashSum > 0 && (
+                  <div className="flex justify-between font-bold text-slate-800 bg-emerald-50 mb-1 px-1">
+                    <span>العهدة الافتتاحية:</span>
+                    <span>{stats.initialCashSum.toFixed(2)}</span>
+                  </div>
+                )}
+                {stats.income > 0 && (
+                  <div className="flex justify-between">
+                    <span>إجمالي الدخل:</span>
+                    <span>{stats.income.toFixed(2)}</span>
+                  </div>
+                )}
+                {stats.deposits > 0 && (
+                  <div className="flex justify-between">
+                    <span>مبالغ الإضافة (بدون تحويل):</span>
+                    <span>{stats.deposits.toFixed(2)}</span>
+                  </div>
+                )}
+                {stats.transfersIn > 0 && (
+                  <div className="flex justify-between">
+                    <span>مبالغ الإضافة بالتحويل:</span>
+                    <span>{stats.transfersIn.toFixed(2)}</span>
+                  </div>
+                )}
+                
+                {stats.expenses > 0 && (
+                  <div className="flex justify-between text-gray-700">
+                    <span>إجمالي المصروفات:</span>
+                    <span>{stats.expenses.toFixed(2)}</span>
+                  </div>
+                )}
+                {stats.salaries > 0 && (
+                  <div className="flex justify-between text-gray-700">
+                    <span>إجمالي رواتب:</span>
+                    <span>{stats.salaries.toFixed(2)}</span>
+                  </div>
+                )}
+                {stats.advances > 0 && (
+                  <div className="flex justify-between text-gray-700">
+                    <span>إجمالي سلف:</span>
+                    <span>{stats.advances.toFixed(2)}</span>
+                  </div>
+                )}
+                {stats.purchases > 0 && (
+                  <div className="flex justify-between text-gray-700">
+                    <span>إجمالي مشتروات:</span>
+                    <span>{stats.purchases.toFixed(2)}</span>
+                  </div>
+                )}
+                {stats.supplierPayments > 0 && (
+                  <div className="flex justify-between text-gray-700">
+                    <span>دفعات وسداد موردين:</span>
+                    <span>{stats.supplierPayments.toFixed(2)}</span>
+                  </div>
+                )}
+                {stats.commissions > 0 && (
+                  <div className="flex justify-between text-gray-700">
+                    <span>نسب الموظفين (العمولات):</span>
+                    <span>{stats.commissions.toFixed(2)}</span>
+                  </div>
+                )}
+                {stats.tips > 0 && (
+                  <div className="flex justify-between text-gray-700">
+                    <span>إكراميات وبقشيش (الدرج):</span>
+                    <span>{stats.tips.toFixed(2)}</span>
+                  </div>
+                )}
+                {stats.withdrawals > 0 && (
+                  <div className="flex justify-between text-gray-700">
+                    <span>مبالغ السحب (بدون تحويل):</span>
+                    <span>{stats.withdrawals.toFixed(2)}</span>
+                  </div>
+                )}
+                {stats.transfersOut > 0 && (
+                  <div className="flex justify-between text-gray-700">
+                    <span>مبالغ السحب بالتحويل:</span>
+                    <span>{stats.transfersOut.toFixed(2)}</span>
+                  </div>
+                )}
+                
+                <div className="flex justify-between font-bold border-t border-black border-dashed pt-1 mt-1 text-sm">
+                  <span>الصافي:</span>
+                  <span dir="ltr">{stats.net.toFixed(2)}</span>
+                </div>
+                {!isMain && stats.net > 0 && (
+                  <div className="text-[10px] text-emerald-800 bg-emerald-50 rounded p-1 mt-1 text-center font-bold">
+                    سيتم تصفير هذا الصافي ونقله تلقائياً إلى الخزينة الرئيسية
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        });
+      })()}
 
       <div className="text-center mt-6 text-xs border-t border-black pt-2">
         <p>تم استخراج التقرير من النظام</p>
