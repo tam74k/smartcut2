@@ -1,5 +1,5 @@
-import { useState, useMemo, useEffect } from 'react';
-import { Package, Search, Plus, Edit2, Trash2, X, AlertTriangle, TrendingDown, FileSpreadsheet, Download, Upload, Check, Sparkles, AlertCircle, Printer, QrCode, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { useState, useMemo, useEffect, useRef } from 'react';
+import { Package, Search, Plus, Edit2, Trash2, X, AlertTriangle, TrendingDown, FileSpreadsheet, Download, Upload, Check, Sparkles, AlertCircle, Printer, QrCode, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, SlidersHorizontal, Maximize2, Minimize2 } from 'lucide-react';
 import { AppSettings, Product, Category, Employee, Supplier } from '../types';
 import { downloadProductsTemplate, readExcelFile } from '../utils/excelHelper';
 import { BarcodePrintModal } from './BarcodePrintModal';
@@ -44,6 +44,59 @@ export function ProductsScreen({
   const [productToDelete, setProductToDelete] = useState<string | null>(null);
   const [barcodeProduct, setBarcodeProduct] = useState<Product | null>(null);
   const [isSavingProduct, setIsSavingProduct] = useState(false);
+
+  // Table Horizontal & Drag-to-Scroll Refs and Helpers
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const [isMouseDown, setIsMouseDown] = useState(false);
+  const [startX, setStartX] = useState(0);
+  const [scrollLeftPos, setScrollLeftPos] = useState(0);
+  const [isFullscreenTable, setIsFullscreenTable] = useState(false);
+  const [isCompactDensity, setIsCompactDensity] = useState(false);
+
+  const scrollTable = (direction: 'left' | 'right' | 'start' | 'end') => {
+    if (!tableContainerRef.current) return;
+    const el = tableContainerRef.current;
+    if (direction === 'start') {
+      el.scrollTo({ left: 0, behavior: 'smooth' });
+    } else if (direction === 'end') {
+      el.scrollTo({ left: -el.scrollWidth, behavior: 'smooth' });
+    } else if (direction === 'left') {
+      el.scrollBy({ left: -380, behavior: 'smooth' });
+    } else if (direction === 'right') {
+      el.scrollBy({ left: 380, behavior: 'smooth' });
+    }
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    if ((e.target as HTMLElement).closest('button, input, select, a, textarea')) return;
+    if (!tableContainerRef.current) return;
+    setIsMouseDown(true);
+    setStartX(e.pageX - tableContainerRef.current.offsetLeft);
+    setScrollLeftPos(tableContainerRef.current.scrollLeft);
+  };
+
+  const handleMouseLeaveOrUp = () => {
+    setIsMouseDown(false);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isMouseDown || !tableContainerRef.current) return;
+    e.preventDefault();
+    const x = e.pageX - tableContainerRef.current.offsetLeft;
+    const walk = (x - startX) * 1.5;
+    tableContainerRef.current.scrollLeft = scrollLeftPos - walk;
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullscreenTable) {
+        setIsFullscreenTable(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isFullscreenTable]);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -869,27 +922,141 @@ export function ProductsScreen({
         </select>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+      {/* Horizontal Scroll Controller Toolbar for the Table */}
+      <div className="bg-white px-4 py-2.5 rounded-2xl border border-slate-200 shadow-2xs mb-3 flex flex-wrap items-center justify-between gap-3 select-none">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+            <SlidersHorizontal size={14} className="text-indigo-600" />
+            <span>شريط تحكم وتصفح الجدول (أفقياً):</span>
+          </span>
+          <span className="text-[11px] text-slate-500 hidden sm:inline">
+            (يمكنك التمرير بالأزرار، أو السحب بالماوس يميناً ويساراً، أو الضغط على Shift مع عجلة الماوس)
+          </span>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1.5">
+          {/* Density Mode: Compact to fit more items on screen */}
+          <button
+            type="button"
+            onClick={() => setIsCompactDensity(!isCompactDensity)}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 border ${
+              isCompactDensity 
+                ? 'bg-amber-100 border-amber-300 text-amber-950 font-black shadow-xs' 
+                : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-800'
+            }`}
+            title="تبديل حجم الصفوف ليظهر أكبر قدر من الأصناف في الشاشة دون تمرير كثير"
+          >
+            <span>{isCompactDensity ? 'عرض عادي واسع' : 'إظهار الشهر بالكامل (عرض مكثف)'}</span>
+          </button>
+
+          {/* Fullscreen Table Mode */}
+          <button
+            type="button"
+            onClick={() => setIsFullscreenTable(!isFullscreenTable)}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 border ${
+              isFullscreenTable
+                ? 'bg-indigo-600 text-white border-indigo-700 shadow-md font-black'
+                : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-800'
+            }`}
+            title="توسيع أو تصغير نافذة الجدول لملء الشاشة بالكامل"
+          >
+            {isFullscreenTable ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            <span>{isFullscreenTable ? 'استعادة الحجم' : 'ملء الشاشة ⤢'}</span>
+          </button>
+
+          <div className="h-5 w-px bg-slate-200 mx-1 hidden sm:block"></div>
+
+          <button
+            type="button"
+            onClick={() => scrollTable('start')}
+            className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all flex items-center gap-1 cursor-pointer active:scale-95"
+            title="انتقال إلى أول الجدول (اسم الصنف والباركود)"
+          >
+            <ChevronsRight size={15} />
+            <span>البداية</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => scrollTable('right')}
+            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl transition-all flex items-center gap-1 cursor-pointer active:scale-95"
+            title="تمرير لليمين (نحو اسم الصنف والنوع)"
+          >
+            <ChevronRight size={16} />
+            <span>يمين</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => scrollTable('left')}
+            className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-xl transition-all flex items-center gap-1 cursor-pointer active:scale-95"
+            title="تمرير لليسار (نحو الأسعار والكميات والإجراءات)"
+          >
+            <span>يسار</span>
+            <ChevronLeft size={16} />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => scrollTable('end')}
+            className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black rounded-xl transition-all flex items-center gap-1 cursor-pointer active:scale-95 shadow-xs"
+            title="انتقال إلى نهاية الجدول (الأسعار، العمولات، والإجراءات)"
+          >
+            <span>الصافي والعمليات</span>
+            <ChevronsLeft size={15} />
+          </button>
+        </div>
+      </div>
+
+      <div className={`bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden transition-all duration-200 ${
+        isFullscreenTable ? 'fixed inset-3 z-50 shadow-2xl p-4 flex flex-col bg-white overflow-hidden border-2 border-indigo-500' : ''
+      }`}>
+        {isFullscreenTable && (
+          <div className="flex justify-between items-center mb-3 pb-2 border-b border-slate-100 shrink-0">
+            <h3 className="font-black text-sm text-slate-800 flex items-center gap-2">
+              <Package size={18} className="text-indigo-600" />
+              <span>جدول المنتجات والأصناف (وضع ملء الشاشة)</span>
+            </h3>
+            <button
+              onClick={() => setIsFullscreenTable(false)}
+              className="px-3 py-1 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 cursor-pointer flex items-center gap-1.5"
+            >
+              <X size={14} />
+              <span>إغلاق ملء الشاشة</span>
+            </button>
+          </div>
+        )}
+
         {/* Top Pagination Bar */}
         {renderPagination('top')}
 
-        <div className="overflow-x-auto w-full">
+        <div 
+          ref={tableContainerRef}
+          onMouseDown={handleMouseDown}
+          onMouseLeave={handleMouseLeaveOrUp}
+          onMouseUp={handleMouseLeaveOrUp}
+          onMouseMove={handleMouseMove}
+          className={`overflow-x-auto w-full custom-scrollbar touch-pan-x select-none ${
+            isFullscreenTable ? 'flex-1 overflow-y-auto' : ''
+          }`}
+          style={{ cursor: isMouseDown ? 'grabbing' : 'default' }}
+        >
           <table className="w-full text-right min-w-[1150px]">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-slate-500">
-                <th className="p-4 font-bold whitespace-nowrap">اسم المنتج</th>
-                <th className="p-4 font-bold whitespace-nowrap text-center">الحالة</th>
-                <th className="p-4 font-bold whitespace-nowrap">النوع</th>
-                <th className="p-4 font-bold whitespace-nowrap">التصنيف</th>
-                <th className="p-4 font-bold whitespace-nowrap">المورد</th>
-                <th className="p-4 font-bold whitespace-nowrap">سعر البيع</th>
-                <th className="p-4 font-bold whitespace-nowrap">سعر التكلفة</th>
-                <th className="p-4 font-bold whitespace-nowrap">أول المدة</th>
-                <th className="p-4 font-bold whitespace-nowrap">الرصيد الحالي</th>
-                <th className="p-4 font-bold whitespace-nowrap">تكلفة الرصيد</th>
-                <th className="p-4 font-bold whitespace-nowrap">حد الطلب</th>
-                <th className="p-4 font-bold whitespace-nowrap">العمولة</th>
-                <th className="p-4 font-bold whitespace-nowrap text-center">إجراءات</th>
+                <th className={`${isCompactDensity ? 'py-2 px-3 text-xs' : 'p-4'} font-bold whitespace-nowrap`}>اسم المنتج</th>
+                <th className={`${isCompactDensity ? 'py-2 px-3 text-xs' : 'p-4'} font-bold whitespace-nowrap text-center`}>الحالة</th>
+                <th className={`${isCompactDensity ? 'py-2 px-3 text-xs' : 'p-4'} font-bold whitespace-nowrap`}>النوع</th>
+                <th className={`${isCompactDensity ? 'py-2 px-3 text-xs' : 'p-4'} font-bold whitespace-nowrap`}>التصنيف</th>
+                <th className={`${isCompactDensity ? 'py-2 px-3 text-xs' : 'p-4'} font-bold whitespace-nowrap`}>المورد</th>
+                <th className={`${isCompactDensity ? 'py-2 px-3 text-xs' : 'p-4'} font-bold whitespace-nowrap`}>سعر البيع</th>
+                <th className={`${isCompactDensity ? 'py-2 px-3 text-xs' : 'p-4'} font-bold whitespace-nowrap`}>سعر التكلفة</th>
+                <th className={`${isCompactDensity ? 'py-2 px-3 text-xs' : 'p-4'} font-bold whitespace-nowrap`}>أول المدة</th>
+                <th className={`${isCompactDensity ? 'py-2 px-3 text-xs' : 'p-4'} font-bold whitespace-nowrap`}>الرصيد الحالي</th>
+                <th className={`${isCompactDensity ? 'py-2 px-3 text-xs' : 'p-4'} font-bold whitespace-nowrap`}>تكلفة الرصيد</th>
+                <th className={`${isCompactDensity ? 'py-2 px-3 text-xs' : 'p-4'} font-bold whitespace-nowrap`}>حد الطلب</th>
+                <th className={`${isCompactDensity ? 'py-2 px-3 text-xs' : 'p-4'} font-bold whitespace-nowrap`}>العمولة</th>
+                <th className={`${isCompactDensity ? 'py-2 px-3 text-xs' : 'p-4'} font-bold whitespace-nowrap text-center`}>إجراءات</th>
               </tr>
             </thead>
             <tbody>
@@ -900,7 +1067,7 @@ export function ProductsScreen({
               ) : (
                 paginatedProducts.map(p => (
                   <tr key={p.id} className={`border-b border-slate-100 hover:bg-slate-50 ${p.isActive === false ? 'bg-slate-50/50 opacity-75' : ''}`}>
-                    <td className="p-4 whitespace-nowrap">
+                    <td className={`${isCompactDensity ? 'py-2 px-3 text-xs' : 'p-4'} whitespace-nowrap`}>
                       <div className="font-bold text-slate-800">{p.name}</div>
                       {p.barcode ? (
                         <div className="inline-flex items-center gap-1 font-mono text-[11px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200 mt-1" title="باركود المنتج">
@@ -911,7 +1078,7 @@ export function ProductsScreen({
                         <div className="text-[10px] text-slate-400 mt-0.5">بدون باركود</div>
                       )}
                     </td>
-                    <td className="p-4 whitespace-nowrap text-center">
+                    <td className={`${isCompactDensity ? 'py-2 px-3 text-xs' : 'p-4'} whitespace-nowrap text-center`}>
                       <button
                         type="button"
                         onClick={() => handleToggleActive(p)}
@@ -926,7 +1093,7 @@ export function ProductsScreen({
                         {p.isActive !== false ? 'نشط' : 'غير نشط'}
                       </button>
                     </td>
-                    <td className="p-4 whitespace-nowrap">
+                    <td className={`${isCompactDensity ? 'py-2 px-3 text-xs' : 'p-4'} whitespace-nowrap`}>
                       <button
                         type="button"
                         onClick={() => handleToggleProductType(p)}
@@ -945,34 +1112,34 @@ export function ProductsScreen({
                         <span>{p.productType === 'raw_material' ? 'مادة خام' : 'للبيع'}</span>
                       </button>
                     </td>
-                    <td className="p-4 text-slate-600 whitespace-nowrap">{categories.find(c => c.id === p.categoryId)?.name || p.categoryId || '—'}</td>
-                    <td className="p-4 text-slate-600 font-medium whitespace-nowrap">
+                    <td className={`${isCompactDensity ? 'py-2 px-3 text-xs' : 'p-4'} text-slate-600 whitespace-nowrap`}>{categories.find(c => c.id === p.categoryId)?.name || p.categoryId || '—'}</td>
+                    <td className={`${isCompactDensity ? 'py-2 px-3 text-xs' : 'p-4'} text-slate-600 font-medium whitespace-nowrap`}>
                       {suppliers.find(s => s.id === p.supplierId)?.name || p.supplierName || '—'}
                     </td>
-                    <td className="p-4 font-bold whitespace-nowrap">
+                    <td className={`${isCompactDensity ? 'py-2 px-3 text-xs' : 'p-4'} font-bold whitespace-nowrap`}>
                       {p.productType === 'raw_material' ? (
                         <span className="text-slate-400 font-normal text-xs bg-slate-100 px-2 py-0.5 rounded">غير متاح للبيع</span>
                       ) : (
                         <span className="text-emerald-600">{p.sellPrice.toFixed(2)}</span>
                       )}
                     </td>
-                    <td className="p-4 font-bold text-rose-600 whitespace-nowrap">{p.costPrice.toFixed(2)}</td>
-                    <td className="p-4 text-slate-600 whitespace-nowrap">{p.openingStock}</td>
-                    <td className="p-4 font-bold whitespace-nowrap">
+                    <td className={`${isCompactDensity ? 'py-2 px-3 text-xs' : 'p-4'} font-bold text-rose-600 whitespace-nowrap`}>{p.costPrice.toFixed(2)}</td>
+                    <td className={`${isCompactDensity ? 'py-2 px-3 text-xs' : 'p-4'} text-slate-600 whitespace-nowrap`}>{p.openingStock}</td>
+                    <td className={`${isCompactDensity ? 'py-2 px-3 text-xs' : 'p-4'} font-bold whitespace-nowrap`}>
                       <span className={`px-2 py-1 rounded-md ${p.currentStock <= p.reorderLimit ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-700'}`}>
                         {p.currentStock}
                       </span>
                     </td>
-                    <td className="p-4 text-slate-600 font-bold whitespace-nowrap">{(p.currentStock * p.costPrice).toFixed(2)}</td>
-                    <td className="p-4 text-slate-500 whitespace-nowrap">{p.reorderLimit}</td>
-                    <td className="p-4 text-blue-600 whitespace-nowrap">
+                    <td className={`${isCompactDensity ? 'py-2 px-3 text-xs' : 'p-4'} text-slate-600 font-bold whitespace-nowrap`}>{(p.currentStock * p.costPrice).toFixed(2)}</td>
+                    <td className={`${isCompactDensity ? 'py-2 px-3 text-xs' : 'p-4'} text-slate-500 whitespace-nowrap`}>{p.reorderLimit}</td>
+                    <td className={`${isCompactDensity ? 'py-2 px-3 text-xs' : 'p-4'} text-blue-600 whitespace-nowrap`}>
                       {p.productType === 'raw_material' ? (
                         <span className="text-slate-400 font-normal text-xs">—</span>
                       ) : (
                         p.commission.toFixed(2)
                       )}
                     </td>
-                    <td className="p-4 whitespace-nowrap">
+                    <td className={`${isCompactDensity ? 'py-2 px-3 text-xs' : 'p-4'} whitespace-nowrap`}>
                       <div className="flex items-center gap-1.5">
                         <button 
                           onClick={() => setBarcodeProduct(p)} 
