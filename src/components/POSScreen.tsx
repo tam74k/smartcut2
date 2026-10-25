@@ -1563,10 +1563,6 @@ export function POSScreen({
 
       if (shouldPrint) {
         setShowReceiptModal(true);
-        // فتح أمر الطباعة فورياً ومباشرة
-        setTimeout(() => {
-          executePrintInvoiceReceipt('receipt-content', newInvoice.id);
-        }, 150);
       } else {
         setShowReceiptModal(false);
       }

@@ -156,16 +156,39 @@ export const executePrintInvoiceReceipt = (elementId: string, invoiceId?: string
 
   const printContent = printElement.outerHTML;
 
-  // Try popup window first
-  let printWindow: Window | null = null;
-  try {
-    printWindow = window.open('', '', 'width=450,height=650');
-  } catch {
-    printWindow = null;
+  // 1. Electron Desktop App silent direct print (Zero dialogs!)
+  if (typeof window !== 'undefined' && (window as any).desktopAPI?.printSilent) {
+    try {
+      (window as any).desktopAPI.printSilent({
+        html: printContent,
+        deviceName: ''
+      });
+      return;
+    } catch (e) {
+      console.warn('desktopAPI printSilent notice:', e);
+    }
   }
 
-  if (printWindow && !printWindow.closed) {
-    printWindow.document.write(`<!DOCTYPE html>
+  // 2. Direct hidden iframe print (No popup windows, silent printing if kiosk-printing is configured)
+  try {
+    const oldIframe = document.getElementById('direct-receipt-print-iframe');
+    if (oldIframe) oldIframe.remove();
+
+    const iframe = document.createElement('iframe');
+    iframe.id = 'direct-receipt-print-iframe';
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    iframe.style.visibility = 'hidden';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (doc) {
+      doc.open();
+      doc.write(`<!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
   <meta charset="utf-8">
@@ -205,36 +228,39 @@ export const executePrintInvoiceReceipt = (elementId: string, invoiceId?: string
 </head>
 <body>
   ${printContent}
-  <script>
-    window.addEventListener('load', function() {
-      setTimeout(function() {
-        window.focus();
-        window.print();
-        setTimeout(function() { window.close(); }, 500);
-      }, 150);
-    });
-    setTimeout(function() {
-      window.focus();
-      window.print();
-      setTimeout(function() { window.close(); }, 500);
-    }, 450);
-  </script>
 </body>
 </html>`);
-    printWindow.document.close();
+      doc.close();
 
-    printWindow.setTimeout(() => {
-      try {
-        printWindow?.focus();
-        printWindow?.print();
-      } catch (e) {
-        console.warn('Print popup closed or failed:', e);
+      const trigger = () => {
+        try {
+          iframe.contentWindow?.focus();
+          iframe.contentWindow?.print();
+        } catch (e) {
+          console.warn('Iframe print error:', e);
+        }
+        setTimeout(() => {
+          if (document.body.contains(iframe)) {
+            iframe.remove();
+          }
+        }, 3000);
+      };
+
+      const img = doc.querySelector('img');
+      if (img && !img.complete) {
+        img.onload = () => setTimeout(trigger, 50);
+        img.onerror = () => setTimeout(trigger, 50);
+        setTimeout(trigger, 300);
+      } else {
+        setTimeout(trigger, 80);
       }
-    }, 400);
-    return;
+      return;
+    }
+  } catch (err) {
+    console.error('Direct iframe print failed, falling back:', err);
   }
 
-  // Direct DOM insertion fallback matching BookingsScreen
+  // 3. Fallback to in-DOM print
   const printEl = document.createElement('div');
   printEl.id = 'print-invoice-receipt-direct';
   printEl.className = 'hidden print:block fixed inset-0 bg-white z-[9999] p-2 text-black';
