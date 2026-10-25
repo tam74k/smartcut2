@@ -10,6 +10,7 @@ import { InvoicesImportModal } from './InvoicesImportModal';
 import { SalesReturnModal } from './SalesReturnModal';
 import { generateCode39Svg } from '../utils/printQueueSlip';
 import { InvoiceReceiptCard, executePrintInvoiceReceipt } from './InvoiceReceiptCard';
+import { isWaselInvoice } from '../utils/commissionHelper';
 
 export const getEffectiveInvoiceTotal = (inv: Invoice | any): number => {
   if (!inv) return 0;
@@ -72,7 +73,7 @@ export function InvoicesScreen({
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [branchFilter, setBranchFilter] = useState<string>('all');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'cancelled' | 'unpaid' | 'deferred' | 'partially_paid' | 'refunded' | 'partial_refund'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'wasel' | 'cancelled' | 'unpaid' | 'deferred' | 'partially_paid' | 'refunded' | 'partial_refund'>('all');
   const [returnTargetInvoice, setReturnTargetInvoice] = useState<Invoice | null>(null);
   const [paymentFilter, setPaymentFilter] = useState<string>('all');
   const [showFilters, setShowFilters] = useState(false);
@@ -317,7 +318,9 @@ export function InvoicesScreen({
       if (dateTo && invDateStr > dateTo) return false;
       
       // Status filter
-      if (statusFilter === 'refunded') {
+      if (statusFilter === 'wasel') {
+        if (!isWaselInvoice(inv)) return false;
+      } else if (statusFilter === 'refunded') {
         if (inv.status !== 'refunded') return false;
       } else if (statusFilter === 'partial_refund') {
         const hasPartial = salesReturns.some(r => r.originalInvoiceId === inv.id && r.status !== 'cancelled') && inv.status !== 'refunded';
@@ -328,7 +331,14 @@ export function InvoicesScreen({
       
       // Payment filter
       if (paymentFilter !== 'all') {
-        if (!inv.paymentMethods || !inv.paymentMethods.some(pm => pm.treasuryId === paymentFilter)) return false;
+        if (paymentFilter === 'wasel_free') {
+          if (!isWaselInvoice(inv)) return false;
+        } else {
+          const hasPm = (inv.paymentMethods && inv.paymentMethods.some(pm => pm.treasuryId === paymentFilter)) || 
+                        inv.paymentMethod === paymentFilter || 
+                        (inv as any).treasuryId === paymentFilter;
+          if (!hasPm) return false;
+        }
       }
       
       // Search
@@ -432,6 +442,7 @@ export function InvoicesScreen({
             <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)} className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary font-bold">
               <option value="all">الكل</option>
               <option value="completed">مكتملة ومسددة</option>
+              <option value="wasel">واصل (خدمات مجانية)</option>
               <option value="deferred">مؤجلة بالكامل</option>
               <option value="partially_paid">مسددة جزئياً</option>
               <option value="partial_refund">مرتجع جزئي</option>
@@ -442,8 +453,9 @@ export function InvoicesScreen({
           </div>
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">طريقة الدفع</label>
-            <select value={paymentFilter} onChange={e => setPaymentFilter(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary">
+            <select value={paymentFilter} onChange={e => setPaymentFilter(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary font-bold">
               <option value="all">الكل</option>
+              <option value="wasel_free">واصل (خدمات مجانية)</option>
               {settings.treasuries.filter(t => !t.isMain).map(t => (
                 <option key={t.id} value={t.id}>{t.name}</option>
               ))}
