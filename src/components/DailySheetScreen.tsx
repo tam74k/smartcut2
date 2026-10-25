@@ -497,49 +497,59 @@ export function DailySheetScreen({
 
   // Excel Export
   const handleExportExcel = () => {
-    const headers = ['م'];
-    activeEmployees.forEach(emp => {
-      headers.push(`${emp.name} - رقم`);
-      registeredMethods.forEach(m => headers.push(`${emp.name} - ${m.name}`));
-      headers.push(`${emp.name} - واصل`);
-    });
-    headers.push('المدفوعات - الاسم', 'المدفوعات - المبلغ', 'المصروفات - النوع', 'المصروفات - المبلغ');
-
-    const rows: any[][] = [];
-    for (let r = 0; r < maxRows; r++) {
-      const rowData: any[] = [r + 1];
-
-      activeEmployees.forEach((emp, empIdx) => {
-        const empInfo = employeeData[empIdx];
-        const inv = empInfo?.invoices[r];
-        if (inv) {
-          rowData.push(inv.invoiceId);
-          registeredMethods.forEach(m => rowData.push(inv.methodAmounts[m.id] ? inv.methodAmounts[m.id].toFixed(2) : ''));
-          rowData.push(inv.waselAmount ? inv.waselAmount.toFixed(2) : '');
-        } else {
-          rowData.push('');
-          registeredMethods.forEach(() => rowData.push(''));
-          rowData.push('');
-        }
+    try {
+      const headers = ['م'];
+      activeEmployees.forEach(emp => {
+        headers.push(`${emp.name} - رقم`);
+        registeredMethods.forEach(m => headers.push(`${emp.name} - ${m.name}`));
+        headers.push(`${emp.name} - واصل`);
       });
+      headers.push('المدفوعات - الاسم', 'المدفوعات - المبلغ', 'المصروفات - النوع', 'المصروفات - المبلغ');
 
-      const p = staffPayments[r];
-      rowData.push(p ? p.name : '', p ? p.amount.toFixed(2) : '');
+      const rows: any[][] = [];
+      for (let r = 0; r < maxRows; r++) {
+        const rowData: any[] = [r + 1];
 
-      const e = dayExpenses[r];
-      rowData.push(e ? e.type : '', e ? e.amount.toFixed(2) : '');
+        activeEmployees.forEach((emp, empIdx) => {
+          const empInfo = employeeData[empIdx];
+          const inv = empInfo?.invoices[r];
+          if (inv) {
+            rowData.push(inv.invoiceId);
+            registeredMethods.forEach(m => rowData.push(inv.methodAmounts[m.id] ? Number(inv.methodAmounts[m.id].toFixed(2)) : ''));
+            rowData.push(inv.waselAmount ? Number(inv.waselAmount.toFixed(2)) : '');
+          } else {
+            rowData.push('');
+            registeredMethods.forEach(() => rowData.push(''));
+            rowData.push('');
+          }
+        });
 
-      rows.push(rowData);
+        const p = staffPayments[r];
+        rowData.push(p ? p.name : '', p ? Number(p.amount.toFixed(2)) : '');
+
+        const e = dayExpenses[r];
+        rowData.push(e ? e.type : '', e ? Number(e.amount.toFixed(2)) : '');
+
+        rows.push(rowData);
+      }
+
+      const summaryRows: any[][] = [
+        ['', ...activeEmployees.flatMap((_, idx) => [`العدد: ${employeeData[idx]?.invoiceCount || 0}`, ...registeredMethods.map(() => ''), '']), '', `م: ${totalStaffPayments.toFixed(2)}`, '', `م: ${totalDayExpenses.toFixed(2)}`],
+        ['', ...activeEmployees.flatMap((_, idx) => [`الإجمالي: ${(((employeeData[idx]?.totalSales || 0) + (employeeData[idx]?.totalWasel || 0))).toFixed(2)}`, ...registeredMethods.map(() => ''), '']), '', '', '', ''],
+        ['', ...activeEmployees.flatMap((_, idx) => [`العمولة: ${(employeeData[idx]?.totalCommission || 0).toFixed(2)}`, ...registeredMethods.map(() => ''), '']), '', '', '', ''],
+        [`إجمالي الدخل: ${totalGrandIncome.toFixed(2)}`, `صافي الدخل: ${netIncome.toFixed(2)}`]
+      ];
+
+      exportToExcel(
+        `الكشف_اليومي_${selectedDate}`,
+        'الكشف اليومي',
+        headers,
+        [...rows, ...summaryRows]
+      );
+    } catch (err) {
+      console.error('Error exporting daily sheet:', err);
+      alert('حدث خطأ أثناء تصدير الكشف إلى Excel');
     }
-
-    exportToExcel(`الكشف_اليومي_${selectedDate}`, [
-      headers,
-      ...rows,
-      ['', ...activeEmployees.flatMap((_, idx) => [`العدد: ${employeeData[idx]?.invoiceCount}`, ...registeredMethods.map(() => ''), '']), '', `م: ${totalStaffPayments.toFixed(2)}`, '', `م: ${totalDayExpenses.toFixed(2)}`],
-      ['', ...activeEmployees.flatMap((_, idx) => [`الإجمالي: ${(((employeeData[idx]?.totalSales || 0) + (employeeData[idx]?.totalWasel || 0))).toFixed(2)}`, ...registeredMethods.map(() => ''), '']), '', '', '', ''],
-      ['', ...activeEmployees.flatMap((_, idx) => [`العمولة: ${employeeData[idx]?.totalCommission.toFixed(2)}`, ...registeredMethods.map(() => ''), '']), '', '', '', ''],
-      [`إجمالي الدخل: ${totalGrandIncome.toFixed(2)}`, `صافي الدخل: ${netIncome.toFixed(2)}`]
-    ]);
   };
 
   return (

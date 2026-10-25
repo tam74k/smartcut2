@@ -43,32 +43,75 @@ export function exportToCSV(filename: string, headers: string[], rows: (string |
 
 export function exportToExcel(
   filenameOrData: any, 
-  sheetNameOrFilename?: string, 
+  sheetNameOrFilename?: string | any[][], 
   headers?: string[], 
   rows?: (string | number)[][]
 ) {
   if (!checkCanExportExcel()) return;
   try {
-    const filename = typeof filenameOrData === 'string' ? filenameOrData : (sheetNameOrFilename || 'تقرير');
-    const sheetName = typeof filenameOrData === 'string' ? (sheetNameOrFilename || 'البيانات') : 'البيانات';
+    let filename = 'تقرير';
+    let sheetName = 'البيانات';
     let ws: XLSX.WorkSheet;
 
-    if (Array.isArray(filenameOrData) && typeof filenameOrData[0] === 'object' && !Array.isArray(filenameOrData[0])) {
-      ws = XLSX.utils.json_to_sheet(filenameOrData);
-    } else if (headers && rows) {
+    // Pattern 1: exportToExcel(filename, sheetName, headers, rows)
+    if (typeof filenameOrData === 'string' && typeof sheetNameOrFilename === 'string' && headers && rows) {
+      filename = filenameOrData;
+      sheetName = sheetNameOrFilename;
       const data = [headers, ...rows];
       ws = XLSX.utils.aoa_to_sheet(data);
-    } else {
-      ws = XLSX.utils.json_to_sheet(Array.isArray(filenameOrData) ? filenameOrData : []);
+    }
+    // Pattern 2: exportToExcel(filename, arrayOfArrays)
+    else if (typeof filenameOrData === 'string' && Array.isArray(sheetNameOrFilename)) {
+      filename = filenameOrData;
+      sheetName = 'البيانات';
+      ws = XLSX.utils.aoa_to_sheet(sheetNameOrFilename);
+    }
+    // Pattern 3: exportToExcel(filename, headers, rows) - 3 args
+    else if (typeof filenameOrData === 'string' && Array.isArray(sheetNameOrFilename) && Array.isArray(headers)) {
+      filename = filenameOrData;
+      sheetName = 'البيانات';
+      ws = XLSX.utils.aoa_to_sheet([sheetNameOrFilename as any, ...(headers as any)]);
+    }
+    // Pattern 4: exportToExcel(arrayOfArrays, filename)
+    else if (Array.isArray(filenameOrData) && Array.isArray(filenameOrData[0])) {
+      filename = typeof sheetNameOrFilename === 'string' ? sheetNameOrFilename : 'تقرير';
+      sheetName = 'البيانات';
+      ws = XLSX.utils.aoa_to_sheet(filenameOrData);
+    }
+    // Pattern 5: exportToExcel(arrayOfObjects, filename)
+    else if (Array.isArray(filenameOrData)) {
+      filename = typeof sheetNameOrFilename === 'string' ? sheetNameOrFilename : 'تقرير';
+      sheetName = 'البيانات';
+      ws = XLSX.utils.json_to_sheet(filenameOrData);
+    }
+    // Pattern 6: Fallback if headers and rows are present
+    else if (headers && rows) {
+      filename = typeof filenameOrData === 'string' ? filenameOrData : 'تقرير';
+      ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    }
+    else {
+      filename = typeof filenameOrData === 'string' ? filenameOrData : 'تقرير';
+      ws = XLSX.utils.aoa_to_sheet([['لا توجد بيانات']]);
+    }
+
+    // Set RTL view on sheet if supported
+    if (!ws['!views']) {
+      ws['!views'] = [{ RTL: true }];
     }
 
     const wb = XLSX.utils.book_new();
+    wb.Workbook = { Views: [{ RTL: true }] };
     XLSX.utils.book_append_sheet(wb, ws, sheetName);
     XLSX.writeFile(wb, `${filename.replace(/\.xlsx$/, '')}.xlsx`);
   } catch (error) {
     console.error('Failed to export XLSX:', error);
     if (headers && rows) {
       exportToCSV(typeof filenameOrData === 'string' ? filenameOrData : 'تقرير', headers, rows);
+    } else if (typeof filenameOrData === 'string' && Array.isArray(sheetNameOrFilename) && sheetNameOrFilename.length > 0) {
+      const [h, ...r] = sheetNameOrFilename;
+      exportToCSV(filenameOrData, h, r);
+    } else {
+      alert('حدث خطأ أثناء تصدير الملف');
     }
   }
 }
