@@ -31,7 +31,7 @@ import {
   isWaselInvoice 
 } from '../utils/commissionHelper';
 import { calculateEmployeeTargetCommission } from '../utils/targetCalculationHelper';
-import { exportToExcel } from '../utils/exportExcel';
+import { exportToExcel, exportTableToExcel } from '../utils/exportExcel';
 
 interface DailySheetScreenProps {
   settings: AppSettings;
@@ -498,6 +498,15 @@ export function DailySheetScreen({
   // Excel Export
   const handleExportExcel = () => {
     try {
+      // 1. Try to export the exact HTML table directly (includes salon title, date, merged headers & footers)
+      const success = exportTableToExcel(
+        'daily-sheet-table',
+        `الكشف_اليومي_${selectedDate}`,
+        'الكشف اليومي'
+      );
+      if (success) return;
+
+      // 2. Fallback to programmatic matrix export if table element is not found
       const headers = ['م'];
       activeEmployees.forEach(emp => {
         headers.push(`${emp.name} - رقم`);
@@ -505,6 +514,9 @@ export function DailySheetScreen({
         headers.push(`${emp.name} - واصل`);
       });
       headers.push('المدفوعات - الاسم', 'المدفوعات - المبلغ', 'المصروفات - النوع', 'المصروفات - المبلغ');
+
+      const titleRow1 = [settings.salonName || 'صالون', ...Array(headers.length - 1).fill('')];
+      const titleRow2 = [`الكشف اليومي — التاريخ: ${selectedDate}`, ...Array(headers.length - 1).fill('')];
 
       const rows: any[][] = [];
       for (let r = 0; r < maxRows; r++) {
@@ -544,7 +556,7 @@ export function DailySheetScreen({
         `الكشف_اليومي_${selectedDate}`,
         'الكشف اليومي',
         headers,
-        [...rows, ...summaryRows]
+        [titleRow1, titleRow2, [], headers, ...rows, ...summaryRows]
       );
     } catch (err) {
       console.error('Error exporting daily sheet:', err);
@@ -692,8 +704,32 @@ export function DailySheetScreen({
           </div>
         ) : (
           <div className="overflow-x-auto" id="daily-sheet-print-container">
-            <table className="w-full text-center border-collapse text-xs" style={{ minWidth: `${Math.max(900, totalTableCols * 38)}px` }}>
+            <table 
+              id="daily-sheet-table"
+              className="w-full text-center border-collapse text-xs" 
+              style={{ minWidth: `${Math.max(900, totalTableCols * 38)}px` }}
+            >
               <thead>
+                {/* Level 0: Salon Name & Sheet Date Banner Header */}
+                <tr>
+                  <th 
+                    colSpan={totalTableCols} 
+                    className="border border-black py-2.5 px-3 text-sm font-black text-center bg-slate-900 text-white font-mono"
+                    style={{ backgroundColor: '#1e293b', color: '#ffffff', fontSize: '13px', textAlign: 'center' }}
+                  >
+                    {settings.salonName || 'صالون'}
+                  </th>
+                </tr>
+                <tr>
+                  <th 
+                    colSpan={totalTableCols} 
+                    className="border border-black py-1.5 px-3 text-xs font-bold text-center bg-slate-800 text-amber-300 font-mono"
+                    style={{ backgroundColor: '#334155', color: '#fde047', fontSize: '11px', textAlign: 'center' }}
+                  >
+                    الكشف اليومي | التاريخ: {selectedDate}
+                  </th>
+                </tr>
+
                 {/* Level 1: Employee Names & Categories */}
                 <tr>
                   {activeEmployees.map(emp => (

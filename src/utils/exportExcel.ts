@@ -115,3 +115,51 @@ export function exportToExcel(
     }
   }
 }
+
+/**
+ * Exports an HTML table directly to an Excel file, preserving:
+ * - Colspans and rowspans as merged cells
+ * - Multi-level headers, grouped columns, and footers
+ * - Right-to-Left (RTL) worksheet layout
+ * - Custom column widths
+ */
+export function exportTableToExcel(
+  tableElement: HTMLTableElement | string, 
+  filename: string, 
+  sheetName: string = 'الكشف اليومي'
+): boolean {
+  if (!checkCanExportExcel()) return false;
+  try {
+    const el = typeof tableElement === 'string' 
+      ? document.getElementById(tableElement) as HTMLTableElement 
+      : tableElement;
+
+    if (!el) {
+      console.warn('Table element not found for exportTableToExcel');
+      return false;
+    }
+
+    const wb = XLSX.utils.table_to_book(el, { sheet: sheetName, raw: false });
+    const ws = wb.Sheets[sheetName];
+    if (ws) {
+      // Ensure RTL view
+      ws['!views'] = [{ RTL: true }];
+
+      // Set decent minimum column widths
+      if (ws['!ref']) {
+        const range = XLSX.utils.decode_range(ws['!ref']);
+        const cols = [];
+        for (let c = 0; c <= range.e.c; c++) {
+          cols.push({ wch: 14 });
+        }
+        ws['!cols'] = cols;
+      }
+    }
+    wb.Workbook = { Views: [{ RTL: true }] };
+    XLSX.writeFile(wb, `${filename.replace(/\.xlsx$/, '')}.xlsx`);
+    return true;
+  } catch (err) {
+    console.error('Failed to export table to Excel:', err);
+    return false;
+  }
+}
