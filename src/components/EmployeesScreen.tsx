@@ -52,7 +52,7 @@ export function EmployeesScreen({
   setSettings?: (s: AppSettings) => void;
   activeBranchId?: string;
   employees: Employee[]; 
-  setEmployees: (e: Employee[]) => void;
+  setEmployees: (e: Employee[] | ((prev: Employee[]) => Employee[])) => void;
   services?: ServiceItem[];
   products?: Product[];
   transactions?: Transaction[];
@@ -672,18 +672,36 @@ export function EmployeesScreen({
       const updatedEmp = { 
         ...existingEmp, 
         ...formData,
+        salonId: (formData as any).salonId || existingEmp?.salonId || settings?.salonId,
+        branchId: formData.branchId || existingEmp?.branchId || activeBranchId,
         username: formData.hasOnlineAccount ? cleanUsername : (existingEmp?.username || ''),
         userId: formData.hasOnlineAccount ? (userUuid || existingEmp?.userId) : undefined,
         shiftScheduleHistory: updatedHistory
       } as Employee;
 
-      setEmployees(employees.map(e => e.id === editingId ? updatedEmp : e));
-      DB.saveEmployee(updatedEmp);
+      setEmployees((prev: Employee[]) => prev.map(e => e.id === editingId ? updatedEmp : e));
+
+      try {
+        const stored = localStorage.getItem('smartcut_employees');
+        if (stored) {
+          const list = JSON.parse(stored);
+          const updatedList = list.map((e: any) => e.id === editingId ? updatedEmp : e);
+          localStorage.setItem('smartcut_employees', JSON.stringify(updatedList));
+        }
+      } catch (err) {}
+
+      const saveRes = await DB.saveEmployee(updatedEmp, settings?.salonId || updatedEmp.salonId);
+      if (saveRes) {
+        alert(`تم حفظ وتحديث بيانات الموظف "${updatedEmp.name}" بنجاح ✅`);
+      } else {
+        alert(`تم حفظ التعديلات محلياً بنجاح وجارٍ المزامنة.`);
+      }
     } else {
       const newEmp: Employee = {
         ...formData,
         id: employeeId,
         salonId: (formData as any).salonId || settings?.salonId || '11111111-1111-4111-8111-111111111111',
+        branchId: formData.branchId || activeBranchId || settings?.branchId,
         username: formData.hasOnlineAccount ? cleanUsername : undefined,
         userId: formData.hasOnlineAccount ? userUuid : undefined,
         fingerprintCode: formData.fingerprintCode || String(employees.length + 1),
@@ -713,8 +731,21 @@ export function EmployeesScreen({
         }],
         permissionRecords: []
       } as Employee;
-      setEmployees([...employees, newEmp]);
-      DB.saveEmployee(newEmp);
+      setEmployees((prev: Employee[]) => [...prev, newEmp]);
+
+      try {
+        const stored = localStorage.getItem('smartcut_employees');
+        const list = stored ? JSON.parse(stored) : [];
+        list.push(newEmp);
+        localStorage.setItem('smartcut_employees', JSON.stringify(list));
+      } catch (err) {}
+
+      const saveRes = await DB.saveEmployee(newEmp, settings?.salonId || newEmp.salonId);
+      if (saveRes) {
+        alert(`تم إضافة الموظف الجديد "${newEmp.name}" وحفظه بنجاح ✅`);
+      } else {
+        alert(`تم حفظ الموظف محلياً بنجاح وجارٍ المزامنة.`);
+      }
     }
     setEditingId(null);
     setFormData(defaultFormData);

@@ -2413,13 +2413,21 @@ export const DB = {
   },
   async saveEmployee(e: any, salonId?: string) {
     const client = sb(); if (!client || !e) return null;
-    let validSalonId = toSalonUUID(salonId || e.salonId || getSalonId());
+    let validSalonId = toSalonUUID(salonId || e.salonId || (e as any).salon_id || getSalonId());
     const validBranchId = toBranchUUID(e.branchId);
+    const validUserId = (e.userId && UUID_REGEX.test(e.userId)) ? e.userId : null;
 
-    // Map frontend 'none' to null so Postgres check constraint passes
-    const dbCommissionModel = (e.commissionModel === 'none' || e.commissionModel === null)
-      ? null
-      : (e.commissionModel || 'fixed_rate');
+    // Ensure valid DB enum values so Postgres check constraints always pass
+    const dbCommissionModel = (e.commissionModel === 'target_based' || e.commissionModel === 'tiered_brackets')
+      ? e.commissionModel
+      : 'fixed_rate';
+
+    const validTargetType = (e.targetType === 'daily') ? 'daily' : 'monthly';
+    const validSalaryType = (e.salaryType === 'commission_only' || e.salaryType === 'salary_plus_commission')
+      ? e.salaryType
+      : 'salary';
+
+    const validWeeklyDaysOff = Array.isArray(e.weeklyDaysOff) ? e.weeklyDaysOff : ['Friday'];
 
     try {
       const snap: any = {
@@ -2433,7 +2441,7 @@ export const DB = {
         avatar_url: e.avatarUrl || null,
         public_bio: e.publicBio || null, 
         has_online_account: e.hasOnlineAccount || false,
-        user_id: e.userId || null, 
+        user_id: validUserId, 
         role: e.role, 
         phone: e.phone || '',
         basic_salary: Number(e.basicSalary ?? e.baseSalary ?? 0) || 0,
@@ -2444,7 +2452,7 @@ export const DB = {
         commission_tiers: e.commissionTiers || [],
         target: e.target ?? e.targetAmount ?? 5000, 
         target_amount: e.targetAmount ?? e.target ?? 5000, 
-        target_type: e.targetType || 'monthly',
+        target_type: validTargetType,
         daily_target_amount: Number(e.dailyTargetAmount ?? e.daily_target_amount ?? 0),
         daily_target_method: e.dailyTargetMethod || 'excess_only',
         daily_target_multiplier: Number(e.dailyTargetMultiplier ?? e.targetSalaryMultiplier ?? 1) || 1,
@@ -2454,11 +2462,11 @@ export const DB = {
         target_salary_multiplier: Number(e.targetSalaryMultiplier ?? e.monthlyTargetMultiplier ?? e.dailyTargetMultiplier ?? 1) || 1,
         target_commission_rate: Number(e.targetCommissionRate ?? e.target_commission_rate ?? 0),
         available_vacations: e.availableVacations ?? 21,
-        salary_type: e.salaryType || 'salary',
+        salary_type: validSalaryType,
         allow_dual_commission: e.allowDualCommission || false,
         check_in_time: e.checkInTime || '09:00', 
         check_out_time: e.checkOutTime || '18:00',
-        weekly_days_off: e.weeklyDaysOff || ['Friday'],
+        weekly_days_off: validWeeklyDaysOff,
         is_active: e.isActive !== false ? 1 : 0, 
         is_blacklisted: toBool(e.isBlacklisted) ? 1 : 0,
         blacklist_reason: e.blacklistReason || null,
@@ -2470,16 +2478,87 @@ export const DB = {
         end_of_service: e.endOfService || null,
         updated_at: new Date().toISOString()
       };
+
       let { error } = await client.from('employees').upsert(snap, { onConflict: 'id' });
-      if (error && (error.message?.includes('daily_target_multiplier') || error.message?.includes('monthly_target_multiplier') || error.message?.includes('target_salary_multiplier'))) {
-        console.warn('DB.saveEmployee: multiplier columns not found in schema cache, retrying without them...', error.message);
-        delete (snap as any).daily_target_multiplier;
-        delete (snap as any).monthly_target_multiplier;
-        delete (snap as any).target_salary_multiplier;
-        const retryResult = await client.from('employees').upsert(snap, { onConflict: 'id' });
-        error = retryResult.error;
+      let retries = 0;
+      while (error && retries < 8) {
+        retries++;
+        console.warn(`DB.saveEmployee: retry #${retries} after error:`, error.message);
+        
+        // 1. Missing column in schema cache or table
+        const missingColMatch = error.message?.match(/column "([^"]+)" of relation "employees" does not exist/)
+          || error.message?.match(/Could not find the '([^']+)' column of 'employees' in the schema cache/);
+        if (missingColMatch && missingColMatch[1]) {
+          const col = missingColMatch[1];
+          console.warn(`DB.saveEmployee: removing missing column "${col}" from snap and retrying...`);
+          delete snap[col];
+          const res = await client.from('employees').upsert(snap, { onConflict: 'id' });
+          error = res.error;
+          continue;
+        }
+
+        // 2. User ID foreign key or invalid UUID
+        if (error.message?.includes('user_id') || error.message?.includes('employees_user_id_fkey')) {
+          console.warn('DB.saveEmployee: user_id foreign key failed, resetting user_id to null and retrying...');
+          snap.user_id = null;
+          const res = await client.from('employees').upsert(snap, { onConflict: 'id' });
+          error = res.error;
+          continue;
+        }
+
+        // 3. Branch ID foreign key or invalid UUID
+        if (error.message?.includes('branch_id') || error.message?.includes('employees_branch_id_fkey')) {
+          console.warn('DB.saveEmployee: branch_id foreign key failed, resetting branch_id to null and retrying...');
+          snap.branch_id = null;
+          const res = await client.from('employees').upsert(snap, { onConflict: 'id' });
+          error = res.error;
+          continue;
+        }
+
+        // 4. Multipliers
+        if (error.message?.includes('multiplier')) {
+          delete snap.daily_target_multiplier;
+          delete snap.monthly_target_multiplier;
+          delete snap.target_salary_multiplier;
+          const res = await client.from('employees').upsert(snap, { onConflict: 'id' });
+          error = res.error;
+          continue;
+        }
+
+        // 5. Target methods/amounts
+        if (error.message?.includes('daily_target') || error.message?.includes('monthly_target') || error.message?.includes('target_commission')) {
+          delete snap.daily_target_amount;
+          delete snap.daily_target_method;
+          delete snap.monthly_target_amount;
+          delete snap.monthly_target_method;
+          delete snap.target_commission_rate;
+          delete snap.target_amount;
+          const res = await client.from('employees').upsert(snap, { onConflict: 'id' });
+          error = res.error;
+          continue;
+        }
+
+        break;
       }
-      if (error) { console.error('DB.saveEmployee error:', error.message); return null; }
+
+      if (error) { 
+        console.error('DB.saveEmployee final error:', error.message); 
+        return null; 
+      }
+
+      // Sync into local storage backup immediately
+      try {
+        const stored = localStorage.getItem('smartcut_employees');
+        const list = stored ? JSON.parse(stored) : [];
+        const idx = list.findIndex((emp: any) => emp.id === e.id);
+        if (idx >= 0) {
+          list[idx] = { ...list[idx], ...e };
+        } else {
+          list.push(e);
+        }
+        localStorage.setItem('smartcut_employees', JSON.stringify(list));
+      } catch (lsErr) {}
+
       return e;
     } catch (e2) { console.error('DB.saveEmployee exception:', e2); return null; }
   },

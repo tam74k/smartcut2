@@ -1833,7 +1833,19 @@ export default function App() {
     if (checkReadOnlyAndWarn()) return;
     setEmployees(prev => {
       const currentSalonEmps = prev.filter(e => !e.salonId || e.salonId === currentSalonId || (e as any).salon_id === currentSalonId);
-      const nextSalonEmps = typeof updater === 'function' ? updater(currentSalonEmps) : updater;
+      let nextSalonEmps: Employee[];
+      if (typeof updater === 'function') {
+        nextSalonEmps = updater(currentSalonEmps);
+      } else {
+        const updaterMap = new Map((updater || []).map(e => [e.id, e]));
+        nextSalonEmps = currentSalonEmps.map(e => updaterMap.has(e.id) ? updaterMap.get(e.id)! : e);
+        (updater || []).forEach(e => {
+          if (!currentSalonEmps.some(existing => existing.id === e.id)) {
+            nextSalonEmps.push(e);
+          }
+        });
+      }
+
       const tagged = nextSalonEmps.map(e => {
         // تصحيح أي مسير رواتب تم حفظه كسلفة بالخطأ
         const cleanedRecords = (e.financialRecords || []).map((r: any) => {
@@ -1852,7 +1864,8 @@ export default function App() {
       });
       const otherEmps = prev.filter(e => e.salonId && e.salonId !== currentSalonId && (e as any).salon_id !== currentSalonId);
       const res = [...otherEmps, ...tagged];
-      DB.saveEmployees(tagged);
+      try { localStorage.setItem('smartcut_employees', JSON.stringify(res)); } catch (err) {}
+      DB.saveEmployees(tagged, currentSalonId);
       return res;
     });
   };
