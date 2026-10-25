@@ -168,7 +168,7 @@ export const SubscriptionService = {
       currency: countryMeta.currency,
       isActive: true,
       subscriptionStatus: 'trial',
-      subscriptionPlan: 'growth',
+      subscriptionPlan: 'pro',
       subscriptionStartDate: startDate,
       subscriptionEndDate: endDate,
       trialDays: trialDays,
@@ -282,22 +282,50 @@ export const SubscriptionService = {
     // 3. Save directly and instantly to Supabase Cloud Database:
     // Important: Save Salon first, then Branch second, so foreign key constraints on public.users are satisfied
     try {
-      await DB.saveSalon(newSalon);
-      await DB.saveBranch(newBranch);
+      const salonSaved = await DB.saveSalon(newSalon);
+      if (!salonSaved) {
+        console.error('Critical: DB.saveSalon returned false for new salon', salonId);
+      }
+
+      // Adopt the branch ID created by PostgreSQL triggers or ensure proper save
+      try {
+        const existingBranches = await DB.fetchBranches(salonId);
+        const autoCreatedBranch = existingBranches.find(b => b.code === 'BR-01' || b.isMain);
+        if (autoCreatedBranch && autoCreatedBranch.id) {
+          newBranch.id = autoCreatedBranch.id;
+          newAdminUser.branchId = autoCreatedBranch.id;
+          initialSettings.branchId = autoCreatedBranch.id;
+          await DB.saveBranch({ ...newBranch, id: autoCreatedBranch.id });
+        } else {
+          await DB.saveBranch(newBranch);
+        }
+      } catch (branchErr) {
+        console.warn('Error reconciling branch ID with database:', branchErr);
+        await DB.saveBranch(newBranch);
+      }
+
+      // Update local store with the reconciled branch ID
+      AuthService.saveUser(newAdminUser);
+      this.saveBranches([...allBranches.filter(b => b.id !== branchId && b.id !== newBranch.id), newBranch]);
+      try {
+        localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(initialSettings));
+        localStorage.setItem(`smartcut_settings_${salonId}`, JSON.stringify(initialSettings));
+      } catch (e) {}
+
       await DB.saveSettings(salonId, initialSettings);
       
       // Save primary user directly into public.users table in Supabase
       const userSaved = await DB.saveUser(newAdminUser);
       if (!userSaved) {
         console.warn('Initial saveUser attempt in Supabase returned false, retrying after short delay...');
-        await new Promise(r => setTimeout(r, 300));
+        await new Promise(r => setTimeout(r, 400));
         await DB.saveUser(newAdminUser);
       }
 
       // 4. Record new subscription / trial row in tenant_subscriptions
       await DB.recordTenantSubscription({
         salonId: salonId,
-        planId: newSalon.subscriptionPlan || 'growth',
+        planId: newSalon.subscriptionPlan || 'pro',
         status: newSalon.subscriptionStatus || 'trial',
         startDate: startDate,
         endDate: endDate,

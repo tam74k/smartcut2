@@ -1003,6 +1003,13 @@ export const DB = {
         ? (s.commercialReg || s.commercial_reg)
         : (existingSalon?.commercial_reg || s.commercialReg || s.commercial_reg || '1010000000');
 
+      const normalizePlan = (p?: string): string => {
+        const lower = (p || '').toLowerCase();
+        if (lower === 'starter' || lower === 'basic') return 'starter';
+        if (lower === 'enterprise' || lower === 'vip') return 'enterprise';
+        return 'pro';
+      };
+
       const snap: any = {
         id: validSalonId,
         code: s.code || existingSalon?.code,
@@ -1021,7 +1028,7 @@ export const DB = {
         logo_url: s.logoUrl !== undefined ? s.logoUrl : (existingSalon?.logo_url || null),
         is_active: s.isActive !== undefined ? s.isActive : (existingSalon?.is_active ?? true),
         subscription_status: s.subscriptionStatus || existingSalon?.subscription_status || 'trial',
-        subscription_plan: s.subscriptionPlan || existingSalon?.subscription_plan || 'pro',
+        subscription_plan: normalizePlan(s.subscriptionPlan || existingSalon?.subscription_plan || 'pro'),
         subscription_start_date: toDateOrNull(s.subscriptionStartDate) || existingSalon?.subscription_start_date || new Date().toISOString().split('T')[0],
         subscription_end_date: toDateOrNull(s.subscriptionEndDate) || existingSalon?.subscription_end_date || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
         trial_days: s.trialDays || existingSalon?.trial_days || 7,
@@ -1032,7 +1039,19 @@ export const DB = {
         evolution_api_url: s.evolutionApiUrl ?? existingSalon?.evolution_api_url ?? null,
         updated_at: new Date().toISOString()
       };
-      const { error } = await client.from('salons').upsert(snap, { onConflict: 'id' });
+      let { error } = await client.from('salons').upsert(snap, { onConflict: 'id' });
+      let salonAttempts = 0;
+      while (error && salonAttempts < 5) {
+        salonAttempts++;
+        const colMatch = error.message.match(/Could not find the '([^']+)' column/i);
+        if (colMatch && colMatch[1] && snap[colMatch[1]] !== undefined) {
+          delete snap[colMatch[1]];
+          const retry = await client.from('salons').upsert(snap, { onConflict: 'id' });
+          error = retry.error;
+          continue;
+        }
+        break;
+      }
       if (error) { console.error('DB.saveSalon error:', error.message); return false; }
       return true;
     } catch (e) { console.error('DB.saveSalon exception:', e); return false; }
@@ -1220,17 +1239,29 @@ export const DB = {
         active: u.active !== false,
         screens: normalizedScreens,
         actions: normalizedActions,
-        permissions: normalizedActions,
         avatar: u.avatar || null,
         security_hash: sealed.integritySignature,
         integrity_signature: sealed.integritySignature,
         updated_at: new Date().toISOString()
       };
       let { error } = await client.from('users').upsert(snap, { onConflict: 'username' });
-      if (error && error.message && error.message.includes('employee_id')) {
-        delete snap.employee_id;
-        const retry = await client.from('users').upsert(snap, { onConflict: 'username' });
-        error = retry.error;
+      let userAttempts = 0;
+      while (error && userAttempts < 5) {
+        userAttempts++;
+        const colMatch = error.message.match(/Could not find the '([^']+)' column/i);
+        if (colMatch && colMatch[1] && snap[colMatch[1]] !== undefined) {
+          delete snap[colMatch[1]];
+          const retry = await client.from('users').upsert(snap, { onConflict: 'username' });
+          error = retry.error;
+          continue;
+        }
+        if (error.message.includes('employee_id') && snap.employee_id !== undefined) {
+          delete snap.employee_id;
+          const retry = await client.from('users').upsert(snap, { onConflict: 'username' });
+          error = retry.error;
+          continue;
+        }
+        break;
       }
       if (error) { 
         console.error('DB.saveUser error:', error.message); 
