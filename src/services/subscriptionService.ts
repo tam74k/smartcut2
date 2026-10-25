@@ -469,6 +469,10 @@ export const SubscriptionService = {
         if (fallbackSettings?.treasuries && Array.isArray(fallbackSettings.treasuries) && fallbackSettings.treasuries.length > 0) {
           parsed.treasuries = fallbackSettings.treasuries;
         }
+        if (fallbackSettings?.expenseCategories && Array.isArray(fallbackSettings.expenseCategories) && fallbackSettings.expenseCategories.length > 0) {
+          const mergedSet = new Set([...fallbackSettings.expenseCategories, ...(Array.isArray(parsed.expenseCategories) ? parsed.expenseCategories : [])]);
+          parsed.expenseCategories = Array.from(mergedSet);
+        }
         return parsed;
       }
     } catch (e) {}

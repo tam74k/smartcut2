@@ -70,12 +70,27 @@ export function ExpensesScreen({
   const allCategories = useMemo(() => {
     const set = new Set<string>(settings.expenseCategories || []);
     transactions.forEach(t => {
-      if (t.category === 'expense' && t.expenseCategory) {
-        set.add(t.expenseCategory);
+      if (t.category === 'expense') {
+        const cat = t.expenseCategory || (t as any).expense_category;
+        if (cat && typeof cat === 'string' && cat.trim()) {
+          set.add(cat.trim());
+        }
       }
     });
     return Array.from(set);
   }, [settings.expenseCategories, transactions]);
+
+  // Auto-sync categories if transactions have categories not yet in settings
+  useEffect(() => {
+    if (!settings.expenseCategories || settings.expenseCategories.length === 0) return;
+    const missing = allCategories.filter(c => !settings.expenseCategories?.includes(c));
+    if (missing.length > 0) {
+      setSettings({
+        ...settings,
+        expenseCategories: allCategories
+      });
+    }
+  }, [allCategories]);
 
   // All base expenses
   const baseExpenses = useMemo(() => {
@@ -815,7 +830,7 @@ export function ExpensesScreen({
                 <label className="block text-sm font-bold text-slate-700 mb-1">البند الأساسي</label>
                 <select value={expenseCategory} onChange={e => setExpenseCategory(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary bg-white">
                   <option value="">-- اختر بند الصرف --</option>
-                  {(settings.expenseCategories || []).map(cat => (
+                  {(allCategories || []).map(cat => (
                     <option key={cat} value={cat}>{cat}</option>
                   ))}
                 </select>
@@ -890,10 +905,10 @@ export function ExpensesScreen({
               </div>
 
               <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
-                {(settings.expenseCategories || []).length === 0 ? (
+                {(allCategories || []).length === 0 ? (
                   <p className="text-center text-slate-400 text-sm">لا توجد بنود مضافة</p>
                 ) : (
-                  (settings.expenseCategories || []).map(cat => (
+                  (allCategories || []).map(cat => (
                     <div key={cat} className="flex justify-between items-center p-3 bg-slate-50 border border-slate-100 rounded-lg">
                       <span className="font-bold text-slate-700">{cat}</span>
                       <button onClick={() => handleDeleteCategory(cat)} className="text-red-500 hover:bg-red-50 p-1.5 rounded-md transition-colors">
