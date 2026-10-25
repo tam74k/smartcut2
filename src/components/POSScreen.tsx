@@ -415,6 +415,12 @@ export function POSScreen({
   const [isRemedyInvoice, setIsRemedyInvoice] = useState(false);
   const [remedyReason, setRemedyReason] = useState('إصلاح مجاني بناءً على ضمان الصالون');
 
+  // Wasel / Complimentary Free Services (0.00 SAR)
+  const [isWaselInvoice, setIsWaselInvoice] = useState(false);
+  const [waselReason, setWaselReason] = useState('');
+  const [waselRecipientName, setWaselRecipientName] = useState('');
+  const [showWaselModal, setShowWaselModal] = useState(false);
+
   // Fast Attendance & Timesheet Modal State
   const [showAttendanceModal, setShowAttendanceModal] = useState(false);
 
@@ -769,6 +775,9 @@ export function POSScreen({
       bookingId: activeBookingId,
       isRemedyInvoice,
       remedyReason,
+      isWaselInvoice,
+      waselReason,
+      waselRecipientName,
       beforePhotoUrl,
       afterPhotoUrl,
       queueNumber: activeQueueNumber || undefined,
@@ -787,6 +796,9 @@ export function POSScreen({
     setActiveBookingId(undefined);
     setActiveQueueNumber(null);
     setIsRemedyInvoice(false);
+    setIsWaselInvoice(false);
+    setWaselReason('');
+    setWaselRecipientName('');
     setBeforePhotoUrl('');
     setAfterPhotoUrl('');
     setActiveHeldInvoiceId(null);
@@ -815,6 +827,9 @@ export function POSScreen({
         bookingId: activeBookingId,
         isRemedyInvoice,
         remedyReason,
+        isWaselInvoice,
+        waselReason,
+        waselRecipientName,
         beforePhotoUrl,
         afterPhotoUrl,
         queueNumber: activeQueueNumber || undefined,
@@ -838,6 +853,9 @@ export function POSScreen({
     setActiveBookingId(undefined);
     setActiveQueueNumber(null);
     setIsRemedyInvoice(false);
+    setIsWaselInvoice(false);
+    setWaselReason('');
+    setWaselRecipientName('');
     setBeforePhotoUrl('');
     setAfterPhotoUrl('');
     setActiveHeldInvoiceId(null);
@@ -893,6 +911,9 @@ export function POSScreen({
         bookingId: activeBookingId,
         isRemedyInvoice,
         remedyReason,
+        isWaselInvoice,
+        waselReason,
+        waselRecipientName,
         beforePhotoUrl,
         afterPhotoUrl,
         queueNumber: activeQueueNumber || undefined,
@@ -924,6 +945,9 @@ export function POSScreen({
     if (held.queueNumber) setActiveQueueNumber(held.queueNumber);
     setIsRemedyInvoice(held.isRemedyInvoice || false);
     setRemedyReason(held.remedyReason || '');
+    setIsWaselInvoice(held.isWaselInvoice || false);
+    setWaselReason(held.waselReason || '');
+    setWaselRecipientName(held.waselRecipientName || '');
     setBeforePhotoUrl(held.beforePhotoUrl || '');
     setAfterPhotoUrl(held.afterPhotoUrl || '');
     setShowHeldInvoicesModal(false);
@@ -1104,7 +1128,7 @@ export function POSScreen({
   const vatAmount = settings.vatEnabled ? totalInclusive - baseTotal : 0;
   const totalBeforeAdvance = totalInclusive;
   const rawFinalTotal = Math.max(0, totalBeforeAdvance - (Number(advanceDeduction) || 0));
-  const finalTotal = isRemedyInvoice ? 0 : rawFinalTotal;
+  const finalTotal = (isRemedyInvoice || isWaselInvoice) ? 0 : rawFinalTotal;
 
   // Tips & Change Calculation
   const isCashPayment = singleTreasury === 'cash' || singleTreasury.includes('cash');
@@ -1171,8 +1195,23 @@ export function POSScreen({
 
     setIsSubmittingPayment(true);
     try {
+      if (isWaselInvoice) {
+        if (!waselRecipientName.trim()) {
+          alert('يرجى كتابة اسم الشخص الذي حصل على خدمات مجانية (واصل)');
+          setShowWaselModal(true);
+          setIsSubmittingPayment(false);
+          return;
+        }
+        if (!waselReason.trim()) {
+          alert('يرجى كتابة ملاحظة وسبب تقديم الفاتورة مجاناً (واصل)');
+          setShowWaselModal(true);
+          setIsSubmittingPayment(false);
+          return;
+        }
+      }
+
       let splits: { amount: number, treasuryId: string }[] = [];
-      const cashbackUsed = isRemedyInvoice ? 0 : (splitAmounts['cashback'] || 0);
+      const cashbackUsed = (isRemedyInvoice || isWaselInvoice) ? 0 : (splitAmounts['cashback'] || 0);
       const remainingTotal = finalTotal - cashbackUsed;
     
     // التحقق من متطلبات الفاتورة الآجلة أو السداد الجزئي
@@ -1213,6 +1252,8 @@ export function POSScreen({
       splits = [{ amount: partialVal, treasuryId: singleTreasury }];
     } else if (isRemedyInvoice) {
       splits = [{ amount: 0, treasuryId: 'remedy_free' }];
+    } else if (isWaselInvoice) {
+      splits = [{ amount: 0, treasuryId: 'wasel_free' }];
     } else if (paymentType === 'single') {
       if (remainingTotal > 0 && !singleTreasury) {
         alert('الرجاء اختيار طريقة الدفع'); 
@@ -1242,16 +1283,20 @@ export function POSScreen({
     const initialInv: Invoice = {
       id: 'INV-' + Math.random().toString(36).substr(2,9).toUpperCase(),
       date: effectiveIsShiftOpen ? (effectiveShiftDate + 'T' + new Date().toTimeString().split(' ')[0]) : new Date().toISOString(),
-      clientName: selectedClient ? selectedClient.name : (clientSearch || 'عميل نقدي'),
+      clientName: isWaselInvoice && waselRecipientName.trim()
+        ? (selectedClient ? `${selectedClient.name} (${waselRecipientName.trim()})` : waselRecipientName.trim())
+        : (selectedClient ? selectedClient.name : (clientSearch || 'عميل نقدي')),
       clientId: selectedClient ? selectedClient.id : undefined,
       clientPhone: selectedClient ? selectedClient.phone : undefined,
       subtotal: subtotal,
       vatAmount: vatAmount,
-      total: finalTotal, // net paid (0 if remedy)
+      total: finalTotal, // net paid (0 if remedy or wasel)
       paid: actualPaid,
       remaining: actualRemaining,
       dueDate: (paymentMode === 'deferred' || paymentMode === 'partial') ? (deferredDueDate || undefined) : undefined,
-      notes: (paymentMode === 'deferred' || paymentMode === 'partial') ? (deferredNotes || undefined) : undefined,
+      notes: isWaselInvoice
+        ? `[فاتورة واصل - المستفيد: ${waselRecipientName.trim()} - السبب: ${waselReason.trim()}]${deferredNotes ? ' - ' + deferredNotes : ''}`
+        : ((paymentMode === 'deferred' || paymentMode === 'partial') ? (deferredNotes || undefined) : undefined),
       paymentsHistory: paymentMode === 'partial' ? [{
         id: 'PMT-' + Date.now(),
         date: effectiveIsShiftOpen ? (effectiveShiftDate + 'T' + new Date().toTimeString().split(' ')[0]) : new Date().toISOString(),
@@ -1261,7 +1306,7 @@ export function POSScreen({
         notes: 'الدفعة الأولى عند إصدار الفاتورة',
         createdBy: currentUser?.name || 'الكاشير'
       }] : [],
-      discount: isRemedyInvoice ? subtotal : discountAmount,
+      discount: (isRemedyInvoice || isWaselInvoice) ? subtotal : discountAmount,
       paymentMethod: splits[0]?.treasuryId || 'cash',
       treasuryId: splits[0]?.treasuryId || 'main',
       shiftId: effectiveShiftId,
@@ -1282,6 +1327,9 @@ export function POSScreen({
       afterPhotoUrl: afterPhotoUrl || undefined,
       isRemedyInvoice: isRemedyInvoice || undefined,
       remedyReason: isRemedyInvoice ? remedyReason : undefined,
+      isWaselInvoice: isWaselInvoice || undefined,
+      waselReason: isWaselInvoice ? waselReason.trim() : undefined,
+      waselRecipientName: isWaselInvoice ? waselRecipientName.trim() : undefined,
 
       items: cart.map(c => {
         const performer = employees.find(e => e.id === c.employeeId);
@@ -1342,7 +1390,7 @@ export function POSScreen({
           commission: execCommAmt > 0 ? execCommAmt : undefined,
           commissionableAmount: commBaseVal > 0 ? commBaseVal : undefined,
           isTargetExempt: isExempt || undefined,
-          price: isRemedyInvoice ? 0 : itemPrice,
+          price: (isRemedyInvoice || isWaselInvoice) ? 0 : itemPrice,
           discount: Number(c.discount || c.item?.discount) || undefined,
           originalPrice: Number(c.originalPrice || c.item?.originalPrice) || undefined,
           quantity: qty
@@ -1388,7 +1436,7 @@ export function POSScreen({
       etaStatus
     };
 
-    if (selectedClient && !isRemedyInvoice) {
+    if (selectedClient && !isRemedyInvoice && !isWaselInvoice) {
       // 1. كاش باك العميل المباشر: لا يُحتسب كاش باك إذا تم استخدام كاش باك في السداد أو عند استخدام برومو كود
       let earnedCashback = 0;
       if (cashbackUsed === 0 && !appliedPromo) {
@@ -1540,6 +1588,9 @@ export function POSScreen({
       setActiveBookingId(undefined);
       setActiveQueueNumber(null);
       setIsRemedyInvoice(false);
+      setIsWaselInvoice(false);
+      setWaselReason('');
+      setWaselRecipientName('');
       setBeforePhotoUrl('');
       setAfterPhotoUrl('');
       setSplitAmounts({});
@@ -1789,6 +1840,9 @@ export function POSScreen({
       setActiveBookingId(initialHeldInvoice.bookingId || undefined);
       setIsRemedyInvoice(initialHeldInvoice.isRemedyInvoice || false);
       setRemedyReason(initialHeldInvoice.remedyReason || '');
+      setIsWaselInvoice(initialHeldInvoice.isWaselInvoice || false);
+      setWaselReason(initialHeldInvoice.waselReason || '');
+      setWaselRecipientName(initialHeldInvoice.waselRecipientName || '');
       setBeforePhotoUrl(initialHeldInvoice.beforePhotoUrl || '');
       setAfterPhotoUrl(initialHeldInvoice.afterPhotoUrl || '');
       if (initialHeldInvoice.queueNumber) {
@@ -1828,6 +1882,9 @@ export function POSScreen({
         activeHeldInvoiceId,
         isRemedyInvoice,
         remedyReason,
+        isWaselInvoice,
+        waselReason,
+        waselRecipientName,
         beforePhotoUrl,
         afterPhotoUrl,
         activeQueueNumber
@@ -1842,7 +1899,7 @@ export function POSScreen({
         localStorage.removeItem('smartcut_pos_active_draft');
       } catch {}
     }
-  }, [cart, selectedClient, clientSearch, discount, advanceDeduction, activeAdvancePayments, activeBookingId, activeHeldInvoiceId, isRemedyInvoice, remedyReason, beforePhotoUrl, afterPhotoUrl, activeQueueNumber]);
+  }, [cart, selectedClient, clientSearch, discount, advanceDeduction, activeAdvancePayments, activeBookingId, activeHeldInvoiceId, isRemedyInvoice, remedyReason, isWaselInvoice, waselReason, waselRecipientName, beforePhotoUrl, afterPhotoUrl, activeQueueNumber]);
 
   // استعادة المسودة النشطة عند فتح شاشة الكاشير (إذا لم يتم تمرير حجز جديد أو فاتورة معلقة جديدة)
   useEffect(() => {
@@ -1863,6 +1920,9 @@ export function POSScreen({
             if (draft.activeHeldInvoiceId) setActiveHeldInvoiceId(draft.activeHeldInvoiceId);
             if (draft.isRemedyInvoice) setIsRemedyInvoice(draft.isRemedyInvoice);
             if (draft.remedyReason) setRemedyReason(draft.remedyReason);
+            if (draft.isWaselInvoice) setIsWaselInvoice(draft.isWaselInvoice);
+            if (draft.waselReason) setWaselReason(draft.waselReason);
+            if (draft.waselRecipientName) setWaselRecipientName(draft.waselRecipientName);
             if (draft.beforePhotoUrl) setBeforePhotoUrl(draft.beforePhotoUrl);
             if (draft.afterPhotoUrl) setAfterPhotoUrl(draft.afterPhotoUrl);
             if (draft.activeQueueNumber) setActiveQueueNumber(draft.activeQueueNumber);
@@ -1884,6 +1944,9 @@ export function POSScreen({
     setActiveQueueNumber(null);
     setActiveHeldInvoiceId(null);
     setIsRemedyInvoice(false);
+    setIsWaselInvoice(false);
+    setWaselReason('');
+    setWaselRecipientName('');
     setBeforePhotoUrl('');
     setAfterPhotoUrl('');
     try {
@@ -3127,7 +3190,7 @@ export function POSScreen({
                           type="number"
                           min="0"
                           step="any"
-                          disabled={hasOverallDiscount || !canApplyDiscount || !!appliedPromo || isRemedyInvoice}
+                          disabled={hasOverallDiscount || !canApplyDiscount || !!appliedPromo || isRemedyInvoice || isWaselInvoice}
                           value={c.discount || ''}
                           onChange={(e) => handleUpdateLineDiscount(c.cartId, e.target.value)}
                           placeholder="0"
@@ -3147,20 +3210,67 @@ export function POSScreen({
         {/* 4. Compact Summary & Checkout Bottom Bar */}
         <div className="bg-white border-t border-slate-200 p-3 space-y-2 shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.1)] shrink-0">
           
-          {/* Quick Options Bar (Warranty & Photos) */}
+          {/* Quick Options Bar (Warranty, Wasel & Photos) */}
           <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-slate-100 text-[10px]">
-            <label className="flex items-center gap-1.5 cursor-pointer">
-              <input 
-                type="checkbox"
-                checked={isRemedyInvoice}
-                onChange={e => setIsRemedyInvoice(e.target.checked)}
-                className="w-3.5 h-3.5 text-purple-600 rounded"
-              />
-              <span className="font-black text-purple-950 flex items-center gap-1">
-                <Wrench size={12} className="text-purple-700" />
-                <span>إصلاح مجاني (ضمان)</span>
-              </span>
-            </label>
+            <div className="flex items-center gap-2 flex-wrap">
+              <label className="flex items-center gap-1 cursor-pointer">
+                <input 
+                  type="checkbox"
+                  checked={isRemedyInvoice}
+                  onChange={e => {
+                    const checked = e.target.checked;
+                    setIsRemedyInvoice(checked);
+                    if (checked) {
+                      setIsWaselInvoice(false);
+                    }
+                  }}
+                  className="w-3.5 h-3.5 text-purple-600 rounded"
+                />
+                <span className="font-black text-purple-950 flex items-center gap-1">
+                  <Wrench size={12} className="text-purple-700" />
+                  <span>إصلاح مجاني (ضمان)</span>
+                </span>
+              </label>
+
+              <label className="flex items-center gap-1 cursor-pointer">
+                <input 
+                  type="checkbox"
+                  checked={isWaselInvoice}
+                  onChange={e => {
+                    const checked = e.target.checked;
+                    setIsWaselInvoice(checked);
+                    if (checked) {
+                      setIsRemedyInvoice(false);
+                      if (!waselRecipientName && selectedClient?.name) {
+                        setWaselRecipientName(selectedClient.name);
+                      }
+                      setShowWaselModal(true);
+                    }
+                  }}
+                  className="w-3.5 h-3.5 text-amber-600 rounded"
+                />
+                <span className="font-black text-amber-950 flex items-center gap-1">
+                  <Gift size={12} className="text-amber-600" />
+                  <span>واصل (مجاني)</span>
+                </span>
+              </label>
+
+              {isWaselInvoice && (
+                <button
+                  type="button"
+                  onClick={() => setShowWaselModal(true)}
+                  className={`px-1.5 py-0.5 rounded text-[9px] font-bold border transition-colors flex items-center gap-1 ${
+                    waselRecipientName.trim() && waselReason.trim() 
+                      ? 'bg-amber-50 text-amber-800 border-amber-300' 
+                      : 'bg-rose-50 text-rose-700 border-rose-300 animate-pulse'
+                  }`}
+                  title="تعديل بيانات واصل (المستفيد والسبب)"
+                >
+                  <Edit3 size={10} />
+                  <span>{waselRecipientName.trim() ? `${waselRecipientName.trim().slice(0, 10)}...` : 'إكمال البيانات *'}</span>
+                </button>
+              )}
+            </div>
 
             <div className="flex items-center gap-1.5">
               <label className={`cursor-pointer px-1.5 py-0.5 rounded-lg text-[9px] font-black border transition-colors flex items-center gap-1 ${beforePhotoUrl ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
@@ -3175,6 +3285,30 @@ export function POSScreen({
               </label>
             </div>
           </div>
+
+          {/* Wasel Active Notification Banner */}
+          {isWaselInvoice && (
+            <div className="bg-amber-50/90 border border-amber-200 rounded-xl p-2 text-xs text-amber-900 flex items-center justify-between shadow-2xs">
+              <div className="flex items-center gap-1.5 truncate">
+                <div className="p-1 bg-amber-200/80 rounded-lg text-amber-800 shrink-0">
+                  <Gift size={13} />
+                </div>
+                <div className="truncate text-[11px]">
+                  <strong className="text-amber-950">فاتورة واصل مجانية:</strong>{' '}
+                  <span className="font-bold text-amber-800">{waselRecipientName.trim() ? `المستفيد (${waselRecipientName.trim()})` : 'يرجى كتابة اسم المستفيد *'}</span>{' '}
+                  <span className="text-slate-400">|</span>{' '}
+                  <span className="text-slate-600">{waselReason.trim() ? waselReason.trim() : 'يرجى كتابة السبب *'}</span>
+                </div>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setShowWaselModal(true)} 
+                className="text-[10px] font-black bg-amber-200/70 hover:bg-amber-200 text-amber-900 px-2 py-0.5 rounded-md transition-colors shrink-0 mr-1"
+              >
+                تعديل
+              </button>
+            </div>
+          )}
 
           {/* Compact Calculations Grid */}
           <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
@@ -3200,8 +3334,8 @@ export function POSScreen({
               <div className="flex items-center gap-1" title={hasLineDiscounts ? "معطل لوجود خصم على مستوى الخدمات" : (appliedPromo ? "لا يُسمح بعمل خصم يدوي عند استخدام برومو كود" : (!canApplyDiscount ? "ليس لديك صلاحية لتعديل أو منح الخصم" : undefined))}>
                 <input 
                   type="number" 
-                  disabled={isRemedyInvoice || !canApplyDiscount || !!appliedPromo || hasLineDiscounts}
-                  value={isRemedyInvoice ? subtotal : (appliedPromo || hasLineDiscounts ? 0 : (discount.value || ''))}
+                  disabled={isRemedyInvoice || isWaselInvoice || !canApplyDiscount || !!appliedPromo || hasLineDiscounts}
+                  value={(isRemedyInvoice || isWaselInvoice) ? subtotal : (appliedPromo || hasLineDiscounts ? 0 : (discount.value || ''))}
                   onChange={(e) => {
                     if (!canApplyDiscount || appliedPromo || hasLineDiscounts) return;
                     setDiscount({...discount, value: Number(e.target.value)});
@@ -3210,7 +3344,7 @@ export function POSScreen({
                   placeholder="0"
                 />
                 <select 
-                  disabled={isRemedyInvoice || !canApplyDiscount || !!appliedPromo || hasLineDiscounts}
+                  disabled={isRemedyInvoice || isWaselInvoice || !canApplyDiscount || !!appliedPromo || hasLineDiscounts}
                   value={discount.type}
                   onChange={(e) => {
                     if (!canApplyDiscount || appliedPromo || hasLineDiscounts) return;
@@ -3224,14 +3358,14 @@ export function POSScreen({
               </div>
             </div>
 
-            {settings.vatEnabled && !isRemedyInvoice && (
+            {settings.vatEnabled && !isRemedyInvoice && !isWaselInvoice && (
               <div className="flex justify-between items-center text-slate-500 text-[11px]">
                 <span>الضريبة ({settings.vatRate}%):</span>
                 <span className="font-bold font-mono">{vatAmount.toFixed(2)}</span>
               </div>
             )}
 
-            {advanceDeduction > 0 && !isRemedyInvoice && (
+            {advanceDeduction > 0 && !isRemedyInvoice && !isWaselInvoice && (
               <div className="flex justify-between items-center text-emerald-700 bg-emerald-50/80 px-2 py-1 rounded-md text-[11px] font-bold border border-emerald-200/60">
                 <span>المدفوع مقدماً (عربون الحجز):</span>
                 <span className="font-mono font-black text-emerald-800">-{advanceDeduction.toFixed(2)} {settings.currency}</span>
@@ -3246,15 +3380,17 @@ export function POSScreen({
                 <input
                   type="text"
                   value={promoCodeInput}
+                  disabled={isRemedyInvoice || isWaselInvoice}
                   onChange={e => setPromoCodeInput(e.target.value.toUpperCase())}
                   placeholder="برومو كود (مثل TEMO25)..."
-                  className="flex-1 px-2.5 py-1 bg-white border border-purple-200 rounded-lg text-xs font-mono font-bold uppercase outline-none focus:border-purple-500"
+                  className="flex-1 px-2.5 py-1 bg-white border border-purple-200 rounded-lg text-xs font-mono font-bold uppercase outline-none focus:border-purple-500 disabled:bg-slate-100 disabled:opacity-60"
                   onKeyDown={e => { if (e.key === 'Enter') handleApplyPromoCode(); }}
                 />
                 <button
                   type="button"
+                  disabled={isRemedyInvoice || isWaselInvoice}
                   onClick={handleApplyPromoCode}
-                  className="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs"
+                  className="px-3 py-1 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-300 text-white rounded-lg text-xs font-bold transition-all shadow-xs"
                 >
                   تطبيق
                 </button>
@@ -3289,7 +3425,7 @@ export function POSScreen({
           </div>
 
           {/* Tier Discount Banner if active */}
-          {!appliedPromo && clientTier && clientTier.discountPercentage > 0 && discount.value === clientTier.discountPercentage && discount.type === 'percentage' && !isRemedyInvoice && (
+          {!appliedPromo && clientTier && clientTier.discountPercentage > 0 && discount.value === clientTier.discountPercentage && discount.type === 'percentage' && !isRemedyInvoice && !isWaselInvoice && (
             <div className="text-[10px] font-black bg-amber-50 text-amber-900 px-2 py-0.5 rounded-lg border border-amber-300 flex items-center justify-between">
               <span>{clientTier.icon} خصم مستوى {clientTier.name}:</span>
               <span className="font-mono">-{manualDiscountAmount.toFixed(2)} {settings.currency} ({clientTier.discountPercentage}%)</span>
@@ -3311,6 +3447,18 @@ export function POSScreen({
               if (isSubscriptionBlocked) {
                 alert('عذراً، لا يمكن إصدار فواتير جديدة نظراً لانتهاء الفترة التجريبية للصالون. يرجى تجديد الاشتراك مع الإدارة.');
                 return;
+              }
+              if (isWaselInvoice) {
+                if (!waselRecipientName.trim()) {
+                  alert('يرجى كتابة اسم الشخص الذي حصل على خدمات مجانية (واصل)');
+                  setShowWaselModal(true);
+                  return;
+                }
+                if (!waselReason.trim()) {
+                  alert('يرجى كتابة ملاحظة وسبب تقديم الفاتورة مجاناً (واصل)');
+                  setShowWaselModal(true);
+                  return;
+                }
               }
               if (cart.length > 0) {
                 if (!tipEmployeeId) {
@@ -3347,45 +3495,88 @@ export function POSScreen({
                 <p className="text-3xl font-extrabold text-primary">{finalTotal.toFixed(2)} <span className="text-sm font-normal text-slate-500">{settings.currency}</span></p>
               </div>
 
-              {/* اختيار نوع السداد: فوري كلي / جزئي آجل / مؤجل بالكامل */}
-              <div className="grid grid-cols-3 gap-1.5 bg-slate-100 p-1 rounded-xl text-center mb-3">
-                <button
-                  type="button"
-                  onClick={() => setPaymentMode('full')}
-                  className={`py-2 px-1 text-xs font-black rounded-lg transition-all flex flex-col items-center gap-1 cursor-pointer ${
-                    paymentMode === 'full' 
-                      ? 'bg-emerald-600 text-white shadow-sm' 
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                  }`}
-                >
-                  <CheckCircle size={15} />
-                  <span>سداد فوري كلي</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPaymentMode('partial')}
-                  className={`py-2 px-1 text-xs font-black rounded-lg transition-all flex flex-col items-center gap-1 cursor-pointer ${
-                    paymentMode === 'partial' 
-                      ? 'bg-blue-600 text-white shadow-sm' 
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                  }`}
-                >
-                  <Clock size={15} />
-                  <span>سداد جزئي + آجل</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPaymentMode('deferred')}
-                  className={`py-2 px-1 text-xs font-black rounded-lg transition-all flex flex-col items-center gap-1 cursor-pointer ${
-                    paymentMode === 'deferred' 
-                      ? 'bg-amber-600 text-white shadow-sm' 
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                  }`}
-                >
-                  <Hourglass size={15} />
-                  <span>مؤجلة بالكامل</span>
-                </button>
-              </div>
+              {isWaselInvoice ? (
+                <div className="bg-amber-50 border border-amber-300 rounded-2xl p-4 text-center space-y-3">
+                  <div className="inline-flex p-3 rounded-full bg-amber-100 text-amber-700 shadow-xs">
+                    <Gift size={28} />
+                  </div>
+                  <div>
+                    <h4 className="font-black text-amber-950 text-sm">فاتورة واصل (خدمات مجانية بالكامل)</h4>
+                    <p className="text-[11px] text-amber-800">صافي المطلوب سداده: 0.00 {settings.currency}</p>
+                  </div>
+                  <div className="text-xs text-amber-950 space-y-2 text-right bg-white/90 p-3.5 rounded-xl border border-amber-200">
+                    <div className="flex justify-between items-center">
+                      <span className="font-bold text-slate-500">اسم المستفيد:</span>
+                      <span className="font-black text-amber-950 text-sm">{waselRecipientName.trim()}</span>
+                    </div>
+                    <div className="flex justify-between items-start gap-2">
+                      <span className="font-bold text-slate-500 shrink-0">سبب الخدمة المجانية:</span>
+                      <span className="font-medium text-amber-900 text-left">{waselReason.trim()}</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowWaselModal(true)}
+                    className="text-xs text-amber-800 underline font-black hover:text-amber-950 inline-flex items-center gap-1 cursor-pointer"
+                  >
+                    <Edit3 size={11} />
+                    <span>تعديل بيانات واصل</span>
+                  </button>
+                </div>
+              ) : isRemedyInvoice ? (
+                <div className="bg-purple-50 border border-purple-300 rounded-2xl p-4 text-center space-y-3">
+                  <div className="inline-flex p-3 rounded-full bg-purple-100 text-purple-700 shadow-xs">
+                    <Wrench size={28} />
+                  </div>
+                  <div>
+                    <h4 className="font-black text-purple-950 text-sm">فاتورة إصلاح مجاني (ضمان الصالون)</h4>
+                    <p className="text-[11px] text-purple-800">صافي المطلوب سداده: 0.00 {settings.currency}</p>
+                  </div>
+                  <p className="text-xs text-purple-900 bg-white/80 p-3 rounded-xl border border-purple-200 font-medium">
+                    {remedyReason || 'إصلاح مجاني بناءً على ضمان الصالون'}
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {/* اختيار نوع السداد: فوري كلي / جزئي آجل / مؤجل بالكامل */}
+                  <div className="grid grid-cols-3 gap-1.5 bg-slate-100 p-1 rounded-xl text-center mb-3">
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMode('full')}
+                      className={`py-2 px-1 text-xs font-black rounded-lg transition-all flex flex-col items-center gap-1 cursor-pointer ${
+                        paymentMode === 'full' 
+                          ? 'bg-emerald-600 text-white shadow-sm' 
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                      }`}
+                    >
+                      <CheckCircle size={15} />
+                      <span>سداد فوري كلي</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMode('partial')}
+                      className={`py-2 px-1 text-xs font-black rounded-lg transition-all flex flex-col items-center gap-1 cursor-pointer ${
+                        paymentMode === 'partial' 
+                          ? 'bg-blue-600 text-white shadow-sm' 
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                      }`}
+                    >
+                      <Clock size={15} />
+                      <span>سداد جزئي + آجل</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMode('deferred')}
+                      className={`py-2 px-1 text-xs font-black rounded-lg transition-all flex flex-col items-center gap-1 cursor-pointer ${
+                        paymentMode === 'deferred' 
+                          ? 'bg-amber-600 text-white shadow-sm' 
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                      }`}
+                    >
+                      <Hourglass size={15} />
+                      <span>مؤجلة بالكامل</span>
+                    </button>
+                  </div>
 
               {/* تنبيه ضرورة تحديد العميل للفواتير الآجلة والجزئية */}
               {(paymentMode === 'deferred' || paymentMode === 'partial') && (!selectedClient || !selectedClient.name || selectedClient.name === 'عميل نقدي') && (
@@ -3699,6 +3890,8 @@ export function POSScreen({
                   )}
                 </>
               )}
+              </>
+              )}
             </div>
 
             <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center gap-3">
@@ -3716,7 +3909,7 @@ export function POSScreen({
                   <X size={16} />
                 )}
                 <span>
-                  {paymentMode === 'deferred' ? 'تأجيل وإغلاق' : paymentMode === 'partial' ? 'سداد الدفعة وإغلاق' : 'سداد وإغلاق'}
+                  {isWaselInvoice ? 'حفظ واصل وإغلاق' : (isRemedyInvoice ? 'حفظ الضمان وإغلاق' : (paymentMode === 'deferred' ? 'تأجيل وإغلاق' : paymentMode === 'partial' ? 'سداد الدفعة وإغلاق' : 'سداد وإغلاق'))}
                 </span>
               </button>
 
@@ -3726,7 +3919,11 @@ export function POSScreen({
                 disabled={isSubmittingPayment}
                 onClick={() => handleConfirmPayment(true)}
                 className={`flex-[1.4] disabled:opacity-50 text-white font-black py-3 px-3 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-95 text-xs ${
-                  paymentMode === 'deferred'
+                  isWaselInvoice
+                    ? 'bg-amber-600 hover:bg-amber-500 shadow-amber-600/25'
+                    : isRemedyInvoice
+                    ? 'bg-purple-600 hover:bg-purple-500 shadow-purple-600/25'
+                    : paymentMode === 'deferred'
                     ? 'bg-amber-600 hover:bg-amber-500 shadow-amber-600/25'
                     : paymentMode === 'partial'
                     ? 'bg-blue-600 hover:bg-blue-500 shadow-blue-600/25'
@@ -3743,7 +3940,11 @@ export function POSScreen({
                   <>
                     <Printer size={17} />
                     <span>
-                      {paymentMode === 'deferred' 
+                      {isWaselInvoice 
+                        ? 'حفظ وطباعة واصل' 
+                        : isRemedyInvoice 
+                        ? 'حفظ وطباعة الضمان' 
+                        : paymentMode === 'deferred' 
                         ? 'تأجيل الفاتورة وطباعتها' 
                         : paymentMode === 'partial' 
                         ? 'سداد الدفعة وطباعة الفاتورة' 
@@ -3752,6 +3953,128 @@ export function POSScreen({
                   </>
                 )}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Wasel (Complimentary Free Services) Modal */}
+      {showWaselModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[70] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150 border border-amber-200">
+            <div className="p-4 bg-gradient-to-r from-amber-500 to-amber-600 text-white flex justify-between items-center">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shadow-2xs">
+                  <Gift size={20} className="text-white" />
+                </div>
+                <div>
+                  <h3 className="font-black text-sm">بيانات فاتورة واصل (خدمات مجانية)</h3>
+                  <p className="text-[10px] text-amber-100 font-bold">تصبح الفاتورة مجانية بالكامل (0.00)</p>
+                </div>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => {
+                  if (!waselRecipientName.trim() || !waselReason.trim()) {
+                    setIsWaselInvoice(false);
+                  }
+                  setShowWaselModal(false);
+                }} 
+                className="w-7 h-7 rounded-lg bg-black/10 hover:bg-black/20 text-white flex items-center justify-center transition-colors cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 text-right" dir="rtl">
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 text-xs text-amber-900 leading-relaxed font-bold">
+                تنبيه: يجب كتابة اسم الشخص المستفيد وسبب تقديم الخدمة مجاناً للمتابعة والرقابة وضمان الشفافية في التقارير والإيصالات.
+              </div>
+
+              <div>
+                <label className="block text-xs font-black text-slate-800 mb-1.5">
+                  اسم الشخص الذي حصل على الخدمات مجاناً <span className="text-rose-600">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={waselRecipientName}
+                  onChange={e => setWaselRecipientName(e.target.value)}
+                  placeholder="مثال: أ. محمد السعيد / ضيف الإدارة..."
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-amber-500 focus:bg-white transition-all shadow-2xs"
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-black text-slate-800 mb-1.5">
+                  سبب تقديم الخدمة مجاناً (الملاحظة) <span className="text-rose-600">*</span>
+                </label>
+                
+                {/* Fast Preset Chips */}
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {[
+                    'ضيف الإدارة / VIP',
+                    'هدية ترويجية / مسابقة',
+                    'تعويض عميل وتطييب خاطر',
+                    'دعاية وتسويق (صانع محتوى)',
+                    'أقارب ومعارف الإدارة'
+                  ].map(chip => (
+                    <button
+                      key={chip}
+                      type="button"
+                      onClick={() => setWaselReason(chip)}
+                      className={`text-[10px] font-bold px-2 py-1 rounded-lg border transition-all cursor-pointer ${
+                        waselReason === chip 
+                          ? 'bg-amber-100 text-amber-900 border-amber-400 font-black ring-1 ring-amber-400' 
+                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-amber-300'
+                      }`}
+                    >
+                      {chip}
+                    </button>
+                  ))}
+                </div>
+
+                <textarea
+                  rows={3}
+                  value={waselReason}
+                  onChange={e => setWaselReason(e.target.value)}
+                  placeholder="اكتب تفاصيل سبب منح الفاتورة مجاناً (إلزامي)..."
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs font-medium text-slate-800 outline-none focus:border-amber-500 focus:bg-white transition-all resize-none shadow-2xs"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!waselRecipientName.trim()) {
+                      alert('يرجى كتابة اسم الشخص المستفيد من الخدمات المجانية');
+                      return;
+                    }
+                    if (!waselReason.trim()) {
+                      alert('يرجى كتابة سبب تقديم الفاتورة مجاناً');
+                      return;
+                    }
+                    setIsWaselInvoice(true);
+                    setShowWaselModal(false);
+                  }}
+                  className="flex-1 bg-amber-600 hover:bg-amber-500 text-white font-black py-2.5 px-4 rounded-xl text-xs transition-colors shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Check size={16} />
+                  <span>تأكيد واعتماد (واصل)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsWaselInvoice(false);
+                    setShowWaselModal(false);
+                  }}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 px-3 rounded-xl text-xs transition-colors cursor-pointer"
+                >
+                  إلغاء واصل
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -4529,7 +4852,7 @@ export function POSScreen({
                   const heldCart = held.cart || [];
                   const heldSubtotal = heldCart.reduce((sum, c) => sum + (getCartItemPrice(c) * (c?.quantity || 1)), 0);
                   const heldDiscountAmt = held.discount?.type === 'percentage' ? heldSubtotal * ((Number(held.discount?.value) || 0) / 100) : (Number(held.discount?.value) || 0);
-                  const heldTotal = held.isRemedyInvoice ? 0 : Math.max(0, heldSubtotal - heldDiscountAmt - (Number(held.advanceDeduction) || 0));
+                  const heldTotal = (held.isRemedyInvoice || held.isWaselInvoice) ? 0 : Math.max(0, heldSubtotal - heldDiscountAmt - (Number(held.advanceDeduction) || 0));
 
                   return (
                     <div key={held.id} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs space-y-3 hover:border-amber-300 transition-all">
@@ -4561,6 +4884,11 @@ export function POSScreen({
                               {held.isRemedyInvoice && (
                                 <span className="text-[9px] font-black bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full">
                                   ضمان/إصلاح
+                                </span>
+                              )}
+                              {held.isWaselInvoice && (
+                                <span className="text-[9px] font-black bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full" title={`المستفيد: ${held.waselRecipientName || '-'} | السبب: ${held.waselReason || '-'}`}>
+                                  واصل ({held.waselRecipientName || 'مجاني'})
                                 </span>
                               )}
                               {held.id === activeHeldInvoiceId ? (

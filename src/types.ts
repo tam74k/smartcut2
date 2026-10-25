@@ -944,6 +944,9 @@ export interface HeldInvoice {
   bookingId?: string;
   isRemedyInvoice?: boolean;
   remedyReason?: string;
+  isWaselInvoice?: boolean;
+  waselReason?: string;
+  waselRecipientName?: string;
   beforePhotoUrl?: string;
   afterPhotoUrl?: string;
   note?: string;
@@ -1178,6 +1181,9 @@ export interface Invoice {
   // Remedy / Warranty Fix on Salon Expense
   isRemedyInvoice?: boolean;
   remedyReason?: string;
+  isWaselInvoice?: boolean;
+  waselReason?: string;
+  waselRecipientName?: string;
   relatedComplaintId?: string;
   originalInvoiceId?: string;
   // Sales Returns (مرتجعات المبيعات)

@@ -3,7 +3,7 @@ import { AppSettings, Invoice, Transaction, Client, Branch, Product, Employee, S
 import { 
   Search, Filter, Printer, XCircle, Edit, CheckCircle, ChevronDown, 
   ChevronUp, Image as ImageIcon, Wrench, Eye, X, Trash2, RotateCcw,
-  FileSpreadsheet, Hourglass
+  FileSpreadsheet, Hourglass, Gift
 } from 'lucide-react';
 import { DB } from '../services/db';
 import { InvoicesImportModal } from './InvoicesImportModal';
@@ -483,6 +483,12 @@ export function InvoicesScreen({
                         <span>إصلاح مجاني (ضمان الصالون)</span>
                       </span>
                     )}
+                    {inv.isWaselInvoice && (
+                      <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-900 text-[10px] font-black px-2 py-0.5 rounded-full mt-1 border border-amber-300" title={`المستفيد: ${inv.waselRecipientName || '-'} | السبب: ${inv.waselReason || '-'}`}>
+                        <Gift size={10} className="text-amber-700" />
+                        <span>واصل مجاني: {inv.waselRecipientName || ''}</span>
+                      </span>
+                    )}
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex flex-col gap-1">
@@ -511,6 +517,7 @@ export function InvoicesScreen({
                       </div>
                     )}
                     {inv.isRemedyInvoice && <div className="text-[10px] text-purple-700 font-bold">(0.00 إصلاح)</div>}
+                    {inv.isWaselInvoice && <div className="text-[10px] text-amber-700 font-bold">(0.00 واصل)</div>}
                   </td>
                   <td className="px-6 py-4 text-center">
                     {(() => {

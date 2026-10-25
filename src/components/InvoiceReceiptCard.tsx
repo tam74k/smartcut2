@@ -315,7 +315,11 @@ export const InvoiceReceiptCard: React.FC<InvoiceReceiptCardProps> = ({
 
   const invoiceBadge = invoice.status === 'cancelled'
     ? 'فاتورة ملغاة'
-    : (settings.vatEnabled ? 'فاتورة ضريبية مبسطة' : 'فاتورة مبيعات');
+    : (invoice.isWaselInvoice
+      ? 'فاتورة واصل (خدمات مجانية)'
+      : (invoice.isRemedyInvoice
+        ? 'فاتورة إصلاح مجاني (ضمان)'
+        : (settings.vatEnabled ? 'فاتورة ضريبية مبسطة' : 'فاتورة مبيعات')));
 
   const advanceList = invoice.advancePayments || [];
 
@@ -413,6 +417,28 @@ export const InvoiceReceiptCard: React.FC<InvoiceReceiptCardProps> = ({
           <span>منفذ العملية (الكاشير):</span>
           <span style={{ fontWeight: 'bold', color: '#000' }}>{cashierName}</span>
         </div>
+        {invoice.isWaselInvoice && (
+          <div style={{ marginTop: '4px', padding: '3px 5px', border: '1px solid #000', backgroundColor: '#f9f9f9', fontSize: '10px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', color: '#000' }}>
+              <span>المستفيد من واصل:</span>
+              <span style={{ fontWeight: 'bold' }}>{invoice.waselRecipientName || invoice.clientName || '-'}</span>
+            </div>
+            {invoice.waselReason && (
+              <div style={{ marginTop: '2px', color: '#000' }}>
+                <span>السبب / الملاحظة: </span>
+                <span style={{ fontWeight: 'normal' }}>{invoice.waselReason}</span>
+              </div>
+            )}
+          </div>
+        )}
+        {invoice.isRemedyInvoice && (
+          <div style={{ marginTop: '4px', padding: '3px 5px', border: '1px solid #000', backgroundColor: '#f9f9f9', fontSize: '10px' }}>
+            <div style={{ color: '#000', fontWeight: 'bold' }}>إصلاح مجاني (ضمان الصالون)</div>
+            {invoice.remedyReason && (
+              <div style={{ marginTop: '2px', color: '#000', fontWeight: 'normal' }}>{invoice.remedyReason}</div>
+            )}
+          </div>
+        )}
       </div>
 
       <div style={{ borderBottom: '1px dashed #000', margin: '6px 0' }}></div>
@@ -547,7 +573,11 @@ export const InvoiceReceiptCard: React.FC<InvoiceReceiptCardProps> = ({
             {invoice.paymentMethods.map((pm, idx) => {
               const tName = pm.treasuryId === 'cashback'
                 ? 'كاش باك'
-                : (settings.treasuries?.find(t => t.id === pm.treasuryId)?.name || (pm as any).paymentMethod || 'غير محدد');
+                : (pm.treasuryId === 'wasel_free'
+                  ? 'خدمات مجانية (واصل)'
+                  : (pm.treasuryId === 'remedy_free'
+                    ? 'إصلاح مجاني (ضمان)'
+                    : (settings.treasuries?.find(t => t.id === pm.treasuryId)?.name || (pm as any).paymentMethod || 'غير محدد')));
               return (
                 <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', color: '#000', fontFamily: 'monospace', fontWeight: 'bold' }}>
                   <span>• {tName}:</span>

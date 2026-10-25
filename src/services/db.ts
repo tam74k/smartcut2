@@ -354,6 +354,12 @@ export async function ensureCoreSchema(): Promise<void> {
       ensureColumn('held_invoices', 'advance_payments', 'JSONB'),
       ensureColumn('held_invoices', 'is_open', 'BOOLEAN'),
       ensureColumn('held_invoices', 'opened_by', 'VARCHAR(100)'),
+      ensureColumn('invoices', 'is_wasel', 'BOOLEAN'),
+      ensureColumn('invoices', 'wasel_reason', 'TEXT'),
+      ensureColumn('invoices', 'wasel_recipient_name', 'TEXT'),
+      ensureColumn('held_invoices', 'is_wasel_invoice', 'BOOLEAN'),
+      ensureColumn('held_invoices', 'wasel_reason', 'TEXT'),
+      ensureColumn('held_invoices', 'wasel_recipient_name', 'TEXT'),
       ensureColumn('customer_complaints', 'subject', 'VARCHAR(255)'),
       ensureColumn('customer_complaints', 'category', 'VARCHAR(100)'),
       ensureColumn('customer_complaints', 'actions', 'JSONB'),
@@ -844,6 +850,9 @@ export const DB = {
         }
         camel.isOpen = camel.isOpen !== undefined ? camel.isOpen : !!camel.is_open;
         camel.openedBy = camel.openedBy || camel.opened_by || undefined;
+        camel.isWaselInvoice = Boolean(camel.isWaselInvoice ?? camel.is_wasel_invoice);
+        camel.waselReason = camel.waselReason || camel.wasel_reason || '';
+        camel.waselRecipientName = camel.waselRecipientName || camel.wasel_recipient_name || '';
         return camel;
       });
     } catch (e) {
@@ -892,6 +901,9 @@ export const DB = {
         booking_id: held.bookingId || null,
         is_remedy_invoice: !!held.isRemedyInvoice,
         remedy_reason: held.remedyReason || null,
+        is_wasel_invoice: !!held.isWaselInvoice,
+        wasel_reason: held.waselReason || null,
+        wasel_recipient_name: held.waselRecipientName || null,
         before_photo_url: held.beforePhotoUrl || null,
         after_photo_url: held.afterPhotoUrl || null,
         note: held.note || (held as any).notes || null,
@@ -1914,6 +1926,9 @@ export const DB = {
         cancelled_at: inv.cancelledAt || null,
         is_remedy: Boolean(inv.isRemedyInvoice || inv.isRemedy || false),
         remedy_notes: inv.remedyReason || inv.remedyNotes || null,
+        is_wasel: Boolean(inv.isWaselInvoice || inv.isWasel || false),
+        wasel_reason: inv.waselReason || null,
+        wasel_recipient_name: inv.waselRecipientName || null,
         related_complaint_id: inv.relatedComplaintId || null,
         original_invoice_id: inv.originalInvoiceId || null,
         before_photo_url: inv.beforePhotoUrl || null,
@@ -5054,6 +5069,9 @@ export function dbInvoiceToApp(row: any): any {
     cancelledAt: row.cancelledAt || row.cancelled_at || undefined,
     isRemedyInvoice: Boolean(row.isRemedyInvoice ?? row.isRemedy ?? row.is_remedy),
     remedyReason: row.remedyReason || row.remedyNotes || row.remedy_notes || '',
+    isWaselInvoice: Boolean(row.isWaselInvoice ?? row.isWasel ?? row.is_wasel),
+    waselReason: row.waselReason || row.wasel_reason || '',
+    waselRecipientName: row.waselRecipientName || row.wasel_recipient_name || '',
     relatedComplaintId: row.relatedComplaintId || row.related_complaint_id || '',
     originalInvoiceId: row.originalInvoiceId || row.original_invoice_id || '',
     beforePhotoUrl: row.beforePhotoUrl || row.before_photo_url || undefined,
