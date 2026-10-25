@@ -15,6 +15,7 @@ import { calculateEmployeeTargetCommission } from '../utils/targetCalculationHel
 import { DB, getFingerprintProcessedDate } from '../services/db';
 import { AuthService } from '../services/auth';
 import { SalesReturnVoucherModal } from './SalesReturnVoucherModal';
+import { InvoiceReceiptCard, executePrintInvoiceReceipt } from './InvoiceReceiptCard';
 export const safeSplitDate = (d?: string | any): string => {
   if (!d || typeof d !== 'string') return '';
   return d.includes('T') ? d.split('T')[0] : (d.includes(' ') ? d.split(' ')[0] : d);
@@ -523,6 +524,54 @@ export function ReportsScreen({
       topReturnedItems: topItems
     };
   }, [branchSalesReturns, activeFrom, activeTo]);
+
+  // ---- تقرير فواتير واصل (الخدمات المجانية والمستفيدين) ----
+  const [waselSearch, setWaselSearch] = useState('');
+  const waselReportData = useMemo(() => {
+    if (!activeFrom || !activeTo) {
+      return {
+        invoices: [],
+        totalServicesValue: 0,
+        totalCommissions: 0,
+        uniqueBeneficiariesCount: 0,
+        totalInvoicesCount: 0
+      };
+    }
+
+    const waselInvs = branchInvoices.filter(inv => {
+      if (inv.status === 'cancelled') return false;
+      const d = inv.date ? inv.date.split('T')[0] : '';
+      const inDateRange = d >= activeFrom && d <= activeTo;
+      const isWasel = Boolean(inv.isWaselInvoice || inv.paymentMethod === 'wasel_free' || inv.paymentMethods?.some(pm => pm.treasuryId === 'wasel_free'));
+      return inDateRange && isWasel;
+    });
+
+    const uniqueBeneficiaries = new Set<string>();
+    let totalServicesValue = 0;
+    let totalCommissions = 0;
+
+    waselInvs.forEach(inv => {
+      const benName = (inv.waselRecipientName || inv.clientName || '').trim();
+      if (benName) uniqueBeneficiaries.add(benName);
+      
+      const invValue = Number(inv.subtotal || 0) > 0 
+        ? Number(inv.subtotal) 
+        : (inv.items || []).reduce((s, it) => s + (Number(it.price || it.originalPrice || 0) * (it.quantity || 1)), 0);
+      totalServicesValue += invValue;
+
+      (inv.items || []).forEach(it => {
+        totalCommissions += Number(it.employeeCommission ?? it.commissionAmount ?? (it as any).commission ?? 0);
+      });
+    });
+
+    return {
+      invoices: waselInvs,
+      totalServicesValue,
+      totalCommissions,
+      uniqueBeneficiariesCount: uniqueBeneficiaries.size,
+      totalInvoicesCount: waselInvs.length
+    };
+  }, [branchInvoices, activeFrom, activeTo]);
 
   const targetReportData = useMemo(() => {
     if (!activeFrom || !activeTo) {
@@ -2486,6 +2535,28 @@ export function ReportsScreen({
         r.createdByUserName || 'المسؤول'
       ]);
       exportToExcel(filename, 'تقرير_مرتجعات_المبيعات', headers, rows);
+    } else if (activeReportType === 'wasel_report') {
+      const headers = ['م', 'رقم الفاتورة', 'التاريخ والوقت', 'اسم المستفيد', 'رقم الهاتف', 'سبب تقديم الخدمة مجاناً', 'الخدمات المقدمة وفريق العمل', 'القيمة التقديرية للخدمات', 'عمولات الفنيين المحتسبة', 'الكاشير'];
+      const rows = waselReportData.invoices.map((inv: Invoice, idx: number) => {
+        const totalComm = (inv.items || []).reduce((s, it) => s + (Number(it.employeeCommission ?? it.commissionAmount ?? 0)), 0);
+        const invOriginalValue = Number(inv.subtotal || 0) > 0 
+          ? Number(inv.subtotal) 
+          : (inv.items || []).reduce((s, it) => s + (Number(it.price || it.originalPrice || 0) * (it.quantity || 1)), 0);
+
+        return [
+          idx + 1,
+          inv.id,
+          safeSplitDate(inv.date),
+          inv.waselRecipientName || inv.clientName || 'غير محدد',
+          inv.clientPhone || '-',
+          inv.waselReason || inv.notes || '-',
+          (inv.items || []).map(i => `${i.serviceName} (${i.technicianName})`).join(' ، '),
+          invOriginalValue.toFixed(2),
+          totalComm.toFixed(2),
+          inv.cashierName || 'الكاشير'
+        ];
+      });
+      exportToExcel(filename, 'تقرير_فواتير_واصل', headers, rows);
     } else if (activeReportType === 'target_report') {
       const headers = [
         'م', 
@@ -2612,6 +2683,7 @@ export function ReportsScreen({
           <div>
             <label className="block text-xs font-bold text-slate-500 mb-1">نوع التقرير</label>
             <select value={reportType} onChange={(e) => setReportType(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary font-semibold text-slate-700 bg-white">
+              <option value="wasel_report">تقرير فواتير واصل (الخدمات المجانية والمستفيدين)</option>
               <option value="net_profit">تقرير الأرباح الصافية (معادلة صافي الربح وقائمة الدخل)</option>
               <option value="sales_returns">تقرير مرتجعات المبيعات (تفصيلي وتحليلي)</option>
               <option value="target_report">تقرير التارجت والعمولات المستهدفة للموظفين</option>
@@ -2644,6 +2716,34 @@ export function ReportsScreen({
             </button>
           </div>
         </div>
+
+        {/* Sub-filter for Wasel Report */}
+        {reportType === 'wasel_report' && (
+          <div className="mt-4 pt-4 border-t border-slate-100 animate-in fade-in">
+            <div className="max-w-md">
+              <label className="block text-xs font-bold text-slate-600 mb-1">بحث برقم الفاتورة، اسم المستفيد، أو سبب الخدمة:</label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={waselSearch}
+                  onChange={(e) => setWaselSearch(e.target.value)}
+                  placeholder="ابحث عن مستفيد، سبب/ملاحظة، أو رقم فاتورة..."
+                  className="w-full bg-white border border-slate-200 rounded-xl pr-9 pl-8 py-2 text-xs font-bold text-slate-800 outline-none focus:border-amber-500"
+                />
+                <Search size={15} className="absolute right-3 top-2.5 text-slate-400" />
+                {waselSearch && (
+                  <button 
+                    type="button"
+                    onClick={() => setWaselSearch('')}
+                    className="absolute left-2.5 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Sub-filters for Target Report */}
         {reportType === 'target_report' && (
@@ -3090,7 +3190,70 @@ export function ReportsScreen({
       </div>
 
       {/* Report Summary */}
-      {isGenerated && activeReportType === 'net_profit' ? (
+      {isGenerated && activeReportType === 'wasel_report' ? (
+        <div className="space-y-6 mb-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="bg-gradient-to-r from-amber-900 via-amber-950 to-amber-900 rounded-3xl p-6 text-white shadow-xl border border-amber-800 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/10 rounded-full blur-3xl pointer-events-none"></div>
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative z-10">
+              <div>
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-black mb-2">
+                  <Gift size={14} />
+                  <span>خدمات الضيافة والإهداءات المجانية المعتمدة</span>
+                </div>
+                <h3 className="text-xl sm:text-2xl font-black text-white">تقرير فواتير واصل والخدمات المجانية</h3>
+                <p className="text-xs text-amber-200/90 mt-1 max-w-2xl font-medium leading-relaxed">
+                  حصر شامل لجميع الفواتير والخدمات الصادرة مجاناً كإهداء أو ضيافة مع توثيق اسم المستفيد وسبب المنح، واحتساب مستحقات وعمولات الفنيين المعتمدة بشكل طبيعي دون إدخال مبالغ للخزائن.
+                </p>
+              </div>
+
+              <div className="bg-white/10 backdrop-blur-md px-6 py-4 rounded-2xl border border-white/20 text-center shrink-0">
+                <p className="text-xs text-amber-200 font-bold mb-0.5">إجمالي القيمة التقديرية للخدمات المجانية</p>
+                <div className="text-2xl sm:text-3xl font-black font-mono text-amber-300">
+                  {Number(waselReportData.totalServicesValue || 0).toFixed(2)}
+                  <span className="text-xs font-normal text-amber-200 mr-1.5">{settings.currency}</span>
+                </div>
+                <div className="text-[11px] font-bold text-amber-200 mt-1">
+                  إجمالي عمولات الفنيين المحتسبة: <span className="font-mono text-white">{Number(waselReportData.totalCommissions || 0).toFixed(2)} {settings.currency}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-slate-500 mb-1">عدد فواتير واصل</p>
+                <h4 className="text-2xl font-black text-slate-900 font-mono">{waselReportData.totalInvoicesCount}</h4>
+              </div>
+              <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-700 flex items-center justify-center">
+                <FileBarChart size={24} />
+              </div>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-slate-500 mb-1">عدد المستفيدين الفريدين</p>
+                <h4 className="text-2xl font-black text-slate-900 font-mono">{waselReportData.uniqueBeneficiariesCount}</h4>
+              </div>
+              <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-700 flex items-center justify-center">
+                <UserCheck size={24} />
+              </div>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-slate-500 mb-1">إجمالي عمولات الفنيين</p>
+                <h4 className="text-2xl font-black text-emerald-700 font-mono">
+                  {Number(waselReportData.totalCommissions || 0).toFixed(2)} <span className="text-xs font-normal text-slate-400">{settings.currency}</span>
+                </h4>
+              </div>
+              <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center">
+                <Award size={24} />
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : isGenerated && activeReportType === 'net_profit' ? (
         <div className="space-y-6 mb-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
           
           {/* Main Profit Equation Visual Banner */}
@@ -3969,6 +4132,11 @@ export function ReportsScreen({
             handleSendSingleBirthdayGreeting={handleSendSingleBirthdayGreeting}
             getBirthdayWhatsAppWebUrl={getBirthdayWhatsAppWebUrl}
             setBirthdayQuickPeriod={setBirthdayQuickPeriod}
+            waselReportData={waselReportData}
+            waselSearch={waselSearch}
+            setWaselSearch={setWaselSearch}
+            branches={branches}
+            activeBranchId={activeBranchId}
           />
         </div>
       )}
@@ -3990,6 +4158,11 @@ function ReportTable({
   services, 
   products,
   fingerprintLogs,
+  waselReportData,
+  waselSearch = '',
+  setWaselSearch,
+  branches = [],
+  activeBranchId,
   branchTips,
   overtimeReportData,
   overtimeViewMode,
@@ -4117,7 +4290,245 @@ function ReportTable({
     return settings.treasuries.find((t: any) => t.id === id)?.name || id;
   };
 
-  
+  // ===================== تقرير واصل (الخدمات المجانية والمستفيدين) =====================
+  if (reportType === 'wasel_report') {
+    const rawInvoices = waselReportData?.invoices || [];
+    const filteredInvoices = rawInvoices.filter((inv: Invoice) => {
+      if (!waselSearch || !waselSearch.trim()) return true;
+      const q = waselSearch.toLowerCase().trim();
+      const matchInv = (inv.id || '').toLowerCase().includes(q);
+      const matchBen = ((inv as any).waselRecipientName || inv.clientName || '').toLowerCase().includes(q);
+      const matchPhone = (inv.clientPhone || '').includes(q);
+      const matchReason = ((inv as any).waselReason || inv.notes || '').toLowerCase().includes(q);
+      const matchItem = (inv.items || []).some((it: any) => 
+        (it.serviceName || '').toLowerCase().includes(q) || 
+        (it.technicianName || '').toLowerCase().includes(q)
+      );
+      const matchCashier = ((inv as any).cashierName || (inv as any).createdByName || '').toLowerCase().includes(q);
+      return matchInv || matchBen || matchPhone || matchReason || matchItem || matchCashier;
+    });
+
+    const totalFilteredServices = filteredInvoices.reduce((sum: number, inv: any) => {
+      const val = Number(inv.subtotal || 0) > 0 
+        ? Number(inv.subtotal) 
+        : (inv.items || []).reduce((s: number, it: any) => s + (Number(it.price || it.originalPrice || 0) * (it.quantity || 1)), 0);
+      return sum + val;
+    }, 0);
+
+    const totalFilteredCommissions = filteredInvoices.reduce((sum: number, inv: any) => {
+      const c = (inv.items || []).reduce((s: number, it: any) => s + Number(it.employeeCommission ?? it.commissionAmount ?? (it as any).commission ?? 0), 0);
+      return sum + c;
+    }, 0);
+
+    return (
+      <div id="wasel-report-container" className="bg-white rounded-2xl border border-amber-200 shadow-sm overflow-hidden p-6 animate-in fade-in space-y-6">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-5 border-b border-amber-100">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xl font-black text-slate-800 flex items-center gap-2">
+                <Gift size={24} className="text-amber-600" />
+                <span>تقرير فواتير واصل (الخدمات المجانية والمستفيدين)</span>
+                <span className="text-xs font-bold text-amber-800 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200">
+                  الفترة: {activeFrom} إلى {activeTo}
+                </span>
+              </span>
+            </div>
+            <p className="text-slate-500 text-xs mt-1">
+              حصر شامل للخدمات المجانية الممنوحة كـ (واصل) مع بيان المستفيدين، الأسباب، التكلفة التقديرية، والعمولات المحتسبة للموظفين
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => handlePrintReceipt('wasel-report-container', true, 'a4')}
+              className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+            >
+              <Printer size={15} /> طباعة التقرير
+            </button>
+          </div>
+        </div>
+
+        {/* Quick summary cards row */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200/80 rounded-xl p-3.5 flex flex-col justify-between">
+            <span className="text-[11px] font-bold text-amber-800">عدد فواتير واصل</span>
+            <div className="flex items-baseline justify-between mt-1">
+              <span className="text-2xl font-black text-amber-700 font-mono">{filteredInvoices.length}</span>
+              <span className="text-[10px] text-amber-600 font-semibold">فاتورة</span>
+            </div>
+          </div>
+          <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200/80 rounded-xl p-3.5 flex flex-col justify-between">
+            <span className="text-[11px] font-bold text-amber-800">إجمالي قيمة الخدمات الأصلية</span>
+            <div className="flex items-baseline justify-between mt-1">
+              <span className="text-2xl font-black text-amber-900 font-mono">{totalFilteredServices.toFixed(2)}</span>
+              <span className="text-[10px] text-amber-600 font-semibold">{settings.currency}</span>
+            </div>
+          </div>
+          <div className="bg-gradient-to-br from-indigo-50 to-blue-50 border border-indigo-200/80 rounded-xl p-3.5 flex flex-col justify-between">
+            <span className="text-[11px] font-bold text-indigo-800">عمولات الموظفين المستحقة</span>
+            <div className="flex items-baseline justify-between mt-1">
+              <span className="text-2xl font-black text-indigo-700 font-mono">{totalFilteredCommissions.toFixed(2)}</span>
+              <span className="text-[10px] text-indigo-600 font-semibold">{settings.currency}</span>
+            </div>
+          </div>
+          <div className="bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200/80 rounded-xl p-3.5 flex flex-col justify-between">
+            <span className="text-[11px] font-bold text-emerald-800">أثر الخزائن والمقبوضات</span>
+            <div className="flex items-baseline justify-between mt-1">
+              <span className="text-2xl font-black text-emerald-700 font-mono">0.00</span>
+              <span className="text-[10px] text-emerald-600 font-semibold">(مجاني تماماً)</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Detailed Table */}
+        <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-2xs">
+          <div className="p-3.5 bg-slate-900 text-white font-black text-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+            <div className="flex items-center gap-2">
+              <Gift size={15} className="text-amber-400" />
+              <span>كشف تفصيلي بفواتير واصل المصروفة مجاناً</span>
+              <span className="text-[11px] bg-slate-800 text-slate-300 px-2.5 py-0.5 rounded-full font-mono">
+                {filteredInvoices.length} فاتورة
+              </span>
+            </div>
+            <div className="text-[11px] text-slate-300 font-normal flex items-center gap-1">
+              <Sparkles size={12} className="text-amber-400 shrink-0" />
+              <span>نسب وعمولات الموظفين محتسبة بالكامل كأجر عمل ولا تؤثر على ميزانية الخزينة</span>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-right text-xs">
+              <thead>
+                <tr className="bg-slate-100 text-slate-700 font-extrabold border-b border-slate-200">
+                  <th className="py-3 px-3 w-10 text-center">#</th>
+                  <th className="py-3 px-3">رقم الفاتورة</th>
+                  <th className="py-3 px-3">التاريخ والوقت</th>
+                  <th className="py-3 px-3">المستفيد / العميل</th>
+                  <th className="py-3 px-3">سبب المنح</th>
+                  <th className="py-3 px-3">الخدمات والموظفون</th>
+                  <th className="py-3 px-3 text-left">القيمة الأصلية</th>
+                  <th className="py-3 px-3 text-left">عمولة الموظفين</th>
+                  <th className="py-3 px-3 text-center">الكاشير</th>
+                  <th className="py-3 px-3 text-center print:hidden">إجراء</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredInvoices.length === 0 ? (
+                  <tr>
+                    <td colSpan={10} className="py-12 text-center text-slate-400 font-bold">
+                      لا توجد فواتير واصل مطابقة خلال هذه الفترة
+                    </td>
+                  </tr>
+                ) : (
+                  filteredInvoices.map((inv: any, idx: number) => {
+                    const beneficiary = (inv.waselRecipientName || inv.clientName || 'غير محدد').trim();
+                    const reason = (inv.waselReason || inv.notes || 'خدمة مجانية (واصل)').trim();
+                    const invOriginalVal = Number(inv.subtotal || 0) > 0 
+                      ? Number(inv.subtotal) 
+                      : (inv.items || []).reduce((s: number, it: any) => s + (Number(it.price || it.originalPrice || 0) * (it.quantity || 1)), 0);
+                    const invComms = (inv.items || []).reduce((s: number, it: any) => s + Number(it.employeeCommission ?? it.commissionAmount ?? (it as any).commission ?? 0), 0);
+                    const dateFormatted = inv.date ? new Date(inv.date).toLocaleString('ar-EG', { dateStyle: 'short', timeStyle: 'short' }) : '---';
+                    const cashier = inv.cashierName || inv.createdByName || 'الكاشير';
+
+                    return (
+                      <tr key={inv.id || idx} className="hover:bg-amber-50/40 transition-colors">
+                        <td className="py-3 px-3 text-center font-mono text-slate-400 font-bold">{idx + 1}</td>
+                        <td className="py-3 px-3 font-mono font-bold text-slate-700">
+                          <span className="bg-slate-100 px-2 py-0.5 rounded text-[11px]">{inv.id}</span>
+                        </td>
+                        <td className="py-3 px-3 font-mono text-slate-600 whitespace-nowrap">{dateFormatted}</td>
+                        <td className="py-3 px-3">
+                          <div className="font-black text-slate-900">{beneficiary}</div>
+                          {inv.clientPhone && (
+                            <div className="text-[10px] text-slate-500 font-mono mt-0.5">{inv.clientPhone}</div>
+                          )}
+                        </td>
+                        <td className="py-3 px-3 max-w-xs">
+                          <div className="text-amber-900 bg-amber-50 border border-amber-200/60 px-2 py-1 rounded-lg text-[11px] font-medium leading-relaxed">
+                            {reason}
+                          </div>
+                        </td>
+                        <td className="py-3 px-3">
+                          <div className="flex flex-col gap-1 max-w-sm">
+                            {(inv.items || []).map((it: any, i: number) => (
+                              <div key={i} className="flex items-center justify-between gap-2 text-[11px] bg-slate-50 px-2 py-0.5 rounded border border-slate-100">
+                                <span className="font-semibold text-slate-800">{it.serviceName || it.name}</span>
+                                <div className="flex items-center gap-2">
+                                  {it.technicianName && (
+                                    <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded">
+                                      {it.technicianName}
+                                    </span>
+                                  )}
+                                  <span className="text-[10px] font-mono text-slate-500">
+                                    {Number(it.price || it.originalPrice || 0).toFixed(0)} {settings.currency}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="py-3 px-3 text-left font-mono font-black text-slate-800 whitespace-nowrap">
+                          {invOriginalVal.toFixed(2)} {settings.currency}
+                        </td>
+                        <td className="py-3 px-3 text-left font-mono font-black text-indigo-700 whitespace-nowrap">
+                          {invComms.toFixed(2)} {settings.currency}
+                        </td>
+                        <td className="py-3 px-3 text-center text-slate-600 whitespace-nowrap text-[11px]">
+                          {cashier}
+                        </td>
+                        <td className="py-3 px-3 text-center print:hidden whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={() => executePrintInvoiceReceipt(`wasel-inv-print-${inv.id}`, inv.id)}
+                            className="bg-slate-800 hover:bg-slate-900 text-white p-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1 shadow-2xs transition-all mx-auto cursor-pointer"
+                            title="طباعة الفاتورة"
+                          >
+                            <Printer size={13} />
+                            <span>طباعة</span>
+                          </button>
+
+                          {/* Hidden printable receipt for thermal/standard printing */}
+                          <div className="hidden">
+                            <InvoiceReceiptCard
+                              id={`wasel-inv-print-${inv.id}`}
+                              invoice={inv}
+                              settings={settings}
+                              branches={branches}
+                              activeBranchId={activeBranchId}
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+              {filteredInvoices.length > 0 && (
+                <tfoot>
+                  <tr className="bg-slate-900 text-white font-black text-xs border-t-2 border-amber-500">
+                    <td colSpan={6} className="py-3 px-4 text-right">
+                      الإجمالي العام ({filteredInvoices.length} فاتورة واصل)
+                    </td>
+                    <td className="py-3 px-3 text-left font-mono text-amber-300 text-sm">
+                      {totalFilteredServices.toFixed(2)} {settings.currency}
+                    </td>
+                    <td className="py-3 px-3 text-left font-mono text-indigo-300 text-sm">
+                      {totalFilteredCommissions.toFixed(2)} {settings.currency}
+                    </td>
+                    <td colSpan={2} className="py-3 px-4 text-center text-slate-400 text-[10px]">
+                      مقبوضات الخزينة: 0.00
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (reportType === 'income') {
     const dateLabel = start.toISOString().split('T')[0] === end.toISOString().split('T')[0] 
       ? start.toISOString().split('T')[0] 
@@ -4568,12 +4979,12 @@ function ReportTable({
       if (inv.status !== 'cancelled' && Array.isArray(inv.items)) {
         const totalBeforeDiscount = inv.items.reduce((s, item) => s + (Number(item.price || 0) * (item.quantity || 1)), 0);
         const discount = Number(inv.discount) || 0;
-        const discountRatio = totalBeforeDiscount > 0 ? (discount / totalBeforeDiscount) : 0;
+        const discountRatio = (inv.isWaselInvoice || totalBeforeDiscount <= 0) ? 0 : (discount / totalBeforeDiscount);
 
         inv.items.forEach(item => {
           const qty = item.quantity || 1;
-          const itemTotal = (Number(item.price) || 0) * qty;
-          const effectivePrice = Math.max(0, itemTotal - (itemTotal * discountRatio));
+          const itemTotal = (Number(item.price || item.originalPrice) || 0) * qty;
+          const effectivePrice = inv.isWaselInvoice ? itemTotal : Math.max(0, itemTotal - (itemTotal * discountRatio));
 
           const service = services.find((s: any) => s.id === item.itemId || s.id === item.id || s.name === item.serviceName);
           const product = products && products.find((p: any) => p.id === item.itemId || p.id === item.id || p.name === item.serviceName);

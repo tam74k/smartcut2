@@ -1390,9 +1390,9 @@ export function POSScreen({
           commission: execCommAmt > 0 ? execCommAmt : undefined,
           commissionableAmount: commBaseVal > 0 ? commBaseVal : undefined,
           isTargetExempt: isExempt || undefined,
-          price: (isRemedyInvoice || isWaselInvoice) ? 0 : itemPrice,
+          price: isRemedyInvoice ? 0 : itemPrice,
           discount: Number(c.discount || c.item?.discount) || undefined,
-          originalPrice: Number(c.originalPrice || c.item?.originalPrice) || undefined,
+          originalPrice: Number(c.originalPrice || c.item?.originalPrice || itemPrice) || undefined,
           quantity: qty
         };
       }),
@@ -3496,32 +3496,42 @@ export function POSScreen({
               </div>
 
               {isWaselInvoice ? (
-                <div className="bg-amber-50 border border-amber-300 rounded-2xl p-4 text-center space-y-3">
-                  <div className="inline-flex p-3 rounded-full bg-amber-100 text-amber-700 shadow-xs">
-                    <Gift size={28} />
-                  </div>
+                <div className="space-y-4">
                   <div>
-                    <h4 className="font-black text-amber-950 text-sm">فاتورة واصل (خدمات مجانية بالكامل)</h4>
-                    <p className="text-[11px] text-amber-800">صافي المطلوب سداده: 0.00 {settings.currency}</p>
-                  </div>
-                  <div className="text-xs text-amber-950 space-y-2 text-right bg-white/90 p-3.5 rounded-xl border border-amber-200">
-                    <div className="flex justify-between items-center">
-                      <span className="font-bold text-slate-500">اسم المستفيد:</span>
-                      <span className="font-black text-amber-950 text-sm">{waselRecipientName.trim()}</span>
+                    <label className="block text-xs font-bold text-slate-500 mb-2">طريقة السداد المحددة:</label>
+                    <div className="flex items-center justify-between p-4 border-2 border-amber-500 bg-amber-50/80 rounded-2xl shadow-sm">
+                      <div className="flex items-center gap-3">
+                        <div className="w-6 h-6 rounded-full bg-amber-600 text-white flex items-center justify-center shrink-0">
+                          <Check size={14} className="stroke-[3]" />
+                        </div>
+                        <div>
+                          <div className="font-black text-amber-950 text-sm flex items-center gap-1.5">
+                            <Gift size={16} className="text-amber-600" />
+                            <span>واصل (خدمات مجانية بالكامل)</span>
+                          </div>
+                          <div className="text-[11px] text-amber-800 font-bold mt-1">
+                            <span>المستفيد: <strong>{waselRecipientName.trim()}</strong></span>
+                            <span className="mx-1.5 text-amber-400">|</span>
+                            <span>السبب: {waselReason.trim()}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <span className="font-mono font-black text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-xl text-xs border border-emerald-300">
+                        0.00 {settings.currency}
+                      </span>
                     </div>
-                    <div className="flex justify-between items-start gap-2">
-                      <span className="font-bold text-slate-500 shrink-0">سبب الخدمة المجانية:</span>
-                      <span className="font-medium text-amber-900 text-left">{waselReason.trim()}</span>
-                    </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowWaselModal(true)}
-                    className="text-xs text-amber-800 underline font-black hover:text-amber-950 inline-flex items-center gap-1 cursor-pointer"
-                  >
-                    <Edit3 size={11} />
-                    <span>تعديل بيانات واصل</span>
-                  </button>
+
+                  <div className="flex justify-center">
+                    <button
+                      type="button"
+                      onClick={() => setShowWaselModal(true)}
+                      className="text-xs text-amber-800 underline font-black hover:text-amber-950 inline-flex items-center gap-1.5 cursor-pointer py-1 px-3 rounded-lg hover:bg-amber-100/50 transition-colors"
+                    >
+                      <Edit3 size={13} />
+                      <span>تعديل بيانات واصل (المستفيد / السبب)</span>
+                    </button>
+                  </div>
                 </div>
               ) : isRemedyInvoice ? (
                 <div className="bg-purple-50 border border-purple-300 rounded-2xl p-4 text-center space-y-3">
@@ -3909,7 +3919,7 @@ export function POSScreen({
                   <X size={16} />
                 )}
                 <span>
-                  {isWaselInvoice ? 'حفظ واصل وإغلاق' : (isRemedyInvoice ? 'حفظ الضمان وإغلاق' : (paymentMode === 'deferred' ? 'تأجيل وإغلاق' : paymentMode === 'partial' ? 'سداد الدفعة وإغلاق' : 'سداد وإغلاق'))}
+                  {isWaselInvoice ? 'تأكيد وحفظ واصل' : (isRemedyInvoice ? 'حفظ الضمان وإغلاق' : (paymentMode === 'deferred' ? 'تأجيل وإغلاق' : paymentMode === 'partial' ? 'سداد الدفعة وإغلاق' : 'سداد وإغلاق'))}
                 </span>
               </button>
 
@@ -3941,7 +3951,7 @@ export function POSScreen({
                     <Printer size={17} />
                     <span>
                       {isWaselInvoice 
-                        ? 'حفظ وطباعة واصل' 
+                        ? 'تأكيد وطباعة الفاتورة' 
                         : isRemedyInvoice 
                         ? 'حفظ وطباعة الضمان' 
                         : paymentMode === 'deferred' 

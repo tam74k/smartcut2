@@ -50,12 +50,12 @@ export function EmployeesReportReceipt({
     if (inv.status !== 'cancelled' && Array.isArray(inv.items)) {
       const totalBeforeDiscount = inv.items.reduce((s, item) => s + (Number(item.price || 0) * (item.quantity || 1)), 0);
       const discount = Number(inv.discount) || 0;
-      const discountRatio = totalBeforeDiscount > 0 ? (discount / totalBeforeDiscount) : 0;
+      const discountRatio = (inv.isWaselInvoice || totalBeforeDiscount <= 0) ? 0 : (discount / totalBeforeDiscount);
 
       inv.items.forEach(item => {
         const qty = item.quantity || 1;
-        const itemTotal = (Number(item.price) || 0) * qty;
-        const effectivePrice = Math.max(0, itemTotal - (itemTotal * discountRatio));
+        const itemTotal = (Number(item.price || item.originalPrice) || 0) * qty;
+        const effectivePrice = inv.isWaselInvoice ? itemTotal : Math.max(0, itemTotal - (itemTotal * discountRatio));
 
         const service = services.find(s => s.id === item.itemId || s.id === item.id || s.name === item.serviceName);
         const product = products && products.find(p => p.id === item.itemId || p.id === item.id || p.name === item.serviceName);

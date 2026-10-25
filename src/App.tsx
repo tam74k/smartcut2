@@ -2609,7 +2609,8 @@ export default function App() {
            if (srvAmount > 0) {
              commAmount = srvAmount * (item.quantity || 1);
            } else if (srvPct > 0) {
-             commAmount = (srvPct / 100) * (item.price || 0) * (item.quantity || 1);
+             const basePrice = Number(item.price || item.originalPrice || srv.price || 0);
+             commAmount = (srvPct / 100) * basePrice * (item.quantity || 1);
            }
          }
 

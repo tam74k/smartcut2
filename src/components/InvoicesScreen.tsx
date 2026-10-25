@@ -502,10 +502,22 @@ export function InvoicesScreen({
                     </div>
                   </td>
                   <td className="px-6 py-4 text-center text-xs font-bold text-slate-600">
-                    {inv.paymentMethods?.map(pm => {
-                      const treasury = settings.treasuries.find(t => t.id === pm.treasuryId);
-                      return treasury ? <div key={pm.treasuryId}>{treasury.name} ({pm.amount})</div> : null;
-                    }) || '-'}
+                    {inv.isWaselInvoice || inv.paymentMethod === 'wasel_free' || inv.paymentMethods?.some(pm => pm.treasuryId === 'wasel_free') ? (
+                      <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-900 font-black px-2.5 py-1 rounded-full border border-amber-300 shadow-2xs">
+                        <Gift size={11} className="text-amber-700" />
+                        <span>واصل</span>
+                      </span>
+                    ) : inv.isRemedyInvoice || inv.paymentMethod === 'remedy_free' || inv.paymentMethods?.some(pm => pm.treasuryId === 'remedy_free') ? (
+                      <span className="inline-flex items-center gap-1 bg-purple-100 text-purple-800 font-black px-2.5 py-1 rounded-full border border-purple-200 shadow-2xs">
+                        <Wrench size={11} className="text-purple-700" />
+                        <span>إصلاح (ضمان)</span>
+                      </span>
+                    ) : (
+                      inv.paymentMethods?.map((pm, pmIdx) => {
+                        const treasury = settings.treasuries.find(t => t.id === pm.treasuryId);
+                        return treasury ? <div key={pm.treasuryId || pmIdx}>{treasury.name} ({Number(pm.amount || 0).toFixed(2)})</div> : null;
+                      }) || '-'
+                    )}
                   </td>
                   <td className="px-6 py-4 text-center font-bold text-red-500">{Number(inv.discount || 0) > 0 ? Number(inv.discount).toFixed(2) : '-'}</td>
                   <td className="px-6 py-4 text-center font-bold text-blue-600">{Number(inv.cashbackUsed || 0) > 0 ? Number(inv.cashbackUsed).toFixed(2) : '-'}</td>

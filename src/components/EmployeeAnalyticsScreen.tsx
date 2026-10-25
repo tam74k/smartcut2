@@ -93,12 +93,12 @@ export function EmployeeAnalyticsScreen({
       filteredInvoices.forEach(inv => {
         const totalBeforeDiscount = (inv.items || []).reduce((s, item) => s + (Number(item.price || 0) * (item.quantity || 1)), 0);
         const discount = Number(inv.discount) || 0;
-        const discountRatio = totalBeforeDiscount > 0 ? (discount / totalBeforeDiscount) : 0;
+        const discountRatio = (inv.isWaselInvoice || totalBeforeDiscount <= 0) ? 0 : (discount / totalBeforeDiscount);
 
         inv.items?.forEach(item => {
           const qty = item.quantity || 1;
-          const rawItemPrice = (Number(item.price) || 0) * qty;
-          const effectivePrice = Math.max(0, rawItemPrice - (rawItemPrice * discountRatio));
+          const rawItemPrice = (Number(item.price || item.originalPrice) || 0) * qty;
+          const effectivePrice = inv.isWaselInvoice ? rawItemPrice : Math.max(0, rawItemPrice - (rawItemPrice * discountRatio));
 
           // A) Execution (تنفيذ الخدمة أو بيع المنتج)
           if (item.employeeId === emp.id || item.technicianName === emp.name) {

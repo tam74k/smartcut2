@@ -21,15 +21,15 @@ export function ServicesReportReceipt({
     if (inv.status === 'completed' && inv.items) {
       const totalBeforeDiscount = inv.items.reduce((s, item) => s + (item.price * (item.quantity || 1)), 0);
       const discount = inv.discount || 0;
-      const discountRatio = totalBeforeDiscount > 0 ? (discount / totalBeforeDiscount) : 0;
+      const discountRatio = (inv.isWaselInvoice || totalBeforeDiscount <= 0) ? 0 : (discount / totalBeforeDiscount);
 
       inv.items.forEach(item => {
         if (!servicesMap[item.serviceName]) {
           servicesMap[item.serviceName] = { count: 0, total: 0 };
         }
         const qty = item.quantity || 1;
-        const itemTotal = item.price * qty;
-        const effectivePrice = itemTotal - (itemTotal * discountRatio);
+        const itemTotal = (Number(item.price || item.originalPrice) || 0) * qty;
+        const effectivePrice = inv.isWaselInvoice ? itemTotal : (itemTotal - (itemTotal * discountRatio));
         servicesMap[item.serviceName].count += qty;
         servicesMap[item.serviceName].total += effectivePrice;
         
