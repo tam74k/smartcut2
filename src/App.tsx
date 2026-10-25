@@ -10,8 +10,9 @@ import {
   UsersRound, List, Menu, X, Printer, Package, Truck, 
   ShoppingCart, ClipboardList, Shield, User as UserIcon, Sparkles, BarChart3, Boxes, Bot,
   AlertCircle, Smartphone, ShieldAlert, ShieldCheck, Tag, HeartHandshake, Briefcase, Fingerprint, Radio,
-  Key, AlertTriangle, Clock, Lock, ChevronUp, ChevronDown, Zap, MessageSquare, Hourglass, Sliders
+  Key, AlertTriangle, Clock, Lock, ChevronUp, ChevronDown, Zap, MessageSquare, Hourglass, Sliders, TableProperties
 } from 'lucide-react';
+import { DailySheetScreen } from './components/DailySheetScreen';
 import { POSScreen } from './components/POSScreen';
 import { SettingsScreen } from './components/SettingsScreen';
 import { HRScreen } from './components/HRScreen';
@@ -3280,7 +3281,19 @@ export default function App() {
           clients={salonClients}
           setClients={handleSetClients}
         />
-
+      );
+      case 'daily_sheet': return (
+        <DailySheetScreen
+          settings={settings}
+          invoices={branchInvoices}
+          transactions={branchTransactions}
+          expenses={branchTransactions.filter(t => t.category === 'expense' || t.type === 'expense')}
+          employees={branchEmployees}
+          services={branchServices}
+          branches={branches}
+          activeBranchId={activeBranchId}
+          currentUser={currentUser}
+        />
       );
       case 'permissions': return (
         <PermissionsScreen 
@@ -3353,6 +3366,7 @@ export default function App() {
     { id: 'hr', icon: Clock, label: 'شؤون العاملين وسجل الدوام' },
     { id: 'partners', icon: Briefcase, label: 'الشركاء والأرباح والخسائر' },
     { id: 'reports', icon: FileText, label: 'التقارير الشاملة' },
+    { id: 'daily_sheet', icon: TableProperties, label: 'الكشف اليومي' },
     { id: 'tips', icon: HeartHandshake, label: 'البقشيش والإكراميات' },
     { id: 'promo_codes', icon: Tag, label: 'البرومو كود والكوبونات' },
     { id: 'manager_ai_chat', icon: Bot, label: 'المساعد الذكي' },
