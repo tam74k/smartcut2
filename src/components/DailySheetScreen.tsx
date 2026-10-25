@@ -77,9 +77,16 @@ export function DailySheetScreen({
     return clean === selectedDate;
   };
 
-  // 1. Registered payment methods / treasuries (Dynamic based on settings.treasuries)
+  // 1. Registered payment methods / treasuries (Excluding Main Treasury / الخزينة الرئيسية)
   const registeredMethods = useMemo(() => {
-    const treasuries = settings.treasuries || [];
+    const treasuries = (settings.treasuries || []).filter(t => {
+      if (t.isMain) return false;
+      if (t.id === 'main' || t.id.toLowerCase().includes('main')) return false;
+      const n = (t.name || '').toLowerCase();
+      if (n.includes('الرئيسية') || n.includes('رئيسية') || n.includes('main')) return false;
+      return true;
+    });
+
     if (treasuries.length > 0) {
       return treasuries.map(t => ({
         id: t.id,
@@ -596,7 +603,7 @@ export function DailySheetScreen({
         </div>
 
         <div className="bg-gradient-to-br from-indigo-900 to-slate-900 p-3.5 rounded-xl text-white shadow-xs flex flex-col justify-between">
-          <span className="text-[11px] font-bold text-indigo-200">صافي الدخل (الخزينة)</span>
+          <span className="text-[11px] font-bold text-indigo-200">صافي الدخل</span>
           <div className="flex items-baseline justify-between mt-1">
             <span className={`text-xl font-black font-mono ${netIncome >= 0 ? 'text-amber-300' : 'text-rose-400'}`}>
               {netIncome.toFixed(0)}
@@ -911,7 +918,7 @@ export function DailySheetScreen({
                 {/* Footer Row 7: Final Net Income */}
                 <tr style={{ height: '48px', backgroundColor: '#1a237e', color: '#ffffff', fontSize: '24px', fontWeight: 'bold', borderTop: '4px double #fff' }}>
                   <td colSpan={totalTableCols} className="border border-black py-2 px-4 text-center font-black">
-                    صافي الدخل (الخزينة): {netIncome.toFixed(0)} {settings.currency}
+                    صافي الدخل: {netIncome.toFixed(0)} {settings.currency}
                   </td>
                 </tr>
               </tfoot>
