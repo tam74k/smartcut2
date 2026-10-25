@@ -10,7 +10,7 @@ import { IncomeReportReceipt } from './IncomeReportReceipt';
 import { CustodyReportReceipt } from './CustodyReportReceipt';
 import { exportToExcel } from '../utils/exportExcel';
 import { handlePrintReceipt } from '../utils/print';
-import { calculateEmployeeCommission, calculateEmployeeTotalCommission } from '../utils/commissionHelper';
+import { calculateEmployeeCommission, calculateEmployeeTotalCommission, isWaselInvoice } from '../utils/commissionHelper';
 import { calculateEmployeeTargetCommission } from '../utils/targetCalculationHelper';
 import { DB, getFingerprintProcessedDate } from '../services/db';
 import { AuthService } from '../services/auth';
@@ -542,7 +542,7 @@ export function ReportsScreen({
       if (inv.status === 'cancelled') return false;
       const d = inv.date ? inv.date.split('T')[0] : '';
       const inDateRange = d >= activeFrom && d <= activeTo;
-      const isWasel = Boolean(inv.isWaselInvoice || inv.paymentMethod === 'wasel_free' || inv.paymentMethods?.some(pm => pm.treasuryId === 'wasel_free'));
+      const isWasel = isWaselInvoice(inv);
       return inDateRange && isWasel;
     });
 
@@ -560,7 +560,25 @@ export function ReportsScreen({
       totalServicesValue += invValue;
 
       (inv.items || []).forEach(it => {
-        totalCommissions += Number(it.employeeCommission ?? it.commissionAmount ?? (it as any).commission ?? 0);
+        let comm = Number(it.employeeCommission ?? it.commissionAmount ?? (it as any).commission ?? 0);
+        if (comm <= 0) {
+          const srv = services.find((s: any) => s.id === it.itemId || s.id === it.id || s.name === it.serviceName);
+          const srvAmt = Number(srv?.employeeCommissionAmount ?? srv?.commissionAmount ?? 0);
+          const srvPct = Number(srv?.employeeCommissionPercentage ?? srv?.commissionRate ?? 0);
+          const rawBase = Number(srv?.commissionableAmount ?? it.commissionableAmount ?? 0);
+          const p = Number(it.price || it.originalPrice || 0);
+          const q = Number(it.quantity || 1);
+          const commBase = rawBase > 0 ? (rawBase * q) : (p * q);
+          if (srvAmt > 0) comm = srvAmt * q;
+          else if (srvPct > 0) comm = commBase * (srvPct / 100);
+          else {
+            const performerEmp = employees.find((e: any) => (it.employeeId && e.id === it.employeeId) || (it.technicianName && e.name === it.technicianName));
+            if (performerEmp && Number(performerEmp.commissionRate) > 0) {
+              comm = commBase * ((Number(performerEmp.commissionRate) || 0) / 100);
+            }
+          }
+        }
+        totalCommissions += comm;
       });
     });
 
@@ -4977,14 +4995,15 @@ function ReportTable({
 
     filteredInvoices.forEach(inv => {
       if (inv.status !== 'cancelled' && Array.isArray(inv.items)) {
-        const totalBeforeDiscount = inv.items.reduce((s, item) => s + (Number(item.price || 0) * (item.quantity || 1)), 0);
+        const isWasel = isWaselInvoice(inv);
+        const totalBeforeDiscount = inv.items.reduce((s, item) => s + (Number(item.price || item.originalPrice || 0) * (item.quantity || 1)), 0);
         const discount = Number(inv.discount) || 0;
-        const discountRatio = (inv.isWaselInvoice || totalBeforeDiscount <= 0) ? 0 : (discount / totalBeforeDiscount);
+        const discountRatio = (isWasel || totalBeforeDiscount <= 0) ? 0 : (discount / totalBeforeDiscount);
 
         inv.items.forEach(item => {
           const qty = item.quantity || 1;
           const itemTotal = (Number(item.price || item.originalPrice) || 0) * qty;
-          const effectivePrice = inv.isWaselInvoice ? itemTotal : Math.max(0, itemTotal - (itemTotal * discountRatio));
+          const effectivePrice = isWasel ? itemTotal : Math.max(0, itemTotal - (itemTotal * discountRatio));
 
           const service = services.find((s: any) => s.id === item.itemId || s.id === item.id || s.name === item.serviceName);
           const product = products && products.find((p: any) => p.id === item.itemId || p.id === item.id || p.name === item.serviceName);

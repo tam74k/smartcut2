@@ -1,5 +1,6 @@
 import React from 'react';
 import { AppSettings, Invoice } from '../types';
+import { isWaselInvoice } from '../utils/commissionHelper';
 
 export function ServicesReportReceipt({
   settings,
@@ -19,9 +20,10 @@ export function ServicesReportReceipt({
 
   invoices.forEach(inv => {
     if (inv.status === 'completed' && inv.items) {
-      const totalBeforeDiscount = inv.items.reduce((s, item) => s + (item.price * (item.quantity || 1)), 0);
+      const isWasel = isWaselInvoice(inv);
+      const totalBeforeDiscount = inv.items.reduce((s, item) => s + (Number(item.price || item.originalPrice || 0) * (item.quantity || 1)), 0);
       const discount = inv.discount || 0;
-      const discountRatio = (inv.isWaselInvoice || totalBeforeDiscount <= 0) ? 0 : (discount / totalBeforeDiscount);
+      const discountRatio = (isWasel || totalBeforeDiscount <= 0) ? 0 : (discount / totalBeforeDiscount);
 
       inv.items.forEach(item => {
         if (!servicesMap[item.serviceName]) {
@@ -29,7 +31,7 @@ export function ServicesReportReceipt({
         }
         const qty = item.quantity || 1;
         const itemTotal = (Number(item.price || item.originalPrice) || 0) * qty;
-        const effectivePrice = inv.isWaselInvoice ? itemTotal : (itemTotal - (itemTotal * discountRatio));
+        const effectivePrice = isWasel ? itemTotal : (itemTotal - (itemTotal * discountRatio));
         servicesMap[item.serviceName].count += qty;
         servicesMap[item.serviceName].total += effectivePrice;
         

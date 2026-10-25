@@ -7,7 +7,7 @@ import {
   CheckCircle2, FileText, Sparkles, Scissors, Zap, Eye, X,
   Clock, TrendingUp, DollarSign, Layers, ChevronDown, Award
 } from 'lucide-react';
-import { calculateEmployeeCommission, getCommissionModelLabel } from '../utils/commissionHelper';
+import { calculateEmployeeCommission, getCommissionModelLabel, isWaselInvoice } from '../utils/commissionHelper';
 import { handlePrintReceipt } from '../utils/print';
 
 export interface CommissionItemRow {
@@ -193,18 +193,19 @@ export function EmployeeCommissionsDetailedSection({
 
     validInvoices.forEach(inv => {
       const items = inv.items || [];
+      const isWasel = isWaselInvoice(inv);
       const invoiceSubtotal = items.reduce(
-        (sum, it) => sum + (Number(it.price || 0) * (it.quantity || 1)), 
+        (sum, it) => sum + (Number(it.price || it.originalPrice || 0) * (it.quantity || 1)), 
         0
       );
       const invoiceDiscount = Number(inv.discount || 0);
-      const discountRatio = (inv.isWaselInvoice || invoiceSubtotal <= 0) ? 0 : (invoiceDiscount / invoiceSubtotal);
+      const discountRatio = (isWasel || invoiceSubtotal <= 0) ? 0 : (invoiceDiscount / invoiceSubtotal);
       const { dateStr, timeStr } = formatTo12HourTime(inv.date);
 
       items.forEach((item, itemIdx) => {
         const qty = item.quantity || 1;
         const itemGross = Number(item.price || item.originalPrice || 0) * qty;
-        const effectivePrice = inv.isWaselInvoice ? itemGross : Math.max(0, itemGross - (itemGross * discountRatio));
+        const effectivePrice = isWasel ? itemGross : Math.max(0, itemGross - (itemGross * discountRatio));
 
         const matchedService = effectiveServices.find(s => s.id === item.itemId || s.name === item.serviceName);
         const matchedProduct = effectiveProducts.find(p => p.id === item.itemId || p.name === item.serviceName);

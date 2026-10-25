@@ -1,4 +1,5 @@
 import { Employee, Invoice, AppSettings, TargetCalculationPolicy } from '../types';
+import { isWaselInvoice } from './commissionHelper';
 
 export interface TargetCalculationParams {
   employee: Employee;
@@ -62,6 +63,8 @@ export function getTargetPolicyLabel(policy: TargetCalculationPolicy = 1): strin
 /**
  * Calculates the exact discounted (actual paid) price for an invoice item.
  * Strictly guarantees non-canceled invoices and proportional discount application.
+ * Note: Wasel (complimentary / 100% discount) invoices are counted at full gross service value
+ * for employee commission and target achievement purposes, even though customer paid 0.
  */
 export function calculateItemDiscountedPaidAmount(item: any, invoice: Invoice): number {
   if (!item || !invoice) return 0;
@@ -72,14 +75,20 @@ export function calculateItemDiscountedPaidAmount(item: any, invoice: Invoice): 
     return 0;
   }
 
-  const price = Number(item.price) || 0;
+  const price = Number(item.price || item.originalPrice) || 0;
   const quantity = Number(item.quantity) || 1;
   const itemGross = price * quantity;
   if (itemGross <= 0) return 0;
 
+  // Rule 2: Wasel (واصل) invoices are complimentary for the customer,
+  // but for the employee's commission and target achievement they are evaluated at full gross value!
+  if (isWaselInvoice(invoice)) {
+    return Math.round(itemGross * 100) / 100;
+  }
+
   // Calculate gross total across all items in invoice
   const grossSubtotal = (invoice.items || []).reduce((sum, it) => {
-    const p = Number(it.price) || 0;
+    const p = Number(it.price || it.originalPrice) || 0;
     const q = Number(it.quantity) || 1;
     return sum + (p * q);
   }, 0);
@@ -240,7 +249,7 @@ export function calculateEmployeeTargetCommission({
       const rawCommBase = Number(item.commissionableAmount);
       if (!isNaN(rawCommBase) && rawCommBase > 0) {
         // Apply proportional discount ratio if any
-        const itemGross = (Number(item.price) || 0) * qty;
+        const itemGross = (Number(item.price || item.originalPrice) || 0) * qty;
         const discountRatio = itemGross > 0 ? (paidAmount / itemGross) : 1;
         itemTargetRevenue = Math.round(rawCommBase * qty * discountRatio * 100) / 100;
       }

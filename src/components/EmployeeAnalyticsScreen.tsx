@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { exportToExcel } from '../utils/exportExcel';
 import { AuthService } from '../services/auth';
-import { calculateEmployeeCommission, getCommissionModelLabel, calculateEmployeeTotalCommission } from '../utils/commissionHelper';
+import { calculateEmployeeCommission, getCommissionModelLabel, calculateEmployeeTotalCommission, isWaselInvoice } from '../utils/commissionHelper';
 
 export function EmployeeAnalyticsScreen({
   settings,
@@ -91,14 +91,15 @@ export function EmployeeAnalyticsScreen({
       let invoiceReferralCommission = 0;
 
       filteredInvoices.forEach(inv => {
-        const totalBeforeDiscount = (inv.items || []).reduce((s, item) => s + (Number(item.price || 0) * (item.quantity || 1)), 0);
+        const isWasel = isWaselInvoice(inv);
+        const totalBeforeDiscount = (inv.items || []).reduce((s, item) => s + (Number(item.price || item.originalPrice || 0) * (item.quantity || 1)), 0);
         const discount = Number(inv.discount) || 0;
-        const discountRatio = (inv.isWaselInvoice || totalBeforeDiscount <= 0) ? 0 : (discount / totalBeforeDiscount);
+        const discountRatio = (isWasel || totalBeforeDiscount <= 0) ? 0 : (discount / totalBeforeDiscount);
 
         inv.items?.forEach(item => {
           const qty = item.quantity || 1;
           const rawItemPrice = (Number(item.price || item.originalPrice) || 0) * qty;
-          const effectivePrice = inv.isWaselInvoice ? rawItemPrice : Math.max(0, rawItemPrice - (rawItemPrice * discountRatio));
+          const effectivePrice = isWasel ? rawItemPrice : Math.max(0, rawItemPrice - (rawItemPrice * discountRatio));
 
           // A) Execution (تنفيذ الخدمة أو بيع المنتج)
           if (item.employeeId === emp.id || item.technicianName === emp.name) {

@@ -1,6 +1,19 @@
 import { Employee, CommissionTier } from '../types';
 
 /**
+ * فحص ما إذا كانت الفاتورة فاتورة واصل (خدمات مجانية بالكامل / ضيافة الصالون)
+ * سواء عبر علامة isWaselInvoice أو طريقة الدفع wasel_free أو ضمن طرق الدفع المقسمة
+ */
+export function isWaselInvoice(inv: any): boolean {
+  if (!inv) return false;
+  return Boolean(
+    inv.isWaselInvoice ||
+    inv.paymentMethod === 'wasel_free' ||
+    inv.paymentMethods?.some((pm: any) => pm.treasuryId === 'wasel_free' || pm.methodId === 'wasel_free')
+  );
+}
+
+/**
  * Calculates earned commission for an employee based on their configured model:
  * 1. 'none': No commission (0)
  * 2. 'tiered_brackets': Progressive brackets calculation

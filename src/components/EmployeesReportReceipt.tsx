@@ -1,5 +1,5 @@
 import { AppSettings, Invoice, Employee, ServiceItem } from '../types';
-import { calculateEmployeeCommission, calculateEmployeeTotalCommission } from '../utils/commissionHelper';
+import { calculateEmployeeCommission, calculateEmployeeTotalCommission, isWaselInvoice } from '../utils/commissionHelper';
 
 export interface EmployeeWorkCommissionSummary {
   name: string;
@@ -48,14 +48,15 @@ export function EmployeesReportReceipt({
 
   (invoices || []).forEach(inv => {
     if (inv.status !== 'cancelled' && Array.isArray(inv.items)) {
-      const totalBeforeDiscount = inv.items.reduce((s, item) => s + (Number(item.price || 0) * (item.quantity || 1)), 0);
+      const isWasel = isWaselInvoice(inv);
+      const totalBeforeDiscount = inv.items.reduce((s, item) => s + (Number(item.price || item.originalPrice || 0) * (item.quantity || 1)), 0);
       const discount = Number(inv.discount) || 0;
-      const discountRatio = (inv.isWaselInvoice || totalBeforeDiscount <= 0) ? 0 : (discount / totalBeforeDiscount);
+      const discountRatio = (isWasel || totalBeforeDiscount <= 0) ? 0 : (discount / totalBeforeDiscount);
 
       inv.items.forEach(item => {
         const qty = item.quantity || 1;
         const itemTotal = (Number(item.price || item.originalPrice) || 0) * qty;
-        const effectivePrice = inv.isWaselInvoice ? itemTotal : Math.max(0, itemTotal - (itemTotal * discountRatio));
+        const effectivePrice = isWasel ? itemTotal : Math.max(0, itemTotal - (itemTotal * discountRatio));
 
         const service = services.find(s => s.id === item.itemId || s.id === item.id || s.name === item.serviceName);
         const product = products && products.find(p => p.id === item.itemId || p.id === item.id || p.name === item.serviceName);

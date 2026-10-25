@@ -1369,6 +1369,8 @@ export function POSScreen({
             execCommAmt = srvAmount * qty;
           } else if (srvPct > 0) {
             execCommAmt = (srvPct / 100) * commBase * qty;
+          } else if (performer && (performer.commissionModel === 'fixed_rate' || !performer.commissionModel) && Number(performer.commissionRate) > 0) {
+            execCommAmt = ((Number(performer.commissionRate) || 0) / 100) * commBase * qty;
           }
         }
 

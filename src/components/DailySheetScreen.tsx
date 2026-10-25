@@ -23,7 +23,14 @@ import {
   Sparkles,
   TableProperties
 } from 'lucide-react';
-import { calculateEmployeeCommission, getCommissionModelLabel } from '../utils/commissionHelper';
+import { 
+  calculateEmployeeCommission, 
+  getCommissionModelLabel, 
+  calculateEmployeeTotalCommission, 
+  hasEmployeeFixedCommission, 
+  isWaselInvoice 
+} from '../utils/commissionHelper';
+import { calculateEmployeeTargetCommission } from '../utils/targetCalculationHelper';
 import { exportToExcel } from '../utils/exportExcel';
 
 interface DailySheetScreenProps {
@@ -168,13 +175,26 @@ export function DailySheetScreen({
           return sum + (p * q);
         }, 0);
 
-        // Commission for these items
+        // Commission for these items (including Wasel items)
         const empItemsCommission = empItems.reduce((sum, it) => {
-          const c = Number(it.employeeCommission ?? it.commissionAmount ?? (it as any).commission ?? 0);
+          let c = Number(it.employeeCommission ?? it.commissionAmount ?? (it as any).commission ?? 0);
+          if (c <= 0 && services && services.length > 0) {
+            const srv = services.find(s => s.id === it.itemId || s.id === it.id || s.name === it.serviceName);
+            if (srv) {
+              const srvAmt = Number(srv.employeeCommissionAmount ?? srv.commissionAmount ?? 0);
+              const srvPct = Number(srv.employeeCommissionPercentage ?? srv.commissionRate ?? 0);
+              const rawBase = Number(srv.commissionableAmount ?? it.commissionableAmount ?? 0);
+              const p = Number(it.price || it.originalPrice || 0);
+              const q = Number(it.quantity || 1);
+              const commBase = rawBase > 0 ? (rawBase * q) : (p * q);
+              if (srvAmt > 0) c = srvAmt * q;
+              else if (srvPct > 0) c = commBase * (srvPct / 100);
+            }
+          }
           return sum + c;
         }, 0);
 
-        const isWasel = Boolean(inv.isWaselInvoice || inv.paymentMethod === 'wasel_free' || inv.paymentMethods?.some(pm => pm.treasuryId === 'wasel_free'));
+        const isWasel = isWaselInvoice(inv);
 
         const methodAmounts: Record<string, number> = {};
         registeredMethods.forEach(m => { methodAmounts[m.id] = 0; });
@@ -217,13 +237,52 @@ export function DailySheetScreen({
         });
       });
 
-      // If item-level commissions were 0, compute via model
-      let finalCommission = totalCommission;
-      if (finalCommission <= 0 && emp.empObj) {
-        finalCommission = calculateEmployeeCommission(emp.empObj, totalSales);
-      }
+      // Total work volume executed by this employee (both regular paid sales + Wasel free sales)
+      const totalWorkVolume = totalSales + totalWasel;
 
-      const commissionLabel = emp.empObj ? getCommissionModelLabel(emp.empObj) : 'نسبة افتراضية';
+      let finalCommission = totalCommission;
+      let commissionLabel = emp.empObj ? getCommissionModelLabel(emp.empObj) : 'نسبة افتراضية';
+
+      if (emp.empObj) {
+        const empModel = emp.empObj.commissionModel;
+        const targetType = emp.empObj.targetType;
+
+        // A. Target-Based Employee (أو موظف لديه تارجت يومي)
+        if (empModel === 'target_based' || targetType === 'daily') {
+          const targetCalc = calculateEmployeeTargetCommission({
+            employee: emp.empObj,
+            settings,
+            invoices: dayInvoices,
+            dateRange: { start: selectedDate, end: selectedDate },
+            isDaily: true
+          });
+
+          if (targetCalc.targetAmount > 0) {
+            finalCommission = targetCalc.commissionAmount + targetCalc.exemptCommission;
+            commissionLabel = targetCalc.isTargetAchieved
+              ? `تارجت محقق (${targetCalc.achievedAmount.toFixed(0)}/${targetCalc.targetAmount.toFixed(0)}) ${targetCalc.targetCommissionRate}%`
+              : `تارجت لم يتحقق (${targetCalc.achievedAmount.toFixed(0)}/${targetCalc.targetAmount.toFixed(0)})`;
+          } else {
+            // Fallback for classic target amount on total work volume (including Wasel)
+            const fallbackComm = calculateEmployeeCommission(emp.empObj, totalWorkVolume);
+            finalCommission = fallbackComm > 0 ? fallbackComm : totalCommission;
+          }
+        }
+        // B. Fixed Commission Rate or Tiered Brackets (نسبة ثابتة أو شرائح)
+        else if (hasEmployeeFixedCommission(emp.empObj)) {
+          const commRes = calculateEmployeeTotalCommission({
+            employee: emp.empObj,
+            totalWork: totalWorkVolume,
+            serviceExecutionCommission: totalCommission,
+            referralCommission: 0
+          });
+          finalCommission = commRes.totalCommission;
+        }
+        // C. Individual service execution commissions
+        else {
+          finalCommission = totalCommission;
+        }
+      }
 
       return {
         empId: emp.id,
@@ -238,7 +297,7 @@ export function DailySheetScreen({
         commissionLabel
       };
     });
-  }, [activeEmployees, dayInvoices, registeredMethods]);
+  }, [activeEmployees, dayInvoices, registeredMethods, services, settings, selectedDate]);
 
   // 5. Staff Payments (المدفوعات: السلف والرواتب)
   const staffPayments = useMemo(() => {
@@ -477,7 +536,7 @@ export function DailySheetScreen({
       headers,
       ...rows,
       ['', ...activeEmployees.flatMap((_, idx) => [`العدد: ${employeeData[idx]?.invoiceCount}`, ...registeredMethods.map(() => ''), '']), '', `م: ${totalStaffPayments.toFixed(2)}`, '', `م: ${totalDayExpenses.toFixed(2)}`],
-      ['', ...activeEmployees.flatMap((_, idx) => [`الإجمالي: ${employeeData[idx]?.totalSales.toFixed(2)}`, ...registeredMethods.map(() => ''), '']), '', '', '', ''],
+      ['', ...activeEmployees.flatMap((_, idx) => [`الإجمالي: ${(((employeeData[idx]?.totalSales || 0) + (employeeData[idx]?.totalWasel || 0))).toFixed(2)}`, ...registeredMethods.map(() => ''), '']), '', '', '', ''],
       ['', ...activeEmployees.flatMap((_, idx) => [`العمولة: ${employeeData[idx]?.totalCommission.toFixed(2)}`, ...registeredMethods.map(() => ''), '']), '', '', '', ''],
       [`إجمالي الدخل: ${totalGrandIncome.toFixed(2)}`, `صافي الدخل: ${netIncome.toFixed(2)}`]
     ]);
@@ -834,6 +893,7 @@ export function DailySheetScreen({
                 <tr>
                   {activeEmployees.map((emp, empIdx) => {
                     const empData = employeeData[empIdx];
+                    const totalWork = (empData?.totalSales || 0) + (empData?.totalWasel || 0);
                     return (
                       <td 
                         key={emp.id} 
@@ -841,7 +901,12 @@ export function DailySheetScreen({
                         style={{ backgroundColor: '#b2dfdb', borderTop: '1px solid #009688', fontWeight: 'bold' }} 
                         className="border border-black py-1.5 px-2 text-teal-950 text-xs"
                       >
-                        الإجمالي: {empData?.totalSales.toFixed(0) || 0}
+                        الإجمالي: {totalWork.toFixed(0)}
+                        {empData && empData.totalWasel > 0 && (
+                          <span className="text-[10px] text-teal-800 font-normal block">
+                            (مدفوع: {empData.totalSales.toFixed(0)} | واصل: {empData.totalWasel.toFixed(0)})
+                          </span>
+                        )}
                       </td>
                     );
                   })}
