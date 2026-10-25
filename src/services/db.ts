@@ -498,20 +498,39 @@ export const DB = {
     try {
       const rawSalonId = overrideSalonId || getSalonId();
       const validSalonId = rawSalonId ? toSalonUUID(rawSalonId) : '';
-      let q = client.from(table).select(columns);
-      if (validSalonId && table !== 'platform_settings' && table !== 'arab_countries' && table !== 'salons') {
-        q = q.eq('salon_id', validSalonId);
-      }
-      if (extraFilters) {
-        Object.entries(extraFilters).forEach(([k, v]) => { q = q.eq(k, v); });
+      let allData: any[] = [];
+      let page = 0;
+      const pageSize = 1000;
+      let hasMore = true;
+
+      while (hasMore) {
+        let q = client.from(table).select(columns);
+        if (validSalonId && table !== 'platform_settings' && table !== 'arab_countries' && table !== 'salons') {
+          q = q.eq('salon_id', validSalonId);
+        }
+        if (extraFilters) {
+          Object.entries(extraFilters).forEach(([k, v]) => { q = q.eq(k, v); });
+        }
+        q = q.range(page * pageSize, (page + 1) * pageSize - 1);
+
+        const { data, error } = await q;
+        if (error) {
+          console.error(`DB.fetchAll[${table}]:`, error.message);
+          break;
+        }
+        if (!Array.isArray(data) || data.length === 0) {
+          break;
+        }
+
+        allData = allData.concat(data);
+        if (data.length < pageSize) {
+          hasMore = false;
+        } else {
+          page++;
+        }
       }
 
-      const { data, error } = await q;
-      if (error) {
-        console.error(`DB.fetchAll[${table}]:`, error.message);
-        return [];
-      }
-      if (!Array.isArray(data)) return [];
+      const data = allData;
 
       // Fast in-memory sort by created_at / date / timestamp
       data.sort((a: any, b: any) => {

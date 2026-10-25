@@ -2342,6 +2342,15 @@ export default function App() {
       definedTreasuries.forEach(t => {
         if (t.id === mainTreasury.id) return;
 
+        // الحماية من التكرار: إذا كانت هناك حركة تصفير مسجلة بالفعل لهذه الوردية وهذه الخزينة، لا تقم بإنشاء حركة مكررة
+        if (currentShiftCode && transactions.some(trx => 
+          ((trx as any).shiftCode === currentShiftCode || (trx as any).shift_code === currentShiftCode) &&
+          trx.category === 'transfer' &&
+          (trx.treasury === t.id || (trx as any).treasuryId === t.id)
+        )) {
+          return;
+        }
+
         // 1. Transactions directly in this treasury
         const tTrx = transactions.filter(trx => 
           (trx.treasury === t.id || (trx as any).treasuryId === t.id) &&
