@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Category, ServiceItem } from '../types';
+import { Category, ServiceItem, Branch, getServicePrice } from '../types';
 import { 
   Plus, Edit, Trash2, X, Check, Search, FileSpreadsheet, Download, Upload, 
   AlertCircle, Sparkles, Image as ImageIcon, Camera, Loader2, Scissors, 

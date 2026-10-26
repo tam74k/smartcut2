@@ -9,7 +9,8 @@ import {
 } from 'lucide-react';
 import { 
   AppSettings, CartItem, ServiceItem, Booking, Invoice, Client, Category, Employee,
-  getClientTier, getNextClientTier, calculateClientTotalSpend, ClientTierConfig, HeldInvoice, PromoCode, PromoCodeUsage, TipRecord, AdvancePayment, ClientPreferences, Transaction, FingerprintLog, SalesReturn, Branch 
+  getClientTier, getNextClientTier, calculateClientTotalSpend, ClientTierConfig, HeldInvoice, PromoCode, PromoCodeUsage, TipRecord, AdvancePayment, ClientPreferences, Transaction, FingerprintLog, SalesReturn, Branch,
+  getServicePrice
 } from '../types';
 import { processImageFile, MAX_IMAGE_SIZE_KB, compressClientBeforeAfterPhoto } from '../utils/imageUpload';
 import { ComplaintsService } from '../services/complaintsService';
@@ -2107,7 +2108,7 @@ export function POSScreen({
         displayPrice: effectivePrice
       };
     });
-  }, [items, isForeignerClient]);
+  }, [items, isForeignerClient, activeBranchId]);
 
   const filteredItems = useMemo(() => {
     const q = (searchQuery || '').trim().toLowerCase();

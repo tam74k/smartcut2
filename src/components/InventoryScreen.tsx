@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { AppSettings, Product, InventoryCount, ItemMovement, InventoryCountItem } from '../types';
+import { AppSettings, Product, InventoryCount, ItemMovement, InventoryCountItem, Branch, getProductStock } from '../types';
 import { Plus, Search, FileText, CheckCircle, Save, X, Calendar, ArrowRightLeft, ClipboardList } from 'lucide-react';
 import { getEffectiveDateTime } from '../utils/shiftDate';
 

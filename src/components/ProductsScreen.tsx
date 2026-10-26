@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { Package, Search, Plus, Edit2, Trash2, X, AlertTriangle, TrendingDown, FileSpreadsheet, Download, Upload, Check, Sparkles, AlertCircle, Printer, QrCode, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, SlidersHorizontal, Maximize2, Minimize2 } from 'lucide-react';
-import { AppSettings, Product, Category, Employee, Supplier } from '../types';
+import { AppSettings, Product, Category, Employee, Supplier, Branch, getProductStock, getProductReorderLimit } from '../types';
 import { downloadProductsTemplate, readExcelFile } from '../utils/excelHelper';
 import { BarcodePrintModal } from './BarcodePrintModal';
 import { DB } from '../services/db';
