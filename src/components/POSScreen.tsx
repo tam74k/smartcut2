@@ -202,6 +202,7 @@ export function POSScreen({
   onClearInitial, 
   onCheckoutComplete, 
   clients, 
+  allSalonClients = [],
   setClients, 
   services: items, 
   categories, 

@@ -34,6 +34,7 @@ export function InvoicesScreen({
   transactions, 
   setTransactions,
   clients,
+  allSalonClients = [],
   setClients,
   activeBranchId,
   branches = [],
