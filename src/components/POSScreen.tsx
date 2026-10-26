@@ -345,6 +345,16 @@ export function POSScreen({
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const [showAddClientModal, setShowAddClientModal] = useState(false);
 
+  const [showDailyReportModal, setShowDailyReportModal] = useState(false);
+  const [newClientForm, setNewClientForm] = useState<{
+    name: string;
+    phone: string;
+    referredByPhone: string;
+    dobDay: string;
+    dobMonth: string;
+    clientType: 'citizen' | 'foreigner';
+  }>({ name: '', phone: '', referredByPhone: '', dobDay: '', dobMonth: '', clientType: 'citizen' });
+
   const matchedSalonClientInPOS = useMemo(() => {
     const clean = (newClientForm.phone || '').trim().replace(/\D/g, '');
     if (!clean || clean.length < 7) return null;
@@ -365,15 +375,7 @@ export function POSScreen({
       }));
     }
   }, [matchedSalonClientInPOS]);
-  const [showDailyReportModal, setShowDailyReportModal] = useState(false);
-  const [newClientForm, setNewClientForm] = useState<{
-    name: string;
-    phone: string;
-    referredByPhone: string;
-    dobDay: string;
-    dobMonth: string;
-    clientType: 'citizen' | 'foreigner';
-  }>({ name: '', phone: '', referredByPhone: '', dobDay: '', dobMonth: '', clientType: 'citizen' });
+
 
   // نافذة استعلام أسعار الخدمات (معاينة فقط دون إضافة للفاتورة)
   const [showPriceCheckModal, setShowPriceCheckModal] = useState(false);

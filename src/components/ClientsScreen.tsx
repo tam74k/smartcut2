@@ -49,28 +49,6 @@ export function ClientsScreen({
   const [selectedClientForProfile, setSelectedClientForProfile] = useState<Client | null>(null);
   const [profileActiveTab, setProfileActiveTab] = useState<'overview' | 'preferences' | 'invoices'>('overview');
 
-  // Check if phone matches any registered client across any branch of the salon
-  const matchedSalonClient = useMemo(() => {
-    const clean = (clientForm.phone || '').trim().replace(/\D/g, '');
-    if (!clean || clean.length < 7) return null;
-    const pool = (allSalonClients && allSalonClients.length > 0) ? allSalonClients : clients;
-    return pool.find(c => (c.phone || '').trim().replace(/\D/g, '') === clean) || null;
-  }, [clientForm.phone, allSalonClients, clients]);
-
-  // When matchedSalonClient is detected, auto-populate clientForm if name is empty
-  useEffect(() => {
-    if (matchedSalonClient && (!clientForm.name || clientForm.name.trim() === '')) {
-      setClientForm(prev => ({
-        ...prev,
-        name: matchedSalonClient.name || prev.name,
-        clientType: matchedSalonClient.clientType || prev.clientType,
-        dob: matchedSalonClient.dob || prev.dob,
-        notes: matchedSalonClient.notes || prev.notes,
-        referredByPhone: matchedSalonClient.referredByPhone || prev.referredByPhone,
-        isVip: Boolean(matchedSalonClient.isVip)
-      }));
-    }
-  }, [matchedSalonClient]);
   const [viewInvoiceDetails, setViewInvoiceDetails] = useState<Invoice | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -99,6 +77,30 @@ export function ClientsScreen({
     isVip: false,
     clientType: 'citizen'
   });
+
+  // Check if phone matches any registered client across any branch of the salon
+  const matchedSalonClient = useMemo(() => {
+    const clean = (clientForm.phone || '').trim().replace(/\D/g, '');
+    if (!clean || clean.length < 7) return null;
+    const pool = (allSalonClients && allSalonClients.length > 0) ? allSalonClients : clients;
+    return pool.find(c => (c.phone || '').trim().replace(/\D/g, '') === clean) || null;
+  }, [clientForm.phone, allSalonClients, clients]);
+
+  // When matchedSalonClient is detected, auto-populate clientForm if name is empty
+  useEffect(() => {
+    if (matchedSalonClient && (!clientForm.name || clientForm.name.trim() === '')) {
+      setClientForm(prev => ({
+        ...prev,
+        name: matchedSalonClient.name || prev.name,
+        clientType: matchedSalonClient.clientType || prev.clientType,
+        dob: matchedSalonClient.dob || prev.dob,
+        notes: matchedSalonClient.notes || prev.notes,
+        referredByPhone: matchedSalonClient.referredByPhone || prev.referredByPhone,
+        isVip: Boolean(matchedSalonClient.isVip)
+      }));
+    }
+  }, [matchedSalonClient]);
+
 
   // Client Type Filter
   const [clientTypeFilter, setClientTypeFilter] = useState<'all' | 'citizen' | 'foreigner'>('all');
