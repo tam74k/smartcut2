@@ -80,7 +80,7 @@ export function ChangePasswordModal({
 
     setIsSubmitting(true);
     try {
-      const res = await AuthService.changeUserPassword(currentUser, currentPassword, newPassword);
+      const res = await AuthService.changePasswordAsync(currentUser, currentPassword, newPassword);
       setIsSubmitting(false);
 
       if (!res.success) {

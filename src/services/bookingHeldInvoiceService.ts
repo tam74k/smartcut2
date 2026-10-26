@@ -92,9 +92,8 @@ export async function createHeldInvoiceFromBooking(
       branchId: validBranchId,
       name: booking.clientName || 'عميل حجز',
       phone: booking.phone || '',
-      totalVisits: 1,
-      totalSpent: 0,
-      points: 0,
+      loyaltyPoints: 0,
+      cashback: 0,
       createdAt: new Date().toISOString()
     };
   }

@@ -262,7 +262,7 @@ export function verifyUserIntegrity(user: any): { isValid: boolean; reason?: str
  * 2. Generates cryptographic HMAC integrity seal.
  */
 export function sealUserRecord<T extends Record<string, any>>(user: T): T {
-  const cloned = { ...user };
+  const cloned: any = { ...user };
   
   // Hash password if not already hashed
   const currentPass = cloned.password || cloned.passwordHash || cloned.password_hash || '';

@@ -12,7 +12,8 @@ export function SuppliersScreen({
   purchaseInvoices,
   transactions,
   setTransactions,
-  shiftData
+  shiftData,
+  activeBranchId
 }: {
   settings: AppSettings;
   suppliers: Supplier[];
@@ -23,6 +24,7 @@ export function SuppliersScreen({
   transactions: Transaction[];
   setTransactions: (t: Transaction[]) => void;
   shiftData: { isOpen: boolean; date: string };
+  activeBranchId?: string;
 }) {
   const [activeTab, setActiveTab] = useState<'suppliers' | 'payments'>('suppliers');
   const [searchQuery, setSearchQuery] = useState('');

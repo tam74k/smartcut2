@@ -130,7 +130,7 @@ export function AccountingPnLSection({
 
     // 1.1 Sales Returns
     const periodReturns = (salesReturns || []).filter(r => {
-      const d = (r.returnDate || '').split('T')[0];
+      const d = (r.date || (r as any).returnDate || '').split('T')[0];
       return d >= fromDate && d <= toDate && filterByBranch(r.branchId);
     });
     const totalReturnsAmount = periodReturns.reduce((sum, r) => sum + (Number(r.totalRefundAmount) || 0), 0);
@@ -201,7 +201,7 @@ export function AccountingPnLSection({
     let otherGeneralExpenses = 0;
 
     periodTransactions
-      .filter(t => t.type === 'expense')
+      .filter(t => t.type === 'out' || (t.type as string) === 'expense' || t.category === 'expense')
       .forEach(t => {
         const cat = String(t.category || '').toLowerCase();
         const desc = String(t.description || '').toLowerCase();

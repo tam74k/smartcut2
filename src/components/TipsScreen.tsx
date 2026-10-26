@@ -11,6 +11,7 @@ interface TipsScreenProps {
   tips: TipRecord[];
   setTips: (updater: TipRecord[] | ((prev: TipRecord[]) => TipRecord[])) => void;
   employees: Employee[];
+  transactions?: Transaction[];
   setTransactions: (updater: Transaction[] | ((prev: Transaction[]) => Transaction[])) => void;
   activeBranchId?: string;
   currentUser?: any;
@@ -21,6 +22,7 @@ export function TipsScreen({
   tips = [],
   setTips,
   employees = [],
+  transactions,
   setTransactions,
   activeBranchId,
   currentUser

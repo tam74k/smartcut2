@@ -312,6 +312,11 @@ export interface Category {
   name: string; 
   icon?: string; 
   type?: 'service' | 'product'; 
+  isActive?: boolean;
+  stock?: number;
+  minStockAlert?: number;
+  price?: number;
+  salePrice?: number;
 }
 
 export interface ServiceItem { 
@@ -342,6 +347,8 @@ export interface ServiceItem {
   isPriority?: boolean; // أولوية الظهور في الكاشير ونقطة البيع
   cardColor?: string; // لون البطاقة المخصص للخدمة في شاشة الكاشير
   priorityOrder?: number; // ترتيب أسبقية الظهور
+  category?: string;
+  description?: string;
 }
 
 export interface WorkShift {
@@ -837,6 +844,8 @@ export interface AdvancePayment {
   date: string; 
   paymentMethod?: string;
   notes?: string;
+  shiftDate?: string;
+  paymentDate?: string;
 }
 
 export interface ClientPortalAccount {
@@ -1126,6 +1135,8 @@ export interface InvoiceItem {
   commission?: number;
   commissionableAmount?: number;
   isTargetExempt?: boolean;
+  originalPrice?: number;
+  discount?: number;
 }
 
 export interface Invoice { 
@@ -1277,6 +1288,23 @@ export interface PartnerTransaction {
   treasuryName?: string;
   description: string;
   createdBy?: string;
+  treasuryId?: string;
+  paymentMethod?: string;
+  finalTotal?: number;
+  isRemedyInvoice?: boolean;
+  remedyReason?: string;
+  isWaselInvoice?: boolean;
+  waselReason?: string;
+  waselRecipientName?: string;
+  shiftId?: string;
+  shiftCode?: string;
+  shiftDate?: string;
+  createdAt?: string;
+  invoiceNumber?: string;
+  beforePhotoUrl?: string;
+  afterPhotoUrl?: string;
+  remedyApprovedBy?: string;
+  complaintId?: string;
 }
 
 export interface PartnerDrawing {

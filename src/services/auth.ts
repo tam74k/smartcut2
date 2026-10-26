@@ -260,7 +260,7 @@ export class AuthService {
     try {
       const active = localStorage.getItem('smartcut_active_salon_id');
       if (active) return active;
-      const session = this.getSession();
+      const session = this.getCurrentUser();
       if (session?.salonId) return session.salonId;
       const s = localStorage.getItem('smartcut_app_settings');
       if (s) {
@@ -401,6 +401,10 @@ export class AuthService {
     return Math.abs(hash).toString(36) + '_' + raw.length.toString(36);
   }
 
+  public static getSession(): AppUser | null {
+    return this.getCurrentUser();
+  }
+
   public static getCurrentUser(): AppUser | null {
     if (this.currentUser) return this.currentUser;
     const session = localStorage.getItem(STORAGE_KEYS.SESSION);
@@ -483,7 +487,7 @@ export class AuthService {
     }
   }
 
-  private static setSession(user: AppUser) {
+  public static setSession(user: AppUser) {
     this.currentUser = user;
     try {
       const sig = this.computeSessionSignature(user);
@@ -688,6 +692,8 @@ export class AuthService {
     DB.saveUser(users[idx]);
     return true;
   }
+
+  public static changeUserPassword = AuthService.changePasswordAsync;
 
   public static async changePasswordAsync(
     userId: string, 

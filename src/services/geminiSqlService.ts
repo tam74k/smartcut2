@@ -722,9 +722,10 @@ ${parsed.notes ? `- **ملاحظات:** ${parsed.notes}` : ''}
       ];
 
       return {
+        reply: confirmationMsg,
         answer: confirmationMsg,
         updatedHistory
-      };
+      } as any;
     } catch (bookingErr: any) {
       console.warn('AI Booking extraction failed or user error, proceeding with standard flow:', bookingErr);
       if (bookingErr.message?.includes('Google Gemini API') || bookingErr.message?.includes('API_KEY_INVALID')) {

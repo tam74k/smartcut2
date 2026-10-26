@@ -1,3 +1,4 @@
+import { SubscriptionService } from './subscriptionService';
 import { SupabaseService } from './supabase';
 import { dataUrlToBlob } from '../utils/imageUpload';
 import { HeldInvoice } from '../types';
@@ -2107,7 +2108,7 @@ export const DB = {
   },
 
   // ---- المعاملات المالية ----
-  async fetchTransactions(salonId?: string) { return DB.fetchAll<any>('transactions', undefined, salonId); },
+  async fetchTransactions(salonId?: string, branchId?: string) { return DB.fetchAll<any>('transactions', undefined, salonId); },
   async saveTransaction(t: any, salonId?: string) {
     const client = sb(); if (!client || !t) return null;
     const validSalonId = toSalonUUID(salonId || t.salonId || getSalonId());
@@ -2217,7 +2218,7 @@ export const DB = {
   },
 
   // ---- الحجوزات ----
-  async fetchBookings(salonId?: string) { 
+  async fetchBookings(salonId?: string, branchId?: string) { 
     const list = await DB.fetchAll<any>('bookings', undefined, salonId);
     return (list || []).map(dbBookingToApp);
   },
@@ -5029,8 +5030,8 @@ export function dbBookingToApp(row: any): any {
   if (rawStartTime && typeof rawStartTime === 'string' && (rawStartTime.endsWith('Z') || rawStartTime.includes('+'))) {
     try {
       const local = utcToSalonLocal(rawStartTime, tz);
-      if (!date) date = local.date;
-      if (!time) time = local.time;
+      if (!date) date = (local as any).date || local.dateStr;
+      if (!time) time = (local as any).time || local.timeStr;
     } catch {}
   } else if (!time) {
     if (typeof rawStartTime === 'string' && rawStartTime.includes('T')) {

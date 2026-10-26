@@ -66,6 +66,7 @@ export function InvoicesScreen({
   employees?: Employee[];
   services?: ServiceItem[];
   salesReturns?: SalesReturn[];
+  setSalesReturns?: (returns: SalesReturn[] | ((prev: SalesReturn[]) => SalesReturn[])) => void;
   onProcessSalesReturn?: (ret: SalesReturn) => void;
   onNavigateToReturns?: () => void;
   onNavigateToDeferred?: () => void;

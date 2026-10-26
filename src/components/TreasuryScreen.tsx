@@ -8,6 +8,13 @@ import { getBookingAdvances } from './BookingsScreen';
 import { printThermalFinancialVoucher } from './ThermalFinancialVoucher';
 import { resolveMainTreasury, isMatchingTreasury, getTransactionTargetTreasuryId, getTreasuryLabel } from '../utils/treasury';
 
+const isStaffAdvance = (t: any): boolean => {
+  if (!t) return false;
+  const desc = String(t.description || '').toLowerCase();
+  const cat = String(t.category || '').toLowerCase();
+  return cat === 'advance' || cat === 'سلفة' || cat.includes('سلف') || desc.includes('سلفة') || desc.includes('سلف');
+};
+
 export function TreasuryScreen({ 
   settings, 
   shiftData, 
