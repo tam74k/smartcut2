@@ -321,6 +321,8 @@ export interface ServiceItem {
   categoryId: string; 
   name: string; 
   price: number; 
+  branchPrices?: Record<string, number>; // تسعير الخدمة المخصص لكل فرع (branchId -> price)
+  branchForeignerPrices?: Record<string, number>; // تسعير الخدمة المخصص للأجانب لكل فرع
   foreignerPrice?: number; // سعر الخدمة للأجنبي في حال تفعيل التسعير المزدوج
   discountPrice?: number;
   commissionableAmount?: number; // المبلغ الخاضع للعمولة (لحساب عمولة الفني على جزء من السعر فقط واستبعاد تكلفة الخامات)
@@ -1497,12 +1499,47 @@ export interface Product {
   reorderLimit: number;
   openingStock: number;
   currentStock: number;
+  branchStocks?: Record<string, number>; // أرصدة المخزون مفصولة لكل فرع (branchId -> stock)
+  branchReorderLimits?: Record<string, number>; // حد الطلب لكل فرع
   commission: number;
   barcode?: string;
   productType?: 'for_sale' | 'raw_material'; // 'للبيع' | 'مادة خام'
   salonId?: string;
   branchId?: string;
+  branchCode?: string;
   isActive?: boolean;
+}
+
+export function getProductStock(p: Product | null | undefined, branchId?: string): number {
+  if (!p) return 0;
+  if (branchId && p.branchStocks && p.branchStocks[branchId] !== undefined) {
+    return Number(p.branchStocks[branchId]) || 0;
+  }
+  return Number(p.currentStock) || 0;
+}
+
+export function getProductReorderLimit(p: Product | null | undefined, branchId?: string): number {
+  if (!p) return 5;
+  if (branchId && p.branchReorderLimits && p.branchReorderLimits[branchId] !== undefined) {
+    return Number(p.branchReorderLimits[branchId]) || 0;
+  }
+  return Number(p.reorderLimit ?? 5);
+}
+
+export function getServicePrice(service: ServiceItem | null | undefined, branchId?: string, isForeigner?: boolean): number {
+  if (!service) return 0;
+  if (isForeigner) {
+    if (branchId && service.branchForeignerPrices && service.branchForeignerPrices[branchId] !== undefined) {
+      return Number(service.branchForeignerPrices[branchId]);
+    }
+    if (service.foreignerPrice !== undefined && service.foreignerPrice !== null && Number(service.foreignerPrice) > 0) {
+      return Number(service.foreignerPrice);
+    }
+  }
+  if (branchId && service.branchPrices && service.branchPrices[branchId] !== undefined) {
+    return Number(service.branchPrices[branchId]);
+  }
+  return Number(service.price || 0);
 }
 
 export interface Supplier {

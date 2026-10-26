@@ -2035,8 +2035,8 @@ export function POSScreen({
       const bOrder = b.priorityOrder ?? 0;
       return aOrder - bOrder;
     }).map(i => {
-      const isForePrice = Boolean(isForeignerClient && i.foreignerPrice && Number(i.foreignerPrice) > 0);
-      const originalPrice = isForePrice ? Number(i.foreignerPrice) : (Number(i.price) || 0);
+      const isForePrice = Boolean(isForeignerClient && ((i.foreignerPrice && Number(i.foreignerPrice) > 0) || (activeBranchId && i.branchForeignerPrices?.[activeBranchId])));
+      const originalPrice = getServicePrice(i, activeBranchId, isForeignerClient);
       const rawDiscount = Number(i.discountPrice);
       const hasDiscount = !isForePrice && !isNaN(rawDiscount) && rawDiscount > 0 && rawDiscount < originalPrice;
       const effectivePrice = hasDiscount ? rawDiscount : originalPrice;
@@ -2292,8 +2292,8 @@ export function POSScreen({
       // 2. فحص باركود الخدمة
       const matchedService = items.find(s => s.barcode && s.barcode.trim().toLowerCase() === q);
       if (matchedService) {
-        const isForePrice = Boolean(isForeignerClient && matchedService.foreignerPrice && Number(matchedService.foreignerPrice) > 0);
-        const origPrice = isForePrice ? Number(matchedService.foreignerPrice) : (Number(matchedService.price) || 0);
+        const isForePrice = Boolean(isForeignerClient && ((matchedService.foreignerPrice && Number(matchedService.foreignerPrice) > 0) || (activeBranchId && matchedService.branchForeignerPrices?.[activeBranchId])));
+        const origPrice = getServicePrice(matchedService, activeBranchId, isForeignerClient);
         const rawDisc = Number(matchedService.discountPrice);
         const hasDisc = !isForePrice && !isNaN(rawDisc) && rawDisc > 0 && rawDisc < origPrice;
         const effPrice = hasDisc ? rawDisc : origPrice;

@@ -371,48 +371,23 @@ export default function App() {
   const shiftData = useMemo(() => {
     // 1. Direct active branch shift
     const current = branchShifts[activeBranchId];
-    if (current?.isOpen) return current;
-    // 2. Default / generic branch
-    const mainBranch = branchShifts['b-main'];
-    if (mainBranch?.isOpen) return mainBranch;
-    // 3. Any other open shift in the salon's branchShifts
-    const anyOpen = Object.values(branchShifts).find((s: any) => s?.isOpen);
-    if (anyOpen) return anyOpen;
-    return current || { isOpen: false, date: '', initialCash: 0 };
+    if (current && typeof current.isOpen === 'boolean') return current;
+    // Fallback only if no activeBranchId is set
+    if (!activeBranchId && branchShifts['b-main']) return branchShifts['b-main'];
+    return { isOpen: false, date: '', initialCash: 0 };
   }, [branchShifts, activeBranchId]);
 
   const setShiftData = (updater: any) => {
     setBranchShifts(prev => {
-      const current = prev[activeBranchId] || prev['b-main'] || { isOpen: false, date: '', initialCash: 0 };
+      const branchKey = activeBranchId || 'b-main';
+      const current = prev[branchKey] || { isOpen: false, date: '', initialCash: 0 };
       const next = typeof updater === 'function' ? updater(current) : updater;
-      let updated: Record<string, any>;
-      if (!next?.isOpen) {
-        // Closed shift: ensure ALL branch keys are closed
-        updated = { ...prev };
-        Object.keys(updated).forEach(k => {
-          if (updated[k]?.isOpen) {
-            updated[k] = {
-              isOpen: false,
-              date: '',
-              initialCash: 0,
-              shiftId: undefined,
-              shiftCode: undefined,
-              lastClosedAt: next?.lastClosedAt || new Date().toISOString()
-            };
-          }
-        });
-        updated[activeBranchId] = next;
-        updated['b-main'] = next;
-      } else {
-        // Open shift: update active branch, b-main, and shift's specific branchId if available
-        updated = {
-          ...prev,
-          [activeBranchId]: next,
-          ['b-main']: next
-        };
-        if (next.branchId) {
-          updated[next.branchId] = next;
-        }
+      const updated = {
+        ...prev,
+        [branchKey]: next
+      };
+      if (next?.branchId && next.branchId !== branchKey) {
+        updated[next.branchId] = next;
       }
       try { localStorage.setItem('smartcut_work_shifts_state', JSON.stringify(updated)); } catch (e) {}
       return updated;
@@ -420,15 +395,16 @@ export default function App() {
   };
 
   const applyActiveWorkShift = useCallback((activeShift: any, branchId: string) => {
-    // 1. إذا كان الاستدعاء خطأ أو لم يرجع بيانات صالحة (مثلاً عطل شبكة أو استثناء)، يُحظر تماماً تغيير حالة الوردية
+    if (!branchId) return;
+    // 1. إذا كان الاستدعاء خطأ أو لم يرجع بيانات صالحة، يُحظر تماماً تغيير حالة الوردية
     if (!activeShift || activeShift.error) {
       return;
     }
 
-    // 2. الاعتماد على قاعدة البيانات: إذا كان جدول work_shifts يحتوي على وردية مفتوحة
+    // 2. الاعتماد على قاعدة البيانات: إذا كان جدول work_shifts يحتوي على وردية مفتوحة لهذا الفرع تحديداً
     if (activeShift.isOpen === true || activeShift.status === 'open' || (!activeShift.closedAt && !activeShift.isClosed && activeShift.shiftDate)) {
       setBranchShifts(prev => {
-        const current = prev[branchId] || prev['b-main'];
+        const current = prev[branchId];
         const shiftCode = activeShift.shiftCode || activeShift.shift_code || current?.shiftCode || `SH-${(activeShift.shiftDate || '').replace(/-/g, '')}-01`;
         if (
           current?.isOpen === true &&
@@ -449,64 +425,52 @@ export default function App() {
           openedByUserId: activeShift.openedByUserId || (activeShift as any).opened_by_user_id,
           openedByUserName: activeShift.openedByUserName || (activeShift as any).opened_by_user_name || activeShift.openedByName,
           openedByName: activeShift.openedByName || (activeShift as any).opened_by_name || activeShift.openedByUserName,
-          openedByRole: activeShift.openedByRole || (activeShift as any).opened_by_role || 'cashier'
+          openedByRole: activeShift.openedByRole || (activeShift as any).opened_by_role || 'cashier',
+          branchId
         };
         const updated = {
           ...prev,
-          [branchId]: shiftObj,
-          ['b-main']: shiftObj
+          [branchId]: shiftObj
         };
-        if (activeShift.branchId) {
-          updated[activeShift.branchId] = shiftObj;
-        }
         try { localStorage.setItem('smartcut_work_shifts_state', JSON.stringify(updated)); } catch (e) {}
         return updated;
       });
       return;
     }
 
-    // 3. منع التغيير التلقائي: يُحظر تماماً اعتبار الوردية مغلقة إلا بوجود سجل فعلي وقاطع يثبت إغلاقها هي بالتحديد
+    // 3. التحقق القاطع من إغلاق الوردية لهذا الفرع
     if (activeShift.hasDefinitiveProof && (activeShift.isClosed || activeShift.status === 'closed')) {
       setBranchShifts(prev => {
-        const current = prev[branchId] || prev['b-main'];
-
-        // إذا كانت هناك وردية مفتوحة حالياً، نتحقق أن السجل القاطع للإغلاق يثبت إغلاقها هي بالتحديد
-        if (current?.isOpen) {
-          // إذا كان لدينا معرف وردية مفتوحة وسجل الإغلاق يحمل معرف مختلف، لا نغلق الوردية المفتوحة محلياً
-          if (current.shiftId && activeShift.id && current.shiftId !== activeShift.id) {
-            return prev;
-          }
-          // إذا كان السجل في قاعدة البيانات يثبت إغلاق وردية أقدم من وقت فتح الوردية الحالية، فلا نغلقها
-          if (activeShift.closedAt && current.openedAt) {
-            const shiftOpenedTime = new Date(current.openedAt).getTime();
-            const shiftClosedTime = new Date(activeShift.closedAt).getTime();
-            if (!isNaN(shiftOpenedTime) && !isNaN(shiftClosedTime) && shiftClosedTime <= shiftOpenedTime) {
-              return prev;
-            }
-          }
+        const current = prev[branchId];
+        if (!current?.isOpen) return prev;
+        if (current.shiftId && activeShift.id && current.shiftId !== activeShift.id) {
+          return prev;
         }
-
-        const hasOpen = Object.values(prev).some((s: any) => s?.isOpen);
-        if (!hasOpen) return prev;
-
-        const updated = { ...prev };
-        Object.keys(updated).forEach(k => {
-          if (updated[k]?.isOpen) {
-            updated[k] = {
-              isOpen: false,
-              date: '',
-              initialCash: 0,
-              shiftId: undefined,
-              shiftCode: undefined,
-              lastClosedAt: activeShift.closedAt || new Date().toISOString()
-            };
+        const updated = {
+          ...prev,
+          [branchId]: {
+            isOpen: false,
+            date: '',
+            initialCash: 0,
+            shiftId: undefined,
+            shiftCode: undefined,
+            lastClosedAt: activeShift.closedAt || new Date().toISOString()
           }
-        });
+        };
         try { localStorage.setItem('smartcut_work_shifts_state', JSON.stringify(updated)); } catch (e) {}
         return updated;
       });
     }
   }, []);
+
+  // المزامنة التلقائية لوردية الفرع النشط فور التبديل بين الفروع
+  useEffect(() => {
+    if (settings.salonId && activeBranchId) {
+      DB.getActiveWorkShift(settings.salonId, activeBranchId).then(activeShift => {
+        applyActiveWorkShift(activeShift, activeBranchId);
+      }).catch(() => {});
+    }
+  }, [activeBranchId, settings.salonId, applyActiveWorkShift]);
 
   const [showOpenModal, setShowOpenModal] = useState(false);
   const [showCloseModal, setShowCloseModal] = useState(false);
@@ -1597,13 +1561,14 @@ export default function App() {
   }, [branches, activeBranchId]);
 
   const isItemInBranch = (itemBranchId?: string, itemBranchCode?: string) => {
-    if (!itemBranchId && !itemBranchCode) return true; // Global / salon-wide entity
-    if (branches.length <= 1) return true; // If salon has only 1 branch, all entities are visible
+    if (branches.length <= 1) return true; // إذا كان الصالون يملك فرعاً واحداً فقط، تظهر كافة العناصر
     if (itemBranchId && itemBranchId === activeBranchId) return true;
     if (activeBranch && itemBranchCode && itemBranchCode === activeBranch.code) return true;
     const mainBranch = branches.find(b => b.isMain) || branches[0];
-    if (activeBranch?.isMain) {
-      if (!itemBranchId || itemBranchId === mainBranch?.id || itemBranchId === 'b-main' || itemBranchId === '00000000-0000-0000-0000-000000000002') return true;
+    // العناصر العامة أو التاريخية التي لا تملك كود فرع تنتمي حصرياً للفرع الرئيسي، ولا تظهر في الفروع الإضافية الجديدة
+    if (activeBranch?.isMain || activeBranchId === mainBranch?.id) {
+      if (!itemBranchId && !itemBranchCode) return true;
+      if (itemBranchId === mainBranch?.id || itemBranchId === 'b-main' || itemBranchId === '00000000-0000-0000-0000-000000000002') return true;
       if (itemBranchCode === 'BR-01' || itemBranchCode === 'BR-MAIN' || itemBranchCode === 'B01') return true;
     }
     return false;
@@ -1666,21 +1631,60 @@ export default function App() {
     return salesReturns.filter(r => !(r as any).salonId || !currentSalonId || (r as any).salonId === currentSalonId || (r as any).salon_id === currentSalonId);
   }, [salesReturns, currentSalonId]);
 
-  // Backward compatible alias
+  // كيانات الفرع المعزولة قطيعاً (Branch-Scoped Entities) - تمنع تسرب الحسابات والورديات والفواتير بين الفروع
   const branchCategories = salonCategories;
   const branchServices = salonServices;
-  const branchEmployees = salonEmployees;
-  const branchProducts = salonProducts;
-  const branchInvoices = salonInvoices;
-  const branchTransactions = salonTransactions;
-  const branchBookings = salonBookings;
+  const branchEmployees = useMemo(() => {
+    if (branches.length <= 1) return salonEmployees;
+    return salonEmployees.filter(e => isItemInBranch(e.branchId, (e as any).branchCode));
+  }, [salonEmployees, branches.length, activeBranchId, activeBranch]);
+
+  const branchProducts = useMemo(() => {
+    if (branches.length <= 1) return salonProducts;
+    return salonProducts.filter(p => isItemInBranch(p.branchId, p.branchCode));
+  }, [salonProducts, branches.length, activeBranchId, activeBranch]);
+
+  const branchInvoices = useMemo(() => {
+    if (branches.length <= 1) return salonInvoices;
+    return salonInvoices.filter(i => isItemInBranch(i.branchId, i.branchCode));
+  }, [salonInvoices, branches.length, activeBranchId, activeBranch]);
+
+  const branchTransactions = useMemo(() => {
+    if (branches.length <= 1) return salonTransactions;
+    return salonTransactions.filter(t => isItemInBranch((t as any).branchId || (t as any).branch_id, (t as any).branchCode || (t as any).branch_code));
+  }, [salonTransactions, branches.length, activeBranchId, activeBranch]);
+
+  const branchBookings = useMemo(() => {
+    if (branches.length <= 1) return salonBookings;
+    return salonBookings.filter(b => isItemInBranch((b as any).branchId || (b as any).branch_id, (b as any).branchCode || (b as any).branch_code));
+  }, [salonBookings, branches.length, activeBranchId, activeBranch]);
+
   const branchClients = salonClients;
   const branchSuppliers = salonSuppliers;
-  const branchPurchaseInvoices = salonPurchaseInvoices;
-  const branchSupplierPayments = salonSupplierPayments;
-  const branchInventoryCounts = salonInventoryCounts;
-  const branchItemMovements = salonItemMovements;
-  const branchSalesReturns = salonSalesReturns;
+  const branchPurchaseInvoices = useMemo(() => {
+    if (branches.length <= 1) return salonPurchaseInvoices;
+    return salonPurchaseInvoices.filter(p => isItemInBranch((p as any).branchId || (p as any).branch_id, (p as any).branchCode || (p as any).branch_code));
+  }, [salonPurchaseInvoices, branches.length, activeBranchId, activeBranch]);
+
+  const branchSupplierPayments = useMemo(() => {
+    if (branches.length <= 1) return salonSupplierPayments;
+    return salonSupplierPayments.filter(sp => isItemInBranch((sp as any).branchId || (sp as any).branch_id, (sp as any).branchCode || (sp as any).branch_code));
+  }, [salonSupplierPayments, branches.length, activeBranchId, activeBranch]);
+
+  const branchInventoryCounts = useMemo(() => {
+    if (branches.length <= 1) return salonInventoryCounts;
+    return salonInventoryCounts.filter(ic => isItemInBranch((ic as any).branchId || (ic as any).branch_id, (ic as any).branchCode || (ic as any).branch_code));
+  }, [salonInventoryCounts, branches.length, activeBranchId, activeBranch]);
+
+  const branchItemMovements = useMemo(() => {
+    if (branches.length <= 1) return salonItemMovements;
+    return salonItemMovements.filter(im => isItemInBranch((im as any).branchId || (im as any).branch_id, (im as any).branchCode || (im as any).branch_code));
+  }, [salonItemMovements, branches.length, activeBranchId, activeBranch]);
+
+  const branchSalesReturns = useMemo(() => {
+    if (branches.length <= 1) return salonSalesReturns;
+    return salonSalesReturns.filter(r => isItemInBranch((r as any).branchId || (r as any).branch_id, (r as any).branchCode || (r as any).branch_code));
+  }, [salonSalesReturns, branches.length, activeBranchId, activeBranch]);
 
   const handleSetSalesReturns = (newReturns: SalesReturn[] | ((prev: SalesReturn[]) => SalesReturn[])) => {
     setSalesReturns(newReturns);
@@ -2235,17 +2239,17 @@ export default function App() {
 
   const handleOpenShift = async () => {
     if (checkReadOnlyAndWarn()) return;
-    if (shiftData.isOpen || Object.values(branchShifts).some((s: any) => s && s.isOpen)) {
-      alert('لا يمكن فتح وردية جديدة: توجد وردية مفتوحة بالفعل لهذا الصالون! يرجى إغلاق الوردية الحالية أولاً.');
+    if (shiftData.isOpen || branchShifts[activeBranchId]?.isOpen) {
+      alert('لا يمكن فتح وردية جديدة: توجد وردية مفتوحة بالفعل لهذا الفرع! يرجى إغلاق وردية هذا الفرع أولاً.');
       return;
     }
 
-    // التحقق الصارم من قاعدة البيانات لمنع فتح أكثر من وردية لنفس الصالون عبر الأجهزة
+    // التحقق الصارم من قاعدة البيانات لمنع فتح أكثر من وردية لنفس الفرع عبر الأجهزة
     try {
       const activeDbShift = await DB.getActiveWorkShift(settings.salonId, activeBranchId);
       if (activeDbShift && (activeDbShift.status === 'open' || !activeDbShift.closedAt)) {
         applyActiveWorkShift(activeDbShift, activeBranchId);
-        alert(`لا يمكن فتح وردية جديدة: توجد وردية أخرى مفتوحة بالفعل لهذا الصالون في قاعدة البيانات (كود الوردية: ${activeDbShift.shiftCode || activeDbShift.id}). يرجى إغلاقها أولاً.`);
+        alert(`تم رصد وردية مفتوحة للفرع: توجد وردية عمل مفتوحة بالفعل لهذا الفرع في قاعدة البيانات (كود الوردية: ${activeDbShift.shiftCode || activeDbShift.id}). جرى استعادتها.`);
         setShowOpenModal(false);
         return;
       }
@@ -2580,10 +2584,25 @@ export default function App() {
     
     invoice.items.forEach(item => {
       if (item.type === 'product' && item.itemId) {
-        // Deduct stock
+        // Deduct stock per active branch
         const pIdx = updatedProducts.findIndex(p => p.id === item.itemId);
         if (pIdx !== -1) {
-          updatedProducts[pIdx] = { ...updatedProducts[pIdx], currentStock: updatedProducts[pIdx].currentStock - (item.quantity || 1) };
+          const qty = item.quantity || 1;
+          const currentProd = updatedProducts[pIdx];
+          const curBranchStocks = { ...(currentProd.branchStocks || {}) };
+          const branchCurStock = (activeBranchId && curBranchStocks[activeBranchId] !== undefined)
+            ? curBranchStocks[activeBranchId]
+            : currentProd.currentStock;
+          const newBranchStock = branchCurStock - qty;
+          if (activeBranchId) {
+            curBranchStocks[activeBranchId] = newBranchStock;
+          }
+
+          updatedProducts[pIdx] = { 
+            ...currentProd, 
+            currentStock: currentProd.currentStock - qty,
+            branchStocks: curBranchStocks
+          };
           newMovements.push({
             id: 'MOV-' + Math.random().toString(36).substr(2, 9),
             productId: item.itemId,
@@ -2591,8 +2610,9 @@ export default function App() {
             type: 'sale',
             referenceId: invoice.id,
             quantityIn: 0,
-            quantityOut: item.quantity || 1,
-            balanceAfter: updatedProducts[pIdx].currentStock
+            quantityOut: qty,
+            branchId: activeBranchId,
+            balanceAfter: newBranchStock
           });
           
           // Commission
@@ -2896,6 +2916,7 @@ export default function App() {
         <ServicesScreen 
           settings={settings} 
           activeBranchId={activeBranchId}
+          branches={branches}
           services={branchServices} 
           setServices={handleSetServices} 
           categories={branchCategories} 
@@ -3243,6 +3264,8 @@ export default function App() {
         return (
           <WarehouseScreen
             settings={settings}
+            activeBranchId={activeBranchId}
+            branches={branches}
             products={branchProducts}
             setProducts={handleSetProducts}
             categories={branchCategories}
@@ -4070,7 +4093,7 @@ export default function App() {
               {AuthService.canDo('manage_shifts', currentUser) && (
                 <button 
                   onClick={async () => {
-                    if (shiftData.isOpen || Object.values(branchShifts).some((s: any) => s && s.isOpen)) {
+                    if (shiftData.isOpen || branchShifts[activeBranchId]?.isOpen) {
                       setShowCloseModal(true);
                       return;
                     }
@@ -4078,7 +4101,7 @@ export default function App() {
                       const activeDbShift = await DB.getActiveWorkShift(settings.salonId, activeBranchId);
                       if (activeDbShift && (activeDbShift.status === 'open' || !activeDbShift.closedAt)) {
                         applyActiveWorkShift(activeDbShift, activeBranchId);
-                        alert(`توجد وردية مفتوحة بالفعل لهذا الصالون (كود الوردية: ${activeDbShift.shiftCode || activeDbShift.id}). يرجى إغلاقها أولاً قبل فتح وردية جديدة.`);
+                        alert(`توجد وردية مفتوحة بالفعل لهذا الفرع (كود الوردية: ${activeDbShift.shiftCode || activeDbShift.id}). يرجى إغلاقها أولاً قبل فتح وردية جديدة.`);
                         setShowCloseModal(true);
                         return;
                       }

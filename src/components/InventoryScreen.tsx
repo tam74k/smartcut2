@@ -11,7 +11,9 @@ export function InventoryScreen({
   setInventoryCounts,
   itemMovements,
   setItemMovements,
-  shiftData
+  shiftData,
+  activeBranchId,
+  branches = []
 }: {
   settings: AppSettings;
   products: Product[];
@@ -20,6 +22,8 @@ export function InventoryScreen({
   setInventoryCounts: (ic: InventoryCount[]) => void;
   itemMovements: ItemMovement[];
   setItemMovements: (im: ItemMovement[]) => void;
+  activeBranchId?: string;
+  branches?: Branch[];
   shiftData?: { isOpen: boolean; date: string; initialCash?: number };
 }) {
   const [activeTab, setActiveTab] = useState<'counts' | 'movements'>('counts');
@@ -36,13 +40,16 @@ export function InventoryScreen({
   
   const startNewCount = () => {
     // initialize count items with current products
-    const initial = products.map(p => ({
-      productId: p.id,
-      expectedQuantity: p.currentStock,
-      actualQuantity: p.currentStock,
-      difference: 0,
-      notes: ''
-    }));
+    const initial = products.map(p => {
+      const stock = getProductStock(p, activeBranchId);
+      return {
+        productId: p.id,
+        expectedQuantity: stock,
+        actualQuantity: stock,
+        difference: 0,
+        notes: ''
+      };
+    });
     setCountItems(initial);
     setCountNotes('');
     setShowAddCount(true);
@@ -76,7 +83,16 @@ export function InventoryScreen({
       if (item.difference !== 0) {
         const pIdx = updatedProducts.findIndex(p => p.id === item.productId);
         if (pIdx >= 0) {
-          updatedProducts[pIdx] = { ...updatedProducts[pIdx], currentStock: item.actualQuantity };
+          const curProd = updatedProducts[pIdx];
+          const curBranchStocks = { ...(curProd.branchStocks || {}) };
+          if (activeBranchId) {
+            curBranchStocks[activeBranchId] = item.actualQuantity;
+          }
+          updatedProducts[pIdx] = { 
+            ...curProd, 
+            currentStock: item.actualQuantity,
+            branchStocks: curBranchStocks
+          };
           
           newMovements.push({
             id: 'MOV-' + Math.random().toString(36).substr(2, 9),
@@ -87,6 +103,7 @@ export function InventoryScreen({
             quantityIn: item.difference > 0 ? item.difference : 0,
             quantityOut: item.difference < 0 ? Math.abs(item.difference) : 0,
             balanceAfter: item.actualQuantity,
+            branchId: activeBranchId,
             notes: item.notes || countNotes
           });
         }

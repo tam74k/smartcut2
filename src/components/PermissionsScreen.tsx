@@ -241,6 +241,14 @@ export function PermissionsScreen({
       }
     }
 
+    const targetBranch = branches.find(b => 
+      b.id === userForm.branchId || 
+      (b.code && b.code === userForm.branchId) || 
+      (b.name && b.name.toLowerCase() === (userForm.branchId || '').toLowerCase())
+    );
+    const resolvedBranchId = targetBranch?.id || userForm.branchId || undefined;
+    const resolvedBranchCode = targetBranch?.code || undefined;
+
     if (editingUser) {
       const updatedUser: AppUser = {
         ...editingUser,
@@ -250,7 +258,8 @@ export function PermissionsScreen({
         phone: userForm.phone.trim(),
         role: userForm.role,
         customRoleId: userForm.customRoleId,
-        branchId: userForm.branchId || undefined,
+        branchId: resolvedBranchId,
+        branchCode: resolvedBranchCode || editingUser.branchCode,
         salonId: currentSalonId,
         salonCode: settings.salonCode,
         active: userForm.active,
@@ -270,7 +279,8 @@ export function PermissionsScreen({
         phone: userForm.phone.trim(),
         role: userForm.role,
         customRoleId: userForm.customRoleId,
-        branchId: userForm.branchId || undefined,
+        branchId: resolvedBranchId,
+        branchCode: resolvedBranchCode,
         salonId: currentSalonId,
         salonCode: settings.salonCode,
         active: userForm.active,
@@ -357,6 +367,9 @@ export function PermissionsScreen({
             <button
               onClick={() => {
                 setEditingUser(null);
+                const defaultBranch = (selectedBranchFilter && selectedBranchFilter !== 'all') 
+                  ? selectedBranchFilter 
+                  : (activeBranchId || (branches.length > 0 ? branches[0].id : ''));
                 setUserForm({
                   name: '',
                   username: '',
@@ -364,6 +377,7 @@ export function PermissionsScreen({
                   phone: '',
                   role: 'cashier',
                   customRoleId: '',
+                  branchId: defaultBranch,
                   active: true,
                   screens: [...DEFAULT_ROLE_PRESETS.cashier.screens],
                   actions: [...DEFAULT_ROLE_PRESETS.cashier.actions]

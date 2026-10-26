@@ -14,6 +14,8 @@ export function ProductsScreen({
   employees, 
   suppliers = [],
   setSuppliers,
+  activeBranchId,
+  branches = [],
   shiftData
 }: { 
   settings: AppSettings;
@@ -24,6 +26,8 @@ export function ProductsScreen({
   employees: Employee[];
   suppliers?: Supplier[];
   setSuppliers?: (s: Supplier[]) => void;
+  activeBranchId?: string;
+  branches?: Branch[];
   shiftData: { isOpen: boolean; date: string; initialCash: number };
 }) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -1126,11 +1130,11 @@ export function ProductsScreen({
                     <td className={`${isCompactDensity ? 'py-2 px-3 text-xs' : 'p-4'} font-bold text-rose-600 whitespace-nowrap`}>{p.costPrice.toFixed(2)}</td>
                     <td className={`${isCompactDensity ? 'py-2 px-3 text-xs' : 'p-4'} text-slate-600 whitespace-nowrap`}>{p.openingStock}</td>
                     <td className={`${isCompactDensity ? 'py-2 px-3 text-xs' : 'p-4'} font-bold whitespace-nowrap`}>
-                      <span className={`px-2 py-1 rounded-md ${p.currentStock <= p.reorderLimit ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-700'}`}>
-                        {p.currentStock}
+                      <span className={`px-2 py-1 rounded-md ${getProductStock(p, activeBranchId) <= getProductReorderLimit(p, activeBranchId) ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-700'}`}>
+                        {getProductStock(p, activeBranchId)}
                       </span>
                     </td>
-                    <td className={`${isCompactDensity ? 'py-2 px-3 text-xs' : 'p-4'} text-slate-600 font-bold whitespace-nowrap`}>{(p.currentStock * p.costPrice).toFixed(2)}</td>
+                    <td className={`${isCompactDensity ? 'py-2 px-3 text-xs' : 'p-4'} text-slate-600 font-bold whitespace-nowrap`}>{(getProductStock(p, activeBranchId) * p.costPrice).toFixed(2)}</td>
                     <td className={`${isCompactDensity ? 'py-2 px-3 text-xs' : 'p-4'} text-slate-500 whitespace-nowrap`}>{p.reorderLimit}</td>
                     <td className={`${isCompactDensity ? 'py-2 px-3 text-xs' : 'p-4'} text-blue-600 whitespace-nowrap`}>
                       {p.productType === 'raw_material' ? (

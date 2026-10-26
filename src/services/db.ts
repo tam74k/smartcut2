@@ -1214,12 +1214,37 @@ export const DB = {
     } catch (e) { return []; }
   },
 
-  async saveUser(u: any) {
+  async saveUser(u: any, salonIdOverride?: string) {
     const client = sb();
     if (!client) return false;
     try {
-      const validSalonId = toSalonUUID(u.salonId);
-      const validBranchId = toBranchUUID(u.branchId);
+      const validSalonId = toSalonUUID(salonIdOverride || u.salonId || getSalonId());
+      let validBranchId = toBranchUUID(u.branchId);
+      let branchCode = u.branchCode || null;
+
+      // Auto resolve branch UUID and code from branches if branch is provided as code, name (e.g. Dana-Zayed), or id
+      if (validSalonId && (u.branchId || u.branchCode)) {
+        try {
+          const rawBranch = String(u.branchId || u.branchCode).trim();
+          const { data: bList } = await client.from('branches').select('id, code, name').eq('salon_id', validSalonId);
+          if (bList && bList.length > 0) {
+            const matched = bList.find((b: any) => 
+              b.id === u.branchId || 
+              (b.code && b.code.toLowerCase() === rawBranch.toLowerCase()) || 
+              (b.name && b.name.toLowerCase() === rawBranch.toLowerCase()) ||
+              (b.name && rawBranch.toLowerCase().includes(b.name.toLowerCase())) ||
+              (b.code && rawBranch.toLowerCase().includes(b.code.toLowerCase()))
+            );
+            if (matched) {
+              validBranchId = matched.id;
+              branchCode = matched.code || branchCode;
+            }
+          }
+        } catch (e) {
+          console.warn('DB.saveUser branch resolve warning:', e);
+        }
+      }
+
       const cleanUsername = (u.username || '').trim().toLowerCase();
       const userUuid = u.id && u.id.includes('-') && u.id.length === 36 ? u.id : DB.generateUUID();
       
@@ -1237,6 +1262,7 @@ export const DB = {
         id: userUuid,
         salonId: validSalonId,
         branchId: validBranchId,
+        branchCode: branchCode || u.branchCode,
         username: cleanUsername,
         role: normalizedRole,
         screens: normalizedScreens,
@@ -1249,7 +1275,7 @@ export const DB = {
         salon_id: validSalonId,
         branch_id: validBranchId,
         salon_code: u.salonCode || 'SC-01',
-        branch_code: u.branchCode || 'BR-01',
+        branch_code: branchCode || u.branchCode || 'BR-01',
         username: cleanUsername,
         email: u.email || null,
         employee_id: u.employeeId || null,
@@ -2612,7 +2638,15 @@ export const DB = {
         is_active: s.isActive !== false, 
         type: s.type || 'service'
       };
-      const { error } = await client.from('services').upsert(snap, { onConflict: 'id' });
+      if (s.branchPrices && Object.keys(s.branchPrices).length > 0) {
+        snap.branch_prices = s.branchPrices;
+      }
+      let { error } = await client.from('services').upsert(snap, { onConflict: 'id' });
+      if (error && error.message?.includes('branch_prices')) {
+        delete snap.branch_prices;
+        const retry = await client.from('services').upsert(snap, { onConflict: 'id' });
+        error = retry.error;
+      }
       if (error) { console.error('DB.saveService error:', error.message); return null; }
       return s;
     } catch (e) { console.error('DB.saveService exception:', e); return null; }
@@ -2971,7 +3005,7 @@ export const DB = {
       : (p.category_id && p.category_id !== 'all') 
         ? p.category_id 
         : null;
-    const { error } = await client.from('products').upsert({
+    const snap: any = {
       id: p.id, salon_id: validSalonId, branch_id: validBranchId,
       category_id: catId, name: p.name,
       retail_price: p.retailPrice ?? p.sellPrice ?? p.price ?? 0,
@@ -2981,7 +3015,20 @@ export const DB = {
       current_stock: p.currentStock ?? 0, commission: p.commission ?? 0,
       barcode: p.barcode || null, is_active: p.isActive !== false,
       product_type: p.productType || 'for_sale'
-    }, { onConflict: 'id' });
+    };
+    if (p.branchStocks && Object.keys(p.branchStocks).length > 0) {
+      snap.branch_stocks = p.branchStocks;
+    }
+    if (p.branchReorderLimits && Object.keys(p.branchReorderLimits).length > 0) {
+      snap.branch_reorder_limits = p.branchReorderLimits;
+    }
+    let { error } = await client.from('products').upsert(snap, { onConflict: 'id' });
+    if (error && (error.message?.includes('branch_stocks') || error.message?.includes('branch_reorder_limits'))) {
+      delete snap.branch_stocks;
+      delete snap.branch_reorder_limits;
+      const retry = await client.from('products').upsert(snap, { onConflict: 'id' });
+      error = retry.error;
+    }
     if (error) { console.error('DB.saveProduct error:', error.message); return null; }
     return p;
   },
@@ -4863,7 +4910,9 @@ export function dbServiceToApp(row: any) {
     type: row.type || 'service',
     isPriority: row.isPriority ?? row.is_priority ?? false,
     cardColor: row.cardColor || row.card_color || '',
-    priorityOrder: row.priorityOrder ?? row.priority_order ?? 0
+    priorityOrder: row.priorityOrder ?? row.priority_order ?? 0,
+    branchPrices: row.branchPrices || row.branch_prices || {},
+    branchForeignerPrices: row.branchForeignerPrices || row.branch_foreigner_prices || {}
   };
 }
 
@@ -4938,6 +4987,9 @@ export function dbProductToApp(row: any): any {
     productType: (c.productType || row.product_type || 'for_sale') as 'for_sale' | 'raw_material',
     salonId: c.salonId || row.salon_id || undefined,
     branchId: c.branchId || row.branch_id || undefined,
+    branchCode: c.branchCode || row.branch_code || undefined,
+    branchStocks: c.branchStocks || row.branch_stocks || {},
+    branchReorderLimits: c.branchReorderLimits || row.branch_reorder_limits || {},
     isActive: c.isActive !== false && row.is_active !== false
   };
 }

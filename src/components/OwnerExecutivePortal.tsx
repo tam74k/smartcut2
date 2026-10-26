@@ -2531,11 +2531,13 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
       return;
     }
 
+    const curBranch = (branches || []).find(b => b.id === activeBranchId);
     const newUser: AppUser = {
       id: 'usr-' + Math.random().toString(36).substring(2, 9),
       salonId: targetSalonId,
       salonCode: (settings as any).salonCode,
       branchId: activeBranchId,
+      branchCode: curBranch?.code || (settings as any).branchCode,
       name: newUserForm.name.trim(),
       username: cleanUsername,
       password: newUserForm.password,

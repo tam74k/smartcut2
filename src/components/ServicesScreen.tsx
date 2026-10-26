@@ -12,6 +12,7 @@ import { DB } from '../services/db';
 export function ServicesScreen({ 
   settings, 
   activeBranchId,
+  branches = [],
   services, 
   setServices, 
   categories, 
@@ -19,6 +20,7 @@ export function ServicesScreen({
 }: { 
   settings: any;
   activeBranchId?: string;
+  branches?: Branch[];
   services: ServiceItem[]; 
   setServices: (s: ServiceItem[]) => void; 
   categories: Category[]; 
@@ -707,7 +709,12 @@ export function ServicesScreen({
                         </span>
                       </td>
                       <td className="px-4 py-4 font-bold">
-                        <div className="text-slate-900">{service.price} {settings.currency}</div>
+                        <div className="text-slate-900">{getServicePrice(service, activeBranchId)} {settings.currency}</div>
+                        {Boolean(activeBranchId && service.branchPrices && service.branchPrices[activeBranchId] !== undefined) && (
+                          <div className="text-[10px] text-indigo-700 font-bold bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200 mt-0.5 inline-flex items-center gap-1">
+                            <span>سعر خاص بالفرع</span>
+                          </div>
+                        )}
                         {Boolean(settings.enableDualPricing && service.foreignerPrice && service.foreignerPrice > 0) && (
                           <div className="text-[11px] text-amber-800 font-bold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 mt-1 inline-flex items-center gap-1">
                             <span>أجنبي:</span>
@@ -1008,6 +1015,57 @@ export function ServicesScreen({
                   />
                 </div>
               </div>
+
+              {/* تسعير مخصص لكل فرع عند وجود أكثر من فرع */}
+              {branches && branches.length > 1 && (
+                <div className="bg-indigo-50/60 border border-indigo-200/90 rounded-2xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-indigo-950 flex items-center gap-1.5">
+                      <Sparkles size={14} className="text-indigo-600" />
+                      <span>تسعير مخصص للفروع (يمكن تحديد سعر مختلف لكل فرع)</span>
+                    </span>
+                    <span className="text-[10px] text-indigo-600 font-bold bg-indigo-100/70 px-2 py-0.5 rounded-full">
+                      اختياري
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-indigo-900/80 leading-relaxed">
+                    يمكنك تحديد سعر خاص لهذه الخدمة في فروع معينة. إذا تركت سعر الفرع فارغاً، سيتم اعتماد السعر الأساسي تلقائياً ({serviceFormData.price || 0} {settings.currency}).
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                    {branches.map(b => {
+                      const curVal = serviceFormData.branchPrices?.[b.id];
+                      return (
+                        <div key={b.id} className="bg-white p-2.5 rounded-xl border border-indigo-100/90 shadow-2xs flex items-center justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-black text-slate-800 truncate">{b.name} {b.isMain ? '(الرئيسي)' : ''}</p>
+                            <p className="text-[10px] text-slate-400 font-mono">{b.code || ''}</p>
+                          </div>
+                          <div className="w-28 relative">
+                            <input
+                              type="number"
+                              min="0"
+                              step="any"
+                              placeholder={String(serviceFormData.price || 0)}
+                              value={curVal !== undefined ? curVal : ''}
+                              onChange={e => {
+                                const nextPrices = { ...(serviceFormData.branchPrices || {}) };
+                                if (e.target.value.trim() !== '') {
+                                  nextPrices[b.id] = Number(e.target.value);
+                                } else {
+                                  delete nextPrices[b.id];
+                                }
+                                setServiceFormData({ ...serviceFormData, branchPrices: nextPrices });
+                              }}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-bold font-mono outline-none focus:border-indigo-500 text-left"
+                            />
+                            <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[9px] text-slate-400 pointer-events-none">{settings.currency}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {Boolean(settings.enableDualPricing) && (
                 <div className="bg-amber-50/70 p-3.5 rounded-xl border border-amber-200 space-y-1.5">

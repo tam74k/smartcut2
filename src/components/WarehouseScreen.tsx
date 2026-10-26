@@ -254,6 +254,8 @@ export function WarehouseScreen({
           employees={employees}
           suppliers={suppliers}
           setSuppliers={setSuppliers}
+          activeBranchId={activeBranchId}
+          branches={branches}
           shiftData={{
             isOpen: shiftData.isOpen,
             date: shiftData.date,
@@ -311,6 +313,8 @@ export function WarehouseScreen({
           setInventoryCounts={setInventoryCounts}
           itemMovements={itemMovements}
           setItemMovements={setItemMovements}
+          activeBranchId={activeBranchId}
+          branches={branches}
           shiftData={{
             isOpen: shiftData.isOpen,
             date: shiftData.date
