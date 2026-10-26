@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { AppSettings, Client, Invoice, ClientPreferences, getClientTier, calculateClientTotalSpend, ClientTierConfig } from '../types';
 import { 
   Search, UserPlus, Gift, MessageSquare, Receipt, Eye, X, 

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { AppSettings, Invoice, Transaction, Client, Branch, Product, Employee, ServiceItem, SalesReturn } from '../types';
 import { 
   Search, Filter, Printer, XCircle, Edit, CheckCircle, ChevronDown, 
