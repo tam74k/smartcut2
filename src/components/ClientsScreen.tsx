@@ -30,18 +30,47 @@ export function ClientsScreen({
   settings, 
   clients, 
   setClients, 
-  invoices = [] 
+  invoices = [],
+  activeBranchId,
+  branches = [],
+  allSalonClients = []
 }: { 
   settings: AppSettings; 
   clients: Client[]; 
   setClients: (c: Client[]) => void; 
   invoices?: Invoice[]; 
+  activeBranchId?: string;
+  branches?: any[];
+  allSalonClients?: Client[];
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   
   // Modal States
   const [selectedClientForProfile, setSelectedClientForProfile] = useState<Client | null>(null);
   const [profileActiveTab, setProfileActiveTab] = useState<'overview' | 'preferences' | 'invoices'>('overview');
+
+  // Check if phone matches any registered client across any branch of the salon
+  const matchedSalonClient = useMemo(() => {
+    const clean = (clientForm.phone || '').trim().replace(/\D/g, '');
+    if (!clean || clean.length < 7) return null;
+    const pool = (allSalonClients && allSalonClients.length > 0) ? allSalonClients : clients;
+    return pool.find(c => (c.phone || '').trim().replace(/\D/g, '') === clean) || null;
+  }, [clientForm.phone, allSalonClients, clients]);
+
+  // When matchedSalonClient is detected, auto-populate clientForm if name is empty
+  useEffect(() => {
+    if (matchedSalonClient && (!clientForm.name || clientForm.name.trim() === '')) {
+      setClientForm(prev => ({
+        ...prev,
+        name: matchedSalonClient.name || prev.name,
+        clientType: matchedSalonClient.clientType || prev.clientType,
+        dob: matchedSalonClient.dob || prev.dob,
+        notes: matchedSalonClient.notes || prev.notes,
+        referredByPhone: matchedSalonClient.referredByPhone || prev.referredByPhone,
+        isVip: Boolean(matchedSalonClient.isVip)
+      }));
+    }
+  }, [matchedSalonClient]);
   const [viewInvoiceDetails, setViewInvoiceDetails] = useState<Invoice | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -181,7 +210,7 @@ export function ClientsScreen({
     } catch(e){}
   };
 
-  // Save new client
+  // Save new client (with cross-branch auto-link)
   const handleSaveClient = (e: React.FormEvent) => {
     e.preventDefault();
     const cleanPhone = clientForm.phone.trim();
@@ -189,24 +218,55 @@ export function ClientsScreen({
       ? clientForm.referredByPhone.trim()
       : undefined;
 
-    const newClient: Client = {
-      id: 'cli-' + Math.random().toString(36).substring(2, 9),
-      name: clientForm.name.trim(),
-      phone: cleanPhone,
-      clientType: clientForm.clientType || 'citizen',
-      referredByPhone: cleanReferredBy,
-      dob: clientForm.dob || undefined,
-      notes: clientForm.notes || undefined,
-      loyaltyPoints: Number(clientForm.loyaltyPoints) || 0,
-      cashback: 0,
-      isVip: clientForm.isVip,
-      vipSince: clientForm.isVip ? new Date().toISOString().split('T')[0] : undefined,
-      lastVisit: new Date().toISOString().split('T')[0],
-      createdAt: new Date().toISOString()
-    };
+    if (matchedSalonClient) {
+      const existingBranchIds = Array.isArray(matchedSalonClient.branchIds) ? matchedSalonClient.branchIds : [];
+      const branchIdFallback = matchedSalonClient.branchId ? [matchedSalonClient.branchId] : [];
+      const updatedBranchIds = Array.from(new Set([
+        ...existingBranchIds,
+        ...branchIdFallback,
+        activeBranchId
+      ].filter(Boolean) as string[]));
 
-    setClients([...clients, newClient]);
-    DB.saveClient(newClient);
+      const updatedClient: Client = {
+        ...matchedSalonClient,
+        name: clientForm.name.trim() || matchedSalonClient.name,
+        phone: cleanPhone || matchedSalonClient.phone,
+        clientType: clientForm.clientType || matchedSalonClient.clientType || 'citizen',
+        referredByPhone: cleanReferredBy || matchedSalonClient.referredByPhone,
+        dob: clientForm.dob || matchedSalonClient.dob,
+        notes: clientForm.notes || matchedSalonClient.notes,
+        isVip: clientForm.isVip ?? matchedSalonClient.isVip,
+        branchIds: updatedBranchIds,
+        branchId: matchedSalonClient.branchId || activeBranchId,
+        salonId: settings.salonId || matchedSalonClient.salonId
+      };
+
+      setClients([...clients.filter(c => c.id !== updatedClient.id), updatedClient]);
+      DB.saveClient(updatedClient);
+    } else {
+      const newClient: Client = {
+        id: 'cli-' + Math.random().toString(36).substring(2, 9),
+        salonId: settings.salonId,
+        branchId: activeBranchId,
+        branchIds: activeBranchId ? [activeBranchId] : [],
+        name: clientForm.name.trim(),
+        phone: cleanPhone,
+        clientType: clientForm.clientType || 'citizen',
+        referredByPhone: cleanReferredBy,
+        dob: clientForm.dob || undefined,
+        notes: clientForm.notes || undefined,
+        loyaltyPoints: Number(clientForm.loyaltyPoints) || 0,
+        cashback: 0,
+        isVip: clientForm.isVip,
+        vipSince: clientForm.isVip ? new Date().toISOString().split('T')[0] : undefined,
+        lastVisit: new Date().toISOString().split('T')[0],
+        createdAt: new Date().toISOString()
+      };
+
+      setClients([...clients, newClient]);
+      DB.saveClient(newClient);
+    }
+
     setShowAddModal(false);
     setClientForm({ name: '', phone: '', referredByPhone: '', dob: '', notes: '', loyaltyPoints: 0, isVip: false, clientType: 'citizen' });
   };
@@ -1100,6 +1160,19 @@ export function ClientsScreen({
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-indigo-600 font-bold"
                   dir="ltr"
                 />
+                {matchedSalonClient && (
+                  <div className="mt-2 p-2.5 bg-blue-50 border border-blue-200 rounded-xl text-blue-900 flex items-start gap-2 text-xs">
+                    <Sparkles size={16} className="text-blue-600 shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <div className="font-black text-blue-950 flex items-center gap-1.5">
+                        <span>تم العثور على العميل مسجلاً مسبقاً ({matchedSalonClient.name})</span>
+                      </div>
+                      <div className="text-[11px] text-blue-700 mt-0.5">
+                        سيتم تفعيل العميل وإتاحته في هذا الفرع أيضاً فور الحفظ مع ربط كافة بياناته.
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div>

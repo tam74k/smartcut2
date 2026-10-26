@@ -156,6 +156,7 @@ export function BookingsScreen({
   products = [],
   employees,
   clients = [],
+  allSalonClients = [],
   setClients,
   activeBranchId,
   branches = [],
@@ -173,6 +174,7 @@ export function BookingsScreen({
   products?: Product[],
   employees: Employee[],
   clients?: Client[],
+  allSalonClients?: Client[],
   setClients?: (c: Client[]) => void,
   activeBranchId?: string,
   branches?: Branch[],
@@ -276,6 +278,27 @@ export function BookingsScreen({
     clientType: 'citizen'
   });
 
+  const matchedSalonClientInBooking = useMemo(() => {
+    const clean = (newClientForm.phone || '').trim().replace(/\D/g, '');
+    if (!clean || clean.length < 7) return null;
+    const pool = (allSalonClients && allSalonClients.length > 0) ? allSalonClients : clients;
+    return pool.find(c => (c.phone || '').trim().replace(/\D/g, '') === clean) || null;
+  }, [newClientForm.phone, allSalonClients, clients]);
+
+  useEffect(() => {
+    if (matchedSalonClientInBooking && (!newClientForm.name || newClientForm.name.trim() === '')) {
+      const dobParts = (matchedSalonClientInBooking.dob || '').split('-');
+      setNewClientForm(prev => ({
+        ...prev,
+        name: matchedSalonClientInBooking.name || prev.name,
+        clientType: matchedSalonClientInBooking.clientType || prev.clientType,
+        referredByPhone: matchedSalonClientInBooking.referredByPhone || prev.referredByPhone,
+        dobMonth: dobParts[0] || prev.dobMonth,
+        dobDay: dobParts[1] || prev.dobDay
+      }));
+    }
+  }, [matchedSalonClientInBooking]);
+
   const referrerClientInModal = useMemo(() => {
     const p = (newClientForm.referredByPhone || '').trim();
     const cleanDigits = p.replace(/\D/g, '');
@@ -315,39 +338,70 @@ export function BookingsScreen({
       ? `${newClientForm.dobMonth}-${newClientForm.dobDay}` 
       : undefined;
 
-    const newClient: Client = {
-      id: 'c-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
-      salonId: settings.salonId,
-      branchId: activeBranchId,
-      name: newClientForm.name.trim(),
-      phone: cleanPhone,
-      clientType: newClientForm.clientType || 'citizen',
-      referredByPhone: cleanReferredBy,
-      dobDay: newClientForm.dobDay || undefined,
-      dobMonth: newClientForm.dobMonth || undefined,
-      dob: dob,
-      loyaltyPoints: 0,
-      cashback: 0,
-      createdAt: new Date().toISOString()
-    };
+    let targetClient: Client;
+    if (matchedSalonClientInBooking) {
+      const existingBranchIds = Array.isArray(matchedSalonClientInBooking.branchIds) ? matchedSalonClientInBooking.branchIds : [];
+      const branchIdFallback = matchedSalonClientInBooking.branchId ? [matchedSalonClientInBooking.branchId] : [];
+      const updatedBranchIds = Array.from(new Set([
+        ...existingBranchIds,
+        ...branchIdFallback,
+        activeBranchId
+      ].filter(Boolean) as string[]));
 
-    if (setClients) {
-      setClients([newClient, ...clients]);
-    }
-    try {
-      await DB.saveClient(newClient, settings.salonId);
-    } catch (err) {
-      console.warn('Error saving new client to DB:', err);
+      targetClient = {
+        ...matchedSalonClientInBooking,
+        name: newClientForm.name.trim() || matchedSalonClientInBooking.name,
+        phone: cleanPhone || matchedSalonClientInBooking.phone,
+        clientType: newClientForm.clientType || matchedSalonClientInBooking.clientType || 'citizen',
+        referredByPhone: cleanReferredBy || matchedSalonClientInBooking.referredByPhone,
+        dob: dob || matchedSalonClientInBooking.dob,
+        branchIds: updatedBranchIds,
+        branchId: matchedSalonClientInBooking.branchId || activeBranchId,
+        salonId: settings.salonId || matchedSalonClientInBooking.salonId
+      };
+      if (setClients) {
+        setClients([...clients.filter(c => c.id !== targetClient.id), targetClient]);
+      }
+      try {
+        await DB.saveClient(targetClient, settings.salonId);
+      } catch (err) {
+        console.warn('Error saving client to DB:', err);
+      }
+    } else {
+      targetClient = {
+        id: 'c-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
+        salonId: settings.salonId,
+        branchId: activeBranchId,
+        branchIds: activeBranchId ? [activeBranchId] : [],
+        name: newClientForm.name.trim(),
+        phone: cleanPhone,
+        clientType: newClientForm.clientType || 'citizen',
+        referredByPhone: cleanReferredBy,
+        dobDay: newClientForm.dobDay || undefined,
+        dobMonth: newClientForm.dobMonth || undefined,
+        dob: dob,
+        loyaltyPoints: 0,
+        cashback: 0,
+        createdAt: new Date().toISOString()
+      };
+      if (setClients) {
+        setClients([targetClient, ...clients]);
+      }
+      try {
+        await DB.saveClient(targetClient, settings.salonId);
+      } catch (err) {
+        console.warn('Error saving new client to DB:', err);
+      }
     }
 
-    // تحديث بيانات الحجز بالعميل الجديد مباشرة
+    // تحديث بيانات الحجز بالعميل مباشرة
     setNewBooking(prev => ({
       ...prev,
-      phone: newClient.phone,
-      clientName: newClient.name,
-      customerId: newClient.id
+      phone: targetClient.phone,
+      clientName: targetClient.name,
+      customerId: targetClient.id
     }));
-    setMatchingClientInfo(newClient);
+    setMatchingClientInfo(targetClient);
     setShowPhoneSuggestions(false);
     setShowAddClientModal(false);
     setNewClientForm({ name: '', phone: '', referredByPhone: '', dobDay: '', dobMonth: '', clientType: 'citizen' });
@@ -642,18 +696,34 @@ export function BookingsScreen({
   const mainBranchId = mainBranch.id;
   const isMainBranch = !activeBranchId || activeBranchId === mainBranchId || activeBranchId === 'b-main';
 
-  const matchesActiveBranch = (itemBranchId?: string) => {
-    if (itemBranchId) {
-      return itemBranchId === activeBranchId;
+  const matchesActiveBranch = (itemBranchId?: string, itemBranchCode?: string) => {
+    if (!branches || branches.length <= 1) return true;
+    const curBranch = branches.find(b => b.id === activeBranchId) || branches[0];
+    const isMain = Boolean(curBranch?.isMain || curBranch?.id === branches[0]?.id);
+
+    const bId = (itemBranchId || '').trim();
+    const bCode = (itemBranchCode || '').trim();
+
+    if (bId) {
+      if (curBranch?.id && bId === curBranch.id) return true;
+      if (curBranch?.code && bId.toLowerCase() === curBranch.code.toLowerCase()) return true;
+      if (curBranch?.name && bId.toLowerCase() === curBranch.name.toLowerCase()) return true;
+      return false;
     }
-    return isMainBranch;
+    if (bCode && curBranch?.code) {
+      if (bCode.toLowerCase() === curBranch.code.toLowerCase()) return true;
+      if (curBranch?.name && bCode.toLowerCase() === curBranch.name.toLowerCase()) return true;
+      return false;
+    }
+
+    return isMain;
   };
 
   // Filtered Bookings for Table View (with Date Range, Search & Branch)
   const tableFilteredBookings = useMemo(() => {
     return bookings.filter(b => {
       // Branch filter
-      if (!matchesActiveBranch((b as any).branchId)) return false;
+      if (!matchesActiveBranch((b as any).branchId, (b as any).branchCode)) return false;
 
       // Date range filter
       const bDate = b.date ? b.date.split('T')[0].trim() : '';
@@ -693,7 +763,7 @@ export function BookingsScreen({
   const calendarFilteredBookings = useMemo(() => {
     return bookings.filter(b => {
       // Branch filter
-      if (!matchesActiveBranch((b as any).branchId)) return false;
+      if (!matchesActiveBranch((b as any).branchId, (b as any).branchCode)) return false;
 
       // Status filter
       if (statusFilter !== 'all' && b.status !== statusFilter) return false;

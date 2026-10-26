@@ -33,6 +33,8 @@ export function WarehouseScreen({
   transactions,
   setTransactions,
   shiftData,
+  activeBranchId,
+  branches = [],
   initialSubTab = 'products',
   currentUser,
   onRefresh
@@ -56,6 +58,8 @@ export function WarehouseScreen({
   transactions: Transaction[];
   setTransactions: (t: Transaction[]) => void;
   shiftData: { isOpen: boolean; date: string; initialCash?: number };
+  activeBranchId?: string;
+  branches?: any[];
   initialSubTab?: 'products' | 'suppliers' | 'purchases' | 'inventory' | 'shortages';
   currentUser?: any;
   onRefresh?: () => Promise<void> | void;
@@ -275,6 +279,7 @@ export function WarehouseScreen({
           purchaseInvoices={purchaseInvoices}
           transactions={transactions}
           setTransactions={setTransactions}
+          activeBranchId={activeBranchId}
           shiftData={{
             isOpen: shiftData.isOpen,
             date: shiftData.date

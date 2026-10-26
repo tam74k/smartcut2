@@ -55,6 +55,7 @@ export function InvoicesScreen({
   setTransactions: (t: Transaction[]) => void;
   clients: Client[];
   setClients: (c: Client[]) => void;
+  allSalonClients?: Client[];
   activeBranchId?: string;
   branches?: Branch[];
   currentUser?: any;
@@ -72,7 +73,13 @@ export function InvoicesScreen({
   const [searchQuery, setSearchQuery] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [branchFilter, setBranchFilter] = useState<string>('all');
+  const [branchFilter, setBranchFilter] = useState<string>(activeBranchId || 'all');
+
+  useEffect(() => {
+    if (activeBranchId) {
+      setBranchFilter(activeBranchId);
+    }
+  }, [activeBranchId]);
   const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'wasel' | 'cancelled' | 'unpaid' | 'deferred' | 'partially_paid' | 'refunded' | 'partial_refund'>('all');
   const [returnTargetInvoice, setReturnTargetInvoice] = useState<Invoice | null>(null);
   const [paymentFilter, setPaymentFilter] = useState<string>('all');
@@ -296,21 +303,34 @@ export function InvoicesScreen({
   const mainBranchId = mainBranch.id;
   const isMainBranch = !activeBranchId || activeBranchId === mainBranchId || activeBranchId === 'b-main';
 
-  const matchesActiveBranch = (itemBranchId?: string) => {
-    if (branchFilter !== 'all') {
-      return itemBranchId === branchFilter;
-    }
-    if (!itemBranchId) return true;
+  const matchesActiveBranch = (itemBranchId?: string, itemBranchCode?: string) => {
     if (!branches || branches.length <= 1) return true;
-    if (itemBranchId === activeBranchId) return true;
-    if (isMainBranch) return true;
-    return true;
+    const targetBranchId = (branchFilter && branchFilter !== 'all') ? branchFilter : activeBranchId;
+    const curBranch = branches.find(b => b.id === targetBranchId) || branches.find(b => b.id === activeBranchId) || branches[0];
+    const isMain = Boolean(curBranch?.isMain || curBranch?.id === branches[0]?.id);
+
+    const bId = (itemBranchId || '').trim();
+    const bCode = (itemBranchCode || '').trim();
+
+    if (bId) {
+      if (curBranch?.id && bId === curBranch.id) return true;
+      if (curBranch?.code && bId.toLowerCase() === curBranch.code.toLowerCase()) return true;
+      if (curBranch?.name && bId.toLowerCase() === curBranch.name.toLowerCase()) return true;
+      return false;
+    }
+    if (bCode && curBranch?.code) {
+      if (bCode.toLowerCase() === curBranch.code.toLowerCase()) return true;
+      if (curBranch?.name && bCode.toLowerCase() === curBranch.name.toLowerCase()) return true;
+      return false;
+    }
+
+    return isMain;
   };
 
   const filteredInvoices = useMemo(() => {
     return invoices.filter(inv => {
       // Branch filter
-      if (!matchesActiveBranch(inv.branchId)) return false;
+      if (!matchesActiveBranch(inv.branchId, (inv as any).branchCode)) return false;
 
       // Date filter
       const invDateStr = (inv.date || '').split('T')[0];

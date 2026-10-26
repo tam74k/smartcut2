@@ -67,7 +67,7 @@ import { hasEmployeeFixedCommission } from './utils/commissionHelper';
 import { 
   AppSettings, Transaction, Booking, Invoice, ServiceItem, Category, Employee, Product, AppUser, 
   SaaSSubscription, Branch, Partner, PartnerTransaction, PromoCode, PromoCodeUsage, TipRecord, 
-  EmployeeCustody, FingerprintLog, WorkShift, Client, HeldInvoice, SalesReturn 
+  EmployeeCustody, FingerprintLog, WorkShift, Client, HeldInvoice, SalesReturn, isClientInBranch 
 } from './types';
 
 
@@ -1561,17 +1561,26 @@ export default function App() {
   }, [branches, activeBranchId]);
 
   const isItemInBranch = (itemBranchId?: string, itemBranchCode?: string) => {
-    if (branches.length <= 1) return true; // إذا كان الصالون يملك فرعاً واحداً فقط، تظهر كافة العناصر
-    if (itemBranchId && itemBranchId === activeBranchId) return true;
-    if (activeBranch && itemBranchCode && itemBranchCode === activeBranch.code) return true;
-    const mainBranch = branches.find(b => b.isMain) || branches[0];
-    // العناصر العامة أو التاريخية التي لا تملك كود فرع تنتمي حصرياً للفرع الرئيسي، ولا تظهر في الفروع الإضافية الجديدة
-    if (activeBranch?.isMain || activeBranchId === mainBranch?.id) {
-      if (!itemBranchId && !itemBranchCode) return true;
-      if (itemBranchId === mainBranch?.id || itemBranchId === 'b-main' || itemBranchId === '00000000-0000-0000-0000-000000000002') return true;
-      if (itemBranchCode === 'BR-01' || itemBranchCode === 'BR-MAIN' || itemBranchCode === 'B01') return true;
+    if (branches.length <= 1) return true;
+    const curBranch = activeBranch || branches.find(b => b.id === activeBranchId) || branches[0];
+    const isCurMain = Boolean(curBranch?.isMain || curBranch?.id === branches[0]?.id);
+
+    const bId = (itemBranchId || '').trim();
+    const bCode = (itemBranchCode || '').trim();
+
+    if (bId) {
+      if (curBranch?.id && bId === curBranch.id) return true;
+      if (curBranch?.code && bId.toLowerCase() === curBranch.code.toLowerCase()) return true;
+      if (curBranch?.name && bId.toLowerCase() === curBranch.name.toLowerCase()) return true;
+      return false;
     }
-    return false;
+    if (bCode && curBranch?.code) {
+      if (bCode.toLowerCase() === curBranch.code.toLowerCase()) return true;
+      if (curBranch?.name && bCode.toLowerCase() === curBranch.name.toLowerCase()) return true;
+      return false;
+    }
+
+    return isCurMain;
   };
 
   // Salon-Scoped Entities (Direct from MSSQL / Supabase — Guaranteed 100% visible across all screens)
@@ -1659,7 +1668,19 @@ export default function App() {
     return salonBookings.filter(b => isItemInBranch((b as any).branchId || (b as any).branch_id, (b as any).branchCode || (b as any).branch_code));
   }, [salonBookings, branches.length, activeBranchId, activeBranch]);
 
-  const branchClients = salonClients;
+  const branchClients = useMemo(() => {
+    if (branches.length <= 1) return salonClients;
+    return salonClients.filter(c => isClientInBranch(c, activeBranchId, branches));
+  }, [salonClients, branches, activeBranchId]);
+
+  const branchFingerprintLogs = useMemo(() => {
+    if (branches.length <= 1) return fingerprintLogs;
+    const branchEmpIds = new Set(branchEmployees.map(e => e.id));
+    return fingerprintLogs.filter(log => {
+      if (log.employeeId && branchEmpIds.has(log.employeeId)) return true;
+      return isItemInBranch(log.branchId, (log as any).branchCode);
+    });
+  }, [fingerprintLogs, branchEmployees, branches, activeBranchId, activeBranch]);
   const branchSuppliers = salonSuppliers;
   const branchPurchaseInvoices = useMemo(() => {
     if (branches.length <= 1) return salonPurchaseInvoices;
@@ -2890,7 +2911,8 @@ export default function App() {
             setActiveHeldInvoiceForPOS(null);
           }} 
           onCheckoutComplete={handleCheckoutComplete} 
-          clients={salonClients} 
+          clients={branchClients} 
+          allSalonClients={salonClients}
           setClients={handleSetClients} 
           services={branchServices} 
           categories={branchCategories} 
@@ -2908,7 +2930,7 @@ export default function App() {
           currentUser={currentUser}
           transactions={branchTransactions}
           shiftData={shiftData}
-          fingerprintLogs={fingerprintLogs}
+          fingerprintLogs={branchFingerprintLogs}
           setFingerprintLogs={setFingerprintLogs}
         />
       );
@@ -2977,7 +2999,7 @@ export default function App() {
           currentUser={currentUser}
           tips={tips}
           setTips={setTips}
-          fingerprintLogs={fingerprintLogs}
+          fingerprintLogs={branchFingerprintLogs}
           setFingerprintLogs={setFingerprintLogs}
           custodies={custodies}
           setCustodies={setCustodies}
@@ -3031,9 +3053,9 @@ export default function App() {
       case 'fingerprint_logs': return (
         <FingerprintLogsScreen 
           settings={settings}
-          fingerprintLogs={fingerprintLogs}
+          fingerprintLogs={branchFingerprintLogs}
           setFingerprintLogs={setFingerprintLogs}
-          logs={fingerprintLogs}
+          logs={branchFingerprintLogs}
           setLogs={setFingerprintLogs}
           employees={branchEmployees}
         />
@@ -3049,7 +3071,7 @@ export default function App() {
           transactions={branchTransactions}
           bookings={branchBookings}
           currentUser={currentUser}
-          fingerprintLogs={fingerprintLogs}
+          fingerprintLogs={branchFingerprintLogs}
           setFingerprintLogs={setFingerprintLogs}
           shiftData={shiftData}
           activeBranchId={activeBranchId}
@@ -3088,7 +3110,7 @@ export default function App() {
           branches={branches}
           activeBranchId={activeBranchId}
           employees={branchEmployees}
-          clients={salonClients}
+          clients={branchClients}
           onNavigateScreen={(screenName) => setActiveTab(screenName)}
           onCompleteAndOpenPOS={(heldInvoice) => {
             setActiveHeldInvoiceForPOS(heldInvoice);
@@ -3158,7 +3180,8 @@ export default function App() {
           setProducts={handleSetProducts}
           setItemMovements={handleSetItemMovements}
           employees={branchEmployees}
-          clients={salonClients}
+          clients={branchClients}
+          allSalonClients={salonClients}
           setClients={handleSetClients}
           activeBranchId={activeBranchId}
           branches={branches}
@@ -3176,7 +3199,8 @@ export default function App() {
           setInvoices={handleSetInvoices} 
           transactions={branchTransactions} 
           setTransactions={handleSetTransactions} 
-          clients={salonClients} 
+          clients={branchClients} 
+          allSalonClients={salonClients}
           setClients={handleSetClients}
           activeBranchId={activeBranchId}
           branches={branches}
@@ -3197,7 +3221,7 @@ export default function App() {
           setInvoices={handleSetInvoices}
           transactions={branchTransactions}
           setTransactions={handleSetTransactions}
-          clients={salonClients}
+          clients={branchClients}
           setClients={handleSetClients}
           activeBranchId={activeBranchId}
           branches={branches}
@@ -3209,10 +3233,13 @@ export default function App() {
       case 'clients': return (
         <ClientsScreen 
           settings={settings} 
-          clients={salonClients} 
+          clients={branchClients} 
           setClients={handleSetClients} 
           invoices={branchInvoices} 
           currentUser={currentUser}
+          activeBranchId={activeBranchId}
+          branches={branches}
+          allSalonClients={salonClients}
         />
       );
       case 'complaints': return (
@@ -3221,7 +3248,7 @@ export default function App() {
           activeBranchId={activeBranchId}
           invoices={branchInvoices}
           employees={branchEmployees}
-          clients={salonClients}
+          clients={branchClients}
           currentUser={currentUser}
           onNavigateToPOSWithRemedy={(clientPhone, clientName, complaintId, originalInvoiceId) => {
             const matchedClient = branchClients.find(c => c.phone.replace(/\D/g, '') === clientPhone.replace(/\D/g, ''));
@@ -3306,7 +3333,7 @@ export default function App() {
           activeBranchId={activeBranchId}
           branches={branches}
           tips={tips}
-          fingerprintLogs={fingerprintLogs}
+          fingerprintLogs={branchFingerprintLogs}
           expenses={branchTransactions.filter(t => t.category === 'expense' || t.type === 'expense')}
           purchases={branchPurchaseInvoices}
           supplierPayments={branchSupplierPayments}
@@ -3315,7 +3342,7 @@ export default function App() {
           setEmployees={handleSetEmployees}
           setTransactions={handleSetTransactions}
           salesReturns={branchSalesReturns}
-          clients={salonClients}
+          clients={branchClients}
           setClients={handleSetClients}
         />
       );

@@ -1,3 +1,4 @@
+import { DB } from '../services/db';
 import { useState, useMemo } from 'react';
 import { AppSettings, PurchaseInvoice, Supplier, Product, Transaction, ItemMovement, PurchaseInvoiceItem } from '../types';
 import { Plus, Trash2, Search, Printer, X, ShoppingCart, QrCode } from 'lucide-react';
@@ -15,7 +16,8 @@ export function PurchasesScreen({
   setItemMovements,
   transactions,
   setTransactions,
-  shiftData
+  shiftData,
+  activeBranchId
 }: {
   settings: AppSettings;
   purchaseInvoices: PurchaseInvoice[];
@@ -29,6 +31,7 @@ export function PurchasesScreen({
   transactions: Transaction[];
   setTransactions: (t: Transaction[]) => void;
   shiftData: { isOpen: boolean; date: string };
+  activeBranchId?: string;
 }) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -92,6 +95,8 @@ export function PurchasesScreen({
     
     const newInvoice: PurchaseInvoice = {
       id: invoiceId,
+      salonId: settings.salonId,
+      branchId: activeBranchId,
       supplierId,
       date: shiftData.date,
       items: invoiceItems,
@@ -105,6 +110,7 @@ export function PurchasesScreen({
     };
     
     setPurchaseInvoices([...purchaseInvoices, newInvoice]);
+    DB.savePurchaseInvoice(newInvoice, settings.salonId);
     
     // Update supplier balance
     if (remaining > 0) {
@@ -120,8 +126,21 @@ export function PurchasesScreen({
       if (pIdx >= 0) {
         const prod = updatedProducts[pIdx];
         const newStock = prod.currentStock + item.quantity;
-        // update cost price if you want to use latest or average. Here we just use latest
-        updatedProducts[pIdx] = { ...prod, currentStock: newStock, costPrice: item.costPrice };
+        const curBranchStocks = { ...(prod.branchStocks || {}) };
+        const branchCurStock = (activeBranchId && curBranchStocks[activeBranchId] !== undefined)
+          ? curBranchStocks[activeBranchId]
+          : prod.currentStock;
+        const newBranchStock = branchCurStock + item.quantity;
+        if (activeBranchId) {
+          curBranchStocks[activeBranchId] = newBranchStock;
+        }
+
+        updatedProducts[pIdx] = { 
+          ...prod, 
+          currentStock: newStock, 
+          branchStocks: curBranchStocks,
+          costPrice: item.costPrice 
+        };
         
         newMovements.push({
           id: 'MOV-' + Math.random().toString(36).substr(2, 9),
@@ -131,7 +150,8 @@ export function PurchasesScreen({
           referenceId: invoiceId,
           quantityIn: item.quantity,
           quantityOut: 0,
-          balanceAfter: newStock
+          balanceAfter: newBranchStock,
+          branchId: activeBranchId
         });
       }
     });
@@ -141,8 +161,10 @@ export function PurchasesScreen({
     
     // Create transaction if paid > 0
     if (paidAmount > 0) {
-      setTransactions([...transactions, {
+      const purTrx: Transaction = {
         id: 'TRX-' + Math.random().toString(36).substring(2,9),
+        salonId: settings.salonId,
+        branchId: activeBranchId,
         date: getEffectiveDateTime(shiftData),
         shiftDate: shiftData.isOpen ? shiftData.date : undefined,
         type: 'out',
@@ -150,7 +172,9 @@ export function PurchasesScreen({
         category: 'purchase',
         treasury: treasuryId || settings.treasuries[0]?.id,
         description: `دفعة فاتورة مشتريات رقم ${invoiceId} ${notes ? '- ' + notes : ''}`
-      }]);
+      };
+      setTransactions([...transactions, purTrx]);
+      DB.saveTransaction(purTrx, settings.salonId);
     }
 
     setShowAddModal(false);

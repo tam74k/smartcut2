@@ -788,6 +788,7 @@ export interface Client {
   id: string; 
   salonId?: string;
   branchId?: string;
+  branchIds?: string[]; // الفروع التي يتردد عليها العميل أو متاح فيها
   name: string; 
   phone: string; 
   email?: string;
@@ -1524,6 +1525,36 @@ export function getProductReorderLimit(p: Product | null | undefined, branchId?:
     return Number(p.branchReorderLimits[branchId]) || 0;
   }
   return Number(p.reorderLimit ?? 5);
+}
+
+export function isClientInBranch(client: Client | null | undefined, activeBranchId?: string, branches: Branch[] = []): boolean {
+  if (!client) return false;
+  if (!branches || branches.length <= 1) return true;
+  if (!activeBranchId) return true;
+  const curBranch = branches.find(b => b.id === activeBranchId) || branches.find(b => b.isMain) || branches[0];
+  const isMain = Boolean(curBranch?.isMain || curBranch?.id === branches[0]?.id);
+
+  if (client.branchIds && Array.isArray(client.branchIds) && client.branchIds.length > 0) {
+    if (client.branchIds.includes(activeBranchId)) return true;
+    if (curBranch?.code && client.branchIds.includes(curBranch.code)) return true;
+    if (curBranch?.name && client.branchIds.includes(curBranch.name)) return true;
+  }
+
+  const bId = ((client.branchId || (client as any).branch_id) || '').trim();
+  const bCode = ((client as any).branchCode || (client as any).branch_code || '').trim();
+
+  if (bId) {
+    if (curBranch?.id && bId === curBranch.id) return true;
+    if (curBranch?.code && bId.toLowerCase() === curBranch.code.toLowerCase()) return true;
+    if (curBranch?.name && bId.toLowerCase() === curBranch.name.toLowerCase()) return true;
+    return false;
+  }
+  if (bCode && curBranch?.code) {
+    if (bCode.toLowerCase() === curBranch.code.toLowerCase()) return true;
+    return false;
+  }
+
+  return isMain;
 }
 
 export function getServicePrice(service: ServiceItem | null | undefined, branchId?: string, isForeigner?: boolean): number {

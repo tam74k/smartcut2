@@ -240,6 +240,7 @@ export function POSScreen({
   onClearInitial?: () => void,
   onCheckoutComplete?: (invoice: Invoice, paymentSplits: { amount: number, treasuryId: string }[], bookingId?: string) => void,
   clients: Client[],
+  allSalonClients?: Client[],
   setClients: (c: Client[]) => void,
   services: ServiceItem[],
   categories: Category[],
@@ -343,6 +344,27 @@ export function POSScreen({
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const [showAddClientModal, setShowAddClientModal] = useState(false);
+
+  const matchedSalonClientInPOS = useMemo(() => {
+    const clean = (newClientForm.phone || '').trim().replace(/\D/g, '');
+    if (!clean || clean.length < 7) return null;
+    const pool = (allSalonClients && allSalonClients.length > 0) ? allSalonClients : clients;
+    return pool.find(c => (c.phone || '').trim().replace(/\D/g, '') === clean) || null;
+  }, [newClientForm.phone, allSalonClients, clients]);
+
+  useEffect(() => {
+    if (matchedSalonClientInPOS && (!newClientForm.name || newClientForm.name.trim() === '')) {
+      const dobParts = (matchedSalonClientInPOS.dob || '').split('-');
+      setNewClientForm(prev => ({
+        ...prev,
+        name: matchedSalonClientInPOS.name || prev.name,
+        clientType: matchedSalonClientInPOS.clientType || prev.clientType,
+        referredByPhone: matchedSalonClientInPOS.referredByPhone || prev.referredByPhone,
+        dobMonth: dobParts[0] || prev.dobMonth,
+        dobDay: dobParts[1] || prev.dobDay
+      }));
+    }
+  }, [matchedSalonClientInPOS]);
   const [showDailyReportModal, setShowDailyReportModal] = useState(false);
   const [newClientForm, setNewClientForm] = useState<{
     name: string;
@@ -1282,6 +1304,9 @@ export function POSScreen({
 
     const initialInv: Invoice = {
       id: 'INV-' + Math.random().toString(36).substr(2,9).toUpperCase(),
+      salonId: settings.salonId,
+      branchId: activeBranchId || (branches?.find(b => b.isMain)?.id) || settings.branchId,
+      branchCode: (branches?.find(b => b.id === (activeBranchId || settings.branchId))?.code),
       date: effectiveIsShiftOpen ? (effectiveShiftDate + 'T' + new Date().toTimeString().split(' ')[0]) : new Date().toISOString(),
       clientName: isWaselInvoice && waselRecipientName.trim()
         ? (selectedClient ? `${selectedClient.name} (${waselRecipientName.trim()})` : waselRecipientName.trim())
@@ -1666,20 +1691,49 @@ export function POSScreen({
       ? newClientForm.referredByPhone.trim()
       : undefined;
 
-    const newClient: Client = {
-      id: 'C-' + Math.random().toString(36).substr(2, 9),
-      name: newClientForm.name.trim(),
-      phone: cleanPhone,
-      clientType: newClientForm.clientType || 'citizen',
-      referredByPhone: cleanReferredBy,
-      loyaltyPoints: 0,
-      cashback: 0,
-      dob: (newClientForm.dobDay && newClientForm.dobMonth) ? `${newClientForm.dobMonth}-${newClientForm.dobDay}` : undefined
-    };
-    setClients([...clients, newClient]);
-    DB.saveClient(newClient);
-    setSelectedClient(newClient);
-    setClientSearch(newClient.name);
+    let savedClient: Client;
+    if (matchedSalonClientInPOS) {
+      const existingBranchIds = Array.isArray(matchedSalonClientInPOS.branchIds) ? matchedSalonClientInPOS.branchIds : [];
+      const branchIdFallback = matchedSalonClientInPOS.branchId ? [matchedSalonClientInPOS.branchId] : [];
+      const updatedBranchIds = Array.from(new Set([
+        ...existingBranchIds,
+        ...branchIdFallback,
+        activeBranchId
+      ].filter(Boolean) as string[]));
+
+      savedClient = {
+        ...matchedSalonClientInPOS,
+        name: newClientForm.name.trim() || matchedSalonClientInPOS.name,
+        phone: cleanPhone || matchedSalonClientInPOS.phone,
+        clientType: newClientForm.clientType || matchedSalonClientInPOS.clientType || 'citizen',
+        referredByPhone: cleanReferredBy || matchedSalonClientInPOS.referredByPhone,
+        dob: (newClientForm.dobDay && newClientForm.dobMonth) ? `${newClientForm.dobMonth}-${newClientForm.dobDay}` : matchedSalonClientInPOS.dob,
+        branchIds: updatedBranchIds,
+        branchId: matchedSalonClientInPOS.branchId || activeBranchId,
+        salonId: settings.salonId || matchedSalonClientInPOS.salonId
+      };
+      setClients([...clients.filter(c => c.id !== savedClient.id), savedClient]);
+      DB.saveClient(savedClient);
+    } else {
+      savedClient = {
+        id: 'C-' + Math.random().toString(36).substr(2, 9),
+        salonId: settings.salonId,
+        branchId: activeBranchId,
+        branchIds: activeBranchId ? [activeBranchId] : [],
+        name: newClientForm.name.trim(),
+        phone: cleanPhone,
+        clientType: newClientForm.clientType || 'citizen',
+        referredByPhone: cleanReferredBy,
+        loyaltyPoints: 0,
+        cashback: 0,
+        dob: (newClientForm.dobDay && newClientForm.dobMonth) ? `${newClientForm.dobMonth}-${newClientForm.dobDay}` : undefined
+      };
+      setClients([...clients, savedClient]);
+      DB.saveClient(savedClient);
+    }
+
+    setSelectedClient(savedClient);
+    setClientSearch(savedClient.name);
     setShowAddClientModal(false);
     setNewClientForm({ name: '', phone: '', referredByPhone: '', dobDay: '', dobMonth: '', clientType: 'citizen' });
   };
@@ -4522,6 +4576,19 @@ export function POSScreen({
                   placeholder="05XXXXXXXX"
                   dir="ltr"
                 />
+                {matchedSalonClientInPOS && (
+                  <div className="mt-2 p-2.5 bg-blue-50 border border-blue-200 rounded-xl text-blue-900 flex items-start gap-2 text-xs">
+                    <Sparkles size={16} className="text-blue-600 shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <div className="font-black text-blue-950 flex items-center gap-1.5">
+                        <span>تم العثور على العميل مسجلاً مسبقاً ({matchedSalonClientInPOS.name})</span>
+                      </div>
+                      <div className="text-[11px] text-blue-700 mt-0.5">
+                        سيتم تفعيل العميل وإتاحته في هذا الفرع فور الحفظ مع ربط كافة بياناته.
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-bold text-amber-700 mb-1 flex items-center justify-between">
