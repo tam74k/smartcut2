@@ -607,9 +607,14 @@ export const DB = {
             continue; // Retry with column in place
           }
 
-          // 2. If creation not possible on remote DB, strip missing column and store locally
+          // 2. If creation not possible on remote DB, strip missing column and store locally (small values only)
           if (snakeRecord.id && snakeRecord[missingCol] !== undefined) {
-            localStorage.setItem(`smartcut_extra_${targetTable}_${snakeRecord.id}_${missingCol}`, JSON.stringify(snakeRecord[missingCol]));
+            try {
+              const valStr = JSON.stringify(snakeRecord[missingCol]);
+              if (valStr && valStr.length < 2048) {
+                localStorage.setItem(`smartcut_extra_${targetTable}_${snakeRecord.id}_${missingCol}`, valStr);
+              }
+            } catch (_) {}
           }
           delete snakeRecord[missingCol];
           continue; // Retry without missing column
@@ -682,7 +687,12 @@ export const DB = {
             continue;
           }
           if (snakeUpdates[missingCol] !== undefined) {
-            localStorage.setItem(`smartcut_extra_${targetTable}_${id}_${missingCol}`, JSON.stringify(snakeUpdates[missingCol]));
+            try {
+              const valStr = JSON.stringify(snakeUpdates[missingCol]);
+              if (valStr && valStr.length < 2048) {
+                localStorage.setItem(`smartcut_extra_${targetTable}_${id}_${missingCol}`, valStr);
+              }
+            } catch (_) {}
           }
           delete snakeUpdates[missingCol];
           continue;

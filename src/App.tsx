@@ -60,7 +60,7 @@ import { AuthService, ROLE_LABELS } from './services/auth';
 import { SupabaseService } from './services/supabase';
 import { RealtimeSync } from './services/realtimeSync';
 import { DB, dbClientToApp, dbEmployeeToApp, dbServiceToApp, dbProductToApp, dbBookingToApp, dbInvoiceToApp, toCamel } from './services/db';
-import { SubscriptionService } from './services/subscriptionService';
+import { SubscriptionService, evictExcessLocalStorage } from './services/subscriptionService';
 import { QueueService } from './services/queueService';
 import { completeBookingAndCreateHeldInvoice } from './services/bookingHeldInvoiceService';
 import { hasEmployeeFixedCommission } from './utils/commissionHelper';
@@ -648,7 +648,8 @@ export default function App() {
     if (hasInitializedRef.current) return;
     hasInitializedRef.current = true;
 
-    // تنظيف شامل وغير مشروط لأي بيانات تجريبية أو كاش محلي سابق لضمان أن قاعدة بيانات SQL Server هي المصدر الوحيد للحقيقة
+    // تنظيف شامل وغير مشروط لأي بيانات تجريبية أو كاش محلي زائد لحماية localStorage من تجاوز الحصة (Quota)
+    evictExcessLocalStorage();
     try {
       const sess = localStorage.getItem('smartcut_session');
       if (sess && (sess.includes('Dana') || sess.includes('Tamer') || sess.toLowerCase().includes('dana'))) {

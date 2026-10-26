@@ -89,6 +89,51 @@ export function generateUUID(): string {
 
 export const DEFAULT_INITIAL_SALONS: SalonTenant[] = [];
 
+/**
+ * Clean up transient or bloated keys from localStorage to prevent quota exceeded errors
+ */
+export function evictExcessLocalStorage(): void {
+  try {
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k) continue;
+      // 1. Remove dangling smartcut_extra_* fallback items
+      if (k.startsWith('smartcut_extra_') || k.startsWith('smartcut_demo_')) {
+        keysToRemove.push(k);
+      }
+      // 2. Remove transient big caches
+      else if (
+        k === 'smartcut_invoices_cache' ||
+        k === 'smartcut_transactions' ||
+        k === 'smartcut_bookings' ||
+        k === 'smartcut_last_print_job' ||
+        k === 'smartcut_manager_ai_history_gemini' ||
+        k === 'smartcut_fingerprint_logs'
+      ) {
+        keysToRemove.push(k);
+      }
+    }
+    keysToRemove.forEach(k => {
+      try { localStorage.removeItem(k); } catch (_) {}
+    });
+
+    // 3. Clean bloated base64 logo from cached smartcut_app_settings if present
+    try {
+      const s = localStorage.getItem('smartcut_app_settings');
+      if (s && s.length > 50000) {
+        const parsed = JSON.parse(s);
+        if (parsed.logoUrl && parsed.logoUrl.startsWith('data:') && parsed.logoUrl.length > 5000) {
+          delete parsed.logoUrl;
+          localStorage.setItem('smartcut_app_settings', JSON.stringify(parsed));
+        }
+      }
+    } catch (_) {}
+  } catch (err) {
+    console.warn('evictExcessLocalStorage notice:', err);
+  }
+}
+
 export const SubscriptionService = {
   /**
    * Get all registered salons
@@ -106,22 +151,64 @@ export const SubscriptionService = {
   },
 
   /**
-   * Save salons list to storage
+   * Save salons list to storage with quota protection and automatic field sanitation
    */
   saveSalons(salons: SalonTenant[]): void {
-    try {
-      localStorage.setItem(STORAGE_KEYS.SALONS, JSON.stringify(salons));
-    } catch (e: any) {
-      if (e?.name === 'QuotaExceededError' || e?.code === 22) {
-        try {
-          localStorage.removeItem('smartcut_invoices_cache');
-          localStorage.removeItem('smartcut_transactions');
-          localStorage.removeItem('smartcut_last_print_job');
-          localStorage.setItem(STORAGE_KEYS.SALONS, JSON.stringify(salons));
-          return;
-        } catch (_) {}
+    if (!Array.isArray(salons)) return;
+
+    // Sanitize salons to keep localStorage lightweight and within browser quotas
+    const sanitizeSalon = (s: any) => {
+      const copy = { ...s };
+      // Strip oversized fields (base64 logos, binary certificates, large settings)
+      if (copy.logoUrl && typeof copy.logoUrl === 'string' && copy.logoUrl.length > 2048) {
+        delete copy.logoUrl;
       }
-      console.warn('Failed to save salons to localStorage:', e?.message || e);
+      if (copy.zatcaCertificate) delete copy.zatcaCertificate;
+      if (copy.zatcaPrivateKey) delete copy.zatcaPrivateKey;
+      if (copy.backup) delete copy.backup;
+      if (copy.rawSettings) delete copy.rawSettings;
+      return copy;
+    };
+
+    const sanitized = salons.map(sanitizeSalon);
+
+    try {
+      localStorage.setItem(STORAGE_KEYS.SALONS, JSON.stringify(sanitized));
+    } catch (e: any) {
+      // If QuotaExceededError or code 22
+      evictExcessLocalStorage();
+
+      try {
+        // Retry with minimal required tenant attributes
+        const minimalSalons = sanitized.map(s => ({
+          id: s.id,
+          code: s.code,
+          name: s.name,
+          salonType: s.salonType,
+          ownerName: s.ownerName,
+          email: s.email,
+          phone: s.phone,
+          country: s.country,
+          currency: s.currency,
+          isActive: s.isActive,
+          subscriptionStatus: s.subscriptionStatus,
+          subscriptionPlan: s.subscriptionPlan,
+          subscriptionStartDate: s.subscriptionStartDate,
+          subscriptionEndDate: s.subscriptionEndDate,
+          maxBranches: s.maxBranches || 1,
+          maxUsers: s.maxUsers || 5
+        }));
+        localStorage.setItem(STORAGE_KEYS.SALONS, JSON.stringify(minimalSalons));
+      } catch (innerErr) {
+        try {
+          // Keep only current/active salon if space is extremely constrained
+          const activeId = localStorage.getItem('smartcut_active_salon_id');
+          const activeOnly = sanitized.filter(s => s.id === activeId || s.isActive).slice(0, 3);
+          localStorage.setItem(STORAGE_KEYS.SALONS, JSON.stringify(activeOnly));
+        } catch (_) {
+          console.warn('Notice: Salons stored in-memory (browser localStorage quota reached limit)');
+        }
+      }
     }
   },
 
