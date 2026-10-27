@@ -400,7 +400,11 @@ export function DeferredInvoicesScreen({
         paymentMethods: [
           ...(settleModalInvoice.paymentMethods || []),
           { amount: payNum, treasuryId: settleTreasury }
-        ]
+        ],
+        updatedBy: currentUser?.username || currentUser?.name,
+        updatedByName: currentUser?.name || currentUser?.username,
+        updatedById: currentUser?.id,
+        updatedAt: nowIso
       };
 
       // 3. Create and record income Transaction to deposit in treasury
@@ -452,7 +456,11 @@ export function DeferredInvoicesScreen({
         status: 'bad_debt',
         badDebtReason: badDebtReason.trim() || 'تعذر التحصيل',
         badDebtAt: new Date().toISOString(),
-        badDebtBy: currentUser?.name || 'المدير'
+        badDebtBy: currentUser?.name || 'المدير',
+        updatedBy: currentUser?.username || currentUser?.name,
+        updatedByName: currentUser?.name || currentUser?.username,
+        updatedById: currentUser?.id,
+        updatedAt: new Date().toISOString()
       };
 
       await DB.saveInvoice(updatedInvoice, settings.salonId);
@@ -480,7 +488,11 @@ export function DeferredInvoicesScreen({
         status: restoredStatus,
         badDebtReason: undefined,
         badDebtAt: undefined,
-        badDebtBy: undefined
+        badDebtBy: undefined,
+        updatedBy: currentUser?.username || currentUser?.name,
+        updatedByName: currentUser?.name || currentUser?.username,
+        updatedById: currentUser?.id,
+        updatedAt: new Date().toISOString()
       };
       await DB.saveInvoice(updatedInvoice, settings.salonId);
       setInvoices(prev => prev.map(i => i.id === updatedInvoice.id ? updatedInvoice : i));

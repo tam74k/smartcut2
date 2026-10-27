@@ -1310,6 +1310,10 @@ export function POSScreen({
       salonId: settings.salonId,
       branchId: activeBranchId || (branches?.find(b => b.isMain)?.id) || settings.branchId,
       branchCode: (branches?.find(b => b.id === (activeBranchId || settings.branchId))?.code),
+      cashierId: currentUser?.id || currentUser?.username || undefined,
+      cashierName: currentUser?.name || currentUser?.username || undefined,
+      createdBy: currentUser?.username || currentUser?.name || undefined,
+      createdById: currentUser?.id || undefined,
       date: effectiveIsShiftOpen ? (effectiveShiftDate + 'T' + new Date().toTimeString().split(' ')[0]) : new Date().toISOString(),
       clientName: isWaselInvoice && waselRecipientName.trim()
         ? (selectedClient ? `${selectedClient.name} (${waselRecipientName.trim()})` : waselRecipientName.trim())

@@ -1188,7 +1188,14 @@ export interface Invoice {
   zatcaWarning?: string;
   etaSubmissionUuid?: string;
   etaStatus?: 'submitted' | 'valid' | 'invalid' | 'not_submitted';
+  cashierId?: string;
+  cashierName?: string;
   createdBy?: string;
+  createdById?: string;
+  updatedBy?: string;
+  updatedByName?: string;
+  updatedById?: string;
+  updatedAt?: string;
   // Before and After photos for quality assurance & customer history
   beforePhotoUrl?: string;
   afterPhotoUrl?: string;

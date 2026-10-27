@@ -599,7 +599,10 @@ export function InvoicesImportModal({
           status: cand.status,
           items: cand.items,
           paymentMethods: [{ amount: cand.total, treasuryId: cand.paymentMethod }],
-          createdBy: currentUser?.name || 'استيراد إكسل',
+          cashierId: currentUser?.id || currentUser?.username || 'import',
+          cashierName: currentUser?.name || currentUser?.username || 'استيراد إكسل',
+          createdBy: currentUser?.username || currentUser?.name || 'استيراد إكسل',
+          createdById: currentUser?.id || undefined,
           notes: cand.notes || undefined
         };
 

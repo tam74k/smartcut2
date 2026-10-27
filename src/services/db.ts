@@ -62,6 +62,23 @@ export function toBranchUUID(id?: string | null): string | null {
   return null;
 }
 
+export function getActiveAppUser(): any | null {
+  try {
+    const session = localStorage.getItem('smartcut_session');
+    if (session) {
+      const parsedSession = JSON.parse(session);
+      const user = parsedSession?.user || parsedSession;
+      if (user && (user.id || user.username || user.name)) return user;
+    }
+    const currentUser = localStorage.getItem('smartcut_current_user');
+    if (currentUser) {
+      const parsedUser = JSON.parse(currentUser);
+      if (parsedUser && (parsedUser.id || parsedUser.username || parsedUser.name)) return parsedUser;
+    }
+  } catch {}
+  return null;
+}
+
 export function toBool(val: any): boolean {
   if (val === true || val === 1 || val === '1' || val === '1.0' || val === 'true' || val === 'TRUE') return true;
   if (val === false || val === 0 || val === '0' || val === '0.0' || val === 'false' || val === 'FALSE' || val === null || val === undefined) return false;
@@ -1932,6 +1949,41 @@ export const DB = {
     const validSalonId = toSalonUUID(salonId || inv.salonId || getSalonId());
     const validBranchId = toBranchUUID(inv.branchId);
 
+    const activeUser = getActiveAppUser();
+
+    // 1. تحديد بيانات المستخدم الذي أنشأ الفاتورة (cashier_id, cashier_name, created_by)
+    const effectiveCashierId = inv.cashierId || inv.cashier_id || inv.userId || activeUser?.id || activeUser?.username || null;
+    const effectiveCashierName = inv.cashierName || inv.cashier_name || activeUser?.name || activeUser?.username || null;
+    const effectiveCreatedBy = inv.createdBy || inv.created_by || activeUser?.username || activeUser?.name || effectiveCashierName || null;
+    const effectiveCreatedById = inv.createdById || inv.created_by_id || activeUser?.id || effectiveCashierId || null;
+
+    // 2. تحديد بيانات المستخدم الذي قام بتعديل الفاتورة (updated_by, updated_by_name, updated_by_id, updated_at)
+    const isUpdate = Boolean(inv.updatedBy || inv.updated_by || inv.updatedAt || inv.updated_at);
+    const effectiveUpdatedBy = isUpdate 
+      ? (inv.updatedBy || inv.updated_by || activeUser?.username || activeUser?.name || null) 
+      : (inv.updatedBy || inv.updated_by || null);
+    const effectiveUpdatedByName = isUpdate 
+      ? (inv.updatedByName || inv.updated_by_name || activeUser?.name || activeUser?.username || null) 
+      : (inv.updatedByName || inv.updated_by_name || null);
+    const effectiveUpdatedById = isUpdate 
+      ? (inv.updatedById || inv.updated_by_id || activeUser?.id || null) 
+      : (inv.updatedById || inv.updated_by_id || null);
+    const effectiveUpdatedAt = isUpdate 
+      ? (inv.updatedAt || inv.updated_at || new Date().toISOString()) 
+      : (inv.updatedAt || inv.updated_at || null);
+
+    // تحديث كائن الفاتورة في الذاكرة والكاش المحلي ليبقى متزامناً بالكامل
+    inv.cashierId = effectiveCashierId || inv.cashierId;
+    inv.cashierName = effectiveCashierName || inv.cashierName;
+    inv.createdBy = effectiveCreatedBy || inv.createdBy;
+    if (effectiveCreatedById) inv.createdById = effectiveCreatedById;
+    if (isUpdate) {
+      inv.updatedBy = effectiveUpdatedBy;
+      inv.updatedByName = effectiveUpdatedByName;
+      inv.updatedById = effectiveUpdatedById;
+      inv.updatedAt = effectiveUpdatedAt;
+    }
+
     // 1. Always cache in localStorage for instant offline & screen reactivity
     try {
       const saved = localStorage.getItem('smartcut_invoices_cache');
@@ -1955,8 +2007,8 @@ export const DB = {
         client_id: safeClientId,
         client_name: inv.clientName || inv.client_name || 'عميل نقدي',
         client_phone: inv.clientPhone || inv.client_phone || '0000000000',
-        cashier_id: inv.cashierId || null,
-        cashier_name: inv.cashierName || null,
+        cashier_id: effectiveCashierId,
+        cashier_name: effectiveCashierName,
         date: inv.date || new Date().toISOString(),
         subtotal: Number(inv.subtotal ?? inv.total ?? 0),
         discount: Number(inv.discount ?? 0),
@@ -2003,32 +2055,58 @@ export const DB = {
         bad_debt_at: inv.badDebtAt || inv.bad_debt_at || null,
         bad_debt_by: inv.badDebtBy || inv.bad_debt_by || null,
         payments_history: inv.paymentsHistory || inv.payments_history || [],
-        created_by: inv.createdBy || null
+        created_by: effectiveCreatedBy,
+        created_by_id: effectiveCreatedById,
+        updated_by: effectiveUpdatedBy,
+        updated_by_name: effectiveUpdatedByName,
+        updated_by_id: effectiveUpdatedById,
+        updated_at: effectiveUpdatedAt
       };
 
-      let { error } = await client.from('invoices').upsert(snap, { onConflict: 'id' });
-      if (error && error.code === '23503') {
-        if (error.message?.includes('client_id') || error.details?.includes('clients')) {
-          console.warn('DB.saveInvoice FK warning on client_id, retrying with client_id = null:', error.message);
-          snap.client_id = null;
+      let retries = 0;
+      let lastError: any = null;
+      while (retries < 6) {
+        let { error } = await client.from('invoices').upsert(snap, { onConflict: 'id' });
+        if (!error) {
+          lastError = null;
+          break;
         }
-        if (error.message?.includes('branch_id') || error.details?.includes('branches')) {
-          console.warn('DB.saveInvoice FK warning on branch_id, retrying with branch_id = null:', error.message);
-          snap.branch_id = null;
+
+        lastError = error;
+        const errMsg = error.message || '';
+
+        // إذا كان العمود غير موجود في هيكل جدول الفواتير في سوبابيز يتم حذفه من الكائن وإعادة المحاولة بسلاسة
+        const missingColMatch = errMsg.match(/Could not find the '([^']+)' column of '([^']+)'/i)
+          || errMsg.match(/column "([^"]+)" of relation "([^"]+)" does not exist/i);
+        if (missingColMatch) {
+          const missingCol = missingColMatch[1];
+          console.warn(`DB.saveInvoice: removing missing column "${missingCol}" from snap and retrying...`);
+          delete snap[missingCol];
+          retries++;
+          continue;
         }
-        const retry = await client.from('invoices').upsert(snap, { onConflict: 'id' });
-        error = retry.error;
-        if (error && error.code === '23503') {
-          snap.client_id = null;
-          snap.branch_id = null;
-          const retry2 = await client.from('invoices').upsert(snap, { onConflict: 'id' });
-          error = retry2.error;
+
+        // معالجة قيود المفاتيح الأجنبية client_id و branch_id
+        if (error.code === '23503') {
+          if (errMsg.includes('client_id') || error.details?.includes('clients')) {
+            console.warn('DB.saveInvoice FK warning on client_id, retrying with client_id = null');
+            snap.client_id = null;
+          }
+          if (errMsg.includes('branch_id') || error.details?.includes('branches')) {
+            console.warn('DB.saveInvoice FK warning on branch_id, retrying with branch_id = null');
+            snap.branch_id = null;
+          }
+          retries++;
+          continue;
         }
+
+        console.error('DB.saveInvoice error:', error.message);
+        break;
       }
 
-      if (error) { 
-        console.error('DB.saveInvoice error:', error.message); 
-        return null; 
+      if (lastError) {
+        console.error('DB.saveInvoice final error:', lastError.message);
+        return null;
       }
       return inv;
     } catch (e) { 
@@ -5243,8 +5321,13 @@ export function dbInvoiceToApp(row: any): any {
     etaSubmissionUuid: row.etaSubmissionUuid || row.eta_submission_uuid || '',
     etaStatus: row.etaStatus || row.eta_status || 'not_submitted',
     createdBy: row.createdBy || row.created_by || '',
+    createdById: row.createdById || row.created_by_id || undefined,
     cashierId: row.cashierId || row.cashier_id || undefined,
     cashierName: row.cashierName || row.cashier_name || undefined,
+    updatedBy: row.updatedBy || row.updated_by || undefined,
+    updatedByName: row.updatedByName || row.updated_by_name || undefined,
+    updatedById: row.updatedById || row.updated_by_id || undefined,
+    updatedAt: row.updatedAt || row.updated_at || undefined,
     notes: row.notes || '',
     dueDate: row.dueDate || row.due_date || undefined,
     badDebtReason: row.badDebtReason || row.bad_debt_reason || undefined,

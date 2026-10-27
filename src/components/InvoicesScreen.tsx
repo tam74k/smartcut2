@@ -134,7 +134,14 @@ export function InvoicesScreen({
     if (!cancelInvoiceTarget) return;
     const invoice = cancelInvoiceTarget;
     // 1. Update invoice status in DB & state
-    const updatedInv = { ...invoice, status: 'cancelled' as const };
+    const updatedInv = { 
+      ...invoice, 
+      status: 'cancelled' as const,
+      updatedBy: currentUser?.username || currentUser?.name,
+      updatedByName: currentUser?.name || currentUser?.username,
+      updatedById: currentUser?.id,
+      updatedAt: new Date().toISOString()
+    };
     await DB.saveInvoice(updatedInv);
     setInvoices(invoices.map(inv => inv.id === invoice.id ? updatedInv : inv));
 
@@ -183,7 +190,14 @@ export function InvoicesScreen({
     if (!window.confirm(`هل أنت متأكد من استعادة الفاتورة رقم (${invoice.id})؟ سيتم إعادة تفعيلها وإعادة تسجيل آثارها المالية وكميات المنتجات.`)) return;
 
     // 1. تحديث حالة الفاتورة إلى مكتملة
-    const restored = { ...invoice, status: 'completed' as const };
+    const restored = { 
+      ...invoice, 
+      status: 'completed' as const,
+      updatedBy: currentUser?.username || currentUser?.name,
+      updatedByName: currentUser?.name || currentUser?.username,
+      updatedById: currentUser?.id,
+      updatedAt: new Date().toISOString()
+    };
     await DB.saveInvoice(restored);
     setInvoices(invoices.map(inv => inv.id === invoice.id ? restored : inv));
 
@@ -255,7 +269,7 @@ export function InvoicesScreen({
     alert(`تم استعادة الفاتورة ${invoice.id} بنجاح وإعادة تسجيل آثارها المالية.`);
   };
   
-  const handlePayInvoice = () => {
+  const handlePayInvoice = async () => {
     if (!showPayModal) return;
     
     const invoice = showPayModal;
@@ -294,12 +308,18 @@ export function InvoicesScreen({
       paymentMethods.push({ amount: remainingToPay, treasuryId: payTreasury });
     }
     
-    setInvoices(invoices.map(inv => inv.id === invoice.id ? { 
-      ...inv, 
+    const paidInv: Invoice = { 
+      ...invoice, 
       status: 'completed', 
       cashbackUsed: finalCashbackUsed,
-      paymentMethods: paymentMethods 
-    } : inv));
+      paymentMethods: paymentMethods,
+      updatedBy: currentUser?.username || currentUser?.name,
+      updatedByName: currentUser?.name || currentUser?.username,
+      updatedById: currentUser?.id,
+      updatedAt: new Date().toISOString()
+    };
+    await DB.saveInvoice(paidInv);
+    setInvoices(invoices.map(inv => inv.id === invoice.id ? paidInv : inv));
     
     setShowPayModal(null);
     setCashbackToUse(0);
@@ -523,7 +543,19 @@ export function InvoicesScreen({
             <tbody className="divide-y divide-slate-100">
               {paginatedInvoices.map((inv) => (
                 <tr key={inv.id} className={`transition-colors ${inv.status === 'cancelled' ? 'bg-red-50/50' : 'hover:bg-slate-50/50'}`}>
-                  <td className="px-6 py-4 font-bold text-slate-800">{inv.id}</td>
+                  <td className="px-6 py-4 font-bold text-slate-800">
+                    <div>{inv.id}</div>
+                    {(inv.createdBy || inv.cashierName) && (
+                      <div className="text-[10px] text-slate-400 font-normal">
+                        بواسطة: {inv.createdBy || inv.cashierName}
+                      </div>
+                    )}
+                    {inv.updatedBy && (
+                      <div className="text-[9px] text-amber-600 font-normal">
+                        تعديل: {inv.updatedBy}
+                      </div>
+                    )}
+                  </td>
                   <td className="px-6 py-4 text-slate-600">{new Date(inv.date).toLocaleString('ar-EG')}</td>
                   <td className="px-6 py-4">
                     <div className="font-bold text-primary">{inv.clientName}</div>
@@ -930,8 +962,16 @@ export function InvoicesScreen({
             </div>
             <div className="p-4 bg-slate-50 border-t border-slate-100 flex gap-3">
               <button onClick={() => setShowEditModal(null)} className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-3 rounded-xl transition-colors">إلغاء</button>
-              <button onClick={() => {
-                setInvoices(invoices.map(i => i.id === showEditModal.id ? showEditModal : i));
+              <button onClick={async () => {
+                const updated: Invoice = {
+                  ...showEditModal,
+                  updatedBy: currentUser?.username || currentUser?.name || 'admin',
+                  updatedByName: currentUser?.name || currentUser?.username || 'admin',
+                  updatedById: currentUser?.id,
+                  updatedAt: new Date().toISOString()
+                };
+                setInvoices(invoices.map(i => i.id === updated.id ? updated : i));
+                await DB.saveInvoice(updated);
                 setShowEditModal(null);
               }} className="flex-1 bg-primary hover:bg-primary-dark text-white font-bold py-3 rounded-xl transition-colors">حفظ التعديلات</button>
             </div>
