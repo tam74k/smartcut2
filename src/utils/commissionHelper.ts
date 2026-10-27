@@ -42,9 +42,11 @@ export function calculateEmployeeCommission(emp: Employee, salesAmount: number):
   }
 
   // 2. Target-Based (تحقيق التارجت)
-  if (emp.commissionModel === 'target_based' && emp.target > 0) {
-    if (salesAmount >= emp.target) {
-      return salesAmount * ((Number(emp.commissionRate) || 0) / 100);
+  if ((emp.commissionModel === 'target_based' || (emp as any).commissionModel === 'target') && (emp.target > 0 || (emp.dailyTargetAmount && emp.dailyTargetAmount > 0) || (emp.monthlyTargetAmount && emp.monthlyTargetAmount > 0))) {
+    const effectiveTarget = emp.target || emp.dailyTargetAmount || emp.monthlyTargetAmount || 0;
+    if (salesAmount >= effectiveTarget) {
+      const commRate = Number(emp.targetCommissionRate || emp.commissionRate) || 0;
+      return salesAmount * (commRate / 100);
     }
     return 0;
   }
@@ -64,8 +66,11 @@ export function getCommissionModelLabel(emp: Employee): string {
   if (emp.commissionModel === 'tiered_brackets' && emp.commissionTiers && emp.commissionTiers.length > 0) {
     return `شرائح متدرجة (${emp.commissionTiers.length} شرائح)`;
   }
-  if (emp.commissionModel === 'target_based' && emp.target > 0) {
-    return `تارجت ${emp.target} (${emp.commissionRate ?? 0}%)`;
+  if ((emp.commissionModel === 'target_based' || (emp as any).commissionModel === 'target') && (emp.target > 0 || (emp.dailyTargetAmount && emp.dailyTargetAmount > 0) || (emp.monthlyTargetAmount && emp.monthlyTargetAmount > 0))) {
+    const tVal = emp.target || (emp.targetType === 'daily' ? emp.dailyTargetAmount : emp.monthlyTargetAmount) || 0;
+    const cRate = emp.targetCommissionRate !== undefined ? emp.targetCommissionRate : emp.commissionRate;
+    const cycle = emp.targetType === 'daily' ? 'يومي' : 'شهري';
+    return `تارجت ${cycle} ${tVal} (${cRate ?? 0}%)`;
   }
   return `نسبة ثابتة ${emp.commissionRate ?? 0}%`;
 }
@@ -75,7 +80,7 @@ export function getCommissionModelLabel(emp: Employee): string {
  */
 export function hasEmployeeFixedCommission(emp?: Employee | null): boolean {
   if (!emp) return false;
-  if (emp.commissionModel === 'fixed_rate' || emp.commissionModel === 'tiered_brackets' || emp.commissionModel === 'target_based') {
+  if (emp.commissionModel === 'fixed_rate' || emp.commissionModel === 'tiered_brackets' || emp.commissionModel === 'target_based' || (emp as any).commissionModel === 'target') {
     return true;
   }
   return emp.commissionRate !== undefined && Number(emp.commissionRate) > 0;
