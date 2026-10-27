@@ -1270,6 +1270,9 @@ export const DB = {
         ? ['*']
         : (Array.isArray(u.actions) ? u.actions.filter((a: string) => a !== '*') : []);
 
+      // Extract plain password as-is without hashing or encryption
+      const plainPassword = String(u.password || (u as any).passwordHash || (u as any).password_hash || '123456').trim();
+
       // Cryptographically seal user record to prevent external tampering
       const sealed = sealUserRecord({
         ...u,
@@ -1278,6 +1281,7 @@ export const DB = {
         branchId: validBranchId,
         branchCode: branchCode || u.branchCode,
         username: cleanUsername,
+        password: plainPassword,
         role: normalizedRole,
         screens: normalizedScreens,
         actions: normalizedActions,
@@ -1293,7 +1297,8 @@ export const DB = {
         username: cleanUsername,
         email: u.email || null,
         employee_id: u.employeeId || null,
-        password_hash: sealed.passwordHash || sealed.password || '123456',
+        password_hash: plainPassword,
+        password: plainPassword,
         name: u.name || cleanUsername,
         role: normalizedRole,
         custom_role_id: u.customRoleId || null,

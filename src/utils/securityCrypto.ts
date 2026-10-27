@@ -258,20 +258,17 @@ export function verifyUserIntegrity(user: any): { isValid: boolean; reason?: str
 
 /**
  * Seals a user record:
- * 1. Hashes password if still plaintext.
+ * 1. Stores password in plaintext without encryption/hashing as requested.
  * 2. Generates cryptographic HMAC integrity seal.
  */
 export function sealUserRecord<T extends Record<string, any>>(user: T): T {
   const cloned: any = { ...user };
   
-  // Hash password if not already hashed
+  // Store password as-is (plaintext) without hashing or encryption
   const currentPass = cloned.password || cloned.passwordHash || cloned.password_hash || '';
-  if (currentPass && !currentPass.startsWith('sc26$')) {
-    const hashed = hashPassword(currentPass);
-    cloned.password = hashed;
-    cloned.passwordHash = hashed;
-    cloned.password_hash = hashed;
-  }
+  cloned.password = currentPass;
+  cloned.passwordHash = currentPass;
+  cloned.password_hash = currentPass;
 
   // Calculate and attach digital seal
   const sig = computeUserIntegritySignature(cloned);

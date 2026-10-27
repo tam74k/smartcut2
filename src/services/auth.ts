@@ -1,6 +1,7 @@
 import { AppUser, UserRole, ActionPermission, CustomRole } from '../types';
 import { DB, dbUserToApp } from './db';
 import { SupabaseService } from './supabase';
+import { verifyPassword } from '../utils/securityCrypto';
 
 const STORAGE_KEYS = {
   USERS: 'smartcut_users',
@@ -551,8 +552,9 @@ export class AuthService {
     );
 
     if (user) {
-      const targetPass = user.password || (user as any).passwordHash || (user as any).password_hash || '';
-      if (targetPass && targetPass === cleanPass) {
+      const targetPass = String(user.password || (user as any).passwordHash || (user as any).password_hash || '').trim();
+      const isPasswordMatch = (targetPass === cleanPass) || (targetPass.startsWith('sc26$') && verifyPassword(cleanPass, targetPass));
+      if (targetPass && isPasswordMatch) {
         this.setSession(user);
         return user;
       }
@@ -603,8 +605,9 @@ export class AuthService {
           }
           localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(currentLocal));
 
-          const targetPass = dbu.password || (dbu as any).passwordHash || (dbu as any).password_hash || '';
-          if (targetPass && targetPass === cleanPass) {
+          const targetPass = String(dbu.password || (dbu as any).passwordHash || (dbu as any).password_hash || '').trim();
+          const isPasswordMatch = (targetPass === cleanPass) || (targetPass.startsWith('sc26$') && verifyPassword(cleanPass, targetPass));
+          if (targetPass && isPasswordMatch) {
             this.setSession(dbu);
             return dbu;
           }
@@ -626,8 +629,9 @@ export class AuthService {
     );
 
     if (localMatched) {
-      const targetPass = localMatched.password || (localMatched as any).passwordHash || (localMatched as any).password_hash || '';
-      if (targetPass && targetPass === cleanPass) {
+      const targetPass = String(localMatched.password || (localMatched as any).passwordHash || (localMatched as any).password_hash || '').trim();
+      const isPasswordMatch = (targetPass === cleanPass) || (targetPass.startsWith('sc26$') && verifyPassword(cleanPass, targetPass));
+      if (targetPass && isPasswordMatch) {
         this.setSession(localMatched);
         return localMatched;
       }
@@ -697,9 +701,10 @@ export class AuthService {
     const users = this.getUsers();
     const idx = users.findIndex(u => u.id === userId);
     if (idx === -1) return false;
-    const currentPass = users[idx].password || (users[idx] as any).passwordHash || (users[idx] as any).password_hash || '';
-    if (currentPass !== oldPass) return false;
-    users[idx].password = newPass;
+    const currentPass = String(users[idx].password || (users[idx] as any).passwordHash || (users[idx] as any).password_hash || '').trim();
+    const isOldMatch = (currentPass === oldPass.trim()) || (currentPass.startsWith('sc26$') && verifyPassword(oldPass.trim(), currentPass));
+    if (!isOldMatch) return false;
+    users[idx].password = newPass.trim();
     this.saveUsers(users);
     this.setSession(users[idx]);
     DB.saveUser(users[idx]);
@@ -709,11 +714,11 @@ export class AuthService {
   public static changeUserPassword = AuthService.changePasswordAsync;
 
   public static async changePasswordAsync(
-    userId: string, 
+    userIdOrUser: string | AppUser, 
     oldPass: string, 
     newPass: string, 
     userObj?: AppUser | null
-  ): Promise<{ success: boolean; message?: string }> {
+  ): Promise<{ success: boolean; message?: string; updatedUser?: AppUser }> {
     const cleanOld = (oldPass || '').trim();
     const cleanNew = (newPass || '').trim();
 
@@ -724,8 +729,11 @@ export class AuthService {
       return { success: false, message: 'كلمة المرور الجديدة يجب ألا تقل عن 4 خانات' };
     }
 
+    const actualUser = (typeof userIdOrUser === 'object' && userIdOrUser) ? userIdOrUser : userObj;
+    const actualUserId = typeof userIdOrUser === 'string' ? userIdOrUser : (userIdOrUser?.id || userObj?.id || '');
+
     // 1. حساب المبرمج الرئيسي (Programmer)
-    if (userObj?.role === 'programmer' || userId === MASTER_PROGRAMMER_USER.id || userId === 'usr-programmer') {
+    if (actualUser?.role === 'programmer' || actualUserId === MASTER_PROGRAMMER_USER.id || actualUserId === 'usr-programmer') {
       const currentProgPass = this.getProgrammerPassword();
       if (cleanOld !== currentProgPass && cleanOld !== MASTER_PROGRAMMER_USER.password) {
         return { success: false, message: 'كلمة المرور الحالية غير صحيحة' };
@@ -736,27 +744,29 @@ export class AuthService {
 
     // 2. مستخدمو الصالون العاديون
     const users = this.getUsers();
-    let idx = users.findIndex(u => u.id === userId);
-    if (idx === -1 && userObj?.username) {
-      idx = users.findIndex(u => u.username.toLowerCase() === userObj.username.toLowerCase());
+    let idx = users.findIndex(u => u.id === actualUserId);
+    if (idx === -1 && actualUser?.username) {
+      idx = users.findIndex(u => u.username.toLowerCase() === actualUser.username.toLowerCase());
     }
 
     let targetUser: AppUser;
 
     if (idx !== -1) {
       targetUser = users[idx];
-      const currentPass = targetUser.password || (targetUser as any).passwordHash || (targetUser as any).password_hash || '';
-      if (currentPass && currentPass !== cleanOld) {
+      const currentPass = String(targetUser.password || (targetUser as any).passwordHash || (targetUser as any).password_hash || '').trim();
+      const isOldMatch = (currentPass === cleanOld) || (currentPass.startsWith('sc26$') && verifyPassword(cleanOld, currentPass));
+      if (currentPass && !isOldMatch) {
         return { success: false, message: 'كلمة المرور الحالية غير صحيحة' };
       }
       targetUser.password = cleanNew;
       users[idx] = targetUser;
-    } else if (userObj) {
-      const currentPass = userObj.password || (userObj as any).passwordHash || (userObj as any).password_hash || '';
-      if (currentPass && currentPass !== cleanOld) {
+    } else if (actualUser) {
+      const currentPass = String(actualUser.password || (actualUser as any).passwordHash || (actualUser as any).password_hash || '').trim();
+      const isOldMatch = (currentPass === cleanOld) || (currentPass.startsWith('sc26$') && verifyPassword(cleanOld, currentPass));
+      if (currentPass && !isOldMatch) {
         return { success: false, message: 'كلمة المرور الحالية غير صحيحة' };
       }
-      targetUser = { ...userObj, password: cleanNew };
+      targetUser = { ...actualUser, password: cleanNew };
       users.push(targetUser);
     } else {
       return { success: false, message: 'لم يتم العثور على حساب المستخدم في النظام' };
@@ -766,6 +776,6 @@ export class AuthService {
     this.setSession(targetUser);
     await DB.saveUser(targetUser);
 
-    return { success: true };
+    return { success: true, updatedUser: targetUser };
   }
 }
