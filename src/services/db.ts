@@ -17,16 +17,7 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 export function toSalonUUID(id?: string | null): string {
   if (id && UUID_REGEX.test(id)) return id;
   try {
-    const active = localStorage.getItem('smartcut_active_salon_id');
-    if (active && UUID_REGEX.test(active)) return active;
-
-    const currentUser = localStorage.getItem('smartcut_current_user');
-    if (currentUser) {
-      const parsedUser = JSON.parse(currentUser);
-      if (parsedUser?.salonId && UUID_REGEX.test(parsedUser.salonId)) return parsedUser.salonId;
-      if (parsedUser?.salon_id && UUID_REGEX.test(parsedUser.salon_id)) return parsedUser.salon_id;
-    }
-
+    // 1. Authenticated session / user ALWAYS takes top priority for tenant isolation
     const session = localStorage.getItem('smartcut_session');
     if (session) {
       const parsedSession = JSON.parse(session);
@@ -35,6 +26,16 @@ export function toSalonUUID(id?: string | null): string {
       if (user?.salon_id && UUID_REGEX.test(user.salon_id)) return user.salon_id;
       if (parsedSession?.salonId && UUID_REGEX.test(parsedSession.salonId)) return parsedSession.salonId;
     }
+
+    const currentUser = localStorage.getItem('smartcut_current_user');
+    if (currentUser) {
+      const parsedUser = JSON.parse(currentUser);
+      if (parsedUser?.salonId && UUID_REGEX.test(parsedUser.salonId)) return parsedUser.salonId;
+      if (parsedUser?.salon_id && UUID_REGEX.test(parsedUser.salon_id)) return parsedUser.salon_id;
+    }
+
+    const active = localStorage.getItem('smartcut_active_salon_id');
+    if (active && UUID_REGEX.test(active)) return active;
 
     const s = localStorage.getItem('smartcut_app_settings');
     const parsed = s ? JSON.parse(s) : null;
@@ -104,16 +105,7 @@ export function toSnake(obj: any): any {
 // ---- تحديد معرف الصالون ----
 function getSalonId(): string {
   try {
-    const active = localStorage.getItem('smartcut_active_salon_id');
-    if (active && UUID_REGEX.test(active)) return active;
-
-    const currentUser = localStorage.getItem('smartcut_current_user');
-    if (currentUser) {
-      const parsedUser = JSON.parse(currentUser);
-      if (parsedUser?.salonId && UUID_REGEX.test(parsedUser.salonId)) return parsedUser.salonId;
-      if (parsedUser?.salon_id && UUID_REGEX.test(parsedUser.salon_id)) return parsedUser.salon_id;
-    }
-
+    // 1. Authenticated session / user ALWAYS takes top priority for tenant isolation
     const session = localStorage.getItem('smartcut_session');
     if (session) {
       const parsedSession = JSON.parse(session);
@@ -122,6 +114,16 @@ function getSalonId(): string {
       if (user?.salon_id && UUID_REGEX.test(user.salon_id)) return user.salon_id;
       if (parsedSession?.salonId && UUID_REGEX.test(parsedSession.salonId)) return parsedSession.salonId;
     }
+
+    const currentUser = localStorage.getItem('smartcut_current_user');
+    if (currentUser) {
+      const parsedUser = JSON.parse(currentUser);
+      if (parsedUser?.salonId && UUID_REGEX.test(parsedUser.salonId)) return parsedUser.salonId;
+      if (parsedUser?.salon_id && UUID_REGEX.test(parsedUser.salon_id)) return parsedUser.salon_id;
+    }
+
+    const active = localStorage.getItem('smartcut_active_salon_id');
+    if (active && UUID_REGEX.test(active)) return active;
 
     const s = localStorage.getItem('smartcut_app_settings');
     const parsed = s ? JSON.parse(s) : null;
@@ -995,6 +997,17 @@ export const DB = {
       if (error) { console.error('DB.fetchSalons:', error.message); return []; }
       return (data || []).map(toCamel);
     } catch (e) { return []; }
+  },
+
+  async fetchSalonById(salonId: string) {
+    const client = sb();
+    if (!client || !salonId) return null;
+    try {
+      const validId = toSalonUUID(salonId);
+      const { data, error } = await client.from('salons').select('*').eq('id', validId).maybeSingle();
+      if (error || !data) return null;
+      return toCamel(data);
+    } catch { return null; }
   },
 
   async saveSalon(s: any) {

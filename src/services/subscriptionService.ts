@@ -201,9 +201,13 @@ export const SubscriptionService = {
         localStorage.setItem(STORAGE_KEYS.SALONS, JSON.stringify(minimalSalons));
       } catch (innerErr) {
         try {
-          // Keep only current/active salon if space is extremely constrained
-          const activeId = localStorage.getItem('smartcut_active_salon_id');
-          const activeOnly = sanitized.filter(s => s.id === activeId || s.isActive).slice(0, 3);
+          // Keep active salon first and ensure it is preserved if space is constrained
+          const activeUser = AuthService.getCurrentUser();
+          const targetId = activeUser?.salonId || (activeUser as any)?.salon_id || localStorage.getItem('smartcut_active_salon_id');
+          const sorted = targetId 
+            ? [sanitized.find(s => s.id === targetId), ...sanitized.filter(s => s.id !== targetId)].filter(Boolean)
+            : sanitized;
+          const activeOnly = sorted.slice(0, 5);
           localStorage.setItem(STORAGE_KEYS.SALONS, JSON.stringify(activeOnly));
         } catch (_) {
           console.warn('Notice: Salons stored in-memory (browser localStorage quota reached limit)');

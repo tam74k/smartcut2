@@ -72,7 +72,13 @@ import {
 
 
 export default function App() {
-  const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
+  const [currentUser, setCurrentUser] = useState<AppUser | null>(() => {
+    try {
+      return AuthService.getCurrentUser();
+    } catch {
+      return null;
+    }
+  });
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
   const [showUserProfileModal, setShowUserProfileModal] = useState(false);
   const [showUserHeaderMenu, setShowUserHeaderMenu] = useState(false);
@@ -191,37 +197,49 @@ export default function App() {
   // 1. App Settings State
   const [settings, setSettings] = useState<AppSettings>(() => {
     try {
+      const activeUser = AuthService.getCurrentUser();
+      const activeUserSalonId = activeUser?.salonId || (activeUser as any)?.salon_id;
+      const savedActiveId = localStorage.getItem('smartcut_active_salon_id');
+      const targetSalonId = activeUserSalonId || savedActiveId;
+
       const saved = localStorage.getItem('smartcut_app_settings');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed.treasuries && Array.isArray(parsed.treasuries)) {
-          const hasMain = parsed.treasuries.some((t: any) => t.isMain || t.id === 'main' || (t.name && t.name.includes('الرئيسية')));
-          if (!hasMain) {
-            parsed.treasuries = [{ id: 'main', name: 'الخزينة الرئيسية', isMain: true }, ...parsed.treasuries];
+        // Ensure saved settings belong to the active user's salon
+        if (!targetSalonId || parsed.salonId === targetSalonId) {
+          if (parsed.treasuries && Array.isArray(parsed.treasuries)) {
+            const hasMain = parsed.treasuries.some((t: any) => t.isMain || t.id === 'main' || (t.name && t.name.includes('الرئيسية')));
+            if (!hasMain) {
+              parsed.treasuries = [{ id: 'main', name: 'الخزينة الرئيسية', isMain: true }, ...parsed.treasuries];
+            }
+          } else {
+            parsed.treasuries = DEFAULT_INITIAL_TREASURIES;
           }
-        } else {
-          parsed.treasuries = DEFAULT_INITIAL_TREASURIES;
+          return parsed;
         }
-        return parsed;
       }
+
       const regSalons = SubscriptionService.getSalons();
-      if (regSalons.length > 0) {
-        const s = regSalons[0];
-        const sBranches = SubscriptionService.getBranches(s.id);
-        const firstBranch = sBranches[0];
+      const targetSalon = targetSalonId 
+        ? regSalons.find(s => s.id === targetSalonId || s.code === targetSalonId)
+        : (regSalons.length > 0 ? regSalons[0] : null);
+
+      if (targetSalon) {
+        const sBranches = SubscriptionService.getBranches(targetSalon.id);
+        const firstBranch = (activeUser?.branchId && sBranches.find(b => b.id === activeUser.branchId)) || sBranches[0];
         return {
-          salonId: s.id,
-          salonCode: s.code,
+          salonId: targetSalon.id,
+          salonCode: targetSalon.code,
           branchId: firstBranch?.id || '',
           branchCode: firstBranch?.code || 'BR-01',
-          salonName: s.name,
-          salonType: s.salonType || (s as any).salon_type || 'men',
+          salonName: targetSalon.name,
+          salonType: targetSalon.salonType || (targetSalon as any).salon_type || 'men',
           taxNumber: '',
           commercialReg: '',
           vatEnabled: false,
           vatRate: 0,
-          currency: s.currency || 'EGP',
-          country: s.country || 'جمهورية مصر العربية',
+          currency: targetSalon.currency || 'EGP',
+          country: targetSalon.country || 'جمهورية مصر العربية',
           waInstantName: '',
           waApiKey: '',
           printerName: 'طابعة الكاشير',
@@ -230,9 +248,9 @@ export default function App() {
           zatcaEnabled: false,
           receiptHeaderNote: 'أهلاً بكم في صالونكم المميز',
           receiptFooterNote: 'شكراً لزيارتكم ونسعد بخدمتكم دائماً',
-          logoUrl: s.logoUrl || '',
-          phone: s.phone || '',
-          address: s.address || '',
+          logoUrl: targetSalon.logoUrl || '',
+          phone: targetSalon.phone || '',
+          address: targetSalon.address || '',
           expenseCategories: ['إيجار', 'كهرباء ومياه', 'صيانة ومطبوعات', 'أدوات ومستهلكات', 'ضيافة ونظافة', 'أخرى'],
           bookingNotes: '',
           showDashboardAnalytics: true,
@@ -275,31 +293,32 @@ export default function App() {
   // SaaS Subscription & Branches State
   const [subscription, setSubscription] = useState<SaaSSubscription>(() => {
     try {
+      const activeUser = AuthService.getCurrentUser();
+      const activeUserSalonId = activeUser?.salonId || (activeUser as any)?.salon_id;
       const savedSettings = localStorage.getItem('smartcut_app_settings');
-      if (savedSettings) {
-        const s = JSON.parse(savedSettings);
-        if (s.salonName) {
-          const salons = SubscriptionService.getSalons();
-          const salon = s.salonId ? salons.find((item: any) => item.id === s.salonId) : salons.find((item: any) => item.name === s.salonName);
-          if (salon) {
-            return {
-              id: salon.id,
-              salonId: salon.id,
-              salonCode: salon.code,
-              organizationName: salon.name,
-              ownerEmail: salon.email,
-              phone: salon.phone,
-              country: salon.country,
-              plan: salon.subscriptionPlan || 'pro',
-              status: salon.subscriptionStatus || 'trial',
-              isActive: salon.isActive !== false,
-              startDate: salon.subscriptionStartDate,
-              endDate: salon.subscriptionEndDate,
-              maxBranches: salon.maxBranches || 3,
-              maxUsers: salon.maxUsers || 10,
-              trialDays: salon.trialDays || 7
-            };
-          }
+      const s = savedSettings ? JSON.parse(savedSettings) : null;
+      const targetSalonId = activeUserSalonId || s?.salonId;
+      if (targetSalonId) {
+        const salons = SubscriptionService.getSalons();
+        const salon = salons.find((item: any) => item.id === targetSalonId || item.code === targetSalonId);
+        if (salon) {
+          return {
+            id: salon.id,
+            salonId: salon.id,
+            salonCode: salon.code,
+            organizationName: salon.name,
+            ownerEmail: salon.email,
+            phone: salon.phone,
+            country: salon.country,
+            plan: salon.subscriptionPlan || 'pro',
+            status: salon.subscriptionStatus || 'trial',
+            isActive: salon.isActive !== false,
+            startDate: salon.subscriptionStartDate,
+            endDate: salon.subscriptionEndDate,
+            maxBranches: salon.maxBranches || 3,
+            maxUsers: salon.maxUsers || 10,
+            trialDays: salon.trialDays || 7
+          };
         }
       }
     } catch (e) {}
@@ -320,28 +339,32 @@ export default function App() {
 
   const [branches, setBranches] = useState<Branch[]>(() => {
     try {
+      const activeUser = AuthService.getCurrentUser();
+      const activeUserSalonId = activeUser?.salonId || (activeUser as any)?.salon_id;
       const savedSettings = localStorage.getItem('smartcut_app_settings');
-      const sId = savedSettings ? JSON.parse(savedSettings).salonId : '';
+      const sId = activeUserSalonId || (savedSettings ? JSON.parse(savedSettings).salonId : '');
       if (sId) {
         const list = SubscriptionService.getBranches(sId);
         if (list && list.length > 0) return list;
       }
-      const allBranches = SubscriptionService.getBranches();
-      if (allBranches && allBranches.length > 0) return allBranches;
     } catch (e) {}
     return [];
   });
 
   const [activeBranchId, setActiveBranchId] = useState<string>(() => {
     try {
+      const activeUser = AuthService.getCurrentUser();
+      if (activeUser?.branchId) return activeUser.branchId;
+      const activeUserSalonId = activeUser?.salonId || (activeUser as any)?.salon_id;
       const savedSettings = localStorage.getItem('smartcut_app_settings');
-      const sId = savedSettings ? JSON.parse(savedSettings).salonId : '';
+      const sId = activeUserSalonId || (savedSettings ? JSON.parse(savedSettings).salonId : '');
       if (sId) {
         const list = SubscriptionService.getBranches(sId);
-        if (list && list.length > 0) return list[0].id;
+        if (list && list.length > 0) {
+          const main = list.find((b: any) => b.isMain);
+          return main ? main.id : list[0].id;
+        }
       }
-      const allBranches = SubscriptionService.getBranches();
-      if (allBranches && allBranches.length > 0) return allBranches[0].id;
     } catch (e) {}
     return 'b-main';
   });
@@ -615,16 +638,6 @@ export default function App() {
     // تنظيف شامل وغير مشروط لأي بيانات تجريبية أو كاش محلي زائد لحماية localStorage من تجاوز الحصة (Quota)
     evictExcessLocalStorage();
     try {
-      const sess = localStorage.getItem('smartcut_session');
-      if (sess && (sess.includes('Dana') || sess.includes('Tamer') || sess.toLowerCase().includes('dana'))) {
-        localStorage.removeItem('smartcut_session');
-        localStorage.removeItem('smartcut_current_user');
-      }
-      const curUser = localStorage.getItem('smartcut_current_user');
-      if (curUser && (curUser.includes('Dana') || curUser.includes('Tamer') || curUser.toLowerCase().includes('dana'))) {
-        localStorage.removeItem('smartcut_current_user');
-      }
-
       const entityKeys = [
         'smartcut_client_complaints', 'smartcut_clients', 'smartcut_invoices',
         'smartcut_transactions', 'smartcut_bookings', 'smartcut_employees',
@@ -671,12 +684,30 @@ export default function App() {
         }
 
         const salons = (cloudSalons && cloudSalons.length > 0) ? cloudSalons : SubscriptionService.getSalons();
+        const userSalonId = user?.salonId || (user as any)?.salon_id;
         const savedActiveId = localStorage.getItem('smartcut_active_salon_id');
-        let activeSalon = user?.salonId 
-          ? (salons.find(s => s.id === user.salonId || s.code === (user as any).salonCode) || null)
-          : (savedActiveId ? salons.find(s => s.id === savedActiveId) : null);
-        
-        if (!activeSalon && salons.length > 0) {
+
+        let activeSalon: any = null;
+        if (userSalonId) {
+          activeSalon = salons.find(s => s.id === userSalonId || s.code === (user as any)?.salonCode) || null;
+          if (!activeSalon) {
+            try {
+              const single = await DB.fetchSalonById(userSalonId);
+              if (single) {
+                activeSalon = single;
+                setAllSalons(prev => [...prev.filter(s => s.id !== single.id), single]);
+              }
+            } catch {}
+          }
+          if (!activeSalon) {
+            activeSalon = { id: userSalonId, name: (user as any)?.salonName || 'الصالون', code: (user as any)?.salonCode || 'SC-01' };
+          }
+        } else if (savedActiveId) {
+          activeSalon = salons.find(s => s.id === savedActiveId) || null;
+        }
+
+        // Strictly fall back to first salon ONLY if there is no authenticated user
+        if (!activeSalon && !user && salons.length > 0) {
           activeSalon = salons[0];
         }
 
@@ -695,7 +726,7 @@ export default function App() {
             setSettings(prev => {
               const isDifferentSalon = prev.salonId && prev.salonId !== sId;
               const base = isDifferentSalon ? {} : prev;
-              return {
+              const updatedSettings: AppSettings = {
                 ...base,
                 ...dbSettings,
                 salonId: sId,
@@ -715,6 +746,11 @@ export default function App() {
                 })(),
                 expenseCategories: (Array.isArray(dbSettings.expenseCategories) && dbSettings.expenseCategories.length > 0) ? dbSettings.expenseCategories : (prev.expenseCategories || []),
               };
+              try {
+                localStorage.setItem('smartcut_app_settings', JSON.stringify(updatedSettings));
+                localStorage.setItem('smartcut_active_salon_id', sId);
+              } catch (e) {}
+              return updatedSettings;
             });
             if (activeSalon.name || dbSettings.salonName) {
               setShowInitialSalonModal(false);

@@ -664,7 +664,7 @@ export function EmployeesScreen({
           checkOutTime: formData.checkOutTime || '18:00',
           weeklyDaysOff: formData.weeklyDaysOff || existingEmp.weeklyDaysOff || ['Friday'],
           reason: 'تعديل من شاشة بيانات الموظف',
-          updatedBy: (currentUser?.name && !currentUser.name.includes('Dana')) ? currentUser.name : 'مدير النظام'
+          updatedBy: currentUser?.name || 'مدير النظام'
         };
         updatedHistory = [...updatedHistory, shiftEntry];
       }
@@ -716,7 +716,7 @@ export function EmployeesScreen({
           previousSalary: 0,
           newSalary: formData.baseSalary || 0,
           reason: 'تعيين أولي',
-          approvedBy: (currentUser?.name && !currentUser.name.includes('Dana')) ? currentUser.name : 'مدير النظام'
+          approvedBy: currentUser?.name || 'مدير النظام'
         }],
         shiftScheduleHistory: [{
           id: 'SCH-1',
@@ -727,7 +727,7 @@ export function EmployeesScreen({
           checkOutTime: formData.checkOutTime || '18:00',
           weeklyDaysOff: formData.weeklyDaysOff || ['Friday'],
           reason: 'مواعيد الدوام عند التعيين الأولي',
-          updatedBy: (currentUser?.name && !currentUser.name.includes('Dana')) ? currentUser.name : 'مدير النظام'
+          updatedBy: currentUser?.name || 'مدير النظام'
         }],
         permissionRecords: []
       } as Employee;

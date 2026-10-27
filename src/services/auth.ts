@@ -258,14 +258,19 @@ export class AuthService {
 
   public static getCurrentSalonId(): string {
     try {
-      const active = localStorage.getItem('smartcut_active_salon_id');
-      if (active) return active;
+      // 1. Authenticated session / user ALWAYS takes top priority for tenant isolation
       const session = this.getCurrentUser();
       if (session?.salonId) return session.salonId;
+      if ((session as any)?.salon_id) return (session as any).salon_id;
+
+      const active = localStorage.getItem('smartcut_active_salon_id');
+      if (active) return active;
+
       const s = localStorage.getItem('smartcut_app_settings');
       if (s) {
         const parsed = JSON.parse(s);
         if (parsed?.salonId) return parsed.salonId;
+        if (parsed?.salon_id) return parsed.salon_id;
       }
     } catch {}
     return '';
@@ -491,21 +496,29 @@ export class AuthService {
     this.currentUser = user;
     try {
       const sig = this.computeSessionSignature(user);
+      const targetSalonId = user.salonId || (user as any).salon_id;
       localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify({ 
         userId: user.id, 
-        salonId: user.salonId, 
+        salonId: targetSalonId, 
         user, 
         signature: sig,
         loginTime: new Date().toISOString() 
       }));
       localStorage.setItem('smartcut_current_user', JSON.stringify(user));
-      if (user.salonId) {
-        localStorage.setItem('smartcut_active_salon_id', user.salonId);
+      if (targetSalonId) {
+        localStorage.setItem('smartcut_active_salon_id', targetSalonId);
         const s = localStorage.getItem('smartcut_app_settings');
         if (s) {
-          const parsed = JSON.parse(s);
-          parsed.salonId = user.salonId;
-          localStorage.setItem('smartcut_app_settings', JSON.stringify(parsed));
+          try {
+            const parsed = JSON.parse(s);
+            // If switching to a different salon, remove old salon settings to prevent stale crossover!
+            if (parsed.salonId && parsed.salonId !== targetSalonId) {
+              localStorage.removeItem('smartcut_app_settings');
+            } else {
+              parsed.salonId = targetSalonId;
+              localStorage.setItem('smartcut_app_settings', JSON.stringify(parsed));
+            }
+          } catch {}
         }
       }
     } catch (e) {}
