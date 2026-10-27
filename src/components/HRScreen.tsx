@@ -10,7 +10,7 @@ import {
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Download, DollarSign, Award, ArrowUpRight, Check, X, Wallet,
   Edit, Trash2, TrendingUp, TrendingDown, History, Percent, Coins, Palmtree, RefreshCw, DoorOpen, Timer,
   ShieldCheck, Briefcase, Maximize2, Minimize2, FileSpreadsheet, Search,
-  Moon, Sun, Save, SlidersHorizontal
+  Moon, Sun, Save, SlidersHorizontal, Banknote, Users
 } from 'lucide-react';
 
 import { ThermalSalarySlip, SalarySlipSummary } from './ThermalSalarySlip';
@@ -293,8 +293,8 @@ export function HRScreen({
   const [endDate, setEndDate] = useState(`${currentYearMonth}-${new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()}`);
   const [selectedSingleDay, setSelectedSingleDay] = useState(now.toISOString().split('T')[0]);
 
-  // Main HR sub-tab: 'timesheet' | 'commissions'
-  const [hrMainTab, setHrMainTab] = useState<'timesheet' | 'commissions'>('timesheet');
+  // Main HR sub-tab: 'timesheet' | 'commissions' | 'advances'
+  const [hrMainTab, setHrMainTab] = useState<'timesheet' | 'commissions' | 'advances'>('timesheet');
 
   // Commissions Section State
   const [commSelectedEmpId, setCommSelectedEmpId] = useState<string>(() => selectedEmpId || activeEmployees[0]?.id || '');
@@ -320,6 +320,68 @@ export function HRScreen({
       setCommSelectedEmpId(activeEmployees[0].id);
     }
   }, [activeEmployees, commSelectedEmpId]);
+
+  // Advances Section State & Filters (سجل وجدول السلف النقدية)
+  const [advanceEmpFilter, setAdvanceEmpFilter] = useState<string>('all');
+  const [advanceDateFrom, setAdvanceDateFrom] = useState<string>(() => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    return `${y}-${m}-01`;
+  });
+  const [advanceDateTo, setAdvanceDateTo] = useState<string>(() => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = d.getMonth() + 1;
+    const lastDay = new Date(y, m, 0).getDate();
+    return `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+  });
+  const [advanceTreasuryFilter, setAdvanceTreasuryFilter] = useState<string>('all');
+  const [advanceSearchQuery, setAdvanceSearchQuery] = useState('');
+
+  // Modals for Advances (Edit & New)
+  const [editingAdvance, setEditingAdvance] = useState<{
+    id: string;
+    employeeId: string;
+    employeeName: string;
+    employeeRole?: string;
+    employeeCode?: string;
+    amount: number;
+    date: string;
+    treasuryId?: string;
+    treasuryName: string;
+    note: string;
+    rawRecord: EmployeeFinancialRecord;
+    matchingTransaction?: Transaction;
+  } | null>(null);
+
+  const [editAdvanceForm, setEditAdvanceForm] = useState<{
+    amount: number | '';
+    date: string;
+    treasuryId: string;
+    note: string;
+  }>({
+    amount: '',
+    date: '',
+    treasuryId: '',
+    note: ''
+  });
+
+  const [showNewAdvanceModal, setShowNewAdvanceModal] = useState(false);
+  const [newAdvanceForm, setNewAdvanceForm] = useState<{
+    empId: string;
+    amount: number | '';
+    date: string;
+    treasuryId: string;
+    note: string;
+  }>({
+    empId: '',
+    amount: '',
+    date: new Date().toISOString().split('T')[0],
+    treasuryId: '',
+    note: ''
+  });
+  const [isSavingAdvance, setIsSavingAdvance] = useState(false);
 
   // Granular RBAC Permission checks for HR Operations
   const canViewTimesheet = AuthService.canDo('hr_view_timesheet', currentUser);
@@ -2039,6 +2101,375 @@ export function HRScreen({
     }
   };
 
+  // =========================================================================
+  // ADVANCES (السلف النقدية) COMPUTATIONS & HANDLERS
+  // =========================================================================
+  const allAdvancesList = useMemo(() => {
+    const list: Array<{
+      id: string;
+      employeeId: string;
+      employeeName: string;
+      employeeRole?: string;
+      employeeCode?: string;
+      amount: number;
+      date: string;
+      treasuryId?: string;
+      treasuryName: string;
+      note: string;
+      rawRecord: EmployeeFinancialRecord;
+      matchingTransaction?: Transaction;
+    }> = [];
+
+    employees.forEach(emp => {
+      (emp.financialRecords || []).forEach(r => {
+        const isSalaryRecord = r.type === 'salary' || 
+          r.id?.startsWith('FIN-SAL-') || 
+          r.note?.includes('صرف راتب') || 
+          r.note?.includes('عن مسير') || 
+          r.note?.includes('مسير رواتب') || 
+          r.note?.includes('تم استلام صافي الراتب');
+
+        if (r.type === 'advance' && !isSalaryRecord) {
+          const treasury = settings.treasuries.find(t => t.id === r.treasuryId);
+          const treasuryName = treasury?.name || 'الخزينة الرئيسية';
+
+          const matchingTrx = transactions.find(t => 
+            t.id === r.id || 
+            t.id === `TRX-${r.id}` || 
+            t.id === `TRX-ADV-${r.id.replace('FIN-', '')}` ||
+            (t.category === 'hr_advance' && t.description?.includes(r.id)) ||
+            (t.category === 'hr_advance' && (t.description?.includes(emp.name) || (emp.fingerprintCode && t.description?.includes(emp.fingerprintCode))) && Math.abs(t.amount - (r.amount || 0)) < 0.01 && (t.date?.startsWith(r.date?.split('T')[0]) || r.date?.startsWith(t.date?.substring(0, 10))))
+          );
+
+          list.push({
+            id: r.id,
+            employeeId: emp.id,
+            employeeName: emp.name,
+            employeeRole: emp.role,
+            employeeCode: emp.fingerprintCode || emp.id,
+            amount: Number(r.amount) || 0,
+            date: r.date || '',
+            treasuryId: r.treasuryId,
+            treasuryName,
+            note: r.note || '',
+            rawRecord: r,
+            matchingTransaction: matchingTrx
+          });
+        }
+      });
+    });
+
+    return list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [employees, transactions, settings.treasuries]);
+
+  // Filtered advances
+  const filteredAdvances = useMemo(() => {
+    return allAdvancesList.filter(item => {
+      if (advanceEmpFilter !== 'all' && item.employeeId !== advanceEmpFilter) return false;
+      if (advanceTreasuryFilter !== 'all' && item.treasuryId !== advanceTreasuryFilter) return false;
+
+      const itemDateOnly = item.date.split('T')[0].split(' ')[0];
+      if (advanceDateFrom && itemDateOnly < advanceDateFrom) return false;
+      if (advanceDateTo && itemDateOnly > advanceDateTo) return false;
+
+      if (advanceSearchQuery.trim()) {
+        const q = advanceSearchQuery.toLowerCase();
+        const matchEmp = item.employeeName.toLowerCase().includes(q);
+        const matchNote = item.note.toLowerCase().includes(q);
+        const matchId = item.id.toLowerCase().includes(q);
+        const matchRole = item.employeeRole?.toLowerCase().includes(q);
+        if (!matchEmp && !matchNote && !matchId && !matchRole) return false;
+      }
+      return true;
+    });
+  }, [allAdvancesList, advanceEmpFilter, advanceTreasuryFilter, advanceDateFrom, advanceDateTo, advanceSearchQuery]);
+
+  // Advances summary statistics
+  const advancesStats = useMemo(() => {
+    const totalAmount = filteredAdvances.reduce((sum, item) => sum + item.amount, 0);
+    const count = filteredAdvances.length;
+    const avgAmount = count > 0 ? totalAmount / count : 0;
+    const uniqueEmployeesCount = new Set(filteredAdvances.map(item => item.employeeId)).size;
+    return {
+      totalAmount,
+      count,
+      avgAmount,
+      uniqueEmployeesCount
+    };
+  }, [filteredAdvances]);
+
+  // Edit Advance Modal Open
+  const handleOpenEditAdvance = (item: (typeof allAdvancesList)[0]) => {
+    if (!canManageAdvances) {
+      alert('عذراً، تعديل السلف يتطلب صلاحية إدارة وصرف السلف النقدية (hr_manage_advances).');
+      return;
+    }
+    setEditingAdvance(item);
+    setEditAdvanceForm({
+      amount: item.amount,
+      date: item.date.split('T')[0],
+      treasuryId: item.treasuryId || settings.treasuries[0]?.id || '',
+      note: item.note
+    });
+  };
+
+  // Save Edited Advance
+  const handleSaveEditedAdvance = async () => {
+    if (!editingAdvance) return;
+    if (!canManageAdvances) {
+      alert('عذراً، تعديل السلف يتطلب صلاحية إدارة وصرف السلف النقدية.');
+      return;
+    }
+    const newAmount = Number(editAdvanceForm.amount);
+    if (!newAmount || newAmount <= 0) {
+      alert('يرجى إدخال مبلغ سلفة صحيح أكبر من صفر.');
+      return;
+    }
+    if (!editAdvanceForm.date) {
+      alert('يرجى تحديد تاريخ السلفة.');
+      return;
+    }
+    if (!editAdvanceForm.treasuryId) {
+      alert('يرجى اختيار الخزينة المنصرف منها.');
+      return;
+    }
+
+    setIsSavingAdvance(true);
+    try {
+      const targetEmp = employees.find(e => e.id === editingAdvance.employeeId);
+      if (!targetEmp) {
+        alert('لم يتم العثور على الموظف.');
+        return;
+      }
+
+      const updatedRecords = (targetEmp.financialRecords || []).map(r => {
+        if (r.id === editingAdvance.id) {
+          return {
+            ...r,
+            amount: newAmount,
+            date: editAdvanceForm.date,
+            treasuryId: editAdvanceForm.treasuryId,
+            note: editAdvanceForm.note
+          };
+        }
+        return r;
+      });
+
+      const updatedEmp: Employee = {
+        ...targetEmp,
+        financialRecords: updatedRecords
+      };
+
+      if (DB.saveEmployee) {
+        await DB.saveEmployee(updatedEmp, settings.salonId);
+      }
+      setEmployees(employees.map(e => e.id === updatedEmp.id ? updatedEmp : e));
+
+      // Update matching transaction if found
+      if (editingAdvance.matchingTransaction && setTransactions && transactions) {
+        const updatedTrx: Transaction = {
+          ...editingAdvance.matchingTransaction,
+          amount: newAmount,
+          date: editAdvanceForm.date + (editingAdvance.matchingTransaction.date?.includes('T') ? 'T' + editingAdvance.matchingTransaction.date.split('T')[1] : ''),
+          treasury: editAdvanceForm.treasuryId,
+          description: `سلفة نقدية للموظف (${targetEmp.name}) [${editingAdvance.id}] - ${editAdvanceForm.note}`
+        };
+
+        if (DB.saveTransaction) {
+          await DB.saveTransaction(updatedTrx, settings.salonId);
+        }
+        setTransactions(transactions.map(t => t.id === updatedTrx.id ? updatedTrx : t));
+      }
+
+      setEditingAdvance(null);
+      alert('تم تعديل بيانات السلفة وتحديث السجلات المالية بنجاح.');
+    } catch (err: any) {
+      console.error('Error in handleSaveEditedAdvance:', err);
+      alert('حدث خطأ أثناء تعديل السلفة: ' + (err?.message || 'خطأ غير معروف'));
+    } finally {
+      setIsSavingAdvance(false);
+    }
+  };
+
+  // Delete Advance
+  const handleDeleteAdvance = async (item: (typeof allAdvancesList)[0]) => {
+    if (!canManageAdvances) {
+      alert('عذراً، حذف السلف يتطلب صلاحية إدارة وصرف السلف النقدية (hr_manage_advances).');
+      return;
+    }
+
+    const confirmMsg = `هل أنت متأكد من حذف سلفة الموظف (${item.employeeName}) بمبلغ ${item.amount.toFixed(2)} ${settings.currency}؟\n\nسيتم حذف السجل المالي نهائياً وإلغاء الحركة المالية واسترداد المبلغ للخزينة.`;
+    if (!window.confirm(confirmMsg)) return;
+
+    setIsSavingAdvance(true);
+    try {
+      const targetEmp = employees.find(e => e.id === item.employeeId);
+      if (!targetEmp) {
+        alert('لم يتم العثور على الموظف.');
+        return;
+      }
+
+      const updatedRecords = (targetEmp.financialRecords || []).filter(r => r.id !== item.id);
+      const updatedEmp: Employee = {
+        ...targetEmp,
+        financialRecords: updatedRecords
+      };
+
+      if (DB.saveEmployee) {
+        await DB.saveEmployee(updatedEmp, settings.salonId);
+      }
+      setEmployees(employees.map(e => e.id === updatedEmp.id ? updatedEmp : e));
+
+      // Delete matching transaction if found
+      if (item.matchingTransaction) {
+        if (DB.deleteTransaction) {
+          await DB.deleteTransaction(item.matchingTransaction.id);
+        }
+        if (setTransactions && transactions) {
+          setTransactions(transactions.filter(t => t.id !== item.matchingTransaction!.id));
+        }
+      }
+
+      alert('تم حذف السلفة وإلغاء الحركة المالية بنجاح.');
+    } catch (err: any) {
+      console.error('Error in handleDeleteAdvance:', err);
+      alert('حدث خطأ أثناء حذف السلفة: ' + (err?.message || 'خطأ غير معروف'));
+    } finally {
+      setIsSavingAdvance(false);
+    }
+  };
+
+  // Print Thermal Voucher for Advance
+  const handlePrintAdvanceVoucher = (item: (typeof allAdvancesList)[0]) => {
+    printThermalFinancialVoucher(settings, {
+      voucherType: 'advance',
+      voucherNumber: item.id.startsWith('FIN-') ? item.id.replace('FIN-', 'ADV-') : `ADV-${item.id}`,
+      date: `${item.date} ${new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}`,
+      employeeName: item.employeeName,
+      employeeCode: item.employeeCode,
+      employeeRole: item.employeeRole,
+      amount: item.amount,
+      treasuryName: item.treasuryName,
+      note: item.note || 'سلفة نقدية على حساب الراتب',
+      issuedBy: currentUser?.name || 'مدير النظام'
+    });
+  };
+
+  // Create New Advance Handler
+  const handleCreateNewAdvance = async () => {
+    if (!canManageAdvances) {
+      alert('عذراً، تسجيل سلفة جديدة يتطلب صلاحية إدارة وصرف السلف النقدية.');
+      return;
+    }
+    if (!newAdvanceForm.empId) {
+      alert('يرجى اختيار الموظف المستفيد من السلفة.');
+      return;
+    }
+    const amt = Number(newAdvanceForm.amount);
+    if (!amt || amt <= 0) {
+      alert('يرجى إدخال مبلغ صحيح للسلفة أكبر من صفر.');
+      return;
+    }
+    if (!newAdvanceForm.treasuryId) {
+      alert('يرجى اختيار الخزينة المنصرف منها.');
+      return;
+    }
+
+    const currentBal = treasuryBalances[newAdvanceForm.treasuryId] ?? 0;
+    if (amt > currentBal) {
+      const tName = settings.treasuries.find(t => t.id === newAdvanceForm.treasuryId)?.name || 'الخزينة';
+      const proceed = window.confirm(
+        `تنبيه: رصيد الخزينة (${tName}) الحالي هو (${Number(currentBal || 0).toFixed(2)} ${settings.currency})، وهو أقل من مبلغ السلفة المطلوب صرفه (${amt.toFixed(2)} ${settings.currency}).\n\nهل تريد المتابعة والصرف بالسالب؟`
+      );
+      if (!proceed) return;
+    }
+
+    setIsSavingAdvance(true);
+    try {
+      const targetEmp = employees.find(e => e.id === newAdvanceForm.empId);
+      if (!targetEmp) {
+        alert('لم يتم العثور على الموظف.');
+        return;
+      }
+
+      const advId = 'FIN-ADV-' + Math.random().toString(36).substring(2, 9);
+      const trxId = 'TRX-' + advId;
+      const treasuryName = settings.treasuries.find(t => t.id === newAdvanceForm.treasuryId)?.name || 'الخزينة الرئيسية';
+      const branchCodeToUse = settings.branches?.find(b => b.id === activeBranchId)?.code || (targetEmp as any).branchCode || 'BR-01';
+
+      // 1. Transaction
+      const trx: Transaction = {
+        id: trxId,
+        date: newAdvanceForm.date + 'T' + new Date().toTimeString().split(' ')[0],
+        shiftDate: shiftData?.isOpen ? shiftData.date : undefined,
+        type: 'out',
+        amount: amt,
+        category: 'hr_advance',
+        description: `سلفة نقدية للموظف (${targetEmp.name}) [${advId}] - ${newAdvanceForm.note || 'سلفة نقدية على حساب الراتب'}`,
+        treasury: newAdvanceForm.treasuryId,
+        salonId: (targetEmp as any).salonId || settings.salonId,
+        branchId: targetEmp.branchId || activeBranchId,
+        branchCode: branchCodeToUse
+      } as any;
+
+      if (DB.saveTransaction) {
+        await DB.saveTransaction(trx, settings.salonId);
+      }
+      if (setTransactions && transactions) {
+        setTransactions([...transactions, trx]);
+      }
+
+      // 2. Financial record in employee
+      const finRecord: EmployeeFinancialRecord = {
+        id: advId,
+        date: newAdvanceForm.date,
+        type: 'advance',
+        amount: amt,
+        treasuryId: newAdvanceForm.treasuryId,
+        note: newAdvanceForm.note || 'سلفة نقدية على حساب الراتب'
+      };
+
+      const updatedEmp: Employee = {
+        ...targetEmp,
+        financialRecords: [...(targetEmp.financialRecords || []), finRecord]
+      };
+
+      if (DB.saveEmployee) {
+        await DB.saveEmployee(updatedEmp, settings.salonId);
+      }
+      setEmployees(employees.map(e => e.id === updatedEmp.id ? updatedEmp : e));
+
+      // 3. Print 80mm thermal voucher
+      printThermalFinancialVoucher(settings, {
+        voucherType: 'advance',
+        voucherNumber: `ADV-${Math.floor(100000 + Math.random() * 900000)}`,
+        date: `${newAdvanceForm.date} ${new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}`,
+        employeeName: targetEmp.name,
+        employeeCode: targetEmp.fingerprintCode || targetEmp.id,
+        employeeRole: targetEmp.role,
+        amount: amt,
+        treasuryName,
+        note: newAdvanceForm.note || 'سلفة نقدية على حساب الراتب',
+        issuedBy: currentUser?.name || 'مدير النظام'
+      });
+
+      setShowNewAdvanceModal(false);
+      setNewAdvanceForm({
+        empId: activeEmployees[0]?.id || '',
+        amount: '',
+        date: new Date().toISOString().split('T')[0],
+        treasuryId: settings.treasuries[0]?.id || '',
+        note: ''
+      });
+      alert(`تم تسجيل وصرف السلفة للموظف (${targetEmp.name}) بمبلغ ${amt.toFixed(2)} ${settings.currency} بنجاح وطباعة إيصال الصرف.`);
+    } catch (err: any) {
+      console.error('Error in handleCreateNewAdvance:', err);
+      alert('حدث خطأ أثناء تسجيل السلفة: ' + (err?.message || 'خطأ غير معروف'));
+    } finally {
+      setIsSavingAdvance(false);
+    }
+  };
+
   // Leave Management State & Handlers
   const [showLeaveModal, setShowLeaveModal] = useState(false);
   const [showLeavesListModal, setShowLeavesListModal] = useState(false);
@@ -3073,6 +3504,24 @@ export function HRScreen({
             hrMainTab === 'commissions' ? 'bg-amber-700 text-white' : 'bg-amber-100 text-amber-800'
           }`}>
             تفصيلي
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setHrMainTab('advances')}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-black text-xs transition-all cursor-pointer ${
+            hrMainTab === 'advances'
+              ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+        >
+          <Banknote size={16} />
+          <span>جدول وسجل السلف النقدية</span>
+          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+            hrMainTab === 'advances' ? 'bg-emerald-700 text-white' : 'bg-emerald-100 text-emerald-800'
+          }`}>
+            {allAdvancesList.length}
           </span>
         </button>
       </div>
@@ -4620,6 +5069,648 @@ export function HRScreen({
               <div className="font-mono text-slate-400">
                 Smart Cut HR & Commission Engine
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* ADVANCES SECTION (قسم جدول وسجل السلف النقدية وإدارتها) */}
+      {/* ========================================================================= */}
+      {hrMainTab === 'advances' && (
+        <div className="space-y-6">
+          {/* Header Card */}
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+            <div>
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black shadow-md shadow-emerald-600/20">
+                  <Banknote size={22} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-xl font-black text-slate-900">سجل وجدول السلف النقدية (Advances Register)</h2>
+                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold">
+                      {filteredAdvances.length} سلفة مسجلة
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    كشف شامل لجميع السلف النقدية المنصرفة للموظفين مع إمكانية التصفية، البحث، التعديل، والحذف وإعادة طباعة السندات
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Action: New Advance */}
+            {canManageAdvances && (
+              <button
+                type="button"
+                onClick={() => {
+                  setNewAdvanceForm({
+                    empId: activeEmployees[0]?.id || '',
+                    amount: '',
+                    date: shiftData?.isOpen ? shiftData.date : new Date().toISOString().split('T')[0],
+                    treasuryId: settings.treasuries[0]?.id || '',
+                    note: ''
+                  });
+                  setShowNewAdvanceModal(true);
+                }}
+                className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-md shadow-emerald-600/20 transition-all cursor-pointer self-stretch md:self-auto justify-center"
+              >
+                <Plus size={16} />
+                <span>+ تسجيل سلفة جديدة</span>
+              </button>
+            )}
+          </div>
+
+          {/* Quick Stats Cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            {/* Total Advances */}
+            <div className="bg-white p-4 rounded-2xl border border-emerald-200 shadow-xs">
+              <div className="flex items-center justify-between text-emerald-700 mb-1">
+                <span className="text-[11px] font-bold">إجمالي مبالغ السلف</span>
+                <DollarSign size={16} />
+              </div>
+              <div className="text-xl font-black font-mono text-emerald-950">
+                {advancesStats.totalAmount.toFixed(2)}
+                <span className="text-[10px] font-normal text-slate-500 mr-1">{settings.currency}</span>
+              </div>
+              <div className="text-[10px] font-bold text-emerald-700 mt-1">
+                للفترة والفلاتر المحددة
+              </div>
+            </div>
+
+            {/* Count of Advances */}
+            <div className="bg-white p-4 rounded-2xl border border-sky-200 shadow-xs">
+              <div className="flex items-center justify-between text-sky-700 mb-1">
+                <span className="text-[11px] font-bold">عدد السلف المنصرفة</span>
+                <FileText size={16} />
+              </div>
+              <div className="text-xl font-black font-mono text-sky-950">
+                {advancesStats.count}
+                <span className="text-[10px] font-normal text-slate-500 mr-1">سلفة</span>
+              </div>
+              <div className="text-[10px] font-bold text-sky-700 mt-1">
+                عملية صرف موثقة
+              </div>
+            </div>
+
+            {/* Average Advance */}
+            <div className="bg-white p-4 rounded-2xl border border-amber-200 shadow-xs">
+              <div className="flex items-center justify-between text-amber-700 mb-1">
+                <span className="text-[11px] font-bold">متوسط قيمة السلفة</span>
+                <TrendingUp size={16} />
+              </div>
+              <div className="text-xl font-black font-mono text-amber-950">
+                {advancesStats.avgAmount.toFixed(2)}
+                <span className="text-[10px] font-normal text-slate-500 mr-1">{settings.currency}</span>
+              </div>
+              <div className="text-[10px] font-bold text-amber-700 mt-1">
+                لكل عملية صرف
+              </div>
+            </div>
+
+            {/* Unique Recipient Employees */}
+            <div className="bg-white p-4 rounded-2xl border border-purple-200 shadow-xs">
+              <div className="flex items-center justify-between text-purple-700 mb-1">
+                <span className="text-[11px] font-bold">الموظفون المستفيدون</span>
+                <Users size={16} />
+              </div>
+              <div className="text-xl font-black font-mono text-purple-950">
+                {advancesStats.uniqueEmployeesCount}
+                <span className="text-[10px] font-normal text-slate-500 mr-1">موظف</span>
+              </div>
+              <div className="text-[10px] font-bold text-purple-700 mt-1">
+                من إجمالي {activeEmployees.length} موظف
+              </div>
+            </div>
+          </div>
+
+          {/* Filters Bar */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+            <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-2 text-xs font-black text-slate-800">
+                <Filter size={15} className="text-emerald-600" />
+                <span>فلاتر البحث والتصفية المتقدمة</span>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const d = new Date();
+                    const y = d.getFullYear();
+                    const m = String(d.getMonth() + 1).padStart(2, '0');
+                    const lastDay = new Date(y, d.getMonth() + 1, 0).getDate();
+                    setAdvanceDateFrom(`${y}-${m}-01`);
+                    setAdvanceDateTo(`${y}-${m}-${String(lastDay).padStart(2, '0')}`);
+                  }}
+                  className="px-2.5 py-1 text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors cursor-pointer"
+                >
+                  الشهر الحالي
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const d = new Date();
+                    d.setMonth(d.getMonth() - 1);
+                    const y = d.getFullYear();
+                    const m = String(d.getMonth() + 1).padStart(2, '0');
+                    const lastDay = new Date(y, d.getMonth() + 1, 0).getDate();
+                    setAdvanceDateFrom(`${y}-${m}-01`);
+                    setAdvanceDateTo(`${y}-${m}-${String(lastDay).padStart(2, '0')}`);
+                  }}
+                  className="px-2.5 py-1 text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors cursor-pointer"
+                >
+                  الشهر السابق
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAdvanceDateFrom('');
+                    setAdvanceDateTo('');
+                  }}
+                  className="px-2.5 py-1 text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors cursor-pointer"
+                >
+                  كل الفترات
+                </button>
+                {(advanceEmpFilter !== 'all' || advanceTreasuryFilter !== 'all' || advanceSearchQuery || advanceDateFrom || advanceDateTo) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAdvanceEmpFilter('all');
+                      setAdvanceTreasuryFilter('all');
+                      setAdvanceSearchQuery('');
+                      const d = new Date();
+                      const y = d.getFullYear();
+                      const m = String(d.getMonth() + 1).padStart(2, '0');
+                      const lastDay = new Date(y, d.getMonth() + 1, 0).getDate();
+                      setAdvanceDateFrom(`${y}-${m}-01`);
+                      setAdvanceDateTo(`${y}-${m}-${String(lastDay).padStart(2, '0')}`);
+                    }}
+                    className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                  >
+                    <RotateCcw size={12} />
+                    <span>إعادة ضبط</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+              {/* Search Query */}
+              <div className="lg:col-span-2">
+                <label className="block text-[11px] font-bold text-slate-600 mb-1">بحث سريع</label>
+                <div className="relative">
+                  <Search size={14} className="absolute right-3 top-2.5 text-slate-400" />
+                  <input
+                    type="text"
+                    value={advanceSearchQuery}
+                    onChange={e => setAdvanceSearchQuery(e.target.value)}
+                    placeholder="بحث باسم الموظف أو البيان أو رقم السند..."
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-9 pl-3 py-1.5 text-xs font-bold text-slate-800 outline-none focus:border-emerald-600 focus:bg-white transition-all"
+                  />
+                  {advanceSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setAdvanceSearchQuery('')}
+                      className="absolute left-2.5 top-2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Employee Filter */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 mb-1">الموظف</label>
+                <select
+                  value={advanceEmpFilter}
+                  onChange={e => setAdvanceEmpFilter(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 outline-none focus:border-emerald-600 focus:bg-white transition-all cursor-pointer"
+                >
+                  <option value="all">كل الموظفين ({activeEmployees.length})</option>
+                  {activeEmployees.map(emp => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.name} ({emp.role || 'موظف'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Treasury Filter */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 mb-1">الخزينة المنصرف منها</label>
+                <select
+                  value={advanceTreasuryFilter}
+                  onChange={e => setAdvanceTreasuryFilter(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 outline-none focus:border-emerald-600 focus:bg-white transition-all cursor-pointer"
+                >
+                  <option value="all">كل الخزائن</option>
+                  {settings.treasuries.map(t => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Date Range: From / To */}
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">من تاريخ</label>
+                  <input
+                    type="date"
+                    value={advanceDateFrom}
+                    onChange={e => setAdvanceDateFrom(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2 py-1.5 text-xs font-bold text-slate-800 outline-none focus:border-emerald-600 focus:bg-white transition-all cursor-pointer"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">إلى تاريخ</label>
+                  <input
+                    type="date"
+                    value={advanceDateTo}
+                    onChange={e => setAdvanceDateTo(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2 py-1.5 text-xs font-bold text-slate-800 outline-none focus:border-emerald-600 focus:bg-white transition-all cursor-pointer"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Advances Table Card */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto max-h-[600px] custom-scrollbar">
+              <table className="w-full text-right text-xs">
+                <thead className="bg-slate-900 text-white font-bold sticky top-0 z-10 shadow-xs">
+                  <tr>
+                    <th className="p-3 text-center w-12">#</th>
+                    <th className="p-3">رقم السند / المعرف</th>
+                    <th className="p-3">تاريخ ووقت السلفة</th>
+                    <th className="p-3">اسم الموظف</th>
+                    <th className="p-3 text-left">مبلغ السلفة</th>
+                    <th className="p-3">الخزينة المنصرف منها</th>
+                    <th className="p-3">البيان والملاحظات</th>
+                    <th className="p-3 text-center w-36">الإجراءات</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredAdvances.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="p-12 text-center text-slate-400">
+                        <Banknote size={40} className="mx-auto mb-2 text-slate-300 opacity-60" />
+                        <p className="font-bold text-sm text-slate-600">لا توجد سلف مسجلة مطابقة للفلاتر المحددة</p>
+                        <p className="text-xs text-slate-400 mt-1">جرّب تغيير خيارات البحث أو تمديد نطاق التواريخ</p>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredAdvances.map((adv, idx) => (
+                      <tr key={adv.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="p-3 text-center font-mono font-bold text-slate-400 text-[11px]">
+                          {idx + 1}
+                        </td>
+                        <td className="p-3 font-mono font-bold text-slate-700">
+                          <span className="px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-[11px]">
+                            {adv.id}
+                          </span>
+                        </td>
+                        <td className="p-3">
+                          <div className="font-bold text-slate-800">{adv.date.split('T')[0]}</div>
+                          {adv.date.includes('T') && (
+                            <div className="text-[10px] text-slate-400 font-mono">
+                              {adv.date.split('T')[1].substring(0, 5)}
+                            </div>
+                          )}
+                        </td>
+                        <td className="p-3">
+                          <div className="font-black text-slate-900">{adv.employeeName}</div>
+                          {adv.employeeRole && (
+                            <div className="text-[10px] text-slate-500">{adv.employeeRole}</div>
+                          )}
+                        </td>
+                        <td className="p-3 text-left">
+                          <span className="font-mono font-black text-emerald-800 text-sm bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                            {adv.amount.toFixed(2)}
+                            <span className="text-[10px] font-normal text-emerald-700 mr-1">{settings.currency}</span>
+                          </span>
+                        </td>
+                        <td className="p-3">
+                          <div className="flex items-center gap-1.5">
+                            <Wallet size={13} className="text-slate-400" />
+                            <span className="font-bold text-slate-700">{adv.treasuryName}</span>
+                          </div>
+                        </td>
+                        <td className="p-3">
+                          <span className="text-slate-700 font-medium">
+                            {adv.note || '--'}
+                          </span>
+                        </td>
+                        <td className="p-3 text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            {/* Print thermal voucher */}
+                            <button
+                              type="button"
+                              onClick={() => handlePrintAdvanceVoucher(adv)}
+                              className="p-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200 transition-colors cursor-pointer"
+                              title="طباعة سند السلفة 80mm"
+                            >
+                              <Printer size={14} />
+                            </button>
+
+                            {/* Edit advance */}
+                            {canManageAdvances && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditAdvance(adv)}
+                                className="p-1.5 rounded-lg text-sky-600 hover:text-sky-800 hover:bg-sky-50 border border-sky-200 transition-colors cursor-pointer"
+                                title="تعديل بيانات السلفة"
+                              >
+                                <Edit size={14} />
+                              </button>
+                            )}
+
+                            {/* Delete advance */}
+                            {canManageAdvances && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteAdvance(adv)}
+                                className="p-1.5 rounded-lg text-rose-600 hover:text-rose-800 hover:bg-rose-50 border border-rose-200 transition-colors cursor-pointer"
+                                title="حذف السلفة واسترجاع المبلغ"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+                {filteredAdvances.length > 0 && (
+                  <tfoot className="bg-slate-100 font-black text-slate-900 border-t-2 border-slate-300 sticky bottom-0 text-xs">
+                    <tr>
+                      <td colSpan={4} className="p-3 text-center bg-slate-200 border-l border-slate-300 font-black">
+                        الإجمالي ({filteredAdvances.length} سلفة مسجلة)
+                      </td>
+                      <td className="p-3 text-left font-mono font-black text-emerald-800 border-l border-slate-300 text-sm bg-emerald-100/70">
+                        {advancesStats.totalAmount.toFixed(2)} {settings.currency}
+                      </td>
+                      <td colSpan={3} className="p-3 text-slate-500 font-normal text-right">
+                        متوسط السلفة: {advancesStats.avgAmount.toFixed(2)} {settings.currency} • المستفيدون: {advancesStats.uniqueEmployeesCount} موظف
+                      </td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+
+            <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 text-[11px] text-slate-500 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+              <div className="flex items-center gap-1.5">
+                <ShieldCheck size={14} className="text-emerald-600" />
+                <span>يتم خصم السلف المسجلة تلقائياً من صافي راتب الموظف في مسير الرواتب الشهري، وتؤثر الحركات المالية مباشرة على رصيد الخزينة المحددة.</span>
+              </div>
+              <div className="font-mono text-slate-400">
+                Smart Cut HR & Advances Engine
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Advance Modal */}
+      {editingAdvance && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center font-bold">
+                  <Edit size={16} />
+                </div>
+                <div>
+                  <h3 className="font-black text-sm text-slate-900">تعديل بيانات السلفة النقدية</h3>
+                  <p className="text-[11px] text-slate-500">{editingAdvance.employeeName} ({editingAdvance.employeeRole || 'موظف'})</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingAdvance(null)}
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {/* Employee Name (Locked) */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">الموظف</label>
+                <input
+                  type="text"
+                  disabled
+                  value={`${editingAdvance.employeeName} (${editingAdvance.employeeCode || editingAdvance.employeeId})`}
+                  className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-500 cursor-not-allowed"
+                />
+              </div>
+
+              {/* Amount */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
+                  <span>مبلغ السلفة *</span>
+                  <span className="text-[10px] text-slate-400 font-normal">بالعملة المحلية ({settings.currency})</span>
+                </label>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="any"
+                  value={editAdvanceForm.amount}
+                  onChange={e => setEditAdvanceForm({ ...editAdvanceForm, amount: e.target.value === '' ? '' : Number(e.target.value) })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-black text-emerald-800 font-mono outline-none focus:border-emerald-600 focus:bg-white"
+                  placeholder="0.00"
+                />
+              </div>
+
+              {/* Date */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">تاريخ السلفة *</label>
+                <input
+                  type="date"
+                  value={editAdvanceForm.date}
+                  onChange={e => setEditAdvanceForm({ ...editAdvanceForm, date: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-emerald-600 focus:bg-white cursor-pointer"
+                />
+              </div>
+
+              {/* Treasury */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">الخزينة المنصرف منها *</label>
+                <select
+                  value={editAdvanceForm.treasuryId}
+                  onChange={e => setEditAdvanceForm({ ...editAdvanceForm, treasuryId: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-emerald-600 focus:bg-white cursor-pointer"
+                >
+                  {settings.treasuries.map(t => {
+                    const bal = treasuryBalances[t.id] ?? 0;
+                    return (
+                      <option key={t.id} value={t.id}>
+                        {t.name} (رصيد: {Number(bal || 0).toFixed(2)} {settings.currency})
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              {/* Note */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">البيان والملاحظات</label>
+                <input
+                  type="text"
+                  value={editAdvanceForm.note}
+                  onChange={e => setEditAdvanceForm({ ...editAdvanceForm, note: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-emerald-600 focus:bg-white"
+                  placeholder="ملاحظات أو سبب السلفة..."
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setEditingAdvance(null)}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-xs hover:bg-slate-50 transition-colors cursor-pointer"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                disabled={isSavingAdvance}
+                onClick={handleSaveEditedAdvance}
+                className="flex-1 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-black text-xs shadow-md shadow-sky-600/20 transition-all cursor-pointer disabled:opacity-50"
+              >
+                {isSavingAdvance ? 'جاري الحفظ...' : 'حفظ التعديلات'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New Advance Modal */}
+      {showNewAdvanceModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
+                  <Plus size={16} />
+                </div>
+                <div>
+                  <h3 className="font-black text-sm text-slate-900">تسجيل وصرف سلفة جديدة</h3>
+                  <p className="text-[11px] text-slate-500">صرف سلفة نقدية على حساب الراتب وطباعة إيصال الصرف</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowNewAdvanceModal(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {/* Employee */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">الموظف المستفيد *</label>
+                <select
+                  value={newAdvanceForm.empId}
+                  onChange={e => setNewAdvanceForm({ ...newAdvanceForm, empId: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-emerald-600 focus:bg-white cursor-pointer"
+                >
+                  <option value="">-- اختر الموظف --</option>
+                  {activeEmployees.map(emp => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.name} ({emp.role || 'موظف'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Amount */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
+                  <span>مبلغ السلفة *</span>
+                  <span className="text-[10px] text-slate-400 font-normal">بالعملة المحلية ({settings.currency})</span>
+                </label>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="any"
+                  value={newAdvanceForm.amount}
+                  onChange={e => setNewAdvanceForm({ ...newAdvanceForm, amount: e.target.value === '' ? '' : Number(e.target.value) })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-black text-emerald-800 font-mono outline-none focus:border-emerald-600 focus:bg-white"
+                  placeholder="0.00"
+                />
+              </div>
+
+              {/* Date */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">تاريخ الصرف *</label>
+                <input
+                  type="date"
+                  value={newAdvanceForm.date}
+                  onChange={e => setNewAdvanceForm({ ...newAdvanceForm, date: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-emerald-600 focus:bg-white cursor-pointer"
+                />
+              </div>
+
+              {/* Treasury */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">الخزينة المنصرف منها *</label>
+                <select
+                  value={newAdvanceForm.treasuryId}
+                  onChange={e => setNewAdvanceForm({ ...newAdvanceForm, treasuryId: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-emerald-600 focus:bg-white cursor-pointer"
+                >
+                  {settings.treasuries.map(t => {
+                    const bal = treasuryBalances[t.id] ?? 0;
+                    return (
+                      <option key={t.id} value={t.id}>
+                        {t.name} (رصيد: {Number(bal || 0).toFixed(2)} {settings.currency})
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              {/* Note */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">البيان والملاحظات</label>
+                <input
+                  type="text"
+                  value={newAdvanceForm.note}
+                  onChange={e => setNewAdvanceForm({ ...newAdvanceForm, note: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-emerald-600 focus:bg-white"
+                  placeholder="سلفة نقدية على حساب الراتب..."
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowNewAdvanceModal(false)}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-xs hover:bg-slate-50 transition-colors cursor-pointer"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                disabled={isSavingAdvance}
+                onClick={handleCreateNewAdvance}
+                className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-md shadow-emerald-600/20 transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
+              >
+                <Printer size={14} />
+                <span>{isSavingAdvance ? 'جاري الصرف...' : 'صرف وطباعة السند'}</span>
+              </button>
             </div>
           </div>
         </div>
