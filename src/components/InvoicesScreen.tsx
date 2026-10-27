@@ -3,7 +3,7 @@ import { AppSettings, Invoice, Transaction, Client, Branch, Product, Employee, S
 import { 
   Search, Filter, Printer, XCircle, Edit, CheckCircle, ChevronDown, 
   ChevronUp, Image as ImageIcon, Wrench, Eye, X, Trash2, RotateCcw,
-  FileSpreadsheet, Hourglass, Gift
+  FileSpreadsheet, Hourglass, Gift, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight
 } from 'lucide-react';
 import { DB } from '../services/db';
 import { InvoicesImportModal } from './InvoicesImportModal';
@@ -87,6 +87,14 @@ export function InvoicesScreen({
   const [paymentFilter, setPaymentFilter] = useState<string>('all');
   const [showFilters, setShowFilters] = useState(false);
   const [showPhotoPreview, setShowPhotoPreview] = useState<{ before?: string; after?: string; title: string } | null>(null);
+  
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, dateFrom, dateTo, statusFilter, paymentFilter, branchFilter]);
   
   const [showPayModal, setShowPayModal] = useState<Invoice | null>(null);
   const [payTreasury, setPayTreasury] = useState(settings.treasuries.find(t => !t.isMain)?.id || settings.treasuries[0]?.id || '');
@@ -375,6 +383,15 @@ export function InvoicesScreen({
     }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [invoices, dateFrom, dateTo, statusFilter, paymentFilter, searchQuery, activeBranchId, isMainBranch, branchFilter, salesReturns]);
 
+  // Pagination calculation
+  const totalInvoices = filteredInvoices.length;
+  const totalPages = Math.max(1, Math.ceil(totalInvoices / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const paginatedInvoices = useMemo(() => {
+    const start = (safeCurrentPage - 1) * pageSize;
+    return filteredInvoices.slice(start, start + pageSize);
+  }, [filteredInvoices, safeCurrentPage, pageSize]);
+
   return (
     <div className="p-8 w-full h-full flex flex-col bg-slate-50">
       <div className="flex justify-between items-center mb-6">
@@ -504,7 +521,7 @@ export function InvoicesScreen({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredInvoices.map((inv) => (
+              {paginatedInvoices.map((inv) => (
                 <tr key={inv.id} className={`transition-colors ${inv.status === 'cancelled' ? 'bg-red-50/50' : 'hover:bg-slate-50/50'}`}>
                   <td className="px-6 py-4 font-bold text-slate-800">{inv.id}</td>
                   <td className="px-6 py-4 text-slate-600">{new Date(inv.date).toLocaleString('ar-EG')}</td>
@@ -723,11 +740,77 @@ export function InvoicesScreen({
               
               {filteredInvoices.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="text-center py-12 text-slate-500">لا توجد فواتير تطابق شروط التصفية</td>
+                  <td colSpan={10} className="text-center py-12 text-slate-500">لا توجد فواتير تطابق شروط التصفية</td>
                 </tr>
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Pagination Controls Bar */}
+        <div className="border-t border-slate-200 bg-slate-50/80 px-6 py-3.5 flex flex-col sm:flex-row justify-between items-center gap-3 text-xs font-bold text-slate-600">
+          <div className="flex flex-wrap items-center gap-2">
+            <span>عرض</span>
+            <select
+              value={pageSize}
+              onChange={e => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
+              className="bg-white border border-slate-200 rounded-lg px-2.5 py-1 outline-none font-bold text-slate-700 shadow-2xs cursor-pointer focus:border-primary"
+            >
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+            <span>فاتورة لكل صفحة</span>
+            <span className="text-slate-400 mx-1">|</span>
+            <span className="text-slate-700 font-extrabold">
+              {totalInvoices === 0 ? 'لا توجد نتائج' : `عرض ${((safeCurrentPage - 1) * pageSize) + 1} - ${Math.min(safeCurrentPage * pageSize, totalInvoices)} من إجمالي ${totalInvoices} فاتورة`}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              disabled={safeCurrentPage <= 1}
+              onClick={() => setCurrentPage(1)}
+              className="p-1.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors shadow-2xs"
+              title="الصفحة الأولى"
+            >
+              <ChevronsRight size={16} />
+            </button>
+            <button
+              type="button"
+              disabled={safeCurrentPage <= 1}
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              className="p-1.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors shadow-2xs"
+              title="الصفحة السابقة"
+            >
+              <ChevronRight size={16} />
+            </button>
+
+            <span className="px-3.5 py-1 bg-white border border-slate-200 rounded-lg font-black text-slate-800 shadow-2xs">
+              صفحة {safeCurrentPage} من {totalPages}
+            </span>
+
+            <button
+              type="button"
+              disabled={safeCurrentPage >= totalPages}
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              className="p-1.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors shadow-2xs"
+              title="الصفحة التالية"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <button
+              type="button"
+              disabled={safeCurrentPage >= totalPages}
+              onClick={() => setCurrentPage(totalPages)}
+              className="p-1.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors shadow-2xs"
+              title="الصفحة الأخيرة"
+            >
+              <ChevronsLeft size={16} />
+            </button>
+          </div>
         </div>
       </div>
 
