@@ -7,7 +7,8 @@ import {
   AlertTriangle, Hourglass, Phone, MessageCircle, Printer, X, 
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, 
   ArrowUpDown, ArrowUp, ArrowDown, FileText, Ban, RotateCcw, 
-  Eye, Wallet, CreditCard, User, Building, Info, ShieldAlert, Zap
+  Eye, Wallet, CreditCard, User, Building, Info, ShieldAlert, Zap,
+  Package, Scissors, Layers
 } from 'lucide-react';
 import { DB } from '../services/db';
 import { executePrintInvoiceReceipt } from './InvoiceReceiptCard';
@@ -94,13 +95,84 @@ export function DeferredInvoicesScreen({
     return true;
   };
 
-  // Base list of deferred / partially paid invoices
+  // Safely get remaining debt on an invoice
+  const getInvoiceRemainingDebt = (inv: Invoice): number => {
+    if (inv.remaining !== undefined && inv.remaining !== null && !isNaN(Number(inv.remaining))) {
+      return Number(inv.remaining);
+    }
+    const tot = Number(inv.total) || 0;
+    const pd = Number(inv.paid) || 0;
+    return Math.max(0, tot - pd);
+  };
+
+  // Helper to detect invoice items content (services vs products vs mixed)
+  const getInvoiceContentType = (inv: Invoice): { label: string; icon: 'scissors' | 'package' | 'mixed' } => {
+    const items = inv.items || [];
+    if (items.length === 0) return { label: 'خدمات', icon: 'scissors' };
+    const hasProduct = items.some(it => it.type === 'product' || (it as any).isProduct);
+    const hasService = items.some(it => it.type === 'service' || (!it.type && !(it as any).isProduct));
+    if (hasProduct && hasService) return { label: 'خدمات + منتجات', icon: 'mixed' };
+    if (hasProduct) return { label: 'منتجات فقط', icon: 'package' };
+    return { label: 'خدمات فقط', icon: 'scissors' };
+  };
+
+  // Safe list of all available treasuries in salon/branch
+  const availableTreasuries = useMemo(() => {
+    if (settings.treasuries && settings.treasuries.length > 0) {
+      return settings.treasuries;
+    }
+    return [
+      { id: 'cash', name: 'درج الكاش (الخزينة النقدية)', isMain: false },
+      { id: 'main', name: 'الخزينة الرئيسية', isMain: true }
+    ];
+  }, [settings.treasuries]);
+
+  // Helper to calculate live balance of any treasury from transactions
+  const getTreasuryBalance = (treasuryId: string): number => {
+    return transactions.reduce((acc, trx) => {
+      const matchTreasury = trx.treasury === treasuryId || trx.treasuryId === treasuryId;
+      if (matchTreasury) {
+        if (trx.type === 'in') return acc + (Number(trx.amount) || 0);
+        if (trx.type === 'out') return acc - (Number(trx.amount) || 0);
+      }
+      return acc;
+    }, 0);
+  };
+
+  // Check if an invoice is deferred, partial, or has outstanding debt (services, products, or mixed)
+  const isDeferredOrHasDebt = (inv: Invoice): boolean => {
+    if (inv.status === 'cancelled' || inv.status === 'bad_debt') return false;
+    
+    // Explicit deferred statuses
+    const isDeferredStatus = inv.status === 'deferred' || inv.status === 'partially_paid' || inv.status === 'unpaid';
+    
+    const remainingDebt = getInvoiceRemainingDebt(inv);
+    const hasRemainingDebt = remainingDebt > 0.01;
+    const isUnpaidOrPartial = Number(inv.paid || 0) < Number(inv.total || 0) - 0.01;
+    
+    // Any invoice marked deferred/partially_paid/unpaid that is not fully paid
+    if (isDeferredStatus && (hasRemainingDebt || isUnpaidOrPartial || Number(inv.paid || 0) === 0)) {
+      return true;
+    }
+    
+    // OR any invoice with remaining debt > 0 that is not marked completed
+    if (hasRemainingDebt && inv.status !== 'completed') {
+      return true;
+    }
+
+    // OR even if marked completed by mistake, but remainingDebt > 0 and paid < total
+    if (hasRemainingDebt && isUnpaidOrPartial && Number(inv.paid || 0) < Number(inv.total || 0) - 0.01) {
+      return true;
+    }
+    
+    return false;
+  };
+
+  // Base list of deferred / partially paid invoices (includes all content: services, products, or mixed)
   const rawDeferredInvoices = useMemo(() => {
     return invoices.filter(inv => {
       if (!matchesBranch(inv.branchId)) return false;
-      const isDeferredStatus = inv.status === 'deferred' || inv.status === 'partially_paid' || inv.status === 'unpaid';
-      const hasDebt = (Number(inv.remaining) > 0 || (Number(inv.paid) === 0 && Number(inv.total) > 0));
-      return isDeferredStatus && hasDebt && inv.status !== 'cancelled' && inv.status !== 'bad_debt';
+      return isDeferredOrHasDebt(inv);
     });
   }, [invoices, branchFilter, activeBranchId, branches]);
 
@@ -114,10 +186,10 @@ export function DeferredInvoicesScreen({
 
   // Overall KPIs
   const stats = useMemo(() => {
-    const totalRemaining = rawDeferredInvoices.reduce((acc, inv) => acc + (Number(inv.remaining) || (Number(inv.total) - Number(inv.paid || 0))), 0);
+    const totalRemaining = rawDeferredInvoices.reduce((acc, inv) => acc + getInvoiceRemainingDebt(inv), 0);
     const totalPaid = rawDeferredInvoices.reduce((acc, inv) => acc + (Number(inv.paid) || 0), 0);
     const uniqueIndebtedClients = new Set(rawDeferredInvoices.map(i => i.clientPhone || i.clientName || i.clientId)).size;
-    const totalBadDebts = badDebtsInvoices.reduce((acc, inv) => acc + (Number(inv.remaining) || Number(inv.total) || 0), 0);
+    const totalBadDebts = badDebtsInvoices.reduce((acc, inv) => acc + getInvoiceRemainingDebt(inv), 0);
 
     return {
       totalRemaining,
@@ -269,10 +341,11 @@ export function DeferredInvoicesScreen({
 
   // Action: Open Settlement Modal
   const handleOpenSettleModal = (inv: Invoice) => {
-    const remaining = Number(inv.remaining) || Math.max(0, Number(inv.total) - Number(inv.paid || 0));
+    const remaining = getInvoiceRemainingDebt(inv);
     setSettleModalInvoice(inv);
     setSettleAmount(remaining);
-    setSettleTreasury(settings.treasuries.find(t => !t.isMain)?.id || settings.treasuries[0]?.id || 'cash');
+    const defaultT = availableTreasuries.find(t => t.id === 'cash' || t.name.includes('كاش') || t.name.includes('درج')) || availableTreasuries[0];
+    setSettleTreasury(defaultT?.id || 'cash');
     setSettleNotes('');
   };
 
@@ -280,7 +353,7 @@ export function DeferredInvoicesScreen({
   const handleConfirmSettle = async () => {
     if (!settleModalInvoice) return;
     const payNum = Number(settleAmount);
-    const currentRemaining = Number(settleModalInvoice.remaining) || Math.max(0, Number(settleModalInvoice.total) - Number(settleModalInvoice.paid || 0));
+    const currentRemaining = getInvoiceRemainingDebt(settleModalInvoice);
 
     if (isNaN(payNum) || payNum <= 0) {
       alert('الرجاء إدخال مبلغ سداد صحيح أكبر من الصفر.');
@@ -298,7 +371,8 @@ export function DeferredInvoicesScreen({
     setIsSubmittingSettle(true);
     try {
       const nowIso = new Date().toISOString();
-      const treasuryName = settings.treasuries.find(t => t.id === settleTreasury)?.name || settleTreasury;
+      const treasuryObj = availableTreasuries.find(t => t.id === settleTreasury);
+      const treasuryName = treasuryObj?.name || settleTreasury;
       const newPaid = Number(settleModalInvoice.paid || 0) + payNum;
       const newRemaining = Math.max(0, currentRemaining - payNum);
       const isFullyPaid = newRemaining <= 0.01;
@@ -337,9 +411,11 @@ export function DeferredInvoicesScreen({
         type: 'in',
         amount: payNum,
         category: 'sales',
-        description: `سداد آجل - فاتورة ${updatedInvoice.invoiceNumber || updatedInvoice.id} (${updatedInvoice.clientName})`,
+        description: `سداد آجل - فاتورة ${updatedInvoice.invoiceNumber || updatedInvoice.id} (${updatedInvoice.clientName || 'عميل'})`,
         treasury: settleTreasury,
+        treasuryId: settleTreasury,
         branchId: updatedInvoice.branchId || activeBranchId,
+        branchCode: (branches?.find(b => b.id === (updatedInvoice.branchId || activeBranchId))?.code),
         invoiceId: updatedInvoice.id
       } as any;
 
@@ -352,7 +428,7 @@ export function DeferredInvoicesScreen({
       setTransactions(prev => [newTrx, ...prev]);
 
       if (isFullyPaid) {
-        alert(`تم سداد الفاتورة (${updatedInvoice.invoiceNumber || updatedInvoice.id}) بالكامل بمبلغ ${payNum.toFixed(2)} ${settings.currency}، وتم تحويلها تلقائياً إلى شاشة الفواتير المكتملة.`);
+        alert(`تم سداد الفاتورة (${updatedInvoice.invoiceNumber || updatedInvoice.id}) بالكامل بمبلغ ${payNum.toFixed(2)} ${settings.currency} وإيداعها في خزينة (${treasuryName}). تم تحويل الفاتورة تلقائياً إلى الفواتير المكتملة.`);
       } else {
         alert(`تم سداد دفعة بقيمة ${payNum.toFixed(2)} ${settings.currency} بنجاح وإيداعها في خزينة (${treasuryName}). المتبقي على الفاتورة: ${newRemaining.toFixed(2)} ${settings.currency}.`);
       }
@@ -695,10 +771,11 @@ export function DeferredInvoicesScreen({
                   </tr>
                 ) : (
                   (pagedItems as Invoice[]).map(inv => {
-                    const remaining = Number(inv.remaining) || Math.max(0, Number(inv.total) - Number(inv.paid || 0));
+                    const remaining = getInvoiceRemainingDebt(inv);
                     const paid = Number(inv.paid) || 0;
                     const total = Number(inv.total) || 0;
                     const isOverdue = inv.dueDate && new Date(inv.dueDate).getTime() < new Date().setHours(0,0,0,0);
+                    const cType = getInvoiceContentType(inv);
 
                     return (
                       <tr key={inv.id} className="hover:bg-slate-50/80 transition-colors">
@@ -706,6 +783,16 @@ export function DeferredInvoicesScreen({
                           <span className="font-mono font-black text-slate-800 block">{inv.invoiceNumber || inv.id}</span>
                           <span className="text-[11px] text-slate-400 font-bold block mt-0.5">
                             {new Date(inv.date).toLocaleDateString('ar-EG', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                          <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded mt-1 ${
+                            cType.icon === 'package' 
+                              ? 'bg-amber-100 text-amber-800' 
+                              : cType.icon === 'mixed'
+                              ? 'bg-purple-100 text-purple-800'
+                              : 'bg-emerald-100 text-emerald-800'
+                          }`}>
+                            {cType.icon === 'package' ? <Package size={10} /> : cType.icon === 'mixed' ? <Layers size={10} /> : <Scissors size={10} />}
+                            <span>{cType.label}</span>
                           </span>
                         </td>
 
@@ -927,10 +1014,11 @@ export function DeferredInvoicesScreen({
                             <button
                               type="button"
                               onClick={() => handleOpenSettleModal(entry.invoices[0])}
-                              className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-all cursor-pointer"
+                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl text-xs transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
                               title="سداد دفعة على الفاتورة الأقدم"
                             >
-                              <Wallet size={15} />
+                              <Wallet size={14} />
+                              <span>سداد</span>
                             </button>
                           )}
                         </div>
@@ -1092,18 +1180,19 @@ export function DeferredInvoicesScreen({
         </div>
       </div>
 
-      {/* ===================== MODAL 1: سداد الفاتورة أو جزء منها ===================== */}
+      {/* ===================== MODAL 1: سداد الفاتورة وتأكيد الخزينة المستهدفة ===================== */}
       {settleModalInvoice && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200">
+            {/* Modal Header */}
             <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold">
-                  <Wallet size={18} />
+                <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold shadow-xs">
+                  <Wallet size={20} />
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-sm text-slate-800">سداد الفاتورة الآجلة</h3>
-                  <p className="text-[10px] text-slate-400 font-bold">رقم: {settleModalInvoice.invoiceNumber || settleModalInvoice.id}</p>
+                  <h3 className="font-extrabold text-sm text-slate-800">تأكيد سداد الفاتورة الآجلة وإيداع الخزينة</h3>
+                  <p className="text-[10px] text-slate-500 font-bold">فاتورة #{settleModalInvoice.invoiceNumber || settleModalInvoice.id}</p>
                 </div>
               </div>
               <button
@@ -1114,19 +1203,37 @@ export function DeferredInvoicesScreen({
               </button>
             </div>
 
-            <div className="p-6 space-y-4 overflow-y-auto max-h-[75vh]">
-              {/* Invoice Summary Info */}
+            <div className="p-5 space-y-4 overflow-y-auto max-h-[75vh]">
+              {/* Invoice Summary & Debt Card */}
               <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-2 text-xs">
                 <div className="flex justify-between items-center">
-                  <span className="text-slate-500 font-bold">العميل:</span>
-                  <span className="font-extrabold text-slate-800">{settleModalInvoice.clientName}</span>
+                  <span className="text-slate-500 font-bold">اسم العميل:</span>
+                  <span className="font-extrabold text-slate-900 text-sm">{settleModalInvoice.clientName || 'عميل نقدي'}</span>
                 </div>
                 {settleModalInvoice.clientPhone && (
                   <div className="flex justify-between items-center">
-                    <span className="text-slate-500 font-bold">الهاتف:</span>
+                    <span className="text-slate-500 font-bold">رقم الهاتف:</span>
                     <span className="font-mono font-bold text-slate-700" dir="ltr">{settleModalInvoice.clientPhone}</span>
                   </div>
                 )}
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 font-bold">نوع محتوى الفاتورة:</span>
+                  {(() => {
+                    const cType = getInvoiceContentType(settleModalInvoice);
+                    return (
+                      <span className={`inline-flex items-center gap-1 font-extrabold px-2 py-0.5 rounded-md text-[11px] ${
+                        cType.icon === 'package' 
+                          ? 'bg-amber-100 text-amber-800' 
+                          : cType.icon === 'mixed'
+                          ? 'bg-purple-100 text-purple-800'
+                          : 'bg-emerald-100 text-emerald-800'
+                      }`}>
+                        {cType.icon === 'package' ? <Package size={12} /> : cType.icon === 'mixed' ? <Layers size={12} /> : <Scissors size={12} />}
+                        <span>{cType.label}</span>
+                      </span>
+                    );
+                  })()}
+                </div>
                 <div className="flex justify-between items-center pt-2 border-t border-slate-200">
                   <span className="text-slate-500 font-bold">إجمالي الفاتورة:</span>
                   <span className="font-mono font-bold text-slate-700">{Number(settleModalInvoice.total || 0).toFixed(2)} {settings.currency}</span>
@@ -1135,10 +1242,10 @@ export function DeferredInvoicesScreen({
                   <span className="text-slate-500 font-bold">المسدد سابقاً:</span>
                   <span className="font-mono font-bold text-emerald-600">{Number(settleModalInvoice.paid || 0).toFixed(2)} {settings.currency}</span>
                 </div>
-                <div className="flex justify-between items-center bg-amber-50 p-2 rounded-xl border border-amber-200">
+                <div className="flex justify-between items-center bg-amber-50 p-2.5 rounded-xl border border-amber-200">
                   <span className="text-amber-900 font-black">المتبقي المطلوب سداده:</span>
                   <span className="font-mono font-black text-amber-900 text-sm">
-                    {(Number(settleModalInvoice.remaining) || Math.max(0, Number(settleModalInvoice.total) - Number(settleModalInvoice.paid || 0))).toFixed(2)} {settings.currency}
+                    {getInvoiceRemainingDebt(settleModalInvoice).toFixed(2)} {settings.currency}
                   </span>
                 </div>
               </div>
@@ -1163,38 +1270,60 @@ export function DeferredInvoicesScreen({
                 {/* Shortcut button: Pay full remaining */}
                 <button
                   type="button"
-                  onClick={() => setSettleAmount(Number(settleModalInvoice.remaining) || Math.max(0, Number(settleModalInvoice.total) - Number(settleModalInvoice.paid || 0)))}
+                  onClick={() => setSettleAmount(getInvoiceRemainingDebt(settleModalInvoice))}
                   className="mt-1 text-[11px] font-black text-emerald-600 hover:underline cursor-pointer flex items-center gap-1"
                 >
                   <Zap size={13} className="text-emerald-500" />
-                  <span>سداد كامل المتبقي ({((Number(settleModalInvoice.remaining) || Math.max(0, Number(settleModalInvoice.total) - Number(settleModalInvoice.paid || 0)))).toFixed(2)} {settings.currency})</span>
+                  <span>سداد كامل المتبقي ({getInvoiceRemainingDebt(settleModalInvoice).toFixed(2)} {settings.currency})</span>
                 </button>
               </div>
 
-              {/* Treasury / Payment Method Selector */}
+              {/* Treasury Selector (All Available Treasuries with Live Balances) */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">خزينة الإيداع وطريقة الدفع *</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {settings.treasuries.filter(t => !t.isMain).map(t => (
-                    <label
-                      key={t.id}
-                      className={`flex items-center gap-2 p-2.5 border rounded-xl cursor-pointer text-xs font-bold transition-all ${
-                        settleTreasury === t.id
-                          ? 'border-emerald-600 bg-emerald-50 text-emerald-900 ring-1 ring-emerald-500/20'
-                          : 'border-slate-200 text-slate-700 hover:border-slate-300'
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="settle_treasury"
-                        value={t.id}
-                        checked={settleTreasury === t.id}
-                        onChange={() => setSettleTreasury(t.id)}
-                        className="w-3.5 h-3.5 text-emerald-600"
-                      />
-                      <span>{t.name}</span>
-                    </label>
-                  ))}
+                <div className="flex justify-between items-center mb-1.5">
+                  <label className="text-xs font-bold text-slate-700">تحديد خزينة سداد الفاتورة وإيداع المبلغ *</label>
+                  <span className="text-[10px] text-slate-400">اختر الخزينة لإيداع المبلغ بها</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto p-1">
+                  {availableTreasuries.map(t => {
+                    const balance = getTreasuryBalance(t.id);
+                    const isSelected = settleTreasury === t.id;
+                    return (
+                      <label
+                        key={t.id}
+                        className={`flex flex-col p-2.5 border rounded-xl cursor-pointer text-xs transition-all ${
+                          isSelected
+                            ? 'border-emerald-600 bg-emerald-50 text-emerald-950 ring-2 ring-emerald-500/25 shadow-xs'
+                            : 'border-slate-200 text-slate-700 hover:border-slate-300 bg-white'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="radio"
+                              name="settle_treasury"
+                              value={t.id}
+                              checked={isSelected}
+                              onChange={() => setSettleTreasury(t.id)}
+                              className="w-3.5 h-3.5 text-emerald-600"
+                            />
+                            <span className="font-extrabold">{t.name}</span>
+                          </div>
+                          <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${
+                            t.isMain ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'
+                          }`}>
+                            {t.isMain ? 'رئيسية' : 'فرعية / درج'}
+                          </span>
+                        </div>
+                        <div className="mt-1.5 text-[10px] text-slate-500 flex justify-between items-center font-mono" dir="ltr">
+                          <span className={balance < 0 ? 'text-red-500 font-bold' : 'text-slate-600'}>
+                            {balance.toFixed(2)} {settings.currency}
+                          </span>
+                          <span className="text-slate-400 font-sans">الرصيد الحالي:</span>
+                        </div>
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -1205,12 +1334,43 @@ export function DeferredInvoicesScreen({
                   type="text"
                   value={settleNotes}
                   onChange={e => setSettleNotes(e.target.value)}
-                  placeholder="مثال: تحويل إنستاباي، سداد نقدي بالصالون..."
+                  placeholder="مثال: تحويل إنستاباي، سداد نقدي بالصالون، رقم إيصال تحويل..."
                   className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium outline-none focus:border-emerald-500"
                 />
               </div>
+
+              {/* Confirmation Summary Box (صندوق التأكيد وتوضيح الأثر المالي) */}
+              {(() => {
+                const payNum = Number(settleAmount) || 0;
+                const curRem = getInvoiceRemainingDebt(settleModalInvoice);
+                const nextRem = Math.max(0, curRem - payNum);
+                const selectedTName = availableTreasuries.find(t => t.id === settleTreasury)?.name || 'الخزينة المحددة';
+                const isFull = payNum >= curRem - 0.001 && payNum > 0;
+
+                return (
+                  <div className="bg-emerald-50/80 border border-emerald-200 rounded-2xl p-3 space-y-1.5 text-xs text-emerald-950">
+                    <div className="flex items-center gap-1.5 font-black text-emerald-800">
+                      <CheckCircle2 size={15} className="text-emerald-600 shrink-0" />
+                      <span>تأكيد العملية والأثر المالي:</span>
+                    </div>
+                    <p className="text-[11px] leading-relaxed">
+                      سيتم تسجيل قبض بمبلغ <span className="font-mono font-black underline">{payNum.toFixed(2)} {settings.currency}</span> وإضافته فوراً إلى رصيد <span className="font-bold underline">({selectedTName})</span>.
+                    </p>
+                    <div className="flex justify-between items-center text-[11px] pt-1 border-t border-emerald-200/60">
+                      <span className="text-emerald-800 font-bold">المتبقي على الفاتورة بعد السداد:</span>
+                      <span className="font-mono font-black text-emerald-900">{nextRem.toFixed(2)} {settings.currency}</span>
+                    </div>
+                    {isFull && (
+                      <p className="text-[10px] text-emerald-700 font-bold bg-emerald-100/70 p-1.5 rounded-lg text-center">
+                        ✓ سيتم إغلاق الفاتورة بالكامل ونقلها تلقائياً إلى الفواتير المكتملة.
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
 
+            {/* Modal Actions */}
             <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center gap-3">
               <button
                 type="button"
@@ -1221,12 +1381,12 @@ export function DeferredInvoicesScreen({
               </button>
               <button
                 type="button"
-                disabled={isSubmittingSettle}
+                disabled={isSubmittingSettle || Number(settleAmount) <= 0 || Number(settleAmount) > getInvoiceRemainingDebt(settleModalInvoice) + 0.01}
                 onClick={handleConfirmSettle}
-                className="flex-[1.5] bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-black py-2.5 rounded-xl text-xs transition-all shadow-md shadow-emerald-600/25 flex items-center justify-center gap-2 cursor-pointer"
+                className="flex-[1.8] bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-black py-2.5 rounded-xl text-xs transition-all shadow-md shadow-emerald-600/25 flex items-center justify-center gap-2 cursor-pointer active:scale-95"
               >
                 <CheckCircle2 size={16} />
-                <span>{isSubmittingSettle ? 'جاري تسجيل السداد...' : 'تأكيد السداد والإيداع'}</span>
+                <span>{isSubmittingSettle ? 'جاري تسجيل السداد والإيداع...' : 'تأكيد السداد وإيداع المبلغ'}</span>
               </button>
             </div>
           </div>
@@ -1400,11 +1560,12 @@ export function DeferredInvoicesScreen({
                       <th className="py-2.5 px-3 text-center">المدفوع</th>
                       <th className="py-2.5 px-3 text-center">المتبقي المطلوب</th>
                       <th className="py-2.5 px-3">ملاحظات</th>
+                      <th className="py-2.5 px-3 text-center print:hidden">إجراء</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-medium">
                     {statementClient.invoices.map((inv, idx) => {
-                      const invRem = Number(inv.remaining) || Math.max(0, Number(inv.total) - Number(inv.paid || 0));
+                      const invRem = getInvoiceRemainingDebt(inv);
                       return (
                         <tr key={idx} className="hover:bg-slate-50/50">
                           <td className="py-2 px-3 font-mono font-bold text-slate-800">{inv.invoiceNumber || inv.id}</td>
@@ -1413,6 +1574,19 @@ export function DeferredInvoicesScreen({
                           <td className="py-2 px-3 text-center font-mono font-bold text-emerald-600">{Number(inv.paid || 0).toFixed(2)}</td>
                           <td className="py-2 px-3 text-center font-mono font-black text-amber-800">{invRem.toFixed(2)}</td>
                           <td className="py-2 px-3 text-slate-500 text-[11px]">{inv.notes || '-'}</td>
+                          <td className="py-2 px-3 text-center print:hidden">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setStatementClient(null);
+                                handleOpenSettleModal(inv);
+                              }}
+                              className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-[11px] transition-all cursor-pointer"
+                              title="سداد هذه الفاتورة"
+                            >
+                              سداد
+                            </button>
+                          </td>
                         </tr>
                       );
                     })}

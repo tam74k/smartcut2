@@ -1243,9 +1243,8 @@ export function POSScreen({
     // التحقق من متطلبات الفاتورة الآجلة أو السداد الجزئي
     if (paymentMode === 'deferred' || paymentMode === 'partial') {
       const clientName = selectedClient ? selectedClient.name : clientSearch?.trim();
-      const clientPhone = selectedClient ? selectedClient.phone : '';
-      if (!clientName || clientName === 'عميل نقدي' || !clientPhone) {
-        alert('تنبيه: الفواتير الآجلة والسداد الجزئي يتطلبان اختيار عميل مسجل وتحديد رقم هاتفه لمتابعة الذمة والمطالبات بدقة.');
+      if (!clientName || clientName === 'عميل نقدي') {
+        alert('تنبيه: الفواتير الآجلة والسداد الجزئي يتطلبان تحديد اسم العميل لمتابعة الذمة والمطالبات بدقة.');
         setIsSubmittingPayment(false);
         return;
       }
@@ -3748,10 +3747,15 @@ export function POSScreen({
                   <div className="space-y-2">
                     <label className="block text-xs font-bold text-slate-700">خزينة سداد الدفعة المدفوعة حالياً ({Number(partialPaidAmount) || 0} {settings.currency}):</label>
                     <div className="grid grid-cols-2 gap-2">
-                      {settings.treasuries.filter(t => !t.isMain).map(t => (
-                        <label key={t.id} className={`flex items-center gap-2 p-2.5 border rounded-xl cursor-pointer text-xs font-bold transition-all ${singleTreasury === t.id ? 'border-blue-600 bg-blue-50 text-blue-900 ring-1 ring-blue-500/20' : 'border-slate-200 text-slate-700 hover:border-slate-300'}`}>
-                          <input type="radio" name="partial_treasury" value={t.id} checked={singleTreasury === t.id} onChange={() => setSingleTreasury(t.id)} className="w-3.5 h-3.5 text-blue-600" />
-                          <span>{t.name}</span>
+                      {settings.treasuries.map(t => (
+                        <label key={t.id} className={`flex items-center justify-between p-2.5 border rounded-xl cursor-pointer text-xs font-bold transition-all ${singleTreasury === t.id ? 'border-blue-600 bg-blue-50 text-blue-900 ring-1 ring-blue-500/20' : 'border-slate-200 text-slate-700 hover:border-slate-300'}`}>
+                          <div className="flex items-center gap-2">
+                            <input type="radio" name="partial_treasury" value={t.id} checked={singleTreasury === t.id} onChange={() => setSingleTreasury(t.id)} className="w-3.5 h-3.5 text-blue-600" />
+                            <span>{t.name}</span>
+                          </div>
+                          <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${t.isMain ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'}`}>
+                            {t.isMain ? 'رئيسية' : 'فرعية'}
+                          </span>
                         </label>
                       ))}
                     </div>

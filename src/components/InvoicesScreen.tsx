@@ -419,7 +419,7 @@ export function InvoicesScreen({
               title="الانتقال إلى شاشة إدارة الفواتير الآجلة والذمم والمطالبات"
             >
               <Hourglass size={16} />
-              <span>الفواتير الآجلة والذمم ({invoices.filter(i => (i.status === 'deferred' || i.status === 'partially_paid') && (Number(i.remaining) > 0 || Number(i.paid) === 0)).length})</span>
+              <span>الفواتير الآجلة والذمم ({invoices.filter(i => (i.status === 'deferred' || i.status === 'partially_paid' || i.status === 'unpaid' || ((Number(i.remaining) > 0 || Number(i.paid || 0) < Number(i.total || 0) - 0.01) && i.status !== 'completed' && i.status !== 'cancelled' && i.status !== 'bad_debt'))).length})</span>
             </button>
           )}
 
@@ -478,8 +478,8 @@ export function InvoicesScreen({
             <select value={paymentFilter} onChange={e => setPaymentFilter(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary font-bold">
               <option value="all">الكل</option>
               <option value="wasel_free">واصل (خدمات مجانية)</option>
-              {settings.treasuries.filter(t => !t.isMain).map(t => (
-                <option key={t.id} value={t.id}>{t.name}</option>
+              {settings.treasuries.map(t => (
+                <option key={t.id} value={t.id}>{t.name} {t.isMain ? '(رئيسية)' : ''}</option>
               ))}
             </select>
           </div>
