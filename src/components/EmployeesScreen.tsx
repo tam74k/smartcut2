@@ -147,6 +147,39 @@ export function EmployeesScreen({
   const [usernameStatus, setUsernameStatus] = useState<'idle' | 'checking' | 'available' | 'taken'>('idle');
   const checkUsernameTimerRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Modal state for Add/Edit Employee (بطاقة مستقلة عريضة على عمودين)
+  const [isAddEditModalOpen, setIsAddEditModalOpen] = useState(false);
+
+  const handleOpenAddModal = () => {
+    if (!canAddEmployee) {
+      alert('عذراً، ليس لديك صلاحية إضافة موظف جديد.');
+      return;
+    }
+    if (isEmployeeQuotaReached) {
+      if (onOpenLicenseModal) {
+        onOpenLicenseModal();
+      } else {
+        alert('تم استنفاد سعة الموظفين في باقتك الحالية، يرجى الترقية لإضافة موظف جديد.');
+      }
+      return;
+    }
+    setEditingId(null);
+    setFormData(defaultFormData);
+    setOnlineUsername('');
+    setOnlineUserPassword('123456');
+    setUsernameStatus('idle');
+    setIsAddEditModalOpen(true);
+  };
+
+  const handleCloseAddEditModal = () => {
+    setIsAddEditModalOpen(false);
+    setEditingId(null);
+    setFormData(defaultFormData);
+    setOnlineUsername('');
+    setOnlineUserPassword('123456');
+    setUsernameStatus('idle');
+  };
+
   const handleUsernameChange = (val: string) => {
     const cleaned = val.toLowerCase().replace(/[^a-z0-9_.-]/g, '');
     setOnlineUsername(cleaned);
@@ -510,6 +543,7 @@ export function EmployeesScreen({
       isActive: emp.isActive !== false,
       isBlacklisted: emp.isBlacklisted || false
     });
+    setIsAddEditModalOpen(true);
   };
 
   const handlePermanentDelete = async (id: string, name?: string) => {
@@ -747,6 +781,7 @@ export function EmployeesScreen({
         alert(`تم حفظ الموظف محلياً بنجاح وجارٍ المزامنة.`);
       }
     }
+    setIsAddEditModalOpen(false);
     setEditingId(null);
     setFormData(defaultFormData);
     setOnlineUsername('');
@@ -1282,791 +1317,9 @@ export function EmployeesScreen({
           />
         ) : (
           <div className="space-y-6">
-          {/* Add / Edit Form Card */}
-          {(editingId ? canEditEmployee : canAddEmployee) && (
-          <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs">
-            <h3 className="text-base font-black text-slate-800 mb-4 pb-3 border-b border-slate-100 flex items-center gap-2">
-              <Sparkles size={18} className="text-indigo-600" />
-              <span>{editingId ? 'تعديل بيانات موظف' : 'إضافة موظف جديد إلى الكادر'}</span>
-            </h3>
-
-            {/* Employee Tier Status Banner */}
-            {maxAllowedEmployees !== null && (
-              <div className={`mb-5 p-3.5 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs ${
-                isEmployeeQuotaReached
-                  ? 'bg-rose-50/90 border-rose-200 text-rose-900'
-                  : 'bg-indigo-50/80 border-indigo-200 text-indigo-900'
-              }`}>
-                <div className="flex items-center gap-2.5">
-                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-sm shrink-0 ${
-                    isEmployeeQuotaReached ? 'bg-rose-500 text-white' : 'bg-indigo-600 text-white'
-                  }`}>
-                    <Users size={18} />
-                  </div>
-                  <div>
-                    <div className="font-black text-[13px] flex items-center gap-2">
-                      <span>باقة الموظفين الحالية: {maxAllowedEmployees} موظفين حد أقصى</span>
-                      {isEmployeeQuotaReached ? (
-                        <span className="bg-rose-600 text-white text-[10px] px-2 py-0.5 rounded-full font-bold">
-                          تم استنفاد السعة المتاحة بالكامل
-                        </span>
-                      ) : (
-                        <span className="bg-emerald-600 text-white text-[10px] px-2 py-0.5 rounded-full font-bold">
-                          متبقي {maxAllowedEmployees - currentActiveEmployeesCount} مقاعد
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-[11px] opacity-80 mt-0.5">
-                      الموظفون النشطون حالياً: {currentActiveEmployeesCount} من أصل {maxAllowedEmployees} موظف مسموح بهم
-                    </p>
-                  </div>
-                </div>
-
-                {onOpenLicenseModal && (
-                  <button
-                    type="button"
-                    onClick={onOpenLicenseModal}
-                    className="px-3.5 py-1.5 bg-white hover:bg-slate-50 border border-slate-300 text-indigo-700 rounded-xl text-xs font-black shadow-xs cursor-pointer transition-all hover:scale-102 self-end sm:self-auto flex items-center gap-1.5"
-                  >
-                    <Zap size={13} className="text-amber-500" />
-                    <span>ترقية باقة الموظفين</span>
-                  </button>
-                )}
-              </div>
-            )}
-
-            <div className="flex flex-col md:flex-row gap-6 items-start mb-6 pb-6 border-b border-slate-100">
-              {/* Employee Avatar Upload Box */}
-              <div className="flex flex-col items-center gap-2 shrink-0">
-                <div className="relative w-24 h-24 rounded-2xl bg-slate-100 border-2 border-dashed border-indigo-200 overflow-hidden flex items-center justify-center group shadow-inner">
-                  {formData.avatarUrl ? (
-                    <>
-                      <img src={formData.avatarUrl} alt="Employee" className="w-full h-full object-cover" />
-                      <button
-                        type="button"
-                        onClick={() => setFormData({ ...formData, avatarUrl: '' })}
-                        className="absolute top-1 left-1 bg-rose-600 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-                        title="حذف الصورة"
-                      >
-                        <X size={12} />
-                      </button>
-                    </>
-                  ) : (
-                    <div className="flex flex-col items-center justify-center text-slate-400">
-                      <Camera size={24} className="mb-1" />
-                      <span className="text-[10px] font-bold">صورة الموظف</span>
-                    </div>
-                  )}
-                  <label className="absolute inset-0 bg-black/40 text-white flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-[10px] font-black">
-                    <Camera size={18} className="mb-0.5" />
-                    <span>{formData.avatarUrl ? 'تغيير الصورة' : 'رفع صورة'}</span>
-                    <input type="file" accept="image/*" onChange={handleAvatarUpload} className="hidden" />
-                  </label>
-                </div>
-                <span className="text-[10px] font-bold text-slate-400">
-                  حد أقصى {MAX_IMAGE_SIZE_KB} KB
-                </span>
-              </div>
-
-              {/* Basic Fields */}
-              <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 w-full">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">اسم الموظف</label>
-                  <input 
-                    type="text" 
-                    value={formData.name || ''} 
-                    onChange={e => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="محمد فتحي"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">المسمى الوظيفي *</label>
-                  <select 
-                    value={formData.role || 'حلاق / كوافير'} 
-                    onChange={e => setFormData({ ...formData, role: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none cursor-pointer"
-                  >
-                    <option value="">اختر المسمى الوظيفي...</option>
-                    {EMPLOYEE_ROLES.map(r => (
-                      <option key={r} value={r}>{r}</option>
-                    ))}
-                    {formData.role && !(EMPLOYEE_ROLES as readonly string[]).includes(formData.role) && (
-                      <option value={formData.role}>{formData.role}</option>
-                    )}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">كود البصمة (Fingerprint)</label>
-                  <input 
-                    type="text" 
-                    value={formData.fingerprintCode || ''} 
-                    onChange={e => setFormData({ ...formData, fingerprintCode: e.target.value })}
-                    placeholder="13"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:border-indigo-600 outline-none"
-                  />
-                </div>
-
-                <div className="sm:col-span-2 md:col-span-3">
-                  <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
-                    <span className="flex items-center gap-1.5 text-indigo-700">
-                      <Sparkles size={14} className="text-indigo-600" />
-                      <span>نبذة وملاحظات الموظف (تظهر للعملاء في الحجز الأونلاين):</span>
-                    </span>
-                    <span className="text-[10px] text-slate-400 font-normal">مثال: خبير صبغات وحاصل على جائزة أفضل حلاق</span>
-                  </label>
-                  <input 
-                    type="text" 
-                    value={formData.publicBio || ''} 
-                    onChange={e => setFormData({ ...formData, publicBio: e.target.value })}
-                    placeholder="خبير صبغات وتصفيف عالمي، حاصل على جائزة التميز"
-                    className="w-full bg-slate-50 border border-indigo-200 rounded-xl px-3.5 py-2 text-xs font-bold focus:border-indigo-600 outline-none placeholder:text-slate-400"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">نوع الراتب والاستحقاق</label>
-                <select
-                  value={formData.salaryType || 'salary'}
-                  onChange={e => setFormData({ ...formData, salaryType: e.target.value as any })}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none"
-                >
-                  <option value="salary">راتب ثابت شهري</option>
-                  <option value="commission_only">بالعمولة فقط (بدون راتب ثابت)</option>
-                  <option value="salary_plus_commission">راتب أساسي + عمولة مبيعات</option>
-                </select>
-              </div>
-
-              {formData.salaryType !== 'commission_only' && (
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">الراتب الأساسي الشهري ({settings.currency})</label>
-                  <input 
-                    type="number" 
-                    min="0"
-                    step="any"
-                    onChange={e => {
-                      const newSalary = e.target.value === '' ? ('' as any) : Number(e.target.value);
-                      const numSalary = Number(newSalary) || 0;
-                      let newDailyTarget = formData.dailyTargetAmount;
-                      let newMonthlyTarget = formData.monthlyTargetAmount;
-                      let newTarget = formData.target;
-                      if (formData.dailyTargetMethod === 'salary_multiplier') {
-                        newDailyTarget = Math.round(((numSalary / 30) * (formData.dailyTargetMultiplier ?? 1)) * 100) / 100;
-                        if (formData.targetType === 'daily') newTarget = newDailyTarget;
-                      }
-                      if (formData.monthlyTargetMethod === 'salary_multiplier') {
-                        newMonthlyTarget = Math.round((numSalary * (formData.monthlyTargetMultiplier ?? 1)) * 100) / 100;
-                        if (formData.targetType === 'monthly') newTarget = newMonthlyTarget;
-                      }
-                      setFormData({ 
-                        ...formData, 
-                        baseSalary: newSalary,
-                        dailyTargetAmount: newDailyTarget,
-                        monthlyTargetAmount: newMonthlyTarget,
-                        target: newTarget
-                      });
-                    }}
-                    placeholder="0.00"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:border-indigo-600 outline-none"
-                  />
-                </div>
-              )}
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">نظام ونموذج احتساب العمولة</label>
-                <select
-                  value={formData.commissionModel || 'none'}
-                  onChange={e => {
-                    const val = e.target.value as any;
-                    setFormData({
-                      ...formData,
-                      commissionModel: val,
-                      commissionRate: val === 'none' ? 0 : (formData.commissionRate ?? 0)
-                    });
-                  }}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none"
-                >
-                  <option value="none">بدون عمولة ثابتة (0%)</option>
-                  <option value="fixed_rate">نسبة مئوية ثابتة (%)</option>
-                  <option value="target_based">تارجت مبيعات محدد + نسبة عمولة</option>
-                  <option value="tiered_brackets">شرائح مبيعات متدرجة تصاعدية (Tiered Brackets)</option>
-                </select>
-              </div>
-
-              {formData.commissionModel === 'fixed_rate' && (
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">نسبة العمولة الثابتة (%)</label>
-                  <input 
-                    type="number" 
-                    min="0"
-                    max="100"
-                    value={formData.commissionRate ?? 0} 
-                    onChange={e => setFormData({ ...formData, commissionRate: Number(e.target.value) })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:border-indigo-600 outline-none"
-                  />
-                </div>
-              )}
-
-              {formData.commissionModel === 'target_based' && (
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">قيمة التارجت ({settings.currency})</label>
-                    <input 
-                      type="number" 
-                      value={formData.target || 0} 
-                      onChange={e => setFormData({ ...formData, target: Number(e.target.value) })}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:border-indigo-600 outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">النسبة عند التحقيق (%)</label>
-                    <input 
-                      type="number" 
-                      min="0"
-                      max="100"
-                      value={formData.commissionRate ?? 0} 
-                      onChange={e => setFormData({ ...formData, commissionRate: Number(e.target.value) })}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:border-indigo-600 outline-none"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {formData.commissionModel === 'tiered_brackets' && (
-                <div className="col-span-1 sm:col-span-2 bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100 space-y-3">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <h4 className="text-xs font-black text-indigo-900 flex items-center gap-1.5">
-                        <Layers size={15} className="text-indigo-600" />
-                        <span>شرائح العمولات المتدرجة (Tiered Commission Brackets)</span>
-                      </h4>
-                      <p className="text-[11px] text-slate-500 mt-0.5">
-                        يتم احتساب العمولة تلقائياً تصاعدياً لكل شريحة مبيعات يحققها الموظف
-                      </p>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const tiers = formData.commissionTiers || [];
-                        const lastTier = tiers[tiers.length - 1];
-                        const newFrom = lastTier ? (lastTier.toAmount || lastTier.fromAmount + 5000) : 0;
-                        const newTier: CommissionTier = {
-                          id: 'tier-' + Math.random().toString(36).substring(2, 7),
-                          fromAmount: newFrom,
-                          toAmount: newFrom + 5000,
-                          percentage: (lastTier ? lastTier.percentage + 5 : 5)
-                        };
-                        setFormData({ ...formData, commissionTiers: [...tiers, newTier] });
-                      }}
-                      className="bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 shadow-xs cursor-pointer"
-                    >
-                      <Plus size={13} />
-                      <span>+ إضافة شريحة</span>
-                    </button>
-                  </div>
-
-                  <div className="space-y-2">
-                    {(formData.commissionTiers || []).map((tier, idx) => (
-                      <div key={tier.id || idx} className="grid grid-cols-12 gap-2 bg-white p-2.5 rounded-xl border border-indigo-200/60 items-center text-xs">
-                        <div className="col-span-1 font-bold text-slate-500 font-mono text-center">
-                          #{idx + 1}
-                        </div>
-                        <div className="col-span-4">
-                          <label className="block text-[10px] text-slate-500 mb-0.5">من مبيعات ({settings.currency}):</label>
-                          <input
-                            type="number"
-                            value={tier.fromAmount}
-                            onChange={e => {
-                              const updated = [...(formData.commissionTiers || [])];
-                              updated[idx] = { ...tier, fromAmount: Number(e.target.value) };
-                              setFormData({ ...formData, commissionTiers: updated });
-                            }}
-                            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono font-bold"
-                          />
-                        </div>
-                        <div className="col-span-4">
-                          <label className="block text-[10px] text-slate-500 mb-0.5">إلى مبيعات (0 = مفتوح):</label>
-                          <input
-                            type="number"
-                            value={tier.toAmount || ''}
-                            placeholder="بدون حد أقصى"
-                            onChange={e => {
-                              const updated = [...(formData.commissionTiers || [])];
-                              updated[idx] = { ...tier, toAmount: Number(e.target.value) || 0 };
-                              setFormData({ ...formData, commissionTiers: updated });
-                            }}
-                            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono font-bold"
-                          />
-                        </div>
-                        <div className="col-span-2">
-                          <label className="block text-[10px] text-slate-500 mb-0.5">النسبة (%):</label>
-                          <input
-                            type="number"
-                            value={tier.percentage}
-                            onChange={e => {
-                              const updated = [...(formData.commissionTiers || [])];
-                              updated[idx] = { ...tier, percentage: Number(e.target.value) };
-                              setFormData({ ...formData, commissionTiers: updated });
-                            }}
-                            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono font-bold text-emerald-700"
-                          />
-                        </div>
-                        <div className="col-span-1 text-center">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const updated = (formData.commissionTiers || []).filter((_, i) => i !== idx);
-                              setFormData({ ...formData, commissionTiers: updated });
-                            }}
-                            className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg"
-                            title="حذف الشريحة"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Target & Performance Commission Section */}
-              <div className="col-span-1 sm:col-span-2 md:col-span-4 bg-gradient-to-r from-indigo-50/70 to-purple-50/40 p-4 rounded-2xl border border-indigo-100/80 space-y-3">
-                <div className="flex items-center justify-between border-b border-indigo-100/70 pb-2">
-                  <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-black text-xs">
-                      <Target size={16} />
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-black text-indigo-950">نظام ومستهدفات التارجت وعمولة الأداء</h4>
-                      <p className="text-[10px] text-slate-500">اختر دورة التارجت للموظف (يومي / شهري / بدون تارجت) وطريقة احتساب العمولة المعتمدة</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                      نظام التارجت للموظف:
-                    </label>
-                    <select
-                      value={formData.targetType || 'none'}
-                      onChange={e => setFormData({ ...formData, targetType: e.target.value as any })}
-                      className="w-full bg-white border border-indigo-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 outline-none text-slate-800"
-                    >
-                      <option value="none">بدون تارجت (عمولات عادية فورية فقط)</option>
-                      <option value="daily">تارجت يومي (يحسب بالتايم شيت اليومي)</option>
-                      <option value="monthly">تارجت شهري (يحسب شهرياً بتقرير التارجت والرواتب)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                      نسبة عمولة التارجت (%):
-                    </label>
-                    <input 
-                      type="number" 
-                      min="0"
-                      max="100"
-                      step="any"
-                      value={formData.targetCommissionRate ?? 0} 
-                      onChange={e => setFormData({ ...formData, targetCommissionRate: Math.max(0, Math.min(100, parseFloat(e.target.value) || 0)) })}
-                      placeholder="0%"
-                      className="w-full bg-white border border-indigo-200 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:border-indigo-600 outline-none text-indigo-700"
-                    />
-                    <span className="text-[10px] text-slate-400">تمنح عند تحقيق أو تجاوز مبلغ التارجت</span>
-                  </div>
-                </div>
-
-                {/* تفاصيل التارجت اليومي */}
-                {formData.targetType === 'daily' && (
-                  <div className="p-3 bg-white/90 rounded-xl border border-indigo-200/80 space-y-3">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                          طريقة احتساب التارجت اليومي:
-                        </label>
-                        <select
-                          value={formData.dailyTargetMethod || 'excess_only'}
-                          onChange={e => {
-                            const newMethod = e.target.value as any;
-                            let newDailyTarget = formData.dailyTargetAmount;
-                            let newTarget = formData.target;
-                            if (newMethod === 'salary_multiplier') {
-                              const numSalary = Number(formData.baseSalary) || 0;
-                              const m = formData.dailyTargetMultiplier ?? 1;
-                              newDailyTarget = Math.round(((numSalary / 30) * m) * 100) / 100;
-                              newTarget = newDailyTarget;
-                            }
-                            setFormData({ 
-                              ...formData, 
-                              dailyTargetMethod: newMethod,
-                              dailyTargetAmount: newDailyTarget,
-                              target: newTarget
-                            });
-                          }}
-                          className="w-full bg-white border border-indigo-300 rounded-xl px-3 py-2 text-xs font-bold outline-none"
-                        >
-                          <option value="excess_only">1. على ما فوق التارجت فقط (النسبة على المبلغ الزائد)</option>
-                          <option value="full_amount">2. على كامل المبلغ طالما تجاوز التارجت</option>
-                          <option value="salary_multiplier">3. مضاعف الراتب (العمولة على ما يزيد عن مضاعف الراتب)</option>
-                        </select>
-                      </div>
-
-                      {formData.dailyTargetMethod === 'salary_multiplier' ? (
-                        <div>
-                          <label className="block text-[11px] font-bold text-indigo-900 mb-1">
-                            مضاعف الراتب اليومي (اكتب مثلاً: 1 أو 1.5 أو 2):
-                          </label>
-                          <div className="relative">
-                            <input
-                              type="number"
-                              min="0.1"
-                              step="0.1"
-                              value={formData.dailyTargetMultiplier ?? 1}
-                              onChange={e => {
-                                const m = Math.max(0, parseFloat(e.target.value) || 1);
-                                const numSalary = Number(formData.baseSalary) || 0;
-                                const calculatedTarget = Math.round(((numSalary / 30) * m) * 100) / 100;
-                                setFormData({
-                                  ...formData,
-                                  dailyTargetMultiplier: m,
-                                  targetSalaryMultiplier: m,
-                                  dailyTargetAmount: calculatedTarget,
-                                  target: calculatedTarget
-                                });
-                              }}
-                              placeholder="1.0"
-                              className="w-full bg-indigo-50 border border-indigo-400 rounded-xl px-3 py-2 text-xs font-mono font-bold outline-none text-indigo-900"
-                            />
-                            <span className="absolute left-3 top-2 text-xs text-indigo-600 font-bold">× الراتب اليومي</span>
-                          </div>
-                        </div>
-                      ) : (
-                        <div>
-                          <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                            مبلغ التارجت اليومي المستهدف ({settings.currency}):
-                          </label>
-                          <input 
-                            type="number" 
-                            min="0"
-                            step="any"
-                            value={formData.dailyTargetAmount ?? 0} 
-                            onChange={e => {
-                              const val = Math.max(0, parseFloat(e.target.value) || 0);
-                              setFormData({ ...formData, dailyTargetAmount: val, target: val });
-                            }}
-                            placeholder="0.00"
-                            className="w-full bg-white border border-indigo-300 rounded-xl px-3 py-2 text-xs font-mono font-bold outline-none"
-                          />
-                        </div>
-                      )}
-                    </div>
-
-                    {formData.dailyTargetMethod === 'salary_multiplier' && (
-                      <div className="p-2.5 bg-indigo-50/90 border border-indigo-200 rounded-xl text-xs space-y-1">
-                        <div className="flex items-center justify-between font-bold text-indigo-900">
-                          <span className="flex items-center gap-1.5">
-                            <Info size={14} className="text-indigo-600" />
-                            <span>قيمة التارجت اليومي المطلوب تحقيقه:</span>
-                          </span>
-                          <span className="font-mono text-indigo-700 bg-white px-2.5 py-0.5 rounded-lg border border-indigo-300 text-xs">
-                            {Math.round(((Number(formData.baseSalary) || 0) / 30 * (formData.dailyTargetMultiplier ?? 1)) * 100) / 100} {settings.currency}
-                          </span>
-                        </div>
-                        <p className="text-[10px] text-indigo-700 leading-relaxed">
-                          الراتب اليومي ({(Math.round(((Number(formData.baseSalary) || 0) / 30) * 100) / 100).toLocaleString()} {settings.currency}) × {formData.dailyTargetMultiplier ?? 1} = يُلزم الموظف بتحقيق هذا المبلغ، وتُحسب العمولة بنسبة {formData.targetCommissionRate || 0}% على كل ما يزيد عن هذا المبلغ في اليوم.
-                        </p>
-                      </div>
-                    )}
-
-                    <p className="text-[10px] text-slate-500">
-                      في التارجت اليومي، يحسب التارجت يومياً بالتايم شيت بناءً على الخدمات الخاضعة للتارجت + تضاف عمولة الخدمات المعفاة من التارجت مباشرة.
-                    </p>
-                  </div>
-                )}
-
-                {/* تفاصيل التارجت الشهري */}
-                {formData.targetType === 'monthly' && (
-                  <div className="p-3 bg-white/90 rounded-xl border border-indigo-200/80 space-y-3">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                          طريقة احتساب التارجت الشهري:
-                        </label>
-                        <select
-                          value={formData.monthlyTargetMethod || 'deduct_salary'}
-                          onChange={e => {
-                            const newMethod = e.target.value as any;
-                            let newMonthlyTarget = formData.monthlyTargetAmount;
-                            let newTarget = formData.target;
-                            if (newMethod === 'salary_multiplier') {
-                              const numSalary = Number(formData.baseSalary) || 0;
-                              const m = formData.monthlyTargetMultiplier ?? 1;
-                              newMonthlyTarget = Math.round((numSalary * m) * 100) / 100;
-                              newTarget = newMonthlyTarget;
-                            }
-                            setFormData({ 
-                              ...formData, 
-                              monthlyTargetMethod: newMethod,
-                              monthlyTargetAmount: newMonthlyTarget,
-                              target: newTarget
-                            });
-                          }}
-                          className="w-full bg-white border border-indigo-300 rounded-xl px-3 py-2 text-xs font-bold outline-none"
-                        >
-                          <option value="deduct_salary">1. خصم الراتب من الشغل (النسبة على ما فوق التارجت)</option>
-                          <option value="gross_sales">2. على إجمالي الشغل مباشرة (بدون خصم المرتب)</option>
-                          <option value="salary_multiplier">3. مضاعف الراتب (العمولة على ما يزيد عن مضاعف الراتب)</option>
-                        </select>
-                      </div>
-
-                      {formData.monthlyTargetMethod === 'salary_multiplier' ? (
-                        <div>
-                          <label className="block text-[11px] font-bold text-indigo-900 mb-1">
-                            مضاعف الراتب الشهري (اكتب مثلاً: 1 أو 1.5 أو 2):
-                          </label>
-                          <div className="relative">
-                            <input
-                              type="number"
-                              min="0.1"
-                              step="0.1"
-                              value={formData.monthlyTargetMultiplier ?? 1}
-                              onChange={e => {
-                                const m = Math.max(0, parseFloat(e.target.value) || 1);
-                                const numSalary = Number(formData.baseSalary) || 0;
-                                const calculatedTarget = Math.round((numSalary * m) * 100) / 100;
-                                setFormData({
-                                  ...formData,
-                                  monthlyTargetMultiplier: m,
-                                  targetSalaryMultiplier: m,
-                                  monthlyTargetAmount: calculatedTarget,
-                                  target: calculatedTarget
-                                });
-                              }}
-                              placeholder="1.0"
-                              className="w-full bg-indigo-50 border border-indigo-400 rounded-xl px-3 py-2 text-xs font-mono font-bold outline-none text-indigo-900"
-                            />
-                            <span className="absolute left-3 top-2 text-xs text-indigo-600 font-bold">× الراتب الشهري</span>
-                          </div>
-                        </div>
-                      ) : (
-                        <div>
-                          <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                            مبلغ التارجت الشهري المستهدف ({settings.currency}):
-                          </label>
-                          <input 
-                            type="number" 
-                            min="0"
-                            step="any"
-                            value={formData.monthlyTargetAmount ?? 0} 
-                            onChange={e => {
-                              const val = Math.max(0, parseFloat(e.target.value) || 0);
-                              setFormData({ ...formData, monthlyTargetAmount: val, target: val });
-                            }}
-                            placeholder="0.00"
-                            className="w-full bg-white border border-indigo-300 rounded-xl px-3 py-2 text-xs font-mono font-bold outline-none"
-                          />
-                        </div>
-                      )}
-                    </div>
-
-                    {formData.monthlyTargetMethod === 'salary_multiplier' && (
-                      <div className="p-2.5 bg-indigo-50/90 border border-indigo-200 rounded-xl text-xs space-y-1">
-                        <div className="flex items-center justify-between font-bold text-indigo-900">
-                          <span className="flex items-center gap-1.5">
-                            <Info size={14} className="text-indigo-600" />
-                            <span>قيمة التارجت الشهري المطلوب تحقيقه:</span>
-                          </span>
-                          <span className="font-mono text-indigo-700 bg-white px-2.5 py-0.5 rounded-lg border border-indigo-300 text-xs">
-                            {Math.round(((Number(formData.baseSalary) || 0) * (formData.monthlyTargetMultiplier ?? 1)) * 100) / 100} {settings.currency}
-                          </span>
-                        </div>
-                        <p className="text-[10px] text-indigo-700 leading-relaxed">
-                          الراتب الأساسي ({(Number(formData.baseSalary) || 0).toLocaleString()} {settings.currency}) × {formData.monthlyTargetMultiplier ?? 1} = يُلزم الموظف بتحقيق هذا التارجت، وتُحسب العمولة بنسبة {formData.targetCommissionRate || 0}% على كل ما يزيد عن هذا المبلغ شهرياً.
-                        </p>
-                      </div>
-                    )}
-
-                    <p className="text-[10px] text-indigo-800 font-bold bg-indigo-50 p-2 rounded-lg border border-indigo-200">
-                      في التارجت الشهري: لا يظهر بالتايم شيت اليومي أي عمولات إلا على الخدمات المعفاة من التارجت فقط، بينما يظهر استحقاق التارجت في تقرير التارجت ومسير الرواتب الشهري.
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">البريد الإلكتروني (اختياري)</label>
-                <input 
-                  type="email" 
-                  value={formData.email || ''} 
-                  onChange={e => setFormData({ ...formData, email: e.target.value })}
-                  placeholder="emp@salon.com"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold focus:border-indigo-600 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">موعد الحضور اليومي</label>
-                <input 
-                  type="time" 
-                  value={formData.checkInTime || '09:00'} 
-                  onChange={e => setFormData({ ...formData, checkInTime: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono focus:border-indigo-600 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">موعد الانصراف اليومي</label>
-                <input 
-                  type="time" 
-                  value={formData.checkOutTime || '18:00'} 
-                  onChange={e => setFormData({ ...formData, checkOutTime: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono focus:border-indigo-600 outline-none"
-                />
-              </div>
-            </div>
-
-            {/* Online User Account Section for Employee */}
-            <div className="mt-4 p-3.5 bg-indigo-50/60 rounded-2xl border border-indigo-100 space-y-3">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input 
-                    type="checkbox"
-                    checked={formData.hasOnlineAccount || false}
-                    onChange={e => setFormData({ ...formData, hasOnlineAccount: e.target.checked })}
-                    className="w-4 h-4 text-indigo-600 rounded"
-                  />
-                  <span className="text-xs font-black text-indigo-950 flex items-center gap-1.5">
-                    <Globe size={14} className="text-indigo-600" />
-                    <span>إنشاء حساب مستخدم أونلاين للموظف للدخول على النظام</span>
-                    <span className="text-[10px] bg-indigo-200/70 text-indigo-800 px-2 py-0.5 rounded-full font-bold">بوابة الموظف</span>
-                  </span>
-                </label>
-              </div>
-
-              {formData.hasOnlineAccount && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-indigo-100/80 animate-in fade-in">
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="block text-[11px] font-bold text-slate-700">
-                        اسم المستخدم لتسجيل الدخول (Username فريد) <span className="text-rose-500">*</span>
-                      </label>
-                      {usernameStatus === 'checking' && (
-                        <span className="text-[10px] text-slate-400 font-bold flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-ping"></span>
-                          جاري الفحص...
-                        </span>
-                      )}
-                      {usernameStatus === 'available' && (
-                        <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5">
-                          <CheckCircle2 size={12} />
-                          اسم متاح
-                        </span>
-                      )}
-                      {usernameStatus === 'taken' && (
-                        <span className="text-[10px] text-rose-600 font-bold flex items-center gap-0.5">
-                          <XCircle size={12} />
-                          محجوز مسبقاً!
-                        </span>
-                      )}
-                    </div>
-                    <div className="relative">
-                      <input 
-                        type="text"
-                        required={formData.hasOnlineAccount}
-                        value={onlineUsername}
-                        onChange={e => handleUsernameChange(e.target.value)}
-                        placeholder="barber_ahmed"
-                        className={`w-full bg-white border rounded-xl px-3 py-1.5 text-xs font-mono font-bold focus:ring-2 focus:ring-indigo-500/20 outline-none ${
-                          usernameStatus === 'taken' ? 'border-rose-400 text-rose-700 bg-rose-50/20' : usernameStatus === 'available' ? 'border-emerald-400 text-slate-800' : 'border-slate-200'
-                        }`}
-                        dir="ltr"
-                      />
-                    </div>
-                    <p className="text-[10px] text-slate-500 mt-1">
-                      أحرف إنجليزية وأرقام بدون مسافات (يُستخدم لتسجيل الدخول من الشاشة الرئيسية)
-                    </p>
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                      كلمة مرور حساب الموظف (Password) <span className="text-rose-500">*</span>
-                    </label>
-                    <input 
-                      type="text"
-                      required={formData.hasOnlineAccount}
-                      value={onlineUserPassword}
-                      onChange={e => setOnlineUserPassword(e.target.value)}
-                      placeholder="123456"
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-mono font-bold focus:border-indigo-600 outline-none"
-                      dir="ltr"
-                    />
-                    <p className="text-[10px] text-slate-500 mt-1">
-                      كلمة المرور الافتراضية للحساب (123456 أو كلمة مخصصة)
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Admin Dual Commission Option */}
-            <div className="mt-3 pt-3 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input 
-                  type="checkbox"
-                  checked={formData.allowDualCommission || false}
-                  onChange={e => setFormData({ ...formData, allowDualCommission: e.target.checked })}
-                  className="w-4 h-4 text-indigo-600 rounded"
-                />
-                <span className="text-xs font-bold text-slate-700">
-                  احتساب العمولتين معاً (العمولة الثابتة + عمولة الخدمات) لهذا الموظف (خاص بالإدارة)
-                </span>
-              </label>
-
-              <div className="flex gap-2 w-full sm:w-auto">
-                {editingId && (
-                  <button
-                    type="button"
-                    onClick={() => { setEditingId(null); setFormData(defaultFormData); setOnlineUsername(''); setOnlineUserPassword('123456'); setUsernameStatus('idle'); }}
-                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold"
-                  >
-                    إلغاء
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={handleSaveEmployee}
-                  className={`px-6 py-2.5 text-white rounded-xl text-xs font-black shadow-md flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                    !editingId && isEmployeeQuotaReached
-                      ? 'bg-amber-600 hover:bg-amber-700 shadow-amber-600/20'
-                      : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/20'
-                  }`}
-                >
-                  <Save size={15} />
-                  <span>
-                    {editingId
-                      ? 'حفظ التعديلات'
-                      : isEmployeeQuotaReached
-                      ? 'ترقية الباقة لإضافة موظف'
-                      : 'إضافة الموظف'}
-                  </span>
-                </button>
-              </div>
-            </div>
-          </div>
-          )}
-
-          {/* Employees Directory Cards Grid */}
+          {/* Employees Directory Header & Controls */}
           <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden p-5">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-4 mb-5 border-b border-slate-100">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-4 mb-5 border-b border-slate-100">
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="font-black text-slate-800 text-sm">قائمة موظفي الصالون ({filteredEmployees.length})</h3>
                 {maxAllowedEmployees !== null ? (
@@ -2083,18 +1336,37 @@ export function EmployeesScreen({
                   </span>
                 )}
               </div>
-              <div className="relative w-full sm:w-64">
-                <input 
-                  type="text"
-                  placeholder="بحث عن موظف..."
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  className="w-full pr-9 pl-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:border-indigo-600 focus:bg-white transition-all font-bold"
-                />
-                <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+
+              <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+                <div className="relative flex-1 md:w-64">
+                  <input 
+                    type="text"
+                    placeholder="بحث عن موظف..."
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    className="w-full pr-9 pl-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:border-indigo-600 focus:bg-white transition-all font-bold"
+                  />
+                  <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                </div>
+
+                {canAddEmployee && (
+                  <button
+                    type="button"
+                    onClick={handleOpenAddModal}
+                    className={`px-4 py-2 rounded-xl text-xs font-black shadow-xs flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap text-white ${
+                      isEmployeeQuotaReached
+                        ? 'bg-amber-600 hover:bg-amber-700 shadow-amber-600/20'
+                        : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/20'
+                    }`}
+                  >
+                    <Plus size={16} />
+                    <span>إضافة موظف جديد</span>
+                  </button>
+                )}
               </div>
             </div>
 
+            {/* Table View */}
             {filteredEmployees.length === 0 ? (
               <div className="p-12 text-center text-slate-400 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
                 <UserX size={40} className="mx-auto mb-2 text-slate-300" />
@@ -2109,256 +1381,907 @@ export function EmployeesScreen({
                 )}
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {filteredEmployees.map(emp => (
-                  <div
-                    key={emp.id}
-                    onClick={() => setSelectedEmployeeId(emp.id)}
-                    className="group bg-white rounded-2xl border border-slate-200 hover:border-indigo-400 hover:shadow-lg transition-all duration-200 p-4.5 flex flex-col justify-between cursor-pointer relative overflow-hidden"
-                  >
-                    {/* Top Header: Fingerprint & Status */}
-                    <div className="flex items-center justify-between gap-2 mb-3">
-                      <span className="font-mono text-[11px] font-black text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-lg border border-indigo-100/60">
-                        #{emp.fingerprintCode || '—'}
-                      </span>
-                      <div>
-                        {emp.isBlacklisted ? (
-                          <span className="bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-black px-2 py-0.5 rounded-full">
-                            محظور (Blacklist)
-                          </span>
-                        ) : emp.endOfService ? (
-                          <span className="bg-slate-100 text-slate-600 border border-slate-200 text-[10px] font-black px-2 py-0.5 rounded-full">
-                            منتهي الخدمة
-                          </span>
-                        ) : (
-                          <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-black px-2 py-0.5 rounded-full flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                            <span>نشط</span>
-                          </span>
-                        )}
-                      </div>
-                    </div>
+              <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                <table className="w-full text-right text-xs">
+                  <thead className="bg-slate-50/90 text-slate-600 font-black border-b border-slate-200">
+                    <tr>
+                      <th className="py-3.5 px-3 whitespace-nowrap">الكود / الموظف</th>
+                      <th className="py-3.5 px-3 whitespace-nowrap">المسمى الوظيفي</th>
+                      <th className="py-3.5 px-3 whitespace-nowrap">نظام الراتب</th>
+                      <th className="py-3.5 px-3 whitespace-nowrap">العمولة والتارجت</th>
+                      <th className="py-3.5 px-3 whitespace-nowrap">الدوام والعطلة</th>
+                      <th className="py-3.5 px-3 whitespace-nowrap">حساب الدخول</th>
+                      <th className="py-3.5 px-3 whitespace-nowrap text-center">الحالة</th>
+                      <th className="py-3.5 px-3 whitespace-nowrap text-center">الإجراءات والعمليات</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredEmployees.map(emp => (
+                      <tr 
+                        key={emp.id} 
+                        className="hover:bg-indigo-50/30 transition-colors group"
+                      >
+                        {/* 1. Code / Employee info */}
+                        <td className="py-3 px-3">
+                          <div className="flex items-center gap-2.5">
+                            <div 
+                              onClick={() => setSelectedEmployeeId(emp.id)}
+                              className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-50 to-slate-100 border border-slate-200 group-hover:border-indigo-400 overflow-hidden shrink-0 flex items-center justify-center font-black text-indigo-700 text-sm shadow-inner cursor-pointer"
+                              title="عرض ملف الموظف"
+                            >
+                              {emp.avatarUrl ? (
+                                <img src={emp.avatarUrl} alt={emp.name} className="w-full h-full object-cover" />
+                              ) : (
+                                <span>{emp.name.charAt(0)}</span>
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span 
+                                  onClick={() => setSelectedEmployeeId(emp.id)}
+                                  className="font-black text-slate-900 hover:text-indigo-600 cursor-pointer transition-colors truncate text-xs"
+                                  title={emp.name}
+                                >
+                                  {emp.name}
+                                </span>
+                                {emp.fingerprintCode && (
+                                  <span className="font-mono text-[10px] font-black text-indigo-700 bg-indigo-50 px-1.5 py-0.2 rounded border border-indigo-100 shrink-0">
+                                    #{emp.fingerprintCode}
+                                  </span>
+                                )}
+                              </div>
+                              {emp.email && (
+                                <div className="text-[10px] text-slate-400 font-mono truncate max-w-[140px]" title={emp.email}>
+                                  {emp.email}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </td>
 
-                    {/* Employee Profile Core */}
-                    <div className="flex items-center gap-3 mb-3.5">
-                      <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-50 to-slate-100 border border-slate-200 group-hover:border-indigo-400 overflow-hidden shrink-0 flex items-center justify-center font-black text-indigo-700 text-lg shadow-inner transition-colors">
-                        {emp.avatarUrl ? (
-                          <img src={emp.avatarUrl} alt={emp.name} className="w-full h-full object-cover" />
-                        ) : (
-                          <span>{emp.name.charAt(0)}</span>
-                        )}
+                        {/* 2. Role */}
+                        <td className="py-3 px-3">
+                          <span className="font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-lg text-[11px] inline-block">
+                            {emp.role}
+                          </span>
+                        </td>
+
+                        {/* 3. Salary System */}
+                        <td className="py-3 px-3">
+                          {emp.salaryType === 'commission_only' ? (
+                            <span className="text-amber-700 text-[11px] font-bold bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200/60">
+                              بالعمولة فقط
+                            </span>
+                          ) : (
+                            <div className="font-mono font-black text-slate-800 text-[11px]">
+                              {(emp.baseSalary || 0).toLocaleString()} {settings.currency}
+                              <span className="text-[10px] font-normal text-slate-400 mr-1">
+                                {emp.salaryType === 'daily' ? '/يومي' : emp.salaryType === 'weekly' ? '/أسبوعي' : emp.salaryType === 'hourly' ? '/ساعة' : '/شهري'}
+                              </span>
+                            </div>
+                          )}
+                        </td>
+
+                        {/* 4. Commission & Target */}
+                        <td className="py-3 px-3">
+                          <div className="space-y-0.5">
+                            <span className="font-bold text-emerald-700 text-[10px] bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200/60 inline-block max-w-[150px] truncate" title={getCommissionModelLabel(emp)}>
+                              {getCommissionModelLabel(emp)}
+                            </span>
+                            {emp.allowDualCommission && (
+                              <div className="text-[9px] font-bold text-indigo-600">عمولتان معاً (إداري)</div>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* 5. Schedule & Off Days */}
+                        <td className="py-3 px-3">
+                          <div className="text-[11px] text-slate-600 font-mono">
+                            {emp.checkInTime || '09:00'} - {emp.checkOutTime || '18:00'}
+                          </div>
+                          {emp.weeklyDaysOff && emp.weeklyDaysOff.length > 0 && (
+                            <div className="text-[10px] text-slate-400 truncate max-w-[120px]" title={emp.weeklyDaysOff.map(d => weekDays.find(w => w.id === d)?.label || d).join(', ')}>
+                              عطلة: {emp.weeklyDaysOff.map(d => weekDays.find(w => w.id === d)?.label || d).join(', ')}
+                            </div>
+                          )}
+                        </td>
+
+                        {/* 6. Online Account */}
+                        <td className="py-3 px-3">
+                          {emp.hasOnlineAccount ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200/60 px-2 py-0.5 rounded-full font-mono" dir="ltr">
+                              <Globe size={10} className="text-indigo-600" />
+                              <span>@{emp.username || (emp as any).username || 'مفعل'}</span>
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-slate-400 font-bold">—</span>
+                          )}
+                        </td>
+
+                        {/* 7. Status */}
+                        <td className="py-3 px-3 text-center">
+                          {emp.isBlacklisted ? (
+                            <span className="bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-black px-2 py-0.5 rounded-full whitespace-nowrap">
+                              محظور
+                            </span>
+                          ) : emp.endOfService ? (
+                            <span className="bg-slate-100 text-slate-600 border border-slate-200 text-[10px] font-black px-2 py-0.5 rounded-full whitespace-nowrap">
+                              منتهي الخدمة
+                            </span>
+                          ) : (
+                            <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-black px-2 py-0.5 rounded-full inline-flex items-center gap-1 whitespace-nowrap">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                              <span>نشط</span>
+                            </span>
+                          )}
+                        </td>
+
+                        {/* 8. Actions */}
+                        <td className="py-3 px-3">
+                          <div className="flex items-center justify-center gap-1">
+                            {/* Profile View */}
+                            <button
+                              type="button"
+                              onClick={() => setSelectedEmployeeId(emp.id)}
+                              className="p-1.5 bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white rounded-lg transition-colors cursor-pointer"
+                              title="عرض السجل والملف الشامل"
+                            >
+                              <Eye size={13} />
+                            </button>
+
+                            {/* Advance */}
+                            <button
+                              type="button"
+                              disabled={!canManageAdvances}
+                              onClick={() => {
+                                if (!canManageAdvances) {
+                                  alert('عذراً، لا تملك صلاحية صرف وإدارة السلف النقدية (hr_manage_advances)');
+                                  return;
+                                }
+                                handleOpenActionModal(emp.id, 'advance');
+                              }}
+                              className={`p-1.5 rounded-lg transition-colors ${
+                                canManageAdvances
+                                  ? 'bg-amber-50 hover:bg-amber-100 text-amber-700 cursor-pointer'
+                                  : 'bg-slate-100 text-slate-300 opacity-50 cursor-not-allowed'
+                              }`}
+                              title={canManageAdvances ? 'تسجيل سلفة' : 'لا تملك صلاحية السلف'}
+                            >
+                              <Banknote size={13} />
+                            </button>
+
+                            {/* Penalty */}
+                            <button
+                              type="button"
+                              disabled={!canManagePenalties}
+                              onClick={() => {
+                                if (!canManagePenalties) {
+                                  alert('عذراً، لا تملك صلاحية تسجيل الجزاءات والخصومات (hr_manage_penalties)');
+                                  return;
+                                }
+                                handleOpenActionModal(emp.id, 'penalty');
+                              }}
+                              className={`p-1.5 rounded-lg transition-colors ${
+                                canManagePenalties
+                                  ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 cursor-pointer'
+                                  : 'bg-slate-100 text-slate-300 opacity-50 cursor-not-allowed'
+                              }`}
+                              title={canManagePenalties ? 'تسجيل خصم/جزاء' : 'لا تملك صلاحية الجزاءات'}
+                            >
+                              <DollarSign size={13} />
+                            </button>
+
+                            {/* Bonus */}
+                            <button
+                              type="button"
+                              disabled={!canManageBonuses}
+                              onClick={() => {
+                                if (!canManageBonuses) {
+                                  alert('عذراً، لا تملك صلاحية تسجيل المكافآت والحوافز (hr_manage_bonuses)');
+                                  return;
+                                }
+                                handleOpenActionModal(emp.id, 'bonus');
+                              }}
+                              className={`p-1.5 rounded-lg transition-colors ${
+                                canManageBonuses
+                                  ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 cursor-pointer'
+                                  : 'bg-slate-100 text-slate-300 opacity-50 cursor-not-allowed'
+                              }`}
+                              title={canManageBonuses ? 'تسجيل مكافأة' : 'لا تملك صلاحية المكافآت'}
+                            >
+                              <Gift size={13} />
+                            </button>
+
+                            {/* Salary Increase */}
+                            {canSalaryIncrements && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenActionModal(emp.id, 'salary_increase')}
+                                className="p-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg transition-colors cursor-pointer"
+                                title="تسجيل زيادة راتب"
+                              >
+                                <TrendingUp size={13} />
+                              </button>
+                            )}
+
+                            {/* Shift Schedule */}
+                            {(canAccessHR || canEditEmployee) && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenActionModal(emp.id, 'shift_schedule')}
+                                className="p-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg transition-colors cursor-pointer"
+                                title="تعديل مواعيد العمل"
+                              >
+                                <Clock size={13} />
+                              </button>
+                            )}
+
+                            {/* Blacklist / End of Service */}
+                            {emp.isBlacklisted ? (
+                              canManageEndOfService && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleUnbanBlacklist(emp.id)}
+                                  className="p-1.5 bg-emerald-50 hover:bg-emerald-600 text-emerald-700 hover:text-white rounded-lg transition-colors cursor-pointer"
+                                  title="إلغاء الحظر وفك البلاك ليست"
+                                >
+                                  <ShieldCheck size={13} />
+                                </button>
+                              )
+                            ) : (
+                              canManageEndOfService && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenActionModal(emp.id, 'end_of_service')}
+                                  className="p-1.5 bg-slate-100 hover:bg-rose-100 text-slate-700 hover:text-rose-700 rounded-lg transition-colors cursor-pointer"
+                                  title="إنهاء خدمة / بلاك ليست"
+                                >
+                                  <UserX size={13} />
+                                </button>
+                              )
+                            )}
+
+                            {/* Edit */}
+                            {canEditEmployee && (
+                              <button
+                                type="button"
+                                onClick={() => handleEdit(emp)}
+                                className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors cursor-pointer"
+                                title="تعديل الموظف"
+                              >
+                                <Edit2 size={13} />
+                              </button>
+                            )}
+
+                            {/* Delete */}
+                            {canDeleteEmployee && (
+                              <button
+                                type="button"
+                                onClick={() => handlePermanentDelete(emp.id, emp.name)}
+                                className="p-1.5 bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white rounded-lg transition-colors cursor-pointer"
+                                title="حذف نهائي للموظف من النظام"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* 2-Column Wide Add / Edit Employee Modal */}
+          {isAddEditModalOpen && (
+            <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+              <div className="bg-white rounded-3xl max-w-5xl w-full border border-slate-200 shadow-2xl overflow-hidden my-auto animate-in fade-in zoom-in-95 duration-200">
+                {/* Header */}
+                <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-md shadow-indigo-600/20">
+                      <Sparkles size={18} />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-black text-slate-800">
+                        {editingId ? 'تعديل بيانات موظف' : 'إضافة موظف جديد إلى الكادر'}
+                      </h3>
+                      <p className="text-[11px] text-slate-500 font-bold">
+                        {editingId ? `تعديل السجل المهني والمالي لـ ${formData.name || 'الموظف'}` : 'أدخل البيانات الشخصية ونظام الرواتب والعمولات'}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCloseAddEditModal}
+                    className="w-8 h-8 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-600 flex items-center justify-center transition-colors cursor-pointer"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+
+                {/* Modal Body: 2 Columns */}
+                <div className="p-6 max-h-[75vh] overflow-y-auto">
+                  {/* Employee Tier Status Banner if adding */}
+                  {!editingId && maxAllowedEmployees !== null && (
+                    <div className={`mb-5 p-3.5 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs ${
+                      isEmployeeQuotaReached
+                        ? 'bg-rose-50/90 border-rose-200 text-rose-900'
+                        : 'bg-indigo-50/80 border-indigo-200 text-indigo-900'
+                    }`}>
+                      <div className="flex items-center gap-2.5">
+                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-sm shrink-0 ${
+                          isEmployeeQuotaReached ? 'bg-rose-500 text-white' : 'bg-indigo-600 text-white'
+                        }`}>
+                          <Users size={18} />
+                        </div>
+                        <div>
+                          <div className="font-black text-[13px] flex items-center gap-2">
+                            <span>باقة الموظفين الحالية: {maxAllowedEmployees} موظفين حد أقصى</span>
+                            {isEmployeeQuotaReached ? (
+                              <span className="bg-rose-600 text-white text-[10px] px-2 py-0.5 rounded-full font-bold">
+                                تم استنفاد السعة المتاحة بالكامل
+                              </span>
+                            ) : (
+                              <span className="bg-emerald-600 text-white text-[10px] px-2 py-0.5 rounded-full font-bold">
+                                متبقي {maxAllowedEmployees - currentActiveEmployeesCount} مقاعد
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] opacity-80 mt-0.5">
+                            الموظفون النشطون حالياً: {currentActiveEmployeesCount} من أصل {maxAllowedEmployees}
+                          </p>
+                        </div>
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="font-black text-slate-900 text-sm truncate group-hover:text-indigo-600 transition-colors">
-                          {emp.name}
+                      {isEmployeeQuotaReached && onOpenLicenseModal && (
+                        <button
+                          type="button"
+                          onClick={onOpenLicenseModal}
+                          className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-black rounded-xl text-xs shadow-xs transition-colors cursor-pointer"
+                        >
+                          ترقية الباقة الآن
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* COLUMN 1: البيانات الشخصية والدوام وحساب النظام */}
+                    <div className="space-y-4">
+                      <div className="text-xs font-black text-indigo-700 flex items-center gap-2 pb-2 border-b border-indigo-100">
+                        <UserCog size={15} />
+                        <span>البيانات الشخصية والدوام وحساب النظام</span>
+                      </div>
+
+                      {/* Avatar Upload */}
+                      <div className="flex items-center gap-4 bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                        <div className="w-16 h-16 rounded-2xl bg-white border-2 border-dashed border-indigo-300 flex items-center justify-center overflow-hidden shrink-0 relative group">
+                          {formData.avatarUrl ? (
+                            <img src={formData.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                          ) : (
+                            <ImageIcon size={24} className="text-slate-300" />
+                          )}
+                          <label className="absolute inset-0 bg-black/40 text-white flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                            <Camera size={14} />
+                            <span className="text-[8px] font-bold mt-0.5">تغيير</span>
+                            <input 
+                              type="file" 
+                              accept="image/*" 
+                              className="hidden" 
+                              onChange={handleAvatarUpload}
+                            />
+                          </label>
                         </div>
-                        <div className="text-[11px] font-bold text-slate-500 truncate mt-0.5">
-                          {emp.role}
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-bold text-slate-800">صورة الموظف الشخصية</div>
+                          <p className="text-[10px] text-slate-500 mt-0.5">تظهر الصورة في الفواتير والتقارير وشاشات الحجز</p>
+                          {formData.avatarUrl && (
+                            <button
+                              type="button"
+                              onClick={() => setFormData({ ...formData, avatarUrl: '' })}
+                              className="text-[10px] text-rose-600 font-bold hover:underline mt-1"
+                            >
+                              إزالة الصورة
+                            </button>
+                          )}
                         </div>
-                        {emp.email && (
-                          <div className="text-[10px] text-slate-400 font-mono truncate">
-                            {emp.email}
+                      </div>
+
+                      {/* Name & Role */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                            اسم الموظف <span className="text-rose-500">*</span>
+                          </label>
+                          <input 
+                            type="text"
+                            required
+                            value={formData.name || ''}
+                            onChange={e => setFormData({ ...formData, name: e.target.value })}
+                            placeholder="مثال: أحمد محمد"
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 focus:bg-white outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                            المسمى الوظيفي <span className="text-rose-500">*</span>
+                          </label>
+                          <select 
+                            value={formData.role || EMPLOYEE_ROLES[0]}
+                            onChange={e => setFormData({ ...formData, role: e.target.value })}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 focus:bg-white outline-none cursor-pointer"
+                          >
+                            {EMPLOYEE_ROLES.map(r => (
+                              <option key={r} value={r}>{r}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Fingerprint Code & Email */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                            كود جهاز البصمة (ID)
+                          </label>
+                          <input 
+                            type="text"
+                            value={formData.fingerprintCode || ''}
+                            onChange={e => setFormData({ ...formData, fingerprintCode: e.target.value })}
+                            placeholder="مثال: 101"
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:border-indigo-600 focus:bg-white outline-none"
+                            dir="ltr"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                            البريد الإلكتروني
+                          </label>
+                          <input 
+                            type="email"
+                            value={formData.email || ''}
+                            onChange={e => setFormData({ ...formData, email: e.target.value })}
+                            placeholder="emp@example.com"
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:border-indigo-600 focus:bg-white outline-none"
+                            dir="ltr"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Work Times */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                            وقت بدء الدوام
+                          </label>
+                          <input 
+                            type="time"
+                            value={formData.checkInTime || '09:00'}
+                            onChange={e => setFormData({ ...formData, checkInTime: e.target.value })}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-mono font-bold focus:border-indigo-600 focus:bg-white outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                            وقت انتهاء الدوام
+                          </label>
+                          <input 
+                            type="time"
+                            value={formData.checkOutTime || '18:00'}
+                            onChange={e => setFormData({ ...formData, checkOutTime: e.target.value })}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-mono font-bold focus:border-indigo-600 focus:bg-white outline-none"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Weekly Days Off */}
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1.5">
+                          أيام العطلة الأسبوعية
+                        </label>
+                        <div className="flex flex-wrap gap-1.5">
+                          {weekDays.map(day => {
+                            const isSelected = (formData.weeklyDaysOff || []).includes(day.id);
+                            return (
+                              <button
+                                key={day.id}
+                                type="button"
+                                onClick={() => toggleDayOff(day.id)}
+                                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                  isSelected 
+                                    ? 'bg-indigo-600 text-white shadow-xs' 
+                                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                                }`}
+                              >
+                                {day.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Bio */}
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                          نبذة تعريفية وتخصصات الموظف
+                        </label>
+                        <textarea 
+                          rows={2}
+                          value={formData.bio || ''}
+                          onChange={e => setFormData({ ...formData, bio: e.target.value })}
+                          placeholder="مهارات الموظف، تخصصات الحلاقة أو التجميل..."
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold focus:border-indigo-600 focus:bg-white outline-none resize-none"
+                        />
+                      </div>
+
+                      {/* Online Account Section */}
+                      <div className="bg-slate-50 rounded-2xl p-3 border border-slate-200 space-y-3">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input 
+                            type="checkbox"
+                            checked={formData.hasOnlineAccount || false}
+                            onChange={e => setFormData({ ...formData, hasOnlineAccount: e.target.checked })}
+                            className="w-4 h-4 text-indigo-600 rounded"
+                          />
+                          <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                            <Globe size={14} className="text-indigo-600" />
+                            <span>إنشاء / تفعيل حساب دخول للنظام لهذا الموظف</span>
+                          </span>
+                        </label>
+
+                        {formData.hasOnlineAccount && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-200">
+                            <div>
+                              <div className="flex items-center justify-between mb-1">
+                                <label className="block text-[11px] font-bold text-slate-700">
+                                  اسم المستخدم (Username) <span className="text-rose-500">*</span>
+                                </label>
+                                {usernameStatus === 'checking' && (
+                                  <span className="text-[10px] text-indigo-600 flex items-center gap-1">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-ping"></span>
+                                    فحص...
+                                  </span>
+                                )}
+                                {usernameStatus === 'available' && (
+                                  <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-1">
+                                    <CheckCircle2 size={12} />
+                                    متاح
+                                  </span>
+                                )}
+                                {usernameStatus === 'taken' && (
+                                  <span className="text-[10px] text-rose-600 font-bold flex items-center gap-1">
+                                    <XCircle size={12} />
+                                    محجوز!
+                                  </span>
+                                )}
+                              </div>
+                              <input 
+                                type="text"
+                                required={formData.hasOnlineAccount}
+                                value={onlineUsername}
+                                onChange={e => handleUsernameChange(e.target.value)}
+                                placeholder="barber_ahmed"
+                                className={`w-full bg-white border rounded-xl px-3 py-1.5 text-xs font-mono font-bold focus:ring-2 focus:ring-indigo-500/20 outline-none ${
+                                  usernameStatus === 'taken' ? 'border-rose-400 text-rose-700 bg-rose-50/20' : usernameStatus === 'available' ? 'border-emerald-400 text-slate-800' : 'border-slate-200'
+                                }`}
+                                dir="ltr"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                                كلمة مرور حساب الموظف <span className="text-rose-500">*</span>
+                              </label>
+                              <input 
+                                type="text"
+                                required={formData.hasOnlineAccount}
+                                value={onlineUserPassword}
+                                onChange={e => setOnlineUserPassword(e.target.value)}
+                                placeholder="123456"
+                                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-mono font-bold focus:border-indigo-600 outline-none"
+                                dir="ltr"
+                              />
+                            </div>
                           </div>
                         )}
                       </div>
                     </div>
 
-                    {/* Details Rows */}
-                    <div className="bg-slate-50/80 rounded-xl p-2.5 space-y-1.5 text-[11px] mb-3 border border-slate-100">
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-500 font-bold">الراتب الأساسي:</span>
-                        <span className="font-mono font-black text-slate-800">
-                          {emp.salaryType === 'commission_only' ? (
-                            <span className="text-amber-700 text-[10px] font-bold">بالعمولة فقط</span>
-                          ) : (
-                            `${(emp.baseSalary || 0).toLocaleString()} ${settings.currency}`
-                          )}
-                        </span>
+                    {/* COLUMN 2: الراتب ونظام العمولات والتارجت */}
+                    <div className="space-y-4">
+                      <div className="text-xs font-black text-indigo-700 flex items-center gap-2 pb-2 border-b border-indigo-100">
+                        <Banknote size={15} />
+                        <span>الراتب، نظام العمولات، والتارجت</span>
                       </div>
 
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-500 font-bold">نظام العمولة:</span>
-                        <span className="font-bold text-emerald-700 text-[10px] bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200/60 truncate max-w-[130px]">
-                          {getCommissionModelLabel(emp)}
-                        </span>
+                      {/* Salary Type & Base Salary */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                            نوع نظام الراتب <span className="text-rose-500">*</span>
+                          </label>
+                          <select 
+                            value={formData.salaryType || 'salary'}
+                            onChange={e => setFormData({ ...formData, salaryType: e.target.value as any })}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 focus:bg-white outline-none cursor-pointer"
+                          >
+                            <option value="salary">راتب شهري ثابت</option>
+                            <option value="weekly">راتب أسبوعي</option>
+                            <option value="daily">يوميّة / راتب يومي</option>
+                            <option value="hourly">بالساعة</option>
+                            <option value="commission_only">بالعمولة فقط (بدون راتب)</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                            {formData.salaryType === 'commission_only' ? 'الراتب الأساسي (غير مطلوب)' : `مبلغ الراتب الأساسي (${settings.currency})`}
+                          </label>
+                          <input 
+                            type="number"
+                            disabled={formData.salaryType === 'commission_only'}
+                            value={formData.salaryType === 'commission_only' ? '' : (formData.baseSalary ?? '')}
+                            onChange={e => setFormData({ ...formData, baseSalary: parseFloat(e.target.value) || 0 })}
+                            placeholder={formData.salaryType === 'commission_only' ? 'بدون راتب' : '0.00'}
+                            className="w-full bg-slate-50 disabled:bg-slate-100 disabled:opacity-60 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:border-indigo-600 focus:bg-white outline-none"
+                          />
+                        </div>
                       </div>
 
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-500 font-bold">مواعيد الدوام:</span>
-                        <span className="font-mono text-slate-600 text-[10px]">
-                          {emp.checkInTime || '09:00'} - {emp.checkOutTime || '18:00'}
-                        </span>
+                      {/* Commission Model Selection */}
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                          نظام احتساب العمولة
+                        </label>
+                        <select
+                          value={formData.commissionModel || 'none'}
+                          onChange={e => {
+                            const val = e.target.value;
+                            setFormData({ 
+                              ...formData, 
+                              commissionModel: val,
+                              targetType: val === 'target' ? (formData.targetType === 'none' ? 'monthly' : (formData.targetType || 'monthly')) : 'none'
+                            });
+                          }}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-600 focus:bg-white outline-none cursor-pointer"
+                        >
+                          <option value="none">بدون عمولة (راتب فقط)</option>
+                          <option value="fixed_rate">عمولة بنسبة ثابتة مباشرة (%)</option>
+                          <option value="tiered_brackets">عمولة بشرائح تدرجية حسب الدخل الإجمالي</option>
+                          <option value="target">عمولة مرتبطة بتحقيق التارجت المستهدف (Target)</option>
+                        </select>
                       </div>
 
-                      {emp.hasOnlineAccount && (
-                        <div className="flex items-center justify-between pt-1 border-t border-slate-200/50">
-                          <span className="text-indigo-600 font-bold flex items-center gap-1.5 text-[10px]">
-                            <Globe size={11} className="text-indigo-600" />
-                            <span>حساب أونلاين</span>
-                          </span>
-                          <span className="text-[10px] font-mono font-bold text-slate-500 truncate" dir="ltr">
-                            @{emp.username || (emp as any).username || 'مفعل'}
-                          </span>
+                      {/* Sub-form: Fixed Rate */}
+                      {formData.commissionModel === 'fixed_rate' && (
+                        <div className="bg-emerald-50/50 rounded-2xl p-3 border border-emerald-200">
+                          <label className="block text-[11px] font-bold text-emerald-900 mb-1">
+                            نسبة العمولة المباشرة (%)
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <input 
+                              type="number"
+                              step="0.5"
+                              min="0"
+                              max="100"
+                              value={formData.commissionRate ?? ''}
+                              onChange={e => setFormData({ ...formData, commissionRate: parseFloat(e.target.value) || 0 })}
+                              placeholder="مثال: 10"
+                              className="w-full bg-white border border-emerald-300 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:border-emerald-600 outline-none"
+                            />
+                            <span className="text-emerald-800 font-bold text-xs">%</span>
+                          </div>
+                          <p className="text-[10px] text-emerald-700 mt-1">يتم احتساب هذه النسبة مباشرة من إجمالي مبيعات وخدمات الموظف</p>
                         </div>
                       )}
-                    </div>
 
-                    {/* View Details Click Action Hint Button */}
-                    <button
-                      type="button"
-                      onClick={() => setSelectedEmployeeId(emp.id)}
-                      className="w-full py-1.5 mb-2 bg-indigo-50/70 group-hover:bg-indigo-600 text-indigo-700 group-hover:text-white rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 shadow-2xs"
-                    >
-                      <Eye size={13} />
-                      <span>عرض السجل والملف الشامل</span>
-                    </button>
+                      {/* Sub-form: Tiered Brackets */}
+                      {formData.commissionModel === 'tiered_brackets' && (
+                        <div className="bg-indigo-50/40 rounded-2xl p-3 border border-indigo-200 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-black text-indigo-900">جدول الشرائح التدرجية</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const current = formData.commissionTiers || [];
+                                const lastTo = current.length > 0 ? current[current.length - 1].toAmount : 0;
+                                const newTier: CommissionTier = {
+                                  id: `t_${Date.now()}`,
+                                  fromAmount: lastTo,
+                                  toAmount: lastTo + 5000,
+                                  percentage: 10
+                                };
+                                setFormData({ ...formData, commissionTiers: [...current, newTier] });
+                              }}
+                              className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-black cursor-pointer"
+                            >
+                              + إضافة شريحة
+                            </button>
+                          </div>
 
-                    {emp.isBlacklisted && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleUnbanBlacklist(emp.id);
-                        }}
-                        className="w-full py-1.5 mb-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer animate-pulse"
-                        title="إلغاء الحظر وفك الموظف من القائمة السوداء"
-                      >
-                        <Unlock size={14} />
-                        <span>إلغاء الحظر (فك القائمة السوداء)</span>
-                      </button>
-                    )}
+                          <div className="space-y-1.5 max-h-44 overflow-y-auto">
+                            {(formData.commissionTiers || []).map((tier, idx) => (
+                              <div key={tier.id || idx} className="flex items-center gap-1.5 bg-white p-2 rounded-xl border border-indigo-100 text-xs">
+                                <span className="text-[10px] font-bold text-slate-500 w-12">من {tier.fromAmount}</span>
+                                <span className="text-[10px] font-bold text-slate-500">إلى:</span>
+                                <input
+                                  type="number"
+                                  value={tier.toAmount === 0 ? '' : tier.toAmount}
+                                  onChange={e => {
+                                    const val = parseFloat(e.target.value) || 0;
+                                    const updated = [...(formData.commissionTiers || [])];
+                                    updated[idx] = { ...updated[idx], toAmount: val };
+                                    setFormData({ ...formData, commissionTiers: updated });
+                                  }}
+                                  placeholder="∞ (ما فوق)"
+                                  className="w-20 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono font-bold"
+                                />
+                                <span className="text-[10px] font-bold text-slate-500">النسبة:</span>
+                                <input
+                                  type="number"
+                                  value={tier.percentage}
+                                  onChange={e => {
+                                    const val = parseFloat(e.target.value) || 0;
+                                    const updated = [...(formData.commissionTiers || [])];
+                                    updated[idx] = { ...updated[idx], percentage: val };
+                                    setFormData({ ...formData, commissionTiers: updated });
+                                  }}
+                                  className="w-14 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono font-bold"
+                                />
+                                <span className="text-[10px] font-bold text-slate-500">%</span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const updated = (formData.commissionTiers || []).filter((_, i) => i !== idx);
+                                    setFormData({ ...formData, commissionTiers: updated });
+                                  }}
+                                  className="p-1 text-rose-500 hover:bg-rose-50 rounded-lg cursor-pointer"
+                                  title="حذف الشريحة"
+                                >
+                                  <X size={13} />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
 
-                    {/* Action Buttons Bar */}
-                    <div 
-                      onClick={e => e.stopPropagation()} 
-                      className="pt-2 border-t border-slate-100 flex items-center justify-between gap-1"
-                    >
-                      <button
-                        type="button"
-                        disabled={!canManageAdvances}
-                        onClick={() => {
-                          if (!canManageAdvances) {
-                            alert('عذراً، لا تملك صلاحية صرف وإدارة السلف النقدية (hr_manage_advances)');
-                            return;
-                          }
-                          handleOpenActionModal(emp.id, 'advance');
-                        }}
-                        className={`p-1.5 rounded-lg transition-colors ${
-                          canManageAdvances
-                            ? 'bg-amber-50 hover:bg-amber-100 text-amber-700 cursor-pointer'
-                            : 'bg-slate-100 text-slate-300 opacity-50 cursor-not-allowed'
-                        }`}
-                        title={canManageAdvances ? 'تسجيل سلفة' : 'لا تملك صلاحية السلف (hr_manage_advances)'}
-                      >
-                        <Banknote size={13} />
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!canManagePenalties}
-                        onClick={() => {
-                          if (!canManagePenalties) {
-                            alert('عذراً، لا تملك صلاحية تسجيل الجزاءات والخصومات (hr_manage_penalties)');
-                            return;
-                          }
-                          handleOpenActionModal(emp.id, 'penalty');
-                        }}
-                        className={`p-1.5 rounded-lg transition-colors ${
-                          canManagePenalties
-                            ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 cursor-pointer'
-                            : 'bg-slate-100 text-slate-300 opacity-50 cursor-not-allowed'
-                        }`}
-                        title={canManagePenalties ? 'تسجيل خصم/جزاء' : 'لا تملك صلاحية الجزاءات (hr_manage_penalties)'}
-                      >
-                        <DollarSign size={13} />
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!canManageBonuses}
-                        onClick={() => {
-                          if (!canManageBonuses) {
-                            alert('عذراً، لا تملك صلاحية تسجيل المكافآت والحوافز (hr_manage_bonuses)');
-                            return;
-                          }
-                          handleOpenActionModal(emp.id, 'bonus');
-                        }}
-                        className={`p-1.5 rounded-lg transition-colors ${
-                          canManageBonuses
-                            ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 cursor-pointer'
-                            : 'bg-slate-100 text-slate-300 opacity-50 cursor-not-allowed'
-                        }`}
-                        title={canManageBonuses ? 'تسجيل مكافأة' : 'لا تملك صلاحية المكافآت (hr_manage_bonuses)'}
-                      >
-                        <Gift size={13} />
-                      </button>
-                      {canSalaryIncrements && (
-                        <button
-                          type="button"
-                          onClick={() => handleOpenActionModal(emp.id, 'salary_increase')}
-                          className="p-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg transition-colors cursor-pointer"
-                          title="تسجيل زيادة راتب"
-                        >
-                          <TrendingUp size={13} />
-                        </button>
+                      {/* Sub-form: Target Model */}
+                      {formData.commissionModel === 'target' && (
+                        <div className="bg-amber-50/50 rounded-2xl p-3 border border-amber-200 space-y-3">
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-[11px] font-bold text-amber-900 mb-1">
+                                دورة التارجت
+                              </label>
+                              <select
+                                value={formData.targetType || 'monthly'}
+                                onChange={e => setFormData({ ...formData, targetType: e.target.value as any })}
+                                className="w-full bg-white border border-amber-300 rounded-xl px-2.5 py-1.5 text-xs font-bold focus:border-amber-600 outline-none cursor-pointer"
+                              >
+                                <option value="daily">تارجت يومي</option>
+                                <option value="monthly">تارجت شهري</option>
+                              </select>
+                            </div>
+
+                            <div>
+                              <label className="block text-[11px] font-bold text-amber-900 mb-1">
+                                مبلغ التارجت ({settings.currency})
+                              </label>
+                              <input 
+                                type="number"
+                                value={formData.targetType === 'daily' ? (formData.dailyTargetAmount ?? '') : (formData.monthlyTargetAmount ?? '')}
+                                onChange={e => {
+                                  const val = parseFloat(e.target.value) || 0;
+                                  if (formData.targetType === 'daily') {
+                                    setFormData({ ...formData, dailyTargetAmount: val });
+                                  } else {
+                                    setFormData({ ...formData, monthlyTargetAmount: val, target: val });
+                                  }
+                                }}
+                                placeholder="0.00"
+                                className="w-full bg-white border border-amber-300 rounded-xl px-3 py-1.5 text-xs font-mono font-bold focus:border-amber-600 outline-none"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-[11px] font-bold text-amber-900 mb-1">
+                                نسبة عمولة التارجت (%)
+                              </label>
+                              <input 
+                                type="number"
+                                step="0.5"
+                                value={formData.targetCommissionRate ?? ''}
+                                onChange={e => setFormData({ ...formData, targetCommissionRate: parseFloat(e.target.value) || 0, commissionRate: parseFloat(e.target.value) || 0 })}
+                                placeholder="مثال: 15"
+                                className="w-full bg-white border border-amber-300 rounded-xl px-3 py-1.5 text-xs font-mono font-bold focus:border-amber-600 outline-none"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-[11px] font-bold text-amber-900 mb-1">
+                                طريقة الاحتساب
+                              </label>
+                              <select
+                                value={formData.targetType === 'daily' ? (formData.dailyTargetMethod || 'excess_only') : (formData.monthlyTargetMethod || 'deduct_salary')}
+                                onChange={e => {
+                                  const val = e.target.value as any;
+                                  if (formData.targetType === 'daily') {
+                                    setFormData({ ...formData, dailyTargetMethod: val });
+                                  } else {
+                                    setFormData({ ...formData, monthlyTargetMethod: val });
+                                  }
+                                }}
+                                className="w-full bg-white border border-amber-300 rounded-xl px-2.5 py-1.5 text-xs font-bold focus:border-amber-600 outline-none cursor-pointer"
+                              >
+                                <option value="excess_only">على ما فوق التارجت فقط (الفائض)</option>
+                                <option value="full_amount">على كامل الدخل بعد تحقيق التارجت</option>
+                                <option value="deduct_salary">خصم الراتب من الإجمالي</option>
+                                <option value="salary_multiplier">مضاعف الراتب</option>
+                              </select>
+                            </div>
+                          </div>
+                        </div>
                       )}
-                      {(canAccessHR || canEditEmployee) && (
-                        <button
-                          type="button"
-                          onClick={() => handleOpenActionModal(emp.id, 'shift_schedule')}
-                          className="p-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg transition-colors cursor-pointer"
-                          title="تعديل مواعيد العمل"
-                        >
-                          <Clock size={13} />
-                        </button>
-                      )}
-                      {emp.isBlacklisted ? (
-                        canManageEndOfService && (
-                          <button
-                            type="button"
-                            onClick={() => handleUnbanBlacklist(emp.id)}
-                            className="p-1.5 bg-emerald-50 hover:bg-emerald-600 text-emerald-700 hover:text-white rounded-lg transition-colors cursor-pointer"
-                            title="إلغاء الحظر وفك البلاك ليست"
-                          >
-                            <ShieldCheck size={13} />
-                          </button>
-                        )
-                      ) : (
-                        canManageEndOfService && (
-                          <button
-                            type="button"
-                            onClick={() => handleOpenActionModal(emp.id, 'end_of_service')}
-                            className="p-1.5 bg-slate-100 hover:bg-rose-100 text-slate-700 hover:text-rose-700 rounded-lg transition-colors cursor-pointer"
-                            title="إنهاء خدمة / بلاك ليست"
-                          >
-                            <UserX size={13} />
-                          </button>
-                        )
-                      )}
-                      {canEditEmployee && (
-                        <button
-                          type="button"
-                          onClick={() => handleEdit(emp)}
-                          className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors cursor-pointer"
-                          title="تعديل الموظف"
-                        >
-                          <Edit2 size={13} />
-                        </button>
-                      )}
-                      {canDeleteEmployee && (
-                        <button
-                          type="button"
-                          onClick={() => handlePermanentDelete(emp.id, emp.name)}
-                          className="p-1.5 bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white rounded-lg transition-colors cursor-pointer"
-                          title="حذف نهائي للموظف من النظام"
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      )}
+
+                      {/* Dual Commission Checkbox */}
+                      <div className="bg-slate-50 rounded-2xl p-3 border border-slate-200">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input 
+                            type="checkbox"
+                            checked={formData.allowDualCommission || false}
+                            onChange={e => setFormData({ ...formData, allowDualCommission: e.target.checked })}
+                            className="w-4 h-4 text-indigo-600 rounded"
+                          />
+                          <span className="text-xs font-bold text-slate-700">
+                            احتساب العمولتين معاً (العمولة الثابتة + عمولة الخدمات المخصصة) لهذا الموظف
+                          </span>
+                        </label>
+                        <p className="text-[10px] text-slate-500 mt-1 pr-6">
+                          خاص بالموظفين الإداريين أو الشركاء الذين يتقاضون نسبة عامة بالإضافة لخدماتهم المباشرة
+                        </p>
+                      </div>
                     </div>
                   </div>
-                ))}
+                </div>
+
+                {/* Footer */}
+                <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={handleCloseAddEditModal}
+                    className="px-5 py-2.5 bg-white hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold border border-slate-200 transition-colors cursor-pointer"
+                  >
+                    إلغاء
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveEmployee}
+                    className={`px-7 py-2.5 text-white rounded-xl text-xs font-black shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                      !editingId && isEmployeeQuotaReached
+                        ? 'bg-amber-600 hover:bg-amber-700 shadow-amber-600/20'
+                        : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/20'
+                    }`}
+                  >
+                    <Save size={16} />
+                    <span>
+                      {editingId
+                        ? 'حفظ التعديلات'
+                        : isEmployeeQuotaReached
+                        ? 'ترقية الباقة لإضافة موظف'
+                        : 'إضافة الموظف الآن'}
+                    </span>
+                  </button>
+                </div>
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
         )
       )}
