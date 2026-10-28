@@ -1969,7 +1969,7 @@ export const DB = {
     if (list && list.length > 0) return list.map(dbInvoiceToApp);
     try {
       const cached = localStorage.getItem('smartcut_invoices_cache');
-      return cached ? JSON.parse(cached) : [];
+      return cached ? JSON.parse(cached).map(dbInvoiceToApp) : [];
     } catch {
       return [];
     }
@@ -2029,6 +2029,17 @@ export const DB = {
 
     try {
       const safeClientId = (inv.clientId && typeof inv.clientId === 'string' && inv.clientId.trim()) ? inv.clientId.trim() : null;
+      const isDeferred = inv.status === 'deferred';
+      const isPartiallyPaid = inv.status === 'partially_paid';
+      const calculatedPaid = isDeferred 
+        ? 0 
+        : (isPartiallyPaid ? Number(inv.paid ?? inv.paidAmount ?? 0) : Number(inv.paid ?? inv.paidAmount ?? inv.total ?? 0));
+      const calculatedRemaining = isDeferred 
+        ? Number(inv.total ?? 0) 
+        : (isPartiallyPaid 
+            ? Number(inv.remaining ?? inv.remainingAmount ?? Math.max(0, Number(inv.total ?? 0) - calculatedPaid))
+            : Number(inv.remaining ?? inv.remainingAmount ?? 0));
+
       const snap: any = {
         id: inv.id,
         salon_id: validSalonId,
@@ -2048,16 +2059,16 @@ export const DB = {
         vat: Number(inv.vatAmount ?? inv.vat ?? inv.tax ?? 0),
         cashback_used: Number(inv.cashbackUsed ?? 0),
         total: Number(inv.total ?? 0),
-        paid: Number(inv.paid ?? inv.paidAmount ?? inv.total ?? 0),
-        paid_amount: Number(inv.paidAmount ?? inv.paid ?? inv.total ?? 0),
-        remaining: Number(inv.remaining ?? inv.remainingAmount ?? 0),
-        remaining_amount: Number(inv.remainingAmount ?? inv.remaining ?? 0),
+        paid: calculatedPaid,
+        paid_amount: calculatedPaid,
+        remaining: calculatedRemaining,
+        remaining_amount: calculatedRemaining,
         advance_deduction: Number(inv.advanceDeduction ?? 0),
         booking_id: inv.bookingId || null,
-        payment_method: inv.paymentMethods?.[0]?.treasuryId || inv.paymentMethod || 'cash',
-        treasury_id: inv.paymentMethods?.[0]?.treasuryId || inv.treasuryId || 'main',
+        payment_method: isDeferred ? 'deferred' : (inv.paymentMethods?.[0]?.treasuryId || inv.paymentMethod || 'cash'),
+        treasury_id: isDeferred ? 'deferred' : (inv.paymentMethods?.[0]?.treasuryId || inv.treasuryId || 'main'),
         items: inv.items || [], 
-        payment_methods: inv.paymentMethods || (inv.paymentMethod ? [{ amount: inv.total || 0, treasuryId: inv.paymentMethod }] : []),
+        payment_methods: isDeferred ? [] : (inv.paymentMethods || (inv.paymentMethod ? [{ amount: calculatedPaid || inv.total || 0, treasuryId: inv.paymentMethod }] : [])),
         status: inv.status || 'completed',
         is_cancelled: Boolean(inv.status === 'cancelled' || inv.isCancelled),
         cancel_reason: inv.cancelReason || null,
@@ -5308,6 +5319,42 @@ export function dbInvoiceToApp(row: any): any {
   }
   if (!Array.isArray(paymentMethods)) paymentMethods = [];
 
+  const rawStatus = row.status || 'completed';
+  const isDeferred = rawStatus === 'deferred';
+  const isPartiallyPaid = rawStatus === 'partially_paid';
+
+  let appPaid = 0;
+  if (isDeferred) {
+    appPaid = Number(row.paid ?? row.paid_amount ?? row.paidAmount ?? 0);
+  } else if (isPartiallyPaid) {
+    appPaid = Number(row.paid ?? row.paid_amount ?? row.paidAmount ?? 0);
+  } else {
+    appPaid = Number(row.paid ?? row.paid_amount ?? row.paidAmount ?? row.total ?? 0);
+  }
+
+  let appRemaining = 0;
+  if (isDeferred) {
+    const rawRem = row.remaining ?? row.remaining_amount ?? row.remainingAmount;
+    appRemaining = (rawRem !== undefined && rawRem !== null && !isNaN(Number(rawRem)))
+      ? Number(rawRem)
+      : Math.max(0, Number(row.total || 0) - appPaid);
+    if (appRemaining <= 0 && Number(row.total || 0) > 0 && appPaid <= 0) {
+      appRemaining = Number(row.total || 0);
+    }
+  } else if (isPartiallyPaid) {
+    appRemaining = Number(row.remaining ?? row.remaining_amount ?? row.remainingAmount ?? Math.max(0, Number(row.total || 0) - appPaid));
+  } else {
+    appRemaining = Number(row.remaining ?? row.remaining_amount ?? row.remainingAmount ?? 0);
+  }
+
+  const appPaymentMethod = isDeferred
+    ? (row.paymentMethod || row.payment_method || 'deferred')
+    : (row.paymentMethod || row.payment_method || (paymentMethods[0]?.treasuryId) || 'cash');
+
+  const appTreasuryId = isDeferred
+    ? (row.treasuryId || row.treasury_id || 'deferred')
+    : (row.treasuryId || row.treasury_id || (paymentMethods[0]?.treasuryId) || 'main');
+
   return {
     id: row.id,
     salonId: row.salonId || row.salon_id,
@@ -5325,16 +5372,16 @@ export function dbInvoiceToApp(row: any): any {
     vatAmount: Number(row.vatAmount ?? row.vat ?? row.tax ?? 0),
     cashbackUsed: Number(row.cashbackUsed ?? row.cashback_used ?? 0),
     total: Number(row.total ?? 0),
-    paid: Number(row.paid ?? row.paidAmount ?? row.total ?? 0),
-    paidAmount: Number(row.paidAmount ?? row.paid ?? row.total ?? 0),
-    remaining: Number(row.remaining ?? row.remainingAmount ?? 0),
-    remainingAmount: Number(row.remainingAmount ?? row.remaining ?? 0),
+    paid: appPaid,
+    paidAmount: appPaid,
+    remaining: appRemaining,
+    remainingAmount: appRemaining,
     advanceDeduction: Number(row.advanceDeduction ?? row.advance_deduction ?? 0),
-    paymentMethod: row.paymentMethod || row.payment_method || (paymentMethods[0]?.treasuryId) || 'cash',
-    treasuryId: row.treasuryId || row.treasury_id || (paymentMethods[0]?.treasuryId) || 'main',
+    paymentMethod: appPaymentMethod,
+    treasuryId: appTreasuryId,
     paymentMethods,
     items,
-    status: row.status || 'completed',
+    status: rawStatus,
     isCancelled: Boolean(row.isCancelled ?? row.is_cancelled),
     cancelReason: row.cancelReason || row.cancel_reason || '',
     cancelledAt: row.cancelledAt || row.cancelled_at || undefined,

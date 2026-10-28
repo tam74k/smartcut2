@@ -1339,8 +1339,8 @@ export function POSScreen({
         createdBy: currentUser?.name || 'الكاشير'
       }] : [],
       discount: (isRemedyInvoice || isWaselInvoice) ? subtotal : discountAmount,
-      paymentMethod: splits[0]?.treasuryId || 'cash',
-      treasuryId: splits[0]?.treasuryId || 'main',
+      paymentMethod: paymentMode === 'deferred' ? 'deferred' : (splits[0]?.treasuryId || 'cash'),
+      treasuryId: paymentMode === 'deferred' ? 'deferred' : (splits[0]?.treasuryId || 'main'),
       shiftId: effectiveShiftId,
       shiftCode: effectiveShiftCode,
       shiftDate: effectiveIsShiftOpen ? effectiveShiftDate : undefined,

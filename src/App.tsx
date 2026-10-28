@@ -541,7 +541,9 @@ export default function App() {
   const [invoices, setInvoices] = useState<Invoice[]>(() => {
     try {
       const cached = localStorage.getItem('smartcut_invoices_cache');
-      return cached ? JSON.parse(cached) : [];
+      if (!cached) return [];
+      const parsed = JSON.parse(cached);
+      return Array.isArray(parsed) ? parsed.map(dbInvoiceToApp) : [];
     } catch {
       return [];
     }
@@ -2629,8 +2631,8 @@ export default function App() {
     const invoiceWithBranch: Invoice = {
       ...invoice,
       salonId: settings.salonId,
-      branchId: activeBranchId,
-      branchCode: activeBranch?.code,
+      branchId: invoice.branchId || activeBranchId,
+      branchCode: invoice.branchCode || activeBranch?.code,
       cashierId: invoice.cashierId || currentUser?.id || currentUser?.username || undefined,
       cashierName: invoice.cashierName || currentUser?.name || currentUser?.username || undefined,
       createdBy: invoice.createdBy || currentUser?.username || currentUser?.name || undefined,
@@ -3273,11 +3275,11 @@ export default function App() {
       case 'deferred_invoices': return (
         <DeferredInvoicesScreen 
           settings={settings}
-          invoices={branchInvoices}
+          invoices={salonInvoices}
           setInvoices={handleSetInvoices}
-          transactions={branchTransactions}
+          transactions={salonTransactions}
           setTransactions={handleSetTransactions}
-          clients={branchClients}
+          clients={salonClients}
           setClients={handleSetClients}
           activeBranchId={activeBranchId}
           branches={branches}

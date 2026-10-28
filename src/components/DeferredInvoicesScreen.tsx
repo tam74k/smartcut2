@@ -86,18 +86,18 @@ export function DeferredInvoicesScreen({
   const [historyModalInvoice, setHistoryModalInvoice] = useState<Invoice | null>(null);
 
   // Branch matching helper
-  const matchesBranch = (itemBranchId?: string) => {
-    if (branchFilter !== 'all') return itemBranchId === branchFilter;
-    if (!itemBranchId) return true;
-    if (!branches || branches.length <= 1) return true;
-    if (activeBranchId && activeBranchId !== 'all' && activeBranchId !== 'b-main') {
-      return itemBranchId === activeBranchId;
+  const matchesBranch = (itemBranchId?: string, itemBranchCode?: string) => {
+    if (branchFilter && branchFilter !== 'all') {
+      return itemBranchId === branchFilter || itemBranchCode === branchFilter;
     }
     return true;
   };
 
   // Safely get remaining debt on an invoice
   const getInvoiceRemainingDebt = (inv: Invoice): number => {
+    if (inv.status === 'deferred' && (!inv.paymentsHistory || inv.paymentsHistory.length === 0)) {
+      return Number(inv.total) || 0;
+    }
     if (inv.remaining !== undefined && inv.remaining !== null && !isNaN(Number(inv.remaining))) {
       return Number(inv.remaining);
     }
@@ -144,25 +144,33 @@ export function DeferredInvoicesScreen({
   const isDeferredOrHasDebt = (inv: Invoice): boolean => {
     if (inv.status === 'cancelled' || inv.status === 'bad_debt') return false;
     
-    // Explicit deferred statuses
-    const isDeferredStatus = inv.status === 'deferred' || inv.status === 'partially_paid' || inv.status === 'unpaid';
-    
-    const remainingDebt = getInvoiceRemainingDebt(inv);
-    const hasRemainingDebt = remainingDebt > 0.01;
-    const isUnpaidOrPartial = Number(inv.paid || 0) < Number(inv.total || 0) - 0.01;
-    
-    // Any invoice marked deferred/partially_paid/unpaid that is not fully paid
-    if (isDeferredStatus && (hasRemainingDebt || isUnpaidOrPartial || Number(inv.paid || 0) === 0)) {
-      return true;
-    }
-    
-    // OR any invoice with remaining debt > 0 that is not marked completed
-    if (hasRemainingDebt && inv.status !== 'completed') {
+    // 1. Explicitly deferred status: always include unless fully paid
+    if (inv.status === 'deferred') {
+      const remainingDebt = getInvoiceRemainingDebt(inv);
+      if (remainingDebt > 0.01 || Number(inv.paid || 0) === 0 || !inv.paymentsHistory || inv.paymentsHistory.length === 0) {
+        return true;
+      }
       return true;
     }
 
-    // OR even if marked completed by mistake, but remainingDebt > 0 and paid < total
-    if (hasRemainingDebt && isUnpaidOrPartial && Number(inv.paid || 0) < Number(inv.total || 0) - 0.01) {
+    // 2. Partially paid or unpaid status
+    if (inv.status === 'partially_paid' || inv.status === 'unpaid') {
+      return true;
+    }
+
+    // 3. Payment method or treasury marked deferred
+    if (inv.paymentMethod === 'deferred' || inv.paymentMethod === 'آجل' || (inv as any).treasuryId === 'deferred') {
+      return true;
+    }
+
+    // 4. Any invoice with remaining debt > 0.01
+    const remainingDebt = getInvoiceRemainingDebt(inv);
+    if (remainingDebt > 0.01) {
+      return true;
+    }
+
+    // 5. Invoices where paid is less than total and not marked completed
+    if (Number(inv.total || 0) > 0 && Number(inv.paid || 0) < Number(inv.total || 0) - 0.01 && inv.status !== 'completed') {
       return true;
     }
     
@@ -172,18 +180,18 @@ export function DeferredInvoicesScreen({
   // Base list of deferred / partially paid invoices (includes all content: services, products, or mixed)
   const rawDeferredInvoices = useMemo(() => {
     return invoices.filter(inv => {
-      if (!matchesBranch(inv.branchId)) return false;
+      if (!matchesBranch(inv.branchId, inv.branchCode)) return false;
       return isDeferredOrHasDebt(inv);
     });
-  }, [invoices, branchFilter, activeBranchId, branches]);
+  }, [invoices, branchFilter]);
 
   // Bad debts list
   const badDebtsInvoices = useMemo(() => {
     return invoices.filter(inv => {
-      if (!matchesBranch(inv.branchId)) return false;
+      if (!matchesBranch(inv.branchId, inv.branchCode)) return false;
       return inv.status === 'bad_debt';
     });
-  }, [invoices, branchFilter, activeBranchId, branches]);
+  }, [invoices, branchFilter]);
 
   // Overall KPIs
   const stats = useMemo(() => {
