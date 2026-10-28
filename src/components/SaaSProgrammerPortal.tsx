@@ -6,10 +6,11 @@ import {
   Database, RefreshCw, AlertTriangle, ArrowRight, UserPlus, Layers, Server,
   Trash2, Receipt, CreditCard, LogOut, HardDrive, Crown, Save, Settings, Check, AlertCircle, FileSpreadsheet, Info
 } from 'lucide-react';
-import { SalonTenant, AppUser, Branch } from '../types';
-import { SubscriptionService, COUNTRY_CURRENCY_MAP } from '../services/subscriptionService';
+import { SalonTenant, AppUser, Branch, ServiceItem } from '../types';
+import { SubscriptionService, COUNTRY_CURRENCY_MAP, getCountryMeta, generateUUID } from '../services/subscriptionService';
 import { AuthService } from '../services/auth';
-import { DB } from '../services/db';
+import { DB, dbServiceToApp } from '../services/db';
+import { Copy, Scissors } from 'lucide-react';
 
 interface SaaSProgrammerPortalProps {
   onSwitchSalon?: (salon: SalonTenant) => void;
@@ -27,6 +28,26 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
   const [statusFilter, setStatusFilter] = useState<'all' | 'expiring_soon' | 'expired_trials' | 'active' | 'trial' | 'expired' | 'suspended'>('all');
   const [branchStatusFilter, setBranchStatusFilter] = useState<'all' | 'pending_activation' | 'active' | 'suspended'>('all');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showAddBranchForSalonModal, setShowAddBranchForSalonModal] = useState(false);
+  const [targetSalonForNewBranch, setTargetSalonForNewBranch] = useState<string>('');
+  const [newBranchData, setNewBranchData] = useState({
+    name: '',
+    country: 'المملكة العربية السعودية',
+    currency: 'SAR',
+    vatRate: 15,
+    vatEnabled: true,
+    taxNumber: '',
+    city: '',
+    phone: '',
+    address: ''
+  });
+
+  const [showCopyServicesModal, setShowCopyServicesModal] = useState(false);
+  const [newlyCreatedBranch, setNewlyCreatedBranch] = useState<Branch | null>(null);
+  const [selectedCopyServiceIds, setSelectedCopyServiceIds] = useState<string[]>([]);
+  const [copyServicesSearch, setCopyServicesSearch] = useState('');
+  const [isCopyingServices, setIsCopyingServices] = useState(false);
+  const [mainBranchServicesForCopy, setMainBranchServicesForCopy] = useState<ServiceItem[]>([]);
   const [editingSalon, setEditingSalon] = useState<SalonTenant | null>(null);
   const [showExtendModal, setShowExtendModal] = useState<SalonTenant | null>(null);
   const [extendDaysCount, setExtendDaysCount] = useState<number>(30);
@@ -205,6 +226,92 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
     setBranches(prev => prev.map(b => b.id === branchId ? updatedBranch : b));
     SubscriptionService.setBranchStatus(branchId, 'suspended');
     await DB.saveBranch(updatedBranch);
+  };
+
+  const handleCountryChangeForBranch = (cName: string) => {
+    const meta = getCountryMeta(cName);
+    setNewBranchData(prev => ({
+      ...prev,
+      country: cName,
+      currency: meta.currency,
+      vatRate: meta.tax,
+      vatEnabled: meta.tax > 0
+    }));
+  };
+
+  const handleCreateBranchInPortal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!targetSalonForNewBranch) {
+      alert('يرجى اختيار الصالون المراد إضافة الفرع له');
+      return;
+    }
+
+    const res = SubscriptionService.addBranch(targetSalonForNewBranch, newBranchData);
+    if (res.success && res.branch) {
+      res.branch.isActive = true;
+      res.branch.status = 'active';
+      await DB.saveBranch(res.branch);
+      await loadData();
+      setShowAddBranchForSalonModal(false);
+
+      let mbServices: ServiceItem[] = [];
+      try {
+        const cloudServices = await DB.fetchServices(targetSalonForNewBranch);
+        if (cloudServices && cloudServices.length > 0) {
+          const mapped = cloudServices.map(dbServiceToApp);
+          const salonBr = branches.filter(b => b.salonId === targetSalonForNewBranch);
+          const mb = salonBr.find(b => b.isMain) || salonBr[0];
+          mbServices = mapped.filter(s => {
+            const matches = !s.salonId || s.salonId === targetSalonForNewBranch || (s as any).salon_id === targetSalonForNewBranch;
+            if (!matches) return false;
+            if (!s.branchId) return true;
+            if (mb && (s.branchId === mb.id || s.branchId === mb.code)) return true;
+            return false;
+          });
+        }
+      } catch (err) {
+        console.warn('Failed to load services for copy in programmer portal:', err);
+      }
+
+      setNewlyCreatedBranch(res.branch);
+      setMainBranchServicesForCopy(mbServices);
+      setSelectedCopyServiceIds(mbServices.map(s => s.id));
+      setCopyServicesSearch('');
+      setShowCopyServicesModal(true);
+    } else {
+      alert(res.message);
+    }
+  };
+
+  const handleExecuteCopyServicesInPortal = async () => {
+    if (!newlyCreatedBranch) return;
+    const targetSalonId = newlyCreatedBranch.salonId;
+    setIsCopyingServices(true);
+
+    try {
+      const servicesToCopy = mainBranchServicesForCopy.filter(s => selectedCopyServiceIds.includes(s.id));
+      for (const orig of servicesToCopy) {
+        const newId = generateUUID();
+        const copy: ServiceItem = {
+          ...orig,
+          id: newId,
+          salonId: targetSalonId,
+          branchId: newlyCreatedBranch.id,
+          branchCode: newlyCreatedBranch.code,
+          isActive: true
+        };
+        await DB.saveService(copy, targetSalonId);
+      }
+
+      setShowCopyServicesModal(false);
+      alert(`تم إضافة الفرع بنجاح ونسخ (${servicesToCopy.length}) خدمة من الفرع الرئيسي للفرع الجديد بنجاح!`);
+    } catch (err) {
+      console.error('Error copying services in portal:', err);
+      alert('حدث خطأ أثناء نسخ بعض الخدمات.');
+    } finally {
+      setIsCopyingServices(false);
+      setNewlyCreatedBranch(null);
+    }
   };
 
   const handleToggleBranchActive = async (branch: Branch) => {
@@ -847,6 +954,17 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
             </div>
           ) : (
             <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto pb-2 md:pb-0">
+              <button
+                type="button"
+                onClick={() => {
+                  if (salons.length > 0) setTargetSalonForNewBranch(salons[0].id);
+                  setShowAddBranchForSalonModal(true);
+                }}
+                className="bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md shadow-indigo-600/30 transition-all cursor-pointer shrink-0"
+              >
+                <Plus size={15} />
+                <span>إضافة فرع جديد لصالون</span>
+              </button>
               {[
                 { id: 'all', label: 'كافة الفروع' },
                 { id: 'pending_activation', label: `بانتظار التفعيل (${branches.filter(b => b.status === 'pending_activation').length})` },

@@ -326,6 +326,7 @@ export interface ServiceItem {
   id: string; 
   salonId?: string;
   branchId?: string;
+  branchCode?: string;
   categoryId: string; 
   name: string; 
   price: number; 

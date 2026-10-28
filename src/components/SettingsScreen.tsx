@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AppSettings, Treasury, Category, AppUser, UserRole, ActionPermission, ZatcaSettings, EtaEgyptSettings, Branch } from '../types';
+import { AppSettings, Treasury, Category, AppUser, UserRole, ActionPermission, ZatcaSettings, EtaEgyptSettings, Branch, ServiceItem } from '../types';
 import { 
   Save, Globe, Receipt, MessageSquare, Wallet, Plus, Trash2, CheckCircle, 
   Edit2, Shield, Cloud, Sparkles, RefreshCw, X, Check, Database, Download, 
@@ -13,8 +13,8 @@ import { AuthService, ROLE_LABELS } from '../services/auth';
 import { SupabaseService } from '../services/supabase';
 import { ZatcaService } from '../services/zatcaService';
 import { EtaEgyptService } from '../services/etaEgyptService';
-import { SubscriptionService, COUNTRY_CURRENCY_MAP, getCountryMeta } from '../services/subscriptionService';
-import { DB, toSalonUUID } from '../services/db';
+import { SubscriptionService, COUNTRY_CURRENCY_MAP, getCountryMeta, generateUUID } from '../services/subscriptionService';
+import { DB, toSalonUUID, dbServiceToApp } from '../services/db';
 import { sendToNetworkPrinter } from '../services/networkPrinterService';
 import { 
   POPULAR_AI_MODELS, 
@@ -339,6 +339,15 @@ export function SettingsScreen({
     handleChange('etaEgyptSettings', updated);
   };
 
+  // Copy Services to New Branch Modal State
+  const [showCopyServicesModal, setShowCopyServicesModal] = useState(false);
+  const [newlyCreatedBranch, setNewlyCreatedBranch] = useState<Branch | null>(null);
+  const [selectedCopyServiceIds, setSelectedCopyServiceIds] = useState<string[]>([]);
+  const [copyServicesSearch, setCopyServicesSearch] = useState('');
+  const [copyServicesCategory, setCopyServicesCategory] = useState('all');
+  const [isCopyingServices, setIsCopyingServices] = useState(false);
+  const [dbMainBranchServices, setDbMainBranchServices] = useState<ServiceItem[]>([]);
+
   // Salon Branches Management
   const [salonBranches, setSalonBranches] = useState<Branch[]>([]);
   const [showAddBranchModal, setShowAddBranchModal] = useState(false);
@@ -438,12 +447,42 @@ export function SettingsScreen({
     }
   };
 
-  const handleCreateBranch = (e: React.FormEvent) => {
+  const mainBranch = useMemo(() => {
+    return salonBranches.find(b => b.isMain) || salonBranches[0] || null;
+  }, [salonBranches]);
+
+  const mainBranchServices = useMemo(() => {
+    const currentSalonId = settings.salonId || (SubscriptionService.getSalons()[0]?.id || '');
+    const mb = mainBranch;
+    const pool = (services && services.length > 0) ? services : dbMainBranchServices;
+    return (pool || []).filter(s => {
+      const matchesSalon = !s.salonId || s.salonId === currentSalonId || (s as any).salon_id === currentSalonId;
+      if (!matchesSalon) return false;
+      if (!s.branchId) return true;
+      if (mb && (s.branchId === mb.id || s.branchId === mb.code)) return true;
+      return false;
+    });
+  }, [services, dbMainBranchServices, settings.salonId, mainBranch]);
+
+  const availableMainServicesForCopy = useMemo(() => {
+    return dbMainBranchServices.length > 0 ? dbMainBranchServices : mainBranchServices;
+  }, [dbMainBranchServices, mainBranchServices]);
+
+  const filteredCopyServices = useMemo(() => {
+    const q = copyServicesSearch.trim().toLowerCase();
+    return availableMainServicesForCopy.filter(s => {
+      const matchesSearch = !q || (s.name && s.name.toLowerCase().includes(q)) || (s.categoryId && s.categoryId.toLowerCase().includes(q));
+      const matchesCat = copyServicesCategory === 'all' || s.categoryId === copyServicesCategory;
+      return matchesSearch && matchesCat;
+    });
+  }, [availableMainServicesForCopy, copyServicesSearch, copyServicesCategory]);
+
+  const handleCreateBranch = async (e: React.FormEvent) => {
     e.preventDefault();
     const targetSalonId = settings.salonId || (SubscriptionService.getSalons()[0]?.id || '');
     const res = SubscriptionService.addBranch(targetSalonId, newBranchData);
-    if (res.success) {
-      loadSalonBranches();
+    if (res.success && res.branch) {
+      await loadSalonBranches();
       setShowAddBranchModal(false);
       const meta = getCountryMeta(settings.country || 'المملكة العربية السعودية');
       setNewBranchData({ 
@@ -457,12 +496,102 @@ export function SettingsScreen({
         phone: settings.phone || '', 
         address: '' 
       });
-      setSuccessMsg(res.message);
-      setShowSuccess(true);
-      setTimeout(() => setShowSuccess(false), 5000);
+
+      // جلب خدمات الفرع الرئيسي فوراً من قاعدة البيانات للتأكد من حداثتها
+      let mbServices = mainBranchServices;
+      try {
+        const cloudServices = await DB.fetchServices(targetSalonId);
+        if (cloudServices && cloudServices.length > 0) {
+          const mapped = cloudServices.map(dbServiceToApp);
+          const mb = salonBranches.find(b => b.isMain) || salonBranches[0];
+          const filteredMb = mapped.filter(s => {
+            const matchesSalon = !s.salonId || s.salonId === targetSalonId || (s as any).salon_id === targetSalonId;
+            if (!matchesSalon) return false;
+            if (!s.branchId) return true;
+            if (mb && (s.branchId === mb.id || s.branchId === mb.code)) return true;
+            return false;
+          });
+          if (filteredMb.length > 0) {
+            setDbMainBranchServices(filteredMb);
+            mbServices = filteredMb;
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to fetch services for copy modal:', err);
+      }
+
+      setNewlyCreatedBranch(res.branch);
+      setSelectedCopyServiceIds(mbServices.map(s => s.id));
+      setCopyServicesSearch('');
+      setCopyServicesCategory('all');
+      setShowCopyServicesModal(true);
     } else {
       alert(res.message);
     }
+  };
+
+  const handleToggleCopyService = (serviceId: string) => {
+    setSelectedCopyServiceIds(prev => 
+      prev.includes(serviceId) ? prev.filter(id => id !== serviceId) : [...prev, serviceId]
+    );
+  };
+
+  const handleSelectAllCopyServices = () => {
+    const ids = filteredCopyServices.map(s => s.id);
+    setSelectedCopyServiceIds(prev => Array.from(new Set([...prev, ...ids])));
+  };
+
+  const handleDeselectAllCopyServices = () => {
+    const idsToRemove = new Set(filteredCopyServices.map(s => s.id));
+    setSelectedCopyServiceIds(prev => prev.filter(id => !idsToRemove.has(id)));
+  };
+
+  const handleExecuteCopyServices = async () => {
+    if (!newlyCreatedBranch) return;
+    const targetSalonId = settings.salonId || newlyCreatedBranch.salonId || '';
+    setIsCopyingServices(true);
+
+    try {
+      const servicesToCopy = availableMainServicesForCopy.filter(s => selectedCopyServiceIds.includes(s.id));
+      const copiedList: ServiceItem[] = [];
+
+      for (const orig of servicesToCopy) {
+        const newId = generateUUID();
+        const copy: ServiceItem = {
+          ...orig,
+          id: newId,
+          salonId: targetSalonId,
+          branchId: newlyCreatedBranch.id,
+          branchCode: newlyCreatedBranch.code,
+          isActive: true
+        };
+        await DB.saveService(copy, targetSalonId);
+        copiedList.push(copy);
+      }
+
+      if (setServices && copiedList.length > 0) {
+        setServices(prev => [...(prev || []), ...copiedList]);
+      }
+
+      setShowCopyServicesModal(false);
+      setSuccessMsg(`تم إنشاء الفرع بنجاح وتم نسخ (${copiedList.length}) خدمة من الفرع الرئيسي إلى الفرع الجديد (${newlyCreatedBranch.name}) بنجاح!`);
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 6000);
+    } catch (err: any) {
+      console.error('Error copying services to new branch:', err);
+      alert('حدث خطأ أثناء نسخ بعض الخدمات، يرجى مراجعة قائمة الخدمات.');
+    } finally {
+      setIsCopyingServices(false);
+      setNewlyCreatedBranch(null);
+    }
+  };
+
+  const handleSkipCopyServices = () => {
+    setShowCopyServicesModal(false);
+    setNewlyCreatedBranch(null);
+    setSuccessMsg('تم تسجيل الفرع بنجاح دون نسخ خدمات.');
+    setShowSuccess(true);
+    setTimeout(() => setShowSuccess(false), 5000);
   };
 
   const handleTestZatca = async () => {
@@ -4647,6 +4776,217 @@ export function SettingsScreen({
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* Modal: Copy Main Branch Services to New Branch */}
+        {showCopyServicesModal && newlyCreatedBranch && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-3 sm:p-4 animate-in fade-in">
+            <div className="bg-white rounded-3xl max-w-2xl sm:max-w-3xl w-full shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden">
+              
+              {/* Header */}
+              <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/80">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0">
+                    <Copy size={20} />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-sm sm:text-base text-slate-800">
+                      نسخ خدمات الفرع الرئيسي إلى الفرع الجديد
+                    </h3>
+                    <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-500 font-semibold">
+                      <span>الفرع الجديد:</span>
+                      <span className="font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-200">
+                        {newlyCreatedBranch.name} ({newlyCreatedBranch.code})
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleSkipCopyServices}
+                  className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-200/60 transition-colors cursor-pointer"
+                  title="إغلاق وتخطي"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Instructions Banner */}
+              <div className="px-4 sm:px-6 py-2.5 bg-indigo-50/60 border-b border-indigo-100 flex items-center justify-between text-xs text-indigo-950 font-medium">
+                <p>
+                  حدد الخدمات المراد نسخها وإتاحتها في الفرع الجديد. سيتم نسخها وحفظها بكود الصالون وكود الفرع الجديد مباشرة.
+                </p>
+                <span className="shrink-0 bg-indigo-600 text-white font-bold px-2.5 py-0.5 rounded-full text-[11px]">
+                  محدد: {selectedCopyServiceIds.length} من {availableMainServicesForCopy.length}
+                </span>
+              </div>
+
+              {/* Toolbar: Search, Categories, Select All */}
+              <div className="p-3 sm:p-4 border-b border-slate-100 space-y-2.5 bg-white">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type="text"
+                      placeholder="البحث في خدمات الفرع الرئيسي باسم الخدمة..."
+                      value={copyServicesSearch}
+                      onChange={e => setCopyServicesSearch(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 focus:border-indigo-600 outline-none pr-8"
+                    />
+                    <Scissors size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleSelectAllCopyServices}
+                      className="flex-1 sm:flex-none px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-700 border border-slate-200 transition-colors cursor-pointer"
+                    >
+                      تحديد الكل
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDeselectAllCopyServices}
+                      className="flex-1 sm:flex-none px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 transition-colors cursor-pointer"
+                    >
+                      إلغاء التحديد
+                    </button>
+                  </div>
+                </div>
+
+                {categories && categories.length > 0 && (
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setCopyServicesCategory('all')}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer ${
+                        copyServicesCategory === 'all'
+                          ? 'bg-indigo-600 text-white shadow-2xs'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      كافة التصنيفات
+                    </button>
+                    {categories.map(cat => (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => setCopyServicesCategory(cat.id)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer ${
+                          copyServicesCategory === cat.id
+                            ? 'bg-indigo-600 text-white shadow-2xs'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >
+                        {cat.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Services List / Cards */}
+              <div className="flex-1 overflow-y-auto p-4 sm:p-5 custom-scrollbar bg-slate-50/50">
+                {availableMainServicesForCopy.length === 0 ? (
+                  <div className="py-12 text-center text-slate-400">
+                    <Scissors size={32} className="mx-auto mb-2 opacity-40" />
+                    <p className="text-xs font-bold">لا توجد خدمات مسجلة في الفرع الرئيسي حالياً لنسخها.</p>
+                  </div>
+                ) : filteredCopyServices.length === 0 ? (
+                  <div className="py-12 text-center text-slate-400">
+                    <Scissors size={32} className="mx-auto mb-2 opacity-40" />
+                    <p className="text-xs font-bold">لا توجد خدمات مطابقة لمعايير البحث.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {filteredCopyServices.map(srv => {
+                      const isSelected = selectedCopyServiceIds.includes(srv.id);
+                      return (
+                        <div
+                          key={srv.id}
+                          onClick={() => handleToggleCopyService(srv.id)}
+                          className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 select-none ${
+                            isSelected
+                              ? 'bg-indigo-50/90 border-indigo-400 shadow-xs ring-1 ring-indigo-200'
+                              : 'bg-white border-slate-200/90 hover:border-slate-300'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => handleToggleCopyService(srv.id)}
+                              className="w-4 h-4 rounded text-indigo-600 accent-indigo-600 cursor-pointer shrink-0"
+                            />
+                            <div className="min-w-0">
+                              <h4 className="text-xs font-bold text-slate-800 truncate">
+                                {srv.name}
+                              </h4>
+                              <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-slate-500 font-mono">
+                                <span>{srv.durationMinutes || 30} د</span>
+                                {srv.categoryId && (
+                                  <>
+                                    <span>•</span>
+                                    <span className="truncate max-w-[100px] text-slate-400">
+                                      {categories?.find(c => c.id === srv.categoryId)?.name || srv.categoryId}
+                                    </span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col items-end shrink-0 gap-0.5">
+                            <span className="text-xs font-black text-indigo-700 font-mono">
+                              {srv.price} {settings.currency}
+                            </span>
+                            {(srv.price2 || srv.price3) && (
+                              <div className="flex items-center gap-1 text-[10px] font-bold text-slate-500 font-mono">
+                                {srv.price2 && <span>س2: {srv.price2}</span>}
+                                {srv.price3 && <span>س3: {srv.price3}</span>}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="p-3.5 sm:p-4 bg-white border-t border-slate-100 flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={handleSkipCopyServices}
+                  disabled={isCopyingServices}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer"
+                >
+                  تخطي دون نسخ خدمات
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleExecuteCopyServices}
+                  disabled={isCopyingServices || selectedCopyServiceIds.length === 0}
+                  className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition-all shadow-md shadow-indigo-600/30 flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isCopyingServices ? (
+                    <>
+                      <RefreshCw size={14} className="animate-spin" />
+                      <span>جاري النسخ والحفظ...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy size={14} />
+                      <span>نسخ الخدمات المحددة ({selectedCopyServiceIds.length}) للفرع الجديد</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
             </div>
           </div>
         )}

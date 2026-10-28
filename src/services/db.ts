@@ -2788,7 +2788,7 @@ export const DB = {
       const snap: any = {
         id: s.id, 
         salon_id: validSalonId, 
-        branch_id: toBranchUUID(s.branchId) || null,
+        branch_id: toBranchUUID(s.branchId) || s.branchId || null,
         category_id: s.categoryId || null, 
         name: s.name,
         price: s.price ?? 0, 
@@ -2817,12 +2817,16 @@ export const DB = {
         is_active: s.isActive !== false, 
         type: s.type || 'service'
       };
+      if (s.branchCode || (s as any).branch_code) {
+        snap.branch_code = s.branchCode || (s as any).branch_code;
+      }
       if (s.branchPrices && Object.keys(s.branchPrices).length > 0) {
         snap.branch_prices = s.branchPrices;
       }
       let { error } = await client.from('services').upsert(snap, { onConflict: 'id' });
       if (error) {
         let retried = false;
+        if (error.message?.includes('branch_code')) { delete snap.branch_code; retried = true; }
         if (error.message?.includes('price2')) { delete snap.price2; retried = true; }
         if (error.message?.includes('price3')) { delete snap.price3; retried = true; }
         if (error.message?.includes('branch_prices')) { delete snap.branch_prices; retried = true; }
@@ -5070,6 +5074,7 @@ export function dbServiceToApp(row: any) {
     id: row.id, 
     salonId: row.salonId || row.salon_id, 
     branchId: row.branchId || row.branch_id,
+    branchCode: row.branchCode || row.branch_code || undefined,
     categoryId: row.categoryId || row.category_id || row.category || '',
     name: row.name, 
     price: price, 
