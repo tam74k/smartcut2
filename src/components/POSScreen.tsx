@@ -201,6 +201,7 @@ export function POSScreen({
   shiftDate, 
   initialBooking, 
   initialHeldInvoice,
+  initialEditingInvoice,
   onClearInitial, 
   onCheckoutComplete, 
   clients, 
@@ -240,6 +241,7 @@ export function POSScreen({
   shiftDate: string,
   initialBooking?: Booking | null, 
   initialHeldInvoice?: HeldInvoice | null,
+  initialEditingInvoice?: Invoice | null,
   onClearInitial?: () => void,
   onCheckoutComplete?: (invoice: Invoice, paymentSplits: { amount: number, treasuryId: string }[], bookingId?: string) => void,
   clients: Client[],
@@ -426,6 +428,7 @@ export function POSScreen({
   const [splitAmounts, setSplitAmounts] = useState<Record<string, number>>({});
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [completedInvoice, setCompletedInvoice] = useState<Invoice | null>(null);
+  const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
   const [mobilePrintNotice, setMobilePrintNotice] = useState<string | null>(null);
 
   // Deferred & Partial Payment State (الفواتير الآجلة والسداد الجزئي)
@@ -978,8 +981,8 @@ export function POSScreen({
 
   // إعادة ضبط شاشة نقطة البيع وبدء فاتورة جديدة فوراً مع تحميل جميع الخدمات دون أي تأخير
   const resetToNewInvoice = (options?: { holdCurrentCart?: boolean }) => {
-    // 1. إذا طلب تعليق الفاتورة الحالية وكانت السلة تحتوي عناصر
-    if (options?.holdCurrentCart && cart.length > 0) {
+    // 1. إذا طلب تعليق الفاتورة الحالية وكانت السلة تحتوي عناصر (ولا نكون في وضع تعديل فاتورة قائمة)
+    if (options?.holdCurrentCart && cart.length > 0 && !editingInvoice) {
       const heldId = activeHeldInvoiceId || ('HOLD-' + Math.random().toString(36).substr(2, 6).toUpperCase());
       const newHeld: HeldInvoice = {
         id: heldId,
@@ -1011,7 +1014,7 @@ export function POSScreen({
       }, 0);
     }
 
-    // 2. تصفير فوري لجميع حقول الفاتورة والعميل والسلة
+    // 2. تصفير فوري لجميع حقول الفاتورة والعميل والسلة وإنهاء وضع التعديل
     setCart([]);
     setSelectedClient(null);
     setClientSearch('');
@@ -1027,6 +1030,7 @@ export function POSScreen({
     setBeforePhotoUrl('');
     setAfterPhotoUrl('');
     setActiveHeldInvoiceId(null);
+    setEditingInvoice(null);
     setSplitAmounts({});
     setAppliedPromo(null);
     setPromoDiscountAmount(0);
@@ -1447,16 +1451,23 @@ export function POSScreen({
       : (employees.find(e => e.id === tipEmployeeId) || employees.find(e => e.id === cart[0]?.employeeId) || { id: 'unspecified', name: 'غير محدد (عامة للصالون)' });
     const tipPayoutMode = settings.tipPayoutMethod || 'instant_cash';
 
+    const finalInvoiceId = editingInvoice ? editingInvoice.id : ('INV-' + Math.random().toString(36).substr(2,9).toUpperCase());
+    const finalInvoiceDate = editingInvoice ? editingInvoice.date : (effectiveIsShiftOpen ? (effectiveShiftDate + 'T' + new Date().toTimeString().split(' ')[0]) : new Date().toISOString());
+
     const initialInv: Invoice = {
-      id: 'INV-' + Math.random().toString(36).substr(2,9).toUpperCase(),
+      id: finalInvoiceId,
       salonId: settings.salonId,
       branchId: activeBranchId || (branches?.find(b => b.isMain)?.id) || settings.branchId,
       branchCode: (branches?.find(b => b.id === (activeBranchId || settings.branchId))?.code),
       cashierId: currentUser?.id || currentUser?.username || undefined,
       cashierName: currentUser?.name || currentUser?.username || undefined,
-      createdBy: currentUser?.username || currentUser?.name || undefined,
-      createdById: currentUser?.id || undefined,
-      date: effectiveIsShiftOpen ? (effectiveShiftDate + 'T' + new Date().toTimeString().split(' ')[0]) : new Date().toISOString(),
+      createdBy: editingInvoice?.createdBy || currentUser?.username || currentUser?.name || undefined,
+      createdById: editingInvoice?.createdById || currentUser?.id || undefined,
+      updatedBy: currentUser?.username || currentUser?.name || undefined,
+      updatedByName: currentUser?.name || currentUser?.username || undefined,
+      updatedById: currentUser?.id || undefined,
+      updatedAt: new Date().toISOString(),
+      date: finalInvoiceDate,
       clientName: isWaselInvoice && waselRecipientName.trim()
         ? (selectedClient ? `${selectedClient.name} (${waselRecipientName.trim()})` : waselRecipientName.trim())
         : (selectedClient ? selectedClient.name : (clientSearch || 'عميل نقدي')),
@@ -1704,6 +1715,7 @@ export function POSScreen({
       if (onCheckoutComplete) {
         onCheckoutComplete(newInvoice, splits, activeBookingId || initialBooking?.id);
       }
+      setEditingInvoice(null);
 
       // حفظ استخدام البرومو كود للعميل المحدد منعاً من الاستخدام المتكرر
       if (appliedPromo && selectedClient) {
@@ -2081,6 +2093,114 @@ export function POSScreen({
     }
   }, [initialHeldInvoice, clients]);
 
+  // استرجاع وفتح الفاتورة بالكامل للتعديل في نقطة البيع
+  useEffect(() => {
+    if (initialEditingInvoice) {
+      setEditingInvoice(initialEditingInvoice);
+
+      // 1. العميل
+      let client = clients.find(c => 
+        (initialEditingInvoice.clientId && c.id === initialEditingInvoice.clientId) ||
+        (initialEditingInvoice.clientPhone && c.phone === initialEditingInvoice.clientPhone) ||
+        c.name === initialEditingInvoice.clientName
+      );
+      if (!client && initialEditingInvoice.clientName) {
+        client = {
+          id: initialEditingInvoice.clientId || ('C-' + Math.random().toString(36).substr(2, 9)),
+          name: initialEditingInvoice.clientName,
+          phone: initialEditingInvoice.clientPhone || '',
+          loyaltyPoints: 0
+        };
+      }
+      setSelectedClient(client || null);
+      setClientSearch(initialEditingInvoice.clientName || client?.name || '');
+
+      // 2. بنود الفاتورة (خدمات ومنتجات)
+      const loadedCart: CartItem[] = (initialEditingInvoice.items || []).map((it, idx) => {
+        const isProd = it.type === 'product';
+        const rawItem = isProd
+          ? (products?.find((p: any) => p.id === it.itemId || p.name === it.serviceName) || {
+              id: it.itemId || it.id,
+              name: it.serviceName,
+              price: Number(it.price || 0),
+              originalPrice: Number(it.originalPrice || it.price || 0),
+              type: 'product',
+              _isProduct: true
+            })
+          : (items.find((s: any) => s.id === it.itemId || s.name === it.serviceName) || {
+              id: it.itemId || it.id,
+              name: it.serviceName,
+              price: Number(it.price || 0),
+              originalPrice: Number(it.originalPrice || it.price || 0),
+              type: 'service'
+            });
+
+        return normalizeCartItem({
+          cartId: it.id || ('CART-EDIT-' + idx + '-' + Math.random().toString(36).substr(2, 6)),
+          quantity: Math.max(1, Number(it.quantity) || 1),
+          employeeId: it.employeeId || employees[0]?.id || '',
+          referralEmployeeId: it.referralEmployeeId || '',
+          type: isProd ? 'product' : 'service',
+          price: Number(it.price) || 0,
+          discount: Number(it.discount) || 0,
+          originalPrice: Number(it.originalPrice || it.price) || 0,
+          item: rawItem
+        });
+      });
+      setCart(loadedCart);
+
+      // 3. الخصم
+      setDiscount({ type: 'fixed', value: Number(initialEditingInvoice.discount) || 0 });
+
+      // 4. العربون والحجز
+      setAdvanceDeduction(Number(initialEditingInvoice.advanceDeduction) || 0);
+      setActiveAdvancePayments(initialEditingInvoice.advancePayments || []);
+      setActiveBookingId(initialEditingInvoice.bookingId || undefined);
+
+      // 5. الحالات الخاصة
+      setIsRemedyInvoice(Boolean(initialEditingInvoice.isRemedyInvoice));
+      setRemedyReason(initialEditingInvoice.remedyReason || '');
+      setIsWaselInvoice(Boolean(initialEditingInvoice.isWaselInvoice));
+      setWaselReason(initialEditingInvoice.waselReason || '');
+      setWaselRecipientName(initialEditingInvoice.waselRecipientName || '');
+      setBeforePhotoUrl(initialEditingInvoice.beforePhotoUrl || '');
+      setAfterPhotoUrl(initialEditingInvoice.afterPhotoUrl || '');
+
+      if (initialEditingInvoice.queueNumber) {
+        setActiveQueueNumber(initialEditingInvoice.queueNumber);
+      }
+
+      // 6. طرق الدفع المسبقة
+      if (initialEditingInvoice.status === 'deferred') {
+        setPaymentMode('deferred');
+        setDeferredDueDate(initialEditingInvoice.dueDate || '');
+        setDeferredNotes(initialEditingInvoice.notes || '');
+      } else if (initialEditingInvoice.status === 'partially_paid') {
+        setPaymentMode('partial');
+        setPartialPaidAmount(Number(initialEditingInvoice.paid) || 0);
+        setDeferredDueDate(initialEditingInvoice.dueDate || '');
+        setDeferredNotes(initialEditingInvoice.notes || '');
+      } else {
+        setPaymentMode('full');
+      }
+
+      if (initialEditingInvoice.paymentMethods && initialEditingInvoice.paymentMethods.length > 1) {
+        setPaymentType('split');
+        const splitsObj: Record<string, number> = {};
+        initialEditingInvoice.paymentMethods.forEach(pm => {
+          splitsObj[pm.treasuryId] = pm.amount;
+        });
+        setSplitAmounts(splitsObj);
+      } else {
+        setPaymentType('single');
+        const primaryTreasury = initialEditingInvoice.paymentMethods?.[0]?.treasuryId || initialEditingInvoice.treasuryId || initialEditingInvoice.paymentMethod || 'cash';
+        setSingleTreasury(primaryTreasury);
+      }
+
+      if (onClearInitial) onClearInitial();
+    }
+  }, [initialEditingInvoice, clients, items, products, employees]);
+
   // حفظ الفاتورة النشطة كمسودة محلية تلقائياً لضمان عدم فقدانها عند التنقل بين الشاشات
   useEffect(() => {
     if (cart.length > 0 || activeBookingId || (selectedClient && selectedClient.name) || activeHeldInvoiceId) {
@@ -2114,9 +2234,9 @@ export function POSScreen({
     }
   }, [cart, selectedClient, clientSearch, discount, advanceDeduction, activeAdvancePayments, activeBookingId, activeHeldInvoiceId, isRemedyInvoice, remedyReason, isWaselInvoice, waselReason, waselRecipientName, beforePhotoUrl, afterPhotoUrl, activeQueueNumber]);
 
-  // استعادة المسودة النشطة عند فتح شاشة الكاشير (إذا لم يتم تمرير حجز جديد أو فاتورة معلقة جديدة)
+  // استعادة المسودة النشطة عند فتح شاشة الكاشير (إذا لم يتم تمرير حجز جديد أو فاتورة معلقة أو فاتورة للتعديل)
   useEffect(() => {
-    if (!initialBooking && !initialHeldInvoice) {
+    if (!initialBooking && !initialHeldInvoice && !initialEditingInvoice) {
       try {
         const savedDraft = localStorage.getItem('smartcut_pos_active_draft');
         if (savedDraft) {
@@ -2156,6 +2276,7 @@ export function POSScreen({
     setActiveBookingId(undefined);
     setActiveQueueNumber(null);
     setActiveHeldInvoiceId(null);
+    setEditingInvoice(null);
     setIsRemedyInvoice(false);
     setIsWaselInvoice(false);
     setWaselReason('');
@@ -2641,6 +2762,32 @@ export function POSScreen({
     <div className="flex flex-col lg:flex-row w-full bg-slate-50 overflow-y-auto lg:overflow-hidden lg:h-full">
       {/* Right Section: Items Grid */}
       <div className="order-2 lg:order-none flex-none lg:flex-1 flex flex-col p-4 lg:p-6 lg:overflow-hidden">
+        {/* Banner وضع تعديل الفاتورة */}
+        {editingInvoice && (
+          <div className="mb-3 bg-amber-50 border border-amber-200 text-amber-900 px-3.5 py-2.5 rounded-2xl flex items-center justify-between gap-3 text-xs shadow-xs animate-in fade-in">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse shrink-0" />
+              <div className="min-w-0">
+                <span className="font-black text-amber-800">أنت في وضع تعديل الفاتورة رقم: <span className="font-mono bg-amber-100 px-1.5 py-0.5 rounded text-amber-900 font-bold">{editingInvoice.id}</span></span>
+                <span className="text-slate-600 mr-2 text-[11px] hidden sm:inline">
+                  (تعديل الخدمات/المنتجات/الموظفين/الخصم/العميل - سيتم تحديث الخزائن بدقة ولن تُكرر المبالغ)
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                if (window.confirm('هل تريد إلغاء وضع تعديل الفاتورة وتفريغ السلة؟')) {
+                  setEditingInvoice(null);
+                  clearBooking();
+                }
+              }}
+              className="bg-white hover:bg-amber-100 text-rose-600 border border-amber-200 px-2.5 py-1 rounded-xl text-xs font-bold shrink-0 transition-colors cursor-pointer shadow-xs"
+            >
+              إلغاء التعديل
+            </button>
+          </div>
+        )}
+
         {/* Search & Action Bar - صف واحد متناسق بدون نزول الأزرار للسطر التالي */}
         <div className="flex items-center gap-1.5 sm:gap-2 mb-3 lg:mb-4 w-full flex-nowrap overflow-x-auto no-scrollbar">
           {/* خانة البحث المرنة بحيث تملأ المساحة المتاحة دون دفع الأزرار */}
@@ -2871,6 +3018,31 @@ export function POSScreen({
       {/* Left Section: Cart & Payment (Enlarged & Re-engineered) */}
       <div className="order-1 lg:order-none w-full lg:w-[420px] lg:max-w-[460px] bg-white border-b lg:border-b-0 lg:border-r border-slate-200 shadow-xl z-10 flex flex-col lg:h-full lg:overflow-hidden">
         
+        {/* Banner وضع تعديل الفاتورة في السلة */}
+        {editingInvoice && (
+          <div className="bg-amber-500 text-white p-2.5 px-3 flex items-center justify-between gap-2 text-xs font-bold shrink-0 shadow-inner border-b border-amber-600 animate-in slide-in-from-top-2">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px]">تعديل فاتورة</span>
+              <span className="truncate font-mono">#{editingInvoice.id}</span>
+              <span className="text-[10px] bg-amber-700/60 px-1.5 py-0.5 rounded">
+                {editingInvoice.date.split('T')[0]}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                if (window.confirm('هل تريد إلغاء وضع تعديل الفاتورة وتفريغ السلة؟')) {
+                  setEditingInvoice(null);
+                  clearBooking();
+                }
+              }}
+              className="bg-white text-amber-800 hover:bg-amber-50 px-2 py-0.5 rounded-lg text-[11px] font-black shrink-0 transition-colors cursor-pointer shadow-xs"
+            >
+              إلغاء التعديل
+            </button>
+          </div>
+        )}
+
         {/* 1. Top Quick Action Bar: New Bill / Hold / Held Invoices Counter */}
         <div className="p-3 bg-slate-900 text-white flex items-center justify-between gap-2 shadow-xs shrink-0">
           <div className="flex items-center gap-1.5">

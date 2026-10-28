@@ -48,6 +48,7 @@ export function InvoicesScreen({
   onProcessSalesReturn,
   onNavigateToReturns,
   onNavigateToDeferred,
+  onEditInvoiceInPOS,
 }: { 
   settings: AppSettings;
   invoices: Invoice[];
@@ -70,6 +71,7 @@ export function InvoicesScreen({
   onProcessSalesReturn?: (ret: SalesReturn) => void;
   onNavigateToReturns?: () => void;
   onNavigateToDeferred?: () => void;
+  onEditInvoiceInPOS?: (invoice: Invoice) => void;
 }) {
   const [showImportModal, setShowImportModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -100,12 +102,42 @@ export function InvoicesScreen({
   const [payTreasury, setPayTreasury] = useState(settings.treasuries.find(t => !t.isMain)?.id || settings.treasuries[0]?.id || '');
   const [cashbackToUse, setCashbackToUse] = useState<number>(0);
   
-  const [showEditModal, setShowEditModal] = useState<Invoice | null>(null);
-
   const [cancelInvoiceTarget, setCancelInvoiceTarget] = useState<Invoice | null>(null);
   const [adminPasswordTarget, setAdminPasswordTarget] = useState<Invoice | null>(null);
   const [adminPasswordInput, setAdminPasswordInput] = useState('');
   const [adminPasswordError, setAdminPasswordError] = useState(false);
+
+  // دالة فحص ما إذا كانت الفاتورة صادرة بتاريخ سابق (أمس أو قبله)
+  const isInvoiceFromPreviousDate = (inv: Invoice) => {
+    if (!inv || !inv.date) return false;
+    const invDateStr = inv.date.split('T')[0];
+    const todayStr = new Date().toISOString().split('T')[0];
+    return invDateStr < todayStr;
+  };
+
+  // معالجة بدء تعديل الفاتورة في نقطة البيع
+  const handleInitiateEdit = (inv: Invoice) => {
+    if (isInvoiceFromPreviousDate(inv)) {
+      alert('عذراً، محظور تماماً تعديل الفواتير الصادرة بتاريخ سابق حفاظاً على سلامة الحسابات والورديات المغلقة. التعديل متاح فقط لفواتير اليوم.');
+      return;
+    }
+    if (inv.status === 'cancelled') {
+      alert('عذراً، لا يمكن تعديل فاتورة ملغاة.');
+      return;
+    }
+    const isAuthorized = !currentUser || ['admin', 'owner', 'programmer'].includes(currentUser.role) ||
+      currentUser.actions?.includes('manage_invoices') || currentUser.actions?.includes('*');
+
+    if (isAuthorized) {
+      if (onEditInvoiceInPOS) {
+        onEditInvoiceInPOS(inv);
+      }
+    } else {
+      setAdminPasswordTarget(inv);
+      setAdminPasswordInput('');
+      setAdminPasswordError(false);
+    }
+  };
 
   const canDeleteInvoice = !currentUser || currentUser.role === 'admin' || currentUser.role === 'owner' || currentUser.role === 'programmer' || currentUser.actions?.includes('manage_invoices_delete') || currentUser.actions?.includes('*');
 
@@ -167,13 +199,16 @@ export function InvoicesScreen({
     const currentUserPassword = currentUser?.password || '';
     const isValid = 
       (currentUserPassword && adminPasswordInput === currentUserPassword) ||
-      (currentUser?.role === 'admin' || currentUser?.role === 'owner' || currentUser?.role === 'programmer') && !currentUserPassword;
+      (currentUser?.role === 'admin' || currentUser?.role === 'owner' || currentUser?.role === 'programmer');
     
-    if (isValid) {
-      setShowEditModal(adminPasswordTarget);
+    if (isValid && adminPasswordTarget) {
+      const target = adminPasswordTarget;
       setAdminPasswordTarget(null);
       setAdminPasswordInput('');
       setAdminPasswordError(false);
+      if (onEditInvoiceInPOS) {
+        onEditInvoiceInPOS(target);
+      }
     } else {
       setAdminPasswordError(true);
     }
@@ -737,13 +772,22 @@ export function InvoicesScreen({
                         </button>
                       )}
                       
-                      <button onClick={() => {
-                        setAdminPasswordTarget(inv);
-                        setAdminPasswordInput('');
-                        setAdminPasswordError(false);
-                      }} className="w-8 h-8 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 flex items-center justify-center transition-colors" title="تعديل الفاتورة (إدارة)">
-                        <Edit size={16} />
-                      </button>
+                      {(() => {
+                        const isPrevDate = isInvoiceFromPreviousDate(inv);
+                        return (
+                          <button 
+                            onClick={() => handleInitiateEdit(inv)} 
+                            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
+                              isPrevDate 
+                                ? 'bg-slate-50 text-slate-300 hover:bg-slate-100 cursor-not-allowed opacity-60' 
+                                : 'bg-amber-50 text-amber-700 hover:bg-amber-100 cursor-pointer shadow-xs'
+                            }`} 
+                            title={isPrevDate ? 'محظور تعديل فاتورة بتاريخ سابق (متاح لفواتير اليوم فقط)' : 'تعديل الفاتورة في نقطة البيع (POS)'}
+                          >
+                            <Edit size={16} />
+                          </button>
+                        );
+                      })()}
 
                       <button onClick={() => handlePrint(inv)} className="w-8 h-8 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 flex items-center justify-center transition-colors" title="طباعة">
                         <Printer size={16} />
@@ -943,65 +987,7 @@ export function InvoicesScreen({
         </div>
       )}
 
-      {/* Edit Modal (Admin) */}
-      {showEditModal && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden">
-            <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-              <h3 className="font-bold text-lg text-slate-800">تعديل الفاتورة {showEditModal.id} (صلاحية إدارة)</h3>
-              <button onClick={() => setShowEditModal(null)} className="text-slate-400 hover:text-red-500"><XCircle size={20}/></button>
-            </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">اسم العميل</label>
-                <input 
-                  type="text" 
-                  value={showEditModal.clientName}
-                  onChange={e => setShowEditModal({...showEditModal, clientName: e.target.value})}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary" 
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">المبلغ الإجمالي</label>
-                <input 
-                  type="number" 
-                  value={showEditModal.total}
-                  onChange={e => setShowEditModal({...showEditModal, total: Number(e.target.value)})}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary" 
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">الخصم</label>
-                <input 
-                  type="number" 
-                  value={showEditModal.discount}
-                  onChange={e => setShowEditModal({...showEditModal, discount: Number(e.target.value)})}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary" 
-                />
-              </div>
-              <div className="bg-amber-50 p-3 rounded-lg border border-amber-200">
-                <p className="text-xs text-amber-700 font-bold mb-1">ملاحظة هامة:</p>
-                <p className="text-xs text-amber-600">التعديل المباشر على قيمة الفاتورة لن يقوم بتعديل المعاملات المالية (القيود) المرتبطة بها تلقائياً. يُفضل إلغاء الفاتورة وإصدار فاتورة جديدة لضمان صحة التقارير المالية.</p>
-              </div>
-            </div>
-            <div className="p-4 bg-slate-50 border-t border-slate-100 flex gap-3">
-              <button onClick={() => setShowEditModal(null)} className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-3 rounded-xl transition-colors">إلغاء</button>
-              <button onClick={async () => {
-                const updated: Invoice = {
-                  ...showEditModal,
-                  updatedBy: currentUser?.username || currentUser?.name || 'admin',
-                  updatedByName: currentUser?.name || currentUser?.username || 'admin',
-                  updatedById: currentUser?.id,
-                  updatedAt: new Date().toISOString()
-                };
-                setInvoices(invoices.map(i => i.id === updated.id ? updated : i));
-                await DB.saveInvoice(updated);
-                setShowEditModal(null);
-              }} className="flex-1 bg-primary hover:bg-primary-dark text-white font-bold py-3 rounded-xl transition-colors">حفظ التعديلات</button>
-            </div>
-          </div>
-        </div>
-      )}
+
 
       {/* Cancel Confirm Modal */}
       {cancelInvoiceTarget && (

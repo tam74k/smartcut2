@@ -554,6 +554,7 @@ export default function App() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [activeBookingForPOS, setActiveBookingForPOS] = useState<Booking | null>(null);
   const [activeHeldInvoiceForPOS, setActiveHeldInvoiceForPOS] = useState<HeldInvoice | null>(null);
+  const [activeEditingInvoiceForPOS, setActiveEditingInvoiceForPOS] = useState<Invoice | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [purchaseInvoices, setPurchaseInvoices] = useState<any[]>([]);
@@ -2642,10 +2643,70 @@ export default function App() {
       shiftDate: invoice.shiftDate || (shiftData?.isOpen ? shiftData.date : undefined),
       paymentMethods: invoice.paymentMethods && invoice.paymentMethods.length > 0 ? invoice.paymentMethods : paymentSplits
     };
+
+    const existingOldInvoice = invoices.find(i => i.id === invoiceWithBranch.id);
+    const isEditing = Boolean(existingOldInvoice);
+
+    // 1. إعادة تسوية الآثار السابقة إذا كنا في وضع تعديل فاتورة قائمة
+    const updatedProducts = [...products];
+    if (existingOldInvoice) {
+      // أ. استعادة كميات المنتجات المباعة سابقاً في الفاتورة قبل تعديلها
+      if (existingOldInvoice.items) {
+        existingOldInvoice.items.forEach(oldItem => {
+          if (oldItem.type === 'product' && oldItem.itemId) {
+            const pIdx = updatedProducts.findIndex(p => p.id === oldItem.itemId);
+            if (pIdx !== -1) {
+              const qty = oldItem.quantity || 1;
+              const currentProd = updatedProducts[pIdx];
+              const curBranchStocks = { ...(currentProd.branchStocks || {}) };
+              const branchCurStock = (activeBranchId && curBranchStocks[activeBranchId] !== undefined)
+                ? curBranchStocks[activeBranchId]
+                : currentProd.currentStock;
+              const newBranchStock = branchCurStock + qty;
+              if (activeBranchId) {
+                curBranchStocks[activeBranchId] = newBranchStock;
+              }
+              updatedProducts[pIdx] = { 
+                ...currentProd, 
+                currentStock: currentProd.currentStock + qty,
+                branchStocks: curBranchStocks
+              };
+            }
+          }
+        });
+      }
+      // ب. استبعاد حركات المخزون السابقة الخاصة بهذه الفاتورة
+      setItemMovements(prev => prev.filter(m => m.referenceId !== invoiceWithBranch.id));
+
+      // ج. استبعاد السجلات المالية وعمولات الموظفين المسجلة سابقاً للفاتورة
+      setEmployees(prev => prev.map(emp => {
+        if (!emp.financialRecords || emp.financialRecords.length === 0) return emp;
+        const filtered = emp.financialRecords.filter(r => !r.note?.includes(invoiceWithBranch.id));
+        if (filtered.length !== emp.financialRecords.length) {
+          const updatedEmp = { ...emp, financialRecords: filtered };
+          DB.saveEmployee(updatedEmp).catch(() => {});
+          return updatedEmp;
+        }
+        return emp;
+      }));
+
+      // د. استرجاع نقاط الكاش باك إذا تم استخدامها سابقاً
+      if (existingOldInvoice.cashbackUsed && existingOldInvoice.clientId) {
+        setClients(prev => prev.map(cl => {
+          if (cl.id === existingOldInvoice.clientId) {
+            const restoredPts = (cl.loyaltyPoints || 0) + existingOldInvoice.cashbackUsed!;
+            const updatedCl = { ...cl, loyaltyPoints: restoredPts, cashback: restoredPts };
+            DB.saveClient(updatedCl).catch(() => {});
+            return updatedCl;
+          }
+          return cl;
+        }));
+      }
+    }
+
     setInvoices(prev => [invoiceWithBranch, ...prev.filter(i => i.id !== invoiceWithBranch.id)]);
     
     // Deduct stock & Add Commission
-    const updatedProducts = [...products];
     const newMovements: any[] = [];
     const newFinancialRecords: any[] = [];
     const instantCommissionPayouts: Array<{
@@ -2896,8 +2957,13 @@ export default function App() {
       });
     }
 
-    if (newTrxs.length > 0) {
-      setTransactions(prev => [...prev, ...newTrxs]);
+    if (isEditing) {
+      handleSetTransactions(prev => [
+        ...prev.filter(t => (t as any).invoiceId !== invoiceWithBranch.id && !t.description?.includes(invoiceWithBranch.id)),
+        ...newTrxs
+      ]);
+    } else if (newTrxs.length > 0) {
+      handleSetTransactions(prev => [...prev, ...newTrxs]);
     }
 
 
@@ -2910,6 +2976,9 @@ export default function App() {
     // 4. حفظ فوري في Supabase لضمان بقاء وتوثيق البيانات
     (async () => {
       try {
+        if (isEditing) {
+          await DB.deleteTransactionsByInvoiceId(invoiceWithBranch.id);
+        }
         const saved = await DB.saveInvoice(invoiceWithBranch, settings.salonId);
         if (saved && newTrxs.length > 0) {
           await DB.saveTransactions(newTrxs, settings.salonId);
@@ -2926,6 +2995,7 @@ export default function App() {
     }
 
     setActiveBookingForPOS(null);
+    setActiveEditingInvoiceForPOS(null);
   };
 
 
@@ -2964,9 +3034,11 @@ export default function App() {
           shiftDate={shiftData.date} 
           initialBooking={activeBookingForPOS} 
           initialHeldInvoice={activeHeldInvoiceForPOS}
+          initialEditingInvoice={activeEditingInvoiceForPOS}
           onClearInitial={() => {
             setActiveBookingForPOS(null);
             setActiveHeldInvoiceForPOS(null);
+            setActiveEditingInvoiceForPOS(null);
           }} 
           onCheckoutComplete={handleCheckoutComplete} 
           clients={branchClients} 
@@ -3269,6 +3341,12 @@ export default function App() {
           salesReturns={branchSalesReturns}
           setSalesReturns={handleSetSalesReturns}
           onNavigateToDeferred={() => setActiveTab('deferred_invoices')}
+          onEditInvoiceInPOS={(invoice) => {
+            setActiveBookingForPOS(null);
+            setActiveHeldInvoiceForPOS(null);
+            setActiveEditingInvoiceForPOS(invoice);
+            setActiveTab('pos');
+          }}
         />
       );
 
