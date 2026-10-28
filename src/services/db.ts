@@ -315,6 +315,15 @@ export async function ensureCoreSchema(): Promise<void> {
       ensureColumn('invoices', 'remaining', 'NUMERIC(12,2)'),
       ensureColumn('invoices', 'vat', 'NUMERIC(12,2)'),
       ensureColumn('invoices', 'tax', 'NUMERIC(12,2)'),
+      ensureColumn('invoices', 'due_date', 'TIMESTAMPTZ'),
+      ensureColumn('invoices', 'payments_history', 'JSONB'),
+      ensureColumn('invoices', 'settled_at', 'TIMESTAMPTZ'),
+      ensureColumn('invoices', 'original_deferred_date', 'TIMESTAMPTZ'),
+      ensureColumn('invoices', 'bad_debt_reason', 'TEXT'),
+      ensureColumn('invoices', 'bad_debt_at', 'TIMESTAMPTZ'),
+      ensureColumn('invoices', 'bad_debt_by', 'VARCHAR(100)'),
+      ensureColumn('invoices', 'payment_methods', 'JSONB'),
+      ensureColumn('invoices', 'notes', 'TEXT'),
       ensureColumn('bookings', 'total_price', 'NUMERIC(10,2)'),
       ensureColumn('bookings', 'total_amount', 'NUMERIC(12,2)'),
       ensureColumn('bookings', 'time', 'VARCHAR(50)'),
@@ -2140,6 +2149,23 @@ export const DB = {
             console.warn('DB.saveInvoice FK warning on branch_id, retrying with branch_id = null');
             snap.branch_id = null;
           }
+          retries++;
+          continue;
+        }
+
+        // معالجة خطأ نوع UUID غير الصحيح (22P02)
+        if (error.code === '22P02') {
+          console.warn('DB.saveInvoice 22P02 warning on UUID, retrying with client_id = null and sanitizing branch_id');
+          snap.client_id = null;
+          if (snap.branch_id && !UUID_REGEX.test(snap.branch_id)) snap.branch_id = null;
+          retries++;
+          continue;
+        }
+
+        // معالجة قيد التحقق القديم من الحالة في قاعدة البيانات (23514 check constraint)
+        if (error.code === '23514' || errMsg.includes('check constraint') || errMsg.includes('invoices_status_check') || errMsg.includes('status')) {
+          console.warn('DB.saveInvoice status check constraint violation on DB, falling back status to completed while preserving deferred debt data...');
+          snap.status = 'completed';
           retries++;
           continue;
         }
@@ -5319,7 +5345,15 @@ export function dbInvoiceToApp(row: any): any {
   }
   if (!Array.isArray(paymentMethods)) paymentMethods = [];
 
-  const rawStatus = row.status || 'completed';
+  let rawStatus = row.status || 'completed';
+  const hasRemainingDebt = Number(row.remaining ?? row.remaining_amount ?? row.remainingAmount ?? 0) > 0.01;
+  const isMarkedDeferred = row.paymentMethod === 'deferred' || row.payment_method === 'deferred' || row.treasuryId === 'deferred' || row.treasury_id === 'deferred';
+  if (rawStatus === 'completed' && hasRemainingDebt && isMarkedDeferred) {
+    rawStatus = 'deferred';
+  } else if (rawStatus === 'completed' && hasRemainingDebt && Number(row.paid ?? row.paid_amount ?? row.paidAmount ?? 0) > 0) {
+    rawStatus = 'partially_paid';
+  }
+
   const isDeferred = rawStatus === 'deferred';
   const isPartiallyPaid = rawStatus === 'partially_paid';
 
