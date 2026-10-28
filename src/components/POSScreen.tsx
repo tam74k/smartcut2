@@ -343,6 +343,7 @@ export function POSScreen({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [itemTypeFilter, setItemTypeFilter] = useState<'service' | 'product'>('service');
+  const [selectedPriceTier, setSelectedPriceTier] = useState<1 | 2 | 3>(1);
   const [clientSearch, setClientSearch] = useState('');
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -1043,6 +1044,7 @@ export function POSScreen({
     setItemTypeFilter('service');
     setSelectedCategory('all');
     setSearchQuery('');
+    setSelectedPriceTier(1);
 
     // 4. حذف المسودة المؤقتة فوراً
     try {
@@ -1794,6 +1796,7 @@ export function POSScreen({
       setItemTypeFilter('service');
       setSelectedCategory('all');
       setSearchQuery('');
+      setSelectedPriceTier(1);
       try { localStorage.removeItem('smartcut_pos_active_draft'); } catch {}
       if (onClearInitial) onClearInitial();
 
@@ -2315,11 +2318,42 @@ export function POSScreen({
     });
   }, [categories, itemTypeFilter, items, products]);
 
-  const isForeignerClient = Boolean(settings.enableDualPricing && selectedClient?.clientType === 'foreigner');
+  const isMultiPricingEnabled = Boolean(settings.enableMultiPricing ?? settings.enableDualPricing);
+  const isForeignerClient = Boolean(!isMultiPricingEnabled && settings.enableDualPricing && selectedClient?.clientType === 'foreigner');
 
-  // مزامنة وتحديث أسعار الخدمات داخل السلة تلقائياً عند تغيير نوع العميل (مواطن / أجنبي)
+  const handleSelectPriceTier = (tier: 1 | 2 | 3) => {
+    setSelectedPriceTier(tier);
+    setCart(prevCart => {
+      if (!prevCart || prevCart.length === 0) return prevCart;
+      return prevCart.map(cartItem => {
+        if (cartItem.type === 'product' || cartItem.item?._isProduct) return cartItem;
+        const srvId = cartItem.item?.id;
+        const srv = (items || []).find(s => s.id === srvId || s.name === cartItem.item?.name);
+        if (!srv) return cartItem;
+
+        const newOrigPrice = getServicePrice(srv, tier);
+        const rawDisc = Number(srv.discountPrice);
+        const hasDisc = !isNaN(rawDisc) && rawDisc > 0 && rawDisc < newOrigPrice;
+        const newEffPrice = hasDisc ? rawDisc : newOrigPrice;
+
+        return {
+          ...cartItem,
+          price: newEffPrice,
+          originalPrice: newOrigPrice,
+          item: {
+            ...cartItem.item,
+            displayPrice: newEffPrice,
+            originalPrice: newOrigPrice,
+            price: newEffPrice
+          }
+        };
+      });
+    });
+  };
+
+  // مزامنة وتحديث أسعار الخدمات داخل السلة تلقائياً عند تغيير نوع العميل (مواطن / أجنبي) إن لم يكن التسعير المتعدد نشطاً
   useEffect(() => {
-    if (!settings.enableDualPricing) return;
+    if (!settings.enableDualPricing || isMultiPricingEnabled) return;
     setCart(prevCart => {
       if (!prevCart || prevCart.length === 0) return prevCart;
       let changed = false;
@@ -2354,7 +2388,7 @@ export function POSScreen({
       });
       return changed ? updated : prevCart;
     });
-  }, [selectedClient?.id, selectedClient?.clientType, settings.enableDualPricing, items]);
+  }, [selectedClient?.id, selectedClient?.clientType, settings.enableDualPricing, isMultiPricingEnabled, items]);
 
   // قائمة الخدمات الافتراضية النشطة المجهزة مسبقاً في الذاكرة (Ultra Fast-Path Cache) لنزول الخدمات فوراً دون أي تأخير
   const defaultActiveServices = useMemo(() => {
@@ -2368,7 +2402,9 @@ export function POSScreen({
       return aOrder - bOrder;
     }).map(i => {
       const isForePrice = Boolean(isForeignerClient && ((i.foreignerPrice && Number(i.foreignerPrice) > 0) || (activeBranchId && i.branchForeignerPrices?.[activeBranchId])));
-      const originalPrice = getServicePrice(i, activeBranchId, isForeignerClient);
+      const originalPrice = isMultiPricingEnabled
+        ? getServicePrice(i, selectedPriceTier)
+        : getServicePrice(i, activeBranchId, isForeignerClient);
       const rawDiscount = Number(i.discountPrice);
       const hasDiscount = !isForePrice && !isNaN(rawDiscount) && rawDiscount > 0 && rawDiscount < originalPrice;
       const effectivePrice = hasDiscount ? rawDiscount : originalPrice;
@@ -2382,7 +2418,7 @@ export function POSScreen({
         displayPrice: effectivePrice
       };
     });
-  }, [items, isForeignerClient, activeBranchId]);
+  }, [items, isForeignerClient, activeBranchId, isMultiPricingEnabled, selectedPriceTier]);
 
   const filteredItems = useMemo(() => {
     const q = (searchQuery || '').trim().toLowerCase();
@@ -2484,7 +2520,9 @@ export function POSScreen({
         ? Boolean((i as any)._isProduct) 
         : itemTypeFilter === 'product' || Boolean((i as any).sellPrice !== undefined && (i as any).price === undefined);
       const isForePrice = Boolean(!isProduct && isForeignerClient && i.foreignerPrice && Number(i.foreignerPrice) > 0);
-      const originalPrice = isProduct ? (Number(i.sellPrice) || 0) : (isForePrice ? Number(i.foreignerPrice) : (Number(i.price) || 0));
+      const originalPrice = isProduct 
+        ? (Number(i.sellPrice) || 0) 
+        : (isMultiPricingEnabled ? getServicePrice(i, selectedPriceTier) : (isForePrice ? Number(i.foreignerPrice) : (Number(i.price) || 0)));
       const rawDiscount = Number(i.discountPrice);
       const hasDiscount = !isProduct && !isForePrice && !isNaN(rawDiscount) && rawDiscount > 0 && rawDiscount < originalPrice;
       const effectivePrice = hasDiscount ? rawDiscount : originalPrice;
@@ -2499,7 +2537,7 @@ export function POSScreen({
         displayPrice: effectivePrice
       };
     });
-  }, [selectedCategory, searchQuery, items, products, itemTypeFilter, categories, isForeignerClient, defaultActiveServices]);
+  }, [selectedCategory, searchQuery, items, products, itemTypeFilter, categories, isForeignerClient, defaultActiveServices, isMultiPricingEnabled, selectedPriceTier]);
 
   // تصفية الخدمات والمنتجات لنافذة استعلام الأسعار (معاينة وقراءة فقط دون إضافة للفاتورة)
   const priceCheckFilteredItems = useMemo(() => {
@@ -2625,7 +2663,9 @@ export function POSScreen({
       const matchedService = items.find(s => s.barcode && s.barcode.trim().toLowerCase() === q);
       if (matchedService) {
         const isForePrice = Boolean(isForeignerClient && ((matchedService.foreignerPrice && Number(matchedService.foreignerPrice) > 0) || (activeBranchId && matchedService.branchForeignerPrices?.[activeBranchId])));
-        const origPrice = getServicePrice(matchedService, activeBranchId, isForeignerClient);
+        const origPrice = isMultiPricingEnabled
+          ? getServicePrice(matchedService, selectedPriceTier)
+          : getServicePrice(matchedService, activeBranchId, isForeignerClient);
         const rawDisc = Number(matchedService.discountPrice);
         const hasDisc = !isForePrice && !isNaN(rawDisc) && rawDisc > 0 && rawDisc < origPrice;
         const effPrice = hasDisc ? rawDisc : origPrice;
@@ -2849,20 +2889,59 @@ export function POSScreen({
         </div>
 
         
-        {/* Type Toggle */}
-        <div className="flex gap-2 mb-2 lg:mb-4 bg-white p-2 rounded-xl shadow-sm border border-slate-100">
-          <button 
-            onClick={() => { setItemTypeFilter('service'); setSelectedCategory('all'); }} 
-            className={`flex-1 py-2 rounded-lg font-bold text-sm transition-all flex justify-center items-center gap-2 ${itemTypeFilter === 'service' ? 'bg-primary text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
-          >
-            <Scissors size={18} /> الخدمات
-          </button>
-          <button 
-            onClick={() => { setItemTypeFilter('product'); setSelectedCategory('all'); }} 
-            className={`flex-1 py-2 rounded-lg font-bold text-sm transition-all flex justify-center items-center gap-2 ${itemTypeFilter === 'product' ? 'bg-primary text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
-          >
-            <Package size={18} /> المنتجات
-          </button>
+        {/* Type Toggle & Multi-Pricing Radio */}
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-2 lg:mb-4 bg-white p-2 rounded-xl shadow-sm border border-slate-100">
+          {/* تصغير زري الخدمات والمنتجات */}
+          <div className={`flex items-center gap-1.5 ${isMultiPricingEnabled ? 'shrink-0' : 'flex-1'}`}>
+            <button 
+              type="button"
+              onClick={() => { setItemTypeFilter('service'); setSelectedCategory('all'); }} 
+              className={`${isMultiPricingEnabled ? 'px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm' : 'flex-1 py-2 text-sm'} rounded-lg font-bold transition-all flex justify-center items-center gap-1.5 cursor-pointer ${itemTypeFilter === 'service' ? 'bg-primary text-white shadow-md' : 'text-slate-600 bg-slate-50 hover:bg-slate-100'}`}
+            >
+              <Scissors size={isMultiPricingEnabled ? 15 : 18} /> الخدمات
+            </button>
+            <button 
+              type="button"
+              onClick={() => { setItemTypeFilter('product'); setSelectedCategory('all'); }} 
+              className={`${isMultiPricingEnabled ? 'px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm' : 'flex-1 py-2 text-sm'} rounded-lg font-bold transition-all flex justify-center items-center gap-1.5 cursor-pointer ${itemTypeFilter === 'product' ? 'bg-primary text-white shadow-md' : 'text-slate-600 bg-slate-50 hover:bg-slate-100'}`}
+            >
+              <Package size={isMultiPricingEnabled ? 15 : 18} /> المنتجات
+            </button>
+          </div>
+
+          {/* راديو بوتون لاختيار مستوى السعر (1، 2، 3) بجانبهم */}
+          {isMultiPricingEnabled && (
+            <div className="flex items-center gap-1.5 sm:gap-2 bg-slate-50 px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg border border-slate-200 shadow-2xs">
+              <span className="text-[11px] sm:text-xs font-bold text-slate-500 whitespace-nowrap">السعر:</span>
+              <div className="flex items-center gap-1 sm:gap-1.5">
+                {([1, 2, 3] as const).map(tier => {
+                  const isChecked = selectedPriceTier === tier;
+                  return (
+                    <label
+                      key={tier}
+                      onClick={() => handleSelectPriceTier(tier)}
+                      className={`flex items-center gap-1 px-2 py-0.5 sm:py-1 rounded-md text-xs font-bold cursor-pointer transition-all border select-none ${
+                        isChecked 
+                          ? 'bg-primary text-white border-primary shadow-xs' 
+                          : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                      }`}
+                      title={`السعر ${tier}`}
+                    >
+                      <input
+                        type="radio"
+                        name="pos_price_tier"
+                        value={tier}
+                        checked={isChecked}
+                        onChange={() => handleSelectPriceTier(tier)}
+                        className="w-3.5 h-3.5 accent-primary cursor-pointer"
+                      />
+                      <span className="text-xs font-black">{tier}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Categories Bar */}

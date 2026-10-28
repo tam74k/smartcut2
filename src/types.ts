@@ -329,6 +329,8 @@ export interface ServiceItem {
   categoryId: string; 
   name: string; 
   price: number; 
+  price2?: number; // السعر الثاني (2)
+  price3?: number; // السعر الثالث (3)
   branchPrices?: Record<string, number>; // تسعير الخدمة المخصص لكل فرع (branchId -> price)
   branchForeignerPrices?: Record<string, number>; // تسعير الخدمة المخصص للأجانب لكل فرع
   foreignerPrice?: number; // سعر الخدمة للأجنبي في حال تفعيل التسعير المزدوج
@@ -1124,6 +1126,7 @@ export interface AppSettings {
   depositRefundAllowedDays?: number; // مهلة استرجاع العربون بالأيام (0 = عدم السماح نهائياً)
   deposit_refund_allowed_days?: number;
   enableDualPricing?: boolean; // تفعيل سعرين للخدمة (مواطن وأجنبي)
+  enableMultiPricing?: boolean; // تفعيل العمل بالأسعار المتعددة (سعر 1، سعر 2، سعر 3)
 }
 
 export type TargetCalculationPolicy = 1 | 2 | 3 | 4 | 5;
@@ -1624,18 +1627,21 @@ export function isClientInBranch(client: Client | null | undefined, activeBranch
   return isMain;
 }
 
-export function getServicePrice(service: ServiceItem | null | undefined, branchId?: string, isForeigner?: boolean): number {
+export function getServicePrice(service: ServiceItem | null | undefined, priceTierOrBranchId?: any, isForeigner?: boolean): number {
   if (!service) return 0;
-  if (isForeigner) {
-    if (branchId && service.branchForeignerPrices && service.branchForeignerPrices[branchId] !== undefined) {
-      return Number(service.branchForeignerPrices[branchId]);
+  if (typeof priceTierOrBranchId === 'number') {
+    if (priceTierOrBranchId === 2 && service.price2 !== undefined && service.price2 !== null && Number(service.price2) > 0) {
+      return Number(service.price2);
     }
+    if (priceTierOrBranchId === 3 && service.price3 !== undefined && service.price3 !== null && Number(service.price3) > 0) {
+      return Number(service.price3);
+    }
+    return Number(service.price || 0);
+  }
+  if (isForeigner) {
     if (service.foreignerPrice !== undefined && service.foreignerPrice !== null && Number(service.foreignerPrice) > 0) {
       return Number(service.foreignerPrice);
     }
-  }
-  if (branchId && service.branchPrices && service.branchPrices[branchId] !== undefined) {
-    return Number(service.branchPrices[branchId]);
   }
   return Number(service.price || 0);
 }

@@ -1682,7 +1682,10 @@ export default function App() {
 
   // كيانات الفرع المعزولة قطيعاً (Branch-Scoped Entities) - تمنع تسرب الحسابات والورديات والفواتير بين الفروع
   const branchCategories = salonCategories;
-  const branchServices = salonServices;
+  const branchServices = useMemo(() => {
+    if (branches.length <= 1) return salonServices;
+    return salonServices.filter(s => !s.branchId || isItemInBranch(s.branchId, (s as any).branchCode));
+  }, [salonServices, branches.length, activeBranchId, activeBranch]);
   const branchEmployees = useMemo(() => {
     if (branches.length <= 1) return salonEmployees;
     return salonEmployees.filter(e => isItemInBranch(e.branchId, (e as any).branchCode));

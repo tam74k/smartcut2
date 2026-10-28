@@ -254,6 +254,9 @@ export function ServicesScreen({
       durationMinutes: 30,
       cashbackPercentage: 0,
       commissionableAmount: undefined,
+      price2: undefined,
+      price3: undefined,
+      branchId: activeBranchId || undefined,
       foreignerPrice: undefined,
       isTargetExempt: false,
       imageUrl: '',
@@ -276,6 +279,9 @@ export function ServicesScreen({
     const resolvedCatId = matchedCat?.id || service.categoryId || validServiceCategories[0]?.id || '';
     setServiceFormData({
       ...service,
+      price2: service.price2,
+      price3: service.price3,
+      branchId: service.branchId,
       categoryId: resolvedCatId,
       imageUrl: service.imageUrl || ''
     });
@@ -476,6 +482,9 @@ export function ServicesScreen({
         cardColor: serviceFormData.cardColor || '#10b981',
         priorityOrder: serviceFormData.priorityOrder ?? 0,
         price: Number(serviceFormData.price) || 0,
+        price2: (serviceFormData.price2 !== undefined && serviceFormData.price2 !== null && String(serviceFormData.price2).trim() !== '' && Number(serviceFormData.price2) > 0) ? Number(serviceFormData.price2) : undefined,
+        price3: (serviceFormData.price3 !== undefined && serviceFormData.price3 !== null && String(serviceFormData.price3).trim() !== '' && Number(serviceFormData.price3) > 0) ? Number(serviceFormData.price3) : undefined,
+        branchId: serviceFormData.branchId || undefined,
         foreignerPrice: (serviceFormData.foreignerPrice !== undefined && serviceFormData.foreignerPrice !== null && String(serviceFormData.foreignerPrice).trim() !== '' && Number(serviceFormData.foreignerPrice) > 0) ? Number(serviceFormData.foreignerPrice) : undefined,
         commissionableAmount: (serviceFormData.commissionableAmount !== undefined && serviceFormData.commissionableAmount !== null && Number(serviceFormData.commissionableAmount) > 0) ? Number(serviceFormData.commissionableAmount) : undefined,
         isTargetExempt: Boolean(serviceFormData.isTargetExempt),
@@ -1016,77 +1025,55 @@ export function ServicesScreen({
                 </div>
               </div>
 
-              {/* تسعير مخصص لكل فرع عند وجود أكثر من فرع */}
+              {/* اختيار الفرع المخصص للخدمة عند تعدد الفروع */}
               {branches && branches.length > 1 && (
-                <div className="bg-indigo-50/60 border border-indigo-200/90 rounded-2xl p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-black text-indigo-950 flex items-center gap-1.5">
-                      <Sparkles size={14} className="text-indigo-600" />
-                      <span>تسعير مخصص للفروع (يمكن تحديد سعر مختلف لكل فرع)</span>
-                    </span>
-                    <span className="text-[10px] text-indigo-600 font-bold bg-indigo-100/70 px-2 py-0.5 rounded-full">
-                      اختياري
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-indigo-900/80 leading-relaxed">
-                    يمكنك تحديد سعر خاص لهذه الخدمة في فروع معينة. إذا تركت سعر الفرع فارغاً، سيتم اعتماد السعر الأساسي تلقائياً ({serviceFormData.price || 0} {settings.currency}).
-                  </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
-                    {branches.map(b => {
-                      const curVal = serviceFormData.branchPrices?.[b.id];
-                      return (
-                        <div key={b.id} className="bg-white p-2.5 rounded-xl border border-indigo-100/90 shadow-2xs flex items-center justify-between gap-3">
-                          <div className="min-w-0 flex-1">
-                            <p className="text-xs font-black text-slate-800 truncate">{b.name} {b.isMain ? '(الرئيسي)' : ''}</p>
-                            <p className="text-[10px] text-slate-400 font-mono">{b.code || ''}</p>
-                          </div>
-                          <div className="w-28 relative">
-                            <input
-                              type="number"
-                              min="0"
-                              step="any"
-                              placeholder={String(serviceFormData.price || 0)}
-                              value={curVal !== undefined ? curVal : ''}
-                              onChange={e => {
-                                const nextPrices = { ...(serviceFormData.branchPrices || {}) };
-                                if (e.target.value.trim() !== '') {
-                                  nextPrices[b.id] = Number(e.target.value);
-                                } else {
-                                  delete nextPrices[b.id];
-                                }
-                                setServiceFormData({ ...serviceFormData, branchPrices: nextPrices });
-                              }}
-                              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-bold font-mono outline-none focus:border-indigo-500 text-left"
-                            />
-                            <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[9px] text-slate-400 pointer-events-none">{settings.currency}</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-1">الفرع المخصص للخدمة *</label>
+                  <select
+                    value={serviceFormData.branchId || ''}
+                    onChange={e => setServiceFormData({ ...serviceFormData, branchId: e.target.value || undefined })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 outline-none focus:border-primary font-bold text-slate-800"
+                  >
+                    <option value="">جميع الفروع (عام للصالون)</option>
+                    {branches.map(b => (
+                      <option key={b.id} value={b.id}>{b.name} {b.isMain ? '(الرئيسي)' : ''}</option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-slate-500 mt-1">تحديد الفرع الذي تتاح فيه هذه الخدمة بشكل منفصل بأسعارها وتفاصيلها الخاصة.</p>
                 </div>
               )}
 
-              {Boolean(settings.enableDualPricing) && (
-                <div className="bg-amber-50/70 p-3.5 rounded-xl border border-amber-200 space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="block text-xs font-black text-amber-900">
-                      سعر الخدمة للأجنبي ({settings.currency})
+              {/* الأسعار المتعددة (سعر 2 وسعر 3) عند تفعيلها في الإعدادات */}
+              {Boolean(settings.enableMultiPricing ?? settings.enableDualPricing) && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 bg-emerald-50/60 border border-emerald-200 rounded-2xl">
+                  <div>
+                    <label className="block text-xs font-black text-emerald-950 mb-1.5 flex items-center gap-1.5">
+                      <span className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[10px]">2</span>
+                      <span>السعر الثاني (2) ({settings.currency})</span>
                     </label>
-                    <span className="text-[10px] text-amber-700 font-bold bg-amber-100 px-2 py-0.5 rounded-md">
-                      اختياري
-                    </span>
+                    <input 
+                      type="number" 
+                      value={serviceFormData.price2 !== undefined ? serviceFormData.price2 : ''}
+                      onChange={e => setServiceFormData({ ...serviceFormData, price2: e.target.value ? Number(e.target.value) : undefined })}
+                      placeholder={`اتركه فارغاً للاعتماد على السعر 1 (${serviceFormData.price || 0})`}
+                      className="w-full bg-white border border-emerald-300 rounded-xl px-3 py-2 text-xs font-bold text-emerald-950 outline-none focus:border-emerald-500 font-mono shadow-2xs" 
+                    />
+                    <p className="text-[10px] text-emerald-700 mt-1">يُطبق تلقائياً عند اختيار تسعير (2) في شاشة نقطة البيع.</p>
                   </div>
-                  <input 
-                    type="number" 
-                    value={serviceFormData.foreignerPrice || ''}
-                    onChange={e => setServiceFormData({...serviceFormData, foreignerPrice: e.target.value ? Number(e.target.value) : undefined})}
-                    placeholder={`اتركه فارغاً ليطبق السعر الأساسي (${serviceFormData.price || 0} ${settings.currency})`}
-                    className="w-full bg-white border border-amber-300 rounded-lg px-3 py-2 text-xs font-bold text-amber-950 outline-none focus:border-amber-500" 
-                  />
-                  <p className="text-[11px] text-amber-800 leading-relaxed">
-                    عند اختيار عميل (أجنبي) في شاشة الكاشير سيتم اعتماد هذا السعر تلقائياً، وفي حال عدم إدخال سعر أجنبي سيتم استخدام السعر الأساسي.
-                  </p>
+                  <div>
+                    <label className="block text-xs font-black text-emerald-950 mb-1.5 flex items-center gap-1.5">
+                      <span className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[10px]">3</span>
+                      <span>السعر الثالث (3) ({settings.currency})</span>
+                    </label>
+                    <input 
+                      type="number" 
+                      value={serviceFormData.price3 !== undefined ? serviceFormData.price3 : ''}
+                      onChange={e => setServiceFormData({ ...serviceFormData, price3: e.target.value ? Number(e.target.value) : undefined })}
+                      placeholder={`اتركه فارغاً للاعتماد على السعر 1 (${serviceFormData.price || 0})`}
+                      className="w-full bg-white border border-emerald-300 rounded-xl px-3 py-2 text-xs font-bold text-emerald-950 outline-none focus:border-emerald-500 font-mono shadow-2xs" 
+                    />
+                    <p className="text-[10px] text-emerald-700 mt-1">يُطبق تلقائياً عند اختيار تسعير (3) في شاشة نقطة البيع.</p>
+                  </div>
                 </div>
               )}
               <div>

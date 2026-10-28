@@ -2343,25 +2343,25 @@ export function SettingsScreen({
               <Globe size={16} />
             </div>
             <div>
-              <h3 className="text-base font-bold text-slate-800">تفعيل سعرين للخدمة (مواطن وأجنبي)</h3>
+              <h3 className="text-base font-bold text-slate-800">الأسعار المتعددة للخدمات (سعر 1، سعر 2، سعر 3)</h3>
               <p className="text-[11px] text-slate-500 mt-0.5">
-                تحديد تسعيرتين منفصلتين لكل خدمة (سعر للمواطن وسعر للأجنبي)، واحتساب السعر تلقائياً على الفاتورة حسب نوع العميل
+                تفعيل العمل بمستويات تسعير متعددة لنفس الخدمة (سعر 1 الافتراضي، سعر 2، سعر 3) مع إمكانية التبديل بينها براديو بوتون في نقطة البيع
               </p>
             </div>
           </div>
           <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100">
             <div>
-              <p className="font-bold text-[13px] text-slate-800">تفعيل التسعير المزدوج (مواطن / أجنبي)</p>
+              <p className="font-bold text-[13px] text-slate-800">تفعيل العمل بالأسعار الأخرى (سعر 2 وسعر 3)</p>
               <p className="text-[11px] text-slate-500 mt-0.5">
-                عند التفعيل، يمكن تحديد سعر خاص للأجنبي لكل خدمة، وعند اختيار العميل في الفاتورة يتم تطبيق سعر المواطن أو الأجنبي تلقائياً. والخدمة التي لها سعر واحد تظهر للجميع بنفس السعر.
+                عند التفعيل، يمكنك تحديد سعر ثانٍ وثالث لكل خدمة، وسيظهر خيار راديو بوتون (1، 2، 3) في نقطة البيع للتبديل الفوري بين الأسعار.
               </p>
             </div>
             <label className="relative inline-flex items-center cursor-pointer shrink-0">
               <input 
                 type="checkbox" 
                 className="sr-only peer"
-                checked={Boolean(settings.enableDualPricing)}
-                onChange={(e) => handleChange('enableDualPricing', e.target.checked)}
+                checked={Boolean(settings.enableMultiPricing ?? settings.enableDualPricing)}
+                onChange={(e) => { handleChange('enableMultiPricing', e.target.checked); handleChange('enableDualPricing', e.target.checked); }}
               />
               <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
             </label>

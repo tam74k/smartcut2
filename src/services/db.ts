@@ -2788,9 +2788,12 @@ export const DB = {
       const snap: any = {
         id: s.id, 
         salon_id: validSalonId, 
+        branch_id: toBranchUUID(s.branchId) || null,
         category_id: s.categoryId || null, 
         name: s.name,
         price: s.price ?? 0, 
+        price2: (s.price2 !== undefined && s.price2 !== null && s.price2 !== '') ? Number(s.price2) : null,
+        price3: (s.price3 !== undefined && s.price3 !== null && s.price3 !== '') ? Number(s.price3) : null,
         foreigner_price: (s.foreignerPrice !== undefined && s.foreignerPrice !== null && s.foreignerPrice !== '') ? Number(s.foreignerPrice) : null,
         discount_price: s.discountPrice ?? 0,
         commission_rate: s.employeeCommissionPercentage ?? s.commissionRate ?? 0,
@@ -2818,10 +2821,16 @@ export const DB = {
         snap.branch_prices = s.branchPrices;
       }
       let { error } = await client.from('services').upsert(snap, { onConflict: 'id' });
-      if (error && error.message?.includes('branch_prices')) {
-        delete snap.branch_prices;
-        const retry = await client.from('services').upsert(snap, { onConflict: 'id' });
-        error = retry.error;
+      if (error) {
+        let retried = false;
+        if (error.message?.includes('price2')) { delete snap.price2; retried = true; }
+        if (error.message?.includes('price3')) { delete snap.price3; retried = true; }
+        if (error.message?.includes('branch_prices')) { delete snap.branch_prices; retried = true; }
+        if (error.message?.includes('branch_id')) { delete snap.branch_id; retried = true; }
+        if (retried) {
+          const retry = await client.from('services').upsert(snap, { onConflict: 'id' });
+          error = retry.error;
+        }
       }
       if (error) { console.error('DB.saveService error:', error.message); return null; }
       return s;
@@ -5064,6 +5073,12 @@ export function dbServiceToApp(row: any) {
     categoryId: row.categoryId || row.category_id || row.category || '',
     name: row.name, 
     price: price, 
+    price2: (row.price2 !== undefined && row.price2 !== null && row.price2 !== '') 
+      ? Number(row.price2) 
+      : ((row.price_2 !== undefined && row.price_2 !== null && row.price_2 !== '') ? Number(row.price_2) : undefined),
+    price3: (row.price3 !== undefined && row.price3 !== null && row.price3 !== '') 
+      ? Number(row.price3) 
+      : ((row.price_3 !== undefined && row.price_3 !== null && row.price_3 !== '') ? Number(row.price_3) : undefined),
     foreignerPrice: (row.foreignerPrice !== undefined && row.foreignerPrice !== null && row.foreignerPrice !== '') 
       ? Number(row.foreignerPrice) 
       : ((row.foreigner_price !== undefined && row.foreigner_price !== null && row.foreigner_price !== '') ? Number(row.foreigner_price) : undefined),
