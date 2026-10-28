@@ -121,7 +121,30 @@ export const calculateInvoiceReceiptTotals = (invoice: Invoice, settings: AppSet
   const generalDiscount = Number(invoice.discount) || 0;
   const netTotal = Math.max(0, subtotal - generalDiscount);
   const advanceDeduction = Number(invoice.advanceDeduction) || 0;
-  const netPaidToday = invoice.total !== undefined ? Number(invoice.total) : Math.max(0, netTotal - advanceDeduction);
+  const invoiceTotal = invoice.total !== undefined ? Number(invoice.total) : Math.max(0, netTotal - advanceDeduction);
+
+  // احتساب المبلغ المدفوع الفعلي والمبلغ المتبقي الآجل بدقة
+  let actualPaid = 0;
+  let remaining = 0;
+
+  if (invoice.status === 'deferred') {
+    actualPaid = 0;
+    remaining = invoice.remaining !== undefined ? Number(invoice.remaining) : invoiceTotal;
+  } else if (invoice.status === 'partially_paid') {
+    actualPaid = invoice.paid !== undefined ? Number(invoice.paid) : 0;
+    remaining = invoice.remaining !== undefined ? Number(invoice.remaining) : Math.max(0, invoiceTotal - actualPaid);
+  } else if (invoice.remaining !== undefined && Number(invoice.remaining) > 0.009) {
+    actualPaid = invoice.paid !== undefined ? Number(invoice.paid) : Math.max(0, invoiceTotal - Number(invoice.remaining));
+    remaining = Number(invoice.remaining);
+  } else {
+    // فاتورة مسددة بالكامل
+    actualPaid = invoice.paid !== undefined ? Number(invoice.paid) : invoiceTotal;
+    remaining = 0;
+  }
+
+  const isDeferred = invoice.status === 'deferred' || invoice.status === 'partially_paid' || remaining > 0.009;
+  const isFullyDeferred = invoice.status === 'deferred' || (remaining >= invoiceTotal - 0.01 && actualPaid <= 0.01);
+  const isPartiallyDeferred = isDeferred && !isFullyDeferred && actualPaid > 0;
 
   const totalDiscounts = lineDiscounts + generalDiscount;
 
@@ -141,7 +164,13 @@ export const calculateInvoiceReceiptTotals = (invoice: Invoice, settings: AppSet
     totalDiscounts,
     netTotal,
     advanceDeduction,
-    netPaidToday,
+    invoiceTotal,
+    netPaidToday: actualPaid,
+    actualPaid,
+    remaining,
+    isDeferred,
+    isFullyDeferred,
+    isPartiallyDeferred,
     baseTotal,
     vatAmt
   };
@@ -319,7 +348,11 @@ export const InvoiceReceiptCard: React.FC<InvoiceReceiptCardProps> = ({
       ? 'فاتورة واصل (خدمات مجانية)'
       : (invoice.isRemedyInvoice
         ? 'فاتورة إصلاح مجاني (ضمان)'
-        : (settings.vatEnabled ? 'فاتورة ضريبية مبسطة' : 'فاتورة مبيعات')));
+        : (totals.isFullyDeferred
+          ? (settings.vatEnabled ? 'فاتورة ضريبية مبسطة (آجلة بالكامل)' : 'فاتورة مبيعات آجلة بالكامل')
+          : totals.isPartiallyDeferred
+            ? (settings.vatEnabled ? 'فاتورة ضريبية مبسطة (سداد جزئي + آجل)' : 'فاتورة مبيعات (سداد جزئي + آجل)')
+            : (settings.vatEnabled ? 'فاتورة ضريبية مبسطة' : 'فاتورة مبيعات'))));
 
   const advanceList = invoice.advancePayments || [];
 
@@ -550,6 +583,15 @@ export const InvoiceReceiptCard: React.FC<InvoiceReceiptCardProps> = ({
           </div>
         )}
 
+        {/* إجمالي قيمة الفاتورة */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#000', marginBottom: '2px', fontSize: '11px', fontWeight: 'bold' }}>
+          <span>إجمالي قيمة الفاتورة:</span>
+          <span style={{ fontFamily: 'monospace', fontWeight: 'bold', color: '#000' }}>
+            {totals.invoiceTotal.toFixed(2)} {settings.currency}
+          </span>
+        </div>
+
+        {/* المبلغ المدفوع اليوم */}
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',
@@ -558,33 +600,109 @@ export const InvoiceReceiptCard: React.FC<InvoiceReceiptCardProps> = ({
           marginTop: '4px',
           paddingTop: '3px',
           borderTop: '1.5px solid #000',
-          borderBottom: '1.5px solid #000',
+          borderBottom: totals.isDeferred ? '1px dashed #000' : '1.5px solid #000',
           paddingBottom: '3px',
           color: '#000'
         }}>
-          <span>الصافي المدفوع اليوم:</span>
-          <span style={{ fontFamily: 'monospace', fontWeight: 'bold', color: '#000' }}>{totals.netPaidToday.toFixed(2)} {settings.currency}</span>
+          <span>
+            {totals.isFullyDeferred 
+              ? 'المبلغ المدفوع اليوم (تأجيل كلي):' 
+              : totals.isPartiallyDeferred 
+                ? 'المبلغ المدفوع اليوم (سداد جزئي):' 
+                : 'الصافي المدفوع اليوم:'}
+          </span>
+          <span style={{ fontFamily: 'monospace', fontWeight: 'bold', color: '#000' }}>
+            {totals.actualPaid.toFixed(2)} {settings.currency}
+          </span>
         </div>
 
-        {/* Payment Methods */}
-        {invoice.paymentMethods && invoice.paymentMethods.length > 0 && (
+        {/* المبلغ المتبقي الآجل على ذمة العميل */}
+        {totals.isDeferred && (
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            fontWeight: 'bold',
+            fontSize: '11.5px',
+            marginTop: '3px',
+            padding: '2.5px 4px',
+            border: '1.5px solid #000',
+            backgroundColor: '#f5f5f5',
+            color: '#000'
+          }}>
+            <span>المتبقي (آجل على ذمة العميل):</span>
+            <span style={{ fontFamily: 'monospace', fontWeight: 'bold', color: '#000' }}>
+              {totals.remaining.toFixed(2)} {settings.currency}
+            </span>
+          </div>
+        )}
+
+        {/* تاريخ الاستحقاق إن وجد */}
+        {totals.isDeferred && invoice.dueDate && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9.5px', color: '#000', marginTop: '2px', padding: '0 2px' }}>
+            <span>تاريخ استحقاق الآجل:</span>
+            <span style={{ fontFamily: 'monospace' }}>{invoice.dueDate.split('T')[0]}</span>
+          </div>
+        )}
+
+        {/* طرق السداد */}
+        {totals.isFullyDeferred ? (
           <div style={{ marginTop: '4px', paddingTop: '3px', borderTop: '1px dashed #000', fontSize: '10px', color: '#000' }}>
-            <div style={{ fontWeight: 'bold', marginBottom: '2px', color: '#000' }}>طرق الدفع:</div>
-            {invoice.paymentMethods.map((pm, idx) => {
-              const tName = pm.treasuryId === 'cashback'
-                ? 'كاش باك'
-                : (pm.treasuryId === 'wasel_free'
-                  ? 'خدمات مجانية (واصل)'
-                  : (pm.treasuryId === 'remedy_free'
-                    ? 'إصلاح مجاني (ضمان)'
-                    : (settings.treasuries?.find(t => t.id === pm.treasuryId)?.name || (pm as any).paymentMethod || 'غير محدد')));
-              return (
-                <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', color: '#000', fontFamily: 'monospace', fontWeight: 'bold' }}>
-                  <span>• {tName}:</span>
-                  <span>{Number(pm.amount || 0).toFixed(2)} {settings.currency}</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', color: '#000', fontWeight: 'bold' }}>
+              <span>طريقة السداد:</span>
+              <span>آجل بالكامل (ذمم عملاء)</span>
+            </div>
+            {invoice.notes && (
+              <div style={{ fontSize: '9px', marginTop: '1px', color: '#333' }}>
+                ملاحظات: {invoice.notes}
+              </div>
+            )}
+          </div>
+        ) : (
+          <>
+            {((invoice.paymentMethods && invoice.paymentMethods.length > 0) || totals.isPartiallyDeferred) && (
+              <div style={{ marginTop: '4px', paddingTop: '3px', borderTop: '1px dashed #000', fontSize: '10px', color: '#000' }}>
+                <div style={{ fontWeight: 'bold', marginBottom: '2px', color: '#000' }}>
+                  {totals.isPartiallyDeferred ? 'طريقة سداد الدفعة المسددة اليوم:' : 'طرق الدفع:'}
                 </div>
-              );
-            })}
+                {invoice.paymentMethods && invoice.paymentMethods.length > 0 ? (
+                  invoice.paymentMethods
+                    .filter(pm => Number(pm.amount || 0) > 0)
+                    .map((pm, idx) => {
+                      const tName = pm.treasuryId === 'cashback'
+                        ? 'كاش باك'
+                        : (pm.treasuryId === 'wasel_free'
+                          ? 'خدمات مجانية (واصل)'
+                          : (pm.treasuryId === 'remedy_free'
+                            ? 'إصلاح مجاني (ضمان)'
+                            : (settings.treasuries?.find(t => t.id === pm.treasuryId)?.name || (pm as any).paymentMethod || 'غير محدد')));
+                      return (
+                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', color: '#000', fontFamily: 'monospace', fontWeight: 'bold' }}>
+                          <span>• {tName}:</span>
+                          <span>{Number(pm.amount || 0).toFixed(2)} {settings.currency}</span>
+                        </div>
+                      );
+                    })
+                ) : (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#000', fontFamily: 'monospace', fontWeight: 'bold' }}>
+                    <span>• {settings.treasuries?.find(t => t.id === invoice.treasuryId || t.id === invoice.paymentMethod)?.name || invoice.paymentMethod || 'كاش'}:</span>
+                    <span>{totals.actualPaid.toFixed(2)} {settings.currency}</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* سجل دفعات سداد الفاتورة في حال وجود دفعات تاريخية */}
+        {invoice.paymentsHistory && invoice.paymentsHistory.length > 1 && (
+          <div style={{ marginTop: '4px', paddingTop: '3px', borderTop: '1px dotted #000', fontSize: '9px', color: '#000' }}>
+            <div style={{ fontWeight: 'bold', marginBottom: '1px' }}>سجل دفعات سداد الفاتورة:</div>
+            {invoice.paymentsHistory.map((pmt: any, idx: number) => (
+              <div key={pmt.id || idx} style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'monospace' }}>
+                <span>• {pmt.paymentMethod || 'دفعة'} ({pmt.date?.split('T')[0] || ''}):</span>
+                <span>{Number(pmt.amount || 0).toFixed(2)} {settings.currency}</span>
+              </div>
+            ))}
           </div>
         )}
       </div>
