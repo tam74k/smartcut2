@@ -238,6 +238,9 @@ export interface SalonTenant {
   evolutionApiUrl?: string;
   evolutionApiKey?: string;
   evolutionInstanceName?: string;
+  isWhatsappActive?: boolean;
+  whatsappApiStatus?: 'active' | 'inactive';
+  ownerTomorrowSummarySentDate?: string;
   createdAt: string;
 }
 
@@ -908,6 +911,10 @@ export interface Booking {
   refundExpenseId?: string; // معرف سند المصروف المرتبط بالاسترجاع
   cancelledAt?: string; // تاريخ ووقت الإلغاء
   cancelledBy?: string; // اسم المستخدم منفذ الإلغاء
+  reminderTomorrowSent?: boolean;
+  reminderTomorrowSentAt?: string;
+  reminderTodaySent?: boolean;
+  reminderTodaySentAt?: string;
 }
 
 export interface CartItem { 
@@ -1084,7 +1091,9 @@ export interface AppSettings {
   evolutionApiUrl?: string;
   evolutionApiKey?: string;
   evolutionInstanceName?: string;
-  evolutionBranchInstances?: Record<string, string>; // branchId -> instanceName
+  evolutionBranchInstances?: Record<string, string>;
+  isWhatsappActive?: boolean;
+  whatsappApiStatus?: 'active' | 'inactive'; // branchId -> instanceName
   waInstantName?: string; 
   waApiKey?: string; 
   supabaseUrl?: string;
