@@ -210,6 +210,7 @@ export const ROLE_LABELS: Record<UserRole, string> = {
 
 export class AuthService {
   private static currentUser: AppUser | null = null;
+  private static isResolvingCurrentUser: boolean = false;
 
   public static initUsers(): AppUser[] {
     const saved = localStorage.getItem(STORAGE_KEYS.USERS);
@@ -259,14 +260,33 @@ export class AuthService {
 
   public static getCurrentSalonId(): string {
     try {
-      // 1. Authenticated session / user ALWAYS takes top priority for tenant isolation
-      const session = this.getCurrentUser();
-      if (session?.salonId) return session.salonId;
-      if ((session as any)?.salon_id) return (session as any).salon_id;
+      // 1. Authenticated session in memory ALWAYS takes top priority for tenant isolation
+      if (this.currentUser?.salonId) return this.currentUser.salonId;
+      if ((this.currentUser as any)?.salon_id) return (this.currentUser as any).salon_id;
 
+      // 2. Active salon explicitly saved
       const active = localStorage.getItem('smartcut_active_salon_id');
       if (active) return active;
 
+      // 3. Raw session stored in localStorage (read directly without calling getCurrentUser to prevent circular recursion)
+      const rawSession = localStorage.getItem(STORAGE_KEYS.SESSION);
+      if (rawSession) {
+        const parsed = JSON.parse(rawSession);
+        if (parsed?.salonId) return parsed.salonId;
+        const sUser = parsed?.user;
+        if (sUser?.salonId) return sUser.salonId;
+        if (sUser?.salon_id) return sUser.salon_id;
+      }
+
+      // 4. Current user stored in localStorage
+      const rawCurrentUser = localStorage.getItem('smartcut_current_user');
+      if (rawCurrentUser) {
+        const parsed = JSON.parse(rawCurrentUser);
+        if (parsed?.salonId) return parsed.salonId;
+        if (parsed?.salon_id) return parsed.salon_id;
+      }
+
+      // 5. App settings fallback
       const s = localStorage.getItem('smartcut_app_settings');
       if (s) {
         const parsed = JSON.parse(s);
@@ -442,11 +462,22 @@ export class AuthService {
         return MASTER_PROGRAMMER_USER;
       }
 
-      const users = this.getUsers();
-      const dbUser = users.find(u => u.id === userId && u.active);
-      if (dbUser) {
-        this.currentUser = dbUser;
-        return dbUser;
+      // Mutual recursion protection
+      if (this.isResolvingCurrentUser) {
+        return user;
+      }
+
+      this.isResolvingCurrentUser = true;
+      try {
+        const targetSalonId = user.salonId || (user as any).salon_id;
+        const users = this.getUsers(targetSalonId);
+        const dbUser = users.find(u => u.id === userId && u.active);
+        if (dbUser) {
+          this.currentUser = dbUser;
+          return dbUser;
+        }
+      } finally {
+        this.isResolvingCurrentUser = false;
       }
       
       // Fallback to validated user object
