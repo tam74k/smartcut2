@@ -147,7 +147,14 @@ export function DashboardChartsSection({
   const expensesTimelineData = useMemo(() => {
     const map = new Map<string, number>();
     filteredTransactions
-      .filter(t => t.type === 'out')
+      .filter(t => {
+        const isOut = t.type === 'out' || (t.type as string) === 'expense';
+        if (!isOut) return false;
+        const cat = String(t.category || '').toLowerCase();
+        const desc = String(t.description || '').toLowerCase();
+        if (cat === 'transfer' || desc.includes('تصفير') || desc.includes('تحويل') || desc.includes('نقل الرصيد')) return false;
+        return true;
+      })
       .forEach(t => {
         const key = salesInterval === 'day' ? t.date.split('T')[0] : t.date.substring(0, 7);
         map.set(key, (map.get(key) || 0) + t.amount);
@@ -186,7 +193,14 @@ export function DashboardChartsSection({
   const top10Expenses = useMemo(() => {
     const map = new Map<string, number>();
     filteredTransactions
-      .filter(t => t.type === 'out')
+      .filter(t => {
+        const isOut = t.type === 'out' || (t.type as string) === 'expense';
+        if (!isOut) return false;
+        const cat = String(t.category || '').toLowerCase();
+        const desc = String(t.description || '').toLowerCase();
+        if (cat === 'transfer' || desc.includes('تصفير') || desc.includes('تحويل') || desc.includes('نقل الرصيد')) return false;
+        return true;
+      })
       .forEach(t => {
         const cat = t.expenseCategory || t.category || 'مصروف عام';
         map.set(cat, (map.get(cat) || 0) + t.amount);

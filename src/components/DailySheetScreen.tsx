@@ -303,8 +303,20 @@ export function DailySheetScreen({
   const staffPayments = useMemo(() => {
     return transactions.filter(t => {
       if (!isMatchDate(t.date)) return false;
-      const cat = String(t.category || '').toLowerCase();
-      const expCat = String(t.expenseCategory || '').toLowerCase();
+      const cat = String(t.category || '').toLowerCase().trim();
+      const expCat = String(t.expenseCategory || '').toLowerCase().trim();
+      const desc = String(t.description || '').toLowerCase().trim();
+
+      // استبعاد أي تصفير أو تحويلات داخلية بين الخزائن
+      if (
+        cat === 'transfer' || 
+        desc.includes('تصفير') || 
+        desc.includes('نقل الرصيد') || 
+        desc.includes('تحويل')
+      ) {
+        return false;
+      }
+
       const isAdvance = (
         cat === 'staff_advance' || 
         cat === 'hr_advance' || 
@@ -314,7 +326,9 @@ export function DailySheetScreen({
         cat === 'سلفة موظف' ||
         expCat.includes('سلف') || 
         expCat.includes('رواتب') || 
-        expCat.includes('مرتبات')
+        expCat.includes('مرتبات') ||
+        desc.includes('سلفة') ||
+        desc.includes('راتب')
       );
       return (t.type === 'out' || (t.type as string) === 'expense') && isAdvance;
     }).map(t => {
@@ -331,12 +345,57 @@ export function DailySheetScreen({
     return staffPayments.reduce((s, p) => s + p.amount, 0);
   }, [staffPayments]);
 
-  // 6. Operational Expenses (المصروفات اليومية)
+  // 6. Operational Expenses (المصروفات اليومية - مصروفات تشغيلية صريحة ومحددة فقط دون تصفير الخزائن أو التحويلات)
   const dayExpenses = useMemo(() => {
     return transactions.filter(t => {
       if (!isMatchDate(t.date)) return false;
-      const cat = String(t.category || '').toLowerCase();
-      const expCat = String(t.expenseCategory || '').toLowerCase();
+      const cat = String(t.category || '').toLowerCase().trim();
+      const expCat = String(t.expenseCategory || '').toLowerCase().trim();
+      const desc = String(t.description || '').toLowerCase().trim();
+
+      // 1. استبعاد قاطع لعمليات تصفير الخزائن وإغلاق الورديات ونقل الأرصدة
+      const isZeroing = (
+        desc.includes('تصفير') ||
+        desc.includes('نقل الرصيد') ||
+        desc.includes('تحويل تصفير') ||
+        desc.includes('إغلاق وردية') ||
+        desc.includes('اغلاق وردية') ||
+        desc.includes('ترحيل رصيد') ||
+        cat.includes('تصفير')
+      );
+      if (isZeroing) return false;
+
+      // 2. استبعاد التحويلات الداخلية بين الخزائن
+      const isTransfer = (
+        cat === 'transfer' ||
+        cat.includes('transfer') ||
+        cat.includes('تحويل') ||
+        desc.includes('تحويل بين الخزائن') ||
+        desc.includes('تحويل إلى خزينة') ||
+        desc.includes('تحويل الى خزينة') ||
+        desc.includes('تحويل من خزينة')
+      );
+      if (isTransfer) return false;
+
+      // 3. استبعاد حركات الشركاء والمسحوبات والإيداعات والعهد
+      const isNonExpense = (
+        cat === 'partner_drawing' ||
+        cat === 'partner_distribution' ||
+        cat === 'partner_withdrawal' ||
+        cat === 'partner_deposit' ||
+        cat === 'drawings' ||
+        cat === 'withdrawal' ||
+        cat === 'deposit' ||
+        cat === 'initial_cash' ||
+        cat === 'sales' ||
+        cat === 'booking_advance' ||
+        cat.includes('مسحوبات') ||
+        cat.includes('توزيعات') ||
+        cat.includes('عهدة')
+      );
+      if (isNonExpense) return false;
+
+      // 4. استبعاد سلف ورواتب الموظفين (تسجل في عمود مسحوبات وسلف الموظفين منفصلة)
       const isAdvance = (
         cat === 'staff_advance' || 
         cat === 'hr_advance' || 
@@ -346,9 +405,25 @@ export function DailySheetScreen({
         cat === 'سلفة موظف' ||
         expCat.includes('سلف') || 
         expCat.includes('رواتب') || 
-        expCat.includes('مرتبات')
+        expCat.includes('مرتبات') ||
+        desc.includes('سلفة') ||
+        desc.includes('راتب')
       );
-      return (t.type === 'out' || (t.type as string) === 'expense') && !isAdvance;
+      if (isAdvance) return false;
+
+      // 5. التحقق الصريح: يجب أن تكون الحركة مصروفاً واضحاً ومحدداً فقط
+      const isExplicitExpense = (
+        cat === 'expense' ||
+        cat === 'مصروف' ||
+        cat === 'مصروفات' ||
+        cat === 'نثريات' ||
+        cat === 'فواتير' ||
+        (t.type as string) === 'expense' ||
+        Boolean(t.expenseCategory && t.expenseCategory.trim()) ||
+        desc.includes('مصروف')
+      );
+
+      return (t.type === 'out' || (t.type as string) === 'expense') && isExplicitExpense;
     }).map(t => {
       return {
         id: t.id,

@@ -207,6 +207,19 @@ export function AccountingPnLSection({
         const desc = String(t.description || '').toLowerCase();
         const amt = Number(t.amount) || 0;
 
+        // استبعاد تصفير الخزائن، إغلاق الورديات، والتحويلات الداخلية، والمسحوبات
+        if (
+          cat === 'transfer' || 
+          desc.includes('تصفير') || 
+          desc.includes('نقل الرصيد') || 
+          desc.includes('تحويل') || 
+          cat.includes('مسحوبات') || 
+          cat === 'partner_drawing' || 
+          cat === 'partner_distribution'
+        ) {
+          return;
+        }
+
         if (cat.includes('راتب') || desc.includes('راتب') || cat.includes('سلفة') || desc.includes('سلفة')) {
           // Already counted in salaries / advances
           return;
