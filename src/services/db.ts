@@ -236,6 +236,9 @@ export async function ensureCoreSchema(): Promise<void> {
       ensureColumn('services', 'is_priority', 'BOOLEAN'),
       ensureColumn('services', 'card_color', 'VARCHAR(50)'),
       ensureColumn('services', 'priority_order', 'INT'),
+      ensureColumn('services', 'price2', 'NUMERIC(10,2)'),
+      ensureColumn('services', 'price3', 'NUMERIC(10,2)'),
+      ensureColumn('services', 'foreigner_price', 'NUMERIC(10,2)'),
       ensureColumn('work_shifts', 'shift_code', 'VARCHAR(100)'),
       ensureColumn('work_shifts', 'salon_id', 'UUID'),
       ensureColumn('work_shifts', 'branch_id', 'VARCHAR(100)'),
@@ -2827,8 +2830,16 @@ export const DB = {
       if (error) {
         let retried = false;
         if (error.message?.includes('branch_code')) { delete snap.branch_code; retried = true; }
-        if (error.message?.includes('price2')) { delete snap.price2; retried = true; }
-        if (error.message?.includes('price3')) { delete snap.price3; retried = true; }
+        if (error.message?.includes('price2')) {
+          const added = await ensureColumn('services', 'price2', 'NUMERIC(10,2)');
+          if (!added) delete snap.price2;
+          retried = true;
+        }
+        if (error.message?.includes('price3')) {
+          const added = await ensureColumn('services', 'price3', 'NUMERIC(10,2)');
+          if (!added) delete snap.price3;
+          retried = true;
+        }
         if (error.message?.includes('branch_prices')) { delete snap.branch_prices; retried = true; }
         if (error.message?.includes('branch_id')) { delete snap.branch_id; retried = true; }
         if (retried) {

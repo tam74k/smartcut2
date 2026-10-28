@@ -482,10 +482,10 @@ export function ServicesScreen({
         cardColor: serviceFormData.cardColor || '#10b981',
         priorityOrder: serviceFormData.priorityOrder ?? 0,
         price: Number(serviceFormData.price) || 0,
-        price2: (serviceFormData.price2 !== undefined && serviceFormData.price2 !== null && String(serviceFormData.price2).trim() !== '' && Number(serviceFormData.price2) > 0) ? Number(serviceFormData.price2) : undefined,
-        price3: (serviceFormData.price3 !== undefined && serviceFormData.price3 !== null && String(serviceFormData.price3).trim() !== '' && Number(serviceFormData.price3) > 0) ? Number(serviceFormData.price3) : undefined,
+        price2: (serviceFormData.price2 !== undefined && serviceFormData.price2 !== null && String(serviceFormData.price2).trim() !== '' && !isNaN(Number(serviceFormData.price2)) && Number(serviceFormData.price2) >= 0) ? Number(serviceFormData.price2) : undefined,
+        price3: (serviceFormData.price3 !== undefined && serviceFormData.price3 !== null && String(serviceFormData.price3).trim() !== '' && !isNaN(Number(serviceFormData.price3)) && Number(serviceFormData.price3) >= 0) ? Number(serviceFormData.price3) : undefined,
         branchId: serviceFormData.branchId || undefined,
-        foreignerPrice: (serviceFormData.foreignerPrice !== undefined && serviceFormData.foreignerPrice !== null && String(serviceFormData.foreignerPrice).trim() !== '' && Number(serviceFormData.foreignerPrice) > 0) ? Number(serviceFormData.foreignerPrice) : undefined,
+        foreignerPrice: (serviceFormData.foreignerPrice !== undefined && serviceFormData.foreignerPrice !== null && String(serviceFormData.foreignerPrice).trim() !== '' && !isNaN(Number(serviceFormData.foreignerPrice)) && Number(serviceFormData.foreignerPrice) >= 0) ? Number(serviceFormData.foreignerPrice) : undefined,
         commissionableAmount: (serviceFormData.commissionableAmount !== undefined && serviceFormData.commissionableAmount !== null && Number(serviceFormData.commissionableAmount) > 0) ? Number(serviceFormData.commissionableAmount) : undefined,
         isTargetExempt: Boolean(serviceFormData.isTargetExempt),
         isActive: serviceFormData.isActive !== false,
@@ -497,6 +497,9 @@ export function ServicesScreen({
       } else {
         setServices([...services, savedServiceObj]);
       }
+
+      // حفظ مباشر ومؤكد في قاعدة البيانات
+      await DB.saveService(savedServiceObj, settings?.salonId);
 
       setShowServiceModal(false);
       setEditingService(null);

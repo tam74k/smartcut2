@@ -3131,7 +3131,7 @@ export default function App() {
           categories={categories} 
           setCategories={setCategories}
           services={services} 
-          setServices={setServices}
+          setServices={handleSetServices}
           products={products}
           setProducts={setProducts}
           clients={salonClients}
