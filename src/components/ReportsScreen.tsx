@@ -6843,6 +6843,7 @@ function ReportTable({
 
     const filteredClients = data.filteredClients || [];
     const isEvolutionConfigured = Boolean(
+      settings?.whatsappEnabled !== false &&
       settings?.evolutionApiUrl?.trim() && 
       settings?.evolutionApiKey?.trim() && 
       settings?.evolutionInstanceName?.trim()
@@ -7394,6 +7395,7 @@ function ReportTable({
 
     const filteredClients = data.inactiveClients || [];
     const isEvolutionConfigured = Boolean(
+      settings?.whatsappEnabled !== false &&
       settings?.evolutionApiUrl?.trim() && 
       settings?.evolutionApiKey?.trim() && 
       settings?.evolutionInstanceName?.trim()

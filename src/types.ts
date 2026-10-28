@@ -1060,6 +1060,7 @@ export interface AppSettings {
   expenseCategories: string[];
   bookingNotes: string;
   // Evolution API WhatsApp Integration per salon & branch
+  whatsappEnabled?: boolean;
   evolutionApiUrl?: string;
   evolutionApiKey?: string;
   evolutionInstanceName?: string;

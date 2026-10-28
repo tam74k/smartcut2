@@ -119,6 +119,7 @@ export const EvolutionApiService = {
    * Checks if Evolution API is properly configured for this salon
    */
   isConfigured(settings: AppSettings, branchId?: string): boolean {
+    if (settings.whatsappEnabled === false) return false;
     const instance = this.getInstanceName(settings, branchId);
     const key = settings.evolutionApiKey || settings.waApiKey;
     return !!(instance && key);
@@ -128,6 +129,9 @@ export const EvolutionApiService = {
    * Checks the connection state of the salon's Evolution API instance
    */
   async checkConnection(settings: AppSettings, branchId?: string): Promise<EvolutionInstanceStatus> {
+    if (settings.whatsappEnabled === false) {
+      return { connected: false, error: 'خدمة رسائل الواتساب معطلة حالياً في إعدادات النظام. يرجى تفعيلها أولاً.' };
+    }
     if (!this.isConfigured(settings, branchId)) {
       return { connected: false, error: 'الرجاء إدخال اسم الجلسة (Instance Name) ومفتاح API (API Key)' };
     }

@@ -6,7 +6,7 @@ import {
   Upload, HardDrive, AlertTriangle, FileCheck, RefreshCcw, Landmark, FileSpreadsheet,
   QrCode, Key, Send, CheckCircle2, ShieldCheck, HelpCircle, Building2, Layers, Clock, DollarSign, Coins,
   Printer, Wifi, Laptop, Lock, UserX, CalendarCheck, Calendar, Settings, Smartphone, Copy, Package, Scissors, Crown, Award, MapPin, ExternalLink,
-  Bot, Eye, EyeOff, Zap, AlertCircle
+  Bot, Eye, EyeOff, Zap, AlertCircle, Power
 } from 'lucide-react';
 
 import { AuthService, ROLE_LABELS } from '../services/auth';
@@ -3772,82 +3772,137 @@ export function SettingsScreen({
 
         {/* ============================================================ */}
         {/* Evolution API & WhatsApp Integration */}
-        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <div className="flex items-center gap-2.5">
-              <div className="w-10 h-10 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
-                <MessageSquare size={20} />
+        {(() => {
+          const isWhatsappActive = settings.whatsappEnabled !== false;
+          return (
+            <div className={`bg-white rounded-3xl p-6 border shadow-xs space-y-4 transition-all ${
+              isWhatsappActive ? 'border-emerald-200' : 'border-slate-200 bg-slate-50/50'
+            }`}>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-bold transition-colors ${
+                    isWhatsappActive ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'
+                  }`}>
+                    <MessageSquare size={20} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-base font-black text-slate-800">بوابة وإعدادات رسائل الواتساب التلقائية (WhatsApp Gateway)</h3>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border inline-flex items-center gap-1 ${
+                        isWhatsappActive 
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                          : 'bg-rose-50 text-rose-700 border-rose-200'
+                      }`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${isWhatsappActive ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+                        {isWhatsappActive ? 'مفعل' : 'معطل'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500">إرسال الفواتير وتأكيدات الحجوزات ورموز التحقق OTP للعملاء والموظفين عبر الواتساب</p>
+                  </div>
+                </div>
+
+                {/* زر التفعيل / إلغاء التفعيل والسويتش السريع */}
+                <div className="flex items-center gap-2.5 self-end sm:self-auto">
+                  <button
+                    type="button"
+                    onClick={() => handleUpdateSettings({ whatsappEnabled: !isWhatsappActive })}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                      isWhatsappActive
+                        ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 active:scale-95'
+                        : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-500/20 active:scale-95'
+                    }`}
+                    title={isWhatsappActive ? 'إيقاف وتعطيل إرسال رسائل الواتساب' : 'تفعيل إرسال رسائل الواتساب'}
+                  >
+                    <Power size={13} />
+                    <span>{isWhatsappActive ? 'إلغاء التفعيل' : 'تفعيل الواتساب'}</span>
+                  </button>
+
+                  <label className="relative inline-flex items-center cursor-pointer ml-1" title={isWhatsappActive ? 'الواتساب مفعل' : 'الواتساب معطل'}>
+                    <input 
+                      type="checkbox" 
+                      className="sr-only peer"
+                      checked={isWhatsappActive}
+                      onChange={(e) => handleUpdateSettings({ whatsappEnabled: e.target.checked })}
+                    />
+                    <div className="w-10 h-5.5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4.5 after:w-4.5 after:transition-all peer-checked:bg-emerald-600"></div>
+                  </label>
+                </div>
               </div>
-              <div>
-                <h3 className="text-base font-black text-slate-800">بوابة وإعدادات رسائل الواتساب التلقائية (WhatsApp Gateway)</h3>
-                <p className="text-xs text-slate-500">إرسال الفواتير وتأكيدات الحجوزات ورموز التحقق OTP للعملاء والموظفين عبر الواتساب</p>
+
+              {/* تنبيه عند تعطيل الواتساب */}
+              {!isWhatsappActive && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl flex items-center gap-2 text-amber-800 text-xs font-bold animate-in fade-in">
+                  <AlertTriangle size={16} className="text-amber-600 shrink-0" />
+                  <span>خدمة الواتساب معطلة حالياً. لن يقوم النظام بإرسال أي رسائل تلقائية للفواتير أو الحجوزات أو تذكيرات المواعيد حتى تقوم بإعادة تفعيلها.</span>
+                </div>
+              )}
+
+              <div className={`grid grid-cols-1 md:grid-cols-2 gap-4 ${!isWhatsappActive ? 'opacity-60' : ''}`}>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">اسم الجلسة (Instance Name) *</label>
+                  <input 
+                    type="text" 
+                    value={settings.evolutionInstanceName ?? settings.waInstantName ?? ''}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      handleUpdateSettings({
+                        evolutionInstanceName: val,
+                        waInstantName: val
+                      });
+                    }}
+                    placeholder="مثال: salon_newlook_main"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:border-emerald-600 outline-none"
+                    dir="ltr"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">مفتاح API السري (API Key) *</label>
+                  <input 
+                    type="password" 
+                    value={settings.evolutionApiKey ?? settings.waApiKey ?? ''}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      handleUpdateSettings({
+                        evolutionApiKey: val,
+                        waApiKey: val
+                      });
+                    }}
+                    placeholder="••••••••••••••••"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono focus:border-emerald-600 outline-none"
+                    dir="ltr"
+                  />
+                </div>
+              </div>
+
+              <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                <div className="text-xs text-slate-600 flex items-center gap-1.5">
+                  <Sparkles size={14} className="text-amber-500 shrink-0" />
+                  <span><strong>تنبيه:</strong> تأكد من تسجيل اسم الجلسة ومفتاح API بالشكل الصحيح لإرسال إشعارات الفواتير ورموز OTP وتذكيرات المواعيد.</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!isWhatsappActive) {
+                      alert('تنبيه: خدمة رسائل الواتساب معطلة حالياً في الإعدادات. يرجى الضغط على زر "تفعيل الواتساب" أولاً.');
+                      return;
+                    }
+                    const res = await import('../services/evolutionApiService').then(m => m.EvolutionApiService.checkConnection(settings));
+                    if (res.connected) {
+                      alert(`جلسة الواتساب متصلة بنجاح! رقم الواتساب: ${res.phone || 'متصل'}`);
+                    } else {
+                      alert(`حالة الاتصال: غير متصل (${res.error || 'يرجى مراجعة اسم الجلسة ومفتاح API'})`);
+                    }
+                  }}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-sm cursor-pointer whitespace-nowrap"
+                >
+                  <Sparkles size={14} />
+                  <span>فحص حالة الاتصال</span>
+                </button>
               </div>
             </div>
-            <span className="text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 px-3 py-1 rounded-full">
-              واتساب آلي
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">اسم الجلسة (Instance Name) *</label>
-              <input 
-                type="text" 
-                value={settings.evolutionInstanceName ?? settings.waInstantName ?? ''}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  handleUpdateSettings({
-                    evolutionInstanceName: val,
-                    waInstantName: val
-                  });
-                }}
-                placeholder="مثال: salon_newlook_main"
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:border-emerald-600 outline-none"
-                dir="ltr"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">مفتاح API السري (API Key) *</label>
-              <input 
-                type="password" 
-                value={settings.evolutionApiKey ?? settings.waApiKey ?? ''}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  handleUpdateSettings({
-                    evolutionApiKey: val,
-                    waApiKey: val
-                  });
-                }}
-                placeholder="••••••••••••••••"
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono focus:border-emerald-600 outline-none"
-                dir="ltr"
-              />
-            </div>
-          </div>
-
-          <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-            <div className="text-xs text-slate-600 flex items-center gap-1.5">
-              <Sparkles size={14} className="text-amber-500 shrink-0" />
-              <span><strong>تنبيه:</strong> تأكد من تسجيل اسم الجلسة ومفتاح API بالشكل الصحيح لإرسال إشعارات الفواتير ورموز OTP وتذكيرات المواعيد.</span>
-            </div>
-            <button
-              type="button"
-              onClick={async () => {
-                const res = await import('../services/evolutionApiService').then(m => m.EvolutionApiService.checkConnection(settings));
-                if (res.connected) {
-                  alert(`جلسة الواتساب متصلة بنجاح! رقم الواتساب: ${res.phone || 'متصل'}`);
-                } else {
-                  alert(`حالة الاتصال: غير متصل (${res.error || 'يرجى مراجعة اسم الجلسة ومفتاح API'})`);
-                }
-              }}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-sm cursor-pointer whitespace-nowrap"
-            >
-              <Sparkles size={14} />
-              <span>فحص حالة الاتصال</span>
-            </button>
-          </div>
-        </div>
+          );
+        })()}
           </div>
         )}
 
