@@ -639,102 +639,116 @@ export function DeferredInvoicesScreen({
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="bg-white p-4 rounded-2xl shadow-xs border border-slate-200/80 mb-6 space-y-3">
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+      <div className="bg-white p-4 rounded-2xl shadow-xs border border-slate-200/80 mb-6">
+        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+          
           {/* Search Input */}
-          <div className="md:col-span-4 relative">
-            <Search size={17} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+          <div className="relative flex-1 min-w-[280px]">
+            <Search size={18} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
               value={searchQuery}
               onChange={e => { setSearchQuery(e.target.value); setCurrentPage(1); }}
               placeholder={activeTab === 'ledger' ? "بحث باسم العميل أو رقم الموبايل..." : "بحث برقم الفاتورة، اسم العميل، أو الهاتف..."}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-10 pl-3 py-2 text-xs font-bold text-slate-800 placeholder-slate-400 focus:bg-white focus:border-primary outline-none transition-all"
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-10 pl-9 py-2.5 text-xs font-bold text-slate-800 placeholder-slate-400 focus:bg-white focus:border-indigo-600 outline-none transition-all"
             />
-          </div>
-
-          {/* Date Range: From */}
-          <div className="md:col-span-2.5 flex items-center gap-1.5">
-            <span className="text-[11px] font-bold text-slate-500 shrink-0">من:</span>
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={e => { setDateFrom(e.target.value); setCurrentPage(1); }}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-700 outline-none focus:bg-white focus:border-primary"
-            />
-          </div>
-
-          {/* Date Range: To */}
-          <div className="md:col-span-2.5 flex items-center gap-1.5">
-            <span className="text-[11px] font-bold text-slate-500 shrink-0">إلى:</span>
-            <input
-              type="date"
-              value={dateTo}
-              onChange={e => { setDateTo(e.target.value); setCurrentPage(1); }}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-700 outline-none focus:bg-white focus:border-primary"
-            />
-          </div>
-
-          {/* Multi-Branch Selector if available */}
-          {branches && branches.length > 1 && (
-            <div className="md:col-span-1.5">
-              <select
-                value={branchFilter}
-                onChange={e => { setBranchFilter(e.target.value); setCurrentPage(1); }}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs font-bold text-slate-700 outline-none focus:border-primary"
-              >
-                <option value="all">كل الفروع</option>
-                {branches.map(b => (
-                  <option key={b.id} value={b.id}>{b.name}</option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {/* Status filter for Tab 1 */}
-          {activeTab === 'deferred' && (
-            <div className="md:col-span-1.5">
-              <select
-                value={statusFilter}
-                onChange={e => { setStatusFilter(e.target.value as any); setCurrentPage(1); }}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs font-bold text-slate-700 outline-none focus:border-primary"
-              >
-                <option value="all">كافة الحالات</option>
-                <option value="deferred">مؤجلة بالكامل</option>
-                <option value="partially_paid">مسددة جزئياً</option>
-              </select>
-            </div>
-          )}
-
-          {/* Sorting for Tab 2 (كشف حساب العملاء) */}
-          {activeTab === 'ledger' && (
-            <div className="md:col-span-3 flex items-center justify-end gap-2">
-              <span className="text-xs font-bold text-slate-500">الترتيب:</span>
+            {searchQuery && (
               <button
                 type="button"
-                onClick={() => setLedgerSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}
-                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer"
-                title="تغيير الترتيب حسب إجمالي المتبقي"
+                onClick={() => { setSearchQuery(''); setCurrentPage(1); }}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
               >
-                {ledgerSortOrder === 'desc' ? (
-                  <>
-                    <ArrowDown size={14} className="text-amber-600" />
-                    <span>من الأكبر للأصغر</span>
-                  </>
-                ) : (
-                  <>
-                    <ArrowUp size={14} className="text-blue-600" />
-                    <span>من الأصغر للأكبر</span>
-                  </>
-                )}
+                <X size={15} />
               </button>
-            </div>
-          )}
+            )}
+          </div>
 
-          {/* Reset Filters */}
-          {(searchQuery || dateFrom || dateTo || statusFilter !== 'all' || branchFilter !== 'all') && (
-            <div className="md:col-span-1 flex justify-end">
+          {/* Filters controls */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            
+            {/* Date Range: From & To */}
+            <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5">
+              <Calendar size={15} className="text-slate-400 shrink-0" />
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-bold text-slate-500 shrink-0">من:</span>
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={e => { setDateFrom(e.target.value); setCurrentPage(1); }}
+                  className="bg-transparent text-xs font-bold text-slate-700 outline-none cursor-pointer w-[125px]"
+                />
+              </div>
+              <span className="text-slate-300">|</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-bold text-slate-500 shrink-0">إلى:</span>
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={e => { setDateTo(e.target.value); setCurrentPage(1); }}
+                  className="bg-transparent text-xs font-bold text-slate-700 outline-none cursor-pointer w-[125px]"
+                />
+              </div>
+            </div>
+
+            {/* Status filter for Tab 1 (Deferred) */}
+            {activeTab === 'deferred' && (
+              <div className="min-w-[140px]">
+                <select
+                  value={statusFilter}
+                  onChange={e => { setStatusFilter(e.target.value as any); setCurrentPage(1); }}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 outline-none focus:bg-white focus:border-indigo-600 cursor-pointer"
+                >
+                  <option value="all">كافة الحالات</option>
+                  <option value="deferred">مؤجلة بالكامل</option>
+                  <option value="partially_paid">مسددة جزئياً</option>
+                </select>
+              </div>
+            )}
+
+            {/* Multi-Branch Selector if available */}
+            {branches && branches.length > 1 && (
+              <div className="min-w-[130px]">
+                <select
+                  value={branchFilter}
+                  onChange={e => { setBranchFilter(e.target.value); setCurrentPage(1); }}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 outline-none focus:bg-white focus:border-indigo-600 cursor-pointer"
+                >
+                  <option value="all">كل الفروع</option>
+                  {branches.map(b => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Sorting for Tab 2 (كشف حساب العملاء) */}
+            {activeTab === 'ledger' && (
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setLedgerSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}
+                  className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer"
+                  title="تغيير الترتيب حسب إجمالي المتبقي"
+                >
+                  {ledgerSortOrder === 'desc' ? (
+                    <>
+                      <ArrowDown size={14} className="text-amber-600" />
+                      <span>من الأكبر للأصغر</span>
+                    </>
+                  ) : (
+                    <>
+                      <ArrowUp size={14} className="text-blue-600" />
+                      <span>من الأصغر للأكبر</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+
+            {/* Reset Filters */}
+            {(searchQuery || dateFrom || dateTo || statusFilter !== 'all' || branchFilter !== 'all') && (
               <button
+                type="button"
                 onClick={() => {
                   setSearchQuery('');
                   setDateFrom('');
@@ -743,14 +757,14 @@ export function DeferredInvoicesScreen({
                   setBranchFilter('all');
                   setCurrentPage(1);
                 }}
-                className="text-xs text-rose-600 hover:text-rose-700 font-bold flex items-center gap-1 p-2 rounded-xl hover:bg-rose-50 cursor-pointer"
+                className="text-xs text-rose-600 hover:text-rose-700 font-bold flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100/80 border border-rose-200/60 transition-colors cursor-pointer"
                 title="مسح كافة الفلاتر"
               >
-                <X size={15} />
+                <X size={14} />
                 <span>مسح</span>
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
 
