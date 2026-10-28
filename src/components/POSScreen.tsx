@@ -22,6 +22,7 @@ import { AuthService } from '../services/auth';
 import { RealtimeSync } from '../services/realtimeSync';
 import { isBarberEmployee, isReferralEligibleEmployee } from '../utils/employeeHelper';
 import { ClosingReportReceipt } from './ClosingReportReceipt';
+import { printThermalFinancialVoucher } from './ThermalFinancialVoucher';
 import { directPrintHtml, isMobileOrTablet, printHtmlToMainServer } from '../utils/print';
 import { InvoiceReceiptCard, executePrintInvoiceReceipt, isSaudiSalon } from './InvoiceReceiptCard';
 import { SalesReturnModal } from './SalesReturnModal';
@@ -446,6 +447,147 @@ export function POSScreen({
   const [waselReason, setWaselReason] = useState('');
   const [waselRecipientName, setWaselRecipientName] = useState('');
   const [showWaselModal, setShowWaselModal] = useState(false);
+
+  // Fast Quick Expense Modal State (تسجيل مصروف سريع من نقطة البيع)
+  const [showQuickExpenseModal, setShowQuickExpenseModal] = useState(false);
+  const [quickExpenseAmount, setQuickExpenseAmount] = useState<number | ''>('');
+  const [quickExpenseCategory, setQuickExpenseCategory] = useState<string>('');
+  const [quickExpenseDescription, setQuickExpenseDescription] = useState<string>('');
+  const [quickExpenseTreasury, setQuickExpenseTreasury] = useState<string>('');
+  const [quickExpenseDate, setQuickExpenseDate] = useState<string>('');
+  const [quickExpensePrint, setQuickExpensePrint] = useState<boolean>(true);
+  const [quickExpenseError, setQuickExpenseError] = useState<string>('');
+  const [isSubmittingQuickExpense, setIsSubmittingQuickExpense] = useState<boolean>(false);
+
+  const availableExpenseCategories = useMemo(() => {
+    const list = settings.expenseCategories && settings.expenseCategories.length > 0
+      ? settings.expenseCategories
+      : ['نثريات وضيافة', 'مشتريات وبوفيه', 'صيانة ومعدات', 'أدوات ومستهلكات', 'إيجار وفواتير', 'رواتب ومكافآت', 'أخرى'];
+    return Array.from(new Set(list));
+  }, [settings.expenseCategories]);
+
+  const availableExpenseTreasuries = useMemo(() => {
+    if (settings.treasuries && settings.treasuries.length > 0) {
+      return settings.treasuries;
+    }
+    return [
+      { id: 'cash', name: 'درج الكاش (الخزينة النقدية)', isMain: false },
+      { id: 'main', name: 'الخزينة الرئيسية', isMain: true }
+    ];
+  }, [settings.treasuries]);
+
+  const handleOpenQuickExpenseModal = () => {
+    const initialDay = shiftData?.isOpen && shiftData.date 
+      ? shiftData.date 
+      : (shiftDate || new Date().toISOString().split('T')[0]);
+    const defaultTreasury = settings.treasuries?.find(t => !t.isMain)?.id 
+      || settings.treasuries?.[0]?.id 
+      || 'cash';
+    
+    setQuickExpenseAmount('');
+    setQuickExpenseDescription('');
+    setQuickExpenseCategory(availableExpenseCategories[0] || 'نثريات وضيافة');
+    setQuickExpenseTreasury(defaultTreasury);
+    setQuickExpenseDate(initialDay);
+    setQuickExpensePrint(true);
+    setQuickExpenseError('');
+    setShowQuickExpenseModal(true);
+  };
+
+  const handleSaveQuickExpense = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const amt = Number(quickExpenseAmount);
+    if (isNaN(amt) || amt <= 0) {
+      setQuickExpenseError('الرجاء إدخال مبلغ صحيح أكبر من الصفر');
+      return;
+    }
+    if (!quickExpenseDescription.trim()) {
+      setQuickExpenseError('الرجاء إدخال بيان وتفاصيل المصروف');
+      return;
+    }
+    if (!quickExpenseCategory) {
+      setQuickExpenseError('الرجاء اختيار بند المصروف');
+      return;
+    }
+    if (!quickExpenseTreasury) {
+      setQuickExpenseError('الرجاء اختيار الخزينة المسحوب منها');
+      return;
+    }
+
+    setIsSubmittingQuickExpense(true);
+    setQuickExpenseError('');
+
+    try {
+      const nowIso = new Date().toISOString();
+      const effectiveDay = quickExpenseDate || (shiftData?.isOpen && shiftData.date ? shiftData.date : nowIso.split('T')[0]);
+      const tTime = nowIso.split('T')[1] || '12:00:00.000Z';
+      const tDate = effectiveDay + 'T' + tTime;
+      const isMatchingCurrentShift = Boolean(shiftData?.isOpen && shiftData.date === effectiveDay);
+      const assignedShiftDate = isMatchingCurrentShift ? shiftData.date : effectiveDay;
+      const assignedShiftId = isMatchingCurrentShift ? ((shiftData as any)?.shiftId || (shiftData as any)?.id) : undefined;
+      const assignedShiftCode = isMatchingCurrentShift ? (shiftData as any)?.shiftCode : undefined;
+
+      const newTrx: Transaction = {
+        id: 'EXP-' + Math.random().toString(36).substr(2, 9).toUpperCase(),
+        salonId: settings.salonId,
+        branchId: activeBranchId,
+        branchCode: branches?.find(b => b.id === activeBranchId)?.code,
+        date: tDate,
+        createdAt: nowIso,
+        type: 'out',
+        amount: amt,
+        category: 'expense',
+        expenseCategory: quickExpenseCategory,
+        description: quickExpenseDescription.trim(),
+        treasury: quickExpenseTreasury,
+        treasuryId: quickExpenseTreasury,
+        shiftDate: assignedShiftDate,
+        shiftId: assignedShiftId,
+        shiftCode: assignedShiftCode,
+        createdBy: currentUser?.username || currentUser?.name,
+        createdByName: currentUser?.name || currentUser?.username,
+        createdById: currentUser?.id
+      } as any;
+
+      // حفظ المصروف في قاعدة البيانات
+      await DB.saveTransaction(newTrx, settings.salonId);
+
+      // تحديث مصفوفة المعاملات محلياً
+      if (setTransactions) {
+        setTransactions((prev: any) => [newTrx, ...(prev || [])]);
+      }
+
+      // طباعة إيصال الصرف الحراري عند تفعيل خيار الطباعة
+      if (quickExpensePrint) {
+        const treasuryName = availableExpenseTreasuries.find(t => t.id === quickExpenseTreasury)?.name || quickExpenseTreasury;
+        const expDateStr = tDate.includes('T') ? tDate.replace('T', ' ').substring(0, 19) : tDate;
+        try {
+          printThermalFinancialVoucher(settings, {
+            voucherType: 'expense',
+            voucherNumber: newTrx.id,
+            date: expDateStr,
+            expenseCategory: quickExpenseCategory,
+            amount: amt,
+            treasuryName: treasuryName,
+            note: quickExpenseDescription.trim(),
+            issuedBy: currentUser?.name || currentUser?.username || 'الكاشير',
+            shiftDate: assignedShiftDate
+          });
+        } catch (printErr) {
+          console.warn('Thermal expense voucher print error:', printErr);
+        }
+      }
+
+      setShowQuickExpenseModal(false);
+      setQuickExpenseAmount('');
+      setQuickExpenseDescription('');
+    } catch (err: any) {
+      console.error('Error saving quick expense:', err);
+      setQuickExpenseError('حدث خطأ أثناء حفظ المصروف: ' + (err?.message || err));
+    } finally {
+      setIsSubmittingQuickExpense(false);
+    }
+  };
 
   // Fast Attendance & Timesheet Modal State
   const [showAttendanceModal, setShowAttendanceModal] = useState(false);
@@ -2499,49 +2641,63 @@ export function POSScreen({
     <div className="flex flex-col lg:flex-row w-full bg-slate-50 overflow-y-auto lg:overflow-hidden lg:h-full">
       {/* Right Section: Items Grid */}
       <div className="order-2 lg:order-none flex-none lg:flex-1 flex flex-col p-4 lg:p-6 lg:overflow-hidden">
-        {/* Search & Action Bar */}
-        <div className="flex items-center gap-2.5 sm:gap-3 mb-3 lg:mb-6">
-          {/* خانة البحث بعرض مصغر */}
-          <div className="relative w-56 sm:w-72 lg:w-80 shrink-0">
-            <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+        {/* Search & Action Bar - صف واحد متناسق بدون نزول الأزرار للسطر التالي */}
+        <div className="flex items-center gap-1.5 sm:gap-2 mb-3 lg:mb-4 w-full flex-nowrap overflow-x-auto no-scrollbar">
+          {/* خانة البحث المرنة بحيث تملأ المساحة المتاحة دون دفع الأزرار */}
+          <div className="relative flex-1 min-w-[130px] sm:min-w-[160px] max-w-xs">
+            <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
             <input 
               type="text"
-              placeholder="ابحث بالاسم، السعر (مثال: 1500)، أو الباركود..."
-              className="w-full h-11 bg-white border border-slate-200 rounded-xl pr-9 pl-3 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-xs text-slate-700"
+              placeholder="ابحث بالاسم، السعر، أو الباركود..."
+              className="w-full h-10 bg-white border border-slate-200 rounded-xl pr-8 pl-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-xs text-slate-700 truncate"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={handleSearchKeyDown}
             />
           </div>
 
+          {/* زر مصروفات السريع بجوار خانة البحث مباشرة */}
+          <button
+            type="button"
+            onClick={handleOpenQuickExpenseModal}
+            className="h-10 bg-white hover:bg-rose-50/80 border border-slate-200 hover:border-rose-300 text-slate-700 hover:text-rose-900 px-2.5 sm:px-3 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer shrink-0 whitespace-nowrap active:scale-95"
+            title="تسجيل مصروف سريع جديد بدون مغادرة نقطة البيع"
+          >
+            <Wallet size={15} className="text-rose-600 shrink-0" />
+            <span>مصروفات</span>
+          </button>
+
           {/* زر حضور وانصراف السريع للوردية كجزء من التايم شيت */}
           <button
+            type="button"
             onClick={() => setShowAttendanceModal(true)}
-            className="h-11 bg-white hover:bg-emerald-50/80 border border-slate-200 hover:border-emerald-300 text-slate-700 hover:text-emerald-900 px-3 sm:px-4 rounded-xl text-xs font-black flex items-center gap-2 shadow-xs transition-all cursor-pointer whitespace-nowrap active:scale-95"
+            className="h-10 bg-white hover:bg-emerald-50/80 border border-slate-200 hover:border-emerald-300 text-slate-700 hover:text-emerald-900 px-2.5 sm:px-3 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer shrink-0 whitespace-nowrap active:scale-95"
             title="تسجيل حضور وانصراف الموظفين في التايم شيت لوردية اليوم"
           >
-            <UserCheck size={16} className="text-emerald-600" />
+            <UserCheck size={15} className="text-emerald-600 shrink-0" />
             <span>حضور وانصراف</span>
           </button>
 
-          {/* زر تقرير اليومية بين البحث وتعديل مواعيد الدوام وبنفس الارتفاع */}
+          {/* زر تقرير اليومية للوردية */}
           <button
+            type="button"
             onClick={() => setShowDailyReportModal(true)}
-            className="h-11 bg-white hover:bg-indigo-50/70 border border-slate-200 hover:border-indigo-200 text-slate-700 hover:text-indigo-900 px-3 sm:px-4 rounded-xl text-xs font-black flex items-center gap-2 shadow-xs transition-all cursor-pointer whitespace-nowrap active:scale-95"
+            className="h-10 bg-white hover:bg-indigo-50/70 border border-slate-200 hover:border-indigo-200 text-slate-700 hover:text-indigo-900 px-2.5 sm:px-3 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer shrink-0 whitespace-nowrap active:scale-95"
             title="عرض وطباعة تقرير اليومية للوردية الحالية"
           >
-            <FileText size={16} className="text-indigo-600" />
+            <FileText size={15} className="text-indigo-600 shrink-0" />
             <span>تقرير اليومية</span>
           </button>
 
-          {/* زر تعديل مواعيد الدوام بنفس الارتفاع */}
+          {/* زر تعديل مواعيد الدوام */}
           <button
+            type="button"
             onClick={handleOpenScheduleModal}
-            className="h-11 bg-white hover:bg-amber-50/70 border border-slate-200 hover:border-amber-200 text-slate-700 hover:text-amber-900 px-3 sm:px-4 rounded-xl text-xs font-bold flex items-center gap-2 shadow-xs transition-all cursor-pointer whitespace-nowrap active:scale-95"
+            className="h-10 bg-white hover:bg-amber-50/70 border border-slate-200 hover:border-amber-200 text-slate-700 hover:text-amber-900 px-2.5 sm:px-3 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer shrink-0 whitespace-nowrap active:scale-95"
             title="تعديل مواعيد حضور وانصراف الموظفين"
           >
-            <Clock size={16} className="text-amber-600" />
-            <span className="hidden sm:inline">تعديل مواعيد الدوام</span>
+            <Clock size={15} className="text-amber-600 shrink-0" />
+            <span>مواعيد الدوام</span>
           </button>
         </div>
 
@@ -4779,6 +4935,171 @@ export function POSScreen({
                 حفظ العميل
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Fast Quick Expense Modal (نافذة تسجيل مصروف سريع من نقطة البيع) */}
+      {showQuickExpenseModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-5 sm:p-6 space-y-4 animate-in fade-in zoom-in duration-150" dir="rtl">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center shadow-xs">
+                  <Wallet size={20} />
+                </div>
+                <div>
+                  <h3 className="font-black text-base text-slate-900">تسجيل مصروف سريع</h3>
+                  <p className="text-[11px] text-slate-500">صرف مباشر من الخزينة وتوثيق في حسابات الوردية</p>
+                </div>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setShowQuickExpenseModal(false)}
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 cursor-pointer transition-colors"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {quickExpenseError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl font-bold flex items-center gap-2 animate-in fade-in">
+                <AlertCircle size={16} className="shrink-0" />
+                <span>{quickExpenseError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveQuickExpense} className="space-y-3.5">
+              {/* المبلغ */}
+              <div>
+                <label className="block text-xs font-black text-slate-700 mb-1">
+                  المبلغ المنصرف *
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    step="any"
+                    min="0.01"
+                    autoFocus
+                    required
+                    placeholder="0.00"
+                    value={quickExpenseAmount}
+                    onChange={(e) => setQuickExpenseAmount(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="w-full h-12 bg-slate-50 border border-slate-200 rounded-xl px-4 text-left font-mono font-black text-lg focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition-all text-slate-900"
+                  />
+                  <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
+                    {settings.currency}
+                  </span>
+                </div>
+              </div>
+
+              {/* بند المصروف */}
+              <div>
+                <label className="block text-xs font-black text-slate-700 mb-1">
+                  بند المصروف / التصنيف *
+                </label>
+                <select
+                  value={quickExpenseCategory}
+                  onChange={(e) => setQuickExpenseCategory(e.target.value)}
+                  className="w-full h-11 bg-slate-50 border border-slate-200 rounded-xl px-3 text-xs font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition-all text-slate-800"
+                >
+                  {availableExpenseCategories.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* الخزينة المنصرف منها */}
+              <div>
+                <label className="block text-xs font-black text-slate-700 mb-1">
+                  الخزينة المنصرف منها *
+                </label>
+                <select
+                  value={quickExpenseTreasury}
+                  onChange={(e) => setQuickExpenseTreasury(e.target.value)}
+                  className="w-full h-11 bg-slate-50 border border-slate-200 rounded-xl px-3 text-xs font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition-all text-slate-800"
+                >
+                  {availableExpenseTreasuries.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* البيان / الوصف */}
+              <div>
+                <label className="block text-xs font-black text-slate-700 mb-1">
+                  بيان وتفاصيل المصروف *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="مثال: شراء ضيافة وبوفيه، أدوات نظافة، صيانة استشوار..."
+                  value={quickExpenseDescription}
+                  onChange={(e) => setQuickExpenseDescription(e.target.value)}
+                  className="w-full h-11 bg-slate-50 border border-slate-200 rounded-xl px-3 text-xs font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition-all text-slate-800"
+                />
+              </div>
+
+              {/* تاريخ الصرف + خيار الطباعة */}
+              <div className="flex items-center justify-between gap-3 pt-1">
+                <div className="flex-1">
+                  <label className="block text-[11px] font-bold text-slate-500 mb-1">
+                    تاريخ العملية
+                  </label>
+                  <input
+                    type="date"
+                    value={quickExpenseDate}
+                    onChange={(e) => setQuickExpenseDate(e.target.value)}
+                    className="w-full h-9 bg-slate-50 border border-slate-200 rounded-lg px-2 text-xs font-bold text-slate-700 focus:bg-white focus:outline-none"
+                  />
+                </div>
+
+                <label className="flex items-center gap-2 cursor-pointer mt-4 select-none">
+                  <input
+                    type="checkbox"
+                    checked={quickExpensePrint}
+                    onChange={(e) => setQuickExpensePrint(e.target.checked)}
+                    className="w-4 h-4 rounded text-rose-600 focus:ring-rose-500 border-slate-300"
+                  />
+                  <span className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                    <Printer size={13} className="text-slate-500" />
+                    طباعة إيصال
+                  </span>
+                </label>
+              </div>
+
+              {/* الأزرار */}
+              <div className="flex items-center gap-2.5 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowQuickExpenseModal(false)}
+                  className="flex-1 h-11 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-all cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingQuickExpense}
+                  className="flex-[1.5] h-11 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-black rounded-xl text-xs transition-all shadow-md shadow-rose-600/25 flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+                >
+                  {isSubmittingQuickExpense ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      <span>جاري الحفظ...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check size={16} />
+                      <span>حفظ المصروف</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
