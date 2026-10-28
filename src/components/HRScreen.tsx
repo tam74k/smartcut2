@@ -22,6 +22,7 @@ import { DB, calculateFingerprintProcessedDate, getFingerprintProcessedDate } fr
 import { getActiveShiftDate, getEffectiveDateTime, getEffectiveDateOnly } from '../utils/shiftDate';
 import { AuthService } from '../services/auth';
 import { BiometricImportModal } from './BiometricImportModal';
+import { EvolutionApiService } from '../services/evolutionApiService';
 
 // Helper to reliably match date strings (YYYY-MM-DD) across ISO strings, space-delimited timestamps, and local timezone
 const isSameDay = (ts?: string, targetDateStr?: string): boolean => {
@@ -2452,6 +2453,16 @@ export function HRScreen({
         note: newAdvanceForm.note || 'سلفة نقدية على حساب الراتب',
         issuedBy: currentUser?.name || 'مدير النظام'
       });
+
+      // إرسال إشعار السلفة للموظف عبر الواتساب تلقائياً إذا كان الخيار مفعلاً
+      if (settings.whatsappEnabled !== false && settings.whatsappSettings?.sendAdvanceToEmployee) {
+        EvolutionApiService.sendAdvanceWhatsApp(settings, targetEmp, {
+          amount: amt,
+          date: newAdvanceForm.date,
+          treasuryName,
+          note: newAdvanceForm.note
+        }, targetEmp.branchId || activeBranchId).catch(err => console.error('Advance WhatsApp send error:', err));
+      }
 
       setShowNewAdvanceModal(false);
       setNewAdvanceForm({

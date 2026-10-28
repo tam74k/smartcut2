@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { DB } from '../services/db';
 import { executePrintInvoiceReceipt } from './InvoiceReceiptCard';
+import { EvolutionApiService } from '../services/evolutionApiService';
 
 interface DeferredInvoicesScreenProps {
   settings: AppSettings;
@@ -435,6 +436,12 @@ export function DeferredInvoicesScreen({
       // Update Local State
       setInvoices(prev => prev.map(inv => inv.id === updatedInvoice.id ? updatedInvoice : inv));
       setTransactions(prev => [newTrx, ...prev]);
+
+      // إرسال إشعار السداد وتحديث الفاتورة للعميل عبر الواتساب تلقائياً إذا كان الخيار مفعلاً
+      if (settings.whatsappEnabled !== false && settings.whatsappSettings?.sendInvoiceToClient) {
+        EvolutionApiService.sendInvoiceWhatsApp(settings, updatedInvoice, updatedInvoice.branchId || activeBranchId)
+          .catch(err => console.error('Deferred settlement WhatsApp send error:', err));
+      }
 
       setSettleModalInvoice(null);
 

@@ -24,6 +24,8 @@ import { DB } from '../services/db';
 import { escapeHtml, sanitizeUrl } from '../utils/sanitize';
 import { isBarberEmployee } from '../utils/employeeHelper';
 import { BookingsImportModal } from './BookingsImportModal';
+import { EvolutionApiService } from '../services/evolutionApiService';
+import { MessageCircle, Send } from 'lucide-react';
 import { generateCode39Svg } from '../utils/printQueueSlip';
 
 // Format time string (e.g. "14:30" or "09:00") into 12-hour format with AM/PM (ص / م)
@@ -203,6 +205,122 @@ export function BookingsScreen({
 
   // Excel Import Modal State
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isSendingTomorrowWhatsApp, setIsSendingTomorrowWhatsApp] = useState(false);
+  const [isSendingReminderWhatsApp, setIsSendingReminderWhatsApp] = useState(false);
+  const [isResendingConfirmWhatsApp, setIsResendingConfirmWhatsApp] = useState(false);
+
+  const handleSendTomorrowBookingsToOwner = async () => {
+    if (settings.whatsappEnabled === false) {
+      alert('الواتساب معطل حالياً في إعدادات النظام. يرجى تفعيله أولاً من شاشة الإعدادات.');
+      return;
+    }
+    if (settings.whatsappSettings && settings.whatsappSettings.sendTomorrowBookingsToOwner === false) {
+      const proceed = window.confirm('تنبيه: خيار (إرسال حجوزات الغد للمالك) معطل في إعدادات الواتساب.\nهل ترغب في المتابعة والإرسال على أي حال؟');
+      if (!proceed) return;
+    }
+
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    const tomorrowStr = d.toISOString().split('T')[0];
+
+    const tomorrowBookings = bookings.filter(b => 
+      b.date === tomorrowStr && 
+      b.status !== 'cancelled' && 
+      (!activeBranchId || b.branchId === activeBranchId)
+    );
+
+    const ownerPhone = settings.ownerPhone || settings.phone;
+    if (!ownerPhone) {
+      alert('لم يتم تسجيل رقم هاتف المالك في الإعدادات. يرجى تسجيل رقم هاتف المالك في شاشة الإعدادات العامة أولاً.');
+      return;
+    }
+
+    if (tomorrowBookings.length === 0) {
+      const sendEmpty = window.confirm(`لا توجد حجوزات مؤكدة مسجلة ليوم الغد (${tomorrowStr}). هل ترغب في إرسال إشعار للمالك يفيد بعدم وجود حجوزات؟`);
+      if (!sendEmpty) return;
+    }
+
+    setIsSendingTomorrowWhatsApp(true);
+    try {
+      const res = await EvolutionApiService.sendTomorrowBookingsToOwnerWhatsApp(
+        settings,
+        tomorrowBookings,
+        ownerPhone,
+        activeBranchId
+      );
+      if (res.success) {
+        alert(`تم إرسال ملخص حجوزات الغد (${tomorrowBookings.length} حجز) بنجاح إلى هاتف المالك (${ownerPhone}).`);
+      } else {
+        alert(`فشل إرسال تقرير حجوزات الغد: ${res.error || 'خطأ غير معروف'}`);
+      }
+    } catch (err: any) {
+      alert('حدث خطأ أثناء إرسال الواتساب: ' + (err?.message || err));
+    } finally {
+      setIsSendingTomorrowWhatsApp(false);
+    }
+  };
+
+  const handleSendBookingReminder = async (targetBooking: Booking) => {
+    if (!targetBooking.phone) {
+      alert('لا يوجد رقم هاتف مسجل لهذا العميل.');
+      return;
+    }
+    if (settings.whatsappEnabled === false) {
+      alert('الواتساب معطل حالياً في إعدادات النظام.');
+      return;
+    }
+    if (settings.whatsappSettings && settings.whatsappSettings.sendBookingReminder === false) {
+      const proceed = window.confirm('تنبيه: خيار (تذكير العميل قبل موعد الحجز) معطل في إعدادات الواتساب.\nهل ترغب في المتابعة والإرسال على أي حال؟');
+      if (!proceed) return;
+    }
+
+    setIsSendingReminderWhatsApp(true);
+    try {
+      const res = await EvolutionApiService.sendBookingReminderWhatsApp(
+        settings,
+        targetBooking,
+        targetBooking.branchId || activeBranchId
+      );
+      if (res.success) {
+        alert(`تم إرسال تذكير الموعد للعميل (${targetBooking.clientName}) عبر الواتساب بنجاح.`);
+      } else {
+        alert(`فشل إرسال التذكير: ${res.error || 'خطأ غير معروف'}`);
+      }
+    } catch (err: any) {
+      alert('حدث خطأ أثناء الإرسال: ' + (err?.message || err));
+    } finally {
+      setIsSendingReminderWhatsApp(false);
+    }
+  };
+
+  const handleResendBookingConfirmation = async (targetBooking: Booking) => {
+    if (!targetBooking.phone) {
+      alert('لا يوجد رقم هاتف مسجل لهذا العميل.');
+      return;
+    }
+    if (settings.whatsappEnabled === false) {
+      alert('الواتساب معطل حالياً في إعدادات النظام.');
+      return;
+    }
+
+    setIsResendingConfirmWhatsApp(true);
+    try {
+      const res = await EvolutionApiService.sendBookingConfirmationWhatsApp(
+        settings,
+        targetBooking,
+        targetBooking.branchId || activeBranchId
+      );
+      if (res.success) {
+        alert(`تم إرسال تفاصيل وتأكيد الحجز للعميل (${targetBooking.clientName}) بنجاح.`);
+      } else {
+        alert(`فشل إرسال التأكيد: ${res.error || 'خطأ غير معروف'}`);
+      }
+    } catch (err: any) {
+      alert('حدث خطأ أثناء الإرسال: ' + (err?.message || err));
+    } finally {
+      setIsResendingConfirmWhatsApp(false);
+    }
+  };
 
   // Booking Rules Modal State
   const [showRulesModal, setShowRulesModal] = useState(false);
@@ -1308,6 +1426,12 @@ export function BookingsScreen({
       }
     }
 
+    // إرسال تأكيد الحجز للعميل تلقائياً عبر الواتساب إذا كان الحجز جديداً والخيار مفعلاً
+    if (!editingBooking && settings.whatsappEnabled !== false && settings.whatsappSettings?.sendBookingToClient) {
+      EvolutionApiService.sendBookingConfirmationWhatsApp(settings, booking, bBranchId)
+        .catch(err => console.error('Booking confirmation WhatsApp send error:', err));
+    }
+
     // Auto add client to overall salon clients database if new
     let matchedClient = clients.find(c => (c.phone && c.phone.trim() === newBooking.phone!.trim()) || (newBooking.customerId && c.id === newBooking.customerId));
     if (setClients && newBooking.phone && !matchedClient) {
@@ -1925,6 +2049,18 @@ export function BookingsScreen({
           >
             <FileSpreadsheet size={15} className="text-emerald-600" />
             <span>سحب من إكسل</span>
+          </button>
+
+          {/* Send Tomorrow's Bookings to Owner via WhatsApp */}
+          <button
+            type="button"
+            onClick={handleSendTomorrowBookingsToOwner}
+            disabled={isSendingTomorrowWhatsApp}
+            className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-3.5 py-2.5 rounded-2xl text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+            title="إرسال قائمة وتفاصيل حجوزات الغد إلى هاتف مالك الصالون عبر الواتساب"
+          >
+            <MessageCircle size={15} />
+            <span>{isSendingTomorrowWhatsApp ? 'جارٍ الإرسال...' : 'حجوزات الغد للمالك'}</span>
           </button>
 
           {/* Global New Booking Button */}
@@ -3075,6 +3211,31 @@ export function BookingsScreen({
                       <ShoppingCart size={15} />
                       <span>تحويل للكاشير POS</span>
                     </button>
+                    {/* WhatsApp Action Buttons */}
+                    {selectedBookingDetails.phone && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleSendBookingReminder(selectedBookingDetails)}
+                          disabled={isSendingReminderWhatsApp}
+                          className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-3 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
+                          title="إرسال رسالة تذكير بموعد الحجز للعميل عبر الواتساب"
+                        >
+                          <Clock size={13} className="text-emerald-600" />
+                          <span>{isSendingReminderWhatsApp ? 'جارٍ التذكير...' : 'تذكير بالموعد'}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleResendBookingConfirmation(selectedBookingDetails)}
+                          disabled={isResendingConfirmWhatsApp}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors shadow-2xs"
+                          title="إعادة إرسال تفاصيل وتأكيد الحجز للعميل عبر الواتساب"
+                        >
+                          <Send size={13} />
+                          <span>{isResendingConfirmWhatsApp ? 'جارٍ الإرسال...' : 'إرسال الحجز'}</span>
+                        </button>
+                      </>
+                    )}
                     <button
                       type="button"
                       onClick={() => handleEdit(selectedBookingDetails)}

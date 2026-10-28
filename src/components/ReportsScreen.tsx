@@ -102,9 +102,10 @@ export function ReportsScreen({
   const [inactiveSortBy, setInactiveSortBy] = useState<'days_desc' | 'days_asc' | 'spend_desc' | 'visits_desc'>('days_desc');
   const [inactiveSentFilter, setInactiveSentFilter] = useState<'all' | 'not_sent_only' | 'sent_only'>('all');
   const [selectedInactiveClientIds, setSelectedInactiveClientIds] = useState<string[]>([]);
-  const [inactiveMessageText, setInactiveMessageText] = useState<string>(
-    'أهلاً بك يا {name}، اشتقنا لزيارتك في {salonName}! ✂️✨\nيسعدنا تقديم خصم حصري خاص على زيارتك القادمة بمناسبة عودتك لنا. نسعد دائماً بخدمتك ولقائك مجدداً في أي وقت! 🌟'
-  );
+  const [inactiveMessageText, setInactiveMessageText] = useState<string>(() => {
+    return settings.whatsappSettings?.reactivationTemplate || 
+      'أهلاً بك يا {name}، اشتقنا لزيارتك في {salonName}! ✂️✨\nيسعدنا تقديم خصم حصري خاص على زيارتك القادمة بمناسبة عودتك لنا. نسعد دائماً بخدمتك ولقائك مجدداً في أي وقت! 🌟';
+  });
   const [isSendingInactiveWhatsApp, setIsSendingInactiveWhatsApp] = useState<boolean>(false);
   const [inactiveSendProgress, setInactiveSendProgress] = useState<{ current: number; total: number; success: number; failed: number } | null>(null);
   const [bulkInactiveSelectCountInput, setBulkInactiveSelectCountInput] = useState<string>('10');
@@ -117,9 +118,10 @@ export function ReportsScreen({
   const [birthdaySortBy, setBirthdaySortBy] = useState<'date_asc' | 'date_desc' | 'name_asc' | 'greeting_status' | 'spend_desc'>('date_asc');
   const [birthdaySentFilter, setBirthdaySentFilter] = useState<'all' | 'sent_only' | 'not_sent_only'>('all');
   const [selectedBirthdayClientIds, setSelectedBirthdayClientIds] = useState<string[]>([]);
-  const [birthdayMessageText, setBirthdayMessageText] = useState<string>(
-    'أهلاً بك يا {name}، صالون {salonName} يتمنى لك عيد ميلاد سعيد وكل عام وأنت بألف خير! 🎉🎂 يسعدنا تقديم خصم خاص وهدية لك بمناسبة عيد ميلادك عند زيارتك القادمة. نسعد دائماً بخدمتك! ✂️✨'
-  );
+  const [birthdayMessageText, setBirthdayMessageText] = useState<string>(() => {
+    return settings.whatsappSettings?.birthdayTemplate || 
+      'أهلاً بك يا {name}، صالون {salonName} يتمنى لك عيد ميلاد سعيد وكل عام وأنت بألف خير! 🎉🎂 يسعدنا تقديم خصم خاص وهدية لك بمناسبة عيد ميلادك عند زيارتك القادمة. نسعد دائماً بخدمتك! ✂️✨';
+  });
   const [isSendingBirthdayWhatsApp, setIsSendingBirthdayWhatsApp] = useState<boolean>(false);
   const [birthdaySendProgress, setBirthdaySendProgress] = useState<{ current: number; total: number; success: number; failed: number } | null>(null);
   const [bulkSelectCountInput, setBulkSelectCountInput] = useState<string>('10');
@@ -129,6 +131,18 @@ export function ReportsScreen({
       setInactiveDaysFilter(Number(settings.inactiveClientsDays));
     }
   }, [settings.inactiveClientsDays]);
+
+  useEffect(() => {
+    if (settings.whatsappSettings?.reactivationTemplate) {
+      setInactiveMessageText(settings.whatsappSettings.reactivationTemplate);
+    }
+  }, [settings.whatsappSettings?.reactivationTemplate]);
+
+  useEffect(() => {
+    if (settings.whatsappSettings?.birthdayTemplate) {
+      setBirthdayMessageText(settings.whatsappSettings.birthdayTemplate);
+    }
+  }, [settings.whatsappSettings?.birthdayTemplate]);
 
   const [localFingerprintLogs, setLocalFingerprintLogs] = useState<any[]>(fingerprintLogs || []);
   const [isRefreshingLogs, setIsRefreshingLogs] = useState<boolean>(false);
@@ -1356,6 +1370,16 @@ export function ReportsScreen({
       return;
     }
 
+    if (settings.whatsappEnabled === false) {
+      alert('الواتساب معطل حالياً في إعدادات النظام. يرجى تفعيله أولاً من شاشة الإعدادات.');
+      return;
+    }
+
+    if (settings.whatsappSettings && settings.whatsappSettings.sendBirthdayGreeting === false) {
+      const proceed = window.confirm('تنبيه: خيار (إرسال تهنئة مخصصة بأعياد الميلاد) معطل في إعدادات الواتساب.\nهل ترغب في المتابعة والإرسال على أي حال؟');
+      if (!proceed) return;
+    }
+
     if (!EvolutionApiService.isConfigured(settings, activeBranchId)) {
       alert('بيانات Evolution API غير مهيأة بعد في إعدادات النظام. يرجى إدخال الرابط، اسم الجلسة ومفتاح API في شاشة الإعدادات للتمكن من الإرسال المباشر.');
       return;
@@ -1541,6 +1565,16 @@ export function ReportsScreen({
     if (selectedInactiveClientIds.length === 0) {
       alert('يرجى تحديد عميل واحد على الأقل لإرسال رسالة التنشيط.');
       return;
+    }
+
+    if (settings.whatsappEnabled === false) {
+      alert('الواتساب معطل حالياً في إعدادات النظام. يرجى تفعيله أولاً من شاشة الإعدادات.');
+      return;
+    }
+
+    if (settings.whatsappSettings && settings.whatsappSettings.sendReactivationOffers === false) {
+      const proceed = window.confirm('تنبيه: خيار (إرسال عروض للعملاء المنقطعين) معطل في إعدادات الواتساب.\nهل ترغب في المتابعة والإرسال على أي حال؟');
+      if (!proceed) return;
     }
 
     if (!EvolutionApiService.isConfigured(settings, activeBranchId)) {

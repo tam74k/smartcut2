@@ -1021,6 +1021,25 @@ export interface EtaEgyptSettings {
   lastTokenExpiry?: string;
 }
 
+export interface WhatsAppNotificationsConfig {
+  sendInvoiceToClient?: boolean;
+  sendBookingToClient?: boolean;
+  sendAdvanceToEmployee?: boolean;
+  sendBookingReminderToClient?: boolean;
+  sendTomorrowBookingsToOwner?: boolean;
+  sendBirthdayGreeting?: boolean;
+  sendReactivationOffers?: boolean;
+
+  // Custom message templates
+  invoiceTemplate?: string;
+  bookingTemplate?: string;
+  advanceTemplate?: string;
+  reminderTemplate?: string;
+  ownerTomorrowTemplate?: string;
+  birthdayTemplate?: string;
+  reactivationTemplate?: string;
+}
+
 export interface AppSettings { 
   salonId?: string;
   salonCode?: string;
@@ -1061,6 +1080,7 @@ export interface AppSettings {
   bookingNotes: string;
   // Evolution API WhatsApp Integration per salon & branch
   whatsappEnabled?: boolean;
+  whatsappSettings?: WhatsAppNotificationsConfig;
   evolutionApiUrl?: string;
   evolutionApiKey?: string;
   evolutionInstanceName?: string;

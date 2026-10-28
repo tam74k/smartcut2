@@ -63,6 +63,7 @@ import { DB, dbClientToApp, dbEmployeeToApp, dbServiceToApp, dbProductToApp, dbB
 import { SubscriptionService, evictExcessLocalStorage } from './services/subscriptionService';
 import { QueueService } from './services/queueService';
 import { completeBookingAndCreateHeldInvoice } from './services/bookingHeldInvoiceService';
+import { EvolutionApiService } from './services/evolutionApiService';
 import { hasEmployeeFixedCommission } from './utils/commissionHelper';
 import { 
   AppSettings, Transaction, Booking, Invoice, ServiceItem, Category, Employee, Product, AppUser, 
@@ -2916,6 +2917,12 @@ export default function App() {
       }
     })();
 
+    // 5. إرسال الفاتورة للعميل عبر الواتساب تلقائياً إذا كان الخيار مفعلاً
+    if (settings.whatsappEnabled !== false && settings.whatsappSettings?.sendInvoiceToClient) {
+      EvolutionApiService.sendInvoiceWhatsApp(settings, invoiceWithBranch, invoiceWithBranch.branchId || activeBranchId)
+        .catch(err => console.error('Auto invoice WhatsApp send error:', err));
+    }
+
     setActiveBookingForPOS(null);
   };
 
@@ -3695,6 +3702,10 @@ export default function App() {
         }}
         onSaveBooking={(newB) => {
           handleSetBookings((prev: Booking[]) => [newB, ...prev]);
+          if (settings.whatsappEnabled !== false && settings.whatsappSettings?.sendBookingToClient) {
+            EvolutionApiService.sendBookingConfirmationWhatsApp(settings, newB, newB.branchId || activeBranchId)
+              .catch(err => console.error('Portal booking WhatsApp error:', err));
+          }
         }}
         onCancelBooking={(bId) => {
           handleSetBookings((prev: Booking[]) => prev.map(b => b.id === bId ? { ...b, status: 'cancelled' } : b));

@@ -228,6 +228,7 @@ export async function ensureCoreSchema(): Promise<void> {
       ensureColumn('app_settings', 'evolution_api_key', 'TEXT'),
       ensureColumn('app_settings', 'evolution_api_url', 'TEXT'),
       ensureColumn('app_settings', 'whatsapp_enabled', 'BOOLEAN'),
+      ensureColumn('app_settings', 'whatsapp_settings', 'JSONB'),
       ensureColumn('employees', 'custom_overtime_rate', 'NUMERIC(10,2)'),
       ensureColumn('employees', 'late_deduction_rules', 'JSONB'),
       ensureColumn('employees', 'permissions_limit', 'INT'),
@@ -1528,6 +1529,7 @@ export const DB = {
       res.allowNonCashTips = data.allow_non_cash_tips !== undefined ? toBool(data.allow_non_cash_tips) : (uiSet.allowNonCashTips !== undefined ? toBool(uiSet.allowNonCashTips) : true);
       res.enableDualPricing = data.enable_dual_pricing !== undefined ? toBool(data.enable_dual_pricing) : (uiSet.enableDualPricing !== undefined ? toBool(uiSet.enableDualPricing) : false);
       res.whatsappEnabled = data.whatsapp_enabled !== undefined ? toBool(data.whatsapp_enabled) : (uiSet.whatsappEnabled !== undefined ? toBool(uiSet.whatsappEnabled) : true);
+      res.whatsappSettings = (typeof data.whatsapp_settings === 'object' && data.whatsapp_settings) ? data.whatsapp_settings : (uiSet.whatsappSettings || {});
 
       return res;
     } catch (e) { return null; }
@@ -1571,7 +1573,8 @@ export const DB = {
         tipPayoutMethod: settings.tipPayoutMethod || existingUiSettings.tipPayoutMethod || 'instant_cash',
         allowNonCashTips: settings.allowNonCashTips !== undefined ? Boolean(settings.allowNonCashTips) : (existingUiSettings.allowNonCashTips ?? true),
         enableDualPricing: settings.enableDualPricing !== undefined ? Boolean(settings.enableDualPricing) : (existingUiSettings.enableDualPricing ?? false),
-        whatsappEnabled: settings.whatsappEnabled !== undefined ? Boolean(settings.whatsappEnabled) : (existingUiSettings.whatsappEnabled ?? (existing?.whatsapp_enabled !== undefined ? toBool(existing.whatsapp_enabled) : true))
+        whatsappEnabled: settings.whatsappEnabled !== undefined ? Boolean(settings.whatsappEnabled) : (existingUiSettings.whatsappEnabled ?? (existing?.whatsapp_enabled !== undefined ? toBool(existing.whatsapp_enabled) : true)),
+        whatsappSettings: settings.whatsappSettings || existingUiSettings.whatsappSettings || null
       };
 
       const safeSalonName = (settings.salonName && settings.salonName !== 'صالون سمارت كت')
@@ -1637,6 +1640,7 @@ export const DB = {
         wa_instant_name: settings.evolutionInstanceName || settings.waInstantName || existing?.wa_instant_name || null,
         wa_api_key: settings.evolutionApiKey || settings.waApiKey || existing?.wa_api_key || null,
         whatsapp_enabled: settings.whatsappEnabled !== undefined ? Boolean(settings.whatsappEnabled) : (existing?.whatsapp_enabled !== undefined ? toBool(existing.whatsapp_enabled) : true),
+        whatsapp_settings: settings.whatsappSettings || existing?.whatsapp_settings || null,
         evolution_branch_instances: settings.evolutionBranchInstances || existing?.evolution_branch_instances || {},
         supabase_url: settings.supabaseUrl || existing?.supabase_url || null,
         supabase_anon_key: settings.supabaseAnonKey || existing?.supabase_anon_key || null,

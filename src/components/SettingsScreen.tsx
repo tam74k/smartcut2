@@ -6,7 +6,7 @@ import {
   Upload, HardDrive, AlertTriangle, FileCheck, RefreshCcw, Landmark, FileSpreadsheet,
   QrCode, Key, Send, CheckCircle2, ShieldCheck, HelpCircle, Building2, Layers, Clock, DollarSign, Coins,
   Printer, Wifi, Laptop, Lock, UserX, CalendarCheck, Calendar, Settings, Smartphone, Copy, Package, Scissors, Crown, Award, MapPin, ExternalLink,
-  Bot, Eye, EyeOff, Zap, AlertCircle, Power
+  Bot, Eye, EyeOff, Zap, AlertCircle, Power, Gift, Bell, User, ChevronDown, ChevronUp, RotateCcw
 } from 'lucide-react';
 
 import { AuthService, ROLE_LABELS } from '../services/auth';
@@ -22,6 +22,7 @@ import {
   testAiConnection, 
   saveAiCredentials 
 } from '../services/geminiSqlService';
+import { DEFAULT_WHATSAPP_TEMPLATES } from '../services/evolutionApiService';
 
 export function SettingsScreen({ 
   settings, 
@@ -102,6 +103,7 @@ export function SettingsScreen({
   const [isTestingAi, setIsTestingAi] = useState(false);
   const [testAiResult, setTestAiResult] = useState<{ success: boolean; latencyMs?: number; error?: string } | null>(null);
   const [showAiKey, setShowAiKey] = useState(false);
+  const [selectedWaTemplateTab, setSelectedWaTemplateTab] = useState<'invoice' | 'booking' | 'advance' | 'reminder' | 'owner_tomorrow' | 'birthday' | 'reactivation'>('invoice');
 
   const SETTINGS_TABS: { id: SettingsTab; label: string; icon: any; desc: string }[] = [
     {
@@ -3774,30 +3776,171 @@ export function SettingsScreen({
         {/* Evolution API & WhatsApp Integration */}
         {(() => {
           const isWhatsappActive = settings.whatsappEnabled !== false;
+          const waCfg = settings.whatsappSettings || {};
+
+          const updateWaConfig = (key: keyof WhatsAppNotificationsConfig, value: any) => {
+            const nextCfg = { ...waCfg, [key]: value };
+            handleUpdateSettings({
+              whatsappSettings: nextCfg
+            });
+          };
+
+          const WA_NOTIFICATION_ITEMS: {
+            id: keyof WhatsAppNotificationsConfig;
+            title: string;
+            desc: string;
+            icon: any;
+            activeColor: string;
+          }[] = [
+            {
+              id: 'sendInvoiceToClient',
+              title: 'إرسال الفاتورة للعميل',
+              desc: 'إرسال تفاصيل الفاتورة والمبلغ المسدد والمتبقي فور حفظ الفاتورة بالكاشير',
+              icon: Receipt,
+              activeColor: 'text-blue-600 bg-blue-50 border-blue-200'
+            },
+            {
+              id: 'sendBookingToClient',
+              title: 'إرسال الحجز للعميل',
+              desc: 'إرسال تأكيد موعد الحجز والخدمات ورقم التذكرة فور تسجيل وتأكيد الحجز',
+              icon: CalendarCheck,
+              activeColor: 'text-purple-600 bg-purple-50 border-purple-200'
+            },
+            {
+              id: 'sendAdvanceToEmployee',
+              title: 'إرسال السلفة للموظف',
+              desc: 'إرسال إشعار فوري على واتساب الموظف عند صرف سلفة نقدية على راتبه',
+              icon: Wallet,
+              activeColor: 'text-amber-600 bg-amber-50 border-amber-200'
+            },
+            {
+              id: 'sendBookingReminderToClient',
+              title: 'تذكير العميل قبل موعد الحجز',
+              desc: 'إرسال رسالة تذكير ودية للعميل بموعده قبل قدومه للصالون',
+              icon: Bell,
+              activeColor: 'text-emerald-600 bg-emerald-50 border-emerald-200'
+            },
+            {
+              id: 'sendTomorrowBookingsToOwner',
+              title: 'إرسال حجوزات الغد للمالك',
+              desc: 'إرسال تقرير وملخص بجدول حجوزات ومواعيد اليوم التالي للمالك أو المدير',
+              icon: User,
+              activeColor: 'text-indigo-600 bg-indigo-50 border-indigo-200'
+            },
+            {
+              id: 'sendBirthdayGreeting',
+              title: 'إرسال تهنئة مخصصة بأعياد الميلاد',
+              desc: 'إرسال رسائل تهنئة مميزة وهدايا خصم للعملاء في مناسبة أعياد ميلادهم',
+              icon: Gift,
+              activeColor: 'text-rose-600 bg-rose-50 border-rose-200'
+            },
+            {
+              id: 'sendReactivationOffers',
+              title: 'إرسال عروض للعملاء المنقطعين',
+              desc: 'مراسلة العملاء الذين انقطعوا لفترة طويلة لتنشيطهم وتقديم عروض حصرية',
+              icon: RefreshCw,
+              activeColor: 'text-cyan-600 bg-cyan-50 border-cyan-200'
+            }
+          ];
+
+          const TEMPLATE_TABS: {
+            id: 'invoice' | 'booking' | 'advance' | 'reminder' | 'owner_tomorrow' | 'birthday' | 'reactivation';
+            configKey: keyof WhatsAppNotificationsConfig;
+            title: string;
+            icon: any;
+            tags: string[];
+          }[] = [
+            {
+              id: 'invoice',
+              configKey: 'invoiceTemplate',
+              title: 'فاتورة العميل',
+              icon: Receipt,
+              tags: ['{clientName}', '{invoiceId}', '{date}', '{services}', '{total}', '{paid}', '{remaining}', '{remainingText}', '{currency}', '{salonName}']
+            },
+            {
+              id: 'booking',
+              configKey: 'bookingTemplate',
+              title: 'تأكيد الحجز',
+              icon: CalendarCheck,
+              tags: ['{clientName}', '{bookingId}', '{date}', '{time}', '{services}', '{employeeName}', '{branchName}', '{salonAddress}', '{salonName}']
+            },
+            {
+              id: 'advance',
+              configKey: 'advanceTemplate',
+              title: 'سلفة الموظف',
+              icon: Wallet,
+              tags: ['{employeeName}', '{amount}', '{currency}', '{date}', '{treasury}', '{notesText}', '{salonName}']
+            },
+            {
+              id: 'reminder',
+              configKey: 'reminderTemplate',
+              title: 'تذكير الموعد',
+              icon: Bell,
+              tags: ['{clientName}', '{date}', '{time}', '{services}', '{branchName}', '{salonName}']
+            },
+            {
+              id: 'owner_tomorrow',
+              configKey: 'ownerTomorrowTemplate',
+              title: 'حجوزات الغد للمالك',
+              icon: User,
+              tags: ['{ownerName}', '{date}', '{bookingsCount}', '{branchName}', '{details}', '{salonName}']
+            },
+            {
+              id: 'birthday',
+              configKey: 'birthdayTemplate',
+              title: 'أعياد الميلاد',
+              icon: Gift,
+              tags: ['{clientName}', '{discount}', '{salonName}']
+            },
+            {
+              id: 'reactivation',
+              configKey: 'reactivationTemplate',
+              title: 'تنشيط المنقطعين',
+              icon: RefreshCw,
+              tags: ['{clientName}', '{offer}', '{phone}', '{salonName}']
+            }
+          ];
+
+          const activeTemplateMeta = TEMPLATE_TABS.find(t => t.id === selectedWaTemplateTab) || TEMPLATE_TABS[0];
+          const currentTemplateText = (waCfg as any)[activeTemplateMeta.configKey] ?? (DEFAULT_WHATSAPP_TEMPLATES as any)[activeTemplateMeta.configKey] ?? '';
+
+          const handleInsertTag = (tag: string) => {
+            const nextText = currentTemplateText ? (currentTemplateText + ' ' + tag) : tag;
+            updateWaConfig(activeTemplateMeta.configKey, nextText);
+          };
+
+          const handleResetCurrentTemplate = () => {
+            const defText = (DEFAULT_WHATSAPP_TEMPLATES as any)[activeTemplateMeta.configKey];
+            updateWaConfig(activeTemplateMeta.configKey, defText);
+          };
+
           return (
-            <div className={`bg-white rounded-3xl p-6 border shadow-xs space-y-4 transition-all ${
+            <div className={`bg-white rounded-3xl p-6 border shadow-xs space-y-6 transition-all ${
               isWhatsappActive ? 'border-emerald-200' : 'border-slate-200 bg-slate-50/50'
             }`}>
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
-                <div className="flex items-center gap-2.5">
-                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-bold transition-colors ${
+              {/* Header with Enable/Disable Button and Switch */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className={`w-11 h-11 rounded-2xl flex items-center justify-center font-bold transition-colors ${
                     isWhatsappActive ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'
                   }`}>
-                    <MessageSquare size={20} />
+                    <MessageSquare size={22} />
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
                       <h3 className="text-base font-black text-slate-800">بوابة وإعدادات رسائل الواتساب التلقائية (WhatsApp Gateway)</h3>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border inline-flex items-center gap-1 ${
+                      <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border inline-flex items-center gap-1.5 ${
                         isWhatsappActive 
                           ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
                           : 'bg-rose-50 text-rose-700 border-rose-200'
                       }`}>
                         <span className={`w-1.5 h-1.5 rounded-full ${isWhatsappActive ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
-                        {isWhatsappActive ? 'مفعل' : 'معطل'}
+                        <span>{isWhatsappActive ? 'الخدمة مفعلة' : 'الخدمة معطلة'}</span>
                       </span>
                     </div>
-                    <p className="text-xs text-slate-500">إرسال الفواتير وتأكيدات الحجوزات ورموز التحقق OTP للعملاء والموظفين عبر الواتساب</p>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      إرسال الفواتير وتأكيدات الحجوزات والسلف وتذكيرات المواعيد ورسائل التنشيط آلياً لكل صالون وفرع
+                    </p>
                   </div>
                 </div>
 
@@ -3806,14 +3949,14 @@ export function SettingsScreen({
                   <button
                     type="button"
                     onClick={() => handleUpdateSettings({ whatsappEnabled: !isWhatsappActive })}
-                    className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                    className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs ${
                       isWhatsappActive
                         ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 active:scale-95'
                         : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-500/20 active:scale-95'
                     }`}
                     title={isWhatsappActive ? 'إيقاف وتعطيل إرسال رسائل الواتساب' : 'تفعيل إرسال رسائل الواتساب'}
                   >
-                    <Power size={13} />
+                    <Power size={14} />
                     <span>{isWhatsappActive ? 'إلغاء التفعيل' : 'تفعيل الواتساب'}</span>
                   </button>
 
@@ -3831,15 +3974,27 @@ export function SettingsScreen({
 
               {/* تنبيه عند تعطيل الواتساب */}
               {!isWhatsappActive && (
-                <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl flex items-center gap-2 text-amber-800 text-xs font-bold animate-in fade-in">
-                  <AlertTriangle size={16} className="text-amber-600 shrink-0" />
-                  <span>خدمة الواتساب معطلة حالياً. لن يقوم النظام بإرسال أي رسائل تلقائية للفواتير أو الحجوزات أو تذكيرات المواعيد حتى تقوم بإعادة تفعيلها.</span>
+                <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl flex items-center gap-2.5 text-amber-900 text-xs font-bold animate-in fade-in">
+                  <AlertTriangle size={18} className="text-amber-600 shrink-0" />
+                  <span>خدمة الواتساب معطلة حالياً. لن يقوم النظام بإرسال أي رسائل تلقائية للفواتير أو الحجوزات أو السلف حتى تقوم بالضغط على "تفعيل الواتساب".</span>
                 </div>
               )}
 
+              {/* بطاقة العزل الأمني لحسابات الصالونات والفروع */}
+              <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-2xl flex items-center justify-between text-xs text-slate-700">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck size={16} className="text-emerald-600 shrink-0" />
+                  <span><strong>أمان العزل والفروع:</strong> حساب الواتساب والجلسة معزولان تماماً ومخصصان حصرياً لهذا الصالون <strong>({settings.salonName || 'الصالون'})</strong> وفرعه الحالي. لا يتم مشاركة الجلسات بين الصالونات إطلاقاً.</span>
+                </div>
+                <span className="text-[10px] font-mono font-bold bg-white px-2 py-0.5 rounded border border-slate-200 text-slate-600">
+                  {settings.salonCode || 'ISOLATED'}
+                </span>
+              </div>
+
+              {/* بيانات ربط الجلسة ومفتاح API */}
               <div className={`grid grid-cols-1 md:grid-cols-2 gap-4 ${!isWhatsappActive ? 'opacity-60' : ''}`}>
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">اسم الجلسة (Instance Name) *</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">اسم الجلسة المخصصة لهذا الصالون (Instance Name) *</label>
                   <input 
                     type="text" 
                     value={settings.evolutionInstanceName ?? settings.waInstantName ?? ''}
@@ -3850,7 +4005,7 @@ export function SettingsScreen({
                         waInstantName: val
                       });
                     }}
-                    placeholder="مثال: salon_newlook_main"
+                    placeholder="مثال: salon_smartcut_main"
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:border-emerald-600 outline-none"
                     dir="ltr"
                   />
@@ -3878,7 +4033,7 @@ export function SettingsScreen({
               <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                 <div className="text-xs text-slate-600 flex items-center gap-1.5">
                   <Sparkles size={14} className="text-amber-500 shrink-0" />
-                  <span><strong>تنبيه:</strong> تأكد من تسجيل اسم الجلسة ومفتاح API بالشكل الصحيح لإرسال إشعارات الفواتير ورموز OTP وتذكيرات المواعيد.</span>
+                  <span>تأكد من مطابقة اسم الجلسة ومفتاح API مع السيرفر المسجل لضمان إرسال الرسائل فور حدوث أي إجراء من الإجراءات المحددة بالأسفل.</span>
                 </div>
                 <button
                   type="button"
@@ -3889,17 +4044,218 @@ export function SettingsScreen({
                     }
                     const res = await import('../services/evolutionApiService').then(m => m.EvolutionApiService.checkConnection(settings));
                     if (res.connected) {
-                      alert(`جلسة الواتساب متصلة بنجاح! رقم الواتساب: ${res.phone || 'متصل'}`);
+                      alert(`جلسة الواتساب متصلة بنجاح! رقم الواتساب المربوط: ${res.phone || 'متصل'}`);
                     } else {
                       alert(`حالة الاتصال: غير متصل (${res.error || 'يرجى مراجعة اسم الجلسة ومفتاح API'})`);
                     }
                   }}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-sm cursor-pointer whitespace-nowrap"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-sm cursor-pointer whitespace-nowrap active:scale-95"
                 >
                   <Sparkles size={14} />
-                  <span>فحص حالة الاتصال</span>
+                  <span>فحص حالة الاتصال بالجلسة</span>
                 </button>
               </div>
+
+              {/* ============================================================ */}
+              {/* خيارات ON / OFF لإشعارات الواتساب السبعة */}
+              {/* ============================================================ */}
+              {isWhatsappActive && (
+                <div className="border-t border-slate-100 pt-5 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <h4 className="text-sm font-black text-slate-800 flex items-center gap-2">
+                        <span>خيارات إرسال رسائل الواتساب التلقائية (On / Off)</span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                          {WA_NOTIFICATION_ITEMS.filter(it => Boolean((waCfg as any)[it.id])).length} من 7 مفعل
+                        </span>
+                      </h4>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        قم بتشغيل الإشعارات التي ترغب في إرسالها تلقائياً عند حدوث المعاملة في النظام
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {WA_NOTIFICATION_ITEMS.map(item => {
+                      const isItemEnabled = Boolean((waCfg as any)[item.id]);
+                      const ItemIcon = item.icon;
+                      return (
+                        <div
+                          key={item.id}
+                          className={`p-3.5 rounded-2xl border transition-all flex flex-col justify-between gap-3 ${
+                            isItemEnabled 
+                              ? 'bg-white border-emerald-300 ring-2 ring-emerald-500/10 shadow-2xs' 
+                              : 'bg-slate-50/70 border-slate-200 opacity-80'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex items-center gap-2.5">
+                              <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                                isItemEnabled ? item.activeColor : 'bg-slate-200 text-slate-400'
+                              }`}>
+                                <ItemIcon size={16} />
+                              </div>
+                              <div>
+                                <h5 className="text-xs font-black text-slate-900">{item.title}</h5>
+                                <p className="text-[11px] text-slate-500 line-clamp-2 mt-0.5">{item.desc}</p>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                              isItemEnabled ? 'bg-emerald-50 text-emerald-700 font-black' : 'bg-slate-200 text-slate-500'
+                            }`}>
+                              {isItemEnabled ? 'مفعل (ON)' : 'معطل (OFF)'}
+                            </span>
+
+                            <label className="relative inline-flex items-center cursor-pointer">
+                              <input 
+                                type="checkbox" 
+                                className="sr-only peer"
+                                checked={isItemEnabled}
+                                onChange={(e) => updateWaConfig(item.id, e.target.checked)}
+                              />
+                              <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
+                            </label>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* ============================================================ */}
+              {/* قسم تعديل وتخصيص صيغ رسائل الواتساب */}
+              {/* ============================================================ */}
+              {isWhatsappActive && (
+                <div className="border-t border-slate-100 pt-5 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <h4 className="text-sm font-black text-slate-800 flex items-center gap-2">
+                        <span>تخصيص وتعديل صيغ رسائل الواتساب</span>
+                        <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md font-bold">
+                          قوالب قابلة للتعديل
+                        </span>
+                      </h4>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        يمكنك صياغة نص الرسالة حسب رغبتك واستخدام الوسوم الديناميكية ليتم استبدالها ببيانات العميل والفاتورة
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleResetCurrentTemplate}
+                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer self-start sm:self-auto"
+                      title="استعادة النص الافتراضي لهذا القالب"
+                    >
+                      <RotateCcw size={13} />
+                      <span>استعادة الصيغة الافتراضية</span>
+                    </button>
+                  </div>
+
+                  {/* تبويبات القوالب السبعة */}
+                  <div className="flex flex-wrap gap-1.5 bg-slate-100/80 p-1.5 rounded-2xl border border-slate-200">
+                    {TEMPLATE_TABS.map(tab => {
+                      const isSelected = tab.id === selectedWaTemplateTab;
+                      const TabIcon = tab.icon;
+                      const isTriggerEnabled = Boolean((waCfg as any)[tab.id === 'owner_tomorrow' ? 'sendTomorrowBookingsToOwner' : tab.id === 'invoice' ? 'sendInvoiceToClient' : tab.id === 'booking' ? 'sendBookingToClient' : tab.id === 'advance' ? 'sendAdvanceToEmployee' : tab.id === 'reminder' ? 'sendBookingReminderToClient' : tab.id === 'birthday' ? 'sendBirthdayGreeting' : 'sendReactivationOffers']);
+
+                      return (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          onClick={() => setSelectedWaTemplateTab(tab.id)}
+                          className={`px-3 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer ${
+                            isSelected 
+                              ? 'bg-white text-emerald-800 shadow-xs border border-emerald-200 ring-1 ring-emerald-500/20' 
+                              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                          }`}
+                        >
+                          <TabIcon size={14} className={isSelected ? 'text-emerald-600' : 'text-slate-400'} />
+                          <span>{tab.title}</span>
+                          <span className={`w-2 h-2 rounded-full ${isTriggerEnabled ? 'bg-emerald-500' : 'bg-slate-300'}`} title={isTriggerEnabled ? 'مفعل' : 'معطل'} />
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* محرر القالب النشط */}
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                        <activeTemplateMeta.icon size={15} className="text-emerald-600" />
+                        <span>نص قالب رسالة ({activeTemplateMeta.title}):</span>
+                      </label>
+                      <span className="text-[10px] text-slate-500 font-bold">
+                        انقر على أي وسم بالأسفل لإدراجه في النص تلقائياً
+                      </span>
+                    </div>
+
+                    {/* الوسوم الديناميكية القابلة للنقر */}
+                    <div className="flex flex-wrap gap-1.5 bg-white p-2.5 rounded-xl border border-slate-200/80">
+                      <span className="text-[11px] font-bold text-slate-400 pl-1 self-center">الوسوم المتاحة:</span>
+                      {activeTemplateMeta.tags.map(tag => (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() => handleInsertTag(tag)}
+                          className="px-2 py-0.5 bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300 text-slate-700 rounded-md text-[10px] font-mono font-bold border border-slate-200 transition-colors cursor-pointer"
+                          title={`إدراج ${tag}`}
+                        >
+                          + {tag}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* مساحة النص المحررة */}
+                    <textarea
+                      rows={6}
+                      value={currentTemplateText}
+                      onChange={(e) => updateWaConfig(activeTemplateMeta.configKey, e.target.value)}
+                      placeholder="اكتب نص رسالة الواتساب هنا..."
+                      className="w-full bg-white border border-slate-300 rounded-xl p-3 text-xs font-bold leading-relaxed focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500/20 outline-none transition-all resize-y"
+                    />
+
+                    {/* معاينة شكل الرسالة */}
+                    <div className="p-3 bg-emerald-50/50 rounded-xl border border-emerald-100 text-xs space-y-1">
+                      <p className="font-black text-emerald-900 text-[11px] flex items-center gap-1">
+                        <Sparkles size={12} className="text-emerald-600" />
+                        <span>معاينة حية لشكل الرسالة مع بيانات تجريبية:</span>
+                      </p>
+                      <div className="bg-white p-2.5 rounded-lg border border-emerald-200/60 font-mono text-[11px] whitespace-pre-wrap text-slate-800 leading-relaxed" dir="rtl">
+                        {currentTemplateText
+                          .replace(/{clientName}/g, 'محمد أحمد')
+                          .replace(/{employeeName}/g, 'خالد السعيد')
+                          .replace(/{ownerName}/g, 'أحمد المدير')
+                          .replace(/{invoiceId}/g, 'INV-1024')
+                          .replace(/{bookingId}/g, 'B-408')
+                          .replace(/{date}/g, new Date().toISOString().split('T')[0])
+                          .replace(/{time}/g, '04:30 م')
+                          .replace(/{services}/g, 'قص شعر، عناية بالبشرة')
+                          .replace(/{total}/g, '150.00')
+                          .replace(/{paid}/g, '150.00')
+                          .replace(/{remaining}/g, '0.00')
+                          .replace(/{remainingText}/g, '')
+                          .replace(/{amount}/g, '500.00')
+                          .replace(/{treasury}/g, 'خزنة كاش الدرج')
+                          .replace(/{notesText}/g, '📝 سلفة على حساب راتب الشهر')
+                          .replace(/{branchName}/g, 'الفرع الرئيسي')
+                          .replace(/{salonAddress}/g, settings.address || 'شارع التحلية')
+                          .replace(/{currency}/g, settings.currency || 'ر.س')
+                          .replace(/{salonName}/g, settings.salonName || 'صالون سمارت كت')
+                          .replace(/{bookingsCount}/g, '6')
+                          .replace(/{details}/g, '1. 02:00 م - أحمد علي (قص شعر)\n2. 03:30 م - عمر سالم (تنظيف بشرة)')
+                          .replace(/{discount}/g, '20')
+                          .replace(/{offer}/g, 'خصم خاص 20% على باقة العناية الشاملة')
+                          .replace(/{phone}/g, settings.phone || '0500000000')
+                        }
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           );
         })()}
