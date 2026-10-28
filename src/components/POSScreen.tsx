@@ -1645,11 +1645,19 @@ export function POSScreen({
 
       setCompletedInvoice(newInvoice);
       setShowPaymentModal(false);
+      setShowReceiptModal(false);
 
       if (shouldPrint) {
-        setShowReceiptModal(true);
-      } else {
-        setShowReceiptModal(false);
+        // إرسال أمر الطباعة فوراً على الطابعة الافتراضية دون فتح أي نافذة معاينة
+        const triggerDirectPrint = (attempts = 0) => {
+          const el = document.getElementById('direct-receipt-print-area');
+          if (el) {
+            executePrintInvoiceReceipt('direct-receipt-print-area', newInvoice.id);
+          } else if (attempts < 15) {
+            setTimeout(() => triggerDirectPrint(attempts + 1), 30);
+          }
+        };
+        setTimeout(() => triggerDirectPrint(0), 30);
       }
     } catch (err: any) {
       console.error('Payment confirmation error:', err);
@@ -4499,6 +4507,32 @@ export function POSScreen({
           <span className="text-xs sm:text-sm font-black">{mobilePrintNotice}</span>
         </div>
       )}
+
+      {/* Hidden offscreen printable container for instant direct printing without preview modal */}
+      <div 
+        aria-hidden="true" 
+        style={{ 
+          position: 'fixed', 
+          top: '-10000px', 
+          left: '-10000px', 
+          width: '300px', 
+          visibility: 'hidden', 
+          pointerEvents: 'none',
+          zIndex: -100 
+        }}
+      >
+        {completedInvoice && (
+          <div id="direct-receipt-print-area">
+            <InvoiceReceiptCard
+              invoice={completedInvoice}
+              settings={settings}
+              branches={branches}
+              activeBranchId={activeBranchId}
+              currentUser={currentUser}
+            />
+          </div>
+        )}
+      </div>
 
       {/* Receipt / Invoice Print Modal */}
       {showReceiptModal && completedInvoice && (
