@@ -22,7 +22,7 @@ import {
   testAiConnection, 
   saveAiCredentials 
 } from '../services/geminiSqlService';
-import { DEFAULT_WHATSAPP_TEMPLATES } from '../services/evolutionApiService';
+import { DEFAULT_WHATSAPP_TEMPLATES, EvolutionApiService } from '../services/evolutionApiService';
 
 export function SettingsScreen({ 
   settings, 
@@ -3991,8 +3991,40 @@ export function SettingsScreen({
                 </span>
               </div>
 
-              {/* بيانات ربط الجلسة ومفتاح API */}
+              {/* بيانات ربط الجلسة ومفتاح API ورابط السيرفر evolution_api_url */}
               <div className={`grid grid-cols-1 md:grid-cols-2 gap-4 ${!isWhatsappActive ? 'opacity-60' : ''}`}>
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <Globe size={14} className="text-emerald-600" />
+                      <span>رابط سيرفر Evolution API المحدد في قاعدة البيانات (evolution_api_url) *</span>
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-mono font-bold bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                      app_settings.evolution_api_url
+                    </span>
+                  </label>
+                  <input 
+                    type="url" 
+                    value={settings.evolutionApiUrl ?? (settings as any).evolution_api_url ?? ''}
+                    onChange={(e) => {
+                      const val = e.target.value.trim();
+                      handleUpdateSettings({
+                        evolutionApiUrl: val,
+                        evolution_api_url: val
+                      });
+                      try {
+                        localStorage.setItem('smartcut_evolution_api_url', val);
+                      } catch (err) {}
+                    }}
+                    placeholder="https://your-evolution-server.com أو http://localhost:8080"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:border-emerald-600 outline-none"
+                    dir="ltr"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    يتم اعتماد هذا الرابط المخزن في حقل <code className="text-emerald-700 bg-emerald-50 px-1 py-0.5 rounded font-mono font-bold">evolution_api_url</code> بجدول <code className="text-indigo-700 bg-indigo-50 px-1 py-0.5 rounded font-mono font-bold">app_settings</code> في سوبابيز لإرسال كافة رسائل الواتساب وفحص الاتصال.
+                  </p>
+                </div>
+
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">اسم الجلسة المخصصة لهذا الصالون (Instance Name) *</label>
                   <input 
@@ -4042,11 +4074,12 @@ export function SettingsScreen({
                       alert('تنبيه: خدمة رسائل الواتساب معطلة حالياً في الإعدادات. يرجى الضغط على زر "تفعيل الواتساب" أولاً.');
                       return;
                     }
-                    const res = await import('../services/evolutionApiService').then(m => m.EvolutionApiService.checkConnection(settings));
+                    const activeUrl = EvolutionApiService.getBaseUrl(settings);
+                    const res = await EvolutionApiService.checkConnection(settings);
                     if (res.connected) {
-                      alert(`جلسة الواتساب متصلة بنجاح! رقم الواتساب المربوط: ${res.phone || 'متصل'}`);
+                      alert(`جلسة الواتساب متصلة بنجاح!\nالسيرفر المستخدم (evolution_api_url): ${activeUrl}\nرقم الواتساب المربوط: ${res.phone || 'متصل'}`);
                     } else {
-                      alert(`حالة الاتصال: غير متصل (${res.error || 'يرجى مراجعة اسم الجلسة ومفتاح API'})`);
+                      alert(`حالة الاتصال: غير متصل\nالسيرفر المستخدم (evolution_api_url): ${activeUrl}\nالسبب: ${res.error || 'يرجى مراجعة اسم الجلسة ومفتاح API'}`);
                     }
                   }}
                   className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-sm cursor-pointer whitespace-nowrap active:scale-95"

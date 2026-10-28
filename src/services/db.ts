@@ -1531,6 +1531,29 @@ export const DB = {
       res.whatsappEnabled = data.whatsapp_enabled !== undefined ? toBool(data.whatsapp_enabled) : (uiSet.whatsappEnabled !== undefined ? toBool(uiSet.whatsappEnabled) : true);
       res.whatsappSettings = (typeof data.whatsapp_settings === 'object' && data.whatsapp_settings) ? data.whatsapp_settings : (uiSet.whatsappSettings || {});
 
+      // ربط حقل evolution_api_url في جدول app_settings بشكل مباشر وصريح
+      res.evolutionApiUrl = data.evolution_api_url || res.evolutionApiUrl || (data as any)?.evolutionApiUrl || null;
+      res.evolution_api_url = res.evolutionApiUrl;
+      res.evolutionApiKey = data.evolution_api_key || data.wa_api_key || res.evolutionApiKey || null;
+      res.evolutionInstanceName = data.evolution_instance_name || data.wa_instant_name || res.evolutionInstanceName || null;
+
+      // في حال عدم وجود الرابط في app_settings، يتم البحث الاحتياطي في salons
+      if (!res.evolutionApiUrl) {
+        try {
+          const { data: salonRow } = await client.from('salons').select('evolution_api_url').eq('id', validSalonId).maybeSingle();
+          if (salonRow?.evolution_api_url) {
+            res.evolutionApiUrl = salonRow.evolution_api_url;
+            res.evolution_api_url = salonRow.evolution_api_url;
+          }
+        } catch (e) {}
+      }
+
+      if (res.evolutionApiUrl) {
+        try {
+          localStorage.setItem('smartcut_evolution_api_url', res.evolutionApiUrl);
+        } catch (e) {}
+      }
+
       return res;
     } catch (e) { return null; }
   },

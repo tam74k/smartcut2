@@ -109,54 +109,24 @@ export function formatWhatsAppNumber(phone: string, defaultCountry: string = 'ا
  */
 export function validateExternalUrl(inputUrl: string): { isValid: boolean; error?: string } {
   if (!inputUrl || !inputUrl.trim()) {
-    return { isValid: false, error: 'رابط خادم Evolution API غير محدد' };
+    return { isValid: false, error: 'رابط خادم Evolution API غير محدد في حقل evolution_api_url بجدول app_settings' };
   }
   try {
     const parsed = new URL(inputUrl.trim());
     if (!['http:', 'https:'].includes(parsed.protocol)) {
-      return { isValid: false, error: 'بروتوكول الرابط غير آمن، يجب أن يبدأ بـ http:// أو https://' };
+      return { isValid: false, error: 'بروتوكول الرابط غير صالح، يجب أن يبدأ بـ http:// أو https://' };
     }
 
     const host = parsed.hostname.toLowerCase().trim();
-    const isDev = Boolean(
-      (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) ||
-      (import.meta as any)?.env?.DEV
-    );
 
-    // Block cloud metadata services unconditionally
+    // Block cloud metadata services unconditionally (Security best practice)
     if (host === '169.254.169.254' || host === 'metadata.google.internal') {
       return { isValid: false, error: 'تم حظر الرابط لأسباب أمنية (Cloud Metadata blocked)' };
     }
 
-    // In production, block internal private IP ranges & loopbacks
-    if (!isDev) {
-      if (
-        host === 'localhost' ||
-        host === '127.0.0.1' ||
-        host === '0.0.0.0' ||
-        host === '::1' ||
-        host.endsWith('.internal') ||
-        host.endsWith('.local')
-      ) {
-        return { isValid: false, error: 'تم حظر الرابط لأسباب أمنية (Localhost/Loopback blocked in production)' };
-      }
-
-      // Check RFC 1918 private IPv4 subnets
-      if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host) || /^192\.168\.\d{1,3}\.\d{1,3}$/.test(host)) {
-        return { isValid: false, error: 'تم حظر الرابط لأسباب أمنية (Private subnet blocked)' };
-      }
-      const match172 = host.match(/^172\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/);
-      if (match172) {
-        const secondOctet = parseInt(match172[1], 10);
-        if (secondOctet >= 16 && secondOctet <= 31) {
-          return { isValid: false, error: 'تم حظر الرابط لأسباب أمنية (Private subnet blocked)' };
-        }
-      }
-    }
-
     return { isValid: true };
   } catch {
-    return { isValid: false, error: 'صيغة رابط Evolution API غير صالحة' };
+    return { isValid: false, error: 'صيغة رابط Evolution API (evolution_api_url) غير صالحة' };
   }
 }
 
@@ -164,16 +134,27 @@ export const EvolutionApiService = {
   /**
    * Resolves the Evolution API server URL (from salon settings, platform settings, or fallback)
    */
+  /**
+   * Resolves the Evolution API server URL strictly from app_settings (evolution_api_url in Supabase)
+   */
   getBaseUrl(settings: AppSettings): string {
-    if (settings.evolutionApiUrl && settings.evolutionApiUrl.trim()) {
-      return settings.evolutionApiUrl.trim().replace(/\/+$/, '');
+    // 1. Direct from settings loaded from app_settings.evolution_api_url
+    const directUrl = settings?.evolutionApiUrl || 
+                   (settings as any)?.evolution_api_url || 
+                   (settings as any)?.evolutionUrl;
+    if (directUrl && typeof directUrl === 'string' && directUrl.trim()) {
+      return directUrl.trim().replace(/\/+$/, '');
     }
+
+    // 2. Cache from localStorage synced from app_settings
     try {
-      const savedPlatformUrl = localStorage.getItem('smartcut_platform_evolution_url');
-      if (savedPlatformUrl && savedPlatformUrl.trim()) {
-        return savedPlatformUrl.trim().replace(/\/+$/, '');
+      const cached = localStorage.getItem('smartcut_evolution_api_url') || 
+                     localStorage.getItem('smartcut_platform_evolution_url');
+      if (cached && typeof cached === 'string' && cached.trim()) {
+        return cached.trim().replace(/\/+$/, '');
       }
     } catch (e) {}
+
     return 'http://localhost:8080';
   },
 
