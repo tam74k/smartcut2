@@ -3354,12 +3354,28 @@ export const DB = {
     } catch (e) { console.error('DB.deleteTransaction exception:', e); return false; }
   },
 
+  async deleteTransactionsByIds(ids: string[]) {
+    const client = sb();
+    if (!client || !ids || ids.length === 0) return false;
+    try {
+      const validIds = ids.filter(Boolean);
+      if (validIds.length === 0) return true;
+      const { error } = await client.from('transactions').delete().in('id', validIds);
+      if (error) console.warn('DB.deleteTransactionsByIds error:', error.message);
+      return !error;
+    } catch (e) {
+      console.warn('DB.deleteTransactionsByIds exception:', e);
+      return false;
+    }
+  },
+
   async deleteTransactionsByInvoiceId(invoiceId: string) {
     const client = sb();
-    if (!client) return false;
+    if (!client || !invoiceId) return false;
     try {
       await client.from('transactions').delete().eq('invoice_id', invoiceId);
       await client.from('transactions').delete().ilike('description', `%${invoiceId}%`);
+      await client.from('transactions').delete().ilike('id', `%${invoiceId}%`);
       return true;
     } catch (e) { return false; }
   },

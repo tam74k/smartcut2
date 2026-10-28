@@ -815,7 +815,9 @@ export default function App() {
                 ...t,
                 date: t.date || t.created_at || t.createdAt || t.shift_date || t.shiftDate || new Date().toISOString(),
                 expenseCategory: t.expenseCategory || '', createdBy: t.createdBy || '',
-                userId: t.userId || '', userName: t.userName || '', shiftDate: t.shiftDate || ''
+                userId: t.userId || '', userName: t.userName || '', shiftDate: t.shiftDate || '',
+                invoiceId: t.invoiceId || t.invoice_id || (typeof t.description === 'string' ? t.description.match(/INV-[A-Z0-9]+/)?.[0] : undefined),
+                invoice_id: t.invoice_id || t.invoiceId || (typeof t.description === 'string' ? t.description.match(/INV-[A-Z0-9]+/)?.[0] : undefined)
               })));
             } else {
               setTransactions([]);
@@ -1232,7 +1234,9 @@ export default function App() {
             ...t,
             date: t.date || t.created_at || t.createdAt || t.shift_date || t.shiftDate || new Date().toISOString(),
             expenseCategory: t.expenseCategory || '', createdBy: t.createdBy || '',
-            userId: t.userId || '', userName: t.userName || '', shiftDate: t.shiftDate || ''
+            userId: t.userId || '', userName: t.userName || '', shiftDate: t.shiftDate || '',
+            invoiceId: t.invoiceId || t.invoice_id || (typeof t.description === 'string' ? t.description.match(/INV-[A-Z0-9]+/)?.[0] : undefined),
+            invoice_id: t.invoice_id || t.invoiceId || (typeof t.description === 'string' ? t.description.match(/INV-[A-Z0-9]+/)?.[0] : undefined)
           })));
         }
       } catch (cloudErr) {
@@ -2030,6 +2034,13 @@ export default function App() {
         DB.saveTransactions(changed, currentSalonId);
       }
 
+      // Delete from DB any transactions removed by updater
+      const nextIds = new Set(tagged.map(t => t.id));
+      const removedIds = currentSalonTrxs.filter(t => !nextIds.has(t.id)).map(t => t.id);
+      if (removedIds.length > 0) {
+        DB.deleteTransactionsByIds(removedIds);
+      }
+
       return res;
     });
   };
@@ -2648,7 +2659,7 @@ export default function App() {
     };
 
     const existingOldInvoice = invoices.find(i => i.id === invoiceWithBranch.id);
-    const isEditing = Boolean(existingOldInvoice);
+    const isEditing = Boolean((invoice as any).isEditedInvoice || existingOldInvoice);
 
     // 1. إعادة تسوية الآثار السابقة إذا كنا في وضع تعديل فاتورة قائمة
     const updatedProducts = [...products];
@@ -2707,7 +2718,13 @@ export default function App() {
       }
     }
 
-    setInvoices(prev => [invoiceWithBranch, ...prev.filter(i => i.id !== invoiceWithBranch.id)]);
+    setInvoices(prev => {
+      const exists = prev.some(i => i.id === invoiceWithBranch.id);
+      if (exists) {
+        return prev.map(i => i.id === invoiceWithBranch.id ? invoiceWithBranch : i);
+      }
+      return [invoiceWithBranch, ...prev];
+    });
     
     // Deduct stock & Add Commission
     const newMovements: any[] = [];
@@ -2892,23 +2909,39 @@ export default function App() {
     const effectiveShiftCode = invoice.shiftCode || (shiftData?.isOpen ? (shiftData as any).shiftCode : undefined);
     const effectiveShiftDate = invoice.shiftDate || (shiftData?.isOpen ? shiftData.date : undefined);
 
+    const isOldInvoiceTransaction = (t: any) => {
+      const invId = invoiceWithBranch.id;
+      if (!invId) return false;
+      return (
+        t.invoiceId === invId ||
+        t.invoice_id === invId ||
+        (typeof t.id === 'string' && (t.id.includes(invId) || t.id.startsWith(`TRX-${invId}`))) ||
+        (typeof t.description === 'string' && t.description.includes(invId))
+      );
+    };
+
+    const oldMatchingTrxs = transactions.filter(isOldInvoiceTransaction);
+    const oldTrxIds = oldMatchingTrxs.map(t => t.id).filter(Boolean);
+
     const newTrxs: Transaction[] = effectiveSplits
       .filter(split => split.treasuryId !== 'cashback' && split.treasuryId !== 'remedy_free' && Number(split.amount) > 0)
-      .map(split => ({
-        id: 'TRX-' + Math.random().toString(36).substr(2, 9),
+      .map((split, idx) => ({
+        id: `TRX-${invoiceWithBranch.id}-${idx}`,
         salonId: settings.salonId,
-        date: invoice.date,
+        date: invoiceWithBranch.date,
         type: 'in',
         amount: Number(split.amount),
         category: 'sales',
-        description: `مبيعات - فاتورة ${invoice.id}${invoice.clientName ? ` (${invoice.clientName})` : ''}`,
-        treasury: split.treasuryId || invoice.treasuryId || invoice.paymentMethod || 'cash',
+        description: `مبيعات - فاتورة ${invoiceWithBranch.id}${invoiceWithBranch.clientName ? ` (${invoiceWithBranch.clientName})` : ''}`,
+        treasury: split.treasuryId || invoiceWithBranch.treasuryId || invoiceWithBranch.paymentMethod || 'cash',
+        treasuryId: split.treasuryId || invoiceWithBranch.treasuryId || invoiceWithBranch.paymentMethod || 'cash',
         branchId: activeBranchId,
         branchCode: activeBranch?.code,
         shiftId: effectiveShiftId,
         shiftCode: effectiveShiftCode,
         shiftDate: effectiveShiftDate,
-        invoiceId: invoice.id
+        invoiceId: invoiceWithBranch.id,
+        invoice_id: invoiceWithBranch.id
       } as any));
 
     // 2.b. If tip was paid via non-cash method and branch mode is 'instant_cash', deduct tip immediately from Cash Drawer
@@ -2919,20 +2952,22 @@ export default function App() {
       if (hasNonCashPayment) {
         const cashTreasuryId = settings.treasuries.find(t => t.id === 'cash' || t.name.includes('كاش') || t.name.includes('نقد'))?.id || 'cash';
         newTrxs.push({
-          id: 'TRX-TIP-CASH-' + Math.random().toString(36).substr(2, 9),
+          id: `TRX-TIP-${invoiceWithBranch.id}`,
           salonId: settings.salonId,
-          date: invoice.date,
+          date: invoiceWithBranch.date,
           type: 'out',
           amount: invoice.tipAmount,
           category: 'صرف بقشيش فوري',
-          description: `صرف بقشيش فوري كاش - فاتورة ${invoice.id} للموظف ${invoice.tipEmployeeName || 'الموظف'}`,
+          description: `صرف بقشيش فوري كاش - فاتورة ${invoiceWithBranch.id} للموظف ${invoice.tipEmployeeName || 'الموظف'}`,
           treasury: cashTreasuryId,
+          treasuryId: cashTreasuryId,
           branchId: activeBranchId,
           branchCode: activeBranch?.code,
           shiftId: effectiveShiftId,
           shiftCode: effectiveShiftCode,
           shiftDate: effectiveShiftDate,
-          invoiceId: invoice.id
+          invoiceId: invoiceWithBranch.id,
+          invoice_id: invoiceWithBranch.id
         } as any);
       }
     }
@@ -2940,35 +2975,43 @@ export default function App() {
     // 2.c. If instant commission from drawer is enabled and invoice has target-exempt services, deduct directly from Cash Drawer
     if (settings.instantCommissionFromDrawer && instantCommissionPayouts.length > 0) {
       const cashTreasuryId = settings.treasuries.find(t => t.id === 'cash' || t.name.includes('كاش') || t.name.includes('نقد') || t.name.includes('درج'))?.id || 'cash';
-      instantCommissionPayouts.forEach(payout => {
+      instantCommissionPayouts.forEach((payout, pIdx) => {
         newTrxs.push({
-          id: 'TRX-COMM-CASH-' + Math.random().toString(36).substr(2, 9),
+          id: `TRX-COMM-${invoiceWithBranch.id}-${pIdx}`,
           salonId: settings.salonId,
-          date: invoice.date,
+          date: invoiceWithBranch.date,
           type: 'out',
           amount: payout.amount,
           category: 'commission_payout',
-          description: `صرف عمولة فورية من الدرج - ${payout.serviceName} للموظف ${payout.employeeName} (فاتورة #${invoice.id})`,
+          description: `صرف عمولة فورية من الدرج - ${payout.serviceName} للموظف ${payout.employeeName} (فاتورة #${invoiceWithBranch.id})`,
           treasury: cashTreasuryId,
+          treasuryId: cashTreasuryId,
           branchId: activeBranchId,
           branchCode: activeBranch?.code,
           shiftId: effectiveShiftId,
           shiftCode: effectiveShiftCode,
           shiftDate: effectiveShiftDate,
-          invoiceId: invoice.id
+          invoiceId: invoiceWithBranch.id,
+          invoice_id: invoiceWithBranch.id
         } as any);
       });
     }
 
     if (isEditing) {
-      handleSetTransactions(prev => [
-        ...prev.filter(t => (t as any).invoiceId !== invoiceWithBranch.id && !t.description?.includes(invoiceWithBranch.id)),
+      // 1. حذف حركات الخزينة السابقة بالكامل من قاعدة البيانات فوراً لمنع أي تكرار
+      if (oldTrxIds.length > 0) {
+        DB.deleteTransactionsByIds(oldTrxIds);
+      }
+      DB.deleteTransactionsByInvoiceId(invoiceWithBranch.id);
+
+      // 2. استبدال حركات الخزينة في الـ state المحلي دون أي تكرار
+      setTransactions(prev => [
+        ...prev.filter(t => !isOldInvoiceTransaction(t)),
         ...newTrxs
       ]);
     } else if (newTrxs.length > 0) {
       handleSetTransactions(prev => [...prev, ...newTrxs]);
     }
-
 
     // 3. Complete and mark booking as paid if came from booking
     if (bookingId) {
@@ -2980,6 +3023,9 @@ export default function App() {
     (async () => {
       try {
         if (isEditing) {
+          if (oldTrxIds.length > 0) {
+            await DB.deleteTransactionsByIds(oldTrxIds);
+          }
           await DB.deleteTransactionsByInvoiceId(invoiceWithBranch.id);
         }
         const saved = await DB.saveInvoice(invoiceWithBranch, settings.salonId);

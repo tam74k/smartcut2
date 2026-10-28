@@ -107,12 +107,37 @@ export function InvoicesScreen({
   const [adminPasswordInput, setAdminPasswordInput] = useState('');
   const [adminPasswordError, setAdminPasswordError] = useState(false);
 
-  // دالة فحص ما إذا كانت الفاتورة صادرة بتاريخ سابق (أمس أو قبله)
-  const isInvoiceFromPreviousDate = (inv: Invoice) => {
-    if (!inv || !inv.date) return false;
-    const invDateStr = inv.date.split('T')[0];
-    const todayStr = new Date().toISOString().split('T')[0];
-    return invDateStr < todayStr;
+  // دالة موحدة لاستخراج تاريخ الفاتورة بصيغة YYYY-MM-DD بدقة
+  const getInvoiceLocalDateStr = (inv: { date?: string; shiftDate?: string }): string => {
+    if (!inv) return '';
+    let raw = '';
+    if (inv.shiftDate && typeof inv.shiftDate === 'string' && inv.shiftDate.trim()) {
+      raw = inv.shiftDate.trim();
+    } else if (inv.date && typeof inv.date === 'string' && inv.date.trim()) {
+      raw = inv.date.trim();
+    }
+    if (!raw) return '';
+
+    const clean = raw.replace(/\//g, '-').split('T')[0].split(' ')[0];
+    const parts = clean.split('-');
+    if (parts.length === 3) {
+      if (parts[0].length === 4) {
+        return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+      }
+      if (parts[2].length === 4) {
+        return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+      }
+    }
+    return clean;
+  };
+
+  // فحص حاسم ومحكم: هل الفاتورة صادرة بتاريخ سابق (قبل تاريخ اليوم بالتوقيت المحلي)؟
+  const isInvoiceFromPreviousDate = (inv: Invoice): boolean => {
+    const invDate = getInvoiceLocalDateStr(inv);
+    if (!invDate) return false;
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    return invDate < todayStr;
   };
 
   // معالجة بدء تعديل الفاتورة في نقطة البيع
@@ -203,6 +228,13 @@ export function InvoicesScreen({
     
     if (isValid && adminPasswordTarget) {
       const target = adminPasswordTarget;
+      if (isInvoiceFromPreviousDate(target)) {
+        alert('عذراً، محظور تماماً تعديل الفواتير الصادرة بتاريخ سابق حفاظاً على سلامة الحسابات والورديات المغلقة. التعديل متاح فقط لفواتير اليوم.');
+        setAdminPasswordTarget(null);
+        setAdminPasswordInput('');
+        setAdminPasswordError(false);
+        return;
+      }
       setAdminPasswordTarget(null);
       setAdminPasswordInput('');
       setAdminPasswordError(false);
@@ -776,13 +808,18 @@ export function InvoicesScreen({
                         const isPrevDate = isInvoiceFromPreviousDate(inv);
                         return (
                           <button 
-                            onClick={() => handleInitiateEdit(inv)} 
+                            type="button"
+                            disabled={isPrevDate}
+                            onClick={() => {
+                              if (isPrevDate) return;
+                              handleInitiateEdit(inv);
+                            }} 
                             className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
                               isPrevDate 
-                                ? 'bg-slate-50 text-slate-300 hover:bg-slate-100 cursor-not-allowed opacity-60' 
+                                ? 'bg-slate-100 text-slate-300 cursor-not-allowed opacity-40 shadow-none' 
                                 : 'bg-amber-50 text-amber-700 hover:bg-amber-100 cursor-pointer shadow-xs'
                             }`} 
-                            title={isPrevDate ? 'محظور تعديل فاتورة بتاريخ سابق (متاح لفواتير اليوم فقط)' : 'تعديل الفاتورة في نقطة البيع (POS)'}
+                            title={isPrevDate ? 'محظور تماماً تعديل الفواتير الصادرة بتاريخ سابق (متاح لفواتير اليوم فقط)' : 'تعديل الفاتورة في نقطة البيع (POS)'}
                           >
                             <Edit size={16} />
                           </button>

@@ -1617,13 +1617,18 @@ export function POSScreen({
       console.warn('ETA Egypt submission warning:', err);
     }
 
+    const isCurrentlyEditing = Boolean(editingInvoice);
+    const editingInvId = editingInvoice?.id;
+
     const newInvoice: Invoice = {
       ...initialInv,
       zatcaQr: zatcaQr || undefined,
       zatcaReportingStatus,
       etaSubmissionUuid,
-      etaStatus
-    };
+      etaStatus,
+      isEditedInvoice: isCurrentlyEditing,
+      editingInvoiceId: editingInvId
+    } as any;
 
     if (selectedClient && !isRemedyInvoice && !isWaselInvoice) {
       // 1. كاش باك العميل المباشر: لا يُحتسب كاش باك إذا تم استخدام كاش باك في السداد أو عند استخدام برومو كود
@@ -1689,7 +1694,6 @@ export function POSScreen({
     }
 
     if (calculatedTip > 0 && assignedTipEmployee) {
-
       const tipPaymentMethodName = isCashPayment ? 'نقدي (كاش)' : (settings.treasuries.find(t => t.id === singleTreasury)?.name || 'بطاقة / فيزا');
       const newTip: TipRecord = {
         id: 'TIP-' + Math.random().toString(36).substring(2, 9).toUpperCase(),
@@ -1709,9 +1713,13 @@ export function POSScreen({
         notes: isUnspecifiedTip ? 'إكرامية عامة للصالون (غير مخصصة لموظف)' : undefined
       };
       if (setTips) {
-        setTips(prev => [...prev, newTip]);
+        setTips(prev => [...prev.filter(t => t.invoiceId !== newInvoice.id), newTip]);
       }
       DB.saveTip(newTip);
+    } else if (isCurrentlyEditing) {
+      if (setTips) {
+        setTips(prev => prev.filter(t => t.invoiceId !== newInvoice.id));
+      }
     }
 
       if (onCheckoutComplete) {
@@ -2099,6 +2107,31 @@ export function POSScreen({
   // استرجاع وفتح الفاتورة بالكامل للتعديل في نقطة البيع
   useEffect(() => {
     if (initialEditingInvoice) {
+      // فحص صارم ومحكم لمنع فتح وتعديل أي فاتورة صادرة بتاريخ سابق
+      const getInvDate = (inv: Invoice): string => {
+        const raw = inv.shiftDate?.trim() || inv.date?.trim() || '';
+        const clean = raw.replace(/\//g, '-').split('T')[0].split(' ')[0];
+        const parts = clean.split('-');
+        if (parts.length === 3) {
+          if (parts[0].length === 4) return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+          if (parts[2].length === 4) return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        }
+        return clean;
+      };
+      const invDate = getInvDate(initialEditingInvoice);
+      const now = new Date();
+      const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      if (invDate && invDate < todayStr) {
+        alert('عذراً، محظور تماماً تعديل الفواتير الصادرة بتاريخ سابق حفاظاً على سلامة الحسابات والورديات المغلقة. التعديل متاح فقط لفواتير اليوم.');
+        setEditingInvoice(null);
+        if (onClearInitial) onClearInitial();
+        return;
+      }
+
+      try {
+        localStorage.removeItem('smartcut_pos_active_draft');
+      } catch {}
+
       setEditingInvoice(initialEditingInvoice);
 
       // 1. العميل
@@ -2239,7 +2272,7 @@ export function POSScreen({
 
   // استعادة المسودة النشطة عند فتح شاشة الكاشير (إذا لم يتم تمرير حجز جديد أو فاتورة معلقة أو فاتورة للتعديل)
   useEffect(() => {
-    if (!initialBooking && !initialHeldInvoice && !initialEditingInvoice) {
+    if (!initialBooking && !initialHeldInvoice && !initialEditingInvoice && !editingInvoice) {
       try {
         const savedDraft = localStorage.getItem('smartcut_pos_active_draft');
         if (savedDraft) {
