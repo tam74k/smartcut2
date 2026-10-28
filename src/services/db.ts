@@ -2054,6 +2054,8 @@ export const DB = {
         bad_debt_reason: inv.badDebtReason || inv.bad_debt_reason || null,
         bad_debt_at: inv.badDebtAt || inv.bad_debt_at || null,
         bad_debt_by: inv.badDebtBy || inv.bad_debt_by || null,
+        settled_at: inv.settledAt || inv.settled_at || null,
+        original_deferred_date: inv.originalDeferredDate || inv.original_deferred_date || null,
         payments_history: inv.paymentsHistory || inv.payments_history || [],
         created_by: effectiveCreatedBy,
         created_by_id: effectiveCreatedById,
@@ -5343,6 +5345,8 @@ export function dbInvoiceToApp(row: any): any {
     shiftId: row.shiftId || row.shift_id || undefined,
     shiftDate: row.shiftDate || row.shift_date || undefined,
     shiftCode: row.shiftCode || row.shift_code || undefined,
+    settledAt: row.settledAt || row.settled_at || undefined,
+    originalDeferredDate: row.originalDeferredDate || row.original_deferred_date || undefined,
     createdAt: row.createdAt || row.created_at || undefined,
   };
 }

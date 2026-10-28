@@ -396,9 +396,14 @@ export function DeferredInvoicesScreen({
         paid: newPaid,
         remaining: isFullyPaid ? 0 : newRemaining,
         status: isFullyPaid ? 'completed' : 'partially_paid',
+        paymentMethod: settleTreasury,
+        treasuryId: settleTreasury,
+        settledAt: isFullyPaid ? nowIso : (settleModalInvoice as any).settledAt,
+        originalDeferredDate: (settleModalInvoice as any).originalDeferredDate || settleModalInvoice.date,
+        date: isFullyPaid ? nowIso : settleModalInvoice.date,
         paymentsHistory: updatedHistory,
         paymentMethods: [
-          ...(settleModalInvoice.paymentMethods || []),
+          ...(settleModalInvoice.paymentMethods || []).filter(pm => Number(pm.amount) > 0),
           { amount: payNum, treasuryId: settleTreasury }
         ],
         updatedBy: currentUser?.username || currentUser?.name,
@@ -431,13 +436,16 @@ export function DeferredInvoicesScreen({
       setInvoices(prev => prev.map(inv => inv.id === updatedInvoice.id ? updatedInvoice : inv));
       setTransactions(prev => [newTrx, ...prev]);
 
+      setSettleModalInvoice(null);
+
       if (isFullyPaid) {
-        alert(`تم سداد الفاتورة (${updatedInvoice.invoiceNumber || updatedInvoice.id}) بالكامل بمبلغ ${payNum.toFixed(2)} ${settings.currency} وإيداعها في خزينة (${treasuryName}). تم تحويل الفاتورة تلقائياً إلى الفواتير المكتملة.`);
+        alert(`تم سداد الفاتورة (${updatedInvoice.invoiceNumber || updatedInvoice.id}) بالكامل بمبلغ ${payNum.toFixed(2)} ${settings.currency} وإيداعها في خزينة (${treasuryName}). تم نقل الفاتورة بنجاح إلى شاشة الفواتير.`);
+        if (onNavigate) {
+          onNavigate('invoices');
+        }
       } else {
         alert(`تم سداد دفعة بقيمة ${payNum.toFixed(2)} ${settings.currency} بنجاح وإيداعها في خزينة (${treasuryName}). المتبقي على الفاتورة: ${newRemaining.toFixed(2)} ${settings.currency}.`);
       }
-
-      setSettleModalInvoice(null);
     } catch (err: any) {
       console.error('Error settling deferred invoice:', err);
       alert('حدث خطأ أثناء تسجيل السداد: ' + (err?.message || err));

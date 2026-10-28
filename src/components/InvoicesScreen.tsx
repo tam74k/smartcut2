@@ -311,6 +311,9 @@ export function InvoicesScreen({
     const paidInv: Invoice = { 
       ...invoice, 
       status: 'completed', 
+      paid: invoice.total,
+      remaining: 0,
+      settledAt: new Date().toISOString(),
       cashbackUsed: finalCashbackUsed,
       paymentMethods: paymentMethods,
       updatedBy: currentUser?.username || currentUser?.name,
@@ -364,8 +367,15 @@ export function InvoicesScreen({
 
       // Date filter
       const invDateStr = (inv.date || '').split('T')[0];
-      if (dateFrom && invDateStr < dateFrom) return false;
-      if (dateTo && invDateStr > dateTo) return false;
+      const invSettledDateStr = ((inv as any).settledAt || '').split('T')[0];
+      if (dateFrom) {
+        const matchesFrom = invDateStr >= dateFrom || (invSettledDateStr && invSettledDateStr >= dateFrom);
+        if (!matchesFrom) return false;
+      }
+      if (dateTo) {
+        const matchesTo = invDateStr <= dateTo || (invSettledDateStr && invSettledDateStr <= dateTo);
+        if (!matchesTo) return false;
+      }
       
       // Status filter
       if (statusFilter === 'wasel') {
@@ -375,7 +385,12 @@ export function InvoicesScreen({
       } else if (statusFilter === 'partial_refund') {
         const hasPartial = salesReturns.some(r => r.originalInvoiceId === inv.id && r.status !== 'cancelled') && inv.status !== 'refunded';
         if (!hasPartial) return false;
-      } else if (statusFilter !== 'all' && inv.status !== statusFilter) {
+      } else if (statusFilter === 'all') {
+        // في العرض الافتراضي لكافة الفواتير، الفواتير الآجلة غير المسددة مكانها في شاشة الفواتير الآجلة، وتنتقل إلى شاشة الفواتير بعد سدادها بالكامل
+        const isUnpaidDeferred = (inv.status === 'deferred' || inv.status === 'unpaid' || inv.status === 'partially_paid') &&
+          (Number(inv.remaining ?? 0) > 0.01 || Number(inv.paid ?? 0) < Number(inv.total ?? 0) - 0.01);
+        if (isUnpaidDeferred) return false;
+      } else if (inv.status !== statusFilter) {
         return false;
       }
       
@@ -640,7 +655,16 @@ export function InvoicesScreen({
                         );
                       }
                       if (inv.status === 'completed') {
-                        return <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-600">مسددة</span>;
+                        return (
+                          <div className="flex flex-col items-center gap-0.5">
+                            <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-600">مسددة</span>
+                            {(inv as any).settledAt && (
+                              <span className="text-[9px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 font-bold" title={`تم سداد الآجل بتاريخ: ${new Date((inv as any).settledAt).toLocaleDateString('ar-EG')}`}>
+                                سداد آجل
+                              </span>
+                            )}
+                          </div>
+                        );
                       }
                       if (inv.status === 'deferred') {
                         return (

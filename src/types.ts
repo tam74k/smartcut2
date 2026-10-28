@@ -1214,6 +1214,8 @@ export interface Invoice {
   shiftId?: string;
   shiftCode?: string;
   shiftDate?: string;
+  settledAt?: string;
+  originalDeferredDate?: string;
 }
 
 export interface ReturnInvoiceItem {

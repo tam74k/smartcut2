@@ -1988,7 +1988,16 @@ export default function App() {
       const next = typeof updater === 'function' ? updater(currentSalonInvs) : updater;
       const tagged = next.map(i => ({ ...i, salonId: i.salonId || currentSalonId, branchId: i.branchId || activeBranchId }));
       const other = prev.filter(i => i.salonId && i.salonId !== currentSalonId && (i as any).salon_id !== currentSalonId);
-      tagged.forEach(inv => DB.saveInvoice(inv));
+      
+      // Save only new or modified invoices instead of re-saving the entire database
+      const prevMap = new Map(currentSalonInvs.map(i => [i.id, i]));
+      const changed = tagged.filter(i => {
+        const old = prevMap.get(i.id);
+        if (!old) return true;
+        return i.status !== old.status || i.paid !== old.paid || i.remaining !== old.remaining || i.total !== old.total || i.updatedAt !== old.updatedAt || i.settledAt !== old.settledAt;
+      });
+      changed.forEach(inv => DB.saveInvoice(inv, currentSalonId));
+
       return [...other, ...tagged];
     });
   };
