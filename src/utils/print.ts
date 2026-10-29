@@ -64,13 +64,13 @@ export function getPrintStyles(paperSize: '80mm' | '58mm' | 'a4' = '80mm', isLan
     .border-t { border-top: 1px solid #000 !important; }
     .border-black { border-color: #000 !important; }
     .border-dashed { border-style: dashed !important; }
-    .border { border: 1px solid #ccc !important; }
-    .bg-gray-100, .bg-slate-50, .bg-slate-100 { background-color: #f1f5f9 !important; }
-    .bg-emerald-50 { background-color: #ecfdf5 !important; }
-    .text-emerald-700, .text-emerald-800 { color: #047857 !important; }
-    .text-red-700 { color: #b91c1c !important; }
-    .text-gray-700, .text-slate-700 { color: #334155 !important; }
-    .text-slate-800 { color: #1e293b !important; }
+    .border { border: 1px solid #000 !important; }
+    .bg-gray-100, .bg-slate-50, .bg-slate-100 { background-color: #ffffff !important; }
+    .bg-emerald-50 { background-color: #ffffff !important; }
+    .text-emerald-700, .text-emerald-800 { color: #000000 !important; }
+    .text-red-700 { color: #000000 !important; }
+    .text-gray-700, .text-slate-700, .text-gray-500, .text-slate-500, .text-slate-600 { color: #000000 !important; }
+    .text-slate-800, .text-slate-900 { color: #000000 !important; }
     .p-1 { padding: 4px !important; }
     .p-2 { padding: 8px !important; }
     .p-4 { padding: 14px !important; }

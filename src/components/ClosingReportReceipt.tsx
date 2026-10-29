@@ -257,73 +257,73 @@ export function ClosingReportReceipt({
   const invoiceCount = invoices.length; // Ensure invoices passed are already filtered for the date/period!
 
   return (
-    <div className="w-[72mm] mx-auto bg-white text-black p-4 text-sm font-sans" id="print-receipt" style={{ direction: 'rtl' }}>
+    <div className="w-[72mm] mx-auto bg-white text-black p-4 text-sm font-sans" id="print-receipt" style={{ direction: 'rtl', color: '#000000' }}>
       <div className="text-center border-b border-black pb-4 mb-4">
         {settings.logoUrl && (
           <img src={settings.logoUrl} alt="Logo" className="w-24 h-24 mx-auto mb-2 object-contain grayscale" />
         )}
-        <h2 className="text-xl font-bold mb-2">{settings.salonName || 'اسم الصالون'}</h2>
-        <h1 className="text-xl font-bold">تقرير إغلاق اليوم</h1>
+        <h2 className="text-xl font-bold mb-2 text-black">{settings.salonName || 'اسم الصالون'}</h2>
+        <h1 className="text-xl font-bold text-black">تقرير إغلاق اليوم</h1>
         {shiftCode && (
           <p className="text-xs font-bold font-mono text-black mt-0.5">كود الوردية: {shiftCode}</p>
         )}
-        <p className="text-xs mt-1">تاريخ: {dateLabel}</p>
-        <p className="text-xs">المستخدم: {effectiveUserName}</p>
+        <p className="text-xs mt-1 text-black font-semibold">تاريخ: {dateLabel}</p>
+        <p className="text-xs text-black font-semibold">المستخدم: {effectiveUserName}</p>
       </div>
 
-      <div className="mb-4">
-        <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold">
+      <div className="mb-4 text-black">
+        <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold text-black">
           <span>عدد الفواتير:</span>
-          <span>{invoiceCount}</span>
+          <span className="text-black font-mono">{invoiceCount}</span>
         </div>
-        <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold">
+        <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold text-black">
           <span>إجمالي مبيعات الفواتير:</span>
-          <span>{invoices.reduce((sum, inv) => sum + inv.total, 0).toFixed(2)}</span>
+          <span className="text-black font-mono">{invoices.reduce((sum, inv) => sum + inv.total, 0).toFixed(2)}</span>
         </div>
         {invoices.reduce((sum, inv) => sum + (inv.cashbackUsed || 0), 0) > 0 && (
-          <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold">
+          <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold text-black">
             <span>مسدد من الكاش باك:</span>
-            <span>{invoices.reduce((sum, inv) => sum + (inv.cashbackUsed || 0), 0).toFixed(2)}</span>
+            <span className="text-black font-mono">{invoices.reduce((sum, inv) => sum + (inv.cashbackUsed || 0), 0).toFixed(2)}</span>
           </div>
         )}
-        <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold">
+        <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold text-black">
           <span>المحصل الفعلي بالخزائن (كاش / شبكة):</span>
-          <span>{(invoices.reduce((sum, inv) => sum + inv.total, 0) - invoices.reduce((sum, inv) => sum + (inv.cashbackUsed || 0), 0)).toFixed(2)}</span>
+          <span className="text-black font-mono">{(invoices.reduce((sum, inv) => sum + inv.total, 0) - invoices.reduce((sum, inv) => sum + (inv.cashbackUsed || 0), 0)).toFixed(2)}</span>
         </div>
         {initialCash > 0 && (
-          <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold">
+          <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold text-black">
             <span>العهدة الافتتاحية:</span>
-            <span>{initialCash}</span>
+            <span className="text-black font-mono">{initialCash}</span>
           </div>
         )}
       </div>
 
       {attendanceStats && (
-        <div className="mb-4 border-b border-black border-dashed pb-3">
-          <div className="font-bold text-center border-b border-black border-dashed pb-1 mb-2 bg-gray-100">
+        <div className="mb-4 border-b border-black border-dashed pb-3 text-black">
+          <div className="font-bold text-center border-y border-black border-dashed py-1 mb-2 bg-white text-black">
             ملخص حضور وبصمة الوردية
           </div>
-          <div className="space-y-1 text-xs">
-            <div className="flex justify-between">
+          <div className="space-y-1 text-xs text-black">
+            <div className="flex justify-between text-black">
               <span>الموظفون الحاضرون:</span>
-              <span className="font-bold">{attendanceStats.presentStaffCount} موظف</span>
+              <span className="font-bold text-black">{attendanceStats.presentStaffCount} موظف</span>
             </div>
-            <div className="flex justify-between">
+            <div className="flex justify-between text-black">
               <span>إجمالي ساعات العمل:</span>
-              <span className="font-mono font-bold">{attendanceStats.workedHoursStr}</span>
+              <span className="font-mono font-bold text-black">{attendanceStats.workedHoursStr}</span>
             </div>
             {attendanceStats.totalDelayMinutes > 0 && (
-              <div className="flex justify-between">
+              <div className="flex justify-between text-black">
                 <span>إجمالي دقائق التأخير:</span>
-                <span className="font-mono font-bold text-red-700">
+                <span className="font-mono font-bold text-black">
                   {attendanceStats.totalDelayMinutes} دقيقة
                 </span>
               </div>
             )}
             {attendanceStats.totalOvertimeMinutes > 0 && (
-              <div className="flex justify-between">
+              <div className="flex justify-between text-black">
                 <span>ساعات العمل الإضافي:</span>
-                <span className="font-mono font-bold text-emerald-700">{attendanceStats.overtimeHoursStr}</span>
+                <span className="font-mono font-bold text-black">{attendanceStats.overtimeHoursStr}</span>
               </div>
             )}
           </div>
@@ -364,7 +364,7 @@ export function ClosingReportReceipt({
 
         if (visibleTreasuries.length === 0) {
           return (
-            <div className="text-center py-4 my-2 border-y border-black border-dashed text-xs text-gray-500 font-bold">
+            <div className="text-center py-4 my-2 border-y border-black border-dashed text-xs text-black font-bold">
               لا توجد حركات مالية مسجلة بالخزائن خلال هذه الوردية
             </div>
           );
@@ -375,98 +375,98 @@ export function ClosingReportReceipt({
           const isMain = treasury.isMain || treasury.id === 'main' || treasury.id === mainTreasury.id;
 
           return (
-            <div key={treasury.id} className="mb-6">
-              <h3 className="font-bold text-center border-b border-black border-dashed pb-1 mb-2 bg-gray-100">
+            <div key={treasury.id} className="mb-6 text-black">
+              <h3 className="font-bold text-center border-y border-black border-dashed py-1 mb-2 bg-white text-black">
                 {treasury.name} {isMain ? '(الخزينة الرئيسية)' : ''}
               </h3>
               
-              <div className="space-y-1 text-xs">
+              <div className="space-y-1 text-xs text-black">
                 {stats.initialCashSum > 0 && (
-                  <div className="flex justify-between font-bold text-slate-800 bg-emerald-50 mb-1 px-1">
+                  <div className="flex justify-between font-bold text-black border border-black mb-1 p-1">
                     <span>العهدة الافتتاحية:</span>
-                    <span>{stats.initialCashSum.toFixed(2)}</span>
+                    <span className="text-black font-mono">{stats.initialCashSum.toFixed(2)}</span>
                   </div>
                 )}
                 {stats.income > 0 && (
-                  <div className="flex justify-between">
+                  <div className="flex justify-between text-black">
                     <span>إجمالي الدخل:</span>
-                    <span>{stats.income.toFixed(2)}</span>
+                    <span className="text-black font-mono">{stats.income.toFixed(2)}</span>
                   </div>
                 )}
                 {stats.deposits > 0 && (
-                  <div className="flex justify-between">
+                  <div className="flex justify-between text-black">
                     <span>مبالغ الإضافة (بدون تحويل):</span>
-                    <span>{stats.deposits.toFixed(2)}</span>
+                    <span className="text-black font-mono">{stats.deposits.toFixed(2)}</span>
                   </div>
                 )}
                 {stats.transfersIn > 0 && (
-                  <div className="flex justify-between">
+                  <div className="flex justify-between text-black">
                     <span>مبالغ الإضافة بالتحويل:</span>
-                    <span>{stats.transfersIn.toFixed(2)}</span>
+                    <span className="text-black font-mono">{stats.transfersIn.toFixed(2)}</span>
                   </div>
                 )}
                 
                 {stats.expenses > 0 && (
-                  <div className="flex justify-between text-gray-700">
+                  <div className="flex justify-between text-black font-semibold">
                     <span>إجمالي المصروفات:</span>
-                    <span>{stats.expenses.toFixed(2)}</span>
+                    <span className="text-black font-mono">{stats.expenses.toFixed(2)}</span>
                   </div>
                 )}
                 {stats.salaries > 0 && (
-                  <div className="flex justify-between text-gray-700">
+                  <div className="flex justify-between text-black font-semibold">
                     <span>إجمالي رواتب:</span>
-                    <span>{stats.salaries.toFixed(2)}</span>
+                    <span className="text-black font-mono">{stats.salaries.toFixed(2)}</span>
                   </div>
                 )}
                 {stats.advances > 0 && (
-                  <div className="flex justify-between text-gray-700">
+                  <div className="flex justify-between text-black font-semibold">
                     <span>إجمالي سلف:</span>
-                    <span>{stats.advances.toFixed(2)}</span>
+                    <span className="text-black font-mono">{stats.advances.toFixed(2)}</span>
                   </div>
                 )}
                 {stats.purchases > 0 && (
-                  <div className="flex justify-between text-gray-700">
+                  <div className="flex justify-between text-black font-semibold">
                     <span>إجمالي مشتروات:</span>
-                    <span>{stats.purchases.toFixed(2)}</span>
+                    <span className="text-black font-mono">{stats.purchases.toFixed(2)}</span>
                   </div>
                 )}
                 {stats.supplierPayments > 0 && (
-                  <div className="flex justify-between text-gray-700">
+                  <div className="flex justify-between text-black font-semibold">
                     <span>دفعات وسداد موردين:</span>
-                    <span>{stats.supplierPayments.toFixed(2)}</span>
+                    <span className="text-black font-mono">{stats.supplierPayments.toFixed(2)}</span>
                   </div>
                 )}
                 {stats.commissions > 0 && (
-                  <div className="flex justify-between text-gray-700">
+                  <div className="flex justify-between text-black font-semibold">
                     <span>نسب الموظفين (العمولات):</span>
-                    <span>{stats.commissions.toFixed(2)}</span>
+                    <span className="text-black font-mono">{stats.commissions.toFixed(2)}</span>
                   </div>
                 )}
                 {stats.tips > 0 && (
-                  <div className="flex justify-between text-gray-700">
+                  <div className="flex justify-between text-black font-semibold">
                     <span>إكراميات وبقشيش (الدرج):</span>
-                    <span>{stats.tips.toFixed(2)}</span>
+                    <span className="text-black font-mono">{stats.tips.toFixed(2)}</span>
                   </div>
                 )}
                 {stats.withdrawals > 0 && (
-                  <div className="flex justify-between text-gray-700">
+                  <div className="flex justify-between text-black font-semibold">
                     <span>مبالغ السحب (بدون تحويل):</span>
-                    <span>{stats.withdrawals.toFixed(2)}</span>
+                    <span className="text-black font-mono">{stats.withdrawals.toFixed(2)}</span>
                   </div>
                 )}
                 {stats.transfersOut > 0 && (
-                  <div className="flex justify-between text-gray-700">
+                  <div className="flex justify-between text-black font-semibold">
                     <span>مبالغ السحب بالتحويل:</span>
-                    <span>{stats.transfersOut.toFixed(2)}</span>
+                    <span className="text-black font-mono">{stats.transfersOut.toFixed(2)}</span>
                   </div>
                 )}
                 
-                <div className="flex justify-between font-bold border-t border-black border-dashed pt-1 mt-1 text-sm">
+                <div className="flex justify-between font-bold border-t border-black border-dashed pt-1 mt-1 text-sm text-black">
                   <span>الصافي:</span>
-                  <span dir="ltr">{stats.net.toFixed(2)}</span>
+                  <span dir="ltr" className="text-black font-mono">{stats.net.toFixed(2)}</span>
                 </div>
                 {!isMain && stats.net > 0 && (
-                  <div className="text-[10px] text-emerald-800 bg-emerald-50 rounded p-1 mt-1 text-center font-bold">
+                  <div className="text-[10px] text-black border border-black rounded p-1 mt-1 text-center font-bold">
                     سيتم تصفير هذا الصافي ونقله تلقائياً إلى الخزينة الرئيسية
                   </div>
                 )}
@@ -476,9 +476,9 @@ export function ClosingReportReceipt({
         });
       })()}
 
-      <div className="text-center mt-6 text-xs border-t border-black pt-2">
-        <p>تم استخراج التقرير من النظام</p>
-        <p>{new Date().toLocaleString('ar-SA')}</p>
+      <div className="text-center mt-6 text-xs border-t border-black pt-2 text-black font-semibold">
+        <p className="text-black">تم استخراج التقرير من النظام</p>
+        <p className="text-black font-mono">{new Date().toLocaleString('ar-SA')}</p>
       </div>
     </div>
   );
