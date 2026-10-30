@@ -16,6 +16,7 @@ import { DB, getFingerprintProcessedDate } from '../services/db';
 import { AuthService } from '../services/auth';
 import { SalesReturnVoucherModal } from './SalesReturnVoucherModal';
 import { InvoiceReceiptCard, executePrintInvoiceReceipt } from './InvoiceReceiptCard';
+import { formatInvoiceDateTimeDisplay } from '../utils/timezone';
 export const safeSplitDate = (d?: string | any): string => {
   if (!d || typeof d !== 'string') return '';
   return d.includes('T') ? d.split('T')[0] : (d.includes(' ') ? d.split(' ')[0] : d);
@@ -4480,7 +4481,7 @@ function ReportTable({
                       ? Number(inv.subtotal) 
                       : (inv.items || []).reduce((s: number, it: any) => s + (Number(it.price || it.originalPrice || 0) * (it.quantity || 1)), 0);
                     const invComms = (inv.items || []).reduce((s: number, it: any) => s + Number(it.employeeCommission ?? it.commissionAmount ?? (it as any).commission ?? 0), 0);
-                    const dateFormatted = inv.date ? new Date(inv.date).toLocaleString('ar-EG', { dateStyle: 'short', timeStyle: 'short' }) : '---';
+                    const dateFormatted = inv.date ? formatInvoiceDateTimeDisplay(inv.date, 'ar-EG', { dateStyle: 'short', timeStyle: 'short' }) : '---';
                     const cashier = inv.cashierName || inv.createdByName || 'الكاشير';
 
                     return (

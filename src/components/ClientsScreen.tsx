@@ -9,6 +9,7 @@ import {
   Mail, Edit3, Globe, AlertTriangle, Check, BarChart3, Gem, Star
 } from 'lucide-react';
 import { handlePrintReceipt } from '../utils/print';
+import { formatInvoiceDateTimeDisplay } from '../utils/timezone';
 import { DB } from '../services/db';
 import { ClientsImportModal } from './ClientsImportModal';
 
@@ -962,7 +963,7 @@ export function ClientsScreen({
                           {clientInvs.map((inv) => (
                             <tr key={inv.id} className="hover:bg-slate-50 transition-colors">
                               <td className="py-3 px-3 font-mono font-bold text-slate-800">{inv.id}</td>
-                              <td className="py-3 px-3 text-slate-500 font-semibold">{new Date(inv.date).toLocaleString('ar-SA')}</td>
+                              <td className="py-3 px-3 text-slate-500 font-semibold">{formatInvoiceDateTimeDisplay(inv.date, 'ar-SA')}</td>
                               <td className="py-3 px-3">
                                 <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-bold">
                                   {inv.items?.length || 0} عناصر
@@ -1043,7 +1044,7 @@ export function ClientsScreen({
                 </div>
                 <div>
                   <h4 className="font-extrabold text-base text-slate-900">تفاصيل الفاتورة: {viewInvoiceDetails.id}</h4>
-                  <p className="text-[11px] text-slate-400 font-mono">{new Date(viewInvoiceDetails.date).toLocaleString('ar-SA')}</p>
+                  <p className="text-[11px] text-slate-400 font-mono">{formatInvoiceDateTimeDisplay(viewInvoiceDetails.date, 'ar-SA')}</p>
                 </div>
               </div>
               <button onClick={() => setViewInvoiceDetails(null)} className="text-slate-400 hover:text-slate-600">

@@ -239,3 +239,53 @@ export function formatSalonDateTime(
   });
   return dtf.format(d);
 }
+
+/**
+ * Parse any date/time string stored in the database without unwanted timezone shifts.
+ * Extracts the exact literal numbers (year, month, day, hour, minute, second) recorded in the DB,
+ * preventing browser timezone conversion from shifting the time (e.g. from 12:02 to 14:02).
+ */
+export function parseDbDateTime(dateRaw?: string | Date | null): Date {
+  if (!dateRaw) return new Date();
+  if (dateRaw instanceof Date) return dateRaw;
+
+  if (typeof dateRaw === 'string') {
+    const trimmed = dateRaw.trim();
+    // Match: YYYY-MM-DD or YYYY/MM/DD followed by T or space, then HH:mm(:ss)?
+    const match = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})[T\s](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/);
+    if (match) {
+      const year = parseInt(match[1], 10);
+      const month = parseInt(match[2], 10) - 1;
+      const day = parseInt(match[3], 10);
+      const hour = parseInt(match[4], 10);
+      const minute = parseInt(match[5], 10);
+      const second = match[6] ? parseInt(match[6], 10) : 0;
+      return new Date(year, month, day, hour, minute, second);
+    }
+
+    // Match date only: YYYY-MM-DD or YYYY/MM/DD
+    const dateOnly = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+    if (dateOnly) {
+      const year = parseInt(dateOnly[1], 10);
+      const month = parseInt(dateOnly[2], 10) - 1;
+      const day = parseInt(dateOnly[3], 10);
+      return new Date(year, month, day, 0, 0, 0);
+    }
+  }
+
+  const fallback = new Date(dateRaw);
+  return isNaN(fallback.getTime()) ? new Date() : fallback;
+}
+
+/**
+ * Format invoice date & time strictly matching the exact values stored in the database.
+ */
+export function formatInvoiceDateTimeDisplay(
+  dateRaw?: string | Date | null,
+  locale: string = 'ar-EG',
+  options?: Intl.DateTimeFormatOptions
+): string {
+  if (!dateRaw) return '-';
+  const d = parseDbDateTime(dateRaw);
+  return d.toLocaleString(locale, options);
+}

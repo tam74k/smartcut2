@@ -29,6 +29,7 @@ import { SalesReturnModal } from './SalesReturnModal';
 import { SalesReturnVoucherModal } from './SalesReturnVoucherModal';
 import { generateBarcodeSvgString } from '../utils/barcodeGenerator';
 import { POSAttendanceModal } from './POSAttendanceModal';
+import { formatInvoiceDateTimeDisplay } from '../utils/timezone';
 
 const getCartItemPrice = (c: CartItem | any): number => {
   if (!c) return 0;
@@ -99,7 +100,7 @@ function buildReceiptHtml(completedInvoice: Invoice, settings: AppSettings): str
         ` : ''}
         <div style="border-bottom: 1px dashed #000; margin: 12px 0;"></div>
         <p style="font-size: 13px; margin: 0;">رقم الفاتورة: ${completedInvoice.id}</p>
-        <p style="font-size: 13px; margin: 0;">التاريخ: ${new Date(completedInvoice.date).toLocaleString('ar-SA')}</p>
+        <p style="font-size: 13px; margin: 0;">التاريخ: ${formatInvoiceDateTimeDisplay(completedInvoice.date, 'ar-SA')}</p>
         ${completedInvoice.clientName ? `<p style="font-size: 13px; margin: 5px 0 0 0;">العميل: ${completedInvoice.clientName}</p>` : ''}
       </div>
       

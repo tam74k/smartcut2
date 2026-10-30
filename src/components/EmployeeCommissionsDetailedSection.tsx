@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { calculateEmployeeCommission, getCommissionModelLabel, isWaselInvoice } from '../utils/commissionHelper';
 import { handlePrintReceipt } from '../utils/print';
+import { formatInvoiceDateTimeDisplay } from '../utils/timezone';
 
 export interface CommissionItemRow {
   uniqueId: string;
@@ -1101,8 +1102,8 @@ export function EmployeeCommissionsDetailedSection({
                 </div>
                 <div>
                   <h3 className="text-base font-black text-slate-900">تفاصيل الفاتورة #{previewInvoice.id}</h3>
-                  <p className="text-xs text-slate-500">
-                    {previewInvoice.date ? new Date(previewInvoice.date).toLocaleString('ar-SA') : '-'}
+                  <p className="text-xs text-slate-500 font-mono">
+                    {previewInvoice.date ? formatInvoiceDateTimeDisplay(previewInvoice.date, 'ar-SA') : '-'}
                   </p>
                 </div>
               </div>

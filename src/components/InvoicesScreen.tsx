@@ -11,6 +11,7 @@ import { SalesReturnModal } from './SalesReturnModal';
 import { generateCode39Svg } from '../utils/printQueueSlip';
 import { InvoiceReceiptCard, executePrintInvoiceReceipt } from './InvoiceReceiptCard';
 import { isWaselInvoice } from '../utils/commissionHelper';
+import { formatInvoiceDateTimeDisplay, parseDbDateTime } from '../utils/timezone';
 
 export const getEffectiveInvoiceTotal = (inv: Invoice | any): number => {
   if (!inv) return 0;
@@ -433,7 +434,7 @@ export function InvoicesScreen({
       if (!matchesActiveBranch(inv.branchId, (inv as any).branchCode)) return false;
 
       // Date filter
-      const invDateStr = (inv.date || '').split('T')[0];
+      const invDateStr = getInvoiceLocalDateStr(inv);
       const invSettledDateStr = ((inv as any).settledAt || '').split('T')[0];
       if (dateFrom) {
         const matchesFrom = invDateStr >= dateFrom || (invSettledDateStr && invSettledDateStr >= dateFrom);
@@ -482,7 +483,7 @@ export function InvoicesScreen({
       }
       
       return true;
-    }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    }).sort((a, b) => parseDbDateTime(b.date).getTime() - parseDbDateTime(a.date).getTime());
   }, [invoices, dateFrom, dateTo, statusFilter, paymentFilter, searchQuery, activeBranchId, isMainBranch, branchFilter, salesReturns]);
 
   // Pagination calculation
@@ -638,7 +639,7 @@ export function InvoicesScreen({
                       </div>
                     )}
                   </td>
-                  <td className="px-6 py-4 text-slate-600">{new Date(inv.date).toLocaleString('ar-EG')}</td>
+                  <td className="px-6 py-4 text-slate-600 font-medium whitespace-nowrap">{formatInvoiceDateTimeDisplay(inv.date, 'ar-EG')}</td>
                   <td className="px-6 py-4">
                     <div className="font-bold text-primary">{inv.clientName}</div>
                     {inv.clientPhone && <div className="text-xs text-slate-500">{inv.clientPhone}</div>}
@@ -726,7 +727,7 @@ export function InvoicesScreen({
                           <div className="flex flex-col items-center gap-0.5">
                             <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-600">مسددة</span>
                             {(inv as any).settledAt && (
-                              <span className="text-[9px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 font-bold" title={`تم سداد الآجل بتاريخ: ${new Date((inv as any).settledAt).toLocaleDateString('ar-EG')}`}>
+                              <span className="text-[9px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 font-bold" title={`تم سداد الآجل بتاريخ: ${formatInvoiceDateTimeDisplay((inv as any).settledAt, 'ar-EG')}`}>
                                 سداد آجل
                               </span>
                             )}

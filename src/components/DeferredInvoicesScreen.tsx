@@ -13,6 +13,7 @@ import {
 import { DB } from '../services/db';
 import { executePrintInvoiceReceipt } from './InvoiceReceiptCard';
 import { EvolutionApiService } from '../services/evolutionApiService';
+import { formatInvoiceDateTimeDisplay } from '../utils/timezone';
 
 interface DeferredInvoicesScreenProps {
   settings: AppSettings;
@@ -830,8 +831,8 @@ export function DeferredInvoicesScreen({
                       <tr key={inv.id} className="hover:bg-slate-50/80 transition-colors">
                         <td className="py-3.5 px-4">
                           <span className="font-mono font-black text-slate-800 block">{inv.invoiceNumber || inv.id}</span>
-                          <span className="text-[11px] text-slate-400 font-bold block mt-0.5">
-                            {new Date(inv.date).toLocaleDateString('ar-EG', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          <span className="text-[11px] text-slate-400 font-bold block mt-0.5 font-mono">
+                            {formatInvoiceDateTimeDisplay(inv.date, 'ar-EG', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                           </span>
                           <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded mt-1 ${
                             cType.icon === 'package' 

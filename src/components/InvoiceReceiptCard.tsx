@@ -4,6 +4,7 @@ import { AppSettings, Invoice, Branch } from '../types';
 import { generateCode39Svg } from '../utils/printQueueSlip';
 import { generateZatcaQrBase64 } from '../utils/zatca';
 import { escapeHtml, sanitizeUrl } from '../utils/sanitize';
+import { parseDbDateTime } from '../utils/timezone';
 
 interface InvoiceReceiptCardProps {
   id?: string;
@@ -36,8 +37,8 @@ export const isSaudiSalon = (settings: AppSettings, branches?: Branch[], branchI
 
 export const formatInvoiceDate = (dateRaw?: string): string => {
   if (!dateRaw) return new Date().toISOString().split('T')[0];
-  const d = new Date(dateRaw);
-  if (isNaN(d.getTime())) return dateRaw.split('T')[0] || dateRaw;
+  const d = parseDbDateTime(dateRaw);
+  if (isNaN(d.getTime())) return dateRaw.split(/[T\s]/)[0] || dateRaw;
   const pad = (n: number) => n.toString().padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 };
@@ -52,7 +53,7 @@ export const formatInvoiceTime = (dateRaw?: string): string => {
     const formattedHours = pad(hours % 12 || 12);
     return `${formattedHours}:${minutes} ${ampm}`;
   }
-  const d = new Date(dateRaw);
+  const d = parseDbDateTime(dateRaw);
   if (isNaN(d.getTime())) return '';
   const hours = d.getHours();
   const minutes = pad(d.getMinutes());
@@ -65,7 +66,7 @@ export const formatInvoiceCreatedAt = (invoice: Invoice): string => {
   const createdRaw = invoice.date || (invoice as any).createdAt || (invoice as any).created_at;
   const pad = (n: number) => n.toString().padStart(2, '0');
   if (createdRaw) {
-    const d = new Date(createdRaw);
+    const d = parseDbDateTime(createdRaw);
     if (!isNaN(d.getTime())) {
       const datePart = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
       const hours = d.getHours();
