@@ -206,6 +206,10 @@ export function ClosingReportReceipt({
     const income = invoiceSales + recordedSales;
 
     const isTipTrx = (t: any) => {
+      // إذا كان القيد مسجلاً كمصروف تشغيلي فهو مصروف صريح وليس صرف بقشيش
+      if (t.category === 'expense' || t.category === 'مصروفات' || (t.id && String(t.id).startsWith('EXP-'))) {
+        return false;
+      }
       const cat = (t.category || '').toLowerCase();
       const desc = (t.description || '').toLowerCase();
       const id = (t.id || '').toLowerCase();

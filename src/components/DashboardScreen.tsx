@@ -479,6 +479,9 @@ export function DashboardScreen({
   const isTipTrx = (trx: any) => {
     const isOut = trx.type === 'out' || (trx.type as string) === 'expense';
     if (!isOut) return false;
+    if (trx.category === 'expense' || trx.category === 'مصروفات' || (trx.id && String(trx.id).startsWith('EXP-'))) {
+      return false;
+    }
     const cat = (trx.category || '').toLowerCase();
     const desc = (trx.description || '').toLowerCase();
     const id = (trx.id || '').toLowerCase();

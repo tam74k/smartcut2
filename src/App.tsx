@@ -586,8 +586,8 @@ export default function App() {
       setTransactions(data.transactions.map((t: any) => ({
         ...t,
         date: t.date || t.created_at || t.createdAt || t.shift_date || t.shiftDate || new Date().toISOString(),
-        expenseCategory: t.expenseCategory || '', createdBy: t.createdBy || '',
-        userId: t.userId || '', userName: t.userName || '', shiftDate: t.shiftDate || ''
+        expenseCategory: t.expenseCategory || t.expense_category || '', createdBy: t.createdBy || t.created_by || '',
+        userId: t.userId || t.user_id || '', userName: t.userName || t.user_name || '', shiftDate: t.shiftDate || t.shift_date || '', branchId: t.branchId || t.branch_id || undefined, treasuryId: t.treasuryId || t.treasury_id || undefined
       })));
     }
     if (data.bookings) {
@@ -814,8 +814,8 @@ export default function App() {
               setTransactions(dbTrxs.map((t: any) => ({
                 ...t,
                 date: t.date || t.created_at || t.createdAt || t.shift_date || t.shiftDate || new Date().toISOString(),
-                expenseCategory: t.expenseCategory || '', createdBy: t.createdBy || '',
-                userId: t.userId || '', userName: t.userName || '', shiftDate: t.shiftDate || '',
+                expenseCategory: t.expenseCategory || t.expense_category || '', createdBy: t.createdBy || t.created_by || '',
+                userId: t.userId || t.user_id || '', userName: t.userName || t.user_name || '', shiftDate: t.shiftDate || t.shift_date || '', branchId: t.branchId || t.branch_id || undefined, treasuryId: t.treasuryId || t.treasury_id || undefined,
                 invoiceId: t.invoiceId || t.invoice_id || (typeof t.description === 'string' ? t.description.match(/INV-[A-Z0-9]+/)?.[0] : undefined),
                 invoice_id: t.invoice_id || t.invoiceId || (typeof t.description === 'string' ? t.description.match(/INV-[A-Z0-9]+/)?.[0] : undefined)
               })));
@@ -1008,11 +1008,11 @@ export default function App() {
         if (dbTrxs && Array.isArray(dbTrxs)) {
           setTransactions(dbTrxs.map((t: any) => ({
             ...t,
-            expenseCategory: t.expenseCategory || '',
-            createdBy: t.createdBy || '',
-            userId: t.userId || '',
-            userName: t.userName || '',
-            shiftDate: t.shiftDate || ''
+            expenseCategory: t.expenseCategory || t.expense_category || '',
+            createdBy: t.createdBy || t.created_by || '',
+            userId: t.userId || t.user_id || '',
+            userName: t.userName || t.user_name || '',
+            shiftDate: t.shiftDate || t.shift_date || '', branchId: t.branchId || t.branch_id || undefined, treasuryId: t.treasuryId || t.treasury_id || undefined
           })));
         }
       } catch (err) {
@@ -1233,8 +1233,8 @@ export default function App() {
           setTransactions(updatedTrxs.map((t: any) => ({
             ...t,
             date: t.date || t.created_at || t.createdAt || t.shift_date || t.shiftDate || new Date().toISOString(),
-            expenseCategory: t.expenseCategory || '', createdBy: t.createdBy || '',
-            userId: t.userId || '', userName: t.userName || '', shiftDate: t.shiftDate || '',
+            expenseCategory: t.expenseCategory || t.expense_category || '', createdBy: t.createdBy || t.created_by || '',
+            userId: t.userId || t.user_id || '', userName: t.userName || t.user_name || '', shiftDate: t.shiftDate || t.shift_date || '', branchId: t.branchId || t.branch_id || undefined, treasuryId: t.treasuryId || t.treasury_id || undefined,
             invoiceId: t.invoiceId || t.invoice_id || (typeof t.description === 'string' ? t.description.match(/INV-[A-Z0-9]+/)?.[0] : undefined),
             invoice_id: t.invoice_id || t.invoiceId || (typeof t.description === 'string' ? t.description.match(/INV-[A-Z0-9]+/)?.[0] : undefined)
           })));
@@ -1384,11 +1384,11 @@ export default function App() {
         if (polledTransactions && Array.isArray(polledTransactions)) {
           setTransactions(polledTransactions.map((t: any) => ({
             ...t,
-            expenseCategory: t.expenseCategory || '',
-            createdBy: t.createdBy || '',
-            userId: t.userId || '',
-            userName: t.userName || '',
-            shiftDate: t.shiftDate || ''
+            expenseCategory: t.expenseCategory || t.expense_category || '',
+            createdBy: t.createdBy || t.created_by || '',
+            userId: t.userId || t.user_id || '',
+            userName: t.userName || t.user_name || '',
+            shiftDate: t.shiftDate || t.shift_date || '', branchId: t.branchId || t.branch_id || undefined, treasuryId: t.treasuryId || t.treasury_id || undefined
           })));
         }
 

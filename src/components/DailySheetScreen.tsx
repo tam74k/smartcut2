@@ -78,7 +78,11 @@ export function DailySheetScreen({
   };
 
   // Helper date checker
-  const isMatchDate = (dateStr?: string) => {
+  const isMatchDate = (dateStr?: string, shiftDateStr?: string) => {
+    if (shiftDateStr) {
+      const cleanShift = shiftDateStr.includes('T') ? shiftDateStr.split('T')[0] : shiftDateStr.split(' ')[0];
+      if (cleanShift === selectedDate) return true;
+    }
     if (!dateStr) return false;
     const clean = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr.split(' ')[0];
     return clean === selectedDate;
@@ -302,7 +306,7 @@ export function DailySheetScreen({
   // 5. Staff Payments (المدفوعات: السلف والرواتب)
   const staffPayments = useMemo(() => {
     return transactions.filter(t => {
-      if (!isMatchDate(t.date)) return false;
+      if (!isMatchDate(t.date, t.shiftDate || (t as any).shift_date)) return false;
       const cat = String(t.category || '').toLowerCase().trim();
       const expCat = String(t.expenseCategory || '').toLowerCase().trim();
       const desc = String(t.description || '').toLowerCase().trim();
@@ -348,7 +352,7 @@ export function DailySheetScreen({
   // 6. Operational Expenses (المصروفات اليومية - مصروفات تشغيلية صريحة ومحددة فقط دون تصفير الخزائن أو التحويلات)
   const dayExpenses = useMemo(() => {
     return transactions.filter(t => {
-      if (!isMatchDate(t.date)) return false;
+      if (!isMatchDate(t.date, t.shiftDate || (t as any).shift_date)) return false;
       const cat = String(t.category || '').toLowerCase().trim();
       const expCat = String(t.expenseCategory || '').toLowerCase().trim();
       const desc = String(t.description || '').toLowerCase().trim();
@@ -409,7 +413,7 @@ export function DailySheetScreen({
         desc.includes('سلفة') ||
         desc.includes('راتب')
       );
-      if (isAdvance) return false;
+      if (isAdvance && cat !== 'expense' && cat !== 'مصروفات' && !(t.id && String(t.id).startsWith('EXP-'))) return false;
 
       // 5. التحقق الصريح: يجب أن تكون الحركة مصروفاً واضحاً ومحدداً فقط
       const isExplicitExpense = (

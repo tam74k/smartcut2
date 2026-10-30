@@ -279,6 +279,7 @@ export function parseDbDateTime(dateRaw?: string | Date | null): Date {
 
 /**
  * Format invoice date & time strictly matching the exact values stored in the database.
+ * Bypasses all browser and local machine timezone offsets.
  */
 export function formatInvoiceDateTimeDisplay(
   dateRaw?: string | Date | null,
@@ -286,6 +287,29 @@ export function formatInvoiceDateTimeDisplay(
   options?: Intl.DateTimeFormatOptions
 ): string {
   if (!dateRaw) return '-';
+
+  if (typeof dateRaw === 'string') {
+    const trimmed = dateRaw.trim();
+    // Match: YYYY-MM-DD or YYYY/MM/DD followed by T or space, then HH:mm(:ss)?
+    const match = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})[T\s](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/);
+    if (match) {
+      const year = match[1];
+      const month = match[2].padStart(2, '0');
+      const day = match[3].padStart(2, '0');
+      const hourNum = parseInt(match[4], 10);
+      const minute = match[5].padStart(2, '0');
+      const second = match[6] ? match[6].padStart(2, '0') : '00';
+
+      const isPm = hourNum >= 12;
+      const hour12 = hourNum === 0 ? 12 : (hourNum > 12 ? hourNum - 12 : hourNum);
+      const period = isPm ? 'م' : 'ص';
+
+      if (!options) {
+        return `${year}/${month}/${day}, ${hour12}:${minute}:${second} ${period}`;
+      }
+    }
+  }
+
   const d = parseDbDateTime(dateRaw);
   return d.toLocaleString(locale, options);
 }
