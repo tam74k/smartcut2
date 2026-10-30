@@ -56,18 +56,20 @@ export function TipsScreen({
 
   // Filtered tips
   const filteredTips = useMemo(() => {
-    return tips.filter(t => {
-      if (selectedEmployee !== 'all' && t.employeeId !== selectedEmployee) return false;
-      if (selectedStatus !== 'all' && t.status !== selectedStatus) return false;
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const empMatch = t.employeeName?.toLowerCase().includes(q);
-        const invMatch = t.invoiceId?.toLowerCase().includes(q);
-        const clientMatch = t.clientName?.toLowerCase().includes(q);
-        if (!empMatch && !invMatch && !clientMatch) return false;
-      }
-      return true;
-    });
+    return tips
+      .filter(t => {
+        if (selectedEmployee !== 'all' && t.employeeId !== selectedEmployee) return false;
+        if (selectedStatus !== 'all' && t.status !== selectedStatus) return false;
+        if (searchQuery.trim()) {
+          const q = searchQuery.toLowerCase();
+          const empMatch = t.employeeName?.toLowerCase().includes(q);
+          const invMatch = t.invoiceId?.toLowerCase().includes(q);
+          const clientMatch = t.clientName?.toLowerCase().includes(q);
+          if (!empMatch && !invMatch && !clientMatch) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
   }, [tips, selectedEmployee, selectedStatus, searchQuery]);
 
   // Handle single tip payout
@@ -126,7 +128,7 @@ export function TipsScreen({
 
 
   return (
-    <div className="flex-1 p-4 sm:p-6 overflow-y-auto bg-slate-50 flex flex-col gap-6">
+    <div className="w-full h-full min-h-0 p-4 sm:p-6 overflow-y-auto bg-slate-50 flex flex-col gap-6" dir="rtl">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
         <div>
@@ -223,93 +225,100 @@ export function TipsScreen({
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden flex flex-col min-h-0">
         {filteredTips.length === 0 ? (
           <div className="p-12 text-center text-slate-400 flex flex-col items-center gap-3">
             <DollarSign size={48} className="text-slate-200 stroke-1" />
             <p className="text-sm font-semibold">لا توجد سجلات بقشيش مطابقة لمعايير البحث</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-right text-xs">
-              <thead className="bg-slate-50 text-slate-500 border-b border-slate-100 font-bold">
-                <tr>
-                  <th className="p-3.5">التاريخ والوقت</th>
-                  <th className="p-3.5">الموظف المستحق</th>
-                  <th className="p-3.5">العميل</th>
-                  <th className="p-3.5">رقم الفاتورة</th>
-                  <th className="p-3.5">طريقة دفع الفاتورة</th>
-                  <th className="p-3.5">مبلغ البقشيش</th>
-                  <th className="p-3.5 text-center">حالة الصرف</th>
-                  <th className="p-3.5 text-left">إجراء الصرف</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredTips.map(tip => (
-                  <tr key={tip.id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="p-3.5 text-slate-500 font-mono text-[11px]">{new Date(tip.date).toLocaleString('ar-EG')}</td>
-                    <td className="p-3.5 font-bold text-slate-800 flex items-center gap-2">
-                      <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs ${
-                        tip.employeeId === 'unspecified' ? 'bg-purple-100 text-purple-700' : 'bg-emerald-50 text-emerald-700'
-                      }`}>
-                        {tip.employeeId === 'unspecified' ? <Sparkles size={13} /> : (tip.employeeName?.charAt(0) || 'م')}
-                      </div>
-                      <span>{tip.employeeName}</span>
-                    </td>
-                    <td className="p-3.5 font-semibold text-slate-700">{tip.clientName || 'عميل نقدي'}</td>
-                    <td className="p-3.5 font-mono text-slate-600">{tip.invoiceId}</td>
-                    <td className="p-3.5 text-slate-600">
-                      <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[11px]">
-                        {tip.paymentMethod === 'card' ? 'شبكة / بطاقة' : tip.paymentMethod === 'transfer' ? 'تحويل بنكي' : tip.paymentMethod}
-                      </span>
-                    </td>
-                    <td className="p-3.5 font-black text-emerald-600 text-sm">
-                      {tip.amount.toLocaleString()} <span className="text-[10px] text-slate-400 font-normal">{settings.currency}</span>
-                    </td>
-
-                    <td className="p-3.5 text-center">
-                      {tip.employeeId === 'unspecified' ? (
-                        <span className="px-2.5 py-1 rounded-lg bg-purple-50 text-purple-700 font-bold text-[10px] border border-purple-200 inline-flex items-center gap-1">
-                          <CheckCircle2 size={12} />
-                          <span>إيراد عام للصالون</span>
-                        </span>
-                      ) : tip.status === 'paid_out' ? (
-                        <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-bold text-[10px] border border-emerald-100 inline-flex items-center gap-1">
-                          <CheckCircle2 size={12} />
-                          <span>تم الصرف</span>
-                        </span>
-                      ) : (
-                        <span className="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 font-bold text-[10px] border border-amber-100 inline-flex items-center gap-1">
-                          <Clock size={12} />
-                          <span>معلق بالخزينة</span>
-                        </span>
-                      )}
-                    </td>
-                    <td className="p-3.5 text-left">
-                      {tip.employeeId === 'unspecified' ? (
-                        <span className="text-[11px] text-purple-700 font-bold inline-flex items-center gap-1">
-                          <Sparkles size={11} className="text-purple-600" />
-                          <span>عامة للصالون (لا تتطلب صرف)</span>
-                        </span>
-                      ) : tip.status === 'pending_payout' ? (
-                        <button
-                          onClick={() => handleOpenPayout(tip)}
-                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold transition-all shadow-xs flex items-center gap-1 active:scale-95"
-                        >
-                          <Wallet size={13} />
-                          <span>صرف نقدي للموظف</span>
-                        </button>
-                      ) : (
-                        <span className="text-[11px] text-slate-400 font-mono">
-                          صُرف في {tip.paidOutAt ? new Date(tip.paidOutAt).toLocaleDateString('ar-EG') : '-'}
-                        </span>
-                      )}
-                    </td>
+          <>
+            <div className="overflow-x-auto overflow-y-auto max-h-[550px] min-h-[300px]">
+              <table className="w-full text-right text-xs">
+                <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 font-bold sticky top-0 z-10 shadow-xs">
+                  <tr>
+                    <th className="p-3.5 bg-slate-50">التاريخ والوقت</th>
+                    <th className="p-3.5 bg-slate-50">الموظف المستحق</th>
+                    <th className="p-3.5 bg-slate-50">العميل</th>
+                    <th className="p-3.5 bg-slate-50">رقم الفاتورة</th>
+                    <th className="p-3.5 bg-slate-50">طريقة دفع الفاتورة</th>
+                    <th className="p-3.5 bg-slate-50">مبلغ البقشيش</th>
+                    <th className="p-3.5 bg-slate-50 text-center">حالة الصرف</th>
+                    <th className="p-3.5 bg-slate-50 text-left">إجراء الصرف</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredTips.map(tip => (
+                    <tr key={tip.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="p-3.5 text-slate-500 font-mono text-[11px]">{new Date(tip.date).toLocaleString('ar-EG')}</td>
+                      <td className="p-3.5 font-bold text-slate-800 flex items-center gap-2">
+                        <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs ${
+                          tip.employeeId === 'unspecified' ? 'bg-purple-100 text-purple-700' : 'bg-emerald-50 text-emerald-700'
+                        }`}>
+                          {tip.employeeId === 'unspecified' ? <Sparkles size={13} /> : (tip.employeeName?.charAt(0) || 'م')}
+                        </div>
+                        <span>{tip.employeeName}</span>
+                      </td>
+                      <td className="p-3.5 font-semibold text-slate-700">{tip.clientName || 'عميل نقدي'}</td>
+                      <td className="p-3.5 font-mono text-slate-600">{tip.invoiceId}</td>
+                      <td className="p-3.5 text-slate-600">
+                        <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[11px]">
+                          {tip.paymentMethod === 'card' ? 'شبكة / بطاقة' : tip.paymentMethod === 'transfer' ? 'تحويل بنكي' : tip.paymentMethod}
+                        </span>
+                      </td>
+                      <td className="p-3.5 font-black text-emerald-600 text-sm">
+                        {tip.amount.toLocaleString()} <span className="text-[10px] text-slate-400 font-normal">{settings.currency}</span>
+                      </td>
+
+                      <td className="p-3.5 text-center">
+                        {tip.employeeId === 'unspecified' ? (
+                          <span className="px-2.5 py-1 rounded-lg bg-purple-50 text-purple-700 font-bold text-[10px] border border-purple-200 inline-flex items-center gap-1">
+                            <CheckCircle2 size={12} />
+                            <span>إيراد عام للصالون</span>
+                          </span>
+                        ) : tip.status === 'paid_out' ? (
+                          <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-bold text-[10px] border border-emerald-100 inline-flex items-center gap-1">
+                            <CheckCircle2 size={12} />
+                            <span>تم الصرف</span>
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 font-bold text-[10px] border border-amber-100 inline-flex items-center gap-1">
+                            <Clock size={12} />
+                            <span>معلق بالخزينة</span>
+                          </span>
+                        )}
+                      </td>
+                      <td className="p-3.5 text-left">
+                        {tip.employeeId === 'unspecified' ? (
+                          <span className="text-[11px] text-purple-700 font-bold inline-flex items-center gap-1">
+                            <Sparkles size={11} className="text-purple-600" />
+                            <span>عامة للصالون (لا تتطلب صرف)</span>
+                          </span>
+                        ) : tip.status === 'pending_payout' ? (
+                          <button
+                            onClick={() => handleOpenPayout(tip)}
+                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold transition-all shadow-xs flex items-center gap-1 active:scale-95 cursor-pointer"
+                          >
+                            <Wallet size={13} />
+                            <span>صرف نقدي للموظف</span>
+                          </button>
+                        ) : (
+                          <span className="text-[11px] text-slate-400 font-mono">
+                            صُرف في {tip.paidOutAt ? new Date(tip.paidOutAt).toLocaleDateString('ar-EG') : '-'}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {filteredTips.length > 5 && (
+              <div className="p-2.5 bg-slate-50 border-t border-slate-100 text-[11px] text-slate-400 font-semibold text-center flex items-center justify-center gap-2">
+                <span>إجمالي {filteredTips.length} حركة بقشيش — مرر للأسفل والـ أعلى لاستعراض باقي الحركات</span>
+              </div>
+            )}
+          </>
         )}
       </div>
 
