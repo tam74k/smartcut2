@@ -212,20 +212,63 @@ export function DashboardScreen({
     }
   };
 
-  // دمج كافة الحركات المسجلة مع الفواتير المكتملة لاحتساب الأرصدة التاريخية التراكمية للخزائن بدقة
+  // دمج كافة الحركات المسجلة مع الفواتير المكتملة لاحتساب الأرصدة التاريخية التراكمية للخزائن بدقة ومنع التكرار
   const unifiedTransactions = useMemo(() => {
     const txList = transactions || [];
     const invList = invoices || [];
-    const knownInvoiceIds = new Set(
-      txList
-        .filter(t => (t as any).invoiceId || (t as any).invoice_id)
-        .map(t => (t as any).invoiceId || (t as any).invoice_id)
-    );
+
+    // 1. التحقق الشامل من تغطية أي فاتورة بحركة حقيقية مسجلة مسبقاً
+    const isInvoiceCovered = (invId: string) => {
+      if (!invId) return false;
+      return txList.some(t => {
+        if (!t) return false;
+        if ((t as any).invoiceId === invId || (t as any).invoice_id === invId) return true;
+        if (typeof t.id === 'string' && (t.id.includes(invId) || t.id.startsWith(`TRX-${invId}`))) return true;
+        if (typeof t.description === 'string' && t.description.includes(invId)) return true;
+        return false;
+      });
+    };
+
+    // 2. تنقية الحركات المسجلة وتفادي التكرار
+    const cleanedRealTrxs: Transaction[] = [];
+    const seenTrxKeys = new Set<string>();
+
+    txList.forEach(t => {
+      if (!t || !t.id) return;
+
+      // تجاهل الحركات المصطنعة القديمة إذا وجدت حركة حقيقية
+      if (typeof t.id === 'string' && t.id.startsWith('TRX-INV-INV-')) {
+        const invMatch = t.id.match(/INV-[A-Z0-9-]+/i)?.[0];
+        if (invMatch) {
+          const hasOtherTrx = txList.some(o => o.id !== t.id && (
+            (o as any).invoiceId === invMatch ||
+            (o as any).invoice_id === invMatch ||
+            (typeof o.id === 'string' && o.id.includes(invMatch) && !o.id.startsWith('TRX-INV-INV-')) ||
+            (typeof o.description === 'string' && o.description.includes(invMatch))
+          ));
+          if (hasOtherTrx) return;
+        }
+      }
+
+      const invId = (t as any).invoiceId || (t as any).invoice_id || (typeof t.id === 'string' ? t.id.match(/INV-[A-Z0-9-]+/i)?.[0] : null);
+      const bId = (t as any).bookingId || (t as any).booking_id || (typeof t.id === 'string' ? t.id.match(/BOK-[A-Z0-9-]+/i)?.[0] : null);
+
+      let dedupKey = t.id;
+      if (invId && (t.category === 'sales' || t.category === 'مبيعات')) {
+        dedupKey = `INV_${invId}_${t.treasury || (t as any).treasuryId}_${t.amount}_${(t.date || '').slice(0, 16)}`;
+      } else if (bId && (t.category === 'مقدم حجز' || t.category === 'booking_advance' || t.category === 'advance')) {
+        dedupKey = `BOK_${bId}_${t.treasury || (t as any).treasuryId}_${t.amount}_${(t.date || '').slice(0, 16)}`;
+      }
+
+      if (seenTrxKeys.has(dedupKey)) return;
+      seenTrxKeys.add(dedupKey);
+      cleanedRealTrxs.push(t);
+    });
 
     const syntheticTrxs: Transaction[] = [];
     invList.forEach(inv => {
       if (inv.status === 'cancelled' || (inv as any).is_cancelled || (inv as any).isCancelled) return;
-      if (knownInvoiceIds.has(inv.id)) return;
+      if (isInvoiceCovered(inv.id)) return;
 
       const methods = (inv.paymentMethods && inv.paymentMethods.length > 0)
         ? inv.paymentMethods
@@ -236,8 +279,9 @@ export function DashboardScreen({
         const amt = Number(split.amount) || 0;
         if (amt <= 0) return;
 
+        const baseId = inv.id.startsWith('INV-') ? `TRX-${inv.id}` : `TRX-INV-${inv.id}`;
         syntheticTrxs.push({
-          id: `TRX-INV-${inv.id}${methods.length > 1 ? `-${idx + 1}` : ''}`,
+          id: `${baseId}${methods.length > 1 ? `-${idx + 1}` : ''}`,
           salonId: (inv as any).salonId || (inv as any).salon_id || settings.salonId,
           date: inv.date,
           type: 'in',
@@ -253,7 +297,7 @@ export function DashboardScreen({
       });
     });
 
-    return [...txList, ...syntheticTrxs];
+    return [...cleanedRealTrxs, ...syntheticTrxs];
   }, [transactions, invoices, settings.salonId, activeBranchId]);
 
   // Compute stats for today based on transactions & invoices (صفر تلقائياً عند إغلاق الوردية)

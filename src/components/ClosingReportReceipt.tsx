@@ -344,15 +344,21 @@ export function ClosingReportReceipt({
     });
 
     // Track invoice IDs that already exist as transactions in tTrx to avoid double counting
-    const invoiceIdsInTrx = new Set(
-      tTrx.filter(t => t.type === 'in' && ((t as any).invoiceId || (t as any).invoice_id))
-        .map(t => (t as any).invoiceId || (t as any).invoice_id)
-    );
+    const isInvoiceInTrx = (invId: string) => {
+      if (!invId) return false;
+      return tTrx.some(t => {
+        if (!t || t.type !== 'in') return false;
+        if ((t as any).invoiceId === invId || (t as any).invoice_id === invId) return true;
+        if (typeof t.id === 'string' && (t.id.includes(invId) || t.id.startsWith(`TRX-${invId}`))) return true;
+        if (typeof t.description === 'string' && t.description.includes(invId)) return true;
+        return false;
+      });
+    };
 
     // Sum sales for this treasury from shift invoices not yet recorded as individual transactions
     const invoiceSales = isMain ? 0 : effectiveInvoices.reduce((sum, inv) => {
       if (inv.status === 'cancelled') return sum;
-      if (invoiceIdsInTrx.has(inv.id)) return sum;
+      if (isInvoiceInTrx(inv.id)) return sum;
       if (inv.status === 'deferred' && (!inv.paid || Number(inv.paid) === 0) && (!inv.paymentMethods || inv.paymentMethods.length === 0)) {
         return sum;
       }

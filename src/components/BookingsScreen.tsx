@@ -1205,28 +1205,40 @@ export function BookingsScreen({
 
     // Create immediate financial transaction for this advance on its specific date
     const bBranchId = updatedBooking.branchId || activeBranchId || mainBranchId;
-    const newTrx: Transaction = {
-      id: 'TRX-ADV-' + Math.random().toString(36).substr(2, 9),
-      date: advDate + 'T' + new Date().toTimeString().split(' ')[0],
-      shiftDate: advShiftDate,
-      type: 'in',
-      amount: amt,
-      category: 'مقدم حجز',
-      description: `دفعة مقدمة / عربون لحجز #${updatedBooking.bookingCode || updatedBooking.id} - العميل: ${updatedBooking.clientName}`,
-      treasury: tId,
-      bookingId: updatedBooking.id,
-      shiftId: advShiftId,
-      createdBy: currentUser?.name || 'الكاشير',
-      userId: currentUser?.id,
-      userName: currentUser?.name || 'الكاشير',
-      branchId: bBranchId,
-      salonId: settings.salonId
-    };
+    const advTrxId = `TRX-ADV-${newAdv.id}`;
 
-    if (setTransactions) {
-      setTransactions(prev => [...prev, newTrx]);
+    // التحقق الصارم من عدم تكرار تسجيل حركة العربون لنفس الحجز
+    const trxAlreadyExists = (transactions || []).some(t =>
+      t.id === advTrxId ||
+      ((t.bookingId === updatedBooking.id || (t as any).booking_id === updatedBooking.id || (typeof t.description === 'string' && t.description.includes(updatedBooking.id))) &&
+        Math.abs(t.amount - amt) < 0.01 &&
+        (t.category === 'مقدم حجز' || t.category === 'booking_advance' || t.category === 'advance'))
+    );
+
+    if (!trxAlreadyExists) {
+      const newTrx: Transaction = {
+        id: advTrxId,
+        date: advDate + 'T' + new Date().toTimeString().split(' ')[0],
+        shiftDate: advShiftDate,
+        type: 'in',
+        amount: amt,
+        category: 'مقدم حجز',
+        description: `دفعة مقدمة / عربون لحجز #${updatedBooking.bookingCode || updatedBooking.id} - العميل: ${updatedBooking.clientName}`,
+        treasury: tId,
+        bookingId: updatedBooking.id,
+        shiftId: advShiftId,
+        createdBy: currentUser?.name || 'الكاشير',
+        userId: currentUser?.id,
+        userName: currentUser?.name || 'الكاشير',
+        branchId: bBranchId,
+        salonId: settings.salonId
+      };
+
+      if (setTransactions) {
+        setTransactions((prev: Transaction[]) => [...prev.filter(t => t.id !== advTrxId), newTrx]);
+      }
+      await DB.saveTransaction(newTrx);
     }
-    await DB.saveTransaction(newTrx);
 
     // Reset quick modal
     setShowQuickAdvanceModal(false);
@@ -1348,7 +1360,10 @@ export function BookingsScreen({
       notes: newBooking.notes?.trim() || undefined,
       internalNotes: newBooking.internalNotes?.trim() || undefined,
       services: finalServices,
-      advancePayments: newBooking.advancePayments || [],
+      advancePayments: (newBooking.advancePayments || []).map((a, idx) => ({
+        ...a,
+        id: a.id || ('ADV-' + (editingBooking?.id || bookingCreatedAt || Date.now()) + '-' + idx)
+      })),
       totalAmount: totals.netTotal,
       discountType: finalDiscountType,
       discountValue: finalDiscountValue,
@@ -1370,8 +1385,8 @@ export function BookingsScreen({
     };
 
     // Calculate newly added advance payments to generate financial transactions
-    const prevAdvIds = new Set((editingBooking?.advancePayments || []).map(a => a.id));
-    const brandNewAdvances = (booking.advancePayments || []).filter(a => !prevAdvIds.has(a.id));
+    const prevAdvIds = new Set((editingBooking?.advancePayments || []).map(a => a.id).filter(Boolean));
+    const brandNewAdvances = (booking.advancePayments || []).filter(a => a.id && !prevAdvIds.has(a.id));
 
     if (editingBooking) {
       setBookings((prev: Booking[]) => prev.map(b => b.id === booking.id ? { ...b, ...booking, _localEditedAt: Date.now() } : b));
@@ -1393,36 +1408,50 @@ export function BookingsScreen({
     // Auto generate financial transactions for brand new advance payments on their payment date
     if (brandNewAdvances.length > 0) {
       const effectiveShiftDate = (shiftData && shiftData.isOpen && shiftData.date) ? shiftData.date : undefined;
-      const newTrxs: Transaction[] = brandNewAdvances.map(adv => {
-        const advDatePart = adv.date ? adv.date.split('T')[0] : (effectiveShiftDate || new Date().toISOString().split('T')[0]);
-        const transDate = advDatePart + 'T' + new Date().toTimeString().split(' ')[0];
-        const isShiftMatch = Boolean(effectiveShiftDate && advDatePart === effectiveShiftDate);
-        const transShiftDate = isShiftMatch ? effectiveShiftDate : advDatePart;
-        const transShiftId = isShiftMatch ? ((shiftData as any).shiftId || (shiftData as any).id) : undefined;
-        return {
-          id: 'TRX-ADV-' + Math.random().toString(36).substr(2, 9),
-          date: transDate,
-          shiftDate: transShiftDate,
-          type: 'in',
-          amount: adv.amount,
-          category: 'مقدم حجز',
-          description: `دفعة مقدمة / عربون لحجز #${booking.bookingCode || booking.id} - العميل: ${booking.clientName}`,
-          treasury: adv.treasuryId,
-          bookingId: booking.id,
-          shiftId: transShiftId,
-          createdBy: currentUser?.name || 'الكاشير',
-          userId: currentUser?.id,
-          userName: currentUser?.name || 'الكاشير',
-          branchId: bBranchId,
-          salonId: settings.salonId
-        };
+      const advancesToRecord = brandNewAdvances.filter(adv => {
+        const advTrxId = `TRX-ADV-${adv.id}`;
+        const alreadyExists = (transactions || []).some(t =>
+          t.id === advTrxId ||
+          ((t.bookingId === booking.id || (t as any).booking_id === booking.id || (typeof t.description === 'string' && t.description.includes(booking.id))) &&
+            Math.abs(t.amount - adv.amount) < 0.01 &&
+            (t.category === 'مقدم حجز' || t.category === 'booking_advance' || t.category === 'advance'))
+        );
+        return !alreadyExists;
       });
 
-      if (setTransactions) {
-        setTransactions(prev => [...prev, ...newTrxs]);
-      }
-      for (const t of newTrxs) {
-        await DB.saveTransaction(t);
+      if (advancesToRecord.length > 0) {
+        const newTrxs: Transaction[] = advancesToRecord.map(adv => {
+          const advDatePart = adv.date ? adv.date.split('T')[0] : (effectiveShiftDate || new Date().toISOString().split('T')[0]);
+          const transDate = advDatePart + 'T' + new Date().toTimeString().split(' ')[0];
+          const isShiftMatch = Boolean(effectiveShiftDate && advDatePart === effectiveShiftDate);
+          const transShiftDate = isShiftMatch ? effectiveShiftDate : advDatePart;
+          const transShiftId = isShiftMatch ? ((shiftData as any).shiftId || (shiftData as any).id) : undefined;
+          return {
+            id: `TRX-ADV-${adv.id}`,
+            date: transDate,
+            shiftDate: transShiftDate,
+            type: 'in',
+            amount: adv.amount,
+            category: 'مقدم حجز',
+            description: `دفعة مقدمة / عربون لحجز #${booking.bookingCode || booking.id} - العميل: ${booking.clientName}`,
+            treasury: adv.treasuryId,
+            bookingId: booking.id,
+            shiftId: transShiftId,
+            createdBy: currentUser?.name || 'الكاشير',
+            userId: currentUser?.id,
+            userName: currentUser?.name || 'الكاشير',
+            branchId: bBranchId,
+            salonId: settings.salonId
+          };
+        });
+
+        if (setTransactions) {
+          const newIds = new Set(newTrxs.map(t => t.id));
+          setTransactions((prev: Transaction[]) => [...prev.filter(t => !newIds.has(t.id)), ...newTrxs]);
+        }
+        for (const t of newTrxs) {
+          await DB.saveTransaction(t);
+        }
       }
     }
 

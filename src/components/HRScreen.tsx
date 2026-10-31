@@ -1938,11 +1938,16 @@ export function HRScreen({
   // حساب الأرصدة الحية والدقيقة لجميع الخزائن من المعاملات والفواتير
   const treasuryBalances = useMemo(() => {
     const balances: Record<string, number> = {};
-    const knownInvoiceIds = new Set(
-      transactions
-        .filter(t => t.type === 'in' && ((t as any).invoiceId || (t as any).invoice_id))
-        .map(t => (t as any).invoiceId || (t as any).invoice_id)
-    );
+    const isInvoiceCovered = (invId: string) => {
+      if (!invId) return false;
+      return (transactions || []).some(t => {
+        if (!t || t.type !== 'in') return false;
+        if ((t as any).invoiceId === invId || (t as any).invoice_id === invId) return true;
+        if (typeof t.id === 'string' && (t.id.includes(invId) || t.id.startsWith(`TRX-${invId}`))) return true;
+        if (typeof t.description === 'string' && t.description.includes(invId)) return true;
+        return false;
+      });
+    };
 
     // 1. حساب صافي الحركات من المعاملات المسجلة
     transactions.forEach(t => {
@@ -1956,7 +1961,7 @@ export function HRScreen({
     // 2. إضافة إيرادات الفواتير المكتملة التي لم تسجل كمعاملات منفصلة
     invoices.forEach(inv => {
       if (inv.status === 'cancelled') return;
-      if (!knownInvoiceIds.has(inv.id)) {
+      if (!isInvoiceCovered(inv.id)) {
         const methods = (inv.paymentMethods && inv.paymentMethods.length > 0)
           ? inv.paymentMethods
           : [{ amount: Number(inv.total) || 0, treasuryId: (inv as any).treasuryId || (inv as any).paymentMethod || 'cash' }];

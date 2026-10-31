@@ -594,6 +594,36 @@ export const DB = {
       
       return resultData.map(row => {
         const camel = toCamel(row);
+
+        // Normalize transactions: recover invoiceId and bookingId if column was null
+        if (table === 'transactions' && camel) {
+          if (!camel.invoiceId && !camel.invoice_id) {
+            const fromId = typeof camel.id === 'string' ? camel.id.match(/INV-[A-Z0-9-]+/i)?.[0] : null;
+            const fromDesc = typeof camel.description === 'string' ? camel.description.match(/INV-[A-Z0-9-]+/i)?.[0] : null;
+            const recovered = fromId || fromDesc;
+            if (recovered) {
+              camel.invoiceId = recovered;
+              camel.invoice_id = recovered;
+            }
+          } else {
+            camel.invoiceId = camel.invoiceId || camel.invoice_id;
+            camel.invoice_id = camel.invoice_id || camel.invoiceId;
+          }
+
+          if (!camel.bookingId && !camel.booking_id) {
+            const fromId = typeof camel.id === 'string' ? camel.id.match(/BOK-[A-Z0-9-]+/i)?.[0] : null;
+            const fromDesc = typeof camel.description === 'string' ? (camel.description.match(/BOK-[A-Z0-9-]+/i)?.[0] || camel.description.match(/#([A-Za-z0-9-]+)/)?.[1]) : null;
+            const recovered = fromId || fromDesc;
+            if (recovered) {
+              camel.bookingId = recovered;
+              camel.booking_id = recovered;
+            }
+          } else {
+            camel.bookingId = camel.bookingId || camel.booking_id;
+            camel.booking_id = camel.booking_id || camel.bookingId;
+          }
+        }
+
         // Hydrate any local fallback properties if needed
         if (camel && camel.id) {
           try {
@@ -2306,8 +2336,8 @@ export const DB = {
         treasury: t.treasury || t.treasuryId || 'الخزينة الرئيسية',
         treasury_id: t.treasuryId || t.treasury || 'main',
         payment_method: t.paymentMethod || 'cash',
-        invoice_id: (t as any).invoiceId || (t as any).invoice_id || null,
-        booking_id: (t as any).bookingId || (t as any).booking_id || null,
+        invoice_id: (t as any).invoiceId || (t as any).invoice_id || (typeof t.id === 'string' ? t.id.match(/INV-[A-Z0-9-]+/i)?.[0] : null) || (typeof t.description === 'string' ? t.description.match(/INV-[A-Z0-9-]+/i)?.[0] : null) || null,
+        booking_id: (t as any).bookingId || (t as any).booking_id || (typeof t.id === 'string' ? t.id.match(/BOK-[A-Z0-9-]+/i)?.[0] : null) || (typeof t.description === 'string' ? (t.description.match(/BOK-[A-Z0-9-]+/i)?.[0] || t.description.match(/#([A-Za-z0-9-]+)/)?.[1]) : null) || null,
         shift_id: (t as any).shiftId || (t as any).shift_id || null,
         shift_code: (t as any).shiftCode || (t as any).shift_code || null,
         shift_date: t.shiftDate || null,
@@ -2330,8 +2360,12 @@ export const DB = {
         lastError = error;
         const errMsg = error.message || '';
 
-        // 1. Foreign Key constraints
+        // 1. Foreign Key constraints - allow 1 quick pause retry before stripping foreign keys
         if (error.code === '23503' || errMsg.includes('foreign key')) {
+          if (attempts === 1) {
+            await new Promise(res => setTimeout(res, 250));
+            continue;
+          }
           if (snap.invoice_id && (errMsg.includes('invoice_id') || error.details?.includes('invoices'))) {
             snap.invoice_id = null;
             continue;
@@ -5516,6 +5550,40 @@ export function dbInvoiceToApp(row: any): any {
     settledAt: row.settledAt || row.settled_at || undefined,
     originalDeferredDate: row.originalDeferredDate || row.original_deferred_date || undefined,
     createdAt: row.createdAt || row.created_at || undefined,
+  };
+}
+
+// تحويل بيانات الحركة المالية من قاعدة البيانات إلى كيان Transaction موحد ومكتمل مع استخراج أرقام الفواتير والحجوزات بدقة
+export function dbTransactionToApp(row: any): any {
+  if (!row) return {} as any;
+  const invId = row.invoiceId || row.invoice_id || (typeof row.id === 'string' ? row.id.match(/INV-[A-Z0-9-]+/i)?.[0] : null) || (typeof row.description === 'string' ? row.description.match(/INV-[A-Z0-9-]+/i)?.[0] : undefined);
+  const bokId = row.bookingId || row.booking_id || (typeof row.id === 'string' ? row.id.match(/BOK-[A-Z0-9-]+/i)?.[0] : null) || (typeof row.description === 'string' ? (row.description.match(/BOK-[A-Z0-9-]+/i)?.[0] || row.description.match(/#([A-Za-z0-9-]+)/)?.[1]) : undefined);
+
+  return {
+    ...row,
+    id: row.id,
+    salonId: row.salonId || row.salon_id,
+    branchId: row.branchId || row.branch_id || undefined,
+    branchCode: row.branchCode || row.branch_code || undefined,
+    date: row.date || row.created_at || row.createdAt || row.shift_date || row.shiftDate || new Date().toISOString(),
+    type: row.type || 'in',
+    amount: Number(row.amount || 0),
+    category: row.category || 'sales',
+    expenseCategory: row.expenseCategory || row.expense_category || '',
+    description: row.description || '',
+    treasury: row.treasury || row.treasuryId || 'cash',
+    treasuryId: row.treasuryId || row.treasury_id || row.treasury || 'cash',
+    paymentMethod: row.paymentMethod || row.payment_method || 'cash',
+    invoiceId: invId || undefined,
+    invoice_id: invId || undefined,
+    bookingId: bokId || undefined,
+    booking_id: bokId || undefined,
+    shiftId: row.shiftId || row.shift_id || undefined,
+    shiftCode: row.shiftCode || row.shift_code || undefined,
+    shiftDate: row.shiftDate || row.shift_date || '',
+    createdBy: row.createdBy || row.created_by || row.userName || row.user_name || '',
+    userName: row.userName || row.user_name || row.createdBy || row.created_by || '',
+    userId: row.userId || row.user_id || undefined
   };
 }
 

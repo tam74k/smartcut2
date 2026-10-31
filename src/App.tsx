@@ -60,7 +60,7 @@ import { printQueueSlipDirect } from './utils/printQueueSlip';
 import { AuthService, ROLE_LABELS } from './services/auth';
 import { SupabaseService } from './services/supabase';
 import { RealtimeSync } from './services/realtimeSync';
-import { DB, dbClientToApp, dbEmployeeToApp, dbServiceToApp, dbProductToApp, dbBookingToApp, dbInvoiceToApp, toCamel } from './services/db';
+import { DB, dbClientToApp, dbEmployeeToApp, dbServiceToApp, dbProductToApp, dbBookingToApp, dbInvoiceToApp, dbTransactionToApp, toCamel } from './services/db';
 import { SubscriptionService, evictExcessLocalStorage } from './services/subscriptionService';
 import { QueueService } from './services/queueService';
 import { completeBookingAndCreateHeldInvoice } from './services/bookingHeldInvoiceService';
@@ -584,12 +584,7 @@ export default function App() {
       setInvoices(data.invoices.map(dbInvoiceToApp));
     }
     if (data.transactions) {
-      setTransactions(data.transactions.map((t: any) => ({
-        ...t,
-        date: t.date || t.created_at || t.createdAt || t.shift_date || t.shiftDate || new Date().toISOString(),
-        expenseCategory: t.expenseCategory || t.expense_category || '', createdBy: t.createdBy || t.created_by || t.userName || t.user_name || '',
-        userId: t.userId || t.user_id || '', userName: t.userName || t.user_name || t.createdBy || t.created_by || '', shiftDate: t.shiftDate || t.shift_date || '', branchId: t.branchId || t.branch_id || undefined, treasuryId: t.treasuryId || t.treasury_id || undefined
-      })));
+      setTransactions(data.transactions.map(dbTransactionToApp));
     }
     if (data.bookings) {
       setBookings(data.bookings.map(dbBookingToApp));
@@ -812,14 +807,7 @@ export default function App() {
           // Pre-load transactions and invoices to guarantee accurate treasuries and shift closing
           DB.fetchTransactions(sId).then(dbTrxs => {
             if (dbTrxs && dbTrxs.length > 0) {
-              setTransactions(dbTrxs.map((t: any) => ({
-                ...t,
-                date: t.date || t.created_at || t.createdAt || t.shift_date || t.shiftDate || new Date().toISOString(),
-                expenseCategory: t.expenseCategory || t.expense_category || '', createdBy: t.createdBy || t.created_by || t.userName || t.user_name || '',
-                userId: t.userId || t.user_id || '', userName: t.userName || t.user_name || t.createdBy || t.created_by || '', shiftDate: t.shiftDate || t.shift_date || '', branchId: t.branchId || t.branch_id || undefined, treasuryId: t.treasuryId || t.treasury_id || undefined,
-                invoiceId: t.invoiceId || t.invoice_id || (typeof t.description === 'string' ? t.description.match(/INV-[A-Z0-9]+/)?.[0] : undefined),
-                invoice_id: t.invoice_id || t.invoiceId || (typeof t.description === 'string' ? t.description.match(/INV-[A-Z0-9]+/)?.[0] : undefined)
-              })));
+              setTransactions(dbTrxs.map(dbTransactionToApp));
             } else {
               setTransactions([]);
             }
@@ -1007,14 +995,7 @@ export default function App() {
         }
 
         if (dbTrxs && Array.isArray(dbTrxs)) {
-          setTransactions(dbTrxs.map((t: any) => ({
-            ...t,
-            expenseCategory: t.expenseCategory || t.expense_category || '',
-            createdBy: t.createdBy || t.created_by || t.userName || t.user_name || '',
-            userId: t.userId || t.user_id || '',
-            userName: t.userName || t.user_name || t.createdBy || t.created_by || '',
-            shiftDate: t.shiftDate || t.shift_date || '', branchId: t.branchId || t.branch_id || undefined, treasuryId: t.treasuryId || t.treasury_id || undefined
-          })));
+          setTransactions(dbTrxs.map(dbTransactionToApp));
         }
       } catch (err) {
         console.warn('[Realtime] Accounting sync error:', err);
@@ -1231,14 +1212,7 @@ export default function App() {
           setInvoices(updatedInvoices.map(dbInvoiceToApp));
         }
         if (updatedTrxs && Array.isArray(updatedTrxs)) {
-          setTransactions(updatedTrxs.map((t: any) => ({
-            ...t,
-            date: t.date || t.created_at || t.createdAt || t.shift_date || t.shiftDate || new Date().toISOString(),
-            expenseCategory: t.expenseCategory || t.expense_category || '', createdBy: t.createdBy || t.created_by || t.userName || t.user_name || '',
-            userId: t.userId || t.user_id || '', userName: t.userName || t.user_name || t.createdBy || t.created_by || '', shiftDate: t.shiftDate || t.shift_date || '', branchId: t.branchId || t.branch_id || undefined, treasuryId: t.treasuryId || t.treasury_id || undefined,
-            invoiceId: t.invoiceId || t.invoice_id || (typeof t.description === 'string' ? t.description.match(/INV-[A-Z0-9]+/)?.[0] : undefined),
-            invoice_id: t.invoice_id || t.invoiceId || (typeof t.description === 'string' ? t.description.match(/INV-[A-Z0-9]+/)?.[0] : undefined)
-          })));
+          setTransactions(updatedTrxs.map(dbTransactionToApp));
         }
       } catch (cloudErr) {
         console.warn('[Cloud-Sync] Refetch notice:', cloudErr);
@@ -1383,14 +1357,7 @@ export default function App() {
 
         // Sync Transactions
         if (polledTransactions && Array.isArray(polledTransactions)) {
-          setTransactions(polledTransactions.map((t: any) => ({
-            ...t,
-            expenseCategory: t.expenseCategory || t.expense_category || '',
-            createdBy: t.createdBy || t.created_by || t.userName || t.user_name || '',
-            userId: t.userId || t.user_id || '',
-            userName: t.userName || t.user_name || t.createdBy || t.created_by || '',
-            shiftDate: t.shiftDate || t.shift_date || '', branchId: t.branchId || t.branch_id || undefined, treasuryId: t.treasuryId || t.treasury_id || undefined
-          })));
+          setTransactions(polledTransactions.map(dbTransactionToApp));
         }
 
         // Sync Bookings
@@ -2019,7 +1986,7 @@ export default function App() {
     setTransactions(prev => {
       const currentSalonTrxs = prev.filter(t => !(t as any).salonId || (t as any).salonId === currentSalonId || (t as any).salon_id === currentSalonId);
       const next = typeof updater === 'function' ? updater(currentSalonTrxs) : updater;
-      const tagged = next.map(t => ({ ...t, salonId: (t as any).salonId || currentSalonId, branchId: (t as any).branchId || activeBranchId } as any));
+      const tagged = next.map(t => dbTransactionToApp({ ...t, salonId: (t as any).salonId || currentSalonId, branchId: (t as any).branchId || activeBranchId }));
       const other = prev.filter(t => (t as any).salonId && (t as any).salonId !== currentSalonId && (t as any).salon_id !== currentSalonId);
       const res = [...other, ...tagged];
 

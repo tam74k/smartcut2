@@ -63,7 +63,7 @@ export function TreasuryScreen({
     }
 
     // 2. إذا كانت الحركة مرتبطة بفاتورة مبيعات، استخراج اسم الكاشير / منشئ الفاتورة
-    const invId = trx.invoiceId || trx.invoice_id;
+    const invId = trx.invoiceId || trx.invoice_id || (typeof trx.id === 'string' ? trx.id.match(/INV-[A-Z0-9-]+/i)?.[0] : undefined) || (typeof trx.description === 'string' ? trx.description.match(/INV-[A-Z0-9-]+/i)?.[0] : undefined);
     if (invId && invoices && invoices.length > 0) {
       const matchedInv = invoices.find(i => i.id === invId || (i as any).invoiceNumber === invId);
       if (matchedInv) {
@@ -75,7 +75,7 @@ export function TreasuryScreen({
     }
 
     // 3. إذا كانت الحركة مرتبطة بحجز أو دفعة مقدمة
-    const bId = trx.bookingId || trx.booking_id;
+    const bId = trx.bookingId || trx.booking_id || (typeof trx.id === 'string' ? trx.id.match(/BOK-[A-Z0-9-]+/i)?.[0] : undefined) || (typeof trx.description === 'string' ? (trx.description.match(/BOK-[A-Z0-9-]+/i)?.[0] || trx.description.match(/#([A-Za-z0-9-]+)/)?.[1]) : undefined);
     if (bId && bookings && bookings.length > 0) {
       const matchedBooking = bookings.find(b => b.id === bId);
       if (matchedBooking) {
@@ -369,18 +369,64 @@ export function TreasuryScreen({
     'all' | 'sales' | 'expense' | 'purchases' | 'payroll' | 'transfer' | 'custody' | 'deposit_withdraw'
   >('all');
 
-  // دمج الحركات المسجلة مع أي فواتير مكتملة لم يُسجل لها حركة في جدول transactions لضمان ظهور كافة الفواتير كاش وفيزا بالجدول
+  // دمج الحركات المسجلة مع أي فواتير مكتملة لم يُسجل لها حركة في جدول transactions مع منع التكرار بشكل قطعي
   const unifiedTransactions = useMemo(() => {
-    const knownInvoiceIds = new Set(
-      transactions
-        .filter(t => (t as any).invoiceId || (t as any).invoice_id)
-        .map(t => (t as any).invoiceId || (t as any).invoice_id)
-    );
+    // 1. التحقق الشامل من تغطية أي فاتورة بحركة حقيقية مسجلة مسبقاً
+    const isInvoiceCovered = (invId: string) => {
+      if (!invId) return false;
+      return (transactions || []).some(t => {
+        if (!t) return false;
+        if ((t as any).invoiceId === invId || (t as any).invoice_id === invId) return true;
+        if (typeof t.id === 'string' && (t.id.includes(invId) || t.id.startsWith(`TRX-${invId}`))) return true;
+        if (typeof t.description === 'string' && t.description.includes(invId)) return true;
+        return false;
+      });
+    };
 
+    // 2. تنقية الحركات المسجلة وحذف أي حركات مصطنعة مكررة أو حركات عربون مكررة
+    const cleanedRealTrxs: Transaction[] = [];
+    const seenTrxKeys = new Set<string>();
+
+    (transactions || []).forEach(t => {
+      if (!t || !t.id) return;
+
+      // إذا كانت هناك حركة مصطنعة بادئة بـ TRX-INV-INV- وتوجد حركة أصلية مسجلة لنفس الفاتورة، نتجاهل المصطنعة تماماً
+      if (typeof t.id === 'string' && t.id.startsWith('TRX-INV-INV-')) {
+        const invMatch = t.id.match(/INV-[A-Z0-9-]+/i)?.[0];
+        if (invMatch) {
+          const hasOtherTrx = (transactions || []).some(o => o.id !== t.id && (
+            (o as any).invoiceId === invMatch ||
+            (o as any).invoice_id === invMatch ||
+            (typeof o.id === 'string' && o.id.includes(invMatch) && !o.id.startsWith('TRX-INV-INV-')) ||
+            (typeof o.description === 'string' && o.description.includes(invMatch))
+          ));
+          if (hasOtherTrx) return;
+        }
+      }
+
+      // منع تكرار نفس الحركة (بنفس الـ ID أو نفس الفاتورة/الحجز وطريقة الدفع والمبلغ والتاريخ)
+      const invId = (t as any).invoiceId || (t as any).invoice_id || (typeof t.id === 'string' ? t.id.match(/INV-[A-Z0-9-]+/i)?.[0] : null);
+      const bId = (t as any).bookingId || (t as any).booking_id || (typeof t.id === 'string' ? t.id.match(/BOK-[A-Z0-9-]+/i)?.[0] : null);
+
+      let dedupKey = t.id;
+      if (invId && (t.category === 'sales' || t.category === 'مبيعات')) {
+        dedupKey = `INV_${invId}_${t.treasury || (t as any).treasuryId}_${t.amount}_${(t.date || '').slice(0, 16)}`;
+      } else if (bId && (t.category === 'مقدم حجز' || t.category === 'booking_advance' || t.category === 'advance')) {
+        dedupKey = `BOK_${bId}_${t.treasury || (t as any).treasuryId}_${t.amount}_${(t.date || '').slice(0, 16)}`;
+      }
+
+      if (seenTrxKeys.has(dedupKey)) {
+        return; // حركة مكررة
+      }
+      seenTrxKeys.add(dedupKey);
+      cleanedRealTrxs.push(t);
+    });
+
+    // 3. إنشاء حركات افتراضية فقط للفواتير التي لا تملك أي حركة مالية على الإطلاق
     const syntheticTrxs: Transaction[] = [];
     (invoices || []).forEach(inv => {
       if (inv.status === 'cancelled' || (inv as any).is_cancelled || (inv as any).isCancelled) return;
-      if (knownInvoiceIds.has(inv.id)) return;
+      if (isInvoiceCovered(inv.id)) return;
 
       const methods = (inv.paymentMethods && inv.paymentMethods.length > 0)
         ? inv.paymentMethods
@@ -391,8 +437,10 @@ export function TreasuryScreen({
         const amt = Number(split.amount) || 0;
         if (amt <= 0) return;
 
+        // صياغة المعرف بدون تكرار بادئة INV
+        const baseId = inv.id.startsWith('INV-') ? `TRX-${inv.id}` : `TRX-INV-${inv.id}`;
         syntheticTrxs.push({
-          id: `TRX-INV-${inv.id}${methods.length > 1 ? `-${idx + 1}` : ''}`,
+          id: `${baseId}${methods.length > 1 ? `-${idx + 1}` : ''}`,
           salonId: (inv as any).salonId || (inv as any).salon_id || settings.salonId,
           date: inv.date,
           type: 'in',
@@ -403,12 +451,12 @@ export function TreasuryScreen({
           branchId: (inv as any).branchId || (inv as any).branch_id || activeBranchId,
           branchCode: (inv as any).branchCode || (inv as any).branch_code || activeBranch?.code,
           invoiceId: inv.id,
-          userName: (inv as any).cashierName || (inv as any).created_by || undefined
+          userName: (inv as any).cashierName || (inv as any).cashier_name || (inv as any).created_by || inv.createdBy || undefined
         } as any);
       });
     });
 
-    return [...transactions, ...syntheticTrxs];
+    return [...cleanedRealTrxs, ...syntheticTrxs];
   }, [transactions, invoices, settings.salonId, activeBranchId, activeBranch]);
 
   // ---- مقدمات الحجوزات المحصلة في تاريخ الوردية حسب طريقة الدفع ----

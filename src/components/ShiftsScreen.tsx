@@ -283,10 +283,16 @@ export function ShiftsScreen({
       return false;
     });
 
-    const invoiceIdsInTrx = new Set(
-      shiftTrxs.filter(t => t.type === 'in' && ((t as any).invoiceId || (t as any).invoice_id))
-        .map(t => (t as any).invoiceId || (t as any).invoice_id)
-    );
+    const isInvoiceInShiftTrx = (invId: string) => {
+      if (!invId) return false;
+      return shiftTrxs.some(t => {
+        if (!t || t.type !== 'in') return false;
+        if ((t as any).invoiceId === invId || (t as any).invoice_id === invId) return true;
+        if (typeof t.id === 'string' && (t.id.includes(invId) || t.id.startsWith(`TRX-${invId}`))) return true;
+        if (typeof t.description === 'string' && t.description.includes(invId)) return true;
+        return false;
+      });
+    };
 
     // Calculate income for each payment treasury & transfers from main
     const treasuryIncome: Record<string, number> = {};
@@ -307,7 +313,7 @@ export function ShiftsScreen({
       } else {
         // اعمدة (الكاش - فيزا - انستاباي - فوادفون - الخ ) تحتوي فقط الدخل الاجمالي لهذه الوردية فقط
         const invoiceSales = shiftInvs.reduce((sum, inv) => {
-          if (invoiceIdsInTrx.has(inv.id)) return sum;
+          if (isInvoiceInShiftTrx(inv.id)) return sum;
           const methods = inv.paymentMethods && inv.paymentMethods.length > 0
             ? inv.paymentMethods
             : [{ amount: Number(inv.total) || 0, treasuryId: inv.paymentMethod || 'cash' }];

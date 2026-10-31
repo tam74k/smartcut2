@@ -208,13 +208,20 @@ export function IncomeReportReceipt({
       // 2. فحص مبيعات الفواتير غير المسجلة كمعاملات منفصلة
       const dayUnrecordedInvoices: { amount: number; treasuryId: string }[] = [];
       if (invoices && Array.isArray(invoices)) {
-        const knownInvoiceIds = new Set(
-          dayTrxs.filter(t => (t as any).invoiceId || (t as any).invoice_id).map(t => (t as any).invoiceId || (t as any).invoice_id)
-        );
+        const isInvoiceCovered = (invId: string) => {
+          if (!invId) return false;
+          return dayTrxs.some(t => {
+            if (!t) return false;
+            if ((t as any).invoiceId === invId || (t as any).invoice_id === invId) return true;
+            if (typeof t.id === 'string' && (t.id.includes(invId) || t.id.startsWith(`TRX-${invId}`))) return true;
+            if (typeof t.description === 'string' && t.description.includes(invId)) return true;
+            return false;
+          });
+        };
         invoices.forEach(inv => {
           if (inv.status === 'cancelled' || (inv as any).is_cancelled || (inv as any).isCancelled) return;
           const invDate = (inv.date || (inv as any).createdAt || '').split('T')[0].trim();
-          if (invDate === dateStr && !knownInvoiceIds.has(inv.id)) {
+          if (invDate === dateStr && !isInvoiceCovered(inv.id)) {
             const methods = (inv.paymentMethods && inv.paymentMethods.length > 0)
               ? inv.paymentMethods
               : [{ amount: Number(inv.total) || 0, treasuryId: inv.treasuryId || inv.paymentMethod || 'cash' }];
