@@ -2311,9 +2311,9 @@ export const DB = {
         shift_id: (t as any).shiftId || (t as any).shift_id || null,
         shift_code: (t as any).shiftCode || (t as any).shift_code || null,
         shift_date: t.shiftDate || null,
-        created_by: t.createdBy || null, 
-        user_id: t.userId || null,
-        user_name: t.userName || null
+        created_by: t.userName || t.user_name || t.createdBy || t.created_by || t.createdByName || (typeof (t as any).cashierName === 'string' ? (t as any).cashierName : null) || null, 
+        user_id: t.userId || t.user_id || (t as any).createdById || (t as any).created_by_id || null,
+        user_name: t.userName || t.user_name || t.createdBy || t.created_by || t.createdByName || (typeof (t as any).cashierName === 'string' ? (t as any).cashierName : null) || null
       };
 
       let attempts = 0;

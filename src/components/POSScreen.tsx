@@ -549,9 +549,11 @@ export function POSScreen({
         shiftDate: assignedShiftDate,
         shiftId: assignedShiftId,
         shiftCode: assignedShiftCode,
-        createdBy: currentUser?.username || currentUser?.name,
-        createdByName: currentUser?.name || currentUser?.username,
-        createdById: currentUser?.id
+        createdBy: currentUser?.name || currentUser?.username || 'الكاشير',
+        createdByName: currentUser?.name || currentUser?.username || 'الكاشير',
+        userName: currentUser?.name || currentUser?.username || 'الكاشير',
+        createdById: currentUser?.id,
+        userId: currentUser?.id
       } as any;
 
       // حفظ المصروف في قاعدة البيانات

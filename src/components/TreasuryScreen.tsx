@@ -217,7 +217,7 @@ export function TreasuryScreen({
         amount: Number(trx.amount),
         treasuryName: treasuryName,
         note: trx.description || 'سلفة نقدية',
-        issuedBy: trx.userName || trx.createdBy || currentUser?.name || 'مدير النظام',
+        issuedBy: getTransactionActorName(trx) !== '-' ? getTransactionActorName(trx) : (currentUser?.name || 'مدير النظام'),
         shiftDate: trx.shiftDate
       });
     } else {
@@ -229,7 +229,7 @@ export function TreasuryScreen({
         amount: Number(trx.amount),
         treasuryName: treasuryName,
         note: trx.description || 'سند صرف مصروف',
-        issuedBy: trx.userName || trx.createdBy || currentUser?.name || 'مدير النظام',
+        issuedBy: getTransactionActorName(trx) !== '-' ? getTransactionActorName(trx) : (currentUser?.name || 'مدير النظام'),
         shiftDate: trx.shiftDate
       });
     }
@@ -599,7 +599,7 @@ export function TreasuryScreen({
       t.id,
       t.date ? new Date(t.date).toLocaleString('ar-SA') : '-',
       getTreasuryLabel(getTransactionTargetTreasuryId(t, settings.treasuries), settings.treasuries),
-      (t as any).userName || (t as any).createdBy || '-',
+      getTransactionActorName(t),
       t.type === 'in' ? 'إيداع / وارد' : 'صرف / صادر',
       translateCategory(t.category),
       t.description || '-',
@@ -1030,14 +1030,17 @@ export function TreasuryScreen({
                       </span>
                     </td>
                     <td className="py-3.5 px-4">
-                      {trx.userName || trx.createdBy ? (
-                        <span className="inline-flex items-center gap-1 text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md font-bold text-[11px]">
-                          <User size={11} className="text-slate-500" />
-                          <span>{trx.userName || trx.createdBy}</span>
-                        </span>
-                      ) : (
-                        <span className="text-slate-400">-</span>
-                      )}
+                      {(() => {
+                        const actor = getTransactionActorName(trx);
+                        return actor && actor !== '-' ? (
+                          <span className="inline-flex items-center gap-1 text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md font-bold text-[11px]">
+                            <User size={11} className="text-slate-500" />
+                            <span>{actor}</span>
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">-</span>
+                        );
+                      })()}
                     </td>
                     <td className="py-3.5 px-4">
                       {isCustody ? (

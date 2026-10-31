@@ -247,6 +247,8 @@ export function DashboardScreen({
           treasury: split.treasuryId,
           branchId: (inv as any).branchId || (inv as any).branch_id || activeBranchId,
           invoiceId: inv.id,
+          userName: (inv as any).cashierName || (inv as any).cashier_name || inv.createdBy || (inv as any).created_by || 'الكاشير',
+          createdBy: (inv as any).cashierName || (inv as any).cashier_name || inv.createdBy || (inv as any).created_by || 'الكاشير'
         } as any);
       });
     });

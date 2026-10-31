@@ -362,7 +362,10 @@ export function EmployeesScreen({
         treasury: quickActionForm.treasuryId,
         salonId: (emp as any).salonId || settings.salonId,
         branchId: emp.branchId || activeBranchId,
-        branchCode: branchCodeToUse
+        branchCode: branchCodeToUse,
+        createdBy: currentUser?.name || currentUser?.username || 'مدير النظام',
+        userName: currentUser?.name || currentUser?.username || 'مدير النظام',
+        userId: currentUser?.id
       } as any;
       if (setTransactions) {
         setTransactions(prev => [...(prev || []), trx]);
@@ -887,7 +890,10 @@ export function EmployeesScreen({
           treasury: advanceForm.treasuryId,
           salonId: (emp as any).salonId || settings.salonId,
           branchId: emp.branchId || activeBranchId,
-          branchCode: branchCodeToUse
+          branchCode: branchCodeToUse,
+          createdBy: currentUser?.name || currentUser?.username || 'مدير النظام',
+          userName: currentUser?.name || currentUser?.username || 'مدير النظام',
+          userId: currentUser?.id
         } as any;
         if (setTransactions) {
           setTransactions(prev => [...(prev || []), trx]);

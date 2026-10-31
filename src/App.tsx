@@ -586,8 +586,8 @@ export default function App() {
       setTransactions(data.transactions.map((t: any) => ({
         ...t,
         date: t.date || t.created_at || t.createdAt || t.shift_date || t.shiftDate || new Date().toISOString(),
-        expenseCategory: t.expenseCategory || t.expense_category || '', createdBy: t.createdBy || t.created_by || '',
-        userId: t.userId || t.user_id || '', userName: t.userName || t.user_name || '', shiftDate: t.shiftDate || t.shift_date || '', branchId: t.branchId || t.branch_id || undefined, treasuryId: t.treasuryId || t.treasury_id || undefined
+        expenseCategory: t.expenseCategory || t.expense_category || '', createdBy: t.createdBy || t.created_by || t.userName || t.user_name || '',
+        userId: t.userId || t.user_id || '', userName: t.userName || t.user_name || t.createdBy || t.created_by || '', shiftDate: t.shiftDate || t.shift_date || '', branchId: t.branchId || t.branch_id || undefined, treasuryId: t.treasuryId || t.treasury_id || undefined
       })));
     }
     if (data.bookings) {
@@ -814,8 +814,8 @@ export default function App() {
               setTransactions(dbTrxs.map((t: any) => ({
                 ...t,
                 date: t.date || t.created_at || t.createdAt || t.shift_date || t.shiftDate || new Date().toISOString(),
-                expenseCategory: t.expenseCategory || t.expense_category || '', createdBy: t.createdBy || t.created_by || '',
-                userId: t.userId || t.user_id || '', userName: t.userName || t.user_name || '', shiftDate: t.shiftDate || t.shift_date || '', branchId: t.branchId || t.branch_id || undefined, treasuryId: t.treasuryId || t.treasury_id || undefined,
+                expenseCategory: t.expenseCategory || t.expense_category || '', createdBy: t.createdBy || t.created_by || t.userName || t.user_name || '',
+                userId: t.userId || t.user_id || '', userName: t.userName || t.user_name || t.createdBy || t.created_by || '', shiftDate: t.shiftDate || t.shift_date || '', branchId: t.branchId || t.branch_id || undefined, treasuryId: t.treasuryId || t.treasury_id || undefined,
                 invoiceId: t.invoiceId || t.invoice_id || (typeof t.description === 'string' ? t.description.match(/INV-[A-Z0-9]+/)?.[0] : undefined),
                 invoice_id: t.invoice_id || t.invoiceId || (typeof t.description === 'string' ? t.description.match(/INV-[A-Z0-9]+/)?.[0] : undefined)
               })));
@@ -1009,9 +1009,9 @@ export default function App() {
           setTransactions(dbTrxs.map((t: any) => ({
             ...t,
             expenseCategory: t.expenseCategory || t.expense_category || '',
-            createdBy: t.createdBy || t.created_by || '',
+            createdBy: t.createdBy || t.created_by || t.userName || t.user_name || '',
             userId: t.userId || t.user_id || '',
-            userName: t.userName || t.user_name || '',
+            userName: t.userName || t.user_name || t.createdBy || t.created_by || '',
             shiftDate: t.shiftDate || t.shift_date || '', branchId: t.branchId || t.branch_id || undefined, treasuryId: t.treasuryId || t.treasury_id || undefined
           })));
         }
@@ -1233,8 +1233,8 @@ export default function App() {
           setTransactions(updatedTrxs.map((t: any) => ({
             ...t,
             date: t.date || t.created_at || t.createdAt || t.shift_date || t.shiftDate || new Date().toISOString(),
-            expenseCategory: t.expenseCategory || t.expense_category || '', createdBy: t.createdBy || t.created_by || '',
-            userId: t.userId || t.user_id || '', userName: t.userName || t.user_name || '', shiftDate: t.shiftDate || t.shift_date || '', branchId: t.branchId || t.branch_id || undefined, treasuryId: t.treasuryId || t.treasury_id || undefined,
+            expenseCategory: t.expenseCategory || t.expense_category || '', createdBy: t.createdBy || t.created_by || t.userName || t.user_name || '',
+            userId: t.userId || t.user_id || '', userName: t.userName || t.user_name || t.createdBy || t.created_by || '', shiftDate: t.shiftDate || t.shift_date || '', branchId: t.branchId || t.branch_id || undefined, treasuryId: t.treasuryId || t.treasury_id || undefined,
             invoiceId: t.invoiceId || t.invoice_id || (typeof t.description === 'string' ? t.description.match(/INV-[A-Z0-9]+/)?.[0] : undefined),
             invoice_id: t.invoice_id || t.invoiceId || (typeof t.description === 'string' ? t.description.match(/INV-[A-Z0-9]+/)?.[0] : undefined)
           })));
@@ -1385,9 +1385,9 @@ export default function App() {
           setTransactions(polledTransactions.map((t: any) => ({
             ...t,
             expenseCategory: t.expenseCategory || t.expense_category || '',
-            createdBy: t.createdBy || t.created_by || '',
+            createdBy: t.createdBy || t.created_by || t.userName || t.user_name || '',
             userId: t.userId || t.user_id || '',
-            userName: t.userName || t.user_name || '',
+            userName: t.userName || t.user_name || t.createdBy || t.created_by || '',
             shiftDate: t.shiftDate || t.shift_date || '', branchId: t.branchId || t.branch_id || undefined, treasuryId: t.treasuryId || t.treasury_id || undefined
           })));
         }
@@ -2923,6 +2923,9 @@ export default function App() {
     const oldMatchingTrxs = transactions.filter(isOldInvoiceTransaction);
     const oldTrxIds = oldMatchingTrxs.map(t => t.id).filter(Boolean);
 
+    const invActorName = invoiceWithBranch.cashierName || invoiceWithBranch.createdBy || (invoiceWithBranch as any).created_by || currentUser?.name || currentUser?.username || 'الكاشير';
+    const invActorId = invoiceWithBranch.cashierId || invoiceWithBranch.createdById || (invoiceWithBranch as any).created_by_id || currentUser?.id || undefined;
+
     const newTrxs: Transaction[] = effectiveSplits
       .filter(split => split.treasuryId !== 'cashback' && split.treasuryId !== 'remedy_free' && Number(split.amount) > 0)
       .map((split, idx) => ({
@@ -2941,7 +2944,10 @@ export default function App() {
         shiftCode: effectiveShiftCode,
         shiftDate: effectiveShiftDate,
         invoiceId: invoiceWithBranch.id,
-        invoice_id: invoiceWithBranch.id
+        invoice_id: invoiceWithBranch.id,
+        createdBy: invActorName,
+        userName: invActorName,
+        userId: invActorId
       } as any));
 
     // 2.b. If tip was paid via non-cash method and branch mode is 'instant_cash', deduct tip immediately from Cash Drawer
@@ -2967,7 +2973,10 @@ export default function App() {
           shiftCode: effectiveShiftCode,
           shiftDate: effectiveShiftDate,
           invoiceId: invoiceWithBranch.id,
-          invoice_id: invoiceWithBranch.id
+          invoice_id: invoiceWithBranch.id,
+          createdBy: invActorName,
+          userName: invActorName,
+          userId: invActorId
         } as any);
       }
     }
@@ -2992,7 +3001,10 @@ export default function App() {
           shiftCode: effectiveShiftCode,
           shiftDate: effectiveShiftDate,
           invoiceId: invoiceWithBranch.id,
-          invoice_id: invoiceWithBranch.id
+          invoice_id: invoiceWithBranch.id,
+          createdBy: invActorName,
+          userName: invActorName,
+          userId: invActorId
         } as any);
       });
     }

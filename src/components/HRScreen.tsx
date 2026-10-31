@@ -2044,7 +2044,10 @@ export function HRScreen({
         description: `صرف عمولة للموظف (${targetEmp.name}) - ${commNote}`,
         treasury: commTreasuryId,
         salonId: settings.salonId,
-        branchId: activeBranchId || settings.branchId
+        branchId: activeBranchId || settings.branchId,
+        createdBy: currentUser?.name || currentUser?.username || 'مدير النظام',
+        userName: currentUser?.name || currentUser?.username || 'مدير النظام',
+        userId: currentUser?.id
       };
 
       if (DB.saveTransaction) {
@@ -2410,7 +2413,10 @@ export function HRScreen({
         treasury: newAdvanceForm.treasuryId,
         salonId: (targetEmp as any).salonId || settings.salonId,
         branchId: targetEmp.branchId || activeBranchId,
-        branchCode: branchCodeToUse
+        branchCode: branchCodeToUse,
+        createdBy: currentUser?.name || currentUser?.username || 'مدير النظام',
+        userName: currentUser?.name || currentUser?.username || 'مدير النظام',
+        userId: currentUser?.id
       } as any;
 
       if (DB.saveTransaction) {
@@ -2907,7 +2913,10 @@ export function HRScreen({
         description: `صرف راتب الموظف (${item.emp.name}) عن شهر (${selectedMonth}) الفترة (${startDate} إلى ${endDate}) - ${disbursementNote}`,
         treasury: disbursementTreasuryId,
         branchId: activeBranchId || settings.branchId,
-        salonId: settings.salonId
+        salonId: settings.salonId,
+        createdBy: currentUser?.name || currentUser?.username || 'مدير النظام',
+        userName: currentUser?.name || currentUser?.username || 'مدير النظام',
+        userId: currentUser?.id
       };
       newTrxs.push(trx);
 

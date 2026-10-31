@@ -435,7 +435,10 @@ export function DeferredInvoicesScreen({
         treasuryId: settleTreasury,
         branchId: updatedInvoice.branchId || activeBranchId,
         branchCode: (branches?.find(b => b.id === (updatedInvoice.branchId || activeBranchId))?.code),
-        invoiceId: updatedInvoice.id
+        invoiceId: updatedInvoice.id,
+        createdBy: currentUser?.name || currentUser?.username || 'الكاشير',
+        userName: currentUser?.name || currentUser?.username || 'الكاشير',
+        userId: currentUser?.id
       } as any;
 
       // Save to DB

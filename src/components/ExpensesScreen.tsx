@@ -262,6 +262,7 @@ export function ExpensesScreen({
     const assignedShiftId = isMatchingCurrentShift ? ((shiftData as any).shiftId || (shiftData as any).id) : undefined;
 
     if (editingExpenseId) {
+      const actorName = currentUser?.name || currentUser?.username || 'المستخدم';
       setTransactions(transactions.map(t => {
         if (t.id === editingExpenseId) {
           const updated = {
@@ -275,7 +276,11 @@ export function ExpensesScreen({
             treasury: treasuryId,
             shiftDate: assignedShiftDate,
             shiftId: assignedShiftId,
-            updatedAt: nowIso
+            updatedAt: nowIso,
+            updatedBy: actorName,
+            userName: t.userName || actorName,
+            createdBy: t.createdBy || actorName,
+            userId: t.userId || currentUser?.id
           };
           DB.saveTransaction(updated, settings.salonId);
           return updated;
@@ -283,6 +288,7 @@ export function ExpensesScreen({
         return t;
       }));
     } else {
+      const actorName = currentUser?.name || currentUser?.username || 'المستخدم';
       const newTrx: Transaction = {
         id: 'EXP-' + Math.random().toString(36).substr(2, 9),
         date: tDate,
@@ -296,7 +302,10 @@ export function ExpensesScreen({
         salonId: settings.salonId,
         branchId: activeBranchId,
         shiftDate: assignedShiftDate,
-        shiftId: assignedShiftId
+        shiftId: assignedShiftId,
+        createdBy: actorName,
+        userName: actorName,
+        userId: currentUser?.id
       } as any;
       setTransactions([newTrx, ...transactions]);
       DB.saveTransaction(newTrx, settings.salonId);

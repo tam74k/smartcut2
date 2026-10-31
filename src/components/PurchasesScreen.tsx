@@ -1,4 +1,5 @@
 import { DB } from '../services/db';
+import { AuthService } from '../services/auth';
 import { useState, useMemo } from 'react';
 import { AppSettings, PurchaseInvoice, Supplier, Product, Transaction, ItemMovement, PurchaseInvoiceItem } from '../types';
 import { Plus, Trash2, Search, Printer, X, ShoppingCart, QrCode } from 'lucide-react';
@@ -17,7 +18,8 @@ export function PurchasesScreen({
   transactions,
   setTransactions,
   shiftData,
-  activeBranchId
+  activeBranchId,
+  currentUser
 }: {
   settings: AppSettings;
   purchaseInvoices: PurchaseInvoice[];
@@ -32,6 +34,7 @@ export function PurchasesScreen({
   setTransactions: (t: Transaction[]) => void;
   shiftData: { isOpen: boolean; date: string };
   activeBranchId?: string;
+  currentUser?: any;
 }) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -161,6 +164,8 @@ export function PurchasesScreen({
     
     // Create transaction if paid > 0
     if (paidAmount > 0) {
+      const activeUser = currentUser || AuthService.getCurrentUser();
+      const actorName = activeUser?.name || activeUser?.username || 'المسؤول';
       const purTrx: Transaction = {
         id: 'TRX-' + Math.random().toString(36).substring(2,9),
         salonId: settings.salonId,
@@ -171,7 +176,10 @@ export function PurchasesScreen({
         amount: paidAmount,
         category: 'purchase',
         treasury: treasuryId || settings.treasuries[0]?.id,
-        description: `دفعة فاتورة مشتريات رقم ${invoiceId} ${notes ? '- ' + notes : ''}`
+        description: `دفعة فاتورة مشتريات رقم ${invoiceId} ${notes ? '- ' + notes : ''}`,
+        createdBy: actorName,
+        userName: actorName,
+        userId: activeUser?.id
       };
       setTransactions([...transactions, purTrx]);
       DB.saveTransaction(purTrx, settings.salonId);
