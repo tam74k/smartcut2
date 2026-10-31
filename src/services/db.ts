@@ -1638,14 +1638,21 @@ export const DB = {
         depositRefundAllowedDays: depositRefundDays
       };
 
+      const tipPayoutMethodValue = settings.tipPayoutMethod || settings.tip_payout_method || existingUiSettings.tipPayoutMethod || existing?.tip_payout_method || 'instant_cash';
+      const allowNonCashTipsValue = settings.allowNonCashTips !== undefined 
+        ? Boolean(settings.allowNonCashTips) 
+        : (settings.allow_non_cash_tips !== undefined 
+            ? Boolean(settings.allow_non_cash_tips) 
+            : (existingUiSettings.allowNonCashTips ?? (existing?.allow_non_cash_tips !== undefined ? Boolean(existing.allow_non_cash_tips) : true)));
+
       const uiSettingsMerged = {
         ...existingUiSettings,
         depositRefundAllowedDays: depositRefundDays,
         openrouterApiKey: settings.openrouterApiKey || existingUiSettings.openrouterApiKey || null,
         openrouterModel: settings.openrouterModel || existingUiSettings.openrouterModel || null,
         instantCommissionFromDrawer: settings.instantCommissionFromDrawer !== undefined ? Boolean(settings.instantCommissionFromDrawer) : (existingUiSettings.instantCommissionFromDrawer ?? false),
-        tipPayoutMethod: settings.tipPayoutMethod || existingUiSettings.tipPayoutMethod || 'instant_cash',
-        allowNonCashTips: settings.allowNonCashTips !== undefined ? Boolean(settings.allowNonCashTips) : (existingUiSettings.allowNonCashTips ?? true),
+        tipPayoutMethod: tipPayoutMethodValue,
+        allowNonCashTips: allowNonCashTipsValue,
         enableDualPricing: settings.enableDualPricing !== undefined ? Boolean(settings.enableDualPricing) : (existingUiSettings.enableDualPricing ?? false),
         whatsappEnabled: settings.whatsappEnabled !== undefined ? Boolean(settings.whatsappEnabled) : (existingUiSettings.whatsappEnabled ?? (existing?.whatsapp_enabled !== undefined ? toBool(existing.whatsapp_enabled) : true)),
         whatsappSettings: settings.whatsappSettings || existingUiSettings.whatsappSettings || null
@@ -1696,6 +1703,12 @@ export const DB = {
         vat_rate: settings.vatRate ?? settings.vatPercentage ?? existing?.vat_rate ?? 15,
         zatca_enabled: settings.zatcaEnabled ?? existing?.zatca_enabled ?? false,
         enable_dual_pricing: settings.enableDualPricing !== undefined ? Boolean(settings.enableDualPricing) : (existing?.enable_dual_pricing ?? false),
+        tip_payout_method: tipPayoutMethodValue,
+        allow_non_cash_tips: allowNonCashTipsValue,
+        tips_enabled: allowNonCashTipsValue,
+        tips_direct_cash_deduction: tipPayoutMethodValue === 'instant_cash',
+        deposit_refund_allowed_days: depositRefundDays,
+        instant_commission_from_drawer: settings.instantCommissionFromDrawer !== undefined ? Boolean(settings.instantCommissionFromDrawer) : (uiSettingsMerged.instantCommissionFromDrawer ?? false),
         zatca_settings: settings.zatcaSettings || existing?.zatca_settings || null,
         eta_egypt_settings: settings.etaEgyptSettings || existing?.eta_egypt_settings || null,
         receipt_header_note: settings.receiptHeaderNote !== undefined ? settings.receiptHeaderNote : (existing?.receipt_header_note || ''),

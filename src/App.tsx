@@ -2276,10 +2276,9 @@ export default function App() {
     if (checkReadOnlyAndWarn()) return;
     setSettings(prev => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
+      localStorage.setItem('smartcut_app_settings', JSON.stringify(next));
       if (activeBranchId) {
         SubscriptionService.saveBranchSettings(activeBranchId, next);
-      } else {
-        localStorage.setItem('smartcut_app_settings', JSON.stringify(next));
       }
       const salonId = next.salonId || settings.salonId || (SubscriptionService.getSalons()[0]?.id || '');
       if (salonId) {

@@ -668,6 +668,9 @@ export function SettingsScreen({
       const updated = { ...prev, ...updates };
       try {
         localStorage.setItem('smartcut_app_settings', JSON.stringify(updated));
+        if (activeBranchId) {
+          SubscriptionService.saveBranchSettings(activeBranchId, updated);
+        }
         if (updated.salonId) {
           const instName = updated.evolutionInstanceName || updated.waInstantName;
           const apiKeyVal = updated.evolutionApiKey || updated.waApiKey;
@@ -846,6 +849,9 @@ export function SettingsScreen({
   const handleSave = async () => {
     try {
       localStorage.setItem('smartcut_app_settings', JSON.stringify(settings));
+      if (activeBranchId) {
+        SubscriptionService.saveBranchSettings(activeBranchId, settings);
+      }
       const targetSalonId = settings.salonId || currentUser?.salonId;
       if (targetSalonId) {
         const instName = settings.evolutionInstanceName || settings.waInstantName;
