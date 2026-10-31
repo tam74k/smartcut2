@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { AppSettings, Transaction, Invoice, Treasury, Employee, FingerprintLog } from '../types';
 import { calculateFingerprintProcessedDate } from '../services/db';
-import { resolveMainTreasury, getTransactionTargetTreasuryId } from '../utils/treasury';
+import { resolveMainTreasury, getTransactionTargetTreasuryId, getTreasuryLabel } from '../utils/treasury';
 
 function extractDatesFromLabel(label: string): string[] {
   const matches = label.match(/\d{4}-\d{2}-\d{2}/g);
@@ -248,13 +248,14 @@ export function ClosingReportReceipt({
 
   // تصفية الفواتير بدقة طبقاً لكود الوردية الحالي وليس التاريخ (إذا تم تمرير كود الوردية)
   const effectiveInvoices = useMemo(() => {
-    if (!targetShiftCode) return invoices;
-    return invoices.filter(inv => {
+    if (!targetShiftCode) return invoices.filter(inv => inv.status !== 'cancelled');
+    const matched = invoices.filter(inv => {
       if (inv.status === 'cancelled') return false;
       const invCode = (inv.shiftCode || (inv as any).shift_code || '').trim();
       const invShiftId = (inv.shiftId || (inv as any).shift_id || '').trim();
       return invCode === targetShiftCode || invShiftId === targetShiftCode;
     });
+    return matched.length > 0 ? matched : invoices.filter(inv => inv.status !== 'cancelled');
   }, [invoices, targetShiftCode]);
 
   // تصفية الحركات المالية بدقة طبقاً لكود الوردية الحالي مع استبعاد حركات الإغلاق والتصفير نهائياً
@@ -268,6 +269,51 @@ export function ClosingReportReceipt({
       return tCode === targetShiftCode || tShiftId === targetShiftCode || desc.includes(targetShiftCode);
     });
   }, [transactions, targetShiftCode]);
+
+  // قائمة ديناميكية شاملة لجميع الخزائن وطرق الدفع المستخدمة لضمان عدم إغفال أي طريقة دفع (فيزا، انستاباي، فودافون كاش، الخ)
+  const allReportTreasuries = useMemo(() => {
+    const list = [...(settings.treasuries || [])];
+    const knownIds = new Set(list.map(t => t.id));
+
+    // استكشاف أي خزائن مسجلة بالحركات المالية
+    effectiveTransactions.forEach(t => {
+      const assigned = getTransactionTargetTreasuryId(t, settings.treasuries);
+      if (assigned && !knownIds.has(assigned) && assigned !== 'main') {
+        knownIds.add(assigned);
+        list.push({
+          id: assigned,
+          name: t.treasuryName || getTreasuryLabel(assigned, settings.treasuries),
+          balance: 0,
+          isMain: false
+        });
+      }
+    });
+
+    // استكشاف أي طرق دفع أو خزائن مسجلة بالفواتير
+    effectiveInvoices.forEach(inv => {
+      if (inv.status === 'cancelled') return;
+      const methods = inv.paymentMethods && inv.paymentMethods.length > 0
+        ? inv.paymentMethods
+        : [{ amount: Number(inv.total) || 0, treasuryId: inv.paymentMethod || 'cash' }];
+      
+      methods.forEach((m: any) => {
+        const mId = m.treasuryId || m.paymentMethod || m.methodId || m.method || m.id;
+        if (!mId || mId === 'deferred' || mId === 'آجل' || mId === 'cashback') return;
+        const assigned = getTransactionTargetTreasuryId({ treasury: mId }, settings.treasuries);
+        if (assigned && !knownIds.has(assigned) && assigned !== 'main') {
+          knownIds.add(assigned);
+          list.push({
+            id: assigned,
+            name: getTreasuryLabel(assigned, settings.treasuries),
+            balance: 0,
+            isMain: false
+          });
+        }
+      });
+    });
+
+    return list;
+  }, [settings.treasuries, effectiveTransactions, effectiveInvoices]);
 
   // Helper to categorize
   const getStats = (treasuryId: string) => {
@@ -291,11 +337,19 @@ export function ClosingReportReceipt({
     const invoiceSales = isMain ? 0 : effectiveInvoices.reduce((sum, inv) => {
       if (inv.status === 'cancelled') return sum;
       if (invoiceIdsInTrx.has(inv.id)) return sum;
+      if (inv.status === 'deferred' && (!inv.paid || Number(inv.paid) === 0) && (!inv.paymentMethods || inv.paymentMethods.length === 0)) {
+        return sum;
+      }
       const methods = inv.paymentMethods && inv.paymentMethods.length > 0
         ? inv.paymentMethods
-        : [{ amount: Number(inv.total) || 0, treasuryId: inv.paymentMethod || 'cash' }];
+        : [{ 
+            amount: (inv.paid !== undefined && inv.paid !== null && !isNaN(Number(inv.paid))) ? Number(inv.paid) : (Number(inv.total) || 0), 
+            treasuryId: inv.paymentMethod || (inv as any).treasuryId || 'cash' 
+          }];
       const matched = methods.filter((pm: any) => {
-        const pmTarget = getTransactionTargetTreasuryId({ treasury: pm.treasuryId || pm.paymentMethod }, settings.treasuries);
+        const pmId = pm.treasuryId || pm.paymentMethod || pm.methodId || pm.method || pm.id;
+        if (pmId === 'deferred' || pmId === 'آجل' || pmId === 'cashback') return false;
+        const pmTarget = getTransactionTargetTreasuryId({ treasury: pmId }, settings.treasuries);
         return pmTarget === treasuryId;
       });
       return sum + matched.reduce((s: number, m: any) => s + (Number(m.amount) || 0), 0);
@@ -344,12 +398,12 @@ export function ClosingReportReceipt({
   // إجمالي المبيعات المحصلة فعلياً بكافة طرق الدفع والخزائن في هذه الوردية
   const totalCollectedSales = useMemo(() => {
     const mainTreasury = resolveMainTreasury(settings.treasuries);
-    return (settings.treasuries || []).reduce((acc, t) => {
+    return allReportTreasuries.reduce((acc, t) => {
       const isMain = t.isMain || t.id === 'main' || t.id === mainTreasury.id;
       if (isMain) return acc;
       return acc + getStats(t.id).income;
     }, 0);
-  }, [settings.treasuries, effectiveTransactions, effectiveInvoices]);
+  }, [allReportTreasuries, effectiveTransactions, effectiveInvoices]);
 
   // إجمالي المبيعات الآجلة (المتبقي الآجل للفواتير المؤجلة أو المسددة جزئياً في هذه الوردية)
   const totalDeferredSales = useMemo(() => {
@@ -468,7 +522,7 @@ export function ClosingReportReceipt({
       {(() => {
         const mainTreasury = resolveMainTreasury(settings.treasuries);
 
-        const visibleTreasuries = (settings.treasuries || []).filter(treasury => {
+        const visibleTreasuries = allReportTreasuries.filter(treasury => {
           const stats = getStats(treasury.id);
           const isMain = treasury.isMain || treasury.id === 'main' || treasury.id === mainTreasury.id;
 
