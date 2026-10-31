@@ -53,6 +53,42 @@ export function TreasuryScreen({
 
   const activeBranch = branches.find(b => b.id === activeBranchId);
 
+  const getTransactionActorName = (trx: any): string => {
+    if (!trx) return '-';
+
+    // 1. الاسم المسجل مباشرة في حركة الخزينة
+    const directName = trx.userName || trx.user_name || trx.createdByName || trx.createdBy || trx.cashierName || trx.cashier_name;
+    if (directName && typeof directName === 'string' && directName.trim() && directName.trim() !== '-') {
+      return directName.trim();
+    }
+
+    // 2. إذا كانت الحركة مرتبطة بفاتورة مبيعات، استخراج اسم الكاشير / منشئ الفاتورة
+    const invId = trx.invoiceId || trx.invoice_id;
+    if (invId && invoices && invoices.length > 0) {
+      const matchedInv = invoices.find(i => i.id === invId || (i as any).invoiceNumber === invId);
+      if (matchedInv) {
+        const invUser = (matchedInv as any).cashierName || matchedInv.createdBy || (matchedInv as any).cashier || (matchedInv as any).userName;
+        if (invUser && typeof invUser === 'string' && invUser.trim()) {
+          return invUser.trim();
+        }
+      }
+    }
+
+    // 3. إذا كانت الحركة مرتبطة بحجز أو دفعة مقدمة
+    const bId = trx.bookingId || trx.booking_id;
+    if (bId && bookings && bookings.length > 0) {
+      const matchedBooking = bookings.find(b => b.id === bId);
+      if (matchedBooking) {
+        const bUser = (matchedBooking as any).createdByName || (matchedBooking as any).createdBy || matchedBooking.stylistName;
+        if (bUser && typeof bUser === 'string' && bUser.trim()) {
+          return bUser.trim();
+        }
+      }
+    }
+
+    return '-';
+  };
+
   const handleOpenModal = (type: 'deposit' | 'withdraw' | 'transfer', specificTreasuryId?: string) => {
     setModalType(type);
     setAmount(0);
