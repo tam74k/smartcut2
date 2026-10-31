@@ -6,7 +6,8 @@ import {
   Branch, 
   Employee, 
   Service, 
-  AppUser 
+  AppUser,
+  TipRecord
 } from '../types';
 import { 
   Calendar, 
@@ -44,6 +45,7 @@ interface DailySheetScreenProps {
   activeBranchId?: string;
   currentUser?: AppUser | null;
   initialDate?: string;
+  tips?: TipRecord[];
 }
 
 export function DailySheetScreen({
@@ -56,7 +58,8 @@ export function DailySheetScreen({
   branches = [],
   activeBranchId,
   currentUser,
-  initialDate
+  initialDate,
+  tips = []
 }: DailySheetScreenProps) {
   // Current selected date in YYYY-MM-DD
   const todayStr = new Date().toISOString().split('T')[0];
@@ -153,19 +156,21 @@ export function DailySheetScreen({
   }, [dayInvoices, employees]);
 
   // 4. Map invoices per employee
-  // Under each active employee, list their invoices with invoice ID, methods amounts, and wasel
+  // Under each active employee, list their invoices with invoice ID, methods amounts, tip, and wasel
   const employeeData = useMemo(() => {
     return activeEmployees.map(emp => {
       // Find all invoices where this employee has services
       const invoicesForEmp: Array<{
         invoiceId: string;
         methodAmounts: Record<string, number>;
+        tipAmount: number;
         waselAmount: number;
         totalAmount: number;
         commission: number;
       }> = [];
 
       let totalSales = 0;
+      let totalTip = 0;
       let totalCommission = 0;
       const methodTotals: Record<string, number> = {};
       registeredMethods.forEach(m => { methodTotals[m.id] = 0; });
@@ -180,7 +185,7 @@ export function DailySheetScreen({
 
         if (empItems.length === 0) return;
 
-        // Technician's gross share of items
+        // Technician's actual gross share of items (المبلغ الفعلي للخدمات التي سوف يحاسب عليها الموظف)
         const empItemsTotal = empItems.reduce((sum, it) => {
           const p = Number(it.price || it.originalPrice || 0);
           const q = Number(it.quantity || 1);
@@ -206,6 +211,37 @@ export function DailySheetScreen({
           return sum + c;
         }, 0);
 
+        // Tip calculation for this employee in this invoice
+        const invBase = Number(inv.netAmount ?? inv.subtotal ?? inv.total ?? 0);
+        const splitsTotal = (inv.paymentMethods || []).reduce((s, pm) => s + (Number(pm.amount) || 0), 0);
+        let invTip = Number(inv.tipAmount ?? (inv as any).tips ?? (inv as any).tip ?? 0);
+        if (invTip === 0 && splitsTotal > invBase && invBase > 0) {
+          invTip = splitsTotal - invBase;
+        }
+
+        let empTip = 0;
+        const matchingTipRecord = (tips || []).find(t => t.invoiceId === inv.id && (t.employeeId === emp.id || t.employeeName === emp.name));
+        if (matchingTipRecord) {
+          empTip = Number(matchingTipRecord.amount) || 0;
+        } else if (invTip > 0) {
+          const isDirectlyAssigned = (inv.tipEmployeeId && inv.tipEmployeeId === emp.id) || 
+                                     (inv.tipEmployeeName && inv.tipEmployeeName.trim() === emp.name);
+          const isAssignedToOther = (inv.tipEmployeeId && inv.tipEmployeeId !== 'unspecified' && inv.tipEmployeeId !== emp.id) ||
+                                    (inv.tipEmployeeName && !inv.tipEmployeeName.includes('غير محدد') && inv.tipEmployeeName.trim() !== emp.name);
+
+          if (isDirectlyAssigned) {
+            empTip = invTip;
+          } else if (!isAssignedToOther) {
+            const allTechnicians = Array.from(new Set((inv.items || []).map(it => it.technicianId || it.technicianName).filter(Boolean)));
+            if (allTechnicians.length <= 1) {
+              empTip = invTip;
+            } else {
+              const allServicesTotal = (inv.items || []).reduce((s, it) => s + (Number(it.price || it.originalPrice || 0) * Number(it.quantity || 1)), 0);
+              empTip = allServicesTotal > 0 ? (empItemsTotal / allServicesTotal) * invTip : 0;
+            }
+          }
+        }
+
         const isWasel = isWaselInvoice(inv);
 
         const methodAmounts: Record<string, number> = {};
@@ -216,15 +252,14 @@ export function DailySheetScreen({
           waselAmount = empItemsTotal;
           totalWasel += waselAmount;
         } else {
-          // Total invoice effective paid amount
-          const invSubtotal = Number(inv.subtotal || 0) > 0 ? Number(inv.subtotal) : Number(inv.total || empItemsTotal);
-          const ratio = invSubtotal > 0 ? (empItemsTotal / invSubtotal) : 1;
-
+          // Strictly allocate the actual service amount (المبلغ الفعلي فقط) across payment methods
           if (inv.paymentMethods && inv.paymentMethods.length > 0) {
+            const totalMethodsSum = inv.paymentMethods.reduce((s, pm) => s + Number(pm.amount || 0), 0);
             inv.paymentMethods.forEach(pm => {
               const matchedMethod = registeredMethods.find(m => m.id === pm.treasuryId || m.name === pm.treasuryId);
               const mKey = matchedMethod ? matchedMethod.id : registeredMethods[0]?.id || 'cash';
-              const allocated = Number(pm.amount || 0) * ratio;
+              const ratio = totalMethodsSum > 0 ? (Number(pm.amount || 0) / totalMethodsSum) : (1 / inv.paymentMethods!.length);
+              const allocated = empItemsTotal * ratio;
               methodAmounts[mKey] = (methodAmounts[mKey] || 0) + allocated;
               methodTotals[mKey] = (methodTotals[mKey] || 0) + allocated;
             });
@@ -238,11 +273,13 @@ export function DailySheetScreen({
           totalSales += empItemsTotal;
         }
 
+        totalTip += empTip;
         totalCommission += empItemsCommission;
 
         invoicesForEmp.push({
           invoiceId: inv.id,
           methodAmounts,
+          tipAmount: empTip,
           waselAmount,
           totalAmount: empItemsTotal,
           commission: empItemsCommission
@@ -303,13 +340,14 @@ export function DailySheetScreen({
         invoices: invoicesForEmp,
         invoiceCount: invoicesForEmp.length,
         methodTotals,
+        totalTip,
         totalWasel,
         totalSales,
         totalCommission: finalCommission,
         commissionLabel
       };
     });
-  }, [activeEmployees, dayInvoices, registeredMethods, services, settings, selectedDate]);
+  }, [activeEmployees, dayInvoices, registeredMethods, services, settings, selectedDate, tips]);
 
   // 5. Staff Payments (المدفوعات: السلف والرواتب)
   const staffPayments = useMemo(() => {
@@ -471,17 +509,25 @@ export function DailySheetScreen({
     return employeeData.reduce((s, e) => s + e.totalWasel, 0);
   }, [employeeData]);
 
+  const totalOverallTips = useMemo(() => {
+    return employeeData.reduce((s, e) => s + (e.totalTip || 0), 0);
+  }, [employeeData]);
+
+  const totalOverallActualSales = useMemo(() => {
+    return employeeData.reduce((s, e) => s + (e.totalSales || 0), 0);
+  }, [employeeData]);
+
   const totalGrandIncome = useMemo(() => {
-    return Object.values(overallMethodTotals).reduce((s, val) => s + val, 0);
-  }, [overallMethodTotals]);
+    return Object.values(overallMethodTotals).reduce((s, val) => s + val, 0) + totalOverallTips;
+  }, [overallMethodTotals, totalOverallTips]);
 
   const netIncome = useMemo(() => {
     return totalGrandIncome - totalStaffPayments - totalDayExpenses;
   }, [totalGrandIncome, totalStaffPayments, totalDayExpenses]);
 
   // Total columns calculation for colspans
-  // Per employee: 1 (ID) + registeredMethods.length + 1 (Wasel)
-  const colsPerEmployee = 1 + registeredMethods.length + 1;
+  // Per employee: 1 (ID) + registeredMethods.length + 1 (Tip) + 1 (Wasel)
+  const colsPerEmployee = 1 + registeredMethods.length + 1 + 1;
   const totalEmployeeCols = activeEmployees.length * colsPerEmployee;
   // + 1 separator + 2 payments + 2 expenses
   const totalTableCols = totalEmployeeCols + 1 + 2 + 2;
@@ -598,6 +644,7 @@ export function DailySheetScreen({
       activeEmployees.forEach(emp => {
         headers.push(`${emp.name} - رقم`);
         registeredMethods.forEach(m => headers.push(`${emp.name} - ${m.name}`));
+        headers.push(`${emp.name} - بقشيش`);
         headers.push(`${emp.name} - واصل`);
       });
       headers.push('المدفوعات - الاسم', 'المدفوعات - المبلغ', 'المصروفات - النوع', 'المصروفات - المبلغ');
@@ -615,10 +662,12 @@ export function DailySheetScreen({
           if (inv) {
             rowData.push(inv.invoiceId);
             registeredMethods.forEach(m => rowData.push(inv.methodAmounts[m.id] ? Number(inv.methodAmounts[m.id].toFixed(2)) : ''));
+            rowData.push(inv.tipAmount ? Number(inv.tipAmount.toFixed(2)) : '');
             rowData.push(inv.waselAmount ? Number(inv.waselAmount.toFixed(2)) : '');
           } else {
             rowData.push('');
             registeredMethods.forEach(() => rowData.push(''));
+            rowData.push('');
             rowData.push('');
           }
         });
@@ -633,10 +682,10 @@ export function DailySheetScreen({
       }
 
       const summaryRows: any[][] = [
-        ['', ...activeEmployees.flatMap((_, idx) => [`العدد: ${employeeData[idx]?.invoiceCount || 0}`, ...registeredMethods.map(() => ''), '']), '', `م: ${totalStaffPayments.toFixed(2)}`, '', `م: ${totalDayExpenses.toFixed(2)}`],
-        ['', ...activeEmployees.flatMap((_, idx) => [`الإجمالي: ${(((employeeData[idx]?.totalSales || 0) + (employeeData[idx]?.totalWasel || 0))).toFixed(2)}`, ...registeredMethods.map(() => ''), '']), '', '', '', ''],
-        ['', ...activeEmployees.flatMap((_, idx) => [`العمولة: ${(employeeData[idx]?.totalCommission || 0).toFixed(2)}`, ...registeredMethods.map(() => ''), '']), '', '', '', ''],
-        [`إجمالي الدخل: ${totalGrandIncome.toFixed(2)}`, `صافي الدخل: ${netIncome.toFixed(2)}`]
+        ['', ...activeEmployees.flatMap((_, idx) => [`العدد: ${employeeData[idx]?.invoiceCount || 0}`, ...registeredMethods.map(() => ''), '', '']), '', `م: ${totalStaffPayments.toFixed(2)}`, '', `م: ${totalDayExpenses.toFixed(2)}`],
+        ['', ...activeEmployees.flatMap((_, idx) => [`الفعلي: ${(employeeData[idx]?.totalSales || 0).toFixed(2)} | بقشيش: +${(employeeData[idx]?.totalTip || 0).toFixed(2)}`, ...registeredMethods.map(() => ''), '', '']), '', '', '', ''],
+        ['', ...activeEmployees.flatMap((_, idx) => [`العمولة: ${(employeeData[idx]?.totalCommission || 0).toFixed(2)}`, ...registeredMethods.map(() => ''), '', '']), '', '', '', ''],
+        [`إجمالي الدخل: ${totalGrandIncome.toFixed(2)} (خدمات: ${totalOverallActualSales.toFixed(2)} | بقشيش: +${totalOverallTips.toFixed(2)})`, `صافي الدخل: ${netIncome.toFixed(2)}`]
       ];
 
       exportToExcel(
@@ -752,6 +801,12 @@ export function DailySheetScreen({
             <span className="text-xl font-black text-emerald-700 font-mono">{totalGrandIncome.toFixed(0)}</span>
             <span className="text-[10px] text-emerald-600 font-bold">{settings.currency}</span>
           </div>
+          {totalOverallTips > 0 && (
+            <div className="text-[9px] text-slate-500 font-medium mt-1 pt-1 border-t border-slate-100 flex items-center justify-between">
+              <span>خدمات: {totalOverallActualSales.toFixed(0)}</span>
+              <span className="text-purple-700 font-bold">بقشيش: +{totalOverallTips.toFixed(0)}</span>
+            </div>
+          )}
         </div>
 
         <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
@@ -848,7 +903,7 @@ export function DailySheetScreen({
                   </th>
                 </tr>
 
-                {/* Level 2: Sub-columns (رقم, كاش, فيزا, ..., واصل) */}
+                {/* Level 2: Sub-columns (رقم, كاش, فيزا, ..., بقشيش, واصل) */}
                 <tr className="text-[11px] font-bold">
                   {activeEmployees.map(emp => (
                     <React.Fragment key={emp.id}>
@@ -858,6 +913,12 @@ export function DailySheetScreen({
                           {m.name}
                         </th>
                       ))}
+                      <th 
+                        style={{ backgroundColor: '#f3e8ff', color: '#6b21a8' }} 
+                        className="border border-black py-1 px-1 min-w-10"
+                      >
+                        بقشيش
+                      </th>
                       <th className="border border-black py-1 px-1 bg-amber-50 text-amber-900 min-w-10">واصل</th>
                     </React.Fragment>
                   ))}
@@ -890,7 +951,7 @@ export function DailySheetScreen({
                             {inv ? inv.invoiceId : ''}
                           </td>
 
-                          {/* Dynamic Payment Method Amounts */}
+                          {/* Dynamic Payment Method Amounts (المبالغ الفعلية للخدمات فقط) */}
                           {registeredMethods.map(m => {
                             const val = inv?.methodAmounts[m.id];
                             return (
@@ -902,6 +963,14 @@ export function DailySheetScreen({
                               </td>
                             );
                           })}
+
+                          {/* Tip Column (مبلغ البقشيش بجانب المبالغ الفعلية) */}
+                          <td 
+                            style={{ backgroundColor: '#faf5ff', color: '#7e22ce' }} 
+                            className="border border-black py-1 px-1 font-mono font-bold"
+                          >
+                            {inv && inv.tipAmount > 0 ? `+${inv.tipAmount.toFixed(0)}` : ''}
+                          </td>
 
                           {/* Wasel Column */}
                           <td 
@@ -989,7 +1058,7 @@ export function DailySheetScreen({
                   </td>
                 </tr>
 
-                {/* Footer Row 2: Method Totals per employee */}
+                {/* Footer Row 2: Method Totals & Tips per employee */}
                 <tr>
                   {activeEmployees.map((emp, empIdx) => {
                     const empData = employeeData[empIdx];
@@ -1003,11 +1072,21 @@ export function DailySheetScreen({
                               key={m.id} 
                               style={{ backgroundColor: '#e0f7fa', fontWeight: 'bold', fontSize: '11px' }} 
                               className="border border-black py-1 px-1 font-mono text-slate-800"
+                              title={`إجمالي ${m.name} الفعلي لـ ${emp.name}`}
                             >
                               {val > 0 ? `${val.toFixed(0)}` : ''}
                             </td>
                           );
                         })}
+                        {/* Sum of Tips for this employee */}
+                        <td 
+                          style={{ backgroundColor: '#f3e8ff', fontWeight: 'bold', fontSize: '11px', color: '#6b21a8' }} 
+                          className="border border-black py-1 px-1 font-mono"
+                          title={`إجمالي بقشيش ${emp.name}`}
+                        >
+                          {empData && empData.totalTip > 0 ? `+${empData.totalTip.toFixed(0)}` : ''}
+                        </td>
+                        {/* Sum of Wasel */}
                         <td 
                           style={{ backgroundColor: '#e0f7fa', fontWeight: 'bold', fontSize: '11px' }} 
                           className="border border-black py-1 px-1 font-mono text-amber-900"
@@ -1022,24 +1101,44 @@ export function DailySheetScreen({
                   <td colSpan={2} style={{ backgroundColor: '#f0f0f0' }} className="border border-black p-1"></td>
                 </tr>
 
-                {/* Footer Row 3: Employee Grand Sales Totals */}
+                {/* Footer Row 3: Employee Grand Sales Totals & Tips Breakdown (سطر جمع فواتير الموظف) */}
                 <tr>
                   {activeEmployees.map((emp, empIdx) => {
                     const empData = employeeData[empIdx];
-                    const totalWork = (empData?.totalSales || 0) + (empData?.totalWasel || 0);
+                    const actualSales = empData?.totalSales || 0;
+                    const empTip = empData?.totalTip || 0;
+                    const wasel = empData?.totalWasel || 0;
+                    const grandSum = actualSales + empTip + wasel;
+
                     return (
                       <td 
                         key={emp.id} 
                         colSpan={colsPerEmployee} 
                         style={{ backgroundColor: '#b2dfdb', borderTop: '1px solid #009688', fontWeight: 'bold' }} 
-                        className="border border-black py-1.5 px-2 text-teal-950 text-xs"
+                        className="border border-black py-2 px-2 text-teal-950 text-xs text-right"
                       >
-                        الإجمالي: {totalWork.toFixed(0)}
-                        {empData && empData.totalWasel > 0 && (
-                          <span className="text-[10px] text-teal-800 font-normal block">
-                            (مدفوع: {empData.totalSales.toFixed(0)} | واصل: {empData.totalWasel.toFixed(0)})
-                          </span>
-                        )}
+                        <div className="space-y-0.5">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold">إجمالي الفعلي (خدمات):</span>
+                            <span className="font-mono text-xs">{actualSales.toFixed(0)}</span>
+                          </div>
+                          {empTip > 0 && (
+                            <div className="flex items-center justify-between text-purple-900 font-bold text-[11px]">
+                              <span>+ إجمالي البقشيش:</span>
+                              <span className="font-mono">+{empTip.toFixed(0)}</span>
+                            </div>
+                          )}
+                          {wasel > 0 && (
+                            <div className="flex items-center justify-between text-amber-900 text-[10px]">
+                              <span>واصل:</span>
+                              <span className="font-mono">{wasel.toFixed(0)}</span>
+                            </div>
+                          )}
+                          <div className="border-t border-teal-700/30 pt-0.5 mt-0.5 flex items-center justify-between font-black text-xs text-teal-950">
+                            <span>المجموع الكلي:</span>
+                            <span className="font-mono text-sm">{grandSum.toFixed(0)}</span>
+                          </div>
+                        </div>
                       </td>
                     );
                   })}
@@ -1073,8 +1172,8 @@ export function DailySheetScreen({
                 {/* Footer Row 5: Total Methods Bar across all employees */}
                 <tr style={{ backgroundColor: '#2c3e50', color: '#fff', fontWeight: 'bold' }}>
                   {(() => {
-                    // Split the available employee cols evenly among payment methods
-                    const methodCols = registeredMethods.length + 1; // registered + wasel
+                    // Split the available employee cols evenly among payment methods + tip + wasel
+                    const methodCols = registeredMethods.length + 1 + 1; // registered + tip + wasel
                     const spanPerMethod = Math.max(1, Math.floor(totalEmployeeCols / methodCols));
                     const remainder = totalEmployeeCols - (spanPerMethod * methodCols);
 
@@ -1093,6 +1192,12 @@ export function DailySheetScreen({
                             </td>
                           );
                         })}
+                        <td 
+                          colSpan={spanPerMethod} 
+                          className="border border-black py-2 px-2 text-xs font-mono font-bold text-purple-300"
+                        >
+                          إجمالي البقشيش: +{totalOverallTips.toFixed(0)}
+                        </td>
                         <td 
                           colSpan={spanPerMethod} 
                           className="border border-black py-2 px-2 text-xs font-mono font-bold text-amber-300"

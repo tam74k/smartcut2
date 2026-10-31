@@ -3562,6 +3562,7 @@ export default function App() {
           branches={branches}
           activeBranchId={activeBranchId}
           currentUser={currentUser}
+          tips={tips}
         />
       );
       case 'shifts': return (
