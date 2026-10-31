@@ -43,6 +43,7 @@ interface DailySheetScreenProps {
   branches?: Branch[];
   activeBranchId?: string;
   currentUser?: AppUser | null;
+  initialDate?: string;
 }
 
 export function DailySheetScreen({
@@ -54,11 +55,18 @@ export function DailySheetScreen({
   services = [],
   branches = [],
   activeBranchId,
-  currentUser
+  currentUser,
+  initialDate
 }: DailySheetScreenProps) {
   // Current selected date in YYYY-MM-DD
   const todayStr = new Date().toISOString().split('T')[0];
-  const [selectedDate, setSelectedDate] = useState<string>(todayStr);
+  const [selectedDate, setSelectedDate] = useState<string>(initialDate || todayStr);
+
+  useEffect(() => {
+    if (initialDate) {
+      setSelectedDate(initialDate);
+    }
+  }, [initialDate]);
 
   // Navigate dates
   const handlePrevDay = () => {

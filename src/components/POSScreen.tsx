@@ -5,7 +5,7 @@ import {
   Wrench, ShieldAlert, Camera, Crown, Sparkles, PauseCircle, PlayCircle,
   FilePlus2, Layers, Zap, AlertCircle, DollarSign, Coffee, Sliders, Save, AlertTriangle, Loader2,
   Printer, Eye, FileText, RotateCcw, Barcode, Hourglass, CheckCircle, Check,
-  Wallet, Ticket, Edit3, Gift, Lock, Info, Star, UserCheck
+  Wallet, Ticket, Edit3, Gift, Lock, Info, Star, UserCheck, TableProperties
 } from 'lucide-react';
 import { 
   AppSettings, CartItem, ServiceItem, Booking, Invoice, Client, Category, Employee,
@@ -22,6 +22,7 @@ import { AuthService } from '../services/auth';
 import { RealtimeSync } from '../services/realtimeSync';
 import { isBarberEmployee, isReferralEligibleEmployee } from '../utils/employeeHelper';
 import { ClosingReportReceipt } from './ClosingReportReceipt';
+import { DailySheetScreen } from './DailySheetScreen';
 import { printThermalFinancialVoucher } from './ThermalFinancialVoucher';
 import { directPrintHtml, isMobileOrTablet, printHtmlToMainServer } from '../utils/print';
 import { InvoiceReceiptCard, executePrintInvoiceReceipt, isSaudiSalon } from './InvoiceReceiptCard';
@@ -234,12 +235,14 @@ export function POSScreen({
   setProducts,
   setTransactions,
   setItemMovements,
+  onNavigateTab,
 }: { 
   settings: AppSettings, 
   branches?: Branch[],
   activeBranchId?: string,
   isShiftOpen: boolean,
   shiftDate: string,
+  onNavigateTab?: (tab: string) => void,
   initialBooking?: Booking | null, 
   initialHeldInvoice?: HeldInvoice | null,
   initialEditingInvoice?: Invoice | null,
@@ -2901,14 +2904,14 @@ export function POSScreen({
             <span>حضور وانصراف</span>
           </button>
 
-          {/* زر تقرير اليومية للوردية */}
+          {/* زر تقرير أعمال اليوم بالكامل */}
           <button
             type="button"
             onClick={() => setShowDailyReportModal(true)}
-            className="h-10 bg-white hover:bg-indigo-50/70 border border-slate-200 hover:border-indigo-200 text-slate-700 hover:text-indigo-900 px-2.5 sm:px-3 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer shrink-0 whitespace-nowrap active:scale-95"
-            title="عرض وطباعة تقرير اليومية للوردية الحالية"
+            className="h-10 bg-white hover:bg-slate-100 border border-black text-black px-2.5 sm:px-3 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer shrink-0 whitespace-nowrap active:scale-95"
+            title="عرض وطباعة تقرير أعمال اليوم بالكامل"
           >
-            <FileText size={15} className="text-indigo-600 shrink-0" />
+            <TableProperties size={15} className="text-black shrink-0" />
             <span>تقرير اليومية</span>
           </button>
 
@@ -4609,81 +4612,61 @@ export function POSScreen({
         </div>
       )}
 
-      {/* تقرير اليومية (الوردية الحالية) للاطلاع أو الطباعة المباشرة فقط بدون إغلاق الوردية */}
+      {/* تقرير أعمال اليوم بالكامل */}
       {showDailyReportModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-200">
-            <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold">
-                  <FileText size={18} />
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-7xl max-h-[96vh] flex flex-col overflow-hidden border-2 border-black animate-in fade-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="p-4 border-b border-black flex justify-between items-center bg-white">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-black text-white flex items-center justify-center font-bold">
+                  <TableProperties size={20} className="text-white" />
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-sm text-black">تقرير الوردية المفتوحة حالياً</h3>
-                  {effectiveShiftCode && <p className="text-[10px] text-black font-bold font-mono">كود الوردية: {effectiveShiftCode}</p>}
-                  <p className="text-[10px] text-black font-bold">{effectiveShiftDate}</p>
+                  <h3 className="font-black text-base text-black">تقرير أعمال اليوم بالكامل</h3>
+                  <p className="text-xs text-black font-semibold">
+                    حصر كافة أعمال اليوم ومبيعات الحلاقين والمصروفات والسلف وصافي الدخل لتاريخ ({effectiveShiftDate || new Date().toISOString().split('T')[0]})
+                  </p>
                 </div>
               </div>
-              <button 
-                onClick={() => setShowDailyReportModal(false)} 
-                className="text-black hover:text-red-500 p-1.5 rounded-lg transition-colors cursor-pointer"
-                title="إغلاق النافذة"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="p-4 bg-slate-100 overflow-y-auto flex justify-center max-h-[65vh]">
-              <div id="pos-daily-report-content" className="bg-white shadow-sm p-4 w-full rounded-2xl">
-                {(() => {
-                  const shiftTrxs = effectiveShiftCode
-                    ? (transactions || []).filter(t => (t.shiftCode === effectiveShiftCode || (t as any).shift_code === effectiveShiftCode || (t as any).shiftId === effectiveShiftCode || String(t.description || '').includes(effectiveShiftCode)))
-                    : (transactions || []).filter(t => (t.shiftDate && effectiveShiftDate && t.shiftDate === effectiveShiftDate) || t.date?.startsWith(effectiveShiftDate || ''));
-                  const shiftInvs = effectiveShiftCode
-                    ? (invoices || []).filter(i => (i.shiftCode === effectiveShiftCode || (i as any).shift_code === effectiveShiftCode || (i as any).shiftId === effectiveShiftCode))
-                    : (invoices || []).filter(i => (i.shiftDate && effectiveShiftDate && i.shiftDate === effectiveShiftDate) || i.date?.startsWith(effectiveShiftDate || ''));
-
-                  return (
-                    <ClosingReportReceipt 
-                      settings={settings}
-                      shiftCode={effectiveShiftCode}
-                      transactions={shiftTrxs}
-                      invoices={shiftInvs}
-                      dateLabel={effectiveShiftDate || new Date().toISOString().split('T')[0]}
-                      initialCash={shiftData?.initialCash || 0}
-                      userName={currentUser?.name || settings.ownerName || 'المسؤول'}
-                      employees={employees}
-                      fingerprintLogs={fingerprintLogs}
-                    />
-                  );
-                })()}
+              <div className="flex items-center gap-2">
+                {onNavigateTab && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowDailyReportModal(false);
+                      onNavigateTab('daily_sheet');
+                    }}
+                    className="px-3 py-1.5 bg-white hover:bg-slate-100 text-black border border-black rounded-xl text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1.5"
+                    title="فتح التقرير كصفحة رئيسية مستقلة"
+                  >
+                    <span>فتح كصفحة كاملة</span>
+                  </button>
+                )}
+                <button 
+                  onClick={() => setShowDailyReportModal(false)} 
+                  className="text-black hover:bg-slate-100 p-2 rounded-xl transition-colors cursor-pointer border border-black"
+                  title="إغلاق النافذة"
+                >
+                  <X size={20} />
+                </button>
               </div>
             </div>
 
-            <div className="p-4 bg-white border-t border-slate-100 flex items-center gap-3">
-              <button 
-                type="button"
-                onClick={() => setShowDailyReportModal(false)}
-                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95 text-xs"
-              >
-                <X size={16} />
-                <span>إغلاق</span>
-              </button>
-
-              <button 
-                type="button"
-                onClick={async () => {
-                  const el = document.getElementById('pos-daily-report-content');
-                  if (el) {
-                    await directPrintHtml(el.innerHTML, settings.printerName);
-                  }
-                }}
-                className="flex-[1.5] py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl shadow-md shadow-emerald-600/20 transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95 text-xs"
-                title="طباعة تقرير اليومية مباشرة على الطابعة الافتراضية بدون صناديق حوارية"
-              >
-                <Printer size={16} />
-                <span>طباعة مباشرة</span>
-              </button>
+            {/* Modal Body with DailySheetScreen */}
+            <div className="flex-1 overflow-y-auto p-2 sm:p-4 bg-slate-50">
+              <DailySheetScreen 
+                settings={settings}
+                invoices={invoices}
+                transactions={transactions}
+                expenses={transactions.filter(t => t.category === 'expense' || t.type === 'expense')}
+                employees={employees}
+                services={items as any}
+                branches={branches}
+                activeBranchId={activeBranchId}
+                currentUser={currentUser}
+                initialDate={effectiveShiftDate}
+              />
             </div>
           </div>
         </div>
