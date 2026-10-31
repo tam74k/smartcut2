@@ -532,17 +532,100 @@ const isStaffSalary = (t: any) => {
   );
 };
 
+export const isZeroingOrClosingTrx = (t: any): boolean => {
+  if (!t) return false;
+  if (t.isZeroing || t.isShiftZeroing || t.isClosing || t.subCategory === 'shift_zeroing') return true;
+  const desc = String(t.description || '').toLowerCase();
+  const cat = String(t.category || '').toLowerCase();
+  const id = String(t.id || '').toUpperCase();
+  
+  if (id.startsWith('TRX-OUT-') && (desc.includes('تصفير') || desc.includes('تفريغ') || desc.includes('إغلاق') || desc.includes('اغلاق'))) return true;
+  if (id.startsWith('TRX-IN-') && (desc.includes('تصفير') || desc.includes('تفريغ') || desc.includes('إغلاق') || desc.includes('اغلاق'))) return true;
+  
+  return (
+    desc.includes('تصفير') ||
+    desc.includes('تفريغ') ||
+    desc.includes('نقل الرصيد') ||
+    desc.includes('نقل رصيد') ||
+    desc.includes('ترحيل رصيد') ||
+    desc.includes('تحويل تصفير') ||
+    desc.includes('إغلاق وردية') ||
+    desc.includes('اغلاق وردية') ||
+    desc.includes('إغلاق الخزائن') ||
+    desc.includes('اغلاق الخزائن') ||
+    desc.includes('إغلاق الوردية') ||
+    desc.includes('اغلاق الوردية') ||
+    cat === 'shift_zeroing' ||
+    cat === 'zeroing' ||
+    cat === 'clearing' ||
+    cat.includes('تصفير') ||
+    cat.includes('تفريغ')
+  );
+};
+
+export const isInterTreasuryTransfer = (t: any): boolean => {
+  if (!t) return false;
+  if (isZeroingOrClosingTrx(t)) return true;
+  const cat = String(t.category || '').toLowerCase();
+  const desc = String(t.description || '').toLowerCase();
+  return (
+    cat === 'transfer' || 
+    cat.includes('transfer') || 
+    cat.includes('تحويل') || 
+    desc.includes('تحويل إلى') || 
+    desc.includes('تحويل الى') || 
+    desc.includes('تحويل من') ||
+    desc.includes('تحويل بين الخزائن')
+  );
+};
+
+const isCommissionTrx = (t: any): boolean => {
+  if (!t) return false;
+  if (isZeroingOrClosingTrx(t)) return false;
+  const isOut = t.type === 'out' || (t.type as string) === 'expense';
+  if (!isOut) return false;
+  const cat = String(t.category || '').toLowerCase();
+  const desc = String(t.description || '').toLowerCase();
+  const id = String(t.id || '').toUpperCase();
+  return (
+    id.startsWith('TRX-COM-') ||
+    cat === 'commission' ||
+    cat === 'commissions' ||
+    cat === 'commission_payout' ||
+    cat === 'صرف عمولة' ||
+    cat === 'عمولة' ||
+    cat === 'عمولات' ||
+    desc.includes('صرف عمولة') ||
+    desc.includes('عمولة فورية') ||
+    desc.includes('عمولات')
+  );
+};
+
 const isSupplierOrPurchase = (t: any) => {
   const isOut = t.type === 'out' || (t.type as string) === 'expense';
   if (!isOut) return false;
+  if (isZeroingOrClosingTrx(t)) return false;
   const cat = (t.category || '').toLowerCase();
+  const desc = (t.description || '').toLowerCase();
   const id = (t.id || '');
-  return id.startsWith('TRX-SUP-') || cat === 'supplier_payment' || cat === 'purchase' || cat.includes('مورد');
+  return (
+    id.startsWith('TRX-SUP-') || 
+    id.startsWith('TRX-PUR-') || 
+    cat === 'supplier_payment' || 
+    cat === 'purchase' || 
+    cat === 'purchases' || 
+    cat.includes('مورد') || 
+    cat.includes('مشتريات') || 
+    desc.includes('مورد') || 
+    desc.includes('مشتريات') ||
+    desc.includes('فاتورة شراء')
+  );
 };
 
 const isPartnerWithdrawal = (t: any) => {
   const isOut = t.type === 'out' || (t.type as string) === 'expense';
   if (!isOut) return false;
+  if (isZeroingOrClosingTrx(t)) return false;
   const cat = (t.category || '').toLowerCase();
   const id = (t.id || '');
   return id.startsWith('TRX-PARTNER-') || cat === 'profit_share' || cat.includes('شريك');
@@ -550,15 +633,29 @@ const isPartnerWithdrawal = (t: any) => {
 
 const isTipTrx = (t: any): boolean => {
   if (!t) return false;
+  if (isZeroingOrClosingTrx(t)) return false;
+  if (t.category === 'expense' || t.category === 'مصروفات' || (t.id && String(t.id).startsWith('EXP-'))) {
+    return false;
+  }
   const desc = String(t.description || '').toLowerCase();
   const cat = String(t.category || '').toLowerCase();
   const id = String(t.id || '').toUpperCase();
   return (
     id.startsWith('TRX-TIP-') ||
     cat === 'صرف بقشيش فوري' ||
+    cat === 'صرف بقشيش موظفين' ||
+    cat === 'صرف بقشيش' ||
     cat === 'بقشيش' ||
+    cat === 'إكرامية' ||
+    cat === 'إكراميات' ||
+    cat === 'tip' ||
+    cat === 'tips' ||
+    cat === 'tip_payout' ||
     cat.includes('بقشيش') ||
     cat.includes('إكرام') ||
+    desc.includes('صرف بقشيش') ||
+    desc.includes('بقشيش فوري') ||
+    desc.includes('بقشيش مصروف') ||
     desc.includes('بقشيش') ||
     desc.includes('إكرامية') ||
     desc.includes('اكرامية')
@@ -568,11 +665,15 @@ const isTipTrx = (t: any): boolean => {
 const isOperatingExpense = (t: any) => {
   const isOut = t.type === 'out' || (t.type as string) === 'expense';
   if (!isOut) return false;
+  // منع احتساب تفريغ الخزائن أو تحويلات إغلاق الورديات أو التحويل بين الخزائن نهائياً ضمن المصروفات
+  if (isZeroingOrClosingTrx(t)) return false;
+  if (isInterTreasuryTransfer(t)) return false;
   if (isStaffAdvance(t)) return false;
   if (isStaffSalary(t)) return false;
   if (isSupplierOrPurchase(t)) return false;
   if (isPartnerWithdrawal(t)) return false;
   if (isTipTrx(t)) return false;
+  if (isCommissionTrx(t)) return false;
   return true;
 };
 
@@ -843,8 +944,8 @@ export function OwnerExecutivePortal({
   // Finance Revenues Tab Filter (الكل، فواتير، مقدمات حجز)
   const [financeRevenueFilter, setFinanceRevenueFilter] = useState<'all' | 'invoices' | 'advances'>('all');
 
-  // Finance Outflows Tab Filter (الكل، مصروفات تشغيلية، سلف، رواتب)
-  const [financeOutflowFilter, setFinanceOutflowFilter] = useState<'all' | 'expenses' | 'salaries' | 'advances'>('all');
+  // Finance Outflows Tab Filter (الكل، مصروفات عامة، رواتب، سلف، عمولات، بقشيش، مشتريات)
+  const [financeOutflowFilter, setFinanceOutflowFilter] = useState<'all' | 'expenses' | 'salaries' | 'advances' | 'commissions' | 'tips' | 'purchases'>('all');
 
   // Salon Treasuries State (Synchronized with Supabase DB)
   const [liveTreasuries, setLiveTreasuries] = useState<Treasury[]>(() => {
@@ -1290,8 +1391,86 @@ export function OwnerExecutivePortal({
       });
     }
 
-    const totalOutflows = totalExpenses + totalSalaries + totalAdvances;
-    const netProfit = totalRevenue - totalOutflows;
+    // 4. Staff Commissions Paid (العمولات التي تم صرفها فعلياً للكادر)
+    let totalCommissionsPaid = 0;
+    activeStaff.forEach(emp => {
+      (emp.financialRecords || []).forEach((rec: any) => {
+        const recDate = (rec.shiftDate || (rec as any).shift_date || rec.date || '').split('T')[0].split(' ')[0].trim();
+        if (isDateInSelectedPeriod(recDate) && (rec.type === 'commission' || rec.type === 'service_commission')) {
+          totalCommissionsPaid += Number(rec.amount) || 0;
+        }
+      });
+    });
+    const trxCommissions = filteredTransactions.filter(isCommissionTrx);
+    if (totalCommissionsPaid === 0) {
+      totalCommissionsPaid = trxCommissions.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+    } else {
+      trxCommissions.forEach(t => {
+        const amt = Number(t.amount) || 0;
+        const alreadyCounted = activeStaff.some(emp => 
+          (emp.financialRecords || []).some((rec: any) => {
+            const recDate = (rec.shiftDate || (rec as any).shift_date || rec.date || '').split('T')[0].split(' ')[0].trim();
+            return (rec.type === 'commission' || rec.type === 'service_commission') && 
+              Math.abs((Number(rec.amount) || 0) - amt) < 0.01 &&
+              isDateInSelectedPeriod(recDate);
+          })
+        );
+        if (!alreadyCounted) totalCommissionsPaid += amt;
+      });
+    }
+
+    // 5. Staff Tips Disbursed (البقشيش الذي تم صرفه فعلياً للكادر)
+    let totalTipsPaid = 0;
+    activeStaff.forEach(emp => {
+      (emp.financialRecords || []).forEach((rec: any) => {
+        const recDate = (rec.shiftDate || (rec as any).shift_date || rec.date || '').split('T')[0].split(' ')[0].trim();
+        if (isDateInSelectedPeriod(recDate) && (rec.type === 'tip' || rec.type === 'tips')) {
+          totalTipsPaid += Number(rec.amount) || 0;
+        }
+      });
+    });
+    const trxTips = filteredTransactions.filter(isTipTrx);
+    if (totalTipsPaid === 0) {
+      totalTipsPaid = trxTips.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+    } else {
+      trxTips.forEach(t => {
+        const amt = Number(t.amount) || 0;
+        const alreadyCounted = activeStaff.some(emp => 
+          (emp.financialRecords || []).some((rec: any) => {
+            const recDate = (rec.shiftDate || (rec as any).shift_date || rec.date || '').split('T')[0].split(' ')[0].trim();
+            return (rec.type === 'tip' || rec.type === 'tips') && 
+              Math.abs((Number(rec.amount) || 0) - amt) < 0.01 &&
+              isDateInSelectedPeriod(recDate);
+          })
+        );
+        if (!alreadyCounted) totalTipsPaid += amt;
+      });
+    }
+
+    // 6. Purchases & Supplier Payments (المشتروات: المسدد في فواتير المشتريات + سندات سداد الموردين)
+    const periodPurchases = (purchases || []).filter(p => {
+      const inPeriod = isDateInSelectedPeriod(p.invoiceDate || p.date);
+      const isBranchMatch = matchesActiveBranch(p.branchId);
+      return inPeriod && isBranchMatch;
+    });
+    const totalPurchasesPaid = periodPurchases.reduce((sum, p) => sum + (Number(p.paidAmount) || 0), 0);
+
+    const periodSupplierPayments = (supplierPayments || []).filter(sp => {
+      const inPeriod = isDateInSelectedPeriod(sp.paymentDate || sp.date);
+      const isBranchMatch = matchesActiveBranch(sp.branchId);
+      return inPeriod && isBranchMatch;
+    });
+    const totalSupplierPayments = periodSupplierPayments.reduce((sum, sp) => sum + (Number(sp.amount) || 0), 0);
+    let totalPurchasesAndSuppliers = totalPurchasesPaid + totalSupplierPayments;
+
+    if (totalPurchasesAndSuppliers === 0) {
+      totalPurchasesAndSuppliers = filteredTransactions.filter(isSupplierOrPurchase).reduce((s, t) => s + (Number(t.amount) || 0), 0);
+    }
+
+    // المعادلة الصارمة: المصروفات التشغيلية = المصروفات + العمولات التي تم صرفها فعليا + البقشيش الذي تم صرفه + الرواتب + السلف + المشتروات
+    const totalOperatingExpenses = totalExpenses + totalCommissionsPaid + totalTipsPaid + totalSalaries + totalAdvances + totalPurchasesAndSuppliers;
+    const totalOutflows = totalOperatingExpenses;
+    const netProfit = totalRevenue - totalOperatingExpenses;
     const avgTicket = filteredInvoices.length > 0 ? (totalRevenue / filteredInvoices.length) : 0;
 
     return {
@@ -1305,15 +1484,21 @@ export function OwnerExecutivePortal({
       bankTransfer,
       tabTamara,
       other,
-      totalExpenses,
+      totalExpenses, // المصروفات العامة والنثرية
       totalSalaries,
       totalAdvances,
+      totalCommissionsPaid,
+      totalTipsPaid,
+      totalPurchasesPaid,
+      totalSupplierPayments,
+      totalPurchasesAndSuppliers,
+      totalOperatingExpenses, // المصروفات التشغيلية الشاملة
       totalOutflows,
       netProfit,
       invoiceCount: filteredInvoices.length,
       avgTicket
     };
-  }, [filteredInvoices, filteredTransactions, bookings, settings.treasuries, activeBranchId, isMainBranch, isAllBranches, period, dateRange, employees, expenses, bookingAdvancesList]);
+  }, [filteredInvoices, filteredTransactions, bookings, settings.treasuries, activeBranchId, isMainBranch, isAllBranches, period, dateRange, employees, expenses, purchases, supplierPayments, bookingAdvancesList]);
 
   // ---- حسابات وأرصدة الخزائن المسجلة في النظام (Registered Treasuries Balances & Stats) ----
   const treasuryStats = useMemo(() => {
@@ -1563,27 +1748,73 @@ export function OwnerExecutivePortal({
     const totalSupplierPayments = periodSupplierPayments.reduce((sum, sp) => sum + (Number(sp.amount) || 0), 0);
     const totalPurchasesAndSuppliers = totalPurchasesPaid + totalSupplierPayments;
 
-    // 5. Employee Commissions
+    // 5. Employee Commissions (العمولات التي تم صرفها فعلياً للكادر)
     let totalCommissions = 0;
-    filteredInvoices.forEach(inv => {
-      (inv.items || []).forEach((it: any) => {
-        totalCommissions += Number(it.employeeCommission || it.commissionAmount || 0);
+    activeStaff.forEach(emp => {
+      (emp.financialRecords || []).forEach((rec: any) => {
+        const recDate = (rec.shiftDate || (rec as any).shift_date || rec.date || '').split('T')[0].split(' ')[0].trim();
+        if (isDateInSelectedPeriod(recDate) && (rec.type === 'commission' || rec.type === 'service_commission')) {
+          totalCommissions += Number(rec.amount) || 0;
+        }
       });
     });
-
+    const trxCommissions = filteredTransactions.filter(isCommissionTrx);
     if (totalCommissions === 0) {
-      activeStaff.forEach(emp => {
-        (emp.financialRecords || []).forEach((rec: any) => {
-          const recDate = (rec.shiftDate || (rec as any).shift_date || rec.date || '').split('T')[0].split(' ')[0].trim();
-          if (isDateInSelectedPeriod(recDate) && (rec.type === 'commission' || rec.type === 'service_commission')) {
-            totalCommissions += Number(rec.amount) || 0;
-          }
+      totalCommissions = trxCommissions.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+    } else {
+      trxCommissions.forEach(t => {
+        const amt = Number(t.amount) || 0;
+        const alreadyCounted = activeStaff.some(emp => 
+          (emp.financialRecords || []).some((rec: any) => {
+            const recDate = (rec.shiftDate || (rec as any).shift_date || rec.date || '').split('T')[0].split(' ')[0].trim();
+            return (rec.type === 'commission' || rec.type === 'service_commission') && 
+              Math.abs((Number(rec.amount) || 0) - amt) < 0.01 &&
+              isDateInSelectedPeriod(recDate);
+          })
+        );
+        if (!alreadyCounted) totalCommissions += amt;
+      });
+    }
+
+    // إذا لم تسجل سندات صرف عمولات، نعرض عمولات بنود الفواتير كاستحقاق
+    if (totalCommissions === 0) {
+      filteredInvoices.forEach(inv => {
+        (inv.items || []).forEach((it: any) => {
+          totalCommissions += Number(it.employeeCommission || it.commissionAmount || 0);
         });
       });
     }
 
-    // 6. Net Profit Result
-    const totalDeductions = totalExpenses + totalSalaries + totalAdvances + totalPurchasesAndSuppliers + totalCommissions;
+    // 5.b Staff Tips Disbursed (البقشيش الذي تم صرفه فعلياً للكادر)
+    let totalTipsPaid = 0;
+    activeStaff.forEach(emp => {
+      (emp.financialRecords || []).forEach((rec: any) => {
+        const recDate = (rec.shiftDate || (rec as any).shift_date || rec.date || '').split('T')[0].split(' ')[0].trim();
+        if (isDateInSelectedPeriod(recDate) && (rec.type === 'tip' || rec.type === 'tips')) {
+          totalTipsPaid += Number(rec.amount) || 0;
+        }
+      });
+    });
+    const trxTips = filteredTransactions.filter(isTipTrx);
+    if (totalTipsPaid === 0) {
+      totalTipsPaid = trxTips.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+    } else {
+      trxTips.forEach(t => {
+        const amt = Number(t.amount) || 0;
+        const alreadyCounted = activeStaff.some(emp => 
+          (emp.financialRecords || []).some((rec: any) => {
+            const recDate = (rec.shiftDate || (rec as any).shift_date || rec.date || '').split('T')[0].split(' ')[0].trim();
+            return (rec.type === 'tip' || rec.type === 'tips') && 
+              Math.abs((Number(rec.amount) || 0) - amt) < 0.01 &&
+              isDateInSelectedPeriod(recDate);
+          })
+        );
+        if (!alreadyCounted) totalTipsPaid += amt;
+      });
+    }
+
+    // 6. Net Profit Result: المصروفات التشغيلية = المصروفات + العمولات التي تم صرفها فعليا + البقشيش الذي تم صرفه + الرواتب + السلف + المشتروات
+    const totalDeductions = totalExpenses + totalSalaries + totalAdvances + totalPurchasesAndSuppliers + totalCommissions + totalTipsPaid;
     const netProfit = grossIncome - totalDeductions;
     const profitMargin = grossIncome > 0 ? (netProfit / grossIncome) * 100 : 0;
 
@@ -1612,12 +1843,19 @@ export function OwnerExecutivePortal({
         percent: grossIncome > 0 ? (totalBookingAdvances / grossIncome) * 100 : 0, 
         note: `${bookingAdvancesCount} دفعة مقدم حجز محصلة (${totalBookingAdvances.toFixed(0)} ${currency})` 
       },
-      { id: 'expenses', label: 'جميع المصروفات التشغيلية والنثرية', amount: totalExpenses, type: 'minus', percent: grossIncome > 0 ? (totalExpenses / grossIncome) * 100 : 0, note: 'مصروفات الإيجار والفواتير والنثريات' },
+      { id: 'expenses', label: 'المصروفات العامة والتشغيلية والنثرية', amount: totalExpenses, type: 'minus', percent: grossIncome > 0 ? (totalExpenses / grossIncome) * 100 : 0, note: 'مصروفات الإيجار والفواتير والنثريات' },
       { id: 'salaries', label: 'الرواتب الأساسية ومسيرات الصرف', amount: totalSalaries, type: 'minus', percent: grossIncome > 0 ? (totalSalaries / grossIncome) * 100 : 0, note: 'مسيرات الرواتب المنصرفة' },
       { id: 'advances', label: 'سلف الموظفين المصروفة', amount: totalAdvances, type: 'minus', percent: grossIncome > 0 ? (totalAdvances / grossIncome) * 100 : 0, note: 'السلف الممنوحة خلال الفترة' },
-      { id: 'purchases', label: 'المسدد في فواتير المشتريات', amount: totalPurchasesPaid, type: 'minus', percent: grossIncome > 0 ? (totalPurchasesPaid / grossIncome) * 100 : 0, note: 'دفعات فواتير مخزون المنتجات' },
-      { id: 'supplier_payments', label: 'سندات سداد دفعات الموردين', amount: totalSupplierPayments, type: 'minus', percent: grossIncome > 0 ? (totalSupplierPayments / grossIncome) * 100 : 0, note: 'سندات صكوك ودفعات الموردين' },
-      { id: 'commissions', label: 'عمولات الموظفين على الخدمات والمنتجات', amount: totalCommissions, type: 'minus', percent: grossIncome > 0 ? (totalCommissions / grossIncome) * 100 : 0, note: 'استحقاقات الفنيين عن المبيعات' },
+      { id: 'purchases', label: 'المسدد في فواتير المشتريات والموردين', amount: totalPurchasesAndSuppliers, type: 'minus', percent: grossIncome > 0 ? (totalPurchasesAndSuppliers / grossIncome) * 100 : 0, note: `مشتريات: ${totalPurchasesPaid.toFixed(0)} + موردين: ${totalSupplierPayments.toFixed(0)}` },
+      { id: 'commissions', label: 'عمولات الموظفين المصروفة فعلياً', amount: totalCommissions, type: 'minus', percent: grossIncome > 0 ? (totalCommissions / grossIncome) * 100 : 0, note: 'العمولات المصروفة والمستحقة للكادر' },
+      ...(totalTipsPaid > 0 ? [{
+        id: 'tips_paid',
+        label: 'البقشيش المصروف فعلياً للكادر',
+        amount: totalTipsPaid,
+        type: 'minus' as const,
+        percent: grossIncome > 0 ? (totalTipsPaid / grossIncome) * 100 : 0,
+        note: 'إكراميات مصروفة ومسلمة للموظفين'
+      }] : []),
       { id: 'net_profit', label: 'صافي الربح الفعلي بعد كافة الاستقطاعات', amount: netProfit, type: 'result', percent: profitMargin, note: `هامش الربح: ${profitMargin.toFixed(1)}%` }
     ];
 
@@ -1634,6 +1872,7 @@ export function OwnerExecutivePortal({
       totalSupplierPayments,
       totalPurchasesAndSuppliers,
       totalCommissions,
+      totalTipsPaid,
       totalDeductions,
       netProfit,
       profitMargin,
@@ -2236,7 +2475,7 @@ export function OwnerExecutivePortal({
   const combinedOutflows = useMemo(() => {
     const items: Array<{
       id: string;
-      kind: 'expense' | 'salary' | 'advance';
+      kind: 'expense' | 'salary' | 'advance' | 'commission' | 'tip' | 'purchase';
       label: string;
       title: string;
       recipientOrCategory: string;
@@ -2409,13 +2648,65 @@ export function OwnerExecutivePortal({
       }
     });
 
-    // 4. Staff Instant Tips Disbursed (صرف بقشيش فوري للكادر)
+    // 4. Staff Commissions Paid (العمولات المصروفة فعلياً)
+    const addedCommissionKeys = new Set<string>();
+    activeStaff.forEach(emp => {
+      (emp.financialRecords || []).forEach((rec: any) => {
+        const recDate = (rec.shiftDate || (rec as any).shift_date || rec.date || '').split('T')[0].split(' ')[0].trim();
+        if (isDateInSelectedPeriod(recDate) && (rec.type === 'commission' || rec.type === 'service_commission')) {
+          const { date, time, ts } = parseDateTime(rec.shiftDate || (rec as any).shift_date || rec.date);
+          const amt = Number(rec.amount) || 0;
+          const key = `${emp.name}_${amt}_${date}`;
+          addedCommissionKeys.add(key);
+          items.push({
+            id: rec.id || `COM-${emp.id}-${date}`,
+            kind: 'commission',
+            label: 'صرف عمولة',
+            title: `عمولة: ${emp.name}`,
+            recipientOrCategory: emp.name,
+            amount: amt,
+            paymentMethodOrTreasury: (rec as any).treasuryName || (rec as any).paymentMethod || 'نقدي',
+            date,
+            time,
+            notes: rec.note || 'صرف عمولة فنية',
+            timestamp: ts
+          });
+        }
+      });
+    });
+
+    const trxCommissions = filteredTransactions.filter(isCommissionTrx);
+    trxCommissions.forEach(tx => {
+      const { date, time, ts } = parseDateTime(tx.shiftDate || (tx as any).shift_date || tx.date);
+      const amt = Number(tx.amount) || 0;
+      const matchedEmp = activeStaff.find(e => tx.description?.includes(e.name));
+      const empName = matchedEmp ? matchedEmp.name : (tx.description?.split(' ')[1] || 'موظف');
+      const key = `${empName}_${amt}_${date}`;
+      if (!addedCommissionKeys.has(key)) {
+        addedCommissionKeys.add(key);
+        items.push({
+          id: tx.id,
+          kind: 'commission',
+          label: 'صرف عمولة',
+          title: `عمولة: ${empName}`,
+          recipientOrCategory: empName,
+          amount: amt,
+          paymentMethodOrTreasury: (tx as any).treasuryName || tx.paymentMethod || 'نقدي',
+          date,
+          time,
+          notes: tx.description || 'صرف عمولة',
+          timestamp: ts
+        });
+      }
+    });
+
+    // 5. Staff Instant Tips Disbursed (صرف بقشيش فوري للكادر)
     const directTipTx = filteredTransactions.filter(isTipTrx);
     directTipTx.forEach(tx => {
       const { date, time, ts } = parseDateTime(tx.shiftDate || (tx as any).shift_date || tx.date);
       items.push({
         id: tx.id,
-        kind: 'expense',
+        kind: 'tip',
         label: 'صرف بقشيش فوري',
         title: tx.category || 'بقشيش فوري',
         recipientOrCategory: tx.description?.includes('للموظف') ? tx.description.split('للموظف')[1].trim() : 'الموظف',
@@ -2428,8 +2719,45 @@ export function OwnerExecutivePortal({
       });
     });
 
+    // 6. Purchases & Supplier Payments (المشتروات وسندات الموردين)
+    const periodPurchases = (purchases || []).filter(p => isDateInSelectedPeriod(p.invoiceDate || p.date) && matchesActiveBranch(p.branchId));
+    periodPurchases.forEach(p => {
+      const { date, time, ts } = parseDateTime(p.invoiceDate || p.date);
+      items.push({
+        id: p.id || `PUR-${Math.random()}`,
+        kind: 'purchase',
+        label: 'فاتورة مشتريات',
+        title: p.supplierName ? `مشتريات: ${p.supplierName}` : 'مشتريات مخزون',
+        recipientOrCategory: p.supplierName || 'مورد',
+        amount: Number(p.paidAmount) || 0,
+        paymentMethodOrTreasury: p.paymentMethod || 'نقدي',
+        date,
+        time,
+        notes: `فاتورة شراء #${p.invoiceNumber || p.id || ''}`,
+        timestamp: ts
+      });
+    });
+
+    const periodSuppliers = (supplierPayments || []).filter(sp => isDateInSelectedPeriod(sp.paymentDate || sp.date) && matchesActiveBranch(sp.branchId));
+    periodSuppliers.forEach(sp => {
+      const { date, time, ts } = parseDateTime(sp.paymentDate || sp.date);
+      items.push({
+        id: sp.id || `SUP-${Math.random()}`,
+        kind: 'purchase',
+        label: 'سند سداد مورد',
+        title: sp.supplierName ? `سداد: ${sp.supplierName}` : 'دفعة مورد',
+        recipientOrCategory: sp.supplierName || 'مورد',
+        amount: Number(sp.amount) || 0,
+        paymentMethodOrTreasury: sp.paymentMethod || 'نقدي',
+        date,
+        time,
+        notes: sp.notes || 'سند دفع لمورد',
+        timestamp: ts
+      });
+    });
+
     return items.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-  }, [filteredTransactions, expenses, employees, activeBranchId, isMainBranch, isAllBranches, period, dateRange]);
+  }, [filteredTransactions, expenses, employees, activeBranchId, isMainBranch, isAllBranches, period, dateRange, purchases, supplierPayments]);
 
   // الحجوزات المصفاة في تبويب الحجوزات
   const filteredBookingsList = useMemo(() => {
@@ -3132,29 +3460,47 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                  <div className="bg-slate-950/70 p-2.5 rounded-xl border border-slate-800/80">
-                    <span className="text-[10px] text-slate-400 block mb-0.5">مصروفات تشغيلية</span>
+                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 text-xs">
+                  <div className="bg-slate-950/70 p-2 rounded-xl border border-slate-800/80">
+                    <span className="text-[10px] text-slate-400 block mb-0.5">مصروفات عامة</span>
                     <span className="font-mono font-black text-rose-400">
                       {revenueStats.totalExpenses.toLocaleString()} <span className="text-[9px] font-normal text-slate-400">{currency}</span>
                     </span>
                   </div>
-                  <div className="bg-slate-950/70 p-2.5 rounded-xl border border-slate-800/80">
+                  <div className="bg-slate-950/70 p-2 rounded-xl border border-slate-800/80">
                     <span className="text-[10px] text-slate-400 block mb-0.5">رواتب منصرفة</span>
                     <span className="font-mono font-black text-amber-400">
                       {revenueStats.totalSalaries.toLocaleString()} <span className="text-[9px] font-normal text-slate-400">{currency}</span>
                     </span>
                   </div>
-                  <div className="bg-slate-950/70 p-2.5 rounded-xl border border-slate-800/80">
+                  <div className="bg-slate-950/70 p-2 rounded-xl border border-slate-800/80">
                     <span className="text-[10px] text-slate-400 block mb-0.5">سلف الموظفين</span>
                     <span className="font-mono font-black text-sky-400">
                       {revenueStats.totalAdvances.toLocaleString()} <span className="text-[9px] font-normal text-slate-400">{currency}</span>
                     </span>
                   </div>
-                  <div className="bg-rose-950/30 p-2.5 rounded-xl border border-rose-500/30">
-                    <span className="text-[10px] text-rose-300 block mb-0.5 font-bold">إجمالي المنصرفات</span>
+                  <div className="bg-slate-950/70 p-2 rounded-xl border border-slate-800/80">
+                    <span className="text-[10px] text-slate-400 block mb-0.5">عمولات فنية</span>
+                    <span className="font-mono font-black text-teal-400">
+                      {revenueStats.totalCommissionsPaid.toLocaleString()} <span className="text-[9px] font-normal text-slate-400">{currency}</span>
+                    </span>
+                  </div>
+                  <div className="bg-slate-950/70 p-2 rounded-xl border border-slate-800/80">
+                    <span className="text-[10px] text-slate-400 block mb-0.5">بقشيش مصروف</span>
+                    <span className="font-mono font-black text-amber-300">
+                      {revenueStats.totalTipsPaid.toLocaleString()} <span className="text-[9px] font-normal text-slate-400">{currency}</span>
+                    </span>
+                  </div>
+                  <div className="bg-slate-950/70 p-2 rounded-xl border border-slate-800/80">
+                    <span className="text-[10px] text-slate-400 block mb-0.5">مشتريات وموردين</span>
+                    <span className="font-mono font-black text-purple-400">
+                      {revenueStats.totalPurchasesAndSuppliers.toLocaleString()} <span className="text-[9px] font-normal text-slate-400">{currency}</span>
+                    </span>
+                  </div>
+                  <div className="bg-rose-950/30 p-2 rounded-xl border border-rose-500/30 col-span-2 sm:col-span-1">
+                    <span className="text-[10px] text-rose-300 block mb-0.5 font-bold">إجمالي التشغيلية</span>
                     <span className="font-mono font-black text-rose-300">
-                      -{revenueStats.totalOutflows.toLocaleString()} <span className="text-[9px] font-normal text-rose-400/80">{currency}</span>
+                      -{revenueStats.totalOperatingExpenses.toLocaleString()} <span className="text-[9px] font-normal text-rose-400/80">{currency}</span>
                     </span>
                   </div>
                 </div>
@@ -3457,7 +3803,7 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
               {/* 6. Employee Commissions (-) */}
               <div className="bg-slate-900 p-4 rounded-2xl border border-teal-500/30 shadow-md border-r-4 border-r-teal-500">
                 <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[10px] font-bold text-slate-400">6. عمولات الموظفين (-)</span>
+                  <span className="text-[10px] font-bold text-slate-400">6. عمولات الموظفين المصروفة (-)</span>
                   <div className="w-6 h-6 rounded-lg bg-teal-500/20 text-teal-400 flex items-center justify-center">
                     <CheckCircle2 size={13} />
                   </div>
@@ -3465,13 +3811,29 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                 <div className="text-lg font-black text-teal-400 font-mono">
                   {netProfitData.totalCommissions.toLocaleString()} <span className="text-[10px] text-slate-400 font-normal">{currency}</span>
                 </div>
-                <p className="text-[9px] text-slate-500 font-bold mt-1">عمولات الخدمات والمنتجات</p>
+                <p className="text-[9px] text-slate-500 font-bold mt-1">العمولات المصروفة والمستحقة</p>
               </div>
 
-              {/* 7. Total Deductions */}
+              {/* 7. Staff Tips Disbursed (-) */}
+              {netProfitData.totalTipsPaid > 0 && (
+                <div className="bg-slate-900 p-4 rounded-2xl border border-amber-400/30 shadow-md border-r-4 border-r-amber-400">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[10px] font-bold text-slate-400">7. البقشيش المصروف فعلياً (-)</span>
+                    <div className="w-6 h-6 rounded-lg bg-amber-500/20 text-amber-300 flex items-center justify-center">
+                      <Sparkles size={13} />
+                    </div>
+                  </div>
+                  <div className="text-lg font-black text-amber-300 font-mono">
+                    {netProfitData.totalTipsPaid.toLocaleString()} <span className="text-[10px] text-slate-400 font-normal">{currency}</span>
+                  </div>
+                  <p className="text-[9px] text-slate-500 font-bold mt-1">إكراميات مصروفة للكادر</p>
+                </div>
+              )}
+
+              {/* Total Deductions / Total Operating Expenses */}
               <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-md border-r-4 border-r-slate-600">
                 <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[10px] font-bold text-slate-400">إجمالي الاستقطاعات (-)</span>
+                  <span className="text-[10px] font-bold text-slate-400">إجمالي المصروفات التشغيلية (-)</span>
                   <div className="w-6 h-6 rounded-lg bg-slate-800 text-slate-400 flex items-center justify-center">
                     <Clock size={13} />
                   </div>
@@ -3479,7 +3841,7 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                 <div className="text-lg font-black text-slate-200 font-mono">
                   {netProfitData.totalDeductions.toLocaleString()} <span className="text-[10px] text-slate-400 font-normal">{currency}</span>
                 </div>
-                <p className="text-[9px] text-slate-500 font-bold mt-1">مجموع البنود (2 إلى 6)</p>
+                <p className="text-[9px] text-slate-500 font-bold mt-1">مصروفات + عمولات + بقشيش + رواتب + سلف + مشتريات</p>
               </div>
 
               {/* 8. Net Result */}
@@ -3522,6 +3884,9 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                 <div title={`سلف: ${netProfitData.totalAdvances.toLocaleString()}`} style={{ width: `${Math.min(100, (netProfitData.totalAdvances / (netProfitData.grossIncome || 1)) * 100)}%` }} className="bg-amber-500 h-full"></div>
                 <div title={`مشتريات وموردين: ${netProfitData.totalPurchasesAndSuppliers.toLocaleString()}`} style={{ width: `${Math.min(100, (netProfitData.totalPurchasesAndSuppliers / (netProfitData.grossIncome || 1)) * 100)}%` }} className="bg-purple-500 h-full"></div>
                 <div title={`عمولات: ${netProfitData.totalCommissions.toLocaleString()}`} style={{ width: `${Math.min(100, (netProfitData.totalCommissions / (netProfitData.grossIncome || 1)) * 100)}%` }} className="bg-teal-500 h-full"></div>
+                {netProfitData.totalTipsPaid > 0 && (
+                  <div title={`بقشيش مصروف: ${netProfitData.totalTipsPaid.toLocaleString()}`} style={{ width: `${Math.min(100, (netProfitData.totalTipsPaid / (netProfitData.grossIncome || 1)) * 100)}%` }} className="bg-amber-400 h-full"></div>
+                )}
                 {netProfitData.netProfit > 0 && (
                   <div title={`صافي الربح: ${netProfitData.netProfit.toLocaleString()}`} style={{ width: `${Math.max(0, (netProfitData.netProfit / (netProfitData.grossIncome || 1)) * 100)}%` }} className="bg-emerald-500 h-full"></div>
                 )}
@@ -3532,6 +3897,9 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                 <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500"></span> سلف</span>
                 <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-purple-500"></span> مشتريات وموردين</span>
                 <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-teal-500"></span> عمولات</span>
+                {netProfitData.totalTipsPaid > 0 && (
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400"></span> بقشيش</span>
+                )}
                 <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500"></span> صافي الربح</span>
               </div>
             </div>
@@ -3923,7 +4291,7 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                 </div>
                 <div className="text-left text-xs text-slate-300 space-y-1 bg-slate-950/40 p-3 rounded-xl border border-slate-800">
                   <p>إجمالي الإيرادات المحصلة: <span className="font-mono font-bold text-emerald-400">+{revenueStats.totalRevenue.toLocaleString()} {currency}</span></p>
-                  <p className="text-rose-400">المصروفات التشغيلية: <span className="font-mono font-bold">-{revenueStats.totalExpenses.toLocaleString()} {currency}</span></p>
+                  <p className="text-rose-400">المصروفات التشغيلية: <span className="font-mono font-bold">-{revenueStats.totalOperatingExpenses.toLocaleString()} {currency}</span></p>
                 </div>
               </div>
             </div>
@@ -4075,8 +4443,8 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                       <TrendingUp size={20} className="rotate-180" />
                     </div>
                     <div>
-                      <p className="text-xs font-bold text-rose-400">مصروفات الفترة</p>
-                      <p className="text-lg font-black text-rose-300 mt-0.5">-{revenueStats.totalExpenses.toLocaleString()} <span className="text-[10px] font-normal text-slate-400">{currency}</span></p>
+                      <p className="text-xs font-bold text-rose-400">المصروفات التشغيلية للفترة</p>
+                      <p className="text-lg font-black text-rose-300 mt-0.5">-{revenueStats.totalOperatingExpenses.toLocaleString()} <span className="text-[10px] font-normal text-slate-400">{currency}</span></p>
                     </div>
                   </div>
                 </div>
@@ -4235,11 +4603,11 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                   </div>
                 </div>
 
-                {/* Filter Tabs: الكل | مصروفات تشغيلية | رواتب | سلف */}
-                <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
+                {/* Filter Tabs: الكل | مصروفات عامة | رواتب | سلف | عمولات | بقشيش | مشتريات */}
+                <div className="flex flex-wrap items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
                   <button
                     onClick={() => setFinanceOutflowFilter('all')}
-                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                    className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
                       financeOutflowFilter === 'all'
                         ? 'bg-rose-500 text-slate-950 shadow-sm font-black'
                         : 'text-slate-400 hover:text-white'
@@ -4249,7 +4617,7 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                   </button>
                   <button
                     onClick={() => setFinanceOutflowFilter('expenses')}
-                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                    className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
                       financeOutflowFilter === 'expenses'
                         ? 'bg-rose-500 text-slate-950 shadow-sm font-black'
                         : 'text-slate-400 hover:text-white'
@@ -4259,7 +4627,7 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                   </button>
                   <button
                     onClick={() => setFinanceOutflowFilter('salaries')}
-                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                    className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
                       financeOutflowFilter === 'salaries'
                         ? 'bg-amber-500 text-slate-950 shadow-sm font-black'
                         : 'text-amber-300/80 hover:text-amber-200'
@@ -4269,7 +4637,7 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                   </button>
                   <button
                     onClick={() => setFinanceOutflowFilter('advances')}
-                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                    className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
                       financeOutflowFilter === 'advances'
                         ? 'bg-sky-500 text-slate-950 shadow-sm font-black'
                         : 'text-sky-300/80 hover:text-sky-200'
@@ -4277,22 +4645,58 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                   >
                     سلف ({combinedOutflows.filter(o => o.kind === 'advance').length})
                   </button>
+                  <button
+                    onClick={() => setFinanceOutflowFilter('commissions')}
+                    className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                      financeOutflowFilter === 'commissions'
+                        ? 'bg-teal-500 text-slate-950 shadow-sm font-black'
+                        : 'text-teal-300/80 hover:text-teal-200'
+                    }`}
+                  >
+                    عمولات ({combinedOutflows.filter(o => o.kind === 'commission').length})
+                  </button>
+                  <button
+                    onClick={() => setFinanceOutflowFilter('tips')}
+                    className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                      financeOutflowFilter === 'tips'
+                        ? 'bg-amber-400 text-slate-950 shadow-sm font-black'
+                        : 'text-amber-300/80 hover:text-amber-200'
+                    }`}
+                  >
+                    بقشيش ({combinedOutflows.filter(o => o.kind === 'tip').length})
+                  </button>
+                  <button
+                    onClick={() => setFinanceOutflowFilter('purchases')}
+                    className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                      financeOutflowFilter === 'purchases'
+                        ? 'bg-purple-500 text-white shadow-sm font-black'
+                        : 'text-purple-300/80 hover:text-purple-200'
+                    }`}
+                  >
+                    مشتريات ({combinedOutflows.filter(o => o.kind === 'purchase').length})
+                  </button>
                 </div>
               </div>
 
               {/* Subtotal Banner for Filtered View */}
               <div className="flex items-center justify-between bg-slate-950/60 px-3 py-2 rounded-xl mb-3 border border-slate-800/80 text-[11px]">
                 <span className="text-slate-400">
-                  {financeOutflowFilter === 'all' && 'إجمالي المنصرفات والسلف والرواتب المنفذة:'}
-                  {financeOutflowFilter === 'expenses' && 'إجمالي المصروفات التشغيلية المعتمدة:'}
+                  {financeOutflowFilter === 'all' && 'إجمالي المصروفات التشغيلية المنفذة (شاملة الرواتب والسلف والعمولات والبقشيش والمشتريات):'}
+                  {financeOutflowFilter === 'expenses' && 'إجمالي المصروفات العامة والنثرية المعتمدة:'}
                   {financeOutflowFilter === 'salaries' && 'إجمالي الرواتب المنصرفة للكادر:'}
                   {financeOutflowFilter === 'advances' && 'إجمالي سلف الموظفين المسددة:'}
+                  {financeOutflowFilter === 'commissions' && 'إجمالي العمولات المصروفة فعلياً للكادر:'}
+                  {financeOutflowFilter === 'tips' && 'إجمالي البقشيش المصروف فعلياً للكادر:'}
+                  {financeOutflowFilter === 'purchases' && 'إجمالي فواتير المشتريات وسداد الموردين:'}
                 </span>
                 <span className="font-mono font-black text-rose-400">
-                  {financeOutflowFilter === 'all' && `-${revenueStats.totalOutflows.toLocaleString()} ${currency}`}
+                  {financeOutflowFilter === 'all' && `-${revenueStats.totalOperatingExpenses.toLocaleString()} ${currency}`}
                   {financeOutflowFilter === 'expenses' && `-${revenueStats.totalExpenses.toLocaleString()} ${currency}`}
                   {financeOutflowFilter === 'salaries' && `-${revenueStats.totalSalaries.toLocaleString()} ${currency}`}
                   {financeOutflowFilter === 'advances' && `-${revenueStats.totalAdvances.toLocaleString()} ${currency}`}
+                  {financeOutflowFilter === 'commissions' && `-${revenueStats.totalCommissionsPaid.toLocaleString()} ${currency}`}
+                  {financeOutflowFilter === 'tips' && `-${revenueStats.totalTipsPaid.toLocaleString()} ${currency}`}
+                  {financeOutflowFilter === 'purchases' && `-${revenueStats.totalPurchasesAndSuppliers.toLocaleString()} ${currency}`}
                 </span>
               </div>
 
@@ -4303,6 +4707,9 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                     if (financeOutflowFilter === 'expenses') return o.kind === 'expense';
                     if (financeOutflowFilter === 'salaries') return o.kind === 'salary';
                     if (financeOutflowFilter === 'advances') return o.kind === 'advance';
+                    if (financeOutflowFilter === 'commissions') return o.kind === 'commission';
+                    if (financeOutflowFilter === 'tips') return o.kind === 'tip';
+                    if (financeOutflowFilter === 'purchases') return o.kind === 'purchase';
                     return true;
                   })
                   .map(outflow => (
@@ -4313,7 +4720,7 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                       <div className="flex items-center gap-2.5">
                         {outflow.kind === 'expense' && (
                           <span className="bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[9px] font-black px-2 py-0.5 rounded-md whitespace-nowrap">
-                            مصروف تشغيلي
+                            مصروف عام
                           </span>
                         )}
                         {outflow.kind === 'salary' && (
@@ -4324,6 +4731,21 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                         {outflow.kind === 'advance' && (
                           <span className="bg-sky-500/20 text-sky-300 border border-sky-500/40 text-[9px] font-black px-2 py-0.5 rounded-md whitespace-nowrap">
                             سلفة موظف
+                          </span>
+                        )}
+                        {outflow.kind === 'commission' && (
+                          <span className="bg-teal-500/20 text-teal-300 border border-teal-500/40 text-[9px] font-black px-2 py-0.5 rounded-md whitespace-nowrap">
+                            عمولة فنية
+                          </span>
+                        )}
+                        {outflow.kind === 'tip' && (
+                          <span className="bg-amber-400/20 text-amber-300 border border-amber-400/40 text-[9px] font-black px-2 py-0.5 rounded-md whitespace-nowrap">
+                            صرف بقشيش
+                          </span>
+                        )}
+                        {outflow.kind === 'purchase' && (
+                          <span className="bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[9px] font-black px-2 py-0.5 rounded-md whitespace-nowrap">
+                            مشتريات
                           </span>
                         )}
 
