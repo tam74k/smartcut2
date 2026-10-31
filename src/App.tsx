@@ -3130,7 +3130,7 @@ export default function App() {
           shiftData={shiftData}
           fingerprintLogs={branchFingerprintLogs}
           setFingerprintLogs={setFingerprintLogs}
-          onNavigateTab={setCurrentTab}
+          onNavigateTab={setActiveTab}
         />
       );
       case 'services': return (
