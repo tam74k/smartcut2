@@ -170,8 +170,85 @@ export function ClosingReportReceipt({
     };
   }, [dateLabel, employees, fingerprintLogs, attendanceSummary]);
   // Helper to categorize
+  const isZeroingOrClosingTrx = (t: any): boolean => {
+    if (!t) return false;
+    if (t.isZeroing || t.isShiftZeroing || t.isClosing || t.subCategory === 'shift_zeroing') return true;
+    const desc = String(t.description || '').toLowerCase();
+    const cat = String(t.category || '').toLowerCase();
+    const id = String(t.id || '').toUpperCase();
+    
+    if (id.startsWith('TRX-OUT-') && desc.includes('تصفير')) return true;
+    if (id.startsWith('TRX-IN-') && desc.includes('تصفير')) return true;
+    
+    return (
+      desc.includes('تصفير') ||
+      desc.includes('نقل الرصيد') ||
+      desc.includes('نقل رصيد') ||
+      desc.includes('ترحيل رصيد') ||
+      desc.includes('تحويل تصفير') ||
+      desc.includes('إغلاق وردية') ||
+      desc.includes('اغلاق وردية') ||
+      desc.includes('إغلاق الخزائن') ||
+      desc.includes('اغلاق الخزائن') ||
+      cat === 'shift_zeroing' ||
+      cat === 'zeroing' ||
+      cat.includes('تصفير')
+    );
+  };
+
+  const isRealTransferTrx = (t: any): boolean => {
+    if (isZeroingOrClosingTrx(t)) return false;
+    const cat = (t.category || '').toLowerCase();
+    const desc = (t.description || '').toLowerCase();
+    return cat === 'transfer' || cat.includes('transfer') || cat.includes('تحويل') || desc.includes('تحويل إلى') || desc.includes('تحويل الى') || desc.includes('تحويل من');
+  };
+
+  const isCommissionTrx = (t: any): boolean => {
+    const cat = (t.category || '').toLowerCase();
+    const desc = (t.description || '').toLowerCase();
+    return (
+      cat === 'commission' || 
+      cat === 'commissions' || 
+      cat === 'commission_payout' || 
+      cat === 'عمولة' || 
+      cat === 'عمولات' || 
+      cat === 'صرف عمولة' ||
+      desc.includes('صرف عمولة') || 
+      desc.includes('عمولة فورية')
+    );
+  };
+
+  const isTipTrx = (t: any): boolean => {
+    if (t.category === 'expense' || t.category === 'مصروفات' || (t.id && String(t.id).startsWith('EXP-'))) {
+      return false;
+    }
+    const cat = (t.category || '').toLowerCase();
+    const desc = (t.description || '').toLowerCase();
+    const id = (t.id || '').toLowerCase();
+    return (
+      id.startsWith('trx-tip') ||
+      cat === 'صرف بقشيش فوري' ||
+      cat === 'صرف بقشيش موظفين' ||
+      cat === 'صرف بقشيش' ||
+      cat === 'بقشيش' ||
+      cat === 'إكرامية' ||
+      cat === 'إكراميات' ||
+      cat === 'tip' ||
+      cat === 'tips' ||
+      cat === 'tip_payout' ||
+      desc.includes('بقشيش') ||
+      desc.includes('إكرام')
+    );
+  };
+
+  // Helper to categorize
   const getStats = (treasuryId: string) => {
+    const mainTreasury = resolveMainTreasury(settings.treasuries);
+    const isMain = treasuryId === 'main' || treasuryId === mainTreasury.id || Boolean(settings.treasuries.find(t => t.id === treasuryId)?.isMain);
+
+    // استبعاد قاطع لحركات تصفير الخزائن وإغلاق الورديات
     const tTrx = transactions.filter(t => {
+      if (isZeroingOrClosingTrx(t)) return false;
       const assigned = getTransactionTargetTreasuryId(t, settings.treasuries);
       return assigned === treasuryId;
     });
@@ -183,7 +260,7 @@ export function ClosingReportReceipt({
     );
 
     // Sum sales for this treasury from shift invoices not yet recorded as individual transactions
-    const invoiceSales = invoices.reduce((sum, inv) => {
+    const invoiceSales = isMain ? 0 : invoices.reduce((sum, inv) => {
       if (inv.status === 'cancelled') return sum;
       if (invoiceIdsInTrx.has(inv.id)) return sum;
       const methods = inv.paymentMethods && inv.paymentMethods.length > 0
@@ -196,7 +273,7 @@ export function ClosingReportReceipt({
       return sum + matched.reduce((s: number, m: any) => s + (Number(m.amount) || 0), 0);
     }, 0);
 
-    const recordedSales = tTrx.filter(t => t.type === 'in' && (
+    const recordedSales = isMain ? 0 : tTrx.filter(t => t.type === 'in' && (
       t.category === 'sales' || 
       t.category === 'booking_advance' || 
       t.category === 'مبيعات' || 
@@ -205,56 +282,34 @@ export function ClosingReportReceipt({
 
     const income = invoiceSales + recordedSales;
 
-    const isTipTrx = (t: any) => {
-      // إذا كان القيد مسجلاً كمصروف تشغيلي فهو مصروف صريح وليس صرف بقشيش
-      if (t.category === 'expense' || t.category === 'مصروفات' || (t.id && String(t.id).startsWith('EXP-'))) {
-        return false;
-      }
-      const cat = (t.category || '').toLowerCase();
-      const desc = (t.description || '').toLowerCase();
-      const id = (t.id || '').toLowerCase();
-      return (
-        id.startsWith('trx-tip') ||
-        cat === 'صرف بقشيش فوري' ||
-        cat === 'صرف بقشيش موظفين' ||
-        cat === 'صرف بقشيش' ||
-        cat === 'بقشيش' ||
-        cat === 'إكرامية' ||
-        cat === 'إكراميات' ||
-        cat === 'tip' ||
-        cat === 'tips' ||
-        cat === 'tip_payout' ||
-        desc.includes('بقشيش') ||
-        desc.includes('إكرام')
-      );
-    };
-
-    const tips = tTrx.filter(t => (t.type === 'out' || (t.type as string) === 'expense') && isTipTrx(t)).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    const expenses = tTrx.filter(t => (t.type === 'out' || (t.type as string) === 'expense') && !isTipTrx(t) && (t.category === 'expense' || t.category === 'مصروفات')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    const salaries = tTrx.filter(t => (t.type === 'out' || (t.type as string) === 'expense') && (t.category === 'salary' || t.category === 'رواتب' || t.category === 'راتب')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    const advances = tTrx.filter(t => (t.type === 'out' || (t.type as string) === 'expense') && (t.category === 'hr_advance' || t.category === 'staff_advance' || t.category === 'advance' || t.category === 'سلف' || t.category === 'سلفة')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    const purchases = tTrx.filter(t => (t.type === 'out' || (t.type as string) === 'expense') && (t.category === 'purchase' || t.category === 'مشتريات')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    const supplierPayments = tTrx.filter(t => (t.type === 'out' || (t.type as string) === 'expense') && (t.category === 'supplier_payment' || t.category === 'supplier' || t.category === 'سداد مورد')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    const commissions = tTrx.filter(t => (t.type === 'out' || (t.type as string) === 'expense') && (
-      t.category === 'commission' || 
-      t.category === 'commissions' || 
-      t.category === 'commission_payout' || 
-      t.category === 'عمولة' || 
-      t.category === 'عمولات' || 
-      t.category === 'صرف عمولة' ||
-      (t.description && (t.description.includes('صرف عمولة') || t.description.includes('عمولة فورية')))
-    )).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    // البقشيش المصروف
+    const tips = isMain ? 0 : tTrx.filter(t => (t.type === 'out' || (t.type as string) === 'expense') && isTipTrx(t)).reduce((s, x) => s + (Number(x.amount) || 0), 0);
     
-    const transfersIn = tTrx.filter(t => t.type === 'in' && t.category === 'transfer').reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    const transfersOut = tTrx.filter(t => (t.type === 'out' || (t.type as string) === 'expense') && t.category === 'transfer').reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    const withdrawals = tTrx.filter(t => (t.type === 'out' || (t.type as string) === 'expense') && (t.category === 'withdrawal' || t.category === 'سحب' || t.category === 'partner_withdrawal')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    const deposits = tTrx.filter(t => t.type === 'in' && (t.category === 'deposit' || t.category === 'إيداع' || t.category === 'partner_deposit')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    const initialCashSum = tTrx.filter(t => t.type === 'in' && (t.category === 'عهدة افتتاحية' || t.category === 'initial_cash')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    // العمولات الفورية
+    const commissions = isMain ? 0 : tTrx.filter(t => (t.type === 'out' || (t.type as string) === 'expense') && isCommissionTrx(t)).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    
+    // الاضافة بالتحويل (تحويلات تشغيلية حقيقية فقط وليس إغلاق)
+    const transfersIn = isMain ? 0 : tTrx.filter(t => t.type === 'in' && isRealTransferTrx(t)).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    
+    // السحب بالتحويل (تحويلات تشغيلية حقيقية فقط وليس إغلاق)
+    const transfersOut = tTrx.filter(t => (t.type === 'out' || (t.type as string) === 'expense') && isRealTransferTrx(t)).reduce((s, x) => s + (Number(x.amount) || 0), 0);
 
-    const net = (income + transfersIn + deposits + initialCashSum) - (expenses + salaries + advances + purchases + supplierPayments + commissions + tips + transfersOut + withdrawals);
+    // المصروفات
+    const expenses = isMain ? 0 : tTrx.filter(t => 
+      (t.type === 'out' || (t.type as string) === 'expense') && 
+      !isTipTrx(t) && 
+      !isCommissionTrx(t) && 
+      !isRealTransferTrx(t)
+    ).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+
+    const initialCashSum = isMain ? 0 : tTrx.filter(t => t.type === 'in' && (t.category === 'عهدة افتتاحية' || t.category === 'initial_cash')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+
+    const net = isMain 
+      ? -transfersOut 
+      : (income + transfersIn) - (expenses + tips + commissions + transfersOut);
 
     return {
-      income, expenses, salaries, advances, purchases, supplierPayments, commissions, tips, transfersIn, transfersOut, withdrawals, deposits, initialCashSum, net
+      income, expenses, commissions, tips, transfersIn, transfersOut, initialCashSum, net, isMain
     };
   };
 
@@ -342,28 +397,20 @@ export function ClosingReportReceipt({
           const isMain = treasury.isMain || treasury.id === 'main' || treasury.id === mainTreasury.id;
 
           if (isMain) {
-            // الخزنة الرئيسية: تظهر فقط لو حصل سحب منها أو تحويلات إليها أو منها فقط
-            return stats.withdrawals > 0 || stats.transfersIn > 0 || stats.transfersOut > 0;
+            // الخزينة الرئيسية: تعرض في التقرير فقط المبالغ المحولة منها إلى أي خزينة أخرى وليس الإغلاق
+            return stats.transfersOut > 0;
           }
 
-          // بقية الخزائن: إخفاء أي خزينة قيمتها صفر أو لا توجد بها حركات
-          const hasActivity = (
+          // باقي الخزائن: تعرض فقط الخزائن التي بها أي حركة من البنود المطلوبة
+          return (
             stats.income > 0 ||
-            stats.net !== 0 ||
-            stats.initialCashSum > 0 ||
-            stats.deposits > 0 ||
-            stats.transfersIn > 0 ||
             stats.expenses > 0 ||
-            stats.salaries > 0 ||
-            stats.advances > 0 ||
-            stats.purchases > 0 ||
-            stats.supplierPayments > 0 ||
-            stats.commissions > 0 ||
             stats.tips > 0 ||
-            stats.withdrawals > 0 ||
-            stats.transfersOut > 0
+            stats.commissions > 0 ||
+            stats.transfersIn > 0 ||
+            stats.transfersOut > 0 ||
+            stats.initialCashSum > 0
           );
-          return hasActivity;
         });
 
         if (visibleTreasuries.length === 0) {
@@ -378,10 +425,31 @@ export function ClosingReportReceipt({
           const stats = getStats(treasury.id);
           const isMain = treasury.isMain || treasury.id === 'main' || treasury.id === mainTreasury.id;
 
+          if (isMain) {
+            return (
+              <div key={treasury.id} className="mb-6 text-black">
+                <h3 className="font-bold text-center border-y border-black border-dashed py-1 mb-2 bg-white text-black">
+                  {treasury.name} (الخزينة الرئيسية)
+                </h3>
+                
+                <div className="space-y-1 text-xs text-black">
+                  <div className="flex justify-between text-black font-semibold">
+                    <span>المبالغ المحولة منها إلى الخزائن الأخرى:</span>
+                    <span className="text-black font-mono">{stats.transfersOut.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between font-bold border-t border-black border-dashed pt-1 mt-1 text-sm text-black">
+                    <span>إجمالي المحول من الرئيسية:</span>
+                    <span dir="ltr" className="text-black font-mono">{stats.transfersOut.toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+            );
+          }
+
           return (
             <div key={treasury.id} className="mb-6 text-black">
               <h3 className="font-bold text-center border-y border-black border-dashed py-1 mb-2 bg-white text-black">
-                {treasury.name} {isMain ? '(الخزينة الرئيسية)' : ''}
+                {treasury.name}
               </h3>
               
               <div className="space-y-1 text-xs text-black">
@@ -392,75 +460,38 @@ export function ClosingReportReceipt({
                   </div>
                 )}
                 {stats.income > 0 && (
-                  <div className="flex justify-between text-black">
-                    <span>إجمالي الدخل:</span>
+                  <div className="flex justify-between text-black font-semibold">
+                    <span>الدخل من المبيعات:</span>
                     <span className="text-black font-mono">{stats.income.toFixed(2)}</span>
                   </div>
                 )}
-                {stats.deposits > 0 && (
-                  <div className="flex justify-between text-black">
-                    <span>مبالغ الإضافة (بدون تحويل):</span>
-                    <span className="text-black font-mono">{stats.deposits.toFixed(2)}</span>
-                  </div>
-                )}
-                {stats.transfersIn > 0 && (
-                  <div className="flex justify-between text-black">
-                    <span>مبالغ الإضافة بالتحويل:</span>
-                    <span className="text-black font-mono">{stats.transfersIn.toFixed(2)}</span>
-                  </div>
-                )}
-                
                 {stats.expenses > 0 && (
                   <div className="flex justify-between text-black font-semibold">
-                    <span>إجمالي المصروفات:</span>
+                    <span>المصروفات:</span>
                     <span className="text-black font-mono">{stats.expenses.toFixed(2)}</span>
-                  </div>
-                )}
-                {stats.salaries > 0 && (
-                  <div className="flex justify-between text-black font-semibold">
-                    <span>إجمالي رواتب:</span>
-                    <span className="text-black font-mono">{stats.salaries.toFixed(2)}</span>
-                  </div>
-                )}
-                {stats.advances > 0 && (
-                  <div className="flex justify-between text-black font-semibold">
-                    <span>إجمالي سلف:</span>
-                    <span className="text-black font-mono">{stats.advances.toFixed(2)}</span>
-                  </div>
-                )}
-                {stats.purchases > 0 && (
-                  <div className="flex justify-between text-black font-semibold">
-                    <span>إجمالي مشتروات:</span>
-                    <span className="text-black font-mono">{stats.purchases.toFixed(2)}</span>
-                  </div>
-                )}
-                {stats.supplierPayments > 0 && (
-                  <div className="flex justify-between text-black font-semibold">
-                    <span>دفعات وسداد موردين:</span>
-                    <span className="text-black font-mono">{stats.supplierPayments.toFixed(2)}</span>
-                  </div>
-                )}
-                {stats.commissions > 0 && (
-                  <div className="flex justify-between text-black font-semibold">
-                    <span>نسب الموظفين (العمولات):</span>
-                    <span className="text-black font-mono">{stats.commissions.toFixed(2)}</span>
                   </div>
                 )}
                 {stats.tips > 0 && (
                   <div className="flex justify-between text-black font-semibold">
-                    <span>إكراميات وبقشيش (الدرج):</span>
+                    <span>البقشيش المصروف:</span>
                     <span className="text-black font-mono">{stats.tips.toFixed(2)}</span>
                   </div>
                 )}
-                {stats.withdrawals > 0 && (
+                {stats.commissions > 0 && (
                   <div className="flex justify-between text-black font-semibold">
-                    <span>مبالغ السحب (بدون تحويل):</span>
-                    <span className="text-black font-mono">{stats.withdrawals.toFixed(2)}</span>
+                    <span>العمولات الفورية:</span>
+                    <span className="text-black font-mono">{stats.commissions.toFixed(2)}</span>
+                  </div>
+                )}
+                {stats.transfersIn > 0 && (
+                  <div className="flex justify-between text-black font-semibold">
+                    <span>الاضافة بالتحويل:</span>
+                    <span className="text-black font-mono">{stats.transfersIn.toFixed(2)}</span>
                   </div>
                 )}
                 {stats.transfersOut > 0 && (
                   <div className="flex justify-between text-black font-semibold">
-                    <span>مبالغ السحب بالتحويل:</span>
+                    <span>السحب بالتحويل:</span>
                     <span className="text-black font-mono">{stats.transfersOut.toFixed(2)}</span>
                   </div>
                 )}
@@ -469,9 +500,9 @@ export function ClosingReportReceipt({
                   <span>الصافي:</span>
                   <span dir="ltr" className="text-black font-mono">{stats.net.toFixed(2)}</span>
                 </div>
-                {!isMain && stats.net > 0 && (
+                {stats.net > 0 && (
                   <div className="text-[10px] text-black border border-black rounded p-1 mt-1 text-center font-bold">
-                    سيتم تصفير هذا الصافي ونقله تلقائياً إلى الخزينة الرئيسية
+                    سيتم تصفير هذا الصافي ونقله تلقائياً إلى الخزينة الرئيسية عند إغلاق الوردية
                   </div>
                 )}
               </div>

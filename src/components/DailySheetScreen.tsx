@@ -314,9 +314,15 @@ export function DailySheetScreen({
       // استبعاد أي تصفير أو تحويلات داخلية بين الخزائن
       if (
         cat === 'transfer' || 
+        cat.includes('transfer') ||
+        cat.includes('تصفير') ||
         desc.includes('تصفير') || 
         desc.includes('نقل الرصيد') || 
-        desc.includes('تحويل')
+        desc.includes('تحويل') ||
+        desc.includes('إغلاق') ||
+        desc.includes('اغلاق') ||
+        (t as any).isZeroing ||
+        (t as any).isShiftZeroing
       ) {
         return false;
       }
@@ -364,8 +370,11 @@ export function DailySheetScreen({
         desc.includes('تحويل تصفير') ||
         desc.includes('إغلاق وردية') ||
         desc.includes('اغلاق وردية') ||
+        desc.includes('إغلاق الخزائن') ||
+        desc.includes('اغلاق الخزائن') ||
         desc.includes('ترحيل رصيد') ||
-        cat.includes('تصفير')
+        cat.includes('تصفير') ||
+        Boolean((t as any).isZeroing || (t as any).isShiftZeroing)
       );
       if (isZeroing) return false;
 

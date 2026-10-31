@@ -1,6 +1,7 @@
 import React from 'react';
 import { AppSettings, Transaction } from '../types';
 import { Wallet, Calendar, User, Clock } from 'lucide-react';
+import { formatInvoiceDateTimeDisplay } from '../utils/timezone';
 
 export function CustodyReportReceipt({
   settings,
@@ -56,7 +57,7 @@ export function CustodyReportReceipt({
               <span>{settings.treasuries.find(t => t.id === trx.treasury)?.name || 'كاش الدرج'}</span>
             </div>
             <div className="text-[8px] text-slate-400 font-mono">
-              الوقت: {new Date(trx.date).toLocaleTimeString('ar-SA')} | السند: {trx.id}
+              الوقت: {formatInvoiceDateTimeDisplay(trx.date, 'ar-SA')} | السند: {trx.id}
             </div>
           </div>
         ))}

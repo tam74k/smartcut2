@@ -4675,7 +4675,7 @@ function ReportTable({
                   <tr key={t.id} className="hover:bg-slate-50 transition-colors">
                     <td className="py-3 px-4 font-mono font-bold text-slate-700">{t.id}</td>
                     <td className="py-3 px-4 font-bold text-slate-800">{t.shiftDate || safeSplitDate(t.date)}</td>
-                    <td className="py-3 px-4 text-slate-500 font-medium">{new Date(t.date).toLocaleTimeString('ar-SA')}</td>
+                    <td className="py-3 px-4 text-slate-500 font-medium">{formatInvoiceDateTimeDisplay(t.date, 'ar-SA')}</td>
                     <td className="py-3 px-4">
                       <span className="bg-slate-100 text-slate-800 font-bold px-2 py-0.5 rounded-md">
                         {t.userName || t.createdBy || 'الكاشير'}
@@ -5391,7 +5391,7 @@ function ReportTable({
                   <tr key={trx.id} className="hover:bg-slate-50 transition-colors">
                     <td className="py-3 px-4 font-mono font-bold text-slate-700">{trx.id}</td>
                     <td className="py-3 px-4 font-bold text-slate-900">{trx.shiftDate || safeSplitDate(trx.date)}</td>
-                    <td className="py-3 px-4 text-slate-500 font-mono">{new Date(trx.date).toLocaleTimeString('ar-SA')}</td>
+                    <td className="py-3 px-4 text-slate-500 font-mono">{formatInvoiceDateTimeDisplay(trx.date, 'ar-SA')}</td>
                     <td className="py-3 px-4">
                       <span className="bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-lg font-extrabold border border-indigo-200 inline-flex items-center gap-1">
                         <User size={12} />
@@ -5530,7 +5530,7 @@ function ReportTable({
                   <tr key={tip.id} className="hover:bg-slate-50 transition-colors">
                     <td className="py-3 px-4 text-slate-400 font-mono">{idx + 1}</td>
                     <td className="py-3 px-4 text-slate-600 font-mono text-[11px]">
-                      {tip.date ? new Date(tip.date).toLocaleString('ar-EG') : '-'}
+                      {tip.date ? formatInvoiceDateTimeDisplay(tip.date, 'ar-EG') : '-'}
                     </td>
                     <td className="py-3 px-4 font-mono font-bold text-slate-700">{tip.invoiceId}</td>
                     <td className="py-3 px-4 font-bold text-slate-900">{tip.clientName || 'عميل نقدي'}</td>

@@ -1,5 +1,6 @@
 import React from 'react';
 import { AppSettings, SalesReturn } from '../types';
+import { formatInvoiceDateTimeDisplay } from '../utils/timezone';
 
 interface ThermalSalesReturnReceiptProps {
   salesReturn: SalesReturn;
@@ -45,7 +46,7 @@ export const ThermalSalesReturnReceipt: React.FC<ThermalSalesReturnReceiptProps>
               إشعار دائن • سند مرتجع مبيعات
             </span>
             <p className="text-xs font-mono font-bold text-slate-600">رقم السند: {salesReturn.id}</p>
-            <p className="text-xs font-mono text-slate-500">التاريخ: {new Date(salesReturn.date).toLocaleString('ar-SA')}</p>
+            <p className="text-xs font-mono text-slate-500">التاريخ: {formatInvoiceDateTimeDisplay(salesReturn.date, 'ar-SA')}</p>
             <p className="text-xs font-mono text-slate-500">
               الفاتورة الأصلية: {salesReturn.isWithoutInvoice || salesReturn.originalInvoiceId === 'بدون فاتورة' ? 'بدون فاتورة (مرتجع عام)' : `#${salesReturn.originalInvoiceId}`}
             </p>
@@ -214,7 +215,7 @@ export const ThermalSalesReturnReceipt: React.FC<ThermalSalesReturnReceiptProps>
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
           <span>التاريخ والوقت:</span>
-          <span>{new Date(salesReturn.date).toLocaleString('ar-SA')}</span>
+          <span>{formatInvoiceDateTimeDisplay(salesReturn.date, 'ar-SA')}</span>
         </div>
         {salesReturn.clientName && (
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>

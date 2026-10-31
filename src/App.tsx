@@ -2488,6 +2488,9 @@ export default function App() {
             type: 'out',
             amount: net,
             category: 'transfer',
+            subCategory: 'shift_zeroing',
+            isZeroing: true,
+            isShiftZeroing: true,
             description: `تصفير خزينة (${t.name}) ونقل الرصيد بالكامل (${net} ر.س) إلى (${mainTreasury.name}) - وردية ${currentShiftCode || ''} - فرع ${activeBranch?.name || ''}`,
             treasury: t.id,
             branchId: activeBranchId,
@@ -2497,7 +2500,7 @@ export default function App() {
             userName: currentUser?.name || 'الكاشير',
             shiftDate: shiftData.date,
             shiftCode: currentShiftCode
-          });
+          } as any);
           newTransactions.push({
             id: 'TRX-IN-' + Math.random().toString(36).substr(2,9),
             salonId: settings.salonId,
@@ -2505,6 +2508,9 @@ export default function App() {
             type: 'in',
             amount: net,
             category: 'transfer',
+            subCategory: 'shift_zeroing',
+            isZeroing: true,
+            isShiftZeroing: true,
             description: `تحويل تصفير وردية من (${t.name}) بمبلغ (${net} ر.س) إلى (${mainTreasury.name}) - وردية ${currentShiftCode || ''} - فرع ${activeBranch?.name || ''}`,
             treasury: mainTreasury.id,
             branchId: activeBranchId,
@@ -2514,7 +2520,7 @@ export default function App() {
             userName: currentUser?.name || 'الكاشير',
             shiftDate: shiftData.date,
             shiftCode: currentShiftCode
-          });
+          } as any);
         }
       });
 

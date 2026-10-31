@@ -5,6 +5,7 @@ import {
   ArrowDownRight, Check, FileText, Filter, Search, UserCheck, Sparkles, X
 } from 'lucide-react';
 import { DB } from '../services/db';
+import { formatInvoiceDateTimeDisplay } from '../utils/timezone';
 
 interface TipsScreenProps {
   settings: AppSettings;
@@ -250,7 +251,7 @@ export function TipsScreen({
                 <tbody className="divide-y divide-slate-100">
                   {filteredTips.map(tip => (
                     <tr key={tip.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="p-3.5 text-slate-500 font-mono text-[11px]">{new Date(tip.date).toLocaleString('ar-EG')}</td>
+                      <td className="p-3.5 text-slate-500 font-mono text-[11px]">{formatInvoiceDateTimeDisplay(tip.date, 'ar-EG')}</td>
                       <td className="p-3.5 font-bold text-slate-800 flex items-center gap-2">
                         <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs ${
                           tip.employeeId === 'unspecified' ? 'bg-purple-100 text-purple-700' : 'bg-emerald-50 text-emerald-700'

@@ -7,6 +7,7 @@ import { DB } from '../services/db';
 import { getBookingAdvances } from './BookingsScreen';
 import { printThermalFinancialVoucher } from './ThermalFinancialVoucher';
 import { resolveMainTreasury, isMatchingTreasury, getTransactionTargetTreasuryId, getTreasuryLabel } from '../utils/treasury';
+import { formatInvoiceDateTimeDisplay } from '../utils/timezone';
 
 const isStaffAdvance = (t: any): boolean => {
   if (!t) return false;
@@ -283,7 +284,7 @@ export function TreasuryScreen({
     let confirmText = `هل أنت متأكد من حذف هذه الحركة المالية نهائياً؟\n` +
       `----------------------------------------\n` +
       `• رقم الحركة: ${trx.id}\n` +
-      `• التاريخ: ${new Date(trx.date).toLocaleString('ar-SA')}\n` +
+      `• التاريخ: ${formatInvoiceDateTimeDisplay(trx.date, 'ar-SA')}\n` +
       `• الخزينة: ${settings.treasuries.find(t => t.id === trx.treasury)?.name || trx.treasury}\n` +
       `• المبلغ: ${trx.type === 'in' ? '+' : '-'}${trx.amount.toFixed(2)} ${settings.currency}\n` +
       `• البيان: ${trx.description || '-'}` +
@@ -597,7 +598,7 @@ export function TreasuryScreen({
     const headers = ['رقم الحركة', 'التاريخ والوقت', 'الخزينة', 'المستخدم / الكاشير', 'نوع الحركة', 'التصنيف', 'البيان والتفاصيل', 'المبلغ (SAR)'];
     const rows = filteredTransactions.map(t => [
       t.id,
-      t.date ? new Date(t.date).toLocaleString('ar-SA') : '-',
+      t.date ? formatInvoiceDateTimeDisplay(t.date, 'ar-SA') : '-',
       getTreasuryLabel(getTransactionTargetTreasuryId(t, settings.treasuries), settings.treasuries),
       getTransactionActorName(t),
       t.type === 'in' ? 'إيداع / وارد' : 'صرف / صادر',
@@ -1023,7 +1024,7 @@ export function TreasuryScreen({
                 return (
                   <tr key={trx.id} className={`hover:bg-slate-50/80 transition-colors ${isCustody ? 'bg-amber-50/30' : ''}`}>
                     <td className="py-3.5 px-4 font-mono font-bold text-slate-700">{trx.id}</td>
-                    <td className="py-3.5 px-4 text-slate-500 font-semibold">{new Date(trx.date).toLocaleString('ar-SA')}</td>
+                    <td className="py-3.5 px-4 text-slate-500 font-semibold">{formatInvoiceDateTimeDisplay(trx.date, 'ar-SA')}</td>
                     <td className="py-3.5 px-4">
                       <span className="bg-slate-100 text-slate-800 font-bold px-2 py-0.5 rounded-lg border border-slate-200">
                         {getTreasuryLabel(getTransactionTargetTreasuryId(trx, settings.treasuries), settings.treasuries)}
