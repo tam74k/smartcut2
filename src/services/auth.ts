@@ -53,7 +53,8 @@ export const SCREEN_CATALOG: ScreenMeta[] = [
   { id: 'expenses', name: 'سندات الصرف والمصروفات', category: 'الماليات', description: 'تسجيل بنود المصروفات التشغيلية وسندات الصرف' },
   { id: 'partners', name: 'الشركاء والأرباح والخسائر وتعلية رأس المال', category: 'الماليات', description: 'إدارة الشركاء ورؤوس الأموال، قائمة الأرباح والخسائر المحاسبية المبسطة، وتوزيع الأرباح وتعلية رأس المال' },
   { id: 'reports', name: 'التقارير التحليلية والمالية', category: 'التقارير', description: 'تقارير الدخل والمصروفات والأرباح ومبيعات الخدمات وإغلاق اليوم' },
-  { id: 'daily_sheet', name: 'الكشف اليومي للصالون', category: 'التقارير', description: 'كشف تفصيلي يوزع فواتير الحلاقين حسب طرق الدفع مع السلف والمصروفات وصافي الدخل' },
+  { id: 'daily_sheet', name: 'تقرير أعمال اليوم بالكامل', category: 'التقارير', description: 'كشف تفصيلي يوزع فواتير الحلاقين حسب طرق الدفع مع السلف والمصروفات وصافي الدخل' },
+  { id: 'shifts', name: 'سجل وعرض الورديات', category: 'التقارير', description: 'عرض سجل كافة الورديات وتواريخها وتوقيت الفتح والإغلاق والمستخدمين وإجماليات الخزائن وتفاصيل كل وردية' },
   { id: 'permissions', name: 'إدارة الصلاحيات والمستخدمين', category: 'الإدارة والنظام', description: 'التحكم بالمستخدمين وإنشاء الأدوار المخصصة وتوزيع الصلاحيات' },
   { id: 'saas_subscriptions', name: 'إدارة اشتراكات الصالونات (SaaS)', category: 'الإدارة والنظام', description: 'متابعة الصالونات المسجلة، الفترات التجريبية، وتجديد الاشتراكات والربط مع Evolution API' },
   { id: 'ai_assistant', name: 'المساعد الذكي وإدارة العمليات', category: 'الذكاء الاصطناعي والمساعد', description: 'شات ذكي للاستعلام الفوري وتنفيذ العمليات والحجوزات والإحصائيات بالأوامر' },
@@ -157,7 +158,7 @@ export const DEFAULT_ROLE_PRESETS: Record<UserRole, { screens: string[]; actions
     actions: ['*']
   },
   supervisor: {
-    screens: ['dashboard', 'pos', 'queue_calling', 'bookings', 'invoices', 'deferred_invoices', 'sales_returns', 'services', 'warehouse', 'clients', 'employees', 'treasury', 'expenses', 'reports', 'daily_sheet'],
+    screens: ['dashboard', 'pos', 'queue_calling', 'bookings', 'invoices', 'deferred_invoices', 'sales_returns', 'services', 'warehouse', 'clients', 'employees', 'treasury', 'expenses', 'reports', 'daily_sheet', 'shifts'],
     actions: ['pos_discount', 'pos_void', 'pos_reprint', 'sales_return', 'manage_invoices_delete', 'manage_queue', 'manage_shifts', 'edit_shift_cash', 'treasury_deposit', 'treasury_withdraw', 'treasury_transfer', 'treasury_view_balance', 'manage_expenses', 'manage_expense_categories', 'manage_products', 'manage_inventory', 'manage_employees', 'manage_salaries', 'manage_hr', 'manage_hr_actions', 'manage_clients', 'manage_booking_settings', 'manage_bookings_delete', 'view_reports', 'export_excel']
   },
   warehouse_manager: {
@@ -165,7 +166,7 @@ export const DEFAULT_ROLE_PRESETS: Record<UserRole, { screens: string[]; actions
     actions: ['manage_products', 'import_products_excel', 'manage_suppliers', 'manage_purchases', 'manage_inventory', 'export_excel']
   },
   cashier: {
-    screens: ['pos', 'queue_calling', 'bookings', 'invoices', 'deferred_invoices', 'sales_returns', 'clients', 'expenses', 'treasury'],
+    screens: ['pos', 'queue_calling', 'bookings', 'invoices', 'deferred_invoices', 'sales_returns', 'clients', 'expenses', 'treasury', 'shifts'],
     actions: ['pos_discount', 'pos_reprint', 'sales_return', 'manage_queue', 'manage_shifts', 'treasury_deposit', 'manage_expenses']
   },
   receptionist: {
@@ -173,7 +174,7 @@ export const DEFAULT_ROLE_PRESETS: Record<UserRole, { screens: string[]; actions
     actions: ['pos_reprint', 'manage_queue', 'manage_clients']
   },
   accountant: {
-    screens: ['dashboard', 'invoices', 'deferred_invoices', 'sales_returns', 'warehouse', 'treasury', 'expenses', 'reports', 'daily_sheet'],
+    screens: ['dashboard', 'invoices', 'deferred_invoices', 'sales_returns', 'warehouse', 'treasury', 'expenses', 'reports', 'daily_sheet', 'shifts'],
     actions: ['pos_reprint', 'sales_return', 'treasury_deposit', 'treasury_withdraw', 'treasury_transfer', 'treasury_view_balance', 'manage_expenses', 'manage_expense_categories', 'manage_suppliers', 'manage_purchases', 'manage_inventory', 'manage_salaries', 'view_reports', 'export_excel']
   },
   barber: {
@@ -706,8 +707,8 @@ export class AuthService {
     if (u.role === 'programmer') return true;
     if (u.role === 'admin' || u.role === 'owner') return true;
     if (u.screens?.includes('*')) return true;
-    if (screen === 'daily_sheet') {
-      return Boolean(u.screens?.includes('daily_sheet') || u.screens?.includes('reports'));
+    if (screen === 'daily_sheet' || screen === 'shifts') {
+      return Boolean(u.screens?.includes(screen) || u.screens?.includes('daily_sheet') || u.screens?.includes('shifts') || u.screens?.includes('reports') || u.screens?.includes('treasury'));
     }
     return u.screens?.includes(screen) || false;
   }

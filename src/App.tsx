@@ -10,9 +10,10 @@ import {
   UsersRound, List, Menu, X, Printer, Package, Truck, 
   ShoppingCart, ClipboardList, Shield, User as UserIcon, Sparkles, BarChart3, Boxes, Bot,
   AlertCircle, Smartphone, ShieldAlert, ShieldCheck, Tag, HeartHandshake, Briefcase, Fingerprint, Radio,
-  Key, AlertTriangle, Clock, Lock, ChevronUp, ChevronDown, Zap, MessageSquare, Hourglass, Sliders, TableProperties
+  Key, AlertTriangle, Clock, Lock, ChevronUp, ChevronDown, Zap, MessageSquare, Hourglass, Sliders, TableProperties, CalendarClock
 } from 'lucide-react';
 import { DailySheetScreen } from './components/DailySheetScreen';
+import { ShiftsScreen } from './components/ShiftsScreen';
 import { POSScreen } from './components/POSScreen';
 import { SettingsScreen } from './components/SettingsScreen';
 import { HRScreen } from './components/HRScreen';
@@ -3562,6 +3563,19 @@ export default function App() {
           currentUser={currentUser}
         />
       );
+      case 'shifts': return (
+        <ShiftsScreen
+          settings={settings}
+          invoices={branchInvoices}
+          transactions={branchTransactions}
+          employees={branchEmployees}
+          fingerprintLogs={fingerprintLogs}
+          branches={branches}
+          activeBranchId={activeBranchId}
+          currentUser={currentUser}
+          shiftData={shiftData}
+        />
+      );
       case 'permissions': return (
         <PermissionsScreen 
           settings={settings} 
@@ -3633,7 +3647,8 @@ export default function App() {
     { id: 'hr', icon: Clock, label: 'شؤون العاملين وسجل الدوام' },
     { id: 'partners', icon: Briefcase, label: 'الشركاء والأرباح والخسائر' },
     { id: 'reports', icon: FileText, label: 'التقارير الشاملة' },
-    { id: 'daily_sheet', icon: TableProperties, label: 'الكشف اليومي' },
+    { id: 'daily_sheet', icon: TableProperties, label: 'تقرير أعمال اليوم بالكامل' },
+    { id: 'shifts', icon: CalendarClock, label: 'سجل الورديات' },
     { id: 'tips', icon: HeartHandshake, label: 'البقشيش والإكراميات' },
     { id: 'promo_codes', icon: Tag, label: 'البرومو كود والكوبونات' },
     { id: 'manager_ai_chat', icon: Bot, label: 'المساعد الذكي' },
