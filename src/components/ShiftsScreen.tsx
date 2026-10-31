@@ -714,26 +714,31 @@ export function ShiftsScreen({
             <div className="p-4 overflow-y-auto flex justify-center bg-slate-50 flex-1">
               <div id="shift-history-modal-receipt-container" className="bg-white shadow-sm p-4 w-full rounded-2xl border border-black">
                 {(() => {
-                  const targetCode = (selectedShiftForDetails.shiftCode || selectedShiftForDetails.id || '').trim();
+                  const targetCode = (selectedShiftForDetails.shiftCode || '').trim();
+                  const targetId = (selectedShiftForDetails.id || (selectedShiftForDetails as any).shiftId || '').trim();
                   const targetDate = selectedShiftForDetails.shiftDate;
 
                   // 1. Matched invoices for this specific shift
                   const shiftInvs = invoices.filter(inv => {
                     if (inv.status === 'cancelled') return false;
-                    const invCode = (inv.shiftCode || (inv as any).shift_code || (inv as any).shiftId || '').trim();
-                    if (targetCode && invCode) return invCode === targetCode;
-                    return inv.shiftDate === targetDate || inv.date?.startsWith(targetDate);
+                    const invCode = (inv.shiftCode || (inv as any).shift_code || '').trim();
+                    const invShiftId = (inv.shiftId || (inv as any).shift_id || '').trim();
+                    if (targetCode && (invCode === targetCode || invShiftId === targetCode)) return true;
+                    if (targetId && (invCode === targetId || invShiftId === targetId)) return true;
+                    if (!targetCode && !targetId) return inv.shiftDate === targetDate || inv.date?.startsWith(targetDate);
+                    return false;
                   });
 
                   // 2. Matched transactions for this specific shift
                   const shiftTrxs = transactions.filter(t => {
                     if (isZeroingOrClosingTrx(t)) return false;
-                    const tCode = (t.shiftCode || (t as any).shift_code || (t as any).shiftId || '').trim();
+                    const tCode = (t.shiftCode || (t as any).shift_code || '').trim();
+                    const tShiftId = (t.shiftId || (t as any).shift_id || '').trim();
                     const desc = String(t.description || '');
-                    if (targetCode) {
-                      return tCode === targetCode || desc.includes(targetCode);
-                    }
-                    return t.shiftDate === targetDate || t.date?.startsWith(targetDate);
+                    if (targetCode && (tCode === targetCode || tShiftId === targetCode || desc.includes(targetCode))) return true;
+                    if (targetId && (tCode === targetId || tShiftId === targetId)) return true;
+                    if (!targetCode && !targetId) return t.shiftDate === targetDate || t.date?.startsWith(targetDate);
+                    return false;
                   });
 
                   return (

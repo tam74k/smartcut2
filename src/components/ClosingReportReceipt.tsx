@@ -313,10 +313,10 @@ export function ClosingReportReceipt({
     // العمولات الفورية
     const commissions = isMain ? 0 : tTrx.filter(t => (t.type === 'out' || (t.type as string) === 'expense') && isCommissionTrx(t)).reduce((s, x) => s + (Number(x.amount) || 0), 0);
     
-    // الاضافة بالتحويل (تحويلات تشغيلية حقيقية فقط وليس إغلاق)
+    // التحويل من خزينة أخرى (تحويلات تشغيلية حقيقية فقط وليس إغلاق)
     const transfersIn = isMain ? 0 : tTrx.filter(t => t.type === 'in' && isRealTransferTrx(t)).reduce((s, x) => s + (Number(x.amount) || 0), 0);
     
-    // السحب بالتحويل (تحويلات تشغيلية حقيقية فقط وليس إغلاق)
+    // التحويل إلى خزينة أخرى (تحويلات تشغيلية حقيقية فقط وليس إغلاق)
     const transfersOut = tTrx.filter(t => (t.type === 'out' || (t.type as string) === 'expense') && isRealTransferTrx(t)).reduce((s, x) => s + (Number(x.amount) || 0), 0);
 
     // المصروفات
@@ -337,6 +337,48 @@ export function ClosingReportReceipt({
       income, expenses, commissions, tips, transfersIn, transfersOut, initialCashSum, net, isMain
     };
   };
+
+  // إجمالي المبيعات المحصلة فعلياً بكافة طرق الدفع والخزائن في هذه الوردية
+  const totalCollectedSales = useMemo(() => {
+    const mainTreasury = resolveMainTreasury(settings.treasuries);
+    return (settings.treasuries || []).reduce((acc, t) => {
+      const isMain = t.isMain || t.id === 'main' || t.id === mainTreasury.id;
+      if (isMain) return acc;
+      return acc + getStats(t.id).income;
+    }, 0);
+  }, [settings.treasuries, effectiveTransactions, effectiveInvoices]);
+
+  // إجمالي المبيعات الآجلة (المتبقي الآجل للفواتير المؤجلة أو المسددة جزئياً في هذه الوردية)
+  const totalDeferredSales = useMemo(() => {
+    return effectiveInvoices.reduce((sum, inv) => {
+      if (inv.status === 'cancelled') return sum;
+      let remaining = 0;
+      if (inv.status === 'deferred') {
+        if (inv.remaining !== undefined && inv.remaining !== null && !isNaN(Number(inv.remaining))) {
+          remaining = Number(inv.remaining);
+        } else {
+          remaining = Number(inv.total) || 0;
+        }
+      } else if (inv.remaining !== undefined && inv.remaining !== null && !isNaN(Number(inv.remaining)) && Number(inv.remaining) > 0) {
+        remaining = Number(inv.remaining);
+      } else if (inv.status === 'partially_paid' || inv.paymentMethod === 'deferred' || inv.paymentMethod === 'آجل' || (inv as any).treasuryId === 'deferred') {
+        const pd = Number(inv.paid) || 0;
+        remaining = Math.max(0, (Number(inv.total) || 0) - pd);
+      }
+      return sum + remaining;
+    }, 0);
+  }, [effectiveInvoices]);
+
+  // إجمالي مبالغ الكاش باك المستخدمة في فواتير هذه الوردية
+  const totalCashbackUsed = useMemo(() => {
+    return effectiveInvoices.reduce((sum, inv) => {
+      if (inv.status === 'cancelled') return sum;
+      return sum + (Number(inv.cashbackUsed) || 0);
+    }, 0);
+  }, [effectiveInvoices]);
+
+  // إجمالي مبيعات الفواتير شاملاً كافة طرق الدفع + الآجل + الكاش باك
+  const totalGrossSales = totalCollectedSales + totalDeferredSales + totalCashbackUsed;
 
   const invoiceCount = effectiveInvoices.length;
 
@@ -362,17 +404,23 @@ export function ClosingReportReceipt({
         </div>
         <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold text-black">
           <span>إجمالي مبيعات الفواتير:</span>
-          <span className="text-black font-mono">{effectiveInvoices.reduce((sum, inv) => sum + inv.total, 0).toFixed(2)}</span>
+          <span className="text-black font-mono">{totalGrossSales.toFixed(2)}</span>
         </div>
-        {effectiveInvoices.reduce((sum, inv) => sum + (inv.cashbackUsed || 0), 0) > 0 && (
+        {totalCashbackUsed > 0 && (
           <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold text-black">
             <span>مسدد من الكاش باك:</span>
-            <span className="text-black font-mono">{effectiveInvoices.reduce((sum, inv) => sum + (inv.cashbackUsed || 0), 0).toFixed(2)}</span>
+            <span className="text-black font-mono">{totalCashbackUsed.toFixed(2)}</span>
+          </div>
+        )}
+        {totalDeferredSales > 0 && (
+          <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold text-black">
+            <span>المبيعات الآجلة (المتبقي الآجل):</span>
+            <span className="text-black font-mono">{totalDeferredSales.toFixed(2)}</span>
           </div>
         )}
         <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold text-black">
           <span>المحصل الفعلي بالخزائن (كاش / شبكة):</span>
-          <span className="text-black font-mono">{(effectiveInvoices.reduce((sum, inv) => sum + inv.total, 0) - effectiveInvoices.reduce((sum, inv) => sum + (inv.cashbackUsed || 0), 0)).toFixed(2)}</span>
+          <span className="text-black font-mono">{totalCollectedSales.toFixed(2)}</span>
         </div>
         {initialCash > 0 && (
           <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold text-black">
@@ -510,13 +558,13 @@ export function ClosingReportReceipt({
                 )}
                 {stats.transfersIn > 0 && (
                   <div className="flex justify-between text-black font-semibold">
-                    <span>الاضافة بالتحويل:</span>
+                    <span>التحويل من خزينة أخرى:</span>
                     <span className="text-black font-mono">{stats.transfersIn.toFixed(2)}</span>
                   </div>
                 )}
                 {stats.transfersOut > 0 && (
                   <div className="flex justify-between text-black font-semibold">
-                    <span>السحب بالتحويل:</span>
+                    <span>التحويل إلى خزينة أخرى:</span>
                     <span className="text-black font-mono">{stats.transfersOut.toFixed(2)}</span>
                   </div>
                 )}

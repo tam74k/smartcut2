@@ -104,6 +104,7 @@ export function TreasuryScreen({
     const isMatchingCurrentShift = Boolean(shiftData && shiftData.isOpen && shiftData.date === effectiveDay);
     const sDate = isMatchingCurrentShift ? shiftData.date : effectiveDay;
     const sId = isMatchingCurrentShift ? ((shiftData as any).shiftId || (shiftData as any).id) : undefined;
+    const sCode = isMatchingCurrentShift ? ((shiftData as any).shiftCode || (shiftData as any).shift_code || sId) : undefined;
     
     setIsSubmitting(true);
     try {
@@ -135,7 +136,8 @@ export function TreasuryScreen({
           userId: currentUser?.id,
           userName: currentUser?.name || 'الكاشير',
           shiftDate: sDate,
-          shiftId: sId
+          shiftId: sId,
+          shiftCode: sCode
         } as any;
 
         const trxIn: Transaction = {
@@ -156,7 +158,8 @@ export function TreasuryScreen({
           userId: currentUser?.id,
           userName: currentUser?.name || 'الكاشير',
           shiftDate: sDate,
-          shiftId: sId
+          shiftId: sId,
+          shiftCode: sCode
         } as any;
         
         // حفظ فوري ومؤكد في قاعدة بيانات Supabase
@@ -184,7 +187,8 @@ export function TreasuryScreen({
           userId: currentUser?.id,
           userName: currentUser?.name || 'الكاشير',
           shiftDate: sDate,
-          shiftId: sId
+          shiftId: sId,
+          shiftCode: sCode
         } as any;
 
         await DB.saveTransaction(trx, settings.salonId);
