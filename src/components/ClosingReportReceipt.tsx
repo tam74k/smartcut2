@@ -18,8 +18,35 @@ function extractDatesFromLabel(label: string): string[] {
   return dates.length > 0 ? dates : [matches[0]];
 }
 
+export const isZeroingOrClosingTrx = (t: any): boolean => {
+  if (!t) return false;
+  if (t.isZeroing || t.isShiftZeroing || t.isClosing || t.subCategory === 'shift_zeroing') return true;
+  const desc = String(t.description || '').toLowerCase();
+  const cat = String(t.category || '').toLowerCase();
+  const id = String(t.id || '').toUpperCase();
+  
+  if (id.startsWith('TRX-OUT-') && desc.includes('تصفير')) return true;
+  if (id.startsWith('TRX-IN-') && desc.includes('تصفير')) return true;
+  
+  return (
+    desc.includes('تصفير') ||
+    desc.includes('نقل الرصيد') ||
+    desc.includes('نقل رصيد') ||
+    desc.includes('ترحيل رصيد') ||
+    desc.includes('تحويل تصفير') ||
+    desc.includes('إغلاق وردية') ||
+    desc.includes('اغلاق وردية') ||
+    desc.includes('إغلاق الخزائن') ||
+    desc.includes('اغلاق الخزائن') ||
+    cat === 'shift_zeroing' ||
+    cat === 'zeroing' ||
+    cat.includes('تصفير')
+  );
+};
+
 export function ClosingReportReceipt({
   settings,
+  reportTitle,
   transactions,
   invoices,
   dateLabel,
@@ -31,6 +58,7 @@ export function ClosingReportReceipt({
   attendanceSummary
 }: {
   settings: AppSettings,
+  reportTitle?: string,
   transactions: Transaction[],
   invoices: Invoice[],
   dateLabel: string,
@@ -47,6 +75,7 @@ export function ClosingReportReceipt({
   }
 }) {
   const effectiveUserName = userName || settings.ownerName || 'المسؤول';
+  const effectiveTitle = reportTitle || (shiftCode ? 'تقرير الوردية المفتوحة حالياً' : 'تقرير أعمال اليوم بالكامل');
 
   // Attendance & Biometric Summary Calculation
   const attendanceStats = useMemo(() => {
@@ -169,32 +198,6 @@ export function ClosingReportReceipt({
       overtimeHoursStr: `${oh} ساعة ${om > 0 ? `و ${om} د` : ''}`
     };
   }, [dateLabel, employees, fingerprintLogs, attendanceSummary]);
-  // Helper to categorize
-  const isZeroingOrClosingTrx = (t: any): boolean => {
-    if (!t) return false;
-    if (t.isZeroing || t.isShiftZeroing || t.isClosing || t.subCategory === 'shift_zeroing') return true;
-    const desc = String(t.description || '').toLowerCase();
-    const cat = String(t.category || '').toLowerCase();
-    const id = String(t.id || '').toUpperCase();
-    
-    if (id.startsWith('TRX-OUT-') && desc.includes('تصفير')) return true;
-    if (id.startsWith('TRX-IN-') && desc.includes('تصفير')) return true;
-    
-    return (
-      desc.includes('تصفير') ||
-      desc.includes('نقل الرصيد') ||
-      desc.includes('نقل رصيد') ||
-      desc.includes('ترحيل رصيد') ||
-      desc.includes('تحويل تصفير') ||
-      desc.includes('إغلاق وردية') ||
-      desc.includes('اغلاق وردية') ||
-      desc.includes('إغلاق الخزائن') ||
-      desc.includes('اغلاق الخزائن') ||
-      cat === 'shift_zeroing' ||
-      cat === 'zeroing' ||
-      cat.includes('تصفير')
-    );
-  };
 
   const isRealTransferTrx = (t: any): boolean => {
     if (isZeroingOrClosingTrx(t)) return false;
@@ -389,7 +392,7 @@ export function ClosingReportReceipt({
           <img src={settings.logoUrl} alt="Logo" className="w-24 h-24 mx-auto mb-2 object-contain grayscale" />
         )}
         <h2 className="text-xl font-bold mb-2 text-black">{settings.salonName || 'اسم الصالون'}</h2>
-        <h1 className="text-xl font-bold text-black">تقرير الوردية المفتوحة حالياً</h1>
+        <h1 className="text-xl font-bold text-black">{effectiveTitle}</h1>
         {shiftCode && (
           <p className="text-xs font-bold font-mono text-black mt-0.5">كود الوردية: {shiftCode}</p>
         )}

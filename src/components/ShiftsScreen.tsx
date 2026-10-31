@@ -744,6 +744,7 @@ export function ShiftsScreen({
                   return (
                     <ClosingReportReceipt 
                       settings={settings}
+                      reportTitle={`تقرير إغلاق الوردية (${selectedShiftForDetails.shiftCode || ''})`}
                       shiftCode={selectedShiftForDetails.shiftCode}
                       transactions={shiftTrxs}
                       invoices={shiftInvs}

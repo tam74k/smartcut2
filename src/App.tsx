@@ -4559,6 +4559,7 @@ export default function App() {
                   return (
                     <ClosingReportReceipt 
                       settings={settings}
+                      reportTitle="تقرير الوردية المفتوحة حالياً"
                       shiftCode={activeShiftCode}
                       transactions={shiftTrxs}
                       invoices={shiftInvs}

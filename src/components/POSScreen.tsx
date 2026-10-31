@@ -21,10 +21,10 @@ import { SupabaseService } from '../services/supabase';
 import { AuthService } from '../services/auth';
 import { RealtimeSync } from '../services/realtimeSync';
 import { isBarberEmployee, isReferralEligibleEmployee } from '../utils/employeeHelper';
-import { ClosingReportReceipt } from './ClosingReportReceipt';
+import { ClosingReportReceipt, isZeroingOrClosingTrx } from './ClosingReportReceipt';
 import { DailySheetScreen } from './DailySheetScreen';
 import { printThermalFinancialVoucher } from './ThermalFinancialVoucher';
-import { directPrintHtml, isMobileOrTablet, printHtmlToMainServer } from '../utils/print';
+import { directPrintHtml, isMobileOrTablet, printHtmlToMainServer, handlePrintReceipt } from '../utils/print';
 import { InvoiceReceiptCard, executePrintInvoiceReceipt, isSaudiSalon } from './InvoiceReceiptCard';
 import { SalesReturnModal } from './SalesReturnModal';
 import { SalesReturnVoucherModal } from './SalesReturnVoucherModal';
@@ -342,6 +342,26 @@ export function POSScreen({
     } catch (e) {}
     return undefined;
   })();
+
+  // فواتير اليوم بالكامل لتاريخ الوردية (لكافة أعمال وورديات هذا اليوم)
+  const fullDayInvoices = useMemo(() => {
+    return (invoices || []).filter(inv => {
+      if (inv.status === 'cancelled') return false;
+      const invShiftDate = (inv.shiftDate || (inv as any).shift_date || '').trim();
+      const invDate = (inv.date ? inv.date.split('T')[0] : '').trim();
+      return invShiftDate === effectiveShiftDate || invDate === effectiveShiftDate;
+    });
+  }, [invoices, effectiveShiftDate]);
+
+  // حركات الخزائن لليوم بالكامل لتاريخ الوردية (بدون حركات الإغلاق والتصفير نهائياً)
+  const fullDayTransactions = useMemo(() => {
+    return (transactions || []).filter(t => {
+      if (isZeroingOrClosingTrx(t)) return false;
+      const tShiftDate = (t.shiftDate || (t as any).shift_date || '').trim();
+      const tDate = (t.date ? t.date.split('T')[0] : '').trim();
+      return tShiftDate === effectiveShiftDate || tDate === effectiveShiftDate;
+    });
+  }, [transactions, effectiveShiftDate]);
 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -4614,59 +4634,86 @@ export function POSScreen({
 
       {/* تقرير أعمال اليوم بالكامل */}
       {showDailyReportModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-7xl max-h-[96vh] flex flex-col overflow-hidden border-2 border-black animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md my-8 overflow-hidden flex flex-col border border-black animate-in fade-in zoom-in-95 duration-200">
             {/* Modal Header */}
             <div className="p-4 border-b border-black flex justify-between items-center bg-white">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-black text-white flex items-center justify-center font-bold">
-                  <TableProperties size={20} className="text-white" />
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-black text-white flex items-center justify-center font-bold">
+                  <TableProperties size={18} className="text-white" />
                 </div>
                 <div>
-                  <h3 className="font-black text-base text-black">تقرير أعمال اليوم بالكامل</h3>
-                  <p className="text-xs text-black font-semibold">
-                    حصر كافة أعمال اليوم ومبيعات الحلاقين والمصروفات والسلف وصافي الدخل لتاريخ ({effectiveShiftDate || new Date().toISOString().split('T')[0]})
+                  <h3 className="font-extrabold text-sm text-black">تقرير أعمال اليوم بالكامل</h3>
+                  <p className="text-[11px] text-black">
+                    حصر أعمال اليوم بالكامل لتاريخ ({effectiveShiftDate || new Date().toISOString().split('T')[0]})
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                {onNavigateTab && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowDailyReportModal(false);
-                      onNavigateTab('daily_sheet');
-                    }}
-                    className="px-3 py-1.5 bg-white hover:bg-slate-100 text-black border border-black rounded-xl text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1.5"
-                    title="فتح التقرير كصفحة رئيسية مستقلة"
-                  >
-                    <span>فتح كصفحة كاملة</span>
-                  </button>
-                )}
-                <button 
-                  onClick={() => setShowDailyReportModal(false)} 
-                  className="text-black hover:bg-slate-100 p-2 rounded-xl transition-colors cursor-pointer border border-black"
-                  title="إغلاق النافذة"
-                >
-                  <X size={20} />
-                </button>
+              <button 
+                type="button"
+                onClick={() => setShowDailyReportModal(false)} 
+                className="text-black hover:bg-slate-100 p-2 rounded-xl transition-colors cursor-pointer border border-black"
+                title="إغلاق"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Receipt Preview */}
+            <div className="p-4 overflow-y-auto flex justify-center bg-slate-50 max-h-[65vh]">
+              <div id="pos-daily-sheet-report-receipt-container" className="bg-white shadow-sm p-4 w-full rounded-2xl border border-black">
+                <ClosingReportReceipt 
+                  settings={settings}
+                  reportTitle="تقرير أعمال اليوم بالكامل"
+                  shiftCode={undefined}
+                  transactions={fullDayTransactions}
+                  invoices={fullDayInvoices}
+                  dateLabel={effectiveShiftDate || new Date().toISOString().split('T')[0]}
+                  initialCash={shiftData?.initialCash || 0}
+                  userName={currentUser?.name || settings.ownerName || 'المسؤول'}
+                  employees={employees}
+                  fingerprintLogs={fingerprintLogs}
+                />
               </div>
             </div>
 
-            {/* Modal Body with DailySheetScreen */}
-            <div className="flex-1 overflow-y-auto p-2 sm:p-4 bg-slate-50">
-              <DailySheetScreen 
-                settings={settings}
-                invoices={invoices}
-                transactions={transactions}
-                expenses={transactions.filter(t => t.category === 'expense' || t.type === 'expense')}
-                employees={employees}
-                services={items as any}
-                branches={branches}
-                activeBranchId={activeBranchId}
-                currentUser={currentUser}
-                initialDate={effectiveShiftDate}
-              />
+            {/* Modal Footer Controls */}
+            <div className="p-4 bg-white border-t border-black flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handlePrintReceipt('print-receipt', false, settings.paperSize || '80mm')}
+                  className="flex-1 bg-black hover:bg-slate-800 text-white font-extrabold py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 text-xs shadow active:scale-[0.99] cursor-pointer"
+                  title="طباعة إيصال التقرير لطابعة الإيصالات الحرارية"
+                >
+                  <Printer size={15} />
+                  <span>طباعة حراري ({settings.paperSize || '80mm'})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handlePrintReceipt('print-receipt', false, 'a4')}
+                  className="bg-white hover:bg-slate-100 border border-black text-black font-extrabold py-2.5 px-3 rounded-xl transition-all flex items-center justify-center gap-1 text-xs shadow-xs active:scale-[0.99] cursor-pointer whitespace-nowrap"
+                  title="طباعة التقرير على ورق A4"
+                >
+                  <FileText size={14} />
+                  <span>A4</span>
+                </button>
+              </div>
+
+              {onNavigateTab && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowDailyReportModal(false);
+                    onNavigateTab('daily_sheet');
+                  }}
+                  className="w-full bg-slate-100 hover:bg-slate-200 text-black font-bold py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 border border-slate-300"
+                  title="فتح شاشة جدول اليومية والعمليات التفصيلية"
+                >
+                  <TableProperties size={14} />
+                  <span>فتح جدول العمليات التفصيلي (شيت اليومية)</span>
+                </button>
+              )}
             </div>
           </div>
         </div>
