@@ -4619,13 +4619,14 @@ export function POSScreen({
                   <FileText size={18} />
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-sm text-slate-800">تقرير اليومية (الوردية الحالية)</h3>
-                  <p className="text-[10px] text-slate-400 font-bold">{effectiveShiftDate}</p>
+                  <h3 className="font-extrabold text-sm text-black">تقرير الوردية المفتوحة حالياً</h3>
+                  {effectiveShiftCode && <p className="text-[10px] text-black font-bold font-mono">كود الوردية: {effectiveShiftCode}</p>}
+                  <p className="text-[10px] text-black font-bold">{effectiveShiftDate}</p>
                 </div>
               </div>
               <button 
                 onClick={() => setShowDailyReportModal(false)} 
-                className="text-slate-400 hover:text-red-500 p-1.5 rounded-lg transition-colors cursor-pointer"
+                className="text-black hover:text-red-500 p-1.5 rounded-lg transition-colors cursor-pointer"
                 title="إغلاق النافذة"
               >
                 <X size={20} />
@@ -4634,17 +4635,28 @@ export function POSScreen({
 
             <div className="p-4 bg-slate-100 overflow-y-auto flex justify-center max-h-[65vh]">
               <div id="pos-daily-report-content" className="bg-white shadow-sm p-4 w-full rounded-2xl">
-                <ClosingReportReceipt 
-                  settings={settings}
-                  shiftCode={effectiveShiftCode}
-                  transactions={(transactions || []).filter(t => (t.shiftCode && effectiveShiftCode && t.shiftCode === effectiveShiftCode) || (t.shiftDate && effectiveShiftDate && t.shiftDate === effectiveShiftDate) || t.date?.startsWith(effectiveShiftDate || ''))}
-                  invoices={(invoices || []).filter(i => (i.shiftCode && effectiveShiftCode && i.shiftCode === effectiveShiftCode) || (i.shiftDate && effectiveShiftDate && i.shiftDate === effectiveShiftDate) || i.date?.startsWith(effectiveShiftDate || ''))}
-                  dateLabel={effectiveShiftDate || new Date().toISOString().split('T')[0]}
-                  initialCash={shiftData?.initialCash || 0}
-                  userName={currentUser?.name || settings.ownerName || 'المسؤول'}
-                  employees={employees}
-                  fingerprintLogs={fingerprintLogs}
-                />
+                {(() => {
+                  const shiftTrxs = effectiveShiftCode
+                    ? (transactions || []).filter(t => (t.shiftCode === effectiveShiftCode || (t as any).shift_code === effectiveShiftCode || (t as any).shiftId === effectiveShiftCode || String(t.description || '').includes(effectiveShiftCode)))
+                    : (transactions || []).filter(t => (t.shiftDate && effectiveShiftDate && t.shiftDate === effectiveShiftDate) || t.date?.startsWith(effectiveShiftDate || ''));
+                  const shiftInvs = effectiveShiftCode
+                    ? (invoices || []).filter(i => (i.shiftCode === effectiveShiftCode || (i as any).shift_code === effectiveShiftCode || (i as any).shiftId === effectiveShiftCode))
+                    : (invoices || []).filter(i => (i.shiftDate && effectiveShiftDate && i.shiftDate === effectiveShiftDate) || i.date?.startsWith(effectiveShiftDate || ''));
+
+                  return (
+                    <ClosingReportReceipt 
+                      settings={settings}
+                      shiftCode={effectiveShiftCode}
+                      transactions={shiftTrxs}
+                      invoices={shiftInvs}
+                      dateLabel={effectiveShiftDate || new Date().toISOString().split('T')[0]}
+                      initialCash={shiftData?.initialCash || 0}
+                      userName={currentUser?.name || settings.ownerName || 'المسؤول'}
+                      employees={employees}
+                      fingerprintLogs={fingerprintLogs}
+                    />
+                  );
+                })()}
               </div>
             </div>
 

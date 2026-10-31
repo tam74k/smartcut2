@@ -77,11 +77,11 @@ export function DailySheetScreen({
     setSelectedDate(todayStr);
   };
 
-  // Helper date checker
+  // Helper date checker: التحقق الصريح بناءً على تاريخ الوردية أولاً
   const isMatchDate = (dateStr?: string, shiftDateStr?: string) => {
     if (shiftDateStr) {
       const cleanShift = shiftDateStr.includes('T') ? shiftDateStr.split('T')[0] : shiftDateStr.split(' ')[0];
-      if (cleanShift === selectedDate) return true;
+      return cleanShift === selectedDate;
     }
     if (!dateStr) return false;
     const clean = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr.split(' ')[0];
@@ -112,11 +112,11 @@ export function DailySheetScreen({
     ];
   }, [settings.treasuries]);
 
-  // 2. Filter invoices on selected date
+  // 2. Filter invoices on selected date based strictly on shift date
   const dayInvoices = useMemo(() => {
     return invoices.filter(inv => {
       if (inv.status === 'cancelled') return false;
-      return isMatchDate(inv.date);
+      return isMatchDate(inv.date, inv.shiftDate || (inv as any).shift_date);
     });
   }, [invoices, selectedDate]);
 
@@ -510,7 +510,7 @@ export function DailySheetScreen({
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="UTF-8">
-  <title>الكشف اليومي - ${selectedDate}</title>
+  <title>تقرير أعمال اليوم بالكامل - ${selectedDate}</title>
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@500;700;800;900&display=swap" rel="stylesheet">
   <style>
     body { 
@@ -585,7 +585,7 @@ export function DailySheetScreen({
   </style>
 </head>
 <body>
-  <h2>تقرير اليومية: ${selectedDate} - ${settings.salonName || 'صالون'}</h2>
+  <h2>تقرير أعمال اليوم بالكامل: ${selectedDate} - ${settings.salonName || 'صالون'}</h2>
   ${printArea.innerHTML}
   <script>
     window.onload = function() {
@@ -606,8 +606,8 @@ export function DailySheetScreen({
       // 1. Try to export the exact HTML table directly (includes salon title, date, merged headers & footers)
       const success = exportTableToExcel(
         'daily-sheet-table',
-        `الكشف_اليومي_${selectedDate}`,
-        'الكشف اليومي'
+        `تقرير_أعمال_اليوم_بالكامل_${selectedDate}`,
+        'تقرير أعمال اليوم بالكامل'
       );
       if (success) return;
 
@@ -621,7 +621,7 @@ export function DailySheetScreen({
       headers.push('المدفوعات - الاسم', 'المدفوعات - المبلغ', 'المصروفات - النوع', 'المصروفات - المبلغ');
 
       const titleRow1 = [settings.salonName || 'صالون', ...Array(headers.length - 1).fill('')];
-      const titleRow2 = [`الكشف اليومي — التاريخ: ${selectedDate}`, ...Array(headers.length - 1).fill('')];
+      const titleRow2 = [`تقرير أعمال اليوم بالكامل — التاريخ: ${selectedDate}`, ...Array(headers.length - 1).fill('')];
 
       const rows: any[][] = [];
       for (let r = 0; r < maxRows; r++) {
@@ -658,8 +658,8 @@ export function DailySheetScreen({
       ];
 
       exportToExcel(
-        `الكشف_اليومي_${selectedDate}`,
-        'الكشف اليومي',
+        `تقرير_أعمال_اليوم_بالكامل_${selectedDate}`,
+        'تقرير أعمال اليوم بالكامل',
         headers,
         [titleRow1, titleRow2, [], headers, ...rows, ...summaryRows]
       );
@@ -670,23 +670,23 @@ export function DailySheetScreen({
   };
 
   return (
-    <div className="p-4 sm:p-6 space-y-6 max-w-full overflow-x-hidden animate-in fade-in">
+    <div className="p-4 sm:p-6 space-y-6 max-w-full overflow-x-hidden animate-in fade-in text-black font-sans" style={{ color: '#000000' }}>
       {/* Top Header & Navigation Bar */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-black shadow-xs">
         <div>
           <div className="flex items-center gap-2.5">
-            <div className="p-2.5 bg-slate-900 text-amber-400 rounded-xl shadow-xs">
-              <TableProperties size={22} />
+            <div className="p-2.5 bg-black text-white rounded-xl shadow-xs">
+              <TableProperties size={22} className="text-white" />
             </div>
             <div>
-              <h1 className="text-xl font-black text-slate-900 flex items-center gap-2">
-                <span>الكشف اليومي للصالون</span>
-                <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-lg font-mono">
+              <h1 className="text-xl font-black text-black flex items-center gap-2">
+                <span>تقرير أعمال اليوم بالكامل</span>
+                <span className="text-xs font-bold text-black bg-white border border-black px-2 py-0.5 rounded-lg font-mono">
                   {selectedDate}
                 </span>
               </h1>
-              <p className="text-xs text-slate-500 mt-0.5">
-                توزيع فواتير الحلاقين حسب طرق الدفع مع حصر السلف والمصروفات وصافي الدخل النهائي
+              <p className="text-xs text-black mt-0.5 font-semibold">
+                حصر كافة أعمال اليوم ومبيعات الحلاقين والمصروفات والسلف وصافي الدخل (بدون تحويلات الإغلاق)
               </p>
             </div>
           </div>
@@ -694,10 +694,10 @@ export function DailySheetScreen({
 
         {/* Date Selector & Controls */}
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-          <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+          <div className="flex items-center bg-white p-1 rounded-xl border border-black">
             <button
               onClick={handlePrevDay}
-              className="p-1.5 hover:bg-white text-slate-700 rounded-lg transition-colors cursor-pointer"
+              className="p-1.5 hover:bg-slate-100 text-black rounded-lg transition-colors cursor-pointer"
               title="اليوم السابق"
             >
               <ChevronRight size={18} />
@@ -706,11 +706,11 @@ export function DailySheetScreen({
               type="date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
-              className="bg-transparent text-xs font-black text-slate-800 px-2.5 py-1 outline-hidden font-mono cursor-pointer"
+              className="bg-transparent text-xs font-black text-black px-2.5 py-1 outline-hidden font-mono cursor-pointer"
             />
             <button
               onClick={handleNextDay}
-              className="p-1.5 hover:bg-white text-slate-700 rounded-lg transition-colors cursor-pointer"
+              className="p-1.5 hover:bg-slate-100 text-black rounded-lg transition-colors cursor-pointer"
               title="اليوم التالي"
             >
               <ChevronLeft size={18} />
@@ -719,10 +719,10 @@ export function DailySheetScreen({
 
           <button
             onClick={handleToday}
-            className={`px-3 py-2 text-xs font-bold rounded-xl border transition-all cursor-pointer ${
+            className={`px-3 py-2 text-xs font-bold rounded-xl border border-black transition-all cursor-pointer ${
               selectedDate === todayStr 
-                ? 'bg-slate-900 text-white border-slate-900 shadow-2xs' 
-                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                ? 'bg-black text-white shadow-2xs' 
+                : 'bg-white text-black hover:bg-slate-100'
             }`}
           >
             اليوم
@@ -730,15 +730,15 @@ export function DailySheetScreen({
 
           <button
             onClick={handlePrintDailySheet}
-            className="bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+            className="bg-black hover:bg-slate-800 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
           >
             <Printer size={15} />
-            <span>طباعة الكشف / حفظ كـ PDF</span>
+            <span>طباعة التقرير / PDF</span>
           </button>
 
           <button
             onClick={handleExportExcel}
-            className="bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+            className="bg-white hover:bg-slate-100 text-black border border-black px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
           >
             <Download size={14} />
             <span>تصدير Excel</span>
@@ -746,73 +746,73 @@ export function DailySheetScreen({
         </div>
       </div>
 
-      {/* Summary KPI Cards */}
+      {/* Summary KPI Cards - All 100% Black Fonts & Borders */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
-          <span className="text-[11px] font-bold text-slate-500">الحلاقين النشطين</span>
+        <div className="bg-white p-3.5 rounded-xl border border-black shadow-2xs flex flex-col justify-between text-black">
+          <span className="text-[11px] font-bold text-black">الحلاقين النشطين</span>
           <div className="flex items-baseline justify-between mt-1">
-            <span className="text-xl font-black text-slate-900 font-mono">{activeEmployees.length}</span>
-            <Users size={16} className="text-indigo-600" />
+            <span className="text-xl font-black text-black font-mono">{activeEmployees.length}</span>
+            <Users size={16} className="text-black" />
           </div>
         </div>
 
-        <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
-          <span className="text-[11px] font-bold text-slate-500">فواتير اليوم</span>
+        <div className="bg-white p-3.5 rounded-xl border border-black shadow-2xs flex flex-col justify-between text-black">
+          <span className="text-[11px] font-bold text-black">فواتير اليوم</span>
           <div className="flex items-baseline justify-between mt-1">
-            <span className="text-xl font-black text-slate-900 font-mono">{dayInvoices.length}</span>
-            <Receipt size={16} className="text-blue-600" />
+            <span className="text-xl font-black text-black font-mono">{dayInvoices.length}</span>
+            <Receipt size={16} className="text-black" />
           </div>
         </div>
 
-        <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
-          <span className="text-[11px] font-bold text-emerald-700">إجمالي الدخل</span>
+        <div className="bg-white p-3.5 rounded-xl border border-black shadow-2xs flex flex-col justify-between text-black">
+          <span className="text-[11px] font-bold text-black">إجمالي الدخل</span>
           <div className="flex items-baseline justify-between mt-1">
-            <span className="text-xl font-black text-emerald-700 font-mono">{totalGrandIncome.toFixed(0)}</span>
-            <span className="text-[10px] text-emerald-600 font-bold">{settings.currency}</span>
+            <span className="text-xl font-black text-black font-mono">{totalGrandIncome.toFixed(0)}</span>
+            <span className="text-[10px] text-black font-bold">{settings.currency}</span>
           </div>
         </div>
 
-        <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
-          <span className="text-[11px] font-bold text-orange-700">سلف ورواتب الموظفين</span>
+        <div className="bg-white p-3.5 rounded-xl border border-black shadow-2xs flex flex-col justify-between text-black">
+          <span className="text-[11px] font-bold text-black">سلف ورواتب الموظفين</span>
           <div className="flex items-baseline justify-between mt-1">
-            <span className="text-xl font-black text-orange-700 font-mono">{totalStaffPayments.toFixed(0)}</span>
-            <span className="text-[10px] text-orange-600 font-bold">{settings.currency}</span>
+            <span className="text-xl font-black text-black font-mono">{totalStaffPayments.toFixed(0)}</span>
+            <span className="text-[10px] text-black font-bold">{settings.currency}</span>
           </div>
         </div>
 
-        <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
-          <span className="text-[11px] font-bold text-rose-700">المصروفات اليومية</span>
+        <div className="bg-white p-3.5 rounded-xl border border-black shadow-2xs flex flex-col justify-between text-black">
+          <span className="text-[11px] font-bold text-black">المصروفات اليومية</span>
           <div className="flex items-baseline justify-between mt-1">
-            <span className="text-xl font-black text-rose-700 font-mono">{totalDayExpenses.toFixed(0)}</span>
-            <span className="text-[10px] text-rose-600 font-bold">{settings.currency}</span>
+            <span className="text-xl font-black text-black font-mono" style={{ color: '#000000' }}>{totalDayExpenses.toFixed(0)}</span>
+            <span className="text-[10px] text-black font-bold">{settings.currency}</span>
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-indigo-900 to-slate-900 p-3.5 rounded-xl text-white shadow-xs flex flex-col justify-between">
-          <span className="text-[11px] font-bold text-indigo-200">صافي الدخل</span>
+        <div className="bg-white p-3.5 rounded-xl border-2 border-black text-black shadow-xs flex flex-col justify-between">
+          <span className="text-[11px] font-bold text-black">صافي الدخل</span>
           <div className="flex items-baseline justify-between mt-1">
-            <span className={`text-xl font-black font-mono ${netIncome >= 0 ? 'text-amber-300' : 'text-rose-400'}`}>
+            <span className="text-xl font-black font-mono text-black">
               {netIncome.toFixed(0)}
             </span>
-            <span className="text-[10px] text-indigo-300 font-bold">{settings.currency}</span>
+            <span className="text-[10px] text-black font-bold">{settings.currency}</span>
           </div>
         </div>
       </div>
 
       {/* Main Daily Sheet Table Container */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden p-3 sm:p-5">
+      <div className="bg-white rounded-2xl border border-black shadow-sm overflow-hidden p-3 sm:p-5 text-black">
         {activeEmployees.length === 0 ? (
-          <div className="py-16 text-center text-slate-400 font-bold flex flex-col items-center justify-center gap-3">
-            <TableProperties size={40} className="text-slate-300 stroke-1" />
-            <p className="text-base text-slate-600">لا توجد فواتير أو نشاط للموظفين في هذا التاريخ ({selectedDate})</p>
-            <p className="text-xs text-slate-400">اختر يوماً آخر من شريط التاريخ بالأعلى لعرض الكشف اليومي الخاص به</p>
+          <div className="py-16 text-center text-black font-bold flex flex-col items-center justify-center gap-3">
+            <TableProperties size={40} className="text-black stroke-1" />
+            <p className="text-base text-black font-bold">لا توجد فواتير أو نشاط للموظفين في هذا التاريخ ({selectedDate})</p>
+            <p className="text-xs text-black font-semibold">اختر يوماً آخر من شريط التاريخ بالأعلى لعرض تقرير أعمال اليوم الخاص به</p>
           </div>
         ) : (
           <div className="overflow-x-auto" id="daily-sheet-print-container">
             <table 
               id="daily-sheet-table"
-              className="w-full text-center border-collapse text-xs" 
-              style={{ minWidth: `${Math.max(900, totalTableCols * 38)}px` }}
+              className="w-full text-center border-collapse text-xs text-black" 
+              style={{ minWidth: `${Math.max(900, totalTableCols * 38)}px`, color: '#000000' }}
             >
               <thead>
                 {/* Level 0: Salon Name & Sheet Date Banner Header */}
@@ -831,7 +831,7 @@ export function DailySheetScreen({
                     className="border border-black py-1.5 px-3 text-xs font-bold text-center text-black font-mono bg-white"
                     style={{ backgroundColor: '#ffffff', color: '#000000', fontSize: '11px', textAlign: 'center', borderBottom: '2px solid #000000' }}
                   >
-                    الكشف اليومي | التاريخ: {selectedDate}
+                    تقرير أعمال اليوم بالكامل | التاريخ: {selectedDate}
                   </th>
                 </tr>
 

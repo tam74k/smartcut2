@@ -4513,23 +4513,35 @@ export default function App() {
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md my-8 overflow-hidden">
             <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
               <div>
-                <h3 className="font-extrabold text-base text-slate-800">إغلاق الوردية الحالية (Z-Report)</h3>
-                <p className="text-[11px] text-slate-500 mt-0.5">مراجعة أرقام الوردية ومطابقة النقدية بالدرج قبل الإغلاق</p>
+                <h3 className="font-extrabold text-base text-black">تقرير الوردية المفتوحة حالياً</h3>
+                <p className="text-[11px] text-black mt-0.5">مراجعة أرقام الوردية ومطابقة النقدية بالدرج قبل الإغلاق</p>
               </div>
             </div>
             <div className="p-4 overflow-hidden flex justify-center bg-slate-100 max-h-[60vh] overflow-y-auto">
               <div id="shift-closing-report-receipt-container" className="bg-white shadow-sm p-4 w-full rounded-2xl">
-                <ClosingReportReceipt 
-                  settings={settings}
-                  shiftCode={(shiftData as any)?.shiftCode}
-                  transactions={transactions.filter(t => (t.shiftDate && shiftData.date && t.shiftDate === shiftData.date) || t.date.startsWith(shiftData.date))}
-                  invoices={invoices.filter(i => (i.shiftDate && shiftData.date && i.shiftDate === shiftData.date) || i.date.startsWith(shiftData.date))}
-                  dateLabel={shiftData.date}
-                  initialCash={shiftData.initialCash}
-                  userName={currentUser?.name || settings.ownerName || 'المسؤول'}
-                  employees={employees}
-                  fingerprintLogs={fingerprintLogs}
-                />
+                {(() => {
+                  const activeShiftCode = (shiftData as any)?.shiftCode || (shiftData as any)?.shift_code || branchShifts[activeBranchId]?.shiftCode;
+                  const shiftTrxs = activeShiftCode 
+                    ? transactions.filter(t => (t.shiftCode === activeShiftCode || (t as any).shift_code === activeShiftCode || (t as any).shiftId === activeShiftCode || String(t.description || '').includes(activeShiftCode)))
+                    : transactions.filter(t => (t.shiftDate && shiftData.date && t.shiftDate === shiftData.date) || t.date.startsWith(shiftData.date));
+                  const shiftInvs = activeShiftCode
+                    ? invoices.filter(i => (i.shiftCode === activeShiftCode || (i as any).shift_code === activeShiftCode || (i as any).shiftId === activeShiftCode))
+                    : invoices.filter(i => (i.shiftDate && shiftData.date && i.shiftDate === shiftData.date) || i.date.startsWith(shiftData.date));
+
+                  return (
+                    <ClosingReportReceipt 
+                      settings={settings}
+                      shiftCode={activeShiftCode}
+                      transactions={shiftTrxs}
+                      invoices={shiftInvs}
+                      dateLabel={shiftData.date}
+                      initialCash={shiftData.initialCash}
+                      userName={currentUser?.name || settings.ownerName || 'المسؤول'}
+                      employees={employees}
+                      fingerprintLogs={fingerprintLogs}
+                    />
+                  );
+                })()}
               </div>
             </div>
             

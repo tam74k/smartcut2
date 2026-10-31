@@ -241,13 +241,38 @@ export function ClosingReportReceipt({
     );
   };
 
+  const targetShiftCode = (shiftCode || '').trim();
+
+  // تصفية الفواتير بدقة طبقاً لكود الوردية الحالي وليس التاريخ (إذا تم تمرير كود الوردية)
+  const effectiveInvoices = useMemo(() => {
+    if (!targetShiftCode) return invoices;
+    return invoices.filter(inv => {
+      if (inv.status === 'cancelled') return false;
+      const invCode = (inv.shiftCode || (inv as any).shift_code || '').trim();
+      const invShiftId = (inv.shiftId || (inv as any).shift_id || '').trim();
+      return invCode === targetShiftCode || invShiftId === targetShiftCode;
+    });
+  }, [invoices, targetShiftCode]);
+
+  // تصفية الحركات المالية بدقة طبقاً لكود الوردية الحالي مع استبعاد حركات الإغلاق والتصفير نهائياً
+  const effectiveTransactions = useMemo(() => {
+    return transactions.filter(t => {
+      if (isZeroingOrClosingTrx(t)) return false;
+      if (!targetShiftCode) return true;
+      const tCode = (t.shiftCode || (t as any).shift_code || '').trim();
+      const tShiftId = (t.shiftId || (t as any).shift_id || '').trim();
+      const desc = String(t.description || '');
+      return tCode === targetShiftCode || tShiftId === targetShiftCode || desc.includes(targetShiftCode);
+    });
+  }, [transactions, targetShiftCode]);
+
   // Helper to categorize
   const getStats = (treasuryId: string) => {
     const mainTreasury = resolveMainTreasury(settings.treasuries);
     const isMain = treasuryId === 'main' || treasuryId === mainTreasury.id || Boolean(settings.treasuries.find(t => t.id === treasuryId)?.isMain);
 
-    // استبعاد قاطع لحركات تصفير الخزائن وإغلاق الورديات
-    const tTrx = transactions.filter(t => {
+    // استبعاد قاطع لحركات تصفير الخزائن وإغلاق الورديات واستخدام حركات الوردية الحالية
+    const tTrx = effectiveTransactions.filter(t => {
       if (isZeroingOrClosingTrx(t)) return false;
       const assigned = getTransactionTargetTreasuryId(t, settings.treasuries);
       return assigned === treasuryId;
@@ -260,7 +285,7 @@ export function ClosingReportReceipt({
     );
 
     // Sum sales for this treasury from shift invoices not yet recorded as individual transactions
-    const invoiceSales = isMain ? 0 : invoices.reduce((sum, inv) => {
+    const invoiceSales = isMain ? 0 : effectiveInvoices.reduce((sum, inv) => {
       if (inv.status === 'cancelled') return sum;
       if (invoiceIdsInTrx.has(inv.id)) return sum;
       const methods = inv.paymentMethods && inv.paymentMethods.length > 0
@@ -313,7 +338,7 @@ export function ClosingReportReceipt({
     };
   };
 
-  const invoiceCount = invoices.length; // Ensure invoices passed are already filtered for the date/period!
+  const invoiceCount = effectiveInvoices.length;
 
   return (
     <div className="w-[72mm] mx-auto bg-white text-black p-4 text-sm font-sans" id="print-receipt" style={{ direction: 'rtl', color: '#000000' }}>
@@ -322,7 +347,7 @@ export function ClosingReportReceipt({
           <img src={settings.logoUrl} alt="Logo" className="w-24 h-24 mx-auto mb-2 object-contain grayscale" />
         )}
         <h2 className="text-xl font-bold mb-2 text-black">{settings.salonName || 'اسم الصالون'}</h2>
-        <h1 className="text-xl font-bold text-black">تقرير إغلاق اليوم</h1>
+        <h1 className="text-xl font-bold text-black">تقرير الوردية المفتوحة حالياً</h1>
         {shiftCode && (
           <p className="text-xs font-bold font-mono text-black mt-0.5">كود الوردية: {shiftCode}</p>
         )}
@@ -337,17 +362,17 @@ export function ClosingReportReceipt({
         </div>
         <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold text-black">
           <span>إجمالي مبيعات الفواتير:</span>
-          <span className="text-black font-mono">{invoices.reduce((sum, inv) => sum + inv.total, 0).toFixed(2)}</span>
+          <span className="text-black font-mono">{effectiveInvoices.reduce((sum, inv) => sum + inv.total, 0).toFixed(2)}</span>
         </div>
-        {invoices.reduce((sum, inv) => sum + (inv.cashbackUsed || 0), 0) > 0 && (
+        {effectiveInvoices.reduce((sum, inv) => sum + (inv.cashbackUsed || 0), 0) > 0 && (
           <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold text-black">
             <span>مسدد من الكاش باك:</span>
-            <span className="text-black font-mono">{invoices.reduce((sum, inv) => sum + (inv.cashbackUsed || 0), 0).toFixed(2)}</span>
+            <span className="text-black font-mono">{effectiveInvoices.reduce((sum, inv) => sum + (inv.cashbackUsed || 0), 0).toFixed(2)}</span>
           </div>
         )}
         <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold text-black">
           <span>المحصل الفعلي بالخزائن (كاش / شبكة):</span>
-          <span className="text-black font-mono">{(invoices.reduce((sum, inv) => sum + inv.total, 0) - invoices.reduce((sum, inv) => sum + (inv.cashbackUsed || 0), 0)).toFixed(2)}</span>
+          <span className="text-black font-mono">{(effectiveInvoices.reduce((sum, inv) => sum + inv.total, 0) - effectiveInvoices.reduce((sum, inv) => sum + (inv.cashbackUsed || 0), 0)).toFixed(2)}</span>
         </div>
         {initialCash > 0 && (
           <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold text-black">
