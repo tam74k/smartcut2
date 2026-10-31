@@ -314,7 +314,7 @@ export function DailySheetScreen({
   // 5. Staff Payments (المدفوعات: السلف والرواتب)
   const staffPayments = useMemo(() => {
     return transactions.filter(t => {
-      if (!isMatchDate(t.date, t.shiftDate || (t as any).shift_date)) return false;
+      if (!isMatchDate(t.date)) return false;
       const cat = String(t.category || '').toLowerCase().trim();
       const expCat = String(t.expenseCategory || '').toLowerCase().trim();
       const desc = String(t.description || '').toLowerCase().trim();
@@ -322,15 +322,9 @@ export function DailySheetScreen({
       // استبعاد أي تصفير أو تحويلات داخلية بين الخزائن
       if (
         cat === 'transfer' || 
-        cat.includes('transfer') ||
-        cat.includes('تصفير') ||
         desc.includes('تصفير') || 
         desc.includes('نقل الرصيد') || 
-        desc.includes('تحويل') ||
-        desc.includes('إغلاق') ||
-        desc.includes('اغلاق') ||
-        (t as any).isZeroing ||
-        (t as any).isShiftZeroing
+        desc.includes('تحويل')
       ) {
         return false;
       }
@@ -366,7 +360,7 @@ export function DailySheetScreen({
   // 6. Operational Expenses (المصروفات اليومية - مصروفات تشغيلية صريحة ومحددة فقط دون تصفير الخزائن أو التحويلات)
   const dayExpenses = useMemo(() => {
     return transactions.filter(t => {
-      if (!isMatchDate(t.date, t.shiftDate || (t as any).shift_date)) return false;
+      if (!isMatchDate(t.date)) return false;
       const cat = String(t.category || '').toLowerCase().trim();
       const expCat = String(t.expenseCategory || '').toLowerCase().trim();
       const desc = String(t.description || '').toLowerCase().trim();
@@ -378,11 +372,8 @@ export function DailySheetScreen({
         desc.includes('تحويل تصفير') ||
         desc.includes('إغلاق وردية') ||
         desc.includes('اغلاق وردية') ||
-        desc.includes('إغلاق الخزائن') ||
-        desc.includes('اغلاق الخزائن') ||
         desc.includes('ترحيل رصيد') ||
-        cat.includes('تصفير') ||
-        Boolean((t as any).isZeroing || (t as any).isShiftZeroing)
+        cat.includes('تصفير')
       );
       if (isZeroing) return false;
 
@@ -430,7 +421,7 @@ export function DailySheetScreen({
         desc.includes('سلفة') ||
         desc.includes('راتب')
       );
-      if (isAdvance && cat !== 'expense' && cat !== 'مصروفات' && !(t.id && String(t.id).startsWith('EXP-'))) return false;
+      if (isAdvance) return false;
 
       // 5. التحقق الصريح: يجب أن تكون الحركة مصروفاً واضحاً ومحدداً فقط
       const isExplicitExpense = (
@@ -526,7 +517,6 @@ export function DailySheetScreen({
       padding: 10px; 
       margin: 0; 
       background-color: #fff; 
-      color: #000000 !important;
       direction: rtl;
     }
     h2 { 
@@ -535,7 +525,6 @@ export function DailySheetScreen({
       text-decoration: underline; 
       font-weight: 800; 
       font-size: 18px;
-      color: #000000 !important;
     }
     table { 
       width: 100%; 
@@ -543,17 +532,11 @@ export function DailySheetScreen({
       text-align: center; 
       font-size: 11px; 
       direction: rtl;
-      color: #000000 !important;
     }
     th, td { 
-      border: 1px solid #000000 !important; 
+      border: 1px solid #000; 
       padding: 4px; 
       white-space: nowrap; 
-      color: #000000 !important;
-    }
-    * { 
-      color: #000000 !important; 
-      border-color: #000000 !important;
     }
     @media print {
       @page { 
@@ -564,36 +547,27 @@ export function DailySheetScreen({
         padding: 0; 
         margin: 0; 
         zoom: ${zoomPercent}%; 
-        color: #000000 !important;
       }
       table { 
         width: 100%; 
         max-width: 100%; 
         table-layout: auto; 
-        color: #000000 !important;
       }
       th, td { 
         white-space: normal !important; 
         word-wrap: break-word !important; 
         font-size: 10px !important; 
         padding: 2px !important; 
-        border: 1px solid #000000 !important;
-        color: #000000 !important;
       }
       thead { display: table-header-group !important; }
       tfoot { display: table-footer-group !important; }
       tr { page-break-inside: avoid !important; }
-      * { 
-        -webkit-print-color-adjust: exact !important; 
-        print-color-adjust: exact !important; 
-        color: #000000 !important;
-        border-color: #000000 !important;
-      }
+      * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
     }
   </style>
 </head>
 <body>
-  <h2>الكشف اليومي: ${selectedDate} - ${settings.salonName || 'صالون'}</h2>
+  <h2>تقرير اليومية: ${selectedDate} - ${settings.salonName || 'صالون'}</h2>
   ${printArea.innerHTML}
   <script>
     window.onload = function() {
@@ -827,8 +801,8 @@ export function DailySheetScreen({
                 <tr>
                   <th 
                     colSpan={totalTableCols} 
-                    className="border border-black py-2.5 px-3 text-sm font-black text-center text-black font-mono bg-white"
-                    style={{ backgroundColor: '#ffffff', color: '#000000', fontSize: '13px', textAlign: 'center', borderBottom: '2px solid #000000' }}
+                    className="border border-black py-2.5 px-3 text-sm font-black text-center bg-slate-900 text-white font-mono"
+                    style={{ backgroundColor: '#1e293b', color: '#ffffff', fontSize: '13px', textAlign: 'center' }}
                   >
                     {settings.salonName || 'صالون'}
                   </th>
@@ -836,8 +810,8 @@ export function DailySheetScreen({
                 <tr>
                   <th 
                     colSpan={totalTableCols} 
-                    className="border border-black py-1.5 px-3 text-xs font-bold text-center text-black font-mono bg-white"
-                    style={{ backgroundColor: '#ffffff', color: '#000000', fontSize: '11px', textAlign: 'center', borderBottom: '2px solid #000000' }}
+                    className="border border-black py-1.5 px-3 text-xs font-bold text-center bg-slate-800 text-amber-300 font-mono"
+                    style={{ backgroundColor: '#334155', color: '#fde047', fontSize: '11px', textAlign: 'center' }}
                   >
                     الكشف اليومي | التاريخ: {selectedDate}
                   </th>
@@ -849,53 +823,52 @@ export function DailySheetScreen({
                     <th 
                       key={emp.id} 
                       colSpan={colsPerEmployee} 
-                      className="border border-black py-2 px-1 text-black font-black text-xs bg-white"
-                      style={{ color: '#000000', backgroundColor: '#ffffff' }}
+                      className="border border-black py-2 px-1 text-slate-900 font-black text-xs bg-slate-100"
                     >
                       {emp.name}
                     </th>
                   ))}
                   {/* Dark Separator Column */}
-                  <th style={{ backgroundColor: '#000000', width: '5px' }} className="border border-black p-0"></th>
+                  <th style={{ backgroundColor: '#333', width: '5px' }} className="border border-black p-0"></th>
                   {/* Staff Payments */}
                   <th 
                     colSpan={2} 
-                    style={{ backgroundColor: '#ffffff', color: '#000000' }} 
-                    className="border border-black py-2 px-2 text-black font-black text-xs"
+                    style={{ backgroundColor: '#ffccbc' }} 
+                    className="border border-black py-2 px-2 text-orange-950 font-black text-xs"
                   >
                     المدفوعات
                   </th>
                   {/* Expenses */}
                   <th 
                     colSpan={2} 
-                    style={{ backgroundColor: '#ffffff', color: '#000000' }} 
-                    className="border border-black py-2 px-2 text-black font-black text-xs"
+                    style={{ backgroundColor: '#b3e5fc' }} 
+                    className="border border-black py-2 px-2 text-blue-950 font-black text-xs"
                   >
                     المصروفات
                   </th>
                 </tr>
 
                 {/* Level 2: Sub-columns (رقم, كاش, فيزا, ..., واصل) */}
-                <tr className="text-[11px] font-bold text-black">
+                <tr className="text-[11px] font-bold">
                   {activeEmployees.map(emp => (
                     <React.Fragment key={emp.id}>
-                      <th className="border border-black py-1 px-1 bg-white text-black font-bold w-12" style={{ color: '#000000' }}>رقم</th>
+                      <th className="border border-black py-1 px-1 bg-slate-50 text-slate-700 w-12">رقم</th>
                       {registeredMethods.map(m => (
-                        <th key={m.id} className="border border-black py-1 px-1 bg-white text-black font-bold min-w-10" style={{ color: '#000000' }}>
+                        <th key={m.id} className="border border-black py-1 px-1 bg-slate-50 text-slate-700 min-w-10">
                           {m.name}
                         </th>
                       ))}
-                      <th className="border border-black py-1 px-1 bg-white text-black font-bold min-w-10" style={{ color: '#000000' }}>واصل</th>
+                      <th className="border border-black py-1 px-1 bg-amber-50 text-amber-900 min-w-10">واصل</th>
                     </React.Fragment>
                   ))}
                   {/* Separator */}
-                  <th style={{ backgroundColor: '#000000' }} className="border border-black p-0"></th>
+                  <th style={{ backgroundColor: '#333' }} className="border border-black p-0"></th>
                   {/* Payments Subheaders */}
-                  <th style={{ backgroundColor: '#ffffff', color: '#000000' }} className="border border-black py-1 px-2 text-black font-bold min-w-24">الاسم</th>
-                  <th style={{ backgroundColor: '#ffffff', color: '#000000' }} className="border border-black py-1 px-1 text-black font-bold min-w-14">مبلغ</th>
+                  <th style={{ backgroundColor: '#ffe0b2' }} className="border border-black py-1 px-2 text-orange-900 font-bold min-w-24">الاسم</th>
+                  <th style={{ backgroundColor: '#ffe0b2' }} className="border border-black py-1 px-1 text-orange-900 font-bold min-w-14">مبلغ</th>
                   {/* Expenses Subheaders */}
-                  <th style={{ backgroundColor: '#ffffff', color: '#000000' }} className="border border-black py-1 px-2 text-black font-bold min-w-28">نوع</th>
-                  <th style={{ backgroundColor: '#ffffff', color: '#000000' }} className="border border-black py-1 px-1 text-black font-bold min-w-14">مبلغ</th>
+                  <th style={{ backgroundColor: '#e1f5fe' }} className="border border-black py-1 px-2 text-blue-900 font-bold min-w-28">نوع</th>
+                  <th style={{ backgroundColor: '#e1f5fe' }} className="border border-black py-1 px-1 text-blue-900 font-bold min-w-14">مبلغ</th>
                 </tr>
               </thead>
 
@@ -911,8 +884,8 @@ export function DailySheetScreen({
                         <React.Fragment key={emp.id}>
                           {/* Invoice Number */}
                           <td 
-                            style={{ backgroundColor: '#ffffff', color: '#000000', fontWeight: 'bold' }} 
-                            className="border border-black py-1 px-1 font-mono text-[11px] text-black"
+                            style={{ backgroundColor: '#fcfcfc', color: '#c62828', fontWeight: 'bold' }} 
+                            className="border border-black py-1 px-1 font-mono text-[11px]"
                           >
                             {inv ? inv.invoiceId : ''}
                           </td>
@@ -923,8 +896,7 @@ export function DailySheetScreen({
                             return (
                               <td 
                                 key={m.id} 
-                                style={{ color: '#000000' }}
-                                className="border border-black py-1 px-1 font-mono font-bold text-black"
+                                className="border border-black py-1 px-1 font-mono font-bold text-slate-800"
                               >
                                 {val && val > 0 ? val.toFixed(0) : ''}
                               </td>
@@ -933,8 +905,8 @@ export function DailySheetScreen({
 
                           {/* Wasel Column */}
                           <td 
-                            style={{ backgroundColor: '#ffffff', color: '#000000' }} 
-                            className="border border-black py-1 px-1 font-mono font-bold text-black"
+                            style={{ backgroundColor: '#fff8e1' }} 
+                            className="border border-black py-1 px-1 font-mono font-bold text-amber-900"
                           >
                             {inv && inv.waselAmount > 0 ? inv.waselAmount.toFixed(0) : ''}
                           </td>
@@ -943,19 +915,19 @@ export function DailySheetScreen({
                     })}
 
                     {/* Dark Separator Column */}
-                    <td style={{ backgroundColor: '#000000' }} className="border border-black p-0"></td>
+                    <td style={{ backgroundColor: '#333' }} className="border border-black p-0"></td>
 
                     {/* Staff Payment Row Cells */}
                     {(() => {
                       const pay = staffPayments[rIdx];
                       return (
                         <>
-                          <td className="border border-black py-1 px-2 font-bold text-black text-right truncate max-w-32" style={{ color: '#000000' }}>
+                          <td className="border border-black py-1 px-2 font-bold text-slate-800 text-right truncate max-w-32">
                             {pay ? pay.name : ''}
                           </td>
                           <td 
-                            style={{ fontWeight: 'bold', color: '#000000' }} 
-                            className="border border-black py-1 px-1 font-mono text-center text-black"
+                            style={{ fontWeight: 'bold', color: '#d84315' }} 
+                            className="border border-black py-1 px-1 font-mono text-center"
                           >
                             {pay ? pay.amount.toFixed(0) : ''}
                           </td>
@@ -968,12 +940,12 @@ export function DailySheetScreen({
                       const exp = dayExpenses[rIdx];
                       return (
                         <>
-                          <td className="border border-black py-1 px-2 font-bold text-black text-right truncate max-w-36" style={{ color: '#000000' }}>
+                          <td className="border border-black py-1 px-2 font-bold text-slate-800 text-right truncate max-w-36">
                             {exp ? exp.type : ''}
                           </td>
                           <td 
-                            style={{ fontWeight: 'bold', color: '#000000' }} 
-                            className="border border-black py-1 px-1 font-mono text-center text-black"
+                            style={{ fontWeight: 'bold', color: '#0277bd' }} 
+                            className="border border-black py-1 px-1 font-mono text-center"
                           >
                             {exp ? exp.amount.toFixed(0) : ''}
                           </td>
@@ -993,25 +965,25 @@ export function DailySheetScreen({
                       <td 
                         key={emp.id} 
                         colSpan={colsPerEmployee} 
-                        style={{ backgroundColor: '#ffffff', fontWeight: 'bold', color: '#000000' }} 
-                        className="border border-black py-1.5 px-1 text-black font-bold text-xs"
+                        style={{ backgroundColor: '#e0ffff', fontWeight: 'bold' }} 
+                        className="border border-black py-1.5 px-1 text-slate-900 text-xs"
                       >
                         العدد: {empData?.invoiceCount || 0}
                       </td>
                     );
                   })}
-                  <td style={{ backgroundColor: '#000000' }} className="border border-black p-0"></td>
+                  <td style={{ backgroundColor: '#333' }} className="border border-black p-0"></td>
                   <td 
                     colSpan={2} 
-                    style={{ backgroundColor: '#ffffff', fontWeight: 'bold', color: '#000000' }} 
-                    className="border border-black py-1.5 px-2 text-black font-mono text-xs font-bold"
+                    style={{ backgroundColor: '#ffccbc', fontWeight: 'bold' }} 
+                    className="border border-black py-1.5 px-2 text-orange-950 font-mono text-xs"
                   >
                     م: {totalStaffPayments.toFixed(0)}
                   </td>
                   <td 
                     colSpan={2} 
-                    style={{ backgroundColor: '#ffffff', fontWeight: 'bold', color: '#000000' }} 
-                    className="border border-black py-1.5 px-2 text-black font-mono text-xs font-bold"
+                    style={{ backgroundColor: '#b3e5fc', fontWeight: 'bold' }} 
+                    className="border border-black py-1.5 px-2 text-blue-950 font-mono text-xs"
                   >
                     م: {totalDayExpenses.toFixed(0)}
                   </td>
@@ -1023,31 +995,31 @@ export function DailySheetScreen({
                     const empData = employeeData[empIdx];
                     return (
                       <React.Fragment key={emp.id}>
-                        <td style={{ backgroundColor: '#ffffff' }} className="border border-black p-1"></td>
+                        <td style={{ backgroundColor: '#eee' }} className="border border-black p-1"></td>
                         {registeredMethods.map(m => {
                           const val = empData?.methodTotals[m.id] || 0;
                           return (
                             <td 
                               key={m.id} 
-                              style={{ backgroundColor: '#ffffff', fontWeight: 'bold', fontSize: '11px', color: '#000000' }} 
-                              className="border border-black py-1 px-1 font-mono text-black font-bold"
+                              style={{ backgroundColor: '#e0f7fa', fontWeight: 'bold', fontSize: '11px' }} 
+                              className="border border-black py-1 px-1 font-mono text-slate-800"
                             >
                               {val > 0 ? `${val.toFixed(0)}` : ''}
                             </td>
                           );
                         })}
                         <td 
-                          style={{ backgroundColor: '#ffffff', fontWeight: 'bold', fontSize: '11px', color: '#000000' }} 
-                          className="border border-black py-1 px-1 font-mono text-black font-bold"
+                          style={{ backgroundColor: '#e0f7fa', fontWeight: 'bold', fontSize: '11px' }} 
+                          className="border border-black py-1 px-1 font-mono text-amber-900"
                         >
                           {empData && empData.totalWasel > 0 ? `${empData.totalWasel.toFixed(0)}` : ''}
                         </td>
                       </React.Fragment>
                     );
                   })}
-                  <td style={{ backgroundColor: '#000000' }} className="border border-black p-0"></td>
-                  <td colSpan={2} style={{ backgroundColor: '#ffffff' }} className="border border-black p-1"></td>
-                  <td colSpan={2} style={{ backgroundColor: '#ffffff' }} className="border border-black p-1"></td>
+                  <td style={{ backgroundColor: '#333' }} className="border border-black p-0"></td>
+                  <td colSpan={2} style={{ backgroundColor: '#f0f0f0' }} className="border border-black p-1"></td>
+                  <td colSpan={2} style={{ backgroundColor: '#f0f0f0' }} className="border border-black p-1"></td>
                 </tr>
 
                 {/* Footer Row 3: Employee Grand Sales Totals */}
@@ -1059,20 +1031,20 @@ export function DailySheetScreen({
                       <td 
                         key={emp.id} 
                         colSpan={colsPerEmployee} 
-                        style={{ backgroundColor: '#ffffff', borderTop: '2px solid #000000', fontWeight: 'bold', color: '#000000' }} 
-                        className="border border-black py-1.5 px-2 text-black text-xs font-bold"
+                        style={{ backgroundColor: '#b2dfdb', borderTop: '1px solid #009688', fontWeight: 'bold' }} 
+                        className="border border-black py-1.5 px-2 text-teal-950 text-xs"
                       >
                         الإجمالي: {totalWork.toFixed(0)}
                         {empData && empData.totalWasel > 0 && (
-                          <span className="text-[10px] text-black font-bold block" style={{ color: '#000000' }}>
+                          <span className="text-[10px] text-teal-800 font-normal block">
                             (مدفوع: {empData.totalSales.toFixed(0)} | واصل: {empData.totalWasel.toFixed(0)})
                           </span>
                         )}
                       </td>
                     );
                   })}
-                  <td style={{ backgroundColor: '#000000' }} className="border border-black p-0"></td>
-                  <td colSpan={4} className="border border-black bg-white p-1"></td>
+                  <td style={{ backgroundColor: '#333' }} className="border border-black p-0"></td>
+                  <td colSpan={4} className="border border-black bg-slate-100 p-1"></td>
                 </tr>
 
                 {/* Footer Row 4: Employee Earned Commission */}
@@ -1083,23 +1055,23 @@ export function DailySheetScreen({
                       <td 
                         key={emp.id} 
                         colSpan={colsPerEmployee} 
-                        style={{ backgroundColor: '#ffffff', borderTop: '1px solid #000000', fontWeight: 'bold', color: '#000000', fontSize: '11px' }} 
-                        className="border border-black py-1.5 px-1 text-black font-bold"
+                        style={{ backgroundColor: '#f3e5f5', borderTop: '1px solid #ab47bc', fontWeight: 'bold', color: '#6a1b9a', fontSize: '11px' }} 
+                        className="border border-black py-1.5 px-1"
                       >
                         العمولة: {empData?.totalCommission.toFixed(0) || 0}
                         <br />
-                        <span style={{ color: '#000000', fontWeight: 'bold', fontSize: '10px' }}>
+                        <span style={{ color: '#666', fontWeight: 'normal', fontSize: '10px' }}>
                           ({empData?.commissionLabel})
                         </span>
                       </td>
                     );
                   })}
-                  <td style={{ backgroundColor: '#000000' }} className="border border-black p-0"></td>
-                  <td colSpan={4} style={{ backgroundColor: '#ffffff' }} className="border border-black p-1"></td>
+                  <td style={{ backgroundColor: '#333' }} className="border border-black p-0"></td>
+                  <td colSpan={4} style={{ backgroundColor: '#f3e5f5' }} className="border border-black p-1"></td>
                 </tr>
 
                 {/* Footer Row 5: Total Methods Bar across all employees */}
-                <tr style={{ backgroundColor: '#ffffff', color: '#000000', fontWeight: 'bold', borderTop: '2px solid #000000' }}>
+                <tr style={{ backgroundColor: '#2c3e50', color: '#fff', fontWeight: 'bold' }}>
                   {(() => {
                     // Split the available employee cols evenly among payment methods
                     const methodCols = registeredMethods.length + 1; // registered + wasel
@@ -1115,8 +1087,7 @@ export function DailySheetScreen({
                             <td 
                               key={m.id} 
                               colSpan={colSpan} 
-                              className="border border-black py-2 px-2 text-xs font-mono font-bold text-black"
-                              style={{ color: '#000000' }}
+                              className="border border-black py-2 px-2 text-xs font-mono font-bold"
                             >
                               إجمالي {m.name}: {val.toFixed(0)}
                             </td>
@@ -1124,28 +1095,27 @@ export function DailySheetScreen({
                         })}
                         <td 
                           colSpan={spanPerMethod} 
-                          className="border border-black py-2 px-2 text-xs font-mono font-bold text-black"
-                          style={{ color: '#000000' }}
+                          className="border border-black py-2 px-2 text-xs font-mono font-bold text-amber-300"
                         >
                           إجمالي واصل: {totalOverallWasel.toFixed(0)}
                         </td>
-                        <td style={{ backgroundColor: '#000000' }} className="border border-black p-0"></td>
-                        <td colSpan={4} className="border border-black bg-white p-1"></td>
+                        <td style={{ backgroundColor: '#333' }} className="border border-black p-0"></td>
+                        <td colSpan={4} className="border border-black bg-slate-800 p-1"></td>
                       </>
                     );
                   })()}
                 </tr>
 
                 {/* Footer Row 6: Total Paid Income */}
-                <tr style={{ backgroundColor: '#ffffff', color: '#000000', fontWeight: 'bold', fontSize: '18px', borderTop: '2px solid #000000' }}>
-                  <td colSpan={totalTableCols} className="border border-black py-2.5 px-4 text-center font-black text-black" style={{ color: '#000000' }}>
+                <tr style={{ backgroundColor: '#000', color: '#ffeb3b', fontWeight: 'bold', fontSize: '19px' }}>
+                  <td colSpan={totalTableCols} className="border border-black py-2.5 px-4 text-center font-black">
                     إجمالي الدخل (مجموع جميع الفواتير): {totalGrandIncome.toFixed(0)} {settings.currency}
                   </td>
                 </tr>
 
                 {/* Footer Row 7: Final Net Income */}
-                <tr style={{ height: '48px', backgroundColor: '#ffffff', color: '#000000', fontSize: '22px', fontWeight: 'bold', borderTop: '4px double #000000', borderBottom: '2px solid #000000' }}>
-                  <td colSpan={totalTableCols} className="border border-black py-2 px-4 text-center font-black text-black" style={{ color: '#000000' }}>
+                <tr style={{ height: '48px', backgroundColor: '#1a237e', color: '#ffffff', fontSize: '24px', fontWeight: 'bold', borderTop: '4px double #fff' }}>
+                  <td colSpan={totalTableCols} className="border border-black py-2 px-4 text-center font-black">
                     صافي الدخل: {netIncome.toFixed(0)} {settings.currency}
                   </td>
                 </tr>
