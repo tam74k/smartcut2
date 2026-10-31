@@ -3648,7 +3648,7 @@ export default function App() {
     { id: 'hr', icon: Clock, label: 'شؤون العاملين وسجل الدوام' },
     { id: 'partners', icon: Briefcase, label: 'الشركاء والأرباح والخسائر' },
     { id: 'reports', icon: FileText, label: 'التقارير الشاملة' },
-    { id: 'daily_sheet', icon: TableProperties, label: 'تقرير أعمال اليوم بالكامل' },
+    { id: 'daily_sheet', icon: TableProperties, label: 'الكشف اليومي' },
     { id: 'shifts', icon: CalendarClock, label: 'سجل الورديات' },
     { id: 'tips', icon: HeartHandshake, label: 'البقشيش والإكراميات' },
     { id: 'promo_codes', icon: Tag, label: 'البرومو كود والكوبونات' },

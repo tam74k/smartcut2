@@ -593,7 +593,7 @@ export function DailySheetScreen({
   </style>
 </head>
 <body>
-  <h2>تقرير اليومية: ${selectedDate} - ${settings.salonName || 'صالون'}</h2>
+  <h2>الكشف اليومي: ${selectedDate} - ${settings.salonName || 'صالون'}</h2>
   ${printArea.innerHTML}
   <script>
     window.onload = function() {

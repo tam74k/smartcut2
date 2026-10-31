@@ -369,11 +369,33 @@ export function DashboardScreen({
     return getBookingAdvancesForTreasury(() => true);
   }, [todayTrx, branchBookings, isShiftOpen, shiftDate, shiftData, localToday, targetShiftDate]);
 
+  const todayInvoicesBaseSales = useMemo(() => {
+    if (!isShiftOpen) return 0;
+    return todayInvoices.reduce((sum, inv) => sum + (Number(inv.total) || 0), 0);
+  }, [todayInvoices, isShiftOpen]);
+
+  const todayTips = useMemo(() => {
+    if (!isShiftOpen) return 0;
+    return todayInvoices.reduce((sum, inv) => {
+      const splits = (inv.paymentMethods && inv.paymentMethods.length > 0)
+        ? inv.paymentMethods
+        : ((inv as any).payments && (inv as any).payments.length > 0)
+          ? (inv as any).payments
+          : null;
+      const splitsTotal = splits ? splits.reduce((s: number, p: any) => s + (Number(p.amount) || 0), 0) : 0;
+      const net = Number(inv.netAmount ?? inv.total ?? (inv as any).paid ?? 0);
+      let tip = Number(inv.tipAmount ?? (inv as any).tips ?? (inv as any).tip ?? 0);
+      if (tip === 0 && splitsTotal > net) {
+        tip = splitsTotal - net;
+      }
+      return sum + tip;
+    }, 0);
+  }, [todayInvoices, isShiftOpen]);
+
   const todaySalesRevenue = useMemo(() => {
     if (!isShiftOpen) return 0;
-    const invoicesTotal = todayInvoices.reduce((sum, inv) => sum + (Number(inv.total) || 0), 0);
-    return invoicesTotal + todayBookingAdvances;
-  }, [todayInvoices, todayBookingAdvances, isShiftOpen]);
+    return todayInvoicesBaseSales + todayTips + todayBookingAdvances;
+  }, [todayInvoicesBaseSales, todayTips, todayBookingAdvances, isShiftOpen]);
 
   const todayInvoicesCount = useMemo(() => {
     if (!isShiftOpen) return 0;
@@ -680,16 +702,27 @@ export function DashboardScreen({
         >
           <div>
             <p className="text-slate-500 text-[12px] font-bold mb-1">
-              {isShiftOpen && targetShiftDate ? `مبيعات الوردية (${targetShiftDate})` : 'مبيعات اليوم'} (اضغط للتفاصيل)
+              {isShiftOpen && targetShiftDate ? `إجمالي إيراد الوردية (${targetShiftDate})` : 'إجمالي إيراد اليوم'} (اضغط للتفاصيل)
             </p>
             <h3 className="text-lg font-extrabold text-emerald-600 font-mono">{todaySalesRevenue.toFixed(2)} <span className="text-sm font-normal text-slate-500">{settings.currency}</span></h3>
-            {todayBookingAdvances > 0 && (
-              <p className="text-[11px] font-bold text-teal-600 flex items-center gap-1.5 mt-1">
-                <Calendar className="w-3.5 h-3.5 text-teal-500" />
-                <span>منها مقدمات حجز:</span>
-                <span className="font-mono">+{todayBookingAdvances.toFixed(2)} {settings.currency}</span>
-              </p>
-            )}
+            <div className="mt-1 space-y-0.5 text-[11px] font-medium">
+              <div className="flex items-center gap-1.5 text-slate-500">
+                <span>مبيعات الفواتير:</span>
+                <span className="font-mono font-bold text-slate-700">{todayInvoicesBaseSales.toFixed(2)} {settings.currency}</span>
+              </div>
+              {todayTips > 0 && (
+                <div className="flex items-center gap-1.5 text-amber-600 font-bold">
+                  <span>بقشيش اليوم:</span>
+                  <span className="font-mono">+{todayTips.toFixed(2)} {settings.currency}</span>
+                </div>
+              )}
+              {todayBookingAdvances > 0 && (
+                <div className="flex items-center gap-1.5 text-teal-600 font-bold">
+                  <span>مقدم حجز:</span>
+                  <span className="font-mono">+{todayBookingAdvances.toFixed(2)} {settings.currency}</span>
+                </div>
+              )}
+            </div>
           </div>
           <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center">
             <TrendingUp size={20} />

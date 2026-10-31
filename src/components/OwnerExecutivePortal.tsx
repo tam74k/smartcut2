@@ -1143,15 +1143,22 @@ export function OwnerExecutivePortal({
       const net = rawNet > 0 ? rawNet : (rawTotal > 0 ? rawTotal : rawPaid);
       invoicesBaseSales += net;
 
-      const tip = Number(inv.tipAmount) || 0;
-      totalTips += tip;
-
       // Check payments array, paymentMethods, or single method
       const splits = (inv.paymentMethods && inv.paymentMethods.length > 0)
         ? inv.paymentMethods
         : ((inv as any).payments && (inv as any).payments.length > 0)
           ? (inv as any).payments
           : null;
+
+      const splitsTotal = (splits && splits.length > 0)
+        ? splits.reduce((s: number, p: any) => s + (Number(p.amount) || 0), 0)
+        : 0;
+
+      let tip = Number(inv.tipAmount ?? (inv as any).tips ?? (inv as any).tip ?? 0);
+      if (tip === 0 && splitsTotal > net) {
+        tip = splitsTotal - net;
+      }
+      totalTips += tip;
 
       if (splits && splits.length > 0) {
         splits.forEach((p: any) => {
@@ -1452,7 +1459,20 @@ export function OwnerExecutivePortal({
     const bookingAdvancesCount = bookingAdvancesList.length;
 
     // 1.c Total Tips Collected
-    const totalTips = filteredInvoices.reduce((sum, inv) => sum + (Number(inv.tipAmount) || 0), 0);
+    const totalTips = filteredInvoices.reduce((sum, inv) => {
+      const splits = (inv.paymentMethods && inv.paymentMethods.length > 0)
+        ? inv.paymentMethods
+        : ((inv as any).payments && (inv as any).payments.length > 0)
+          ? (inv as any).payments
+          : null;
+      const splitsTotal = splits ? splits.reduce((s: number, p: any) => s + (Number(p.amount) || 0), 0) : 0;
+      const net = Number(inv.netAmount ?? inv.total ?? (inv as any).paid ?? 0);
+      let tip = Number(inv.tipAmount ?? (inv as any).tips ?? (inv as any).tip ?? 0);
+      if (tip === 0 && splitsTotal > net) {
+        tip = splitsTotal - net;
+      }
+      return sum + tip;
+    }, 0);
 
     const grossIncome = grossInvoicesIncome + totalTips + totalBookingAdvances;
 
@@ -2159,7 +2179,16 @@ export function OwnerExecutivePortal({
       const invTime = inv.date?.split('T')[1]?.substring(0, 5) || '';
       const timeVal = inv.date ? new Date(inv.date).getTime() : 0;
       const baseAmt = Number(inv.netAmount || inv.total || 0);
-      const tipAmt = Number(inv.tipAmount) || 0;
+      const splits = (inv.paymentMethods && inv.paymentMethods.length > 0)
+        ? inv.paymentMethods
+        : ((inv as any).payments && (inv as any).payments.length > 0)
+          ? (inv as any).payments
+          : null;
+      const splitsTotal = splits ? splits.reduce((s: number, p: any) => s + (Number(p.amount) || 0), 0) : 0;
+      let tipAmt = Number(inv.tipAmount ?? (inv as any).tips ?? (inv as any).tip ?? 0);
+      if (tipAmt === 0 && splitsTotal > baseAmt) {
+        tipAmt = splitsTotal - baseAmt;
+      }
       const totalCollected = baseAmt + tipAmt;
 
       items.push({
