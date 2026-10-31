@@ -20,16 +20,21 @@ function extractDatesFromLabel(label: string): string[] {
 
 export const isZeroingOrClosingTrx = (t: any): boolean => {
   if (!t) return false;
-  if (t.isZeroing || t.isShiftZeroing || t.isClosing || t.subCategory === 'shift_zeroing') return true;
-  const desc = String(t.description || '').toLowerCase();
-  const cat = String(t.category || '').toLowerCase();
+  if (t.isZeroing || t.isShiftZeroing || t.isClosing || t.subCategory === 'shift_zeroing' || (t as any).sub_category === 'shift_zeroing') return true;
+  const desc = String(t.description || t.notes || '').toLowerCase();
+  const cat = String(t.category || (t as any).expenseCategory || '').toLowerCase();
+  const title = String(t.title || '').toLowerCase();
   const id = String(t.id || '').toUpperCase();
+  const type = String(t.type || '').toLowerCase();
   
-  if (id.startsWith('TRX-OUT-') && desc.includes('تصفير')) return true;
-  if (id.startsWith('TRX-IN-') && desc.includes('تصفير')) return true;
+  if (title === 'transfer' || cat === 'transfer' || type === 'transfer') return true;
+
+  if (id.startsWith('TRX-OUT-') && (desc.includes('تصفير') || desc.includes('تفريغ') || desc.includes('إغلاق') || desc.includes('اغلاق') || desc.includes('إقفال') || desc.includes('اقفال'))) return true;
+  if (id.startsWith('TRX-IN-') && (desc.includes('تصفير') || desc.includes('تفريغ') || desc.includes('إغلاق') || desc.includes('اغلاق') || desc.includes('إقفال') || desc.includes('اقفال'))) return true;
   
   return (
     desc.includes('تصفير') ||
+    desc.includes('تفريغ') ||
     desc.includes('نقل الرصيد') ||
     desc.includes('نقل رصيد') ||
     desc.includes('ترحيل رصيد') ||
@@ -38,9 +43,20 @@ export const isZeroingOrClosingTrx = (t: any): boolean => {
     desc.includes('اغلاق وردية') ||
     desc.includes('إغلاق الخزائن') ||
     desc.includes('اغلاق الخزائن') ||
+    desc.includes('إغلاق الوردية') ||
+    desc.includes('اغلاق الوردية') ||
+    desc.includes('إقفال') ||
+    desc.includes('اقفال') ||
+    title.includes('تصفير') ||
+    title.includes('تفريغ') ||
+    title.includes('نقل الرصيد') ||
+    title.includes('transfer') ||
     cat === 'shift_zeroing' ||
     cat === 'zeroing' ||
-    cat.includes('تصفير')
+    cat === 'clearing' ||
+    cat === 'transfer' ||
+    cat.includes('تصفير') ||
+    cat.includes('تفريغ')
   );
 };
 

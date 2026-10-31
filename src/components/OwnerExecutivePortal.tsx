@@ -534,13 +534,17 @@ const isStaffSalary = (t: any) => {
 
 export const isZeroingOrClosingTrx = (t: any): boolean => {
   if (!t) return false;
-  if (t.isZeroing || t.isShiftZeroing || t.isClosing || t.subCategory === 'shift_zeroing') return true;
-  const desc = String(t.description || '').toLowerCase();
-  const cat = String(t.category || '').toLowerCase();
+  if (t.isZeroing || t.isShiftZeroing || t.isClosing || t.subCategory === 'shift_zeroing' || (t as any).sub_category === 'shift_zeroing') return true;
+  const desc = String(t.description || t.notes || '').toLowerCase();
+  const cat = String(t.category || (t as any).expenseCategory || '').toLowerCase();
+  const title = String(t.title || '').toLowerCase();
   const id = String(t.id || '').toUpperCase();
+  const type = String(t.type || '').toLowerCase();
   
-  if (id.startsWith('TRX-OUT-') && (desc.includes('تصفير') || desc.includes('تفريغ') || desc.includes('إغلاق') || desc.includes('اغلاق'))) return true;
-  if (id.startsWith('TRX-IN-') && (desc.includes('تصفير') || desc.includes('تفريغ') || desc.includes('إغلاق') || desc.includes('اغلاق'))) return true;
+  if (title === 'transfer' || cat === 'transfer' || type === 'transfer') return true;
+
+  if (id.startsWith('TRX-OUT-') && (desc.includes('تصفير') || desc.includes('تفريغ') || desc.includes('إغلاق') || desc.includes('اغلاق') || desc.includes('إقفال') || desc.includes('اقفال'))) return true;
+  if (id.startsWith('TRX-IN-') && (desc.includes('تصفير') || desc.includes('تفريغ') || desc.includes('إغلاق') || desc.includes('اغلاق') || desc.includes('إقفال') || desc.includes('اقفال'))) return true;
   
   return (
     desc.includes('تصفير') ||
@@ -555,9 +559,16 @@ export const isZeroingOrClosingTrx = (t: any): boolean => {
     desc.includes('اغلاق الخزائن') ||
     desc.includes('إغلاق الوردية') ||
     desc.includes('اغلاق الوردية') ||
+    desc.includes('إقفال') ||
+    desc.includes('اقفال') ||
+    title.includes('تصفير') ||
+    title.includes('تفريغ') ||
+    title.includes('نقل الرصيد') ||
+    title.includes('transfer') ||
     cat === 'shift_zeroing' ||
     cat === 'zeroing' ||
     cat === 'clearing' ||
+    cat === 'transfer' ||
     cat.includes('تصفير') ||
     cat.includes('تفريغ')
   );
@@ -567,15 +578,21 @@ export const isInterTreasuryTransfer = (t: any): boolean => {
   if (!t) return false;
   if (isZeroingOrClosingTrx(t)) return true;
   const cat = String(t.category || '').toLowerCase();
-  const desc = String(t.description || '').toLowerCase();
+  const title = String(t.title || '').toLowerCase();
+  const desc = String(t.description || t.notes || '').toLowerCase();
+  const type = String(t.type || '').toLowerCase();
   return (
+    type === 'transfer' ||
     cat === 'transfer' || 
     cat.includes('transfer') || 
+    title === 'transfer' ||
+    title.includes('transfer') ||
     cat.includes('تحويل') || 
     desc.includes('تحويل إلى') || 
     desc.includes('تحويل الى') || 
     desc.includes('تحويل من') ||
-    desc.includes('تحويل بين الخزائن')
+    desc.includes('تحويل بين الخزائن') ||
+    desc.includes('تحويل')
   );
 };
 
@@ -1324,6 +1341,8 @@ export function OwnerExecutivePortal({
     // 1. Operating Expenses (excluding salaries, advances, supplier payments, partner shares)
     const directExpenseTx = filteredTransactions.filter(isOperatingExpense);
     const customExpenses = (expenses || []).filter(e => {
+      if (isZeroingOrClosingTrx(e) || isInterTreasuryTransfer(e)) return false;
+      if (isStaffAdvance(e) || isStaffSalary(e) || isSupplierOrPurchase(e) || isPartnerWithdrawal(e) || isTipTrx(e) || isCommissionTrx(e)) return false;
       const expDate = (e.shiftDate || (e as any).shift_date || e.date || '').split('T')[0].split(' ')[0].trim();
       const inPeriod = isDateInSelectedPeriod(expDate);
       const isBranchMatch = matchesActiveBranch(e.branchId);
@@ -1664,6 +1683,8 @@ export function OwnerExecutivePortal({
     // 2. All Expenses (Operating Expenses)
     const directExpenseTx = filteredTransactions.filter(isOperatingExpense);
     const customExpenses = (expenses || []).filter(e => {
+      if (isZeroingOrClosingTrx(e) || isInterTreasuryTransfer(e)) return false;
+      if (isStaffAdvance(e) || isStaffSalary(e) || isSupplierOrPurchase(e) || isPartnerWithdrawal(e) || isTipTrx(e) || isCommissionTrx(e)) return false;
       const expDate = (e.shiftDate || (e as any).shift_date || e.date || '').split('T')[0].split(' ')[0].trim();
       const inPeriod = isDateInSelectedPeriod(expDate);
       const isBranchMatch = matchesActiveBranch(e.branchId);
@@ -2499,6 +2520,8 @@ export function OwnerExecutivePortal({
     // 1. Operating Expenses
     const directExpenseTx = filteredTransactions.filter(isOperatingExpense);
     const customExpenses = (expenses || []).filter(e => {
+      if (isZeroingOrClosingTrx(e) || isInterTreasuryTransfer(e)) return false;
+      if (isStaffAdvance(e) || isStaffSalary(e) || isSupplierOrPurchase(e) || isPartnerWithdrawal(e) || isTipTrx(e) || isCommissionTrx(e)) return false;
       const eDate = (e.shiftDate || (e as any).shift_date || e.date || '').split('T')[0].split(' ')[0].trim();
       const inPeriod = isDateInSelectedPeriod(eDate);
       const isBranchMatch = matchesActiveBranch(e.branchId);
@@ -2756,7 +2779,33 @@ export function OwnerExecutivePortal({
       });
     });
 
-    return items.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    const sanitizedItems = items.filter(it => {
+      const text = `${it.title} ${it.notes} ${it.recipientOrCategory} ${it.label}`.toLowerCase();
+      if (
+        text.includes('تصفير') || 
+        text.includes('تفريغ') || 
+        text.includes('نقل الرصيد') || 
+        text.includes('نقل رصيد') || 
+        text.includes('ترحيل رصيد') || 
+        text.includes('تحويل تصفير') ||
+        text.includes('إغلاق وردية') || 
+        text.includes('اغلاق وردية') || 
+        text.includes('إغلاق الخزائن') || 
+        text.includes('اغلاق الخزائن') || 
+        text.includes('إغلاق الوردية') || 
+        text.includes('اغلاق الوردية') || 
+        text.includes('إقفال') || 
+        text.includes('اقفال')
+      ) {
+        return false;
+      }
+      if (it.title === 'transfer' || it.recipientOrCategory === 'transfer') {
+        return false;
+      }
+      return true;
+    });
+
+    return sanitizedItems.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
   }, [filteredTransactions, expenses, employees, activeBranchId, isMainBranch, isAllBranches, period, dateRange, purchases, supplierPayments]);
 
   // الحجوزات المصفاة في تبويب الحجوزات

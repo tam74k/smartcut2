@@ -54,7 +54,7 @@ import { TursoCloudSyncModal } from './components/TursoCloudSyncModal';
 import { InitialSalonSetupModal, DEFAULT_INITIAL_TREASURIES } from './components/InitialSalonSetupModal';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { SubscriptionBanner } from './components/SubscriptionBanner';
-import { ClosingReportReceipt } from './components/ClosingReportReceipt';
+import { ClosingReportReceipt, isZeroingOrClosingTrx } from './components/ClosingReportReceipt';
 import { handlePrintReceipt, directPrintHtml } from './utils/print';
 import { printQueueSlipDirect } from './utils/printQueueSlip';
 import { AuthService, ROLE_LABELS } from './services/auth';
@@ -3539,7 +3539,7 @@ export default function App() {
           branches={branches}
           tips={tips}
           fingerprintLogs={branchFingerprintLogs}
-          expenses={branchTransactions.filter(t => t.category === 'expense' || t.type === 'expense')}
+          expenses={branchTransactions.filter(t => (t.category === 'expense' || t.type === 'expense') && !isZeroingOrClosingTrx(t))}
           purchases={branchPurchaseInvoices}
           supplierPayments={branchSupplierPayments}
           suppliers={branchSuppliers}
@@ -3556,7 +3556,7 @@ export default function App() {
           settings={settings}
           invoices={branchInvoices}
           transactions={branchTransactions}
-          expenses={branchTransactions.filter(t => t.category === 'expense' || t.type === 'expense')}
+          expenses={branchTransactions.filter(t => (t.category === 'expense' || t.type === 'expense') && !isZeroingOrClosingTrx(t))}
           employees={branchEmployees}
           services={branchServices}
           branches={branches}
@@ -3598,7 +3598,7 @@ export default function App() {
           onSelectBranch={setActiveBranchId}
           currentUser={currentUser}
           onNavigateScreen={(screenName) => setActiveTab(screenName)}
-          expenses={transactions.filter(t => t.category === 'expense' || t.type === 'expense' || t.type === 'out')}
+          expenses={transactions.filter(t => (t.category === 'expense' || t.type === 'expense') && !isZeroingOrClosingTrx(t))}
           purchases={purchaseInvoices}
           supplierPayments={supplierPayments}
           partners={partners}
