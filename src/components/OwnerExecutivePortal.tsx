@@ -548,6 +548,23 @@ const isPartnerWithdrawal = (t: any) => {
   return id.startsWith('TRX-PARTNER-') || cat === 'profit_share' || cat.includes('شريك');
 };
 
+const isTipTrx = (t: any): boolean => {
+  if (!t) return false;
+  const desc = String(t.description || '').toLowerCase();
+  const cat = String(t.category || '').toLowerCase();
+  const id = String(t.id || '').toUpperCase();
+  return (
+    id.startsWith('TRX-TIP-') ||
+    cat === 'صرف بقشيش فوري' ||
+    cat === 'بقشيش' ||
+    cat.includes('بقشيش') ||
+    cat.includes('إكرام') ||
+    desc.includes('بقشيش') ||
+    desc.includes('إكرامية') ||
+    desc.includes('اكرامية')
+  );
+};
+
 const isOperatingExpense = (t: any) => {
   const isOut = t.type === 'out' || (t.type as string) === 'expense';
   if (!isOut) return false;
@@ -555,6 +572,7 @@ const isOperatingExpense = (t: any) => {
   if (isStaffSalary(t)) return false;
   if (isSupplierOrPurchase(t)) return false;
   if (isPartnerWithdrawal(t)) return false;
+  if (isTipTrx(t)) return false;
   return true;
 };
 
@@ -1108,7 +1126,9 @@ export function OwnerExecutivePortal({
 
   // Revenue Breakdown by payment method
   const revenueStats = useMemo(() => {
-    let totalRevenue = 0;
+    let invoicesBaseSales = 0;
+    let totalTips = 0;
+    let totalBookingAdvances = 0;
     let cash = 0;
     let card = 0; // Mada / POS
     let credit = 0; // Visa / MasterCard
@@ -1121,7 +1141,10 @@ export function OwnerExecutivePortal({
       const rawTotal = (inv.total !== undefined && inv.total !== null) ? Number(inv.total) : 0;
       const rawPaid = ((inv as any).paid !== undefined && (inv as any).paid !== null) ? Number((inv as any).paid) : 0;
       const net = rawNet > 0 ? rawNet : (rawTotal > 0 ? rawTotal : rawPaid);
-      totalRevenue += net;
+      invoicesBaseSales += net;
+
+      const tip = Number(inv.tipAmount) || 0;
+      totalTips += tip;
 
       // Check payments array, paymentMethods, or single method
       const splits = (inv.paymentMethods && inv.paymentMethods.length > 0)
@@ -1155,17 +1178,18 @@ export function OwnerExecutivePortal({
         const method = (inv.paymentMethod || (inv as any).treasury || '').toLowerCase();
         const treasuryObj = (settings.treasuries || []).find(t => t.id === method || t.name === method);
         const descriptor = `${method} ${treasuryObj?.name || ''} ${treasuryObj?.type || ''}`.toLowerCase();
+        const totalInvoicePayment = net + tip;
 
         if (descriptor.includes('mada') || descriptor.includes('شبكة') || descriptor.includes('مدى') || descriptor.includes('pos') || descriptor.includes('card')) {
-          card += net;
+          card += totalInvoicePayment;
         } else if (descriptor.includes('visa') || descriptor.includes('فيزا') || descriptor.includes('credit') || descriptor.includes('ماستر') || descriptor.includes('master')) {
-          credit += net;
+          credit += totalInvoicePayment;
         } else if (descriptor.includes('bank') || descriptor.includes('تحويل') || descriptor.includes('بنك') || descriptor.includes('transfer')) {
-          bankTransfer += net;
+          bankTransfer += totalInvoicePayment;
         } else if (descriptor.includes('tamara') || descriptor.includes('tabby') || descriptor.includes('تابي') || descriptor.includes('تمارا')) {
-          tabTamara += net;
+          tabTamara += totalInvoicePayment;
         } else {
-          cash += net; // Default fallback
+          cash += totalInvoicePayment; // Default fallback
         }
       }
     });
@@ -1174,7 +1198,7 @@ export function OwnerExecutivePortal({
     bookingAdvancesList.forEach(adv => {
       const amt = Number(adv.amount) || 0;
       if (amt <= 0) return;
-      totalRevenue += amt;
+      totalBookingAdvances += amt;
       const descriptor = `${adv.treasuryName || ''} ${adv.paymentMethod || ''}`.toLowerCase();
       if (descriptor.includes('mada') || descriptor.includes('شبكة') || descriptor.includes('مدى') || descriptor.includes('pos') || descriptor.includes('card')) {
         card += amt;
@@ -1186,6 +1210,8 @@ export function OwnerExecutivePortal({
         cash += amt;
       }
     });
+
+    const totalRevenue = invoicesBaseSales + totalTips + totalBookingAdvances;
 
     // 1. Operating Expenses (excluding salaries, advances, supplier payments, partner shares)
     const directExpenseTx = filteredTransactions.filter(isOperatingExpense);
@@ -1263,6 +1289,9 @@ export function OwnerExecutivePortal({
 
     return {
       totalRevenue,
+      invoicesBaseSales,
+      totalTips,
+      totalBookingAdvances,
       cash,
       card,
       credit,
@@ -1341,7 +1370,8 @@ export function OwnerExecutivePortal({
         } else {
           const m = inv.paymentMethod || (inv as any).treasury || '';
           if (m === t.id || m === t.name || (!m && (t.id === 'cash' || t.name.includes('كاش')))) {
-            invoicesCollected += net;
+            const tip = Number(inv.tipAmount) || 0;
+            invoicesCollected += (net + tip);
           }
         }
       });
@@ -1421,7 +1451,10 @@ export function OwnerExecutivePortal({
     const totalBookingAdvances = bookingAdvancesList.reduce((sum, a) => sum + (Number(a.amount) || 0), 0);
     const bookingAdvancesCount = bookingAdvancesList.length;
 
-    const grossIncome = grossInvoicesIncome + totalBookingAdvances;
+    // 1.c Total Tips Collected
+    const totalTips = filteredInvoices.reduce((sum, inv) => sum + (Number(inv.tipAmount) || 0), 0);
+
+    const grossIncome = grossInvoicesIncome + totalTips + totalBookingAdvances;
 
     // 2. All Expenses (Operating Expenses)
     const directExpenseTx = filteredTransactions.filter(isOperatingExpense);
@@ -1537,12 +1570,20 @@ export function OwnerExecutivePortal({
     const breakdownList = [
       { 
         id: 'invoices_income', 
-        label: 'إيرادات فواتير المبيعات المسددة', 
+        label: 'إيرادات مبيعات الفواتير المسددة (الخدمات والمنتجات)', 
         amount: grossInvoicesIncome, 
         type: 'plus', 
         percent: grossIncome > 0 ? (grossInvoicesIncome / grossIncome) * 100 : 100, 
-        note: `${filteredInvoices.length} فاتورة مبيعات مسددة بالكامل (${grossInvoicesIncome.toFixed(0)} ${currency})` 
+        note: `${filteredInvoices.length} فاتورة مبيعات (${grossInvoicesIncome.toFixed(0)} ${currency})` 
       },
+      ...(totalTips > 0 ? [{
+        id: 'tips_income',
+        label: 'إجمالي بقشيش وإكراميات اليوم المحصلة',
+        amount: totalTips,
+        type: 'plus' as const,
+        percent: grossIncome > 0 ? (totalTips / grossIncome) * 100 : 0,
+        note: `بقشيش محصل ضمن الفواتير (${totalTips.toFixed(0)} ${currency})`
+      }] : []),
       { 
         id: 'booking_advances', 
         label: 'مقدم حجز (مقدمات وعربون الحجوزات المحصلة)', 
@@ -1563,6 +1604,7 @@ export function OwnerExecutivePortal({
     return {
       grossIncome,
       grossInvoicesIncome,
+      totalTips,
       totalBookingAdvances,
       bookingAdvancesCount,
       totalExpenses,
@@ -1609,8 +1651,8 @@ export function OwnerExecutivePortal({
         return isBrMatch((adv as any).branchId);
       });
       const brBookingAdvances = brBookingAdvancesList.reduce((s, a) => s + (Number(a.amount) || 0), 0);
-
-      const brGross = brInvoicesGross + brBookingAdvances;
+      const brTips = brInvoices.reduce((s, inv) => s + (Number(inv.tipAmount) || 0), 0);
+      const brGross = brInvoicesGross + brTips + brBookingAdvances;
 
       const brDirectExpTx = (transactions || []).filter(t => {
         if (!isBrMatch((t as any).branchId) || !isOperatingExpense(t)) return false;
@@ -2102,6 +2144,8 @@ export function OwnerExecutivePortal({
       clientName: string;
       clientPhone?: string;
       amount: number;
+      baseAmount?: number;
+      tipAmount?: number;
       paymentMethod: string;
       date: string;
       time: string;
@@ -2114,6 +2158,10 @@ export function OwnerExecutivePortal({
       const invDate = inv.date?.split('T')[0] || '';
       const invTime = inv.date?.split('T')[1]?.substring(0, 5) || '';
       const timeVal = inv.date ? new Date(inv.date).getTime() : 0;
+      const baseAmt = Number(inv.netAmount || inv.total || 0);
+      const tipAmt = Number(inv.tipAmount) || 0;
+      const totalCollected = baseAmt + tipAmt;
+
       items.push({
         id: inv.id,
         kind: 'invoice',
@@ -2121,7 +2169,9 @@ export function OwnerExecutivePortal({
         code: `#${inv.invoiceNumber}`,
         clientName: inv.clientName || 'عميل نقدي',
         clientPhone: inv.clientPhone,
-        amount: Number(inv.netAmount || inv.total || 0),
+        amount: totalCollected,
+        baseAmount: baseAmt,
+        tipAmount: tipAmt,
         paymentMethod: inv.paymentMethod || 'نقدي',
         date: invDate,
         time: invTime,
@@ -2328,6 +2378,25 @@ export function OwnerExecutivePortal({
           timestamp: ts
         });
       }
+    });
+
+    // 4. Staff Instant Tips Disbursed (صرف بقشيش فوري للكادر)
+    const directTipTx = filteredTransactions.filter(isTipTrx);
+    directTipTx.forEach(tx => {
+      const { date, time, ts } = parseDateTime(tx.shiftDate || (tx as any).shift_date || tx.date);
+      items.push({
+        id: tx.id,
+        kind: 'expense',
+        label: 'صرف بقشيش فوري',
+        title: tx.category || 'بقشيش فوري',
+        recipientOrCategory: tx.description?.includes('للموظف') ? tx.description.split('للموظف')[1].trim() : 'الموظف',
+        amount: Number(tx.amount) || 0,
+        paymentMethodOrTreasury: (tx as any).treasuryName || tx.paymentMethod || 'كاش (الدرج)',
+        date,
+        time,
+        notes: tx.description || 'صرف بقشيش فوري من الدرج',
+        timestamp: ts
+      });
     });
 
     return items.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
@@ -2889,7 +2958,7 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
               >
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-[11px] font-bold text-slate-400">
-                    {period === 'today' && shiftData?.isOpen && shiftData?.date ? `إيراد الوردية (${shiftData.date.split('T')[0].trim()})` : 'إيراد اليوم'}
+                    {period === 'today' && shiftData?.isOpen && shiftData?.date ? `إجمالي إيراد الوردية (${shiftData.date.split('T')[0].trim()})` : 'إجمالي إيراد اليوم'}
                   </span>
                   <div className="w-7 h-7 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
                     <DollarSign size={15} />
@@ -2898,9 +2967,31 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                 <div className="text-xl font-black text-white tracking-tight">
                   {revenueStats.totalRevenue.toLocaleString()} <span className="text-xs font-normal text-emerald-400">{currency}</span>
                 </div>
+                
+                {/* تفصيل واضح وصريح للمبيعات والبقشيش ومقدمات الحجز */}
+                <div className="mt-1.5 space-y-0.5 text-[10px] text-slate-300 font-medium">
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400">مبيعات الفواتير:</span>
+                    <span className="font-mono font-bold text-slate-200">{revenueStats.invoicesBaseSales.toLocaleString()} {currency}</span>
+                  </div>
+                  {revenueStats.totalTips > 0 && (
+                    <div className="flex justify-between items-center text-amber-300 font-bold">
+                      <span className="text-amber-400">بقشيش اليوم:</span>
+                      <span className="font-mono">+{revenueStats.totalTips.toLocaleString()} {currency}</span>
+                    </div>
+                  )}
+                  {revenueStats.totalBookingAdvances > 0 && (
+                    <div className="flex justify-between items-center text-purple-300 font-bold">
+                      <span className="text-purple-400">مقدم حجز:</span>
+                      <span className="font-mono">+{revenueStats.totalBookingAdvances.toLocaleString()} {currency}</span>
+                    </div>
+                  )}
+                </div>
+
                 <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-800 text-[10px] text-slate-400 font-semibold">
                   <span>
                     {revenueStats.invoiceCount} فاتورة
+                    {revenueStats.totalTips > 0 && ` (شامل بقشيش +${revenueStats.totalTips.toLocaleString()})`}
                     {netProfitData.bookingAdvancesCount > 0 && ` + ${netProfitData.bookingAdvancesCount} مقدم حجز`}
                   </span>
                   <span className="text-emerald-400 group-hover:translate-x-[-2px] transition-transform">تفاصيل ‹</span>
@@ -3787,16 +3878,23 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                   </h2>
                   <div className="flex flex-wrap items-center gap-2 mt-2 text-[10px] text-slate-300">
                     <span className="bg-emerald-500/15 text-emerald-300 border border-emerald-500/25 px-2 py-0.5 rounded-md font-bold">
-                      فواتير: {netProfitData.grossInvoicesIncome.toLocaleString()} {currency} ({netProfitData.invoicesCount})
+                      مبيعات الفواتير: {revenueStats.invoicesBaseSales.toLocaleString()} {currency} ({netProfitData.invoicesCount})
                     </span>
-                    <span className="bg-purple-500/20 text-purple-300 border border-purple-500/35 px-2 py-0.5 rounded-md font-bold">
-                      مقدم حجز: {netProfitData.totalBookingAdvances.toLocaleString()} {currency} ({netProfitData.bookingAdvancesCount})
-                    </span>
+                    {revenueStats.totalTips > 0 && (
+                      <span className="bg-amber-500/20 text-amber-300 border border-amber-500/35 px-2 py-0.5 rounded-md font-bold">
+                        إجمالي بقشيش اليوم: +{revenueStats.totalTips.toLocaleString()} {currency}
+                      </span>
+                    )}
+                    {netProfitData.totalBookingAdvances > 0 && (
+                      <span className="bg-purple-500/20 text-purple-300 border border-purple-500/35 px-2 py-0.5 rounded-md font-bold">
+                        مقدم حجز: {netProfitData.totalBookingAdvances.toLocaleString()} {currency} ({netProfitData.bookingAdvancesCount})
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="text-left text-xs text-slate-300 space-y-1 bg-slate-950/40 p-3 rounded-xl border border-slate-800">
-                  <p>إجمالي الإيرادات: <span className="font-mono font-bold text-emerald-400">+{revenueStats.totalRevenue.toLocaleString()} {currency}</span></p>
-                  <p className="text-rose-400">المصروفات: <span className="font-mono font-bold">-{revenueStats.totalExpenses.toLocaleString()} {currency}</span></p>
+                  <p>إجمالي الإيرادات المحصلة: <span className="font-mono font-bold text-emerald-400">+{revenueStats.totalRevenue.toLocaleString()} {currency}</span></p>
+                  <p className="text-rose-400">المصروفات التشغيلية: <span className="font-mono font-bold">-{revenueStats.totalExpenses.toLocaleString()} {currency}</span></p>
                 </div>
               </div>
             </div>
@@ -4005,12 +4103,21 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
               <div className="flex items-center justify-between bg-slate-950/60 px-3 py-2 rounded-xl mb-3 border border-slate-800/80 text-[11px]">
                 <span className="text-slate-400">
                   {financeRevenueFilter === 'all' && 'إجمالي المحصل من الفواتير ومقدمات الحجز:'}
-                  {financeRevenueFilter === 'invoices' && 'إجمالي مبيعات الفواتير المسددة:'}
+                  {financeRevenueFilter === 'invoices' && 'إجمالي مبيعات الفواتير المسددة (شامل البقشيش):'}
                   {financeRevenueFilter === 'advances' && 'إجمالي مقبوضات مقدمات الحجز (مقدم حجز):'}
                 </span>
                 <span className="font-mono font-black text-emerald-400">
                   {financeRevenueFilter === 'all' && `${revenueStats.totalRevenue.toLocaleString()} ${currency}`}
-                  {financeRevenueFilter === 'invoices' && `${netProfitData.grossInvoicesIncome.toLocaleString()} ${currency}`}
+                  {financeRevenueFilter === 'invoices' && (
+                    <span>
+                      {(revenueStats.invoicesBaseSales + revenueStats.totalTips).toLocaleString()} {currency}
+                      {revenueStats.totalTips > 0 && (
+                        <span className="text-[10px] text-amber-300 font-normal mr-1.5">
+                          (مبيعات: {revenueStats.invoicesBaseSales.toLocaleString()} + بقشيش: {revenueStats.totalTips.toLocaleString()})
+                        </span>
+                      )}
+                    </span>
+                  )}
                   {financeRevenueFilter === 'advances' && `${netProfitData.totalBookingAdvances.toLocaleString()} ${currency}`}
                 </span>
               </div>
@@ -4047,6 +4154,11 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                           <div className="flex items-center gap-2">
                             <p className="font-bold text-white text-xs">{rev.clientName || 'عميل نقدي'}</p>
                             <span className="text-[10px] text-slate-400 font-mono font-semibold">{rev.code}</span>
+                            {Boolean(rev.tipAmount && rev.tipAmount > 0) && (
+                              <span className="bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[9px] font-bold px-1.5 py-0.2 rounded-md">
+                                بقشيش +{rev.tipAmount?.toLocaleString()} {currency}
+                              </span>
+                            )}
                           </div>
                           <p className="text-[10px] text-slate-400 mt-0.5">
                             {rev.details} • {rev.date} {rev.time ? `(${rev.time})` : ''}
@@ -4058,7 +4170,13 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                         <p className={`font-mono font-black text-sm ${rev.kind === 'booking_advance' ? 'text-purple-300' : 'text-emerald-400'}`}>
                           +{rev.amount.toLocaleString()} <span className="text-[10px] font-normal">{currency}</span>
                         </p>
-                        <p className="text-[10px] text-slate-400 font-medium">{rev.paymentMethod || 'نقدي'}</p>
+                        {Boolean(rev.tipAmount && rev.tipAmount > 0) ? (
+                          <p className="text-[9px] text-slate-400 font-mono">
+                            فاتورة: {rev.baseAmount?.toLocaleString()} | بقشيش: +{rev.tipAmount?.toLocaleString()}
+                          </p>
+                        ) : (
+                          <p className="text-[10px] text-slate-400 font-medium">{rev.paymentMethod || 'نقدي'}</p>
+                        )}
                       </div>
                     </div>
                   ))}
