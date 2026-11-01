@@ -20,23 +20,21 @@ function extractDatesFromLabel(label: string): string[] {
 
 export const isZeroingOrClosingTrx = (t: any): boolean => {
   if (!t) return false;
+  // التحويلات التشغيلية الحقيقية بين الخزائن ليست تصفير وردية
+  const id = String(t.id || '').toUpperCase();
+  if (id.startsWith('TRX-TRF-OUT-') || id.startsWith('TRX-TRF-IN-')) return false;
+
   if (t.isZeroing || t.isShiftZeroing || t.isClosing || t.subCategory === 'shift_zeroing' || (t as any).sub_category === 'shift_zeroing') return true;
   const desc = String(t.description || t.notes || '').toLowerCase();
-  const cat = String(t.category || (t as any).expenseCategory || '').toLowerCase();
+  const cat = String(t.category || (t as any).expenseCategory || (t as any).expense_category || '').toLowerCase();
   const title = String(t.title || '').toLowerCase();
-  const id = String(t.id || '').toUpperCase();
-  const type = String(t.type || '').toLowerCase();
-  
-  if (title === 'transfer' || cat === 'transfer' || type === 'transfer') return true;
 
-  if (id.startsWith('TRX-OUT-') && (desc.includes('تصفير') || desc.includes('تفريغ') || desc.includes('إغلاق') || desc.includes('اغلاق') || desc.includes('إقفال') || desc.includes('اقفال'))) return true;
-  if (id.startsWith('TRX-IN-') && (desc.includes('تصفير') || desc.includes('تفريغ') || desc.includes('إغلاق') || desc.includes('اغلاق') || desc.includes('إقفال') || desc.includes('اقفال'))) return true;
-  
-  return (
+  const isTransfer = title === 'transfer' || cat === 'transfer' || t.type === 'transfer' || desc.includes('تحويل إلى') || desc.includes('تحويل الى') || desc.includes('تحويل من');
+
+  const isZeroing = (
     desc.includes('تصفير') ||
     desc.includes('تفريغ') ||
-    desc.includes('نقل الرصيد') ||
-    desc.includes('نقل رصيد') ||
+    desc.includes('نقل الرصيد بالكامل') ||
     desc.includes('ترحيل رصيد') ||
     desc.includes('تحويل تصفير') ||
     desc.includes('إغلاق وردية') ||
@@ -49,15 +47,21 @@ export const isZeroingOrClosingTrx = (t: any): boolean => {
     desc.includes('اقفال') ||
     title.includes('تصفير') ||
     title.includes('تفريغ') ||
-    title.includes('نقل الرصيد') ||
-    title.includes('transfer') ||
     cat === 'shift_zeroing' ||
     cat === 'zeroing' ||
     cat === 'clearing' ||
-    cat === 'transfer' ||
     cat.includes('تصفير') ||
     cat.includes('تفريغ')
   );
+
+  if (isTransfer && !isZeroing) {
+    return false;
+  }
+
+  if (id.startsWith('TRX-OUT-') && isZeroing) return true;
+  if (id.startsWith('TRX-IN-') && isZeroing) return true;
+
+  return isZeroing;
 };
 
 export function ClosingReportReceipt({
@@ -217,9 +221,22 @@ export function ClosingReportReceipt({
 
   const isRealTransferTrx = (t: any): boolean => {
     if (isZeroingOrClosingTrx(t)) return false;
+    const id = String(t.id || '').toUpperCase();
+    if (id.startsWith('TRX-TRF-OUT-') || id.startsWith('TRX-TRF-IN-')) return true;
     const cat = (t.category || '').toLowerCase();
-    const desc = (t.description || '').toLowerCase();
-    return cat === 'transfer' || cat.includes('transfer') || cat.includes('تحويل') || desc.includes('تحويل إلى') || desc.includes('تحويل الى') || desc.includes('تحويل من');
+    const desc = (t.description || t.notes || '').toLowerCase();
+    const title = (t.title || '').toLowerCase();
+    return (
+      cat === 'transfer' || 
+      cat.includes('transfer') || 
+      cat.includes('تحويل') || 
+      title.includes('transfer') ||
+      title.includes('تحويل') ||
+      desc.includes('تحويل إلى') || 
+      desc.includes('تحويل الى') || 
+      desc.includes('تحويل من') ||
+      desc.includes('تحويل بين الخزائن')
+    );
   };
 
   const isCommissionTrx = (t: any): boolean => {
@@ -393,10 +410,12 @@ export function ClosingReportReceipt({
     const commissions = isMain ? 0 : tTrx.filter(t => (t.type === 'out' || (t.type as string) === 'expense') && isCommissionTrx(t)).reduce((s, x) => s + (Number(x.amount) || 0), 0);
     
     // التحويل من خزينة أخرى (تحويلات تشغيلية حقيقية فقط وليس إغلاق)
-    const transfersIn = isMain ? 0 : tTrx.filter(t => t.type === 'in' && isRealTransferTrx(t)).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    const incomingTransfersList = isMain ? [] : tTrx.filter(t => t.type === 'in' && isRealTransferTrx(t));
+    const transfersIn = incomingTransfersList.reduce((s, x) => s + (Number(x.amount) || 0), 0);
     
     // التحويل إلى خزينة أخرى (تحويلات تشغيلية حقيقية فقط وليس إغلاق)
-    const transfersOut = tTrx.filter(t => (t.type === 'out' || (t.type as string) === 'expense') && isRealTransferTrx(t)).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    const outgoingTransfersList = tTrx.filter(t => (t.type === 'out' || (t.type as string) === 'expense') && isRealTransferTrx(t));
+    const transfersOut = outgoingTransfersList.reduce((s, x) => s + (Number(x.amount) || 0), 0);
 
     // المصروفات
     const expenses = isMain ? 0 : tTrx.filter(t => 
@@ -413,7 +432,8 @@ export function ClosingReportReceipt({
       : (income + transfersIn) - (expenses + tips + commissions + transfersOut);
 
     return {
-      income, expenses, commissions, tips, transfersIn, transfersOut, initialCashSum, net, isMain
+      income, expenses, commissions, tips, transfersIn, transfersOut, initialCashSum, net, isMain,
+      incomingTransfersList, outgoingTransfersList
     };
   };
 
@@ -565,6 +585,15 @@ export function ClosingReportReceipt({
           );
         });
 
+        // ترتيب الخزائن بحيث تظهر الخزينة الرئيسية أولاً دائماً في الأعلى إن وجدت
+        visibleTreasuries.sort((a, b) => {
+          const isMainA = a.isMain || a.id === 'main' || a.id === mainTreasury.id;
+          const isMainB = b.isMain || b.id === 'main' || b.id === mainTreasury.id;
+          if (isMainA && !isMainB) return -1;
+          if (!isMainA && isMainB) return 1;
+          return 0;
+        });
+
         if (visibleTreasuries.length === 0) {
           return (
             <div className="text-center py-4 my-2 border-y border-black border-dashed text-xs text-black font-bold">
@@ -579,19 +608,34 @@ export function ClosingReportReceipt({
 
           if (isMain) {
             return (
-              <div key={treasury.id} className="mb-6 text-black">
-                <h3 className="font-bold text-center border-y border-black border-dashed py-1 mb-2 bg-white text-black">
+              <div key={treasury.id} className="mb-6 text-black border-b border-black pb-4">
+                <h3 className="font-bold text-center border-y border-black border-dashed py-1 mb-2 bg-white text-black text-sm">
                   {treasury.name} (الخزينة الرئيسية)
                 </h3>
                 
-                <div className="space-y-1 text-xs text-black">
-                  <div className="flex justify-between text-black font-semibold">
-                    <span>المبالغ المحولة منها إلى الخزائن الأخرى:</span>
-                    <span className="text-black font-mono">{stats.transfersOut.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between font-bold border-t border-black border-dashed pt-1 mt-1 text-sm text-black">
-                    <span>إجمالي المحول من الرئيسية:</span>
-                    <span dir="ltr" className="text-black font-mono">{stats.transfersOut.toFixed(2)}</span>
+                <div className="space-y-1.5 text-xs text-black">
+                  {/* سطور التحويلات المسحوبة من الخزينة الرئيسية بالسالب مع الوصف */}
+                  {stats.outgoingTransfersList && stats.outgoingTransfersList.length > 0 ? (
+                    stats.outgoingTransfersList.map((tx: any, idx: number) => {
+                      const desc = tx.description || 'تحويل إلى خزينة أخرى';
+                      const amt = Number(tx.amount) || 0;
+                      return (
+                        <div key={tx.id || idx} className="flex justify-between text-black font-semibold">
+                          <span>{desc}:</span>
+                          <span dir="ltr" className="text-black font-mono font-bold">-{amt.toFixed(2)}</span>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="flex justify-between text-black font-semibold">
+                      <span>تحويل إلى الخزائن الأخرى:</span>
+                      <span dir="ltr" className="text-black font-mono font-bold">-{stats.transfersOut.toFixed(2)}</span>
+                    </div>
+                  )}
+
+                  <div className="flex justify-between font-bold border-t border-black border-dashed pt-1.5 mt-2 text-sm text-black">
+                    <span>إجمالي المسحوب من الرئيسية:</span>
+                    <span dir="ltr" className="text-black font-mono font-bold">-{stats.transfersOut.toFixed(2)}</span>
                   </div>
                 </div>
               </div>
@@ -599,58 +643,85 @@ export function ClosingReportReceipt({
           }
 
           return (
-            <div key={treasury.id} className="mb-6 text-black">
-              <h3 className="font-bold text-center border-y border-black border-dashed py-1 mb-2 bg-white text-black">
+            <div key={treasury.id} className="mb-6 text-black border-b border-black pb-4">
+              <h3 className="font-bold text-center border-y border-black border-dashed py-1 mb-2 bg-white text-black text-sm">
                 {treasury.name}
               </h3>
               
-              <div className="space-y-1 text-xs text-black">
+              <div className="space-y-1.5 text-xs text-black">
                 {stats.initialCashSum > 0 && (
                   <div className="flex justify-between font-bold text-black border border-black mb-1 p-1">
                     <span>العهدة الافتتاحية:</span>
                     <span className="text-black font-mono">{stats.initialCashSum.toFixed(2)}</span>
                   </div>
                 )}
+
+                {/* سطر فيه المبلغ المحول من الخزينة الرئيسية والوصف تحويل من الخزينة الرئيسية */}
+                {stats.incomingTransfersList && stats.incomingTransfersList.length > 0 ? (
+                  stats.incomingTransfersList.map((tx: any, idx: number) => {
+                    const desc = tx.description || 'تحويل من الخزينة الرئيسية';
+                    const amt = Number(tx.amount) || 0;
+                    return (
+                      <div key={tx.id || idx} className="flex justify-between text-black font-bold bg-slate-50 p-1 border border-black/30 rounded">
+                        <span>{desc}:</span>
+                        <span dir="ltr" className="text-black font-mono font-bold">+{amt.toFixed(2)}</span>
+                      </div>
+                    );
+                  })
+                ) : (stats.transfersIn > 0 && (
+                  <div className="flex justify-between text-black font-bold bg-slate-50 p-1 border border-black/30 rounded">
+                    <span>تحويل من الخزينة الرئيسية:</span>
+                    <span dir="ltr" className="text-black font-mono font-bold">+{stats.transfersIn.toFixed(2)}</span>
+                  </div>
+                ))}
+
                 {stats.income > 0 && (
                   <div className="flex justify-between text-black font-semibold">
                     <span>الدخل من المبيعات:</span>
-                    <span className="text-black font-mono">{stats.income.toFixed(2)}</span>
+                    <span className="text-black font-mono">+{stats.income.toFixed(2)}</span>
                   </div>
                 )}
                 {stats.expenses > 0 && (
                   <div className="flex justify-between text-black font-semibold">
                     <span>المصروفات:</span>
-                    <span className="text-black font-mono">{stats.expenses.toFixed(2)}</span>
+                    <span dir="ltr" className="text-black font-mono">-{stats.expenses.toFixed(2)}</span>
                   </div>
                 )}
                 {stats.tips > 0 && (
                   <div className="flex justify-between text-black font-semibold">
                     <span>البقشيش المصروف:</span>
-                    <span className="text-black font-mono">{stats.tips.toFixed(2)}</span>
+                    <span dir="ltr" className="text-black font-mono">-{stats.tips.toFixed(2)}</span>
                   </div>
                 )}
                 {stats.commissions > 0 && (
                   <div className="flex justify-between text-black font-semibold">
                     <span>العمولات الفورية:</span>
-                    <span className="text-black font-mono">{stats.commissions.toFixed(2)}</span>
+                    <span dir="ltr" className="text-black font-mono">-{stats.commissions.toFixed(2)}</span>
                   </div>
                 )}
-                {stats.transfersIn > 0 && (
-                  <div className="flex justify-between text-black font-semibold">
-                    <span>التحويل من خزينة أخرى:</span>
-                    <span className="text-black font-mono">{stats.transfersIn.toFixed(2)}</span>
-                  </div>
-                )}
-                {stats.transfersOut > 0 && (
+                {stats.outgoingTransfersList && stats.outgoingTransfersList.length > 0 ? (
+                  stats.outgoingTransfersList.map((tx: any, idx: number) => {
+                    const desc = tx.description || 'تحويل إلى خزينة أخرى';
+                    const amt = Number(tx.amount) || 0;
+                    return (
+                      <div key={tx.id || idx} className="flex justify-between text-black font-semibold">
+                        <span>{desc}:</span>
+                        <span dir="ltr" className="text-black font-mono font-bold">-{amt.toFixed(2)}</span>
+                      </div>
+                    );
+                  })
+                ) : (stats.transfersOut > 0 && (
                   <div className="flex justify-between text-black font-semibold">
                     <span>التحويل إلى خزينة أخرى:</span>
-                    <span className="text-black font-mono">{stats.transfersOut.toFixed(2)}</span>
+                    <span dir="ltr" className="text-black font-mono">-{stats.transfersOut.toFixed(2)}</span>
                   </div>
-                )}
+                ))}
                 
-                <div className="flex justify-between font-bold border-t border-black border-dashed pt-1 mt-1 text-sm text-black">
+                <div className="flex justify-between font-bold border-t border-black border-dashed pt-1.5 mt-2 text-sm text-black">
                   <span>الصافي:</span>
-                  <span dir="ltr" className="text-black font-mono">{stats.net.toFixed(2)}</span>
+                  <span dir="ltr" className={`font-mono font-black ${stats.net >= 0 ? 'text-black' : 'text-rose-700'}`}>
+                    {stats.net >= 0 ? `+${stats.net.toFixed(2)}` : `-${Math.abs(stats.net).toFixed(2)}`}
+                  </span>
                 </div>
                 {stats.net > 0 && (
                   <div className="text-[10px] text-black border border-black rounded p-1 mt-1 text-center font-bold">

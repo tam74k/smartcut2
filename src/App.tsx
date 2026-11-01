@@ -2434,16 +2434,17 @@ export default function App() {
         // الحماية من التكرار: إذا كانت هناك حركة تصفير مسجلة بالفعل لهذه الوردية وهذه الخزينة، لا تقم بإنشاء حركة مكررة
         if (currentShiftCode && transactions.some(trx => 
           ((trx as any).shiftCode === currentShiftCode || (trx as any).shift_code === currentShiftCode) &&
-          trx.category === 'transfer' &&
+          isZeroingOrClosingTrx(trx) &&
           (trx.treasury === t.id || (trx as any).treasuryId === t.id)
         )) {
           return;
         }
 
-        // 1. Transactions directly in this treasury
+        // 1. Transactions directly in this treasury (excluding zeroing sweeps)
         const tTrx = transactions.filter(trx => 
           (trx.treasury === t.id || (trx as any).treasuryId === t.id) &&
-          (!trx.salonId || !settings.salonId || trx.salonId === settings.salonId)
+          (!trx.salonId || !settings.salonId || trx.salonId === settings.salonId) &&
+          !isZeroingOrClosingTrx(trx)
         );
 
         const invoiceIdsInTrx = new Set(
