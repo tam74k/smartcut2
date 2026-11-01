@@ -1,4 +1,5 @@
 import { AppSettings } from '../types';
+import { DB } from './db';
 
 export interface EvolutionSendResult {
   success: boolean;
@@ -274,6 +275,199 @@ export const EvolutionApiService = {
       }
     } catch (err: any) {
       return { success: false, error: err?.message || 'خطأ في الاتصال بسيرفر الواتساب' };
+    }
+  },
+
+  /**
+   * فحص حالة اتصال جلسة واتساب تابعة للمنظومة مباشرة بمعلومية الرابط والمفتاح واسم الجلسة
+   */
+  async checkPlatformConnection(
+    baseUrl: string,
+    apiKey: string,
+    instanceName: string
+  ): Promise<EvolutionInstanceStatus> {
+    const cleanUrl = (baseUrl || '').trim().replace(/\/+$/, '');
+    const cleanKey = (apiKey || '').trim();
+    const cleanInst = (instanceName || '').trim();
+
+    if (!cleanUrl || !cleanKey || !cleanInst) {
+      return { connected: false, error: 'الرجاء إدخال رابط السيرفر ومفتاح API واسم الجلسة' };
+    }
+
+    const validation = validateExternalUrl(cleanUrl);
+    if (!validation.isValid) {
+      return { connected: false, error: validation.error || 'عنوان السيرفر غير مصرح به' };
+    }
+
+    try {
+      const res = await fetch(`${cleanUrl}/instance/connectionState/${encodeURIComponent(cleanInst)}`, {
+        headers: { 'apikey': cleanKey }
+      });
+
+      if (!res.ok) {
+        if (res.status === 404) {
+          return { connected: false, state: 'not_found', error: `الجلسة (${cleanInst}) غير موجودة على سيرفر Evolution` };
+        }
+        return { connected: false, error: `فشل فحص الحالة من السيرفر (كود: ${res.status})` };
+      }
+
+      const data = await res.json();
+      const state = data?.instance?.state || data?.state;
+      return {
+        connected: state === 'open' || state === 'connected',
+        state: state || 'unknown',
+        phone: data?.instance?.owner || data?.owner
+      };
+    } catch (err: any) {
+      return { connected: false, error: err?.message || 'تعذر الاتصال بسيرفر Evolution API' };
+    }
+  },
+
+  /**
+   * طلب رمز الاستجابة السريعة (QR Code) أو حالة الربط لجلسة المنظومة
+   */
+  async getPlatformQrCode(
+    baseUrl: string,
+    apiKey: string,
+    instanceName: string
+  ): Promise<{ success: boolean; qrCode?: string; state?: string; error?: string }> {
+    const cleanUrl = (baseUrl || '').trim().replace(/\/+$/, '');
+    const cleanKey = (apiKey || '').trim();
+    const cleanInst = (instanceName || '').trim();
+
+    if (!cleanUrl || !cleanKey || !cleanInst) {
+      return { success: false, error: 'الرجاء إدخال رابط السيرفر ومفتاح API واسم الجلسة' };
+    }
+
+    const validation = validateExternalUrl(cleanUrl);
+    if (!validation.isValid) {
+      return { success: false, error: validation.error || 'عنوان السيرفر غير مصرح به' };
+    }
+
+    try {
+      const res = await fetch(`${cleanUrl}/instance/connect/${encodeURIComponent(cleanInst)}`, {
+        headers: { 'apikey': cleanKey }
+      });
+
+      if (!res.ok) {
+        if (res.status === 404) {
+          return { success: false, state: 'not_found', error: `الجلسة (${cleanInst}) غير موجودة. يرجى إنشاؤها أولاً على السيرفر.` };
+        }
+        return { success: false, error: `تعذر جلب رمز الباركود (${res.status})` };
+      }
+
+      const data = await res.json();
+      const state = data?.instance?.state || data?.state;
+      const base64 = data?.base64 || data?.qrcode?.base64 || data?.code;
+
+      if (base64) {
+        const fullBase64 = base64.startsWith('data:') ? base64 : `data:image/png;base64,${base64}`;
+        return { success: true, qrCode: fullBase64, state: state || 'connecting' };
+      }
+
+      if (state === 'open' || state === 'connected') {
+        return { success: true, state: 'open', qrCode: undefined };
+      }
+
+      return { success: false, state: state || 'unknown', error: 'لم يُرجع السيرفر كود QR صالحاً، قد تكون الجلسة متصلة بالفعل أو جاري تهيئتها.' };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'خطأ أثناء طلب رمز الباركود من السيرفر' };
+    }
+  },
+
+  /**
+   * إرسال رسالة نصية عامة عبر جلسة المنظومة المحددة
+   */
+  async sendPlatformTextMessage(
+    baseUrl: string,
+    apiKey: string,
+    instanceName: string,
+    phone: string,
+    message: string,
+    country?: string
+  ): Promise<EvolutionSendResult> {
+    const cleanUrl = (baseUrl || '').trim().replace(/\/+$/, '');
+    const cleanKey = (apiKey || '').trim();
+    const cleanInst = (instanceName || '').trim();
+
+    if (!cleanUrl || !cleanKey || !cleanInst) {
+      return { success: false, error: 'إعدادات واتساب Evolution API للمنظومة غير مكتملة' };
+    }
+
+    const formattedPhone = formatWhatsAppNumber(phone, country || 'جمهورية مصر العربية');
+
+    const validation = validateExternalUrl(cleanUrl);
+    if (!validation.isValid) {
+      return { success: false, error: validation.error || 'عنوان السيرفر غير مصرح به' };
+    }
+
+    try {
+      const res = await fetch(`${cleanUrl}/message/sendText/${encodeURIComponent(cleanInst)}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': cleanKey
+        },
+        body: JSON.stringify({
+          number: formattedPhone,
+          text: message,
+          options: {
+            delay: 1000,
+            presence: 'composing'
+          }
+        })
+      });
+
+      const data = await res.json();
+      if (res.ok && (data?.key?.id || data?.status === 'SUCCESS' || data?.messageId)) {
+        return { success: true, messageId: data?.key?.id || data?.messageId };
+      } else {
+        return { success: false, error: data?.message || data?.error || 'فشل إرسال الرسالة عبر Evolution API' };
+      }
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'خطأ في الاتصال بسيرفر Evolution API' };
+    }
+  },
+
+  /**
+   * إرسال رمز التحقق OTP لتسجيل صالون تجريبي جديد عبر حساب واتساب المنظومة
+   */
+  async sendPlatformOtp(
+    phone: string,
+    otpCode: string,
+    country?: string
+  ): Promise<EvolutionSendResult> {
+    try {
+      const pSettings = await DB.fetchPlatformSettings();
+      if (!pSettings) {
+        return { success: false, error: 'تعذر تحميل إعدادات المنظومة من قاعدة البيانات' };
+      }
+
+      const baseUrl = pSettings.evolutionApiUrl;
+      const apiKey = pSettings.evolutionApiKey;
+      const instanceName = pSettings.evolutionInstanceName || 'smartcut_platform_main';
+
+      if (!baseUrl || !apiKey || !instanceName) {
+        return { success: false, error: 'خدمة إرسال رسائل الواتساب غير مهيأة بعد في شاشة المبرمج (يرجى إدخال الرابط ومفتاح API واسم الجلسة)' };
+      }
+
+      const platformName = pSettings.platformName || 'منظومة سمارت كت برو';
+      const template = pSettings.trialOtpTemplate || 'رمز التحقق الخاص بك لتفعيل حساب صالونك التجريبي في {platformName} هو:\n🔐 {otp}\n\nصلاحية الرمز دقيقتين فقط (120 ثانية). لا تشارك هذا الرمز مع أي شخص.';
+
+      const messageText = template
+        .replace(/\{otp\}/g, otpCode)
+        .replace(/\{platformName\}/g, platformName);
+
+      return await this.sendPlatformTextMessage(
+        baseUrl,
+        apiKey,
+        instanceName,
+        phone,
+        messageText,
+        country
+      );
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'تعذر إرسال رمز التحقق عبر الواتساب' };
     }
   },
 

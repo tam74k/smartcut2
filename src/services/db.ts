@@ -219,6 +219,9 @@ export async function ensureCoreSchema(): Promise<void> {
   try {
     await Promise.allSettled([
       ensureColumn('platform_settings', 'logo_url', 'TEXT'),
+      ensureColumn('platform_settings', 'require_trial_otp', 'BOOLEAN'),
+      ensureColumn('platform_settings', 'trial_otp_minutes', 'INT'),
+      ensureColumn('platform_settings', 'trial_otp_template', 'TEXT'),
       ensureColumn('salons', 'salon_type', 'VARCHAR(20)'),
       ensureColumn('salons', 'evolution_instance_name', 'VARCHAR(100)'),
       ensureColumn('salons', 'evolution_api_key', 'TEXT'),
@@ -804,7 +807,10 @@ export const DB = {
         return {
           ...camel,
           logoUrl: resolvedLogo,
-          platformLogoUrl: resolvedLogo
+          platformLogoUrl: resolvedLogo,
+          requireTrialOtp: camel.requireTrialOtp !== undefined ? Boolean(camel.requireTrialOtp) : true,
+          trialOtpMinutes: Number(camel.trialOtpMinutes) || 2,
+          trialOtpTemplate: camel.trialOtpTemplate || 'رمز التحقق الخاص بك لتفعيل حساب صالونك التجريبي في {platformName} هو:\n🔐 {otp}\n\nصلاحية الرمز دقيقتين فقط (120 ثانية).'
         };
       }
       if (localLogo) {
@@ -813,7 +819,10 @@ export const DB = {
           platformPhone: '0500000000',
           platformEmail: 'admin@smartcut.app',
           logoUrl: localLogo,
-          platformLogoUrl: localLogo
+          platformLogoUrl: localLogo,
+          requireTrialOtp: true,
+          trialOtpMinutes: 2,
+          trialOtpTemplate: 'رمز التحقق الخاص بك لتفعيل حساب صالونك التجريبي في {platformName} هو:\n🔐 {otp}\n\nصلاحية الرمز دقيقتين فقط (120 ثانية).'
         };
       }
       return null;
@@ -838,6 +847,9 @@ export const DB = {
         evolution_api_url: settings.evolutionApiUrl || null,
         evolution_api_key: settings.evolutionApiKey || null,
         evolution_instance_name: settings.evolutionInstanceName || 'smartcut_platform_main',
+        require_trial_otp: settings.requireTrialOtp !== undefined ? Boolean(settings.requireTrialOtp) : true,
+        trial_otp_minutes: Number(settings.trialOtpMinutes) || 2,
+        trial_otp_template: settings.trialOtpTemplate || 'رمز التحقق الخاص بك لتفعيل حساب صالونك التجريبي في {platformName} هو:\n🔐 {otp}\n\nصلاحية الرمز دقيقتين فقط (120 ثانية).',
         default_trial_days: settings.defaultTrialDays ?? 7,
         master_programmer_key: settings.masterProgrammerKey || 'dev@smartcut2026',
         ai_provider: settings.aiProvider || 'builtin',

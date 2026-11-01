@@ -4,12 +4,14 @@ import {
   UserCheck, UserX, Plus, Edit3, DollarSign, MessageSquare, Globe, Mail, 
   Phone, Sliders, X, ExternalLink, ChevronDown, Lock, Zap, Shield, Key, 
   Database, RefreshCw, AlertTriangle, ArrowRight, UserPlus, Layers, Server,
-  Trash2, Receipt, CreditCard, LogOut, HardDrive, Crown, Save, Settings, Check, AlertCircle, FileSpreadsheet, Info
+  Trash2, Receipt, CreditCard, LogOut, HardDrive, Crown, Save, Settings, Check, AlertCircle, FileSpreadsheet, Info,
+  QrCode, Wifi, WifiOff, Send, MessageCircle
 } from 'lucide-react';
 import { SalonTenant, AppUser, Branch, ServiceItem } from '../types';
 import { SubscriptionService, COUNTRY_CURRENCY_MAP, getCountryMeta, generateUUID } from '../services/subscriptionService';
 import { AuthService } from '../services/auth';
 import { DB, dbServiceToApp } from '../services/db';
+import { EvolutionApiService } from '../services/evolutionApiService';
 import { Copy, Scissors } from 'lucide-react';
 
 interface SaaSProgrammerPortalProps {
@@ -96,6 +98,126 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
     }
   };
 
+  // Platform WhatsApp Evolution API & Trial OTP Settings
+  const [showPlatformWhatsAppModal, setShowPlatformWhatsAppModal] = useState(false);
+  const [isSavingWaSettings, setIsSavingWaSettings] = useState(false);
+  const [isTestingWaConnection, setIsTestingWaConnection] = useState(false);
+  const [waConnectionStatus, setWaConnectionStatus] = useState<{ connected: boolean; state?: string; error?: string } | null>(null);
+  const [isLoadingWaQr, setIsLoadingWaQr] = useState(false);
+  const [waQrCode, setWaQrCode] = useState<string | null>(null);
+  const [waTestPhone, setWaTestPhone] = useState('');
+  const [isSendingWaTest, setIsSendingWaTest] = useState(false);
+  const [waTestResult, setWaTestResult] = useState<{ success: boolean; message?: string } | null>(null);
+  const [waForm, setWaForm] = useState({
+    evolutionApiUrl: 'https://evo.101488.xyz',
+    evolutionApiKey: '',
+    evolutionInstanceName: 'smartcut_platform_main',
+    requireTrialOtp: true,
+    trialOtpMinutes: 2,
+    trialOtpTemplate: 'رمز التحقق الخاص بك لتفعيل حساب صالونك التجريبي في {platformName} هو:\n🔐 {otp}\n\nصلاحية الرمز دقيقتين فقط (120 ثانية). لا تشارك هذا الرمز مع أي شخص.'
+  });
+
+  const handleSaveWaSettings = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setIsSavingWaSettings(true);
+    try {
+      const ok = await DB.savePlatformSettings({
+        ...platformForm,
+        evolutionApiUrl: waForm.evolutionApiUrl.trim(),
+        evolutionApiKey: waForm.evolutionApiKey.trim(),
+        evolutionInstanceName: waForm.evolutionInstanceName.trim(),
+        requireTrialOtp: Boolean(waForm.requireTrialOtp),
+        trialOtpMinutes: Math.max(1, Number(waForm.trialOtpMinutes) || 2),
+        trialOtpTemplate: waForm.trialOtpTemplate.trim()
+      });
+      if (ok) {
+        alert('تم حفظ إعدادات واتساب Evolution API وتحديث شروط التحقق بالـ OTP بنجاح في قاعدة البيانات.');
+      } else {
+        alert('حدث خطأ أثناء حفظ الإعدادات في قاعدة البيانات');
+      }
+    } catch (err: any) {
+      alert(err?.message || 'خطأ أثناء الحفظ');
+    } finally {
+      setIsSavingWaSettings(false);
+    }
+  };
+
+  const handleTestWaConnection = async () => {
+    if (!waForm.evolutionApiUrl.trim() || !waForm.evolutionApiKey.trim() || !waForm.evolutionInstanceName.trim()) {
+      alert('يرجى إدخال رابط الخادم ومفتاح API واسم الجلسة أولاً.');
+      return;
+    }
+    setIsTestingWaConnection(true);
+    setWaConnectionStatus(null);
+    try {
+      const res = await EvolutionApiService.checkPlatformConnection(
+        waForm.evolutionApiUrl,
+        waForm.evolutionApiKey,
+        waForm.evolutionInstanceName
+      );
+      setWaConnectionStatus(res);
+    } catch (err: any) {
+      setWaConnectionStatus({ connected: false, error: err?.message || 'فشل الاتصال بالخادم' });
+    } finally {
+      setIsTestingWaConnection(false);
+    }
+  };
+
+  const handleGetWaQrCode = async () => {
+    if (!waForm.evolutionApiUrl.trim() || !waForm.evolutionApiKey.trim() || !waForm.evolutionInstanceName.trim()) {
+      alert('يرجى إدخال رابط الخادم ومفتاح API واسم الجلسة أولاً.');
+      return;
+    }
+    setIsLoadingWaQr(true);
+    setWaQrCode(null);
+    try {
+      const res = await EvolutionApiService.getPlatformQrCode(
+        waForm.evolutionApiUrl,
+        waForm.evolutionApiKey,
+        waForm.evolutionInstanceName
+      );
+      if (res.success && res.qrCode) {
+        setWaQrCode(res.qrCode);
+      } else if (res.state === 'open' || res.state === 'connected') {
+        alert('جلسة الواتساب متصلة ونشطة بالفعل! لا حاجة لمسح الباركود.');
+        setWaConnectionStatus({ connected: true, state: 'open' });
+      } else {
+        alert(res.error || 'تعذر جلب رمز الباركود من السيرفر');
+      }
+    } catch (err: any) {
+      alert(err?.message || 'خطأ أثناء طلب الباركود');
+    } finally {
+      setIsLoadingWaQr(false);
+    }
+  };
+
+  const handleSendWaTest = async () => {
+    if (!waTestPhone.trim()) {
+      alert('يرجى كتابة رقم الموبايل لاختبار الإرسال');
+      return;
+    }
+    setIsSendingWaTest(true);
+    setWaTestResult(null);
+    try {
+      const res = await EvolutionApiService.sendPlatformTextMessage(
+        waForm.evolutionApiUrl,
+        waForm.evolutionApiKey,
+        waForm.evolutionInstanceName,
+        waTestPhone.trim(),
+        `*رسالة اختبارية من منصة سمارت كت برو* 🚀\nتم بنجاح ربط خادم Evolution API وتفعيل حساب واتساب المنظومة لإرسال رسائل التحقق (OTP) والتنبيهات.\nالوقت: ${new Date().toLocaleTimeString('ar-EG')}`
+      );
+      if (res.success) {
+        setWaTestResult({ success: true, message: 'تم إرسال رسالة الاختبار بنجاح عبر الواتساب! ✅' });
+      } else {
+        setWaTestResult({ success: false, message: res.error || 'فشل إرسال الرسالة' });
+      }
+    } catch (err: any) {
+      setWaTestResult({ success: false, message: err?.message || 'خطأ أثناء محاولة الإرسال' });
+    } finally {
+      setIsSendingWaTest(false);
+    }
+  };
+
   // New Salon Form State
   const [newSalonForm, setNewSalonForm] = useState({
     salonName: '',
@@ -158,6 +280,14 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
           platformEmail: dbPlatform.platformEmail || 'admin@smartcut.app',
           platformLogoUrl: dbPlatform.platformLogoUrl || '',
           defaultTrialDays: dbPlatform.defaultTrialDays ?? 7
+        });
+        setWaForm({
+          evolutionApiUrl: dbPlatform.evolutionApiUrl || 'https://evo.101488.xyz',
+          evolutionApiKey: dbPlatform.evolutionApiKey || '',
+          evolutionInstanceName: dbPlatform.evolutionInstanceName || 'smartcut_platform_main',
+          requireTrialOtp: dbPlatform.requireTrialOtp !== undefined ? Boolean(dbPlatform.requireTrialOtp) : true,
+          trialOtpMinutes: Math.max(1, Number(dbPlatform.trialOtpMinutes) || 2),
+          trialOtpTemplate: dbPlatform.trialOtpTemplate || 'رمز التحقق الخاص بك لتفعيل حساب صالونك التجريبي في {platformName} هو:\n🔐 {otp}\n\nصلاحية الرمز دقيقتين فقط (120 ثانية). لا تشارك هذا الرمز مع أي شخص.'
         });
       }
 
@@ -779,6 +909,22 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
             >
               <Sliders size={15} />
               <span>هوية ودعم المنظومة</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setShowPlatformWhatsAppModal(true);
+                setWaTestResult(null);
+                setWaQrCode(null);
+              }}
+              className="bg-teal-600/30 hover:bg-teal-600/50 text-teal-200 border border-teal-500/40 px-3.5 py-2.5 rounded-2xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+              title="إعدادات خادم واتساب Evolution API وتفعيل التحقق برمز OTP لمدة دقيقتين للصالونات التجريبية"
+            >
+              <MessageSquare size={15} className="text-teal-400" />
+              <span>واتساب المنظومة & OTP</span>
+              {waConnectionStatus?.connected && (
+                <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block animate-pulse"></span>
+              )}
             </button>
 
             <button
@@ -1974,6 +2120,296 @@ export function SaaSProgrammerPortal({ onSwitchSalon, onExitPortal, onLogout }: 
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Platform WhatsApp Evolution API & Trial OTP Settings Modal */}
+      {showPlatformWhatsAppModal && (
+        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center z-50 p-4 animate-in fade-in overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-700/80 rounded-3xl p-6 max-w-2xl w-full shadow-2xl my-8 text-slate-100 max-h-[92vh] flex flex-col">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-4 border-b border-slate-800 shrink-0 mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/30">
+                  <MessageSquare size={22} />
+                </div>
+                <div>
+                  <h3 className="font-black text-base text-white flex items-center gap-2">
+                    <span>إعدادات واتساب المنظومة (Evolution API) & التحقق OTP</span>
+                    <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                      WhatsApp Gateway
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    ربط حساب واتساب المنظومة لإرسال كود التحقق (OTP) للصالونات التجريبية (صلاحية دقيقتين)
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowPlatformWhatsAppModal(false)}
+                className="text-slate-400 hover:text-white p-1.5 rounded-xl hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Modal Scrollable Content */}
+            <div className="overflow-y-auto space-y-5 pr-1 pl-1">
+              
+              {/* Section 1: Server & Credentials */}
+              <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4 space-y-3.5">
+                <div className="flex items-center justify-between border-b border-slate-700/50 pb-2">
+                  <div className="flex items-center gap-2">
+                    <Server size={16} className="text-teal-400" />
+                    <span className="text-xs font-black text-white">بيانات خادم Evolution API</span>
+                  </div>
+                  {waConnectionStatus && (
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                      waConnectionStatus.connected
+                        ? 'bg-emerald-950 text-emerald-300 border-emerald-800'
+                        : 'bg-rose-950 text-rose-300 border-rose-800'
+                    }`}>
+                      {waConnectionStatus.connected ? `متصل بنجاح (${waConnectionStatus.state || 'open'})` : 'غير متصل أو خطأ'}
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-bold text-slate-300 mb-1">
+                      رابط خادم Evolution API (Base URL)
+                    </label>
+                    <input
+                      type="url"
+                      value={waForm.evolutionApiUrl}
+                      onChange={e => setWaForm({ ...waForm, evolutionApiUrl: e.target.value })}
+                      placeholder="https://evo.101488.xyz"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-white outline-none focus:border-teal-500"
+                      dir="ltr"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">
+                      اسم الجلسة (Instance Name)
+                    </label>
+                    <input
+                      type="text"
+                      value={waForm.evolutionInstanceName}
+                      onChange={e => setWaForm({ ...waForm, evolutionInstanceName: e.target.value })}
+                      placeholder="smartcut_platform_main"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-white outline-none focus:border-teal-500"
+                      dir="ltr"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">
+                      مفتاح الـ API (API Key / apikey)
+                    </label>
+                    <input
+                      type="password"
+                      value={waForm.evolutionApiKey}
+                      onChange={e => setWaForm({ ...waForm, evolutionApiKey: e.target.value })}
+                      placeholder="أدخل مفتاح الـ API"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-white outline-none focus:border-teal-500"
+                      dir="ltr"
+                    />
+                  </div>
+                </div>
+
+                {/* Connection & QR Actions */}
+                <div className="pt-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={handleTestWaConnection}
+                    disabled={isTestingWaConnection}
+                    className="bg-slate-700 hover:bg-slate-600 text-slate-200 px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    {isTestingWaConnection ? (
+                      <span className="inline-block w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                    ) : (
+                      <Wifi size={14} className="text-teal-400" />
+                    )}
+                    <span>فحص حالة الاتصال بالسيرفر</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleGetWaQrCode}
+                    disabled={isLoadingWaQr}
+                    className="bg-teal-600/30 hover:bg-teal-600/50 text-teal-200 border border-teal-500/40 px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    {isLoadingWaQr ? (
+                      <span className="inline-block w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                    ) : (
+                      <QrCode size={14} className="text-teal-400" />
+                    )}
+                    <span>مسح / عرض كود QR لربط واتساب</span>
+                  </button>
+                </div>
+
+                {/* QR Display Card if requested */}
+                {waQrCode && (
+                  <div className="mt-3 p-4 bg-slate-900/90 border border-teal-500/40 rounded-2xl flex flex-col items-center justify-center text-center animate-in zoom-in-95">
+                    <p className="text-xs font-bold text-white mb-1">امسح الباركود باستخدام تطبيق واتساب على هاتفك</p>
+                    <p className="text-[10px] text-slate-400 mb-3">(واتساب {'>'} الإعدادات {'>'} الأجهزة المرتبطة {'>'} ربط جهاز)</p>
+                    <div className="bg-white p-3 rounded-2xl shadow-xl">
+                      <img src={waQrCode} alt="WhatsApp QR Code" className="w-52 h-52 object-contain" />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleGetWaQrCode}
+                      className="mt-3 text-xs text-teal-400 hover:text-teal-300 font-bold flex items-center gap-1 cursor-pointer"
+                    >
+                      <RefreshCw size={12} />
+                      <span>تحديث رمز الباركود</span>
+                    </button>
+                  </div>
+                )}
+
+                {waConnectionStatus?.error && (
+                  <div className="p-2.5 bg-rose-950/40 border border-rose-800/60 rounded-xl text-rose-300 text-xs font-bold flex items-center gap-2">
+                    <AlertTriangle size={15} className="shrink-0 text-rose-400" />
+                    <span>{waConnectionStatus.error}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Section 2: Trial Salon Registration OTP Settings */}
+              <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4 space-y-3.5">
+                <div className="flex items-center gap-2 border-b border-slate-700/50 pb-2">
+                  <ShieldCheck size={16} className="text-emerald-400" />
+                  <span className="text-xs font-black text-white">إعدادات كود التحقق (OTP) للصالونات التجريبية (7 أيام)</span>
+                </div>
+
+                <div className="space-y-3">
+                  <label className="flex items-start gap-3 p-3 bg-slate-900/80 border border-slate-700 rounded-xl cursor-pointer hover:border-emerald-500/50 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={waForm.requireTrialOtp}
+                      onChange={e => setWaForm({ ...waForm, requireTrialOtp: e.target.checked })}
+                      className="mt-0.5 rounded text-emerald-600 focus:ring-emerald-500 w-4 h-4"
+                    />
+                    <div>
+                      <span className="text-xs font-black text-white block">
+                        تفعيل التحقق الإلزامي برمز OTP عبر واتساب عند تسجيل صالون تجريبي
+                      </span>
+                      <span className="text-[11px] text-slate-400 block mt-0.5">
+                        عند التفعيل، يتم إرسال رمز تحقق سري لرقم الموبايل المسجل، ولا يمكن استكمال إنشاء الحساب إلا بعد إدخال الرمز بنجاح خلال المدة المحددة.
+                      </span>
+                    </div>
+                  </label>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-center">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-300 mb-1">
+                        مدة صلاحية الرمز (بالدقائق)
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min="1"
+                          max="10"
+                          value={waForm.trialOtpMinutes}
+                          onChange={e => setWaForm({ ...waForm, trialOtpMinutes: Math.max(1, parseInt(e.target.value) || 2) })}
+                          className="w-24 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono font-bold text-center text-white outline-none focus:border-emerald-500"
+                        />
+                        <span className="text-xs text-slate-400 font-bold">دقيقة (120 ثانية)</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-bold text-slate-300">
+                        قالب رسالة رمز التحقق عبر واتساب
+                      </label>
+                      <span className="text-[10px] text-teal-300 bg-teal-950/60 px-2 py-0.5 rounded border border-teal-800">
+                        المتغيرات: {'{otp}'} للرمز، {'{platformName}'} لاسم المنظومة
+                      </span>
+                    </div>
+                    <textarea
+                      rows={3}
+                      value={waForm.trialOtpTemplate}
+                      onChange={e => setWaForm({ ...waForm, trialOtpTemplate: e.target.value })}
+                      placeholder="رمز التحقق الخاص بك لتفعيل حساب صالونك التجريبي في {platformName} هو: 🔐 {otp}..."
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500 font-sans"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 3: Live Test Message */}
+              <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center gap-2 border-b border-slate-700/50 pb-2">
+                  <Send size={15} className="text-indigo-400" />
+                  <span className="text-xs font-black text-white">اختبار إرسال رسالة واتساب حية</span>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <input
+                    type="tel"
+                    value={waTestPhone}
+                    onChange={e => setWaTestPhone(e.target.value)}
+                    placeholder="أدخل رقم الموبايل للتجربة (مثال: 01014889704 أو 0500000000)"
+                    className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-white outline-none focus:border-indigo-500"
+                    dir="ltr"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSendWaTest}
+                    disabled={isSendingWaTest || !waTestPhone.trim()}
+                    className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 shrink-0"
+                  >
+                    {isSendingWaTest ? (
+                      <span className="inline-block w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                    ) : (
+                      <Send size={13} />
+                    )}
+                    <span>إرسال تجربة الآن</span>
+                  </button>
+                </div>
+
+                {waTestResult && (
+                  <div className={`p-2.5 rounded-xl text-xs font-bold flex items-center gap-2 ${
+                    waTestResult.success
+                      ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-800/80'
+                      : 'bg-rose-950/60 text-rose-300 border border-rose-800/80'
+                  }`}>
+                    {waTestResult.success ? <CheckCircle2 size={15} className="shrink-0 text-emerald-400" /> : <AlertTriangle size={15} className="shrink-0 text-rose-400" />}
+                    <span>{waTestResult.message}</span>
+                  </div>
+                )}
+              </div>
+
+            </div>
+
+            {/* Modal Footer */}
+            <div className="pt-4 mt-4 border-t border-slate-800 shrink-0 flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => setShowPlatformWhatsAppModal(false)}
+                className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-300 bg-slate-800 hover:bg-slate-700 cursor-pointer transition-colors"
+              >
+                إغلاق
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSaveWaSettings()}
+                disabled={isSavingWaSettings}
+                className="bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-black px-6 py-2.5 rounded-xl text-xs shadow-lg shadow-emerald-600/30 flex items-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                {isSavingWaSettings ? (
+                  <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                ) : (
+                  <CheckCircle2 size={16} />
+                )}
+                <span>حفظ إعدادات واتساب والـ OTP في قاعدة البيانات</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

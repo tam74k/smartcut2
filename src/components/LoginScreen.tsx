@@ -19,13 +19,19 @@ import {
   Headphones,
   MessageSquare,
   Check,
-  AlertCircle
+  AlertCircle,
+  Clock,
+  RefreshCw,
+  KeyRound,
+  ArrowLeft,
+  Send
 } from 'lucide-react';
 
 import { AuthService } from '../services/auth';
 import { AppUser, UserRole, AppSettings, Branch } from '../types';
 import { SubscriptionService, COUNTRY_CURRENCY_MAP } from '../services/subscriptionService';
 import { DB } from '../services/db';
+import { EvolutionApiService } from '../services/evolutionApiService';
 
 interface LoginScreenProps {
   onLoginSuccess: (user: AppUser, customSettings?: AppSettings, selectedBranch?: Branch) => void;
@@ -97,6 +103,41 @@ export function LoginScreen({ onLoginSuccess, settings, onOpenSaaSAdmin }: Login
     confirmPassword: ''
   });
   const [regSuccess, setRegSuccess] = useState(false);
+
+  // Trial Registration OTP Verification States
+  const [regStep, setRegStep] = useState<'form' | 'otp'>('form');
+  const [enteredOtp, setEnteredOtp] = useState('');
+  const [generatedOtp, setGeneratedOtp] = useState<string | null>(null);
+  const [otpExpiresAt, setOtpExpiresAt] = useState<number | null>(null);
+  const [countdownSeconds, setCountdownSeconds] = useState(120);
+  const [isSendingOtp, setIsSendingOtp] = useState(false);
+  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
+  const [otpError, setOtpError] = useState('');
+
+  // Countdown timer effect for 2-minute OTP expiry
+  useEffect(() => {
+    let timer: any;
+    if (regStep === 'otp' && countdownSeconds > 0) {
+      timer = setInterval(() => {
+        setCountdownSeconds(prev => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [regStep, countdownSeconds]);
+
+  const formatTimer = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -278,6 +319,104 @@ export function LoginScreen({ onLoginSuccess, settings, onOpenSaaSAdmin }: Login
       return;
     }
 
+    // Check Platform Settings for WhatsApp Evolution API & Trial OTP requirement
+    try {
+      const pSettings = await DB.fetchPlatformSettings();
+      const shouldRequireOtp = pSettings?.requireTrialOtp !== false;
+      const isWaConfigured = Boolean(
+        pSettings?.evolutionApiUrl &&
+        pSettings?.evolutionApiKey &&
+        pSettings?.evolutionInstanceName
+      );
+
+      if (shouldRequireOtp && isWaConfigured) {
+        // Generate random 6-digit OTP
+        const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+        const durationMinutes = Number(pSettings.trialOtpMinutes) || 2;
+
+        const sendRes = await EvolutionApiService.sendPlatformOtp(
+          regForm.phone.trim(),
+          otpCode,
+          regForm.country
+        );
+
+        if (!sendRes.success) {
+          setIsLoading(false);
+          setError(`تعذر إرسال كود التحقق عبر الواتساب: ${sendRes.error || 'يرجى التأكد من كتابة رقم الهاتف بشكل صحيح وإعادة المحاولة'}`);
+          return;
+        }
+
+        // OTP sent successfully, transition to verification screen
+        setGeneratedOtp(otpCode);
+        setOtpExpiresAt(Date.now() + durationMinutes * 60 * 1000);
+        setCountdownSeconds(durationMinutes * 60);
+        setEnteredOtp('');
+        setOtpError('');
+        setIsLoading(false);
+        setRegStep('otp');
+        return;
+      }
+
+      // If WhatsApp OTP is disabled or not configured, proceed directly
+      await executeCompleteRegistration(cleanUsername);
+    } catch (err: any) {
+      setIsLoading(false);
+      setError(err?.message || 'حدث خطأ أثناء فحص إعدادات التحقق، يرجى المحاولة لاحقاً');
+    }
+  };
+
+  const handleVerifyOtpAndRegister = async () => {
+    setOtpError('');
+    if (!enteredOtp || enteredOtp.trim().length < 6) {
+      setOtpError('يرجى إدخال رمز التحقق المكون من 6 أرقام كاملاً');
+      return;
+    }
+
+    if (countdownSeconds <= 0 || (otpExpiresAt && Date.now() > otpExpiresAt)) {
+      setOtpError('انتهت صلاحية رمز التحقق (مرت دقيقتين)! يرجى النقر على زر "إعادة إرسال الرمز" لاستلام رمز جديد.');
+      return;
+    }
+
+    if (enteredOtp.trim() !== generatedOtp) {
+      setOtpError('رمز التحقق غير صحيح! يرجى التأكد من الرمز المرسل لك عبر تطبيق واتساب والمحاولة مجدداً.');
+      return;
+    }
+
+    setIsVerifyingOtp(true);
+    const cleanUsername = regForm.username.trim().toLowerCase();
+    await executeCompleteRegistration(cleanUsername);
+  };
+
+  const handleResendOtp = async () => {
+    setIsSendingOtp(true);
+    setOtpError('');
+    try {
+      const pSettings = await DB.fetchPlatformSettings();
+      const durationMinutes = Number(pSettings?.trialOtpMinutes) || 2;
+      const newOtpCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+      const sendRes = await EvolutionApiService.sendPlatformOtp(
+        regForm.phone.trim(),
+        newOtpCode,
+        regForm.country
+      );
+
+      if (!sendRes.success) {
+        setOtpError(`تعذر إعادة إرسال الرمز: ${sendRes.error || 'خطأ أثناء الاتصال'}`);
+      } else {
+        setGeneratedOtp(newOtpCode);
+        setOtpExpiresAt(Date.now() + durationMinutes * 60 * 1000);
+        setCountdownSeconds(durationMinutes * 60);
+        setEnteredOtp('');
+      }
+    } catch (err: any) {
+      setOtpError(err?.message || 'تعذر إعادة إرسال رمز التحقق');
+    } finally {
+      setIsSendingOtp(false);
+    }
+  };
+
+  const executeCompleteRegistration = async (cleanUsername: string) => {
     try {
       const result = await SubscriptionService.registerNewSalon({
         salonName: regForm.salonName.trim(),
@@ -297,6 +436,7 @@ export function LoginScreen({ onLoginSuccess, settings, onOpenSaaSAdmin }: Login
       }
 
       setIsLoading(false);
+      setIsVerifyingOtp(false);
       setRegSuccess(true);
 
       // Auto login the new salon admin/owner after 1.2 seconds with their custom settings
@@ -306,7 +446,12 @@ export function LoginScreen({ onLoginSuccess, settings, onOpenSaaSAdmin }: Login
 
     } catch (err: any) {
       setIsLoading(false);
-      setError(err?.message || 'حدث خطأ أثناء تسجيل الصالون، يرجى المحاولة لاحقاً');
+      setIsVerifyingOtp(false);
+      if (regStep === 'otp') {
+        setOtpError(err?.message || 'حدث خطأ أثناء استكمال تسجيل الصالون، يرجى المحاولة لاحقاً');
+      } else {
+        setError(err?.message || 'حدث خطأ أثناء تسجيل الصالون، يرجى المحاولة لاحقاً');
+      }
     }
   };
 
@@ -337,7 +482,7 @@ export function LoginScreen({ onLoginSuccess, settings, onOpenSaaSAdmin }: Login
         <div className="grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-2xl mb-6 border border-slate-200">
           <button
             type="button"
-            onClick={() => { setActiveTab('login'); setError(''); }}
+            onClick={() => { setActiveTab('login'); setError(''); setRegStep('form'); }}
             className={`py-2 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1.5 ${
               activeTab === 'login' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'
             }`}
@@ -442,7 +587,135 @@ export function LoginScreen({ onLoginSuccess, settings, onOpenSaaSAdmin }: Login
         )}
 
         {/* TAB 2: REGISTER NEW SALON ONBOARDING */}
-        {activeTab === 'register' && (
+        {activeTab === 'register' && regStep === 'otp' && (
+          <div className="space-y-4 animate-in fade-in">
+            {/* WhatsApp Header Badge */}
+            <div className="p-4 bg-gradient-to-br from-emerald-500/10 via-teal-500/10 to-emerald-500/5 border border-emerald-500/30 rounded-2xl flex flex-col items-center text-center">
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center shadow-lg shadow-emerald-600/30 mb-2.5">
+                <MessageSquare size={28} />
+              </div>
+              <h3 className="text-sm font-black text-slate-900 flex items-center gap-1.5">
+                <span>التحقق عبر الواتساب (WhatsApp OTP)</span>
+                <span className="bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                  إلزامي
+                </span>
+              </h3>
+              <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                تم إرسال رمز تحقق سري مكون من 6 أرقام إلى حساب واتساب المسجل برقم:
+              </p>
+              <div className="mt-2 px-3 py-1 bg-white rounded-xl border border-emerald-300 font-mono font-bold text-emerald-800 text-xs shadow-xs" dir="ltr">
+                {regForm.phone}
+              </div>
+            </div>
+
+            {/* Countdown Timer Alert */}
+            <div className={`p-3 rounded-2xl border flex items-center justify-between text-xs font-bold transition-all ${
+              countdownSeconds > 0
+                ? 'bg-amber-50/80 border-amber-200 text-amber-900 shadow-xs'
+                : 'bg-rose-50 border-rose-200 text-rose-700 shadow-xs'
+            }`}>
+              <div className="flex items-center gap-2">
+                <Clock size={16} className={countdownSeconds > 0 ? 'text-amber-600 animate-pulse' : 'text-rose-600'} />
+                <span>
+                  {countdownSeconds > 0
+                    ? `الوقت المتبقي لانتهاء الرمز: ${formatTimer(countdownSeconds)}`
+                    : 'انتهت صلاحية الرمز (دقيقتين). اضغط على إعادة الإرسال لاستلام رمز جديد.'}
+                </span>
+              </div>
+              {countdownSeconds > 0 && (
+                <span className="text-[11px] bg-amber-200/90 text-amber-950 px-2.5 py-0.5 rounded-lg font-mono font-black">
+                  {countdownSeconds}s
+                </span>
+              )}
+            </div>
+
+            {/* OTP 6-Digit Code Input */}
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-slate-700 text-center">
+                أدخل رمز التحقق (OTP)
+              </label>
+              <div className="relative">
+                <KeyRound className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                <input
+                  type="text"
+                  maxLength={6}
+                  value={enteredOtp}
+                  onChange={e => {
+                    const val = e.target.value.replace(/\D/g, '').slice(0, 6);
+                    setEnteredOtp(val);
+                    if (otpError) setOtpError('');
+                  }}
+                  placeholder="• • • • • •"
+                  autoFocus
+                  disabled={countdownSeconds <= 0 || isVerifyingOtp}
+                  className="w-full bg-slate-50 border-2 border-emerald-500 rounded-2xl py-3 text-center text-2xl font-mono font-black tracking-[0.4em] text-slate-900 outline-none focus:bg-white focus:ring-4 focus:ring-emerald-500/20 disabled:opacity-50 disabled:bg-slate-100"
+                  dir="ltr"
+                />
+              </div>
+              <p className="text-[10px] text-center text-slate-500">
+                صلاحية الرمز دقيقتين فقط (120 ثانية) للحفاظ على أمان حسابك
+              </p>
+            </div>
+
+            {/* OTP Error Alert */}
+            {otpError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-bold flex items-center gap-2 animate-shake">
+                <AlertCircle size={15} className="shrink-0 text-rose-600" />
+                <span>{otpError}</span>
+              </div>
+            )}
+
+            {/* Verification Button */}
+            <button
+              type="button"
+              onClick={handleVerifyOtpAndRegister}
+              disabled={isVerifyingOtp || enteredOtp.length < 6 || countdownSeconds <= 0}
+              className="w-full bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-700 hover:to-teal-600 text-white font-black py-3 rounded-xl shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 text-xs transition-all disabled:opacity-50 cursor-pointer"
+            >
+              {isVerifyingOtp ? (
+                <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+              ) : (
+                <>
+                  <CheckCircle2 size={16} />
+                  <span>تأكيد الرمز واستكمال التسجيل (7 أيام مجاناً)</span>
+                </>
+              )}
+            </button>
+
+            {/* Resend and Return Actions */}
+            <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 text-xs">
+              <button
+                type="button"
+                onClick={handleResendOtp}
+                disabled={isSendingOtp}
+                className="text-emerald-700 hover:text-emerald-800 font-black flex items-center gap-1.5 p-1.5 rounded-lg hover:bg-emerald-50 transition-colors cursor-pointer disabled:opacity-50"
+              >
+                {isSendingOtp ? (
+                  <RefreshCw size={13} className="animate-spin" />
+                ) : (
+                  <RefreshCw size={13} />
+                )}
+                <span>إعادة إرسال الرمز عبر واتساب</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setRegStep('form');
+                  setEnteredOtp('');
+                  setOtpError('');
+                }}
+                className="text-slate-500 hover:text-slate-700 font-bold flex items-center gap-1 p-1.5 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <ArrowRight size={13} />
+                <span>تعديل رقم الهاتف أو البيانات</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 2: REGISTER NEW SALON FORM */}
+        {activeTab === 'register' && regStep === 'form' && (
           <form onSubmit={handleRegisterSubmit} className="space-y-3.5 animate-in fade-in">
             <div className="bg-emerald-50/70 border border-emerald-100 p-3 rounded-2xl flex items-center gap-2 text-xs text-emerald-950 font-bold">
               <Sparkles size={16} className="text-emerald-600 shrink-0" />
