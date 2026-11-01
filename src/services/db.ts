@@ -4092,7 +4092,8 @@ export const DB = {
         type: type,
         device_ip: fl.deviceIp || fl.device_ip || null,
         status: fl.status || (fl.source === 'manual' ? 'manual' : 'synced'),
-        notes: fl.notes || null
+        notes: fl.notes || null,
+        processed_date: computedProcessedDate
       };
       let { error } = await client.from('fingerprint_logs').upsert(snap, { onConflict: 'id' });
       if (error && error.message && (error.message.includes('schema cache') || error.message.includes('column'))) {

@@ -1849,7 +1849,7 @@ export function ReportsScreen({
             const inTimeStr = checkInLog ? (checkInLog.timestamp?.includes('T') ? checkInLog.timestamp.split('T')[1]?.substring(0, 5) : (checkInLog.timestamp?.includes(' ') ? checkInLog.timestamp.split(' ')[1]?.substring(0, 5) : '')) : null;
             const actualInMin = (inTimeStr && inTimeStr.includes(':')) ? (Number(inTimeStr.split(':')[0] || 0) * 60 + Number(inTimeStr.split(':')[1] || 0)) : totalSchedInMin;
 
-            const isOvernight = isNextDayLog || (actualOutMin <= actualInMin);
+            const isOvernight = isNextDayLog || Boolean(checkOutLog.notes?.includes('(+1)') || checkOutLog.notes?.includes('بعد منتصف الليل'));
             if (isOvernight) {
               actualOutMin += 1440;
             }
