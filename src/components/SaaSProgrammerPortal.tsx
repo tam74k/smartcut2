@@ -5,7 +5,7 @@ import {
   Phone, Sliders, X, ExternalLink, ChevronDown, Lock, Zap, Shield, Key, 
   Database, RefreshCw, AlertTriangle, ArrowRight, UserPlus, Layers, Server,
   Trash2, Receipt, CreditCard, LogOut, HardDrive, Crown, Save, Settings, Check, AlertCircle, FileSpreadsheet, Info,
-  QrCode, Wifi, WifiOff, Send, MessageCircle
+  QrCode, Wifi, WifiOff, Send, MessageCircle, ShieldCheck
 } from 'lucide-react';
 import { SalonTenant, AppUser, Branch, ServiceItem } from '../types';
 import { SubscriptionService, COUNTRY_CURRENCY_MAP, getCountryMeta, generateUUID } from '../services/subscriptionService';
