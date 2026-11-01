@@ -1955,7 +1955,26 @@ export default function App() {
       const tagged = next.map(p => ({ ...p, salonId: p.salonId || currentSalonId, branchId: p.branchId || activeBranchId }));
       const other = prev.filter(p => p.salonId && p.salonId !== currentSalonId && (p as any).salon_id !== currentSalonId);
       const res = [...other, ...tagged];
-      DB.saveProducts(tagged);
+
+      // Diff-save only new or modified products to avoid race conditions with polling
+      const prevMap = new Map(currentSalonProds.map(p => [p.id, p]));
+      const changed = tagged.filter(p => {
+        const old = prevMap.get(p.id);
+        if (!old) return true;
+        return (
+          p.openingStock !== old.openingStock ||
+          p.currentStock !== old.currentStock ||
+          p.costPrice !== old.costPrice ||
+          p.sellPrice !== old.sellPrice ||
+          p.reorderLimit !== old.reorderLimit ||
+          p.name !== old.name ||
+          p.categoryId !== old.categoryId ||
+          p.branchId !== old.branchId ||
+          p.isActive !== old.isActive
+        );
+      });
+      changed.forEach(p => DB.saveProduct(p, currentSalonId));
+
       return res;
     });
   };

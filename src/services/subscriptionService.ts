@@ -585,14 +585,26 @@ export const SubscriptionService = {
       const stored = localStorage.getItem(`smartcut_branch_settings_${branchId}`);
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (fallbackSettings?.treasuries && Array.isArray(fallbackSettings.treasuries) && fallbackSettings.treasuries.length > 0) {
-          parsed.treasuries = fallbackSettings.treasuries;
-        }
-        if (fallbackSettings?.expenseCategories && Array.isArray(fallbackSettings.expenseCategories) && fallbackSettings.expenseCategories.length > 0) {
-          const mergedSet = new Set([...fallbackSettings.expenseCategories, ...(Array.isArray(parsed.expenseCategories) ? parsed.expenseCategories : [])]);
-          parsed.expenseCategories = Array.from(mergedSet);
-        }
-        return parsed;
+        
+        // Return parsed with essential global and salon-wide settings inherited from fallbackSettings/DB
+        return {
+          ...fallbackSettings,
+          ...parsed,
+          tipPayoutMethod: fallbackSettings?.tipPayoutMethod || parsed.tipPayoutMethod || 'instant_cash',
+          allowNonCashTips: fallbackSettings?.allowNonCashTips ?? parsed.allowNonCashTips ?? true,
+          instantCommissionFromDrawer: fallbackSettings?.instantCommissionFromDrawer ?? parsed.instantCommissionFromDrawer ?? false,
+          enableDualPricing: fallbackSettings?.enableDualPricing ?? parsed.enableDualPricing ?? false,
+          depositRefundAllowedDays: fallbackSettings?.depositRefundAllowedDays ?? parsed.depositRefundAllowedDays ?? 0,
+          whatsappEnabled: fallbackSettings?.whatsappEnabled ?? parsed.whatsappEnabled ?? false,
+          whatsappSettings: fallbackSettings?.whatsappSettings || parsed.whatsappSettings || {},
+          evolutionApiUrl: fallbackSettings?.evolutionApiUrl || parsed.evolutionApiUrl || null,
+          evolutionApiKey: fallbackSettings?.evolutionApiKey || parsed.evolutionApiKey || null,
+          evolutionInstanceName: fallbackSettings?.evolutionInstanceName || parsed.evolutionInstanceName || null,
+          treasuries: (Array.isArray(fallbackSettings?.treasuries) && fallbackSettings.treasuries.length > 0) ? fallbackSettings.treasuries : parsed.treasuries,
+          expenseCategories: (Array.isArray(fallbackSettings?.expenseCategories) && fallbackSettings.expenseCategories.length > 0)
+            ? Array.from(new Set([...fallbackSettings.expenseCategories, ...(Array.isArray(parsed.expenseCategories) ? parsed.expenseCategories : [])]))
+            : parsed.expenseCategories
+        };
       }
     } catch (e) {}
 

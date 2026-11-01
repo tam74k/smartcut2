@@ -448,10 +448,18 @@ export function ProductsScreen({
       }
 
       let productToSave: Product;
+      const effectiveBranchId = (editingProductId ? products.find(p => p.id === editingProductId)?.branchId : undefined) || activeBranchId || (settings as any).branchId || undefined;
+      const effectiveSalonId = (editingProductId ? products.find(p => p.id === editingProductId)?.salonId : undefined) || settings.salonId;
 
       if (editingProductId) {
         const oldProd = products.find(p => p.id === editingProductId);
         const diff = oldProd ? (oStock - (oldProd.openingStock || 0)) : 0;
+        const updatedBranchStocks = { ...(oldProd?.branchStocks || {}) };
+        if (effectiveBranchId) {
+          const curVal = Number(updatedBranchStocks[effectiveBranchId] ?? oldProd?.currentStock ?? 0);
+          updatedBranchStocks[effectiveBranchId] = curVal + diff;
+        }
+
         productToSave = {
           ...(oldProd || {}),
           id: editingProductId,
@@ -465,13 +473,19 @@ export function ProductsScreen({
           costPrice: cPrice,
           reorderLimit: rLimit,
           openingStock: oStock,
-          currentStock: oldProd ? (oldProd.currentStock + diff) : oStock,
+          currentStock: oldProd ? (Number(oldProd.currentStock || 0) + diff) : oStock,
           commission: comm,
           barcode: cleanBarcode,
-          salonId: settings.salonId,
-          branchId: settings.branchId
+          salonId: effectiveSalonId,
+          branchId: effectiveBranchId,
+          branchStocks: updatedBranchStocks
         } as Product;
       } else {
+        const newBranchStocks: Record<string, number> = {};
+        if (effectiveBranchId) {
+          newBranchStocks[effectiveBranchId] = oStock;
+        }
+
         productToSave = {
           id: 'PRD-' + Math.random().toString(36).substr(2, 9) + '-' + Date.now(),
           name: formData.name.trim(),
@@ -487,8 +501,9 @@ export function ProductsScreen({
           currentStock: oStock,
           commission: comm,
           barcode: cleanBarcode,
-          salonId: settings.salonId,
-          branchId: settings.branchId
+          salonId: effectiveSalonId,
+          branchId: effectiveBranchId,
+          branchStocks: newBranchStocks
         };
       }
 

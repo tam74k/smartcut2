@@ -3267,6 +3267,7 @@ export const DB = {
     const snap: any = {
       id: p.id, salon_id: validSalonId, branch_id: validBranchId,
       category_id: catId, name: p.name,
+      supplier_id: p.supplierId || p.supplier_id || null,
       retail_price: p.retailPrice ?? p.sellPrice ?? p.price ?? 0,
       sell_price: p.sellPrice ?? p.retailPrice ?? p.price ?? 0, cost_price: p.costPrice ?? 0,
       min_stock_alert: p.minStockAlert ?? p.reorderLimit ?? 5,
@@ -3285,6 +3286,16 @@ export const DB = {
     if (error && (error.message?.includes('branch_stocks') || error.message?.includes('branch_reorder_limits'))) {
       delete snap.branch_stocks;
       delete snap.branch_reorder_limits;
+      const retry = await client.from('products').upsert(snap, { onConflict: 'id' });
+      error = retry.error;
+    }
+    if (error && (error.code === '23503' || error.message?.includes('category_id') || error.details?.includes('categories'))) {
+      snap.category_id = null;
+      const retry = await client.from('products').upsert(snap, { onConflict: 'id' });
+      error = retry.error;
+    }
+    if (error && (error.code === '23503' || error.message?.includes('supplier_id') || error.details?.includes('suppliers'))) {
+      snap.supplier_id = null;
       const retry = await client.from('products').upsert(snap, { onConflict: 'id' });
       error = retry.error;
     }
