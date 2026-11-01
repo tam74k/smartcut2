@@ -311,6 +311,8 @@ export function WarehouseScreen({
       {/* SUB-TAB 4: INVENTORY COUNTS & MOVEMENTS */}
       {activeSubTab === 'inventory' && (
         <InventoryScreen
+          categories={categories}
+          currentUser={currentUser}
           settings={settings}
           products={products}
           setProducts={setProducts}
