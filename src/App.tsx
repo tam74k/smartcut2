@@ -2006,12 +2006,19 @@ export default function App() {
       const currentSalonTrxs = prev.filter(t => !(t as any).salonId || (t as any).salonId === currentSalonId || (t as any).salon_id === currentSalonId);
       const next = typeof updater === 'function' ? updater(currentSalonTrxs) : updater;
       const tagged = next.map(t => dbTransactionToApp({ ...t, salonId: (t as any).salonId || currentSalonId, branchId: (t as any).branchId || activeBranchId }));
+      const seenIds = new Set<string>();
+      const dedupedTagged = tagged.filter(t => {
+        if (!t.id) return false;
+        if (seenIds.has(t.id)) return false;
+        seenIds.add(t.id);
+        return true;
+      });
       const other = prev.filter(t => (t as any).salonId && (t as any).salonId !== currentSalonId && (t as any).salon_id !== currentSalonId);
-      const res = [...other, ...tagged];
+      const res = [...other, ...dedupedTagged];
 
       // Save only new or modified transactions instead of re-saving the entire database
       const prevMap = new Map(currentSalonTrxs.map(t => [t.id, t]));
-      const changed = tagged.filter(t => {
+      const changed = dedupedTagged.filter(t => {
         const old = prevMap.get(t.id);
         if (!old) return true;
         return t.amount !== old.amount || t.treasury !== old.treasury || t.type !== old.type || t.category !== old.category;
@@ -2944,7 +2951,8 @@ export default function App() {
       } as any));
 
     // 2.b. If tip was paid via non-cash method and branch mode is 'instant_cash', deduct tip immediately from Cash Drawer
-    const tipMode = settings.tipPayoutMethod || 'instant_cash';
+    const isPooledDeferredTip = (settings.tipPayoutMethod === 'pooled_deferred' || (settings as any).tip_payout_method === 'pooled_deferred' || settings.tipsDirectCashDeduction === false || (settings as any).tips_direct_cash_deduction === false);
+    const tipMode = isPooledDeferredTip ? 'pooled_deferred' : 'instant_cash';
     const isUnspecifiedTip = !invoice.tipEmployeeId || invoice.tipEmployeeId === 'unspecified' || invoice.tipEmployeeName?.includes('غير محدد');
     if (invoice.tipAmount && invoice.tipAmount > 0 && tipMode === 'instant_cash' && !isUnspecifiedTip) {
       const hasNonCashPayment = effectiveSplits.some(s => s.treasuryId !== 'cash' && !s.treasuryId.includes('cash') && s.treasuryId !== 'cashback');
@@ -3002,21 +3010,17 @@ export default function App() {
       });
     }
 
-    if (isEditing) {
-      // 1. حذف حركات الخزينة السابقة بالكامل من قاعدة البيانات فوراً لمنع أي تكرار
-      if (oldTrxIds.length > 0) {
-        DB.deleteTransactionsByIds(oldTrxIds);
-      }
-      DB.deleteTransactionsByInvoiceId(invoiceWithBranch.id);
-
-      // 2. استبدال حركات الخزينة في الـ state المحلي دون أي تكرار
-      setTransactions(prev => [
-        ...prev.filter(t => !isOldInvoiceTransaction(t)),
-        ...newTrxs
-      ]);
-    } else if (newTrxs.length > 0) {
-      handleSetTransactions(prev => [...prev, ...newTrxs]);
+    // 1. حذف حركات الخزينة السابقة بالكامل من قاعدة البيانات فوراً لمنع أي تكرار
+    if (oldTrxIds.length > 0) {
+      DB.deleteTransactionsByIds(oldTrxIds);
     }
+    DB.deleteTransactionsByInvoiceId(invoiceWithBranch.id);
+
+    // 2. استبدال حركات الخزينة في الـ state المحلي دون أي تكرار
+    setTransactions(prev => [
+      ...prev.filter(t => !isOldInvoiceTransaction(t)),
+      ...newTrxs
+    ]);
 
     // 3. Complete and mark booking as paid if came from booking
     if (bookingId) {
@@ -3027,12 +3031,10 @@ export default function App() {
     // 4. حفظ فوري في Supabase لضمان بقاء وتوثيق البيانات
     (async () => {
       try {
-        if (isEditing) {
-          if (oldTrxIds.length > 0) {
-            await DB.deleteTransactionsByIds(oldTrxIds);
-          }
-          await DB.deleteTransactionsByInvoiceId(invoiceWithBranch.id);
+        if (oldTrxIds.length > 0) {
+          await DB.deleteTransactionsByIds(oldTrxIds);
         }
+        await DB.deleteTransactionsByInvoiceId(invoiceWithBranch.id);
         const saved = await DB.saveInvoice(invoiceWithBranch, settings.salonId);
         if (saved && newTrxs.length > 0) {
           await DB.saveTransactions(newTrxs, settings.salonId);

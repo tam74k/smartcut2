@@ -1588,7 +1588,15 @@ export const DB = {
       res.instantCommissionFromDrawer = data.instant_commission_from_drawer !== undefined 
         ? toBool(data.instant_commission_from_drawer) 
         : (uiSet.instantCommissionFromDrawer !== undefined ? toBool(uiSet.instantCommissionFromDrawer) : false);
-      res.tipPayoutMethod = data.tip_payout_method || uiSet.tipPayoutMethod || 'instant_cash';
+
+      const directDeductionRaw = data.tips_direct_cash_deduction !== undefined ? toBool(data.tips_direct_cash_deduction) : undefined;
+      const isPooledMethod = data.tip_payout_method === 'pooled_deferred' || uiSet.tipPayoutMethod === 'pooled_deferred' || directDeductionRaw === false;
+      const resolvedTipMethod = isPooledMethod ? 'pooled_deferred' : (data.tip_payout_method || uiSet.tipPayoutMethod || 'instant_cash');
+      res.tipPayoutMethod = resolvedTipMethod;
+      res.tip_payout_method = resolvedTipMethod;
+      res.tipsDirectCashDeduction = resolvedTipMethod === 'instant_cash';
+      res.tips_direct_cash_deduction = resolvedTipMethod === 'instant_cash';
+
       res.allowNonCashTips = data.allow_non_cash_tips !== undefined ? toBool(data.allow_non_cash_tips) : (uiSet.allowNonCashTips !== undefined ? toBool(uiSet.allowNonCashTips) : true);
       res.enableDualPricing = data.enable_dual_pricing !== undefined ? toBool(data.enable_dual_pricing) : (uiSet.enableDualPricing !== undefined ? toBool(uiSet.enableDualPricing) : false);
       res.whatsappEnabled = data.whatsapp_enabled !== undefined ? toBool(data.whatsapp_enabled) : (uiSet.whatsappEnabled !== undefined ? toBool(uiSet.whatsappEnabled) : true);
@@ -1650,7 +1658,11 @@ export const DB = {
         depositRefundAllowedDays: depositRefundDays
       };
 
-      const tipPayoutMethodValue = settings.tipPayoutMethod || settings.tip_payout_method || existingUiSettings.tipPayoutMethod || existing?.tip_payout_method || 'instant_cash';
+      const directDeductionExplicitlyDisabled = settings.tipsDirectCashDeduction === false || settings.tips_direct_cash_deduction === false;
+      const isPooledSave = settings.tipPayoutMethod === 'pooled_deferred' || settings.tip_payout_method === 'pooled_deferred' || existingUiSettings.tipPayoutMethod === 'pooled_deferred' || existing?.tip_payout_method === 'pooled_deferred' || directDeductionExplicitlyDisabled;
+      const tipPayoutMethodValue = isPooledSave
+        ? 'pooled_deferred'
+        : (settings.tipPayoutMethod || settings.tip_payout_method || existingUiSettings.tipPayoutMethod || existing?.tip_payout_method || 'instant_cash');
       const allowNonCashTipsValue = settings.allowNonCashTips !== undefined 
         ? Boolean(settings.allowNonCashTips) 
         : (settings.allow_non_cash_tips !== undefined 

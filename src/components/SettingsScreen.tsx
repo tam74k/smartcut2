@@ -848,24 +848,34 @@ export function SettingsScreen({
 
   const handleSave = async () => {
     try {
-      localStorage.setItem('smartcut_app_settings', JSON.stringify(settings));
+      const isPooledMethod = (settings.tipPayoutMethod === 'pooled_deferred' || (settings as any).tip_payout_method === 'pooled_deferred' || settings.tipsDirectCashDeduction === false || (settings as any).tips_direct_cash_deduction === false);
+      const chosenTipMethod = isPooledMethod ? 'pooled_deferred' : 'instant_cash';
+      const normalizedSettings: AppSettings = {
+        ...settings,
+        tipPayoutMethod: chosenTipMethod,
+        tip_payout_method: chosenTipMethod,
+        tipsDirectCashDeduction: !isPooledMethod,
+        tips_direct_cash_deduction: !isPooledMethod
+      };
+
+      localStorage.setItem('smartcut_app_settings', JSON.stringify(normalizedSettings));
       if (activeBranchId) {
-        SubscriptionService.saveBranchSettings(activeBranchId, settings);
+        SubscriptionService.saveBranchSettings(activeBranchId, normalizedSettings);
       }
-      const targetSalonId = settings.salonId || currentUser?.salonId;
+      const targetSalonId = normalizedSettings.salonId || currentUser?.salonId;
       if (targetSalonId) {
-        const instName = settings.evolutionInstanceName || settings.waInstantName;
-        const apiKeyVal = settings.evolutionApiKey || settings.waApiKey;
+        const instName = normalizedSettings.evolutionInstanceName || (normalizedSettings as any).waInstantName;
+        const apiKeyVal = normalizedSettings.evolutionApiKey || (normalizedSettings as any).waApiKey;
         SubscriptionService.updateSalon(targetSalonId, {
-          name: settings.salonName,
-          salonType: settings.salonType,
-          phone: settings.phone,
-          country: settings.country,
-          currency: settings.currency,
+          name: normalizedSettings.salonName,
+          salonType: normalizedSettings.salonType,
+          phone: normalizedSettings.phone,
+          country: normalizedSettings.country,
+          currency: normalizedSettings.currency,
           evolutionInstanceName: instName,
           evolutionApiKey: apiKeyVal
         });
-        await DB.saveSettings(targetSalonId, settings);
+        await DB.saveSettings(targetSalonId, normalizedSettings);
         
         // Save categories to Supabase
         if (categories && categories.length > 0) {
@@ -875,6 +885,7 @@ export function SettingsScreen({
           }
         }
       }
+      setSettings(normalizedSettings);
     } catch (e) {
       console.error(e);
     }
@@ -1255,53 +1266,74 @@ export function SettingsScreen({
                 طريقة صرف وسداد الإكراميات للفرع والصالون *
               </label>
 
-              <div className="space-y-2">
-                <label className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition-all ${
-                  (settings.tipPayoutMethod || 'instant_cash') === 'instant_cash'
-                    ? 'bg-emerald-50/70 border-emerald-300 ring-2 ring-emerald-500/20'
-                    : 'bg-slate-50 border-slate-200 hover:bg-slate-100/70'
-                }`}>
-                  <input
-                    type="radio"
-                    name="tipPayoutMethod"
-                    value="instant_cash"
-                    checked={(settings.tipPayoutMethod || 'instant_cash') === 'instant_cash'}
-                    onChange={() => handleChange('tipPayoutMethod', 'instant_cash')}
-                    className="mt-1 accent-emerald-600"
-                  />
-                  <div>
-                    <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
-                      <span>صرف فوري من الكاش (خصم مباشر من الدرج)</span>
-                    </span>
-                    <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-                      عند دفع العميل مبلغ زيادة بالفيزا/البطاقة، يُسجل المبلغ الإجمالي في خانة الفيزا (لمطابقة كشف حساب ماكينة الشبكة)، ويتم خصم مبلغ البقشيش فورياً نقداً من درج الكاش لتسليمه للموظف لحظياً.
-                    </p>
-                  </div>
-                </label>
+              {(() => {
+                const isPooledOption = (settings.tipPayoutMethod === 'pooled_deferred' || (settings as any).tip_payout_method === 'pooled_deferred' || settings.tipsDirectCashDeduction === false || (settings as any).tips_direct_cash_deduction === false);
+                return (
+                  <div className="space-y-2">
+                    <label className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition-all ${
+                      !isPooledOption
+                        ? 'bg-emerald-50/70 border-emerald-300 ring-2 ring-emerald-500/20'
+                        : 'bg-slate-50 border-slate-200 hover:bg-slate-100/70'
+                    }`}>
+                      <input
+                        type="radio"
+                        name="tipPayoutMethod"
+                        value="instant_cash"
+                        checked={!isPooledOption}
+                        onChange={() => {
+                          handleChange('tipPayoutMethod', 'instant_cash');
+                          handleUpdateSettings({
+                            tipPayoutMethod: 'instant_cash',
+                            tip_payout_method: 'instant_cash',
+                            tipsDirectCashDeduction: true,
+                            tips_direct_cash_deduction: true
+                          });
+                        }}
+                        className="mt-1 accent-emerald-600"
+                      />
+                      <div>
+                        <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                          <span>صرف فوري من الكاش (خصم مباشر من الدرج)</span>
+                        </span>
+                        <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                          عند دفع العميل مبلغ زيادة بالفيزا/البطاقة، يُسجل المبلغ الإجمالي في خانة الفيزا (لمطابقة كشف حساب ماكينة الشبكة)، ويتم خصم مبلغ البقشيش فورياً نقداً من درج الكاش لتسليمه للموظف لحظياً.
+                        </p>
+                      </div>
+                    </label>
 
-                <label className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition-all ${
-                  settings.tipPayoutMethod === 'pooled_deferred'
-                    ? 'bg-indigo-50/70 border-indigo-300 ring-2 ring-indigo-500/20'
-                    : 'bg-slate-50 border-slate-200 hover:bg-slate-100/70'
-                }`}>
-                  <input
-                    type="radio"
-                    name="tipPayoutMethod"
-                    value="pooled_deferred"
-                    checked={settings.tipPayoutMethod === 'pooled_deferred'}
-                    onChange={() => handleChange('tipPayoutMethod', 'pooled_deferred')}
-                    className="mt-1 accent-indigo-600"
-                  />
-                  <div>
-                    <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
-                      <span>مجمع ومؤجل (صرف لاحق من الخزينة المحددة)</span>
-                    </span>
-                    <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-                      تتجمع مبالغ البقشيش في حساب ومستحقات الموظف في النظام، ويتم صرفها وسدادها لاحقاً (مع الرواتب أو عند الطلب) من خلال شاشة الإكراميات مع تحديد خزينة الصرف.
-                    </p>
+                    <label className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition-all ${
+                      isPooledOption
+                        ? 'bg-indigo-50/70 border-indigo-300 ring-2 ring-indigo-500/20'
+                        : 'bg-slate-50 border-slate-200 hover:bg-slate-100/70'
+                    }`}>
+                      <input
+                        type="radio"
+                        name="tipPayoutMethod"
+                        value="pooled_deferred"
+                        checked={isPooledOption}
+                        onChange={() => {
+                          handleChange('tipPayoutMethod', 'pooled_deferred');
+                          handleUpdateSettings({
+                            tipPayoutMethod: 'pooled_deferred',
+                            tip_payout_method: 'pooled_deferred',
+                            tipsDirectCashDeduction: false,
+                            tips_direct_cash_deduction: false
+                          });
+                        }}
+                        className="mt-1 accent-indigo-600"
+                      />
+                      <div>
+                        <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                          <span>مجمع ومؤجل (صرف لاحق من الخزينة المحددة)</span>
+                        </span>
+                        <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                          تتجمع مبالغ البقشيش في حساب ومستحقات الموظف في النظام، ويتم صرفها وسدادها لاحقاً (مع الرواتب أو عند الطلب) من خلال شاشة الإكراميات مع تحديد خزينة الصرف.
+                        </p>
+                      </div>
+                    </label>
                   </div>
-                </label>
-              </div>
+                );
+              })()}
             </div>
 
             <div className="space-y-4 bg-slate-50 p-4 rounded-xl border border-slate-200/80">

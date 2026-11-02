@@ -1477,7 +1477,8 @@ export function POSScreen({
     const assignedTipEmployee = isUnspecifiedTip
       ? { id: 'unspecified', name: 'غير محدد (عامة للصالون)' }
       : (employees.find(e => e.id === tipEmployeeId) || employees.find(e => e.id === cart[0]?.employeeId) || { id: 'unspecified', name: 'غير محدد (عامة للصالون)' });
-    const tipPayoutMode = settings.tipPayoutMethod || 'instant_cash';
+    const isPooledDeferredTip = (settings.tipPayoutMethod === 'pooled_deferred' || (settings as any).tip_payout_method === 'pooled_deferred' || settings.tipsDirectCashDeduction === false || (settings as any).tips_direct_cash_deduction === false);
+    const tipPayoutMode = isPooledDeferredTip ? 'pooled_deferred' : 'instant_cash';
 
     const finalInvoiceId = editingInvoice ? editingInvoice.id : ('INV-' + Math.random().toString(36).substr(2,9).toUpperCase());
     const finalInvoiceDate = editingInvoice ? editingInvoice.date : (effectiveIsShiftOpen ? (effectiveShiftDate + 'T' + new Date().toTimeString().split(' ')[0]) : new Date().toISOString());
@@ -4315,31 +4316,34 @@ export function POSScreen({
                             <Sparkles size={14} className="text-purple-700 shrink-0" />
                             <span>إكرامية عامة للصالون: لا تُخصص لأي موظف وتُسجل كإيراد عام للصالون (لن يتم خصم أي مبالغ من درج الكاش).</span>
                           </div>
-                        ) : (
-                          <div className="text-[11px] font-semibold p-2.5 rounded-xl border flex items-center gap-1.5" style={{
-                            backgroundColor: (settings.tipPayoutMethod || 'instant_cash') === 'instant_cash' ? '#ecfdf5' : '#eef2ff',
-                            borderColor: (settings.tipPayoutMethod || 'instant_cash') === 'instant_cash' ? '#a7f3d0' : '#c7d2fe',
-                            color: (settings.tipPayoutMethod || 'instant_cash') === 'instant_cash' ? '#065f46' : '#3730a3'
-                          }}>
-                            {(settings.tipPayoutMethod || 'instant_cash') === 'instant_cash' ? (
-                              <>
-                                <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />
-                                <span className="flex items-center gap-1.5">
-                                  <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block shrink-0"></span>
-                                  <span>الصرف الفوري: يُخصم البقشيش فوراً نقداً من درج الكاش لتسليمه للموظف، وتُسجل الفيزا بكامل المبلغ ({receivedNum.toFixed(2)} {settings.currency}).</span>
-                                </span>
-                              </>
-                            ) : (
-                              <>
-                                <Clock size={14} className="text-indigo-600 shrink-0" />
-                                <span className="flex items-center gap-1.5">
-                                  <span className="w-2 h-2 rounded-full bg-amber-500 inline-block shrink-0"></span>
-                                  <span>الصرف المؤجل: يُسجل البقشيش كرصيد مجمع للموظف ويُصرف لاحقاً من الخزينة المحددة.</span>
-                                </span>
-                              </>
-                            )}
-                          </div>
-                        )}
+                        ) : (() => {
+                          const isPooled = (settings.tipPayoutMethod === 'pooled_deferred' || (settings as any).tip_payout_method === 'pooled_deferred' || settings.tipsDirectCashDeduction === false || (settings as any).tips_direct_cash_deduction === false);
+                          return (
+                            <div className="text-[11px] font-semibold p-2.5 rounded-xl border flex items-center gap-1.5" style={{
+                              backgroundColor: !isPooled ? '#ecfdf5' : '#eef2ff',
+                              borderColor: !isPooled ? '#a7f3d0' : '#c7d2fe',
+                              color: !isPooled ? '#065f46' : '#3730a3'
+                            }}>
+                              {!isPooled ? (
+                                <>
+                                  <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />
+                                  <span className="flex items-center gap-1.5">
+                                    <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block shrink-0"></span>
+                                    <span>الصرف الفوري: يُخصم البقشيش فوراً نقداً من درج الكاش لتسليمه للموظف، وتُسجل الفيزا بكامل المبلغ ({receivedNum.toFixed(2)} {settings.currency}).</span>
+                                  </span>
+                                </>
+                              ) : (
+                                <>
+                                  <Clock size={14} className="text-indigo-600 shrink-0" />
+                                  <span className="flex items-center gap-1.5">
+                                    <span className="w-2 h-2 rounded-full bg-amber-500 inline-block shrink-0"></span>
+                                    <span>الصرف المؤجل: يُسجل البقشيش كرصيد مجمع للموظف ويُصرف لاحقاً من الخزينة المحددة.</span>
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
                     )}
                   </div>

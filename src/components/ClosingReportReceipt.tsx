@@ -363,11 +363,13 @@ export function ClosingReportReceipt({
     // Track invoice IDs that already exist as transactions in tTrx to avoid double counting
     const isInvoiceInTrx = (invId: string) => {
       if (!invId) return false;
+      const cleanInvId = invId.replace(/^TRX-+/i, '').replace(/^INV-+/i, '').replace(/-\d+$/, '').trim().toUpperCase();
       return tTrx.some(t => {
         if (!t || t.type !== 'in') return false;
-        if ((t as any).invoiceId === invId || (t as any).invoice_id === invId) return true;
-        if (typeof t.id === 'string' && (t.id.includes(invId) || t.id.startsWith(`TRX-${invId}`))) return true;
-        if (typeof t.description === 'string' && t.description.includes(invId)) return true;
+        const tInvId = (t as any).invoiceId || (t as any).invoice_id;
+        if (tInvId && (tInvId === invId || (cleanInvId && tInvId.replace(/^INV-+/i, '').toUpperCase() === cleanInvId))) return true;
+        if (typeof t.id === 'string' && (t.id.includes(invId) || (cleanInvId && t.id.toUpperCase().includes(cleanInvId)))) return true;
+        if (typeof t.description === 'string' && (t.description.includes(invId) || (cleanInvId && t.description.toUpperCase().includes(cleanInvId)))) return true;
         return false;
       });
     };

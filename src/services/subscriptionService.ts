@@ -586,11 +586,19 @@ export const SubscriptionService = {
       if (stored) {
         const parsed = JSON.parse(stored);
         
+        const directDeductionDisabled = parsed.tipsDirectCashDeduction === false || parsed.tips_direct_cash_deduction === false || fallbackSettings?.tipsDirectCashDeduction === false || (fallbackSettings as any)?.tips_direct_cash_deduction === false;
+        const resolvedTipMethod = (parsed.tipPayoutMethod === 'pooled_deferred' || parsed.tip_payout_method === 'pooled_deferred' || fallbackSettings?.tipPayoutMethod === 'pooled_deferred' || (fallbackSettings as any)?.tip_payout_method === 'pooled_deferred' || directDeductionDisabled)
+          ? 'pooled_deferred'
+          : (parsed.tipPayoutMethod || parsed.tip_payout_method || fallbackSettings?.tipPayoutMethod || (fallbackSettings as any)?.tip_payout_method || 'instant_cash');
+
         // Return parsed with essential global and salon-wide settings inherited from fallbackSettings/DB
         return {
           ...fallbackSettings,
           ...parsed,
-          tipPayoutMethod: fallbackSettings?.tipPayoutMethod || parsed.tipPayoutMethod || 'instant_cash',
+          tipPayoutMethod: resolvedTipMethod,
+          tip_payout_method: resolvedTipMethod,
+          tipsDirectCashDeduction: resolvedTipMethod === 'instant_cash',
+          tips_direct_cash_deduction: resolvedTipMethod === 'instant_cash',
           allowNonCashTips: fallbackSettings?.allowNonCashTips ?? parsed.allowNonCashTips ?? true,
           instantCommissionFromDrawer: fallbackSettings?.instantCommissionFromDrawer ?? parsed.instantCommissionFromDrawer ?? false,
           enableDualPricing: fallbackSettings?.enableDualPricing ?? parsed.enableDualPricing ?? false,

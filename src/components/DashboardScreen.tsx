@@ -217,14 +217,35 @@ export function DashboardScreen({
     const txList = transactions || [];
     const invList = invoices || [];
 
+    // دالة استخراج الكود النظيف لرقم الفاتورة لإزالة أي بادئات أو زوائد (-0, INV-, TRX-)
+    const getCleanInvoiceId = (id?: string | null) => {
+      if (!id || typeof id !== 'string') return '';
+      return id.replace(/^TRX-+/i, '').replace(/^INV-+/i, '').replace(/-\d+$/, '').trim().toUpperCase();
+    };
+
     // 1. التحقق الشامل من تغطية أي فاتورة بحركة حقيقية مسجلة مسبقاً
-    const isInvoiceCovered = (invId: string) => {
+    const isInvoiceCovered = (invId: string, invAmount?: number, invDate?: string, invTreasury?: string) => {
       if (!invId) return false;
+      const cleanInvId = getCleanInvoiceId(invId);
       return txList.some(t => {
         if (!t) return false;
-        if ((t as any).invoiceId === invId || (t as any).invoice_id === invId) return true;
-        if (typeof t.id === 'string' && (t.id.includes(invId) || t.id.startsWith(`TRX-${invId}`))) return true;
-        if (typeof t.description === 'string' && t.description.includes(invId)) return true;
+        const tInvId = (t as any).invoiceId || (t as any).invoice_id;
+        if (tInvId && (tInvId === invId || (cleanInvId && getCleanInvoiceId(tInvId) === cleanInvId))) return true;
+        if (typeof t.id === 'string') {
+          if (t.id.includes(invId) || (cleanInvId && t.id.toUpperCase().includes(cleanInvId))) return true;
+        }
+        if (typeof t.description === 'string') {
+          if (t.description.includes(invId) || (cleanInvId && t.description.toUpperCase().includes(cleanInvId))) return true;
+        }
+        // فحص إضافي: نفس المبلغ ونفس التاريخ بالدقيقة ونفس الخزينة والمبيعات
+        if (invAmount !== undefined && Math.abs(Number(t.amount) - invAmount) < 0.01 && (t.category === 'sales' || t.category === 'مبيعات')) {
+          const tDate = (t.date || '').slice(0, 16);
+          const iDate = (invDate || '').slice(0, 16);
+          if (tDate && iDate && tDate === iDate) {
+            const tTreas = t.treasury || (t as any).treasuryId;
+            if (!invTreasury || !tTreas || tTreas === invTreasury) return true;
+          }
+        }
         return false;
       });
     };
@@ -235,6 +256,8 @@ export function DashboardScreen({
 
     txList.forEach(t => {
       if (!t || !t.id) return;
+
+      if (seenTrxKeys.has(t.id)) return;
 
       // تجاهل الحركات المصطنعة القديمة إذا وجدت حركة حقيقية
       if (typeof t.id === 'string' && t.id.startsWith('TRX-INV-INV-')) {
@@ -250,25 +273,32 @@ export function DashboardScreen({
         }
       }
 
-      const invId = (t as any).invoiceId || (t as any).invoice_id || (typeof t.id === 'string' ? t.id.match(/INV-[A-Z0-9-]+/i)?.[0] : null);
+      const rawInvId = (t as any).invoiceId || (t as any).invoice_id || (typeof t.id === 'string' ? t.id.match(/INV-[A-Z0-9-]+/i)?.[0] : null) || (typeof t.description === 'string' ? t.description.match(/INV-[A-Z0-9-]+/i)?.[0] : null);
+      const cleanInvId = getCleanInvoiceId(rawInvId);
       const bId = (t as any).bookingId || (t as any).booking_id || (typeof t.id === 'string' ? t.id.match(/BOK-[A-Z0-9-]+/i)?.[0] : null);
 
       let dedupKey = t.id;
-      if (invId && (t.category === 'sales' || t.category === 'مبيعات')) {
-        dedupKey = `INV_${invId}_${t.treasury || (t as any).treasuryId}_${t.amount}_${(t.date || '').slice(0, 16)}`;
+      if (cleanInvId && (t.category === 'sales' || t.category === 'مبيعات')) {
+        dedupKey = `INV_${cleanInvId}_${t.treasury || (t as any).treasuryId}_${t.amount}_${(t.date || '').slice(0, 16)}`;
       } else if (bId && (t.category === 'مقدم حجز' || t.category === 'booking_advance' || t.category === 'advance')) {
         dedupKey = `BOK_${bId}_${t.treasury || (t as any).treasuryId}_${t.amount}_${(t.date || '').slice(0, 16)}`;
       }
 
       if (seenTrxKeys.has(dedupKey)) return;
+      seenTrxKeys.add(t.id);
       seenTrxKeys.add(dedupKey);
+      if (cleanInvId) {
+        seenTrxKeys.add(`INV_CLEAN_${cleanInvId}`);
+      }
       cleanedRealTrxs.push(t);
     });
 
     const syntheticTrxs: Transaction[] = [];
     invList.forEach(inv => {
       if (inv.status === 'cancelled' || (inv as any).is_cancelled || (inv as any).isCancelled) return;
-      if (isInvoiceCovered(inv.id)) return;
+      const cleanInvId = getCleanInvoiceId(inv.id);
+      if (cleanInvId && seenTrxKeys.has(`INV_CLEAN_${cleanInvId}`)) return;
+      if (isInvoiceCovered(inv.id, Number(inv.total) || 0, inv.date, inv.treasuryId || inv.paymentMethod)) return;
 
       const methods = (inv.paymentMethods && inv.paymentMethods.length > 0)
         ? inv.paymentMethods
@@ -279,9 +309,21 @@ export function DashboardScreen({
         const amt = Number(split.amount) || 0;
         if (amt <= 0) return;
 
+        const synthDedupKey = `INV_${cleanInvId || inv.id}_${split.treasuryId || inv.treasuryId || 'cash'}_${amt}_${(inv.date || '').slice(0, 16)}`;
+        if (seenTrxKeys.has(synthDedupKey)) return;
+
         const baseId = inv.id.startsWith('INV-') ? `TRX-${inv.id}` : `TRX-INV-${inv.id}`;
+        const synthId = `${baseId}${methods.length > 1 ? `-${idx + 1}` : ''}`;
+        if (seenTrxKeys.has(synthId)) return;
+
+        seenTrxKeys.add(synthId);
+        seenTrxKeys.add(synthDedupKey);
+        if (cleanInvId) {
+          seenTrxKeys.add(`INV_CLEAN_${cleanInvId}`);
+        }
+
         syntheticTrxs.push({
-          id: `${baseId}${methods.length > 1 ? `-${idx + 1}` : ''}`,
+          id: synthId,
           salonId: (inv as any).salonId || (inv as any).salon_id || settings.salonId,
           date: inv.date,
           type: 'in',
