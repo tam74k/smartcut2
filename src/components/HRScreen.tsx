@@ -693,6 +693,38 @@ export function HRScreen({
     return days[date.getDay()];
   };
 
+  const getDayNameFromDateStr = (dateStr: string): string => {
+    if (!dateStr) return '';
+    const [y, m, d] = dateStr.split('-').map(Number);
+    if (!y || !m || !d) return '';
+    const date = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+    const days = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+    return days[date.getUTCDay()];
+  };
+
+  const formatTime12H = (timeStr?: string | null): string => {
+    if (!timeStr) return '--:--';
+    const clean = String(timeStr).trim();
+    if (clean === '--:--' || clean === '--:--:--' || clean === '-' || clean === '') return '--:--';
+
+    const isNextDay = clean.includes('(+1)');
+    const baseTime = clean.replace(' (+1)', '').trim();
+    const parts = baseTime.split(':');
+    if (parts.length < 2) return clean;
+
+    let hour = parseInt(parts[0], 10);
+    const minute = parts[1].padStart(2, '0');
+    if (isNaN(hour)) return clean;
+
+    const period = hour >= 12 ? 'م' : 'ص';
+    hour = hour % 12;
+    if (hour === 0) hour = 12;
+
+    const formattedHour = String(hour).padStart(2, '0');
+    const result = `${formattedHour}:${minute} ${period}`;
+    return isNextDay ? `${result} (+1)` : result;
+  };
+
   const getDayNameEnglish = (date: Date) => {
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     return days[date.getDay()];
@@ -3875,7 +3907,14 @@ export function HRScreen({
         ) : (
           <>
             <div className="md:col-span-2">
-              <label className="block text-[11px] font-bold text-slate-600 mb-1">اختر يوم العرض:</label>
+              <label className="block text-[11px] font-bold text-slate-600 mb-1 flex items-center justify-between">
+                <span>اختر يوم العرض:</span>
+                {selectedSingleDay && (
+                  <span className="text-indigo-700 font-black">
+                    يوم {getDayNameFromDateStr(selectedSingleDay)}
+                  </span>
+                )}
+              </label>
               <input
                 type="date"
                 value={selectedSingleDay}
@@ -3885,7 +3924,7 @@ export function HRScreen({
             </div>
             <div className="md:col-span-2 flex items-end h-full pt-4">
               <span className="text-xs font-bold text-indigo-700 bg-indigo-50 px-3 py-2 rounded-xl w-full text-center border border-indigo-100">
-                عرض تقرير يوم {selectedSingleDay} لكافة الموظفين ({activeEmployees.length} موظف)
+                عرض تقرير يوم {getDayNameFromDateStr(selectedSingleDay)} ({selectedSingleDay}) لكافة الموظفين ({activeEmployees.length} موظف)
               </span>
             </div>
           </>
@@ -4243,8 +4282,15 @@ export function HRScreen({
                     </td>
 
                     {/* 3. Date */}
-                    <td className="p-2 border-l border-slate-200 font-mono text-[11px] text-slate-600">
-                      {row.dateStr.split('-').reverse().join('/')}
+                    <td className="p-2 border-l border-slate-200 text-xs text-slate-700 whitespace-nowrap">
+                      <div className="flex items-center justify-center gap-1.5 font-bold">
+                        <span className="text-indigo-900 bg-indigo-50 border border-indigo-200/80 px-2 py-0.5 rounded text-[11px] font-black">
+                          {getDayNameFromDateStr(row.dateStr)}
+                        </span>
+                        <span className="font-mono text-[11px] text-slate-600 dir-ltr">
+                          {row.dateStr.split('-').reverse().join('/')}
+                        </span>
+                      </div>
                     </td>
 
                     {/* 4. Daily rate */}
@@ -4256,9 +4302,9 @@ export function HRScreen({
                     <td className="p-2 border-l border-slate-200">
                       <div className="flex items-center justify-center gap-1 group/btn">
                         {row.checkIn ? (
-                          <span className="font-mono text-emerald-700 font-bold flex items-center gap-1">
+                          <span className="font-mono text-emerald-700 font-bold flex items-center gap-1 text-[11px] whitespace-nowrap">
                             <Clock size={12} className="text-emerald-500" />
-                            {row.checkIn}
+                            <span>{formatTime12H(row.checkIn)}</span>
                           </span>
                         ) : (
                           <span className="text-rose-500 font-bold inline-flex items-center gap-1">
@@ -4295,9 +4341,9 @@ export function HRScreen({
                     <td className="p-2 border-l border-slate-200">
                       <div className="flex items-center justify-center gap-1 group/btn">
                         {row.checkOut ? (
-                          <span className="font-mono text-slate-700 font-semibold flex items-center gap-1">
+                          <span className="font-mono text-slate-700 font-bold flex items-center gap-1 text-[11px] whitespace-nowrap">
                             <Clock size={12} className="text-slate-400" />
-                            <span>{row.checkOut.replace(' (+1)', '')}</span>
+                            <span>{formatTime12H(row.checkOut.replace(' (+1)', ''))}</span>
                             {row.checkOut.includes('(+1)') && (
                               <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold" title="انصراف في اليوم التالي (بعد منتصف الليل)">
                                 <Moon size={10} className="text-indigo-600" />
@@ -4306,7 +4352,7 @@ export function HRScreen({
                             )}
                           </span>
                         ) : (
-                          <span className="text-slate-400 font-mono">--:--:--</span>
+                          <span className="text-slate-400 font-mono">--:--</span>
                         )}
                         {canManageAttendance && (
                           <button
@@ -4381,13 +4427,13 @@ export function HRScreen({
                     </td>
 
                     {/* 8. Permission Start */}
-                    <td className="p-2 border-l border-slate-200 font-mono text-slate-500">
-                      {row.permissionStart || '-'}
+                    <td className="p-2 border-l border-slate-200 font-mono text-slate-600 text-[11px] whitespace-nowrap">
+                      {row.permissionStart ? formatTime12H(row.permissionStart) : '-'}
                     </td>
 
                     {/* 9. Permission End */}
-                    <td className="p-2 border-l border-slate-200 font-mono text-slate-500">
-                      {row.permissionEnd || '-'}
+                    <td className="p-2 border-l border-slate-200 font-mono text-slate-600 text-[11px] whitespace-nowrap">
+                      {row.permissionEnd ? formatTime12H(row.permissionEnd) : '-'}
                     </td>
 
                     {/* 9.1 Permission Minutes */}
@@ -6098,8 +6144,13 @@ export function HRScreen({
 
               {/* Date */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  تاريخ اليوم المستهدف *
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
+                  <span>تاريخ اليوم المستهدف *</span>
+                  {attendanceForm.date && (
+                    <span className="text-indigo-700 font-black text-[11px] bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md">
+                      يوم {getDayNameFromDateStr(attendanceForm.date)}
+                    </span>
+                  )}
                 </label>
                 <input
                   type="date"
@@ -6119,6 +6170,11 @@ export function HRScreen({
                         <Clock size={13} className="text-emerald-600" />
                         <span>ساعة الحضور *</span>
                       </span>
+                      {attendanceForm.checkIn && (
+                        <span className="text-[10px] text-emerald-800 font-bold bg-white px-1.5 py-0.2 rounded border border-emerald-200">
+                          {formatTime12H(attendanceForm.checkIn)}
+                        </span>
+                      )}
                     </label>
                     <input
                       type="time"
@@ -6136,17 +6192,24 @@ export function HRScreen({
                         <Clock size={13} className="text-slate-500" />
                         <span>ساعة الانصراف</span>
                       </label>
-                      {attendanceForm.checkOut && (
-                        <button
-                          type="button"
-                          onClick={() => setAttendanceForm({ ...attendanceForm, checkOut: '', isNextDayCheckout: false })}
-                          className="text-[10px] text-rose-600 hover:underline cursor-pointer font-bold inline-flex items-center gap-0.5"
-                          title="إلغاء تسجيل الانصراف"
-                        >
-                          <span>مسح</span>
-                          <X size={10} />
-                        </button>
-                      )}
+                      <div className="flex items-center gap-1.5">
+                        {attendanceForm.checkOut && (
+                          <span className="text-[10px] text-slate-700 font-bold bg-white px-1.5 py-0.2 rounded border border-slate-200">
+                            {formatTime12H(attendanceForm.checkOut)}
+                          </span>
+                        )}
+                        {attendanceForm.checkOut && (
+                          <button
+                            type="button"
+                            onClick={() => setAttendanceForm({ ...attendanceForm, checkOut: '', isNextDayCheckout: false })}
+                            className="text-[10px] text-rose-600 hover:underline cursor-pointer font-bold inline-flex items-center gap-0.5"
+                            title="إلغاء تسجيل الانصراف"
+                          >
+                            <span>مسح</span>
+                            <X size={10} />
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <input
                       type="time"
@@ -6207,7 +6270,7 @@ export function HRScreen({
                   className="text-[10px] font-black bg-indigo-100 hover:bg-indigo-200 text-indigo-800 border border-indigo-200 px-2 py-1 rounded-lg cursor-pointer transition-colors flex items-center gap-1"
                 >
                   <Moon size={12} className="text-indigo-700" />
-                  <span>شفت ليلي (1:00 ظ - 2:00 ص) [13 ساعة]</span>
+                  <span>شفت ليلي (01:00 م - 02:00 ص) [13 ساعة]</span>
                 </button>
                 <button
                   type="button"
@@ -6215,28 +6278,28 @@ export function HRScreen({
                   className="text-[10px] font-black bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-2 py-1 rounded-lg cursor-pointer transition-colors flex items-center gap-1"
                 >
                   <Moon size={12} className="text-indigo-600" />
-                  <span>شفت سهرة (4:00 ع - 2:00 ص) [10 ساعات]</span>
+                  <span>شفت سهرة (04:00 م - 02:00 ص) [10 ساعات]</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setAttendanceForm({ ...attendanceForm, checkIn: '09:00', checkOut: '18:00', isNextDayCheckout: false })}
                   className="text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1 rounded-lg cursor-pointer transition-colors"
                 >
-                  دوام كامل (9:00 - 18:00)
+                  دوام كامل (09:00 ص - 06:00 م)
                 </button>
                 <button
                   type="button"
                   onClick={() => setAttendanceForm({ ...attendanceForm, checkIn: '10:00', checkOut: '19:00', isNextDayCheckout: false })}
                   className="text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1 rounded-lg cursor-pointer transition-colors"
                 >
-                  دوام مسائي (10:00 - 19:00)
+                  دوام مسائي (10:00 ص - 07:00 م)
                 </button>
                 <button
                   type="button"
                   onClick={() => setAttendanceForm({ ...attendanceForm, checkIn: '09:00', checkOut: '14:00', isNextDayCheckout: false })}
                   className="text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1 rounded-lg cursor-pointer transition-colors"
                 >
-                  نصف يوم (9:00 - 14:00)
+                  دوام صباحي (09:00 ص - 02:00 م)
                 </button>
                 <button
                   type="button"
