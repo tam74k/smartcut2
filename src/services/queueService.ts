@@ -293,10 +293,12 @@ export const QueueService = {
         };
       }
 
-      // فحص دوري خفيف (كل 4 ثوانٍ) كأمان إضافي لجلب أي تذاكر واردة من السحابة
+      // فحص دوري متزن (كل 15 ثانية) كأمان إضافي لجلب أي تذاكر واردة من السحابة عند نشاط الشاشة
       const pollInterval = setInterval(() => {
-        onUpdate();
-      }, 4000);
+        if (typeof document !== 'undefined' && !document.hidden) {
+          onUpdate();
+        }
+      }, 15000);
 
       return () => {
         if (bc) {

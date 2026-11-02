@@ -61,7 +61,7 @@ export function FingerprintLogsScreen({
     }
   };
 
-  // Auto-fetch on mount and periodically every 8s + on tab visibility
+  // Auto-fetch on mount and periodically every 30s + on tab visibility
   useEffect(() => {
     fetchLogsDirectly();
 
@@ -69,7 +69,7 @@ export function FingerprintLogsScreen({
       if (!document.hidden) {
         fetchLogsDirectly();
       }
-    }, 8000);
+    }, 30000);
 
     const handleVis = () => {
       if (!document.hidden) {

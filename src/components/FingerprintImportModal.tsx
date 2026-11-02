@@ -253,11 +253,12 @@ export function FingerprintImportModal({
       };
 
       newLogs.push(log);
-      try {
-        await DB.saveFingerprintLog(log);
-      } catch (e) {
-        console.warn('Error saving imported fingerprint log:', e);
-      }
+    }
+
+    try {
+      await (DB as any).saveFingerprintLogs(newLogs, settings.salonId);
+    } catch (e) {
+      console.warn('Error saving imported fingerprint logs:', e);
     }
 
     setIsImporting(false);

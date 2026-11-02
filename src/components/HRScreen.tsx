@@ -527,12 +527,12 @@ export function HRScreen({
     // Initial fetch on mount or salonId change
     refreshFingerprintLogs();
 
-    // Periodic auto-sync every 10 seconds
+    // Periodic auto-sync every 40 seconds
     const intervalId = setInterval(() => {
       if (!document.hidden && isSubscribed) {
         refreshFingerprintLogs();
       }
-    }, 10000);
+    }, 40000);
 
     // Visibility API: Refresh immediately when tab/window becomes active
     const handleVisibilityChange = () => {

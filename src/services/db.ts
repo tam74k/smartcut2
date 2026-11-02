@@ -1664,10 +1664,65 @@ export const DB = {
     }
   },
 
+  mapClientToRow(c: any, salonId?: string) {
+    const validSalonId = toSalonUUID(salonId || c.salonId || getSalonId());
+    const validBranchId = toBranchUUID(c.branchId);
+    return {
+      id: c.id,
+      salon_id: validSalonId,
+      branch_id: validBranchId,
+      name: c.name?.trim() || '',
+      phone: c.phone?.trim() || '',
+      email: c.email?.trim() || null,
+      dob: c.dob || null,
+      birth_date: toDateOrNull(c.dob || c.birthDate),
+      dob_day: c.dobDay || null,
+      dob_month: c.dobMonth || null,
+      client_type: c.clientType || 'citizen',
+      last_birthday_greeting_at: toDateOrNull(c.lastBirthdayGreetingAt || c.last_birthday_greeting_at),
+      last_reactivation_message_at: toDateOrNull(c.lastReactivationMessageAt || c.last_reactivation_message_at),
+      cashback_balance: Number(c.cashback ?? c.cashbackBalance ?? 0),
+      loyalty_points: Number(c.loyaltyPoints ?? 0),
+      tier_level: c.tierLevel || 'standard',
+      is_vip: c.isVip || false,
+      vip_since: toDateOrNull(c.vipSince),
+      vip_notes: c.vipNotes || null,
+      referred_by_phone: c.referredByPhone?.trim() || null,
+      has_used_referral_reward: c.hasUsedReferralReward || false,
+      referral_count: Number(c.referralCount ?? 0),
+      referral_total_cashback_earned: Number(c.referralTotalCashbackEarned ?? 0),
+      notes: c.notes || null,
+      is_blacklisted: c.isBlacklisted || false,
+      blacklist_reason: c.blacklistReason || null,
+      last_visit: toDateOrNull(c.lastVisit),
+      preferences: c.preferences || {},
+      updated_at: new Date().toISOString()
+    };
+  },
+
   async saveClients(list: any[], salonId?: string) {
     if (!list || !list.length) return true;
-    for (const c of list) {
-      await this.saveClient(c, salonId);
+    const client = sb();
+    if (!client) return false;
+
+    const chunkSize = 50;
+    for (let i = 0; i < list.length; i += chunkSize) {
+      const chunk = list.slice(i, i + chunkSize);
+      const rows = chunk.map(c => this.mapClientToRow(c, salonId));
+      try {
+        const { error } = await client.from('clients').upsert(rows, { onConflict: 'id' });
+        if (error) {
+          console.warn('Batch saveClients chunk error, falling back to item-by-item:', error.message);
+          for (const item of chunk) {
+            await this.saveClient(item, salonId);
+          }
+        }
+      } catch (err) {
+        console.warn('Batch saveClients exception, falling back to item-by-item:', err);
+        for (const item of chunk) {
+          await this.saveClient(item, salonId);
+        }
+      }
     }
     return true;
   },
@@ -2230,9 +2285,58 @@ export const DB = {
       return null;
     }
   },
+  mapTransactionToRow(t: any, salonId?: string) {
+    const validSalonId = toSalonUUID(salonId || t.salonId || getSalonId());
+    const validBranchId = toBranchUUID((t as any).branchId);
+    return {
+      id: t.id || ('TRX-' + Math.random().toString(36).substring(2, 9)), 
+      salon_id: validSalonId, 
+      branch_id: validBranchId,
+      branch_code: (t as any).branchCode || null,
+      date: t.date || new Date().toISOString(), 
+      type: t.type || 'in', 
+      amount: Number(t.amount || 0), 
+      category: t.category || 'sales',
+      expense_category: t.expenseCategory || t.category || null, 
+      description: t.description || '',
+      treasury: t.treasury || t.treasuryId || 'الخزينة الرئيسية',
+      treasury_id: t.treasuryId || t.treasury || 'main',
+      payment_method: t.paymentMethod || 'cash',
+      invoice_id: (t as any).invoiceId || (t as any).invoice_id || (typeof t.id === 'string' ? t.id.match(/INV-[A-Z0-9-]+/i)?.[0] : null) || (typeof t.description === 'string' ? t.description.match(/INV-[A-Z0-9-]+/i)?.[0] : null) || null,
+      booking_id: (t as any).bookingId || (t as any).booking_id || (typeof t.id === 'string' ? t.id.match(/BOK-[A-Z0-9-]+/i)?.[0] : null) || (typeof t.description === 'string' ? (t.description.match(/BOK-[A-Z0-9-]+/i)?.[0] || t.description.match(/#([A-Za-z0-9-]+)/)?.[1]) : null) || null,
+      shift_id: (t as any).shiftId || (t as any).shift_id || null,
+      shift_code: (t as any).shiftCode || (t as any).shift_code || null,
+      shift_date: t.shiftDate || null,
+      created_by: t.userName || t.user_name || t.createdBy || t.created_by || t.createdByName || (typeof (t as any).cashierName === 'string' ? (t as any).cashierName : null) || null, 
+      user_id: t.userId || t.user_id || (t as any).createdById || (t as any).created_by_id || null,
+      user_name: t.userName || t.user_name || t.createdBy || t.created_by || t.createdByName || (typeof (t as any).cashierName === 'string' ? (t as any).cashierName : null) || null
+    };
+  },
+
   async saveTransactions(list: any[], salonId?: string) {
     if (!list || !list.length) return true;
-    for (const t of list) await this.saveTransaction(t, salonId);
+    const client = sb();
+    if (!client) return false;
+
+    const chunkSize = 50;
+    for (let i = 0; i < list.length; i += chunkSize) {
+      const chunk = list.slice(i, i + chunkSize);
+      const rows = chunk.map(t => this.mapTransactionToRow(t, salonId));
+      try {
+        const { error } = await client.from('transactions').upsert(rows, { onConflict: 'id' });
+        if (error) {
+          console.warn('Batch saveTransactions chunk error, falling back to sequential save:', error.message);
+          for (const item of chunk) {
+            await this.saveTransaction(item, salonId);
+          }
+        }
+      } catch (err) {
+        console.warn('Batch saveTransactions exception, falling back to sequential save:', err);
+        for (const item of chunk) {
+          await this.saveTransaction(item, salonId);
+        }
+      }
+    }
     return true;
   },
 
@@ -2692,7 +2796,44 @@ export const DB = {
       return s;
     } catch (e) { console.error('DB.saveService exception:', e); return null; }
   },
-  async saveServices(list: any[], salonId?: string) { for (const s of list) await DB.saveService(s, salonId); return true; },
+  async saveServices(list: any[], salonId?: string) {
+    if (!list || !list.length) return true;
+    const client = sb();
+    if (!client) return false;
+    const validSalonId = toSalonUUID(salonId || getSalonId());
+    const chunkSize = 50;
+    for (let i = 0; i < list.length; i += chunkSize) {
+      const chunk = list.slice(i, i + chunkSize);
+      const rows = chunk.map(s => ({
+        id: s.id, 
+        salon_id: toSalonUUID(s.salonId || validSalonId), 
+        branch_id: toBranchUUID(s.branchId) || s.branchId || null,
+        category_id: s.categoryId || null, 
+        name: s.name,
+        price: s.price ?? 0, 
+        price2: (s.price2 !== undefined && s.price2 !== null && s.price2 !== '') ? Number(s.price2) : null,
+        price3: (s.price3 !== undefined && s.price3 !== null && s.price3 !== '') ? Number(s.price3) : null,
+        duration: s.duration ?? 30, 
+        commission_rate: s.commissionRate ?? 0, 
+        commission_type: s.commissionType || 'percentage',
+        fixed_commission_amount: s.fixedCommissionAmount ?? 0,
+        order: s.order ?? 0,
+        branch_prices: s.branchPrices || {},
+        service_type: s.serviceType || 'salon'
+      }));
+      try {
+        const { error } = await client.from('services').upsert(rows, { onConflict: 'id' });
+        if (error) {
+          console.warn('Batch saveServices error, falling back to sequential:', error.message);
+          for (const s of chunk) await this.saveService(s, salonId);
+        }
+      } catch (err) {
+        console.warn('Batch saveServices exception, falling back to sequential:', err);
+        for (const s of chunk) await this.saveService(s, salonId);
+      }
+    }
+    return true;
+  },
 
   // ---- نظام إدارة ومراقبة المساحات التخزينية للفروع في Supabase Storage ----
 
@@ -3033,7 +3174,34 @@ export const DB = {
     return error ? null : c;
   },
   async deleteCategory(id: string) { return DB.remove('categories', id); },
-  async saveCategories(list: any[], salonId?: string) { for (const c of list) await DB.saveCategory(c, salonId); return true; },
+  async saveCategories(list: any[], salonId?: string) {
+    if (!list || !list.length) return true;
+    const client = sb();
+    if (!client) return false;
+    const validSalonId = toSalonUUID(salonId || getSalonId());
+    const chunkSize = 50;
+    for (let i = 0; i < list.length; i += chunkSize) {
+      const chunk = list.slice(i, i + chunkSize);
+      const rows = chunk.map(c => ({
+        id: c.id,
+        salon_id: toSalonUUID(c.salonId || validSalonId),
+        name: c.name,
+        icon: c.icon || 'Scissors',
+        type: c.type || 'service'
+      }));
+      try {
+        const { error } = await client.from('categories').upsert(rows, { onConflict: 'id' });
+        if (error) {
+          console.warn('Batch saveCategories error, falling back to sequential:', error.message);
+          for (const c of chunk) await this.saveCategory(c, salonId);
+        }
+      } catch (err) {
+        console.warn('Batch saveCategories exception, falling back to sequential:', err);
+        for (const c of chunk) await this.saveCategory(c, salonId);
+      }
+    }
+    return true;
+  },
 
   // ---- المنتجات ----
   async fetchProducts(salonId?: string) { return DB.fetchAll<any>('products', undefined, salonId); },
@@ -3085,7 +3253,60 @@ export const DB = {
     return p;
   },
   async deleteProduct(id: string) { return DB.remove('products', id); },
-  async saveProducts(list: any[], salonId?: string) { for (const p of list) await DB.saveProduct(p, salonId); return true; },
+  async saveProducts(list: any[], salonId?: string) {
+    if (!list || !list.length) return true;
+    const client = sb();
+    if (!client) return false;
+    const validSalonId = toSalonUUID(salonId || getSalonId());
+    const chunkSize = 50;
+    for (let i = 0; i < list.length; i += chunkSize) {
+      const chunk = list.slice(i, i + chunkSize);
+      const rows = chunk.map(p => {
+        const catId = (p.categoryId && p.categoryId !== 'all') 
+          ? p.categoryId 
+          : (p.category_id && p.category_id !== 'all') 
+            ? p.category_id 
+            : null;
+        const snap: any = {
+          id: p.id,
+          salon_id: toSalonUUID(p.salonId || validSalonId),
+          branch_id: toBranchUUID(p.branchId),
+          category_id: catId,
+          name: p.name,
+          supplier_id: p.supplierId || p.supplier_id || null,
+          retail_price: p.retailPrice ?? p.sellPrice ?? p.price ?? 0,
+          sell_price: p.sellPrice ?? p.retailPrice ?? p.price ?? 0,
+          cost_price: p.costPrice ?? 0,
+          min_stock_alert: p.minStockAlert ?? p.reorderLimit ?? 5,
+          reorder_limit: p.reorderLimit ?? p.minStockAlert ?? 5,
+          opening_stock: p.openingStock ?? 0,
+          current_stock: p.currentStock ?? 0,
+          commission: p.commission ?? 0,
+          barcode: p.barcode || null,
+          is_active: p.isActive !== false,
+          product_type: p.productType || 'for_sale'
+        };
+        if (p.branchStocks && Object.keys(p.branchStocks).length > 0) {
+          snap.branch_stocks = p.branchStocks;
+        }
+        if (p.branchReorderLimits && Object.keys(p.branchReorderLimits).length > 0) {
+          snap.branch_reorder_limits = p.branchReorderLimits;
+        }
+        return snap;
+      });
+      try {
+        const { error } = await client.from('products').upsert(rows, { onConflict: 'id' });
+        if (error) {
+          console.warn('Batch saveProducts error, falling back to sequential:', error.message);
+          for (const p of chunk) await this.saveProduct(p, salonId);
+        }
+      } catch (err) {
+        console.warn('Batch saveProducts exception, falling back to sequential:', err);
+        for (const p of chunk) await this.saveProduct(p, salonId);
+      }
+    }
+    return true;
+  },
 
   // ---- الموردون ----
   async fetchSuppliers(salonId?: string) { return DB.fetchAll<any>('suppliers', undefined, salonId); },
@@ -3915,6 +4136,85 @@ export const DB = {
       console.error('DB.saveFingerprintLog exception:', e); 
       throw e; 
     }
+  },
+  async saveFingerprintLogs(list: any[], salonId?: string): Promise<boolean> {
+    if (!list || !list.length) return true;
+    const client = sb();
+    if (!client) return false;
+
+    const validSalonId = toSalonUUID(salonId || getSalonId());
+    
+    // Pre-resolve employees once if any log in the batch is missing employee info
+    let employeesMap: Map<string, { id: string; name: string }> | null = null;
+    const needsResolution = list.some(fl => (!fl.employeeId && !fl.employee_id) && (fl.fingerprintCode || fl.fingerprint_code));
+    if (needsResolution) {
+      try {
+        const emps = await DB.fetchAll<any>('employees', undefined, validSalonId);
+        employeesMap = new Map();
+        for (const e of (emps || [])) {
+          if (e.fingerprintCode) employeesMap.set(String(e.fingerprintCode).trim(), { id: e.id, name: e.name });
+          if (e.fingerprint_code) employeesMap.set(String(e.fingerprint_code).trim(), { id: e.id, name: e.name });
+          if (e.id) employeesMap.set(String(e.id).trim(), { id: e.id, name: e.name });
+        }
+      } catch (err) {
+        console.warn('Error fetching employees for batch fingerprint logs:', err);
+      }
+    }
+
+    const mapLogToRow = (fl: any) => {
+      const validBranchId = toBranchUUID(fl.branchId);
+      const validTimestamp = fl.timestamp || fl.logTime || fl.log_time || new Date().toISOString();
+      const type = fl.type || 'check_in';
+      const computedProcessedDate = fl.processedDate || fl.processed_date || calculateFingerprintProcessedDate(validTimestamp, type);
+      const fpCode = fl.fingerprintCode || fl.fingerprint_code || (fl.employeeId ? `FP-${fl.employeeId.slice(0, 4)}` : '101');
+      
+      let resolvedEmployeeId = fl.employeeId || fl.employee_id || null;
+      let resolvedEmployeeName = fl.employeeName || fl.employee_name || null;
+
+      if ((!resolvedEmployeeId || !resolvedEmployeeName) && fpCode && employeesMap) {
+        const matched = employeesMap.get(String(fpCode).trim());
+        if (matched) {
+          if (!resolvedEmployeeId) resolvedEmployeeId = matched.id;
+          if (!resolvedEmployeeName) resolvedEmployeeName = matched.name;
+        }
+      }
+
+      return {
+        id: fl.id || ('fp_' + Math.random().toString(36).substring(2, 9) + Date.now().toString(36)),
+        salon_id: validSalonId,
+        branch_id: validBranchId,
+        employee_id: resolvedEmployeeId,
+        employee_name: resolvedEmployeeName,
+        fingerprint_code: fpCode,
+        timestamp: validTimestamp,
+        type: type,
+        device_ip: fl.deviceIp || fl.device_ip || null,
+        status: fl.status || (fl.source === 'manual' ? 'manual' : 'synced'),
+        notes: fl.notes || null,
+        processed_date: computedProcessedDate
+      };
+    };
+
+    const chunkSize = 100;
+    for (let i = 0; i < list.length; i += chunkSize) {
+      const chunk = list.slice(i, i + chunkSize);
+      const rows = chunk.map(mapLogToRow);
+      try {
+        const { error } = await client.from('fingerprint_logs').upsert(rows, { onConflict: 'id' });
+        if (error) {
+          console.warn('Batch saveFingerprintLogs chunk error, falling back to item-by-item:', error.message);
+          for (const item of chunk) {
+            try { await this.saveFingerprintLog(item); } catch (e) {}
+          }
+        }
+      } catch (err) {
+        console.warn('Batch saveFingerprintLogs exception, falling back to item-by-item:', err);
+        for (const item of chunk) {
+          try { await this.saveFingerprintLog(item); } catch (e) {}
+        }
+      }
+    }
+    return true;
   },
   async deleteFingerprintLog(id: string) {
     const client = sb(); if (!client || !id) return false;

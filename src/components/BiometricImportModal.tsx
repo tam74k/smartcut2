@@ -251,9 +251,7 @@ export function BiometricImportModal({
     setParseError(null);
 
     try {
-      for (const log of parsedLogs) {
-        await DB.saveFingerprintLog(log);
-      }
+      await (DB as any).saveFingerprintLogs(parsedLogs, settings.salonId);
 
       if (setFingerprintLogs) {
         setFingerprintLogs(prev => {

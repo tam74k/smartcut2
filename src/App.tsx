@@ -1266,34 +1266,28 @@ export default function App() {
 
     let isSubscribed = true;
     let isFetching = false;
+    let pollCount = 0;
+    let lastPollTime = Date.now();
 
-    const executePoll = async () => {
+    const executePoll = async (includeStatic: boolean = false) => {
       // 5. Visibility API: Pause polling when the browser tab is hidden or inactive
       if (document.hidden || isFetching || !isSubscribed) return;
 
       try {
         isFetching = true;
+        lastPollTime = Date.now();
 
-        // Poll active shift & operational collections concurrently via REST
-        const [
-          activeShift,
-          polledInvoices,
-          polledTransactions,
-          polledBookings,
-          polledFingerprints,
-          polledEmployees,
-          polledProducts,
-          polledCategories,
-          polledServices,
-          polledPurchases,
-          polledSupplierPayments,
-          polledSuppliers
-        ] = await Promise.all([
+        // 1. Dynamic collections (always polled on every interval tick)
+        const dynamicPromises = [
           bId ? DB.getActiveWorkShift(sId, bId) : null,
           DB.fetchAll<any>('invoices', undefined, sId),
           DB.fetchAll<any>('transactions', undefined, sId),
           DB.fetchAll<any>('bookings', undefined, sId),
-          DB.fetchAll<any>('fingerprint_logs', undefined, sId),
+          DB.fetchAll<any>('fingerprint_logs', undefined, sId)
+        ] as const;
+
+        // 2. Static / slow-changing collections (only polled on mount, branch change, or every ~5 minutes)
+        const staticPromises = includeStatic ? [
           DB.fetchEmployees(sId),
           DB.fetchProducts(sId),
           DB.fetchCategories(sId),
@@ -1301,49 +1295,16 @@ export default function App() {
           DB.fetchPurchaseInvoices(sId),
           DB.fetchSupplierPayments(sId),
           DB.fetchSuppliers(sId)
+        ] as const : null;
+
+        const [dynamicResults, staticResults] = await Promise.all([
+          Promise.all(dynamicPromises),
+          staticPromises ? Promise.all(staticPromises) : Promise.resolve(null)
         ]);
 
         if (!isSubscribed) return;
 
-        // Sync Services
-        if (polledServices && Array.isArray(polledServices)) {
-          setServices(polledServices.map(dbServiceToApp));
-        }
-
-        // Sync Employees
-        if (polledEmployees && Array.isArray(polledEmployees) && polledEmployees.length > 0) {
-          setEmployees(polledEmployees.map(dbEmployeeToApp));
-        }
-
-        // Sync Products
-        if (polledProducts && Array.isArray(polledProducts)) {
-          setProducts(polledProducts.map(dbProductToApp));
-        }
-
-        // Sync Categories
-        if (polledCategories && Array.isArray(polledCategories) && polledCategories.length > 0) {
-          setCategories(polledCategories);
-        }
-
-        // Sync Purchase Invoices
-        if (polledPurchases && Array.isArray(polledPurchases)) {
-          setPurchaseInvoices(polledPurchases);
-        }
-
-        // Sync Supplier Payments
-        if (polledSupplierPayments && Array.isArray(polledSupplierPayments)) {
-          setSupplierPayments(polledSupplierPayments);
-        }
-
-        // Sync Suppliers
-        if (polledSuppliers && Array.isArray(polledSuppliers) && polledSuppliers.length > 0) {
-          setSuppliers(polledSuppliers);
-        }
-
-        // Sync Fingerprint Logs
-        if (polledFingerprints && Array.isArray(polledFingerprints)) {
-          setFingerprintLogs(polledFingerprints);
-        }
+        const [activeShift, polledInvoices, polledTransactions, polledBookings, polledFingerprints] = dynamicResults;
 
         // Sync Shift State
         if (sId) {
@@ -1364,6 +1325,46 @@ export default function App() {
         if (polledBookings && Array.isArray(polledBookings)) {
           setBookings(polledBookings.map(dbBookingToApp));
         }
+
+        // Sync Fingerprint Logs
+        if (polledFingerprints && Array.isArray(polledFingerprints)) {
+          setFingerprintLogs(polledFingerprints);
+        }
+
+        // Sync static collections if included
+        if (staticResults) {
+          const [
+            polledEmployees,
+            polledProducts,
+            polledCategories,
+            polledServices,
+            polledPurchases,
+            polledSupplierPayments,
+            polledSuppliers
+          ] = staticResults;
+
+          if (polledServices && Array.isArray(polledServices)) {
+            setServices(polledServices.map(dbServiceToApp));
+          }
+          if (polledEmployees && Array.isArray(polledEmployees) && polledEmployees.length > 0) {
+            setEmployees(polledEmployees.map(dbEmployeeToApp));
+          }
+          if (polledProducts && Array.isArray(polledProducts)) {
+            setProducts(polledProducts.map(dbProductToApp));
+          }
+          if (polledCategories && Array.isArray(polledCategories) && polledCategories.length > 0) {
+            setCategories(polledCategories);
+          }
+          if (polledPurchases && Array.isArray(polledPurchases)) {
+            setPurchaseInvoices(polledPurchases);
+          }
+          if (polledSupplierPayments && Array.isArray(polledSupplierPayments)) {
+            setSupplierPayments(polledSupplierPayments);
+          }
+          if (polledSuppliers && Array.isArray(polledSuppliers) && polledSuppliers.length > 0) {
+            setSuppliers(polledSuppliers);
+          }
+        }
       } catch (err) {
         console.warn('[Smart Polling] Background poll error:', err);
       } finally {
@@ -1371,21 +1372,25 @@ export default function App() {
       }
     };
 
-    // Immediate poll execution on mount & branch/salon change
-    executePoll();
+    // Immediate poll execution on mount & branch/salon change (full fetch)
+    executePoll(true);
 
-    // 3. Interval Configuration: Fallback polling interval set to 20s (Instant sync handled via SSE)
-    const intervalId = setInterval(executePoll, 20000);
+    // Optimized Polling: 60s intervals (every 5th poll = 5 mins also refreshes static data)
+    const intervalId = setInterval(() => {
+      pollCount++;
+      const shouldIncludeStatic = pollCount % 5 === 0;
+      executePoll(shouldIncludeStatic);
+    }, 60000);
 
-    // 5. Visibility API: Pause polling when hidden, immediately poll when tab becomes active
+    // Visibility API: Pause polling when hidden, immediately poll when tab becomes active if >30s passed
     const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        executePoll();
+      if (!document.hidden && Date.now() - lastPollTime > 30000) {
+        executePoll(false);
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    // 4. Safe Cleanup: Strictly clear interval & event listener on unmount
+    // Safe Cleanup: Strictly clear interval & event listener on unmount
     return () => {
       isSubscribed = false;
       clearInterval(intervalId);

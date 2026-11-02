@@ -74,18 +74,14 @@ export function QueueCallingScreen({
 
     load();
 
-    // 1. استماع فوري عبر BroadcastChannel (بدون WebSockets)
+    // 1. استماع فوري عبر BroadcastChannel وفحص دوري متزن عبر الخدمة
     const unsubscribe = QueueService.subscribe(settings.salonId, () => {
-      load();
+      if (isMounted) load();
     });
-
-    // 2. فحص متكرر (Polling) كل 2.5 ثانية كضمان استقرار إضافي
-    const interval = setInterval(load, 2500);
 
     return () => {
       isMounted = false;
       unsubscribe();
-      clearInterval(interval);
     };
   }, [settings.salonId, selectedBranchId]);
 

@@ -881,8 +881,12 @@ export function POSScreen({
       };
     }
 
-    // فحص دوري كل 5 ثوانٍ كشبكة أمان
-    const interval = setInterval(fetchHeld, 5000);
+    // فحص دوري متزن كل 25 ثانية كشبكة أمان عند نشاط التبويب
+    const interval = setInterval(() => {
+      if (!document.hidden) {
+        fetchHeld();
+      }
+    }, 25000);
 
     return () => {
       isMounted = false;
