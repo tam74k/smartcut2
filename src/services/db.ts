@@ -2413,13 +2413,15 @@ export const DB = {
       const rawClientId = b.clientId || b.customerId || (b as any).client_id;
       const safeClientId = (rawClientId && UUID_REGEX.test(rawClientId)) ? rawClientId : null;
 
-      const safeDate = typeof b.date === 'string' ? b.date.split('T')[0].trim() : (b.date || new Date().toISOString().split('T')[0]);
+      const safeDate = (b.date && typeof b.date === 'string' && b.date.trim()) 
+        ? b.date.split('T')[0].trim() 
+        : (b.status === 'postponed' ? null : (b.date || new Date().toISOString().split('T')[0]));
       const rawTime = b.time || b.startTime || '10:00';
       const safeTime = String(rawTime).includes('T')
         ? (String(rawTime).split('T')[1]?.slice(0, 5) || '10:00')
         : (String(rawTime).slice(0, 8) || '10:00');
 
-      const allowedStatuses = ['pending', 'confirmed', 'completed', 'cancelled', 'no_show'];
+      const allowedStatuses = ['pending', 'confirmed', 'completed', 'cancelled', 'no_show', 'postponed'];
       const safeStatus = allowedStatuses.includes(b.status) ? b.status : 'confirmed';
 
       let cleanAdvances = b.advancePayments || b.advance_payments || [];
@@ -2473,6 +2475,9 @@ export const DB = {
       if (b.updatedAt) snap.updated_at = b.updatedAt;
       if (b.updatedBy || b.updatedByName) snap.updated_by = b.updatedBy || b.updatedByName;
       if (b.updatedByName || b.updatedBy) snap.updated_by_name = b.updatedByName || b.updatedBy;
+      if (b.postponedAt || b.postponed_at) snap.postponed_at = b.postponedAt || b.postponed_at;
+      if (b.postponedBy || b.postponed_by) snap.postponed_by = b.postponedBy || b.postponed_by;
+      if (b.postponedReason || b.postponed_reason) snap.postponed_reason = b.postponedReason || b.postponed_reason;
 
       // Timezone-aware UTC start_time & end_time
       try {

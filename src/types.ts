@@ -885,7 +885,7 @@ export interface Booking {
   start_time?: string; // Supabase column mapping
   end_time?: string; // Supabase column mapping
   timezone?: string; // IANA Time Zone string
-  status: 'pending' | 'confirmed' | 'cancelled' | 'completed'; 
+  status: 'pending' | 'confirmed' | 'cancelled' | 'completed' | 'postponed'; 
   advancePayments: AdvancePayment[]; 
   services: BookingService[]; 
   totalAmount: number; 
@@ -914,6 +914,9 @@ export interface Booking {
   refundExpenseId?: string; // معرف سند المصروف المرتبط بالاسترجاع
   cancelledAt?: string; // تاريخ ووقت الإلغاء
   cancelledBy?: string; // اسم المستخدم منفذ الإلغاء
+  postponedAt?: string; // تاريخ ووقت تأجيل الحجز
+  postponedBy?: string; // اسم المستخدم منفذ التأجيل
+  postponedReason?: string; // سبب التأجيل لموعد مفتوح
   reminderTomorrowSent?: boolean;
   reminderTomorrowSentAt?: string;
   reminderTodaySent?: boolean;

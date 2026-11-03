@@ -200,8 +200,8 @@ export function BookingsScreen({
     currentUser.actions?.includes('manage_bookings_delete') || 
     currentUser.actions?.includes('*');
 
-  // Primary Screen Tab: 'table' (default) | 'calendar'
-  const [activeMainTab, setActiveMainTab] = useState<'table' | 'calendar'>('table');
+  // Primary Screen Tab: 'table' (default) | 'calendar' | 'postponed'
+  const [activeMainTab, setActiveMainTab] = useState<'table' | 'calendar' | 'postponed'>('table');
 
   // Excel Import Modal State
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -226,6 +226,7 @@ export function BookingsScreen({
     const tomorrowBookings = bookings.filter(b => 
       b.date === tomorrowStr && 
       b.status !== 'cancelled' && 
+      b.status !== 'postponed' && 
       (!activeBranchId || b.branchId === activeBranchId)
     );
 
@@ -353,6 +354,12 @@ export function BookingsScreen({
   const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
   const [selectedBookingDetails, setSelectedBookingDetails] = useState<Booking | null>(null);
   const [previewBooking, setPreviewBooking] = useState<Booking | null>(null);
+
+  // Reschedule / Postpone Modal State
+  const [rescheduleBookingTarget, setRescheduleBookingTarget] = useState<Booking | null>(null);
+  const [rescheduleDate, setRescheduleDate] = useState('');
+  const [rescheduleTime, setRescheduleTime] = useState('10:00');
+  const [rescheduleNotes, setRescheduleNotes] = useState('');
 
   const defaultBookingDate = (shiftData && shiftData.isOpen && shiftData.date) ? shiftData.date : new Date().toISOString().split('T')[0];
 
@@ -844,9 +851,11 @@ export function BookingsScreen({
       if (!matchesActiveBranch((b as any).branchId, (b as any).branchCode)) return false;
 
       // Date range filter
-      const bDate = b.date ? b.date.split('T')[0].trim() : '';
-      if (dateFrom && bDate < dateFrom) return false;
-      if (dateTo && bDate > dateTo) return false;
+      if (statusFilter !== 'postponed') {
+        const bDate = b.date ? b.date.split('T')[0].trim() : '';
+        if (dateFrom && bDate && bDate < dateFrom) return false;
+        if (dateTo && bDate && bDate > dateTo) return false;
+      }
 
       // Status filter
       if (statusFilter !== 'all' && b.status !== statusFilter) return false;
@@ -880,6 +889,9 @@ export function BookingsScreen({
   // Filtered Bookings for Calendar View
   const calendarFilteredBookings = useMemo(() => {
     return bookings.filter(b => {
+      // Exclude postponed bookings from calendar grid
+      if (b.status === 'postponed') return false;
+
       // Branch filter
       if (!matchesActiveBranch((b as any).branchId, (b as any).branchCode)) return false;
 
@@ -907,6 +919,41 @@ export function BookingsScreen({
       return true;
     });
   }, [bookings, statusFilter, selectedTech, searchQuery, activeBranchId, isMainBranch]);
+
+  // Filtered Bookings for Postponed Tab (الحجوزات المؤجلة / موعد مفتوح)
+  const postponedBookings = useMemo(() => {
+    return bookings.filter(b => {
+      // Branch filter
+      if (!matchesActiveBranch((b as any).branchId, (b as any).branchCode)) return false;
+
+      // Only postponed bookings
+      if (b.status !== 'postponed') return false;
+
+      // Technician filter
+      if (selectedTech !== 'all') {
+        const matchesTech = b.services?.some(s => s.technicianId === selectedTech);
+        if (!matchesTech) return false;
+      }
+
+      // Search query
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchesClient = b.clientName?.toLowerCase().includes(q);
+        const matchesPhone = b.phone?.includes(q);
+        const matchesService = b.services?.some(s => s.serviceName?.toLowerCase().includes(q));
+        const matchesId = b.id?.toLowerCase().includes(q)
+          || (b.bookingCode && b.bookingCode.toLowerCase().includes(q))
+          || (b.queueNumber && `b-${b.queueNumber}`.toLowerCase().includes(q));
+        if (!matchesClient && !matchesPhone && !matchesService && !matchesId) return false;
+      }
+
+      return true;
+    }).sort((a, b) => {
+      const aTime = a.postponedAt || a.updatedAt || a.createdAt || '';
+      const bTime = b.postponedAt || b.updatedAt || b.createdAt || '';
+      return bTime.localeCompare(aTime);
+    });
+  }, [bookings, selectedTech, searchQuery, activeBranchId, isMainBranch]);
 
   // Group Bookings by Date and Hour Slot for quick lookup in calendar
   const bookingsByDateAndSlot = useMemo(() => {
@@ -1254,18 +1301,21 @@ export function BookingsScreen({
       return;
     }
 
-    if (!newBooking.clientName || !newBooking.phone || !newBooking.date || !newBooking.time) {
-      alert('يرجى ملء جميع الحقول الإلزامية: رقم الموبايل، اسم العميل، التاريخ، والوقت');
+    const isPostponed = newBooking.status === 'postponed';
+    if (!newBooking.clientName || !newBooking.phone || (!isPostponed && (!newBooking.date || !newBooking.time))) {
+      alert('يرجى ملء الحقول الإلزامية: رقم الموبايل، اسم العميل، التاريخ، والوقت');
       return;
     }
 
-    const effectiveBookingDate = newBooking.date || ((!editingBooking && shiftData?.isOpen && shiftData.date)
-      ? shiftData.date
-      : defaultBookingDate);
+    const effectiveBookingDate = isPostponed 
+      ? (newBooking.date || '')
+      : (newBooking.date || ((!editingBooking && shiftData?.isOpen && shiftData.date)
+        ? shiftData.date
+        : defaultBookingDate));
 
     const bBranchId = editingBooking?.branchId || activeBranchId || mainBranchId;
     let queueNumber = editingBooking?.queueNumber;
-    if (!queueNumber) {
+    if (!queueNumber && !isPostponed && effectiveBookingDate) {
       queueNumber = await QueueService.getNextBookingQueueNumberAsync(settings.salonId, bBranchId, effectiveBookingDate);
     }
 
@@ -1356,6 +1406,12 @@ export function BookingsScreen({
       date: effectiveBookingDate,
       time: newBooking.time!,
       status: newBooking.status || editingBooking?.status || 'confirmed',
+      postponedAt: (newBooking.status === 'postponed' || (!newBooking.status && editingBooking?.status === 'postponed'))
+        ? (editingBooking?.postponedAt || new Date().toISOString())
+        : undefined,
+      postponedBy: (newBooking.status === 'postponed' || (!newBooking.status && editingBooking?.status === 'postponed'))
+        ? (editingBooking?.postponedBy || currentUserName)
+        : undefined,
       location: newBooking.location?.trim() || undefined,
       notes: newBooking.notes?.trim() || undefined,
       internalNotes: newBooking.internalNotes?.trim() || undefined,
@@ -2014,12 +2070,122 @@ export function BookingsScreen({
           dot: 'bg-rose-500',
           label: 'ملغي'
         };
+      case 'postponed':
+        return {
+          bg: 'bg-amber-50 text-amber-800 border-amber-300',
+          dot: 'bg-amber-500',
+          label: 'مؤجل (موعد مفتوح)'
+        };
       default:
         return {
           bg: 'bg-slate-50 text-slate-700 border-slate-200',
           dot: 'bg-slate-400',
           label: 'غير محدد'
         };
+    }
+  };
+
+  // تأجيل الحجز لموعد مفتوح بدون تحديد تاريخ جديد
+  const handlePostponeBooking = async (b: Booking, reason?: string) => {
+    if (b.status === 'completed' || b.status === 'cancelled') {
+      alert('لا يمكن تأجيل حجز مكتمل أو ملغي.');
+      return;
+    }
+
+    const confirmMsg = `هل ترغب في تأجيل حجز العميل (${b.clientName}) لموعد مفتوح؟\nسيتم نقل الحجز إلى تبويب (الحجوزات المؤجلة) مع الاحتفاظ بكافة الخدمات والعربون.`;
+    if (!window.confirm(confirmMsg)) return;
+
+    const nowIso = new Date().toISOString();
+    const currentUserName = currentUser?.name || 'المستخدم';
+    const currentUserId = currentUser?.id;
+
+    const updatedData: Partial<Booking> = {
+      status: 'postponed',
+      postponedAt: nowIso,
+      postponedBy: currentUserName,
+      postponedReason: reason || 'تأجيل لموعد مفتوح',
+      updatedAt: nowIso,
+      updatedBy: currentUserId,
+      updatedByName: currentUserName,
+      queueNumber: undefined
+    };
+
+    const updatedBooking: Booking = { ...b, ...updatedData, _localEditedAt: Date.now() };
+
+    setBookings((prev: Booking[]) => prev.map(item => item.id === b.id ? updatedBooking : item));
+
+    try {
+      const stored = localStorage.getItem('smartcut_bookings');
+      if (stored) {
+        const list = JSON.parse(stored);
+        const nextList = list.map((item: any) => item.id === b.id ? updatedBooking : item);
+        localStorage.setItem('smartcut_bookings', JSON.stringify(nextList));
+      }
+    } catch (e) {}
+
+    await DB.saveBooking(updatedBooking, settings.salonId);
+
+    if (selectedBookingDetails?.id === b.id) {
+      setSelectedBookingDetails(updatedBooking);
+    }
+  };
+
+  // تأكيد الموعد الجديد وتفعيل الحجز
+  const handleConfirmReschedule = async () => {
+    if (!rescheduleBookingTarget) return;
+    if (!rescheduleDate) {
+      alert('يرجى تحديد تاريخ الموعد الجديد');
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const currentUserName = currentUser?.name || 'المستخدم';
+    const currentUserId = currentUser?.id;
+    const bBranchId = rescheduleBookingTarget.branchId || activeBranchId || mainBranchId;
+
+    let queueNumber = rescheduleBookingTarget.queueNumber;
+    if (!queueNumber) {
+      queueNumber = await QueueService.getNextBookingQueueNumberAsync(settings.salonId, bBranchId, rescheduleDate);
+    }
+
+    const newNote = `[تم تفعيل الحجز وتحديد موعد جديد: ${rescheduleDate} الساعة ${rescheduleTime}]${rescheduleNotes ? ' - ' + rescheduleNotes : ''}`;
+    const combinedInternalNotes = rescheduleBookingTarget.internalNotes 
+      ? `${rescheduleBookingTarget.internalNotes}\n${newNote}`
+      : newNote;
+
+    const updatedData: Partial<Booking> = {
+      date: rescheduleDate,
+      time: rescheduleTime,
+      status: 'confirmed',
+      queueNumber,
+      updatedAt: nowIso,
+      updatedBy: currentUserId,
+      updatedByName: currentUserName,
+      internalNotes: combinedInternalNotes
+    };
+
+    const updatedBooking: Booking = { ...rescheduleBookingTarget, ...updatedData, _localEditedAt: Date.now() };
+
+    setBookings((prev: Booking[]) => prev.map(item => item.id === rescheduleBookingTarget.id ? updatedBooking : item));
+
+    try {
+      const stored = localStorage.getItem('smartcut_bookings');
+      if (stored) {
+        const list = JSON.parse(stored);
+        const nextList = list.map((item: any) => item.id === rescheduleBookingTarget.id ? updatedBooking : item);
+        localStorage.setItem('smartcut_bookings', JSON.stringify(nextList));
+      }
+    } catch (e) {}
+
+    await DB.saveBooking(updatedBooking, settings.salonId);
+
+    const updatedTarget = { ...updatedBooking };
+    setRescheduleBookingTarget(null);
+    setRescheduleDate('');
+    setRescheduleNotes('');
+
+    if (selectedBookingDetails?.id === updatedTarget.id) {
+      setSelectedBookingDetails(updatedTarget);
     }
   };
 
@@ -2054,6 +2220,25 @@ export function BookingsScreen({
           >
             <CalendarDays size={16} className={activeMainTab === 'calendar' ? 'text-indigo-600' : 'text-slate-500'} />
             <span>رزنامة وتقويم الحجوزات</span>
+          </button>
+
+          <button
+            onClick={() => setActiveMainTab('postponed')}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+              activeMainTab === 'postponed'
+                ? 'bg-amber-500 text-white shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Clock size={16} className={activeMainTab === 'postponed' ? 'text-white' : 'text-amber-600'} />
+            <span>الحجوزات المؤجلة</span>
+            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold transition-colors ${
+              activeMainTab === 'postponed' 
+                ? 'bg-white/20 text-white' 
+                : 'bg-amber-100 text-amber-800'
+            }`}>
+              {postponedBookings.length}
+            </span>
           </button>
         </div>
 
@@ -2149,7 +2334,7 @@ export function BookingsScreen({
         <div className="space-y-5 animate-in fade-in duration-200">
           
           {/* Quick Summary Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             <div 
               onClick={() => setStatusFilter('all')}
               className={`bg-white p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
@@ -2201,6 +2386,26 @@ export function BookingsScreen({
                 <p className="text-amber-600 text-[11px] font-bold">قيد الانتظار</p>
                 <h4 className="text-xl font-black text-amber-700 mt-0.5">
                   {bookings.filter(b => b.status === 'pending').length}
+                </h4>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+                <Clock size={18} />
+              </div>
+            </div>
+
+            <div 
+              onClick={() => setStatusFilter(statusFilter === 'postponed' ? 'all' : 'postponed')}
+              className={`bg-white p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
+                statusFilter === 'postponed' 
+                  ? 'border-amber-400 ring-2 ring-amber-100 shadow-sm' 
+                  : 'border-slate-200 shadow-xs hover:border-slate-300'
+              }`}
+              title="تصفية الحجوزات المؤجلة (موعد مفتوح)"
+            >
+              <div>
+                <p className="text-amber-700 text-[11px] font-bold">حجوزات مؤجلة</p>
+                <h4 className="text-xl font-black text-amber-800 mt-0.5">
+                  {bookings.filter(b => b.status === 'postponed').length}
                 </h4>
               </div>
               <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
@@ -2294,6 +2499,7 @@ export function BookingsScreen({
                   <option value="all">جميع الحالات</option>
                   <option value="confirmed">المؤكدة فقط</option>
                   <option value="pending">قيد الانتظار</option>
+                  <option value="postponed">المؤجلة (موعد مفتوح)</option>
                   <option value="completed">المكتملة</option>
                   <option value="cancelled">الملغاة</option>
                 </select>
@@ -2474,9 +2680,31 @@ export function BookingsScreen({
                                   >
                                     <Edit2 size={13} />
                                   </button>
+                                  {b.status === 'postponed' ? (
+                                    <button
+                                      onClick={() => {
+                                        setRescheduleBookingTarget(b);
+                                        setRescheduleDate(defaultBookingDate);
+                                        setRescheduleTime(b.time || '10:00');
+                                      }}
+                                      className="bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1.5 rounded-xl text-[11px] font-black flex items-center gap-1 shadow-xs cursor-pointer"
+                                      title="تحديد موعد جديد للحجز وتأكيده"
+                                    >
+                                      <CalendarIcon size={12} />
+                                      <span>تحديد موعد</span>
+                                    </button>
+                                  ) : (
+                                    <button
+                                      onClick={() => handlePostponeBooking(b)}
+                                      className="p-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-xl cursor-pointer"
+                                      title="تأجيل الحجز لموعد مفتوح"
+                                    >
+                                      <Clock size={13} />
+                                    </button>
+                                  )}
                                   <button
                                     onClick={() => cancelBooking(b.id)}
-                                    className="p-1.5 bg-amber-50 hover:bg-amber-100 text-amber-600 rounded-xl cursor-pointer"
+                                    className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl cursor-pointer"
                                     title="إلغاء الحجز"
                                   >
                                     <XCircle size={13} />
@@ -2622,6 +2850,7 @@ export function BookingsScreen({
                   <option value="all">جميع الحالات</option>
                   <option value="confirmed">المؤكدة فقط</option>
                   <option value="pending">قيد الانتظار</option>
+                  <option value="postponed">المؤجلة (موعد مفتوح)</option>
                   <option value="completed">المكتملة</option>
                   <option value="cancelled">الملغاة</option>
                 </select>
@@ -2910,6 +3139,403 @@ export function BookingsScreen({
             </div>
           )}
 
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 3: POSTPONED BOOKINGS VIEW (الحجوزات المؤجلة / موعد مفتوح) */}
+      {/* ========================================================================= */}
+      {activeMainTab === 'postponed' && (
+        <div className="space-y-5 animate-in fade-in duration-200">
+          {/* Header Banner & Stats */}
+          <div className="bg-gradient-to-r from-amber-500 via-amber-600 to-amber-700 text-white rounded-3xl p-5 sm:p-6 shadow-md shadow-amber-500/20">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-xs flex items-center justify-center shrink-0 border border-white/30 text-white">
+                  <Clock size={26} />
+                </div>
+                <div>
+                  <h3 className="text-lg sm:text-xl font-extrabold flex items-center gap-2">
+                    الحجوزات المؤجلة (موعد مفتوح)
+                    <span className="bg-white/20 text-white text-xs px-2.5 py-0.5 rounded-full font-bold">
+                      {postponedBookings.length} حجز
+                    </span>
+                  </h3>
+                  <p className="text-amber-100 text-xs mt-1">
+                    حجوزات تم تعليق موعدها بدون تاريخ محدد. يمكنك تفعيل الحجز وتحديد موعد جديد في أي وقت، أو تحويله مباشرة إلى فاتورة POS.
+                  </p>
+                </div>
+              </div>
+
+              {/* Quick Metrics */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 bg-black/15 p-2.5 rounded-2xl border border-white/10 shrink-0">
+                <div className="bg-white/10 backdrop-blur-xs px-3.5 py-2 rounded-xl text-center">
+                  <span className="text-[10px] text-amber-200 block font-medium">عدد الحجوزات</span>
+                  <span className="text-lg font-black font-mono">{postponedBookings.length}</span>
+                </div>
+                <div className="bg-white/10 backdrop-blur-xs px-3.5 py-2 rounded-xl text-center">
+                  <span className="text-[10px] text-amber-200 block font-medium">إجمالي الخدمات</span>
+                  <span className="text-lg font-black font-mono">
+                    {postponedBookings.reduce((sum, b) => sum + (b.totalAmount || 0), 0).toFixed(0)}
+                  </span>
+                  <span className="text-[10px] mr-1">{settings.currency}</span>
+                </div>
+                <div className="bg-white/10 backdrop-blur-xs px-3.5 py-2 rounded-xl text-center col-span-2 sm:col-span-1">
+                  <span className="text-[10px] text-amber-200 block font-medium">العربون المحفوظ</span>
+                  <span className="text-lg font-black font-mono text-emerald-300">
+                    {postponedBookings.reduce((sum, b) => sum + getBookingTotalAdvances(b), 0).toFixed(0)}
+                  </span>
+                  <span className="text-[10px] mr-1">{settings.currency}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Search & Filter Bar */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2.5">
+              {/* Technician Filter */}
+              <div className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+                <User size={14} className="text-slate-400" />
+                <select
+                  value={selectedTech}
+                  onChange={e => setSelectedTech(e.target.value)}
+                  className="bg-transparent text-xs font-bold text-slate-700 outline-none cursor-pointer"
+                >
+                  <option value="all">كل الموظفين والفنيين</option>
+                  {employees.filter(e => e.isActive !== false).map(e => (
+                    <option key={e.id} value={e.id}>{e.name} ({e.role})</option>
+                  ))}
+                </select>
+              </div>
+
+              {selectedTech !== 'all' && (
+                <button
+                  onClick={() => setSelectedTech('all')}
+                  className="text-xs text-rose-600 hover:text-rose-800 font-bold px-2 py-1 cursor-pointer"
+                >
+                  إلغاء تصفية الموظف
+                </button>
+              )}
+            </div>
+
+            {/* Search Input */}
+            <div className="relative w-full sm:w-72">
+              <Search size={15} className="absolute right-3 top-2.5 text-slate-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="بحث باسم العميل، الهاتف، كود الحجز..."
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-9 pl-3 py-1.5 text-xs font-bold focus:border-amber-500 outline-none"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute left-2.5 top-2 text-slate-400 hover:text-slate-600"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Postponed Bookings Content */}
+          {postponedBookings.length === 0 ? (
+            <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center shadow-xs">
+              <div className="w-16 h-16 rounded-full bg-amber-50 text-amber-500 flex items-center justify-center mx-auto mb-3">
+                <Clock size={32} />
+              </div>
+              <h4 className="text-base font-extrabold text-slate-800">لا توجد حجوزات مؤجلة حالياً</h4>
+              <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+                عند تأجيل أي حجز لموعد مفتوح من جدول الحجوزات أو تفاصيل الحجز، سيظهر هنا مباشرة مع حفظ كافة الخدمات والعربون.
+              </p>
+              <button
+                onClick={() => setActiveMainTab('table')}
+                className="mt-4 px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold cursor-pointer transition-colors"
+              >
+                العودة لجدول الحجوزات الرئيسي
+              </button>
+            </div>
+          ) : (
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-right text-xs">
+                  <thead>
+                    <tr className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
+                      <th className="p-3.5">كود الحجز</th>
+                      <th className="p-3.5">العميل</th>
+                      <th className="p-3.5">الخدمات المطلوبة</th>
+                      <th className="p-3.5">قيمة الحجز والعربون</th>
+                      <th className="p-3.5">تفاصيل التأجيل</th>
+                      <th className="p-3.5 text-center">الإجراءات</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {postponedBookings.map(b => {
+                      const totalAdv = getBookingTotalAdvances(b);
+
+                      return (
+                        <tr key={b.id} className="hover:bg-amber-50/30 transition-colors">
+                          {/* Code */}
+                          <td className="p-3.5">
+                            <span className="font-mono font-bold text-amber-800 bg-amber-100/70 border border-amber-200 px-2 py-0.5 rounded-md text-[11px]">
+                              #{b.bookingCode || b.id.slice(0, 8)}
+                            </span>
+                          </td>
+
+                          {/* Client */}
+                          <td className="p-3.5">
+                            <div className="font-extrabold text-slate-900 text-[13px]">{b.clientName}</div>
+                            <div className="flex items-center gap-2 text-slate-500 mt-0.5">
+                              <span className="font-mono direction-ltr inline-block">{b.phone}</span>
+                              {b.phone && (
+                                <a
+                                  href={`https://wa.me/${b.phone.replace(/[^0-9]/g, '')}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-emerald-600 hover:text-emerald-700 transition-colors"
+                                  title="مراسلة عبر واتساب"
+                                >
+                                  <MessageCircle size={14} />
+                                </a>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* Services */}
+                          <td className="p-3.5 max-w-[240px]">
+                            <div className="space-y-1">
+                              {b.services && b.services.map((s, idx) => (
+                                <div key={idx} className="flex items-center gap-1.5 text-[11px] text-slate-700">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0"></span>
+                                  <span className="font-bold truncate">{s.serviceName}</span>
+                                  {s.technicianName && (
+                                    <span className="text-[10px] text-slate-400 truncate">({s.technicianName})</span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </td>
+
+                          {/* Price & Advance */}
+                          <td className="p-3.5">
+                            <div className="font-mono font-black text-slate-900 text-sm">
+                              {b.totalAmount} {settings.currency}
+                            </div>
+                            {totalAdv > 0 ? (
+                              <div className="mt-1 inline-flex items-center gap-1 bg-emerald-50 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-md text-[10px] font-black">
+                                <span>عربون مدفوع: {totalAdv} {settings.currency}</span>
+                              </div>
+                            ) : (
+                              <span className="text-[10px] text-slate-400 block mt-0.5">بدون عربون</span>
+                            )}
+                          </td>
+
+                          {/* Postponement Details */}
+                          <td className="p-3.5">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300">
+                              <Clock size={11} />
+                              <span>موعد مفتوح</span>
+                            </span>
+                            {b.postponedAt && (
+                              <div className="text-[10px] text-slate-400 mt-1 font-mono">
+                                تاريخ التأجيل: {new Date(b.postponedAt).toLocaleDateString('ar-EG')}
+                              </div>
+                            )}
+                            {b.notes && (
+                              <div className="text-[10px] text-slate-500 mt-0.5 line-clamp-1" title={b.notes}>
+                                ملاحظة: {b.notes}
+                              </div>
+                            )}
+                          </td>
+
+                          {/* Actions */}
+                          <td className="p-3.5">
+                            <div className="flex items-center justify-center gap-1.5">
+                              {/* 1. Set Date & Activate */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setRescheduleBookingTarget(b);
+                                  setRescheduleDate(defaultBookingDate);
+                                  setRescheduleTime(b.time || '10:00');
+                                  setRescheduleNotes('');
+                                }}
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 shadow-xs cursor-pointer transition-colors"
+                                title="تحديد موعد جديد وتفعيل الحجز كمؤكد"
+                              >
+                                <CalendarIcon size={13} />
+                                <span>تحديد موعد</span>
+                              </button>
+
+                              {/* 2. Convert to POS / Cashier */}
+                              <button
+                                type="button"
+                                onClick={() => onToPOS({
+                                  ...b,
+                                  advancePayments: getBookingAdvances(b)
+                                })}
+                                className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 shadow-xs cursor-pointer transition-colors"
+                                title="تنفيذ وتحويل مباشر لنقطة البيع POS"
+                              >
+                                <ShoppingCart size={13} />
+                                <span>كاشير</span>
+                              </button>
+
+                              {/* 3. Edit */}
+                              <button
+                                type="button"
+                                onClick={() => handleEdit(b)}
+                                className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl cursor-pointer transition-colors"
+                                title="تعديل الحجز"
+                              >
+                                <Edit2 size={13} />
+                              </button>
+
+                              {/* 4. Details Popover */}
+                              <button
+                                type="button"
+                                onClick={() => setSelectedBookingDetails(b)}
+                                className="p-1.5 bg-slate-100 hover:bg-slate-200 text-indigo-700 rounded-xl cursor-pointer transition-colors"
+                                title="عرض التفاصيل الكاملة"
+                              >
+                                <Eye size={13} />
+                              </button>
+
+                              {/* 5. Cancel */}
+                              <button
+                                type="button"
+                                onClick={() => cancelBooking(b.id)}
+                                className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl cursor-pointer transition-colors"
+                                title="إلغاء الحجز"
+                              >
+                                <XCircle size={13} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* QUICK RESCHEDULE MODAL (تحديد موعد جديد للحجز المؤجل) */}
+      {/* ========================================================================= */}
+      {rescheduleBookingTarget && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 overflow-hidden">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-150 overflow-hidden" dir="rtl">
+            {/* Header */}
+            <div className="px-6 py-4 bg-emerald-600 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+                  <CalendarIcon size={18} />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base text-white">تحديد موعد وتفعيل الحجز</h3>
+                  <p className="text-xs text-emerald-100">تحويل الحجز المؤجل إلى حجز مؤكد بتاريخ ووقت محدد</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRescheduleBookingTarget(null)}
+                className="w-8 h-8 rounded-lg bg-white/20 hover:bg-white/30 text-white flex items-center justify-center transition-colors"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-5 sm:p-6 space-y-4 overflow-y-auto">
+              {/* Client & Booking Summary Box */}
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="font-extrabold text-sm text-slate-900">{rescheduleBookingTarget.clientName}</span>
+                  <span className="font-mono text-xs font-bold text-slate-500 direction-ltr">{rescheduleBookingTarget.phone}</span>
+                </div>
+                <div className="flex justify-between items-center text-xs text-slate-600 pt-2 border-t border-slate-200">
+                  <span>إجمالي الحجز: <b className="text-slate-900 font-mono">{rescheduleBookingTarget.totalAmount} {settings.currency}</b></span>
+                  {getBookingTotalAdvances(rescheduleBookingTarget) > 0 && (
+                    <span className="text-emerald-700 font-bold bg-emerald-100/80 px-2 py-0.5 rounded-md">
+                      عربون محفوظ: {getBookingTotalAdvances(rescheduleBookingTarget)} {settings.currency}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Date Input */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
+                  <CalendarIcon size={13} className="text-emerald-600" />
+                  <span>تاريخ الموعد الجديد *</span>
+                </label>
+                <input
+                  type="date"
+                  value={rescheduleDate}
+                  onChange={e => setRescheduleDate(e.target.value)}
+                  className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:border-emerald-600 outline-none shadow-xs"
+                  required
+                />
+              </div>
+
+              {/* Time Slot Select */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
+                  <Clock size={13} className="text-emerald-600" />
+                  <span>وقت الموعد *</span>
+                </label>
+                <select
+                  value={rescheduleTime}
+                  onChange={e => setRescheduleTime(e.target.value)}
+                  className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-800 focus:border-emerald-600 outline-none shadow-xs"
+                >
+                  {generateSalonTimeSlots(settings).map(t => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Notes Input */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  ملاحظات تفعيل الموعد (اختياري)
+                </label>
+                <textarea
+                  rows={2}
+                  value={rescheduleNotes}
+                  onChange={e => setRescheduleNotes(e.target.value)}
+                  placeholder="ملاحظات حول الموعد الجديد أو اتفاق العميل..."
+                  className="w-full bg-white border border-slate-300 rounded-xl p-2.5 text-xs text-slate-800 focus:border-emerald-600 outline-none shadow-xs"
+                />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-2.5">
+              <button
+                type="button"
+                onClick={() => setRescheduleBookingTarget(null)}
+                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+              >
+                إلغاء
+              </button>
+
+              <button
+                type="button"
+                onClick={handleConfirmReschedule}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+              >
+                <Check size={15} />
+                <span>تأكيد الموعد وتفعيل الحجز</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -3273,6 +3899,35 @@ export function BookingsScreen({
                       <Edit2 size={14} />
                       <span>تعديل</span>
                     </button>
+                    {selectedBookingDetails.status === 'postponed' ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const b = selectedBookingDetails;
+                          setSelectedBookingDetails(null);
+                          setRescheduleBookingTarget(b);
+                          setRescheduleDate(defaultBookingDate);
+                          setRescheduleTime(b.time || '10:00');
+                        }}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors shadow-2xs"
+                        title="تحديد موعد جديد للحجز وتأكيده"
+                      >
+                        <CalendarIcon size={14} />
+                        <span>تحديد موعد وتفعيل</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handlePostponeBooking(selectedBookingDetails);
+                        }}
+                        className="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 px-3.5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
+                        title="تأجيل الحجز لموعد مفتوح بدون تحديد تاريخ جديد"
+                      >
+                        <Clock size={14} className="text-amber-600" />
+                        <span>تأجيل لموعد مفتوح</span>
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => cancelBooking(selectedBookingDetails.id)}
@@ -4040,13 +4695,17 @@ export function BookingsScreen({
                       value={newBooking.date}
                       onChange={e => setNewBooking({ ...newBooking, date: e.target.value })}
                       className="w-full bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 sm:py-2 text-xs font-bold focus:border-indigo-600 outline-none shadow-xs"
-                      required
+                      required={newBooking.status !== 'postponed'}
                     />
-                    {!editingBooking && shiftData?.isOpen && (
+                    {newBooking.status === 'postponed' ? (
+                      <p className="text-[10px] text-amber-600 font-bold mt-0.5">
+                        موعد مفتوح (بدون تاريخ محدد)
+                      </p>
+                    ) : (!editingBooking && shiftData?.isOpen && (
                       <p className="text-[9px] text-slate-400 mt-0.5 truncate">
                         وردية: {shiftData.date}
                       </p>
-                    )}
+                    ))}
                   </div>
 
                   <div>
@@ -4058,7 +4717,7 @@ export function BookingsScreen({
                       value={newBooking.time}
                       onChange={e => setNewBooking({ ...newBooking, time: e.target.value })}
                       className="w-full bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 sm:py-2 text-xs font-mono font-bold focus:border-indigo-600 outline-none shadow-xs"
-                      required
+                      required={newBooking.status !== 'postponed'}
                     >
                       {generateSalonTimeSlots(settings).map(t => (
                         <option key={t} value={t}>{t}</option>
@@ -4075,6 +4734,7 @@ export function BookingsScreen({
                     >
                       <option value="confirmed">مؤكد</option>
                       <option value="pending">قيد الانتظار</option>
+                      <option value="postponed">مؤجل (موعد مفتوح)</option>
                       <option value="completed">مكتمل</option>
                       <option value="cancelled">ملغي</option>
                     </select>
