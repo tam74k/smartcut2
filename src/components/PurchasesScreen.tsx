@@ -44,8 +44,22 @@ export function PurchasesScreen({
   const [invoiceItems, setInvoiceItems] = useState<PurchaseInvoiceItem[]>([]);
   const [discount, setDiscount] = useState(0);
   const [paidAmount, setPaidAmount] = useState(0);
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'transfer' | string>('cash');
   const [treasuryId, setTreasuryId] = useState(settings.treasuries[0]?.id || '');
   const [notes, setNotes] = useState('');
+
+  const handleTreasuryChange = (tId: string) => {
+    setTreasuryId(tId);
+    const t = settings.treasuries.find(x => x.id === tId);
+    const tName = (t?.name || '').toLowerCase();
+    if (tId === 'cash' || tName.includes('كاش') || tName.includes('درج')) {
+      setPaymentMethod('cash');
+    } else if (tId === 'card' || tName.includes('فيزا') || tName.includes('شبكة') || tName.includes('مدى')) {
+      setPaymentMethod('card');
+    } else if (tId === 'transfer' || tId === 'instapay' || tId === 'vodafone_cash' || tName.includes('تحويل') || tName.includes('انستا') || tName.includes('كاش')) {
+      setPaymentMethod('transfer');
+    }
+  };
   
   // Product Search State
   const [productSearch, setProductSearch] = useState('');
@@ -95,7 +109,13 @@ export function PurchasesScreen({
     }
     
     const invoiceId = 'PUR-' + Math.random().toString(36).substr(2, 9);
-    
+    const selectedTreasuryObj = settings.treasuries.find(t => t.id === treasuryId) || settings.treasuries[0];
+    const targetTreasuryId = selectedTreasuryObj?.id || treasuryId || 'main';
+    const targetTreasuryName = selectedTreasuryObj?.name || 'الخزينة';
+    const supplierObj = suppliers.find(s => s.id === supplierId);
+    const supplierName = supplierObj?.name || 'مورد';
+    const activeBranch = branches.find(b => b.id === activeBranchId);
+
     const newInvoice: PurchaseInvoice = {
       id: invoiceId,
       salonId: settings.salonId,
@@ -108,7 +128,8 @@ export function PurchasesScreen({
       total,
       paid: paidAmount,
       remaining,
-      treasuryId,
+      treasuryId: targetTreasuryId,
+      paymentMethod: paymentMethod || 'cash',
       notes
     };
     
@@ -162,7 +183,7 @@ export function PurchasesScreen({
     setProducts(updatedProducts);
     setItemMovements([...itemMovements, ...newMovements]);
     
-    // Create transaction if paid > 0
+    // Create transaction if paid > 0 (خصم المبلغ المسدد مباشرة من الخزينة المختارة وتسجيل حركة الصرف)
     if (paidAmount > 0) {
       const activeUser = currentUser || AuthService.getCurrentUser();
       const actorName = activeUser?.name || activeUser?.username || 'المسؤول';
@@ -170,13 +191,21 @@ export function PurchasesScreen({
         id: 'TRX-' + Math.random().toString(36).substring(2,9),
         salonId: settings.salonId,
         branchId: activeBranchId,
+        branchCode: activeBranch?.code,
         date: getEffectiveDateTime(shiftData),
         shiftDate: shiftData.isOpen ? shiftData.date : undefined,
+        shiftId: shiftData.isOpen ? shiftData.id : undefined,
+        shiftCode: shiftData.isOpen ? (shiftData.shiftCode || shiftData.code) : undefined,
         type: 'out',
         amount: paidAmount,
         category: 'purchase',
-        treasury: treasuryId || settings.treasuries[0]?.id,
-        description: `دفعة فاتورة مشتريات رقم ${invoiceId} ${notes ? '- ' + notes : ''}`,
+        expenseCategory: 'مشتريات',
+        treasury: targetTreasuryId,
+        treasuryId: targetTreasuryId,
+        treasuryName: targetTreasuryName,
+        paymentMethod: paymentMethod || 'cash',
+        payment_method: paymentMethod || 'cash',
+        description: `سداد فاتورة مشتريات رقم ${invoiceId} (${supplierName}) ${notes ? '- ' + notes : ''}`.trim(),
         createdBy: actorName,
         userName: actorName,
         userId: activeUser?.id
@@ -190,6 +219,8 @@ export function PurchasesScreen({
     setInvoiceItems([]);
     setDiscount(0);
     setPaidAmount(0);
+    setPaymentMethod('cash');
+    setTreasuryId(settings.treasuries[0]?.id || '');
     setNotes('');
   };
 
@@ -264,29 +295,56 @@ export function PurchasesScreen({
                 <th className="p-4 font-bold text-slate-700 whitespace-nowrap">التاريخ</th>
                 <th className="p-4 font-bold text-slate-700 whitespace-nowrap">المورد</th>
                 <th className="p-4 font-bold text-slate-700 text-center whitespace-nowrap">الإجمالي</th>
-                <th className="p-4 font-bold text-slate-700 text-center whitespace-nowrap">المدفوع</th>
+                <th className="p-4 font-bold text-slate-700 text-center whitespace-nowrap">المدفوع وطريقة الدفع</th>
+                <th className="p-4 font-bold text-slate-700 text-center whitespace-nowrap">الخزينة المخصوم منها</th>
                 <th className="p-4 font-bold text-slate-700 text-center whitespace-nowrap">المتبقي</th>
                 <th className="p-4 font-bold text-slate-700 text-center whitespace-nowrap">إجراءات</th>
               </tr>
             </thead>
             <tbody>
-              {filteredInvoices.map(inv => (
-                <tr key={inv.id} className="border-b border-slate-100 hover:bg-slate-50">
-                  <td className="p-4 text-slate-600 whitespace-nowrap">{inv.id}</td>
-                  <td className="p-4 text-slate-600 whitespace-nowrap">{inv.date}</td>
-                  <td className="p-4 font-bold text-slate-800 whitespace-nowrap">{suppliers.find(s => s.id === inv.supplierId)?.name}</td>
-                  <td className="p-4 text-center font-bold text-slate-800 whitespace-nowrap">{inv.total.toFixed(2)}</td>
-                  <td className="p-4 text-center font-bold text-emerald-600 whitespace-nowrap">{inv.paid.toFixed(2)}</td>
-                  <td className="p-4 text-center font-bold text-red-600 whitespace-nowrap">{inv.remaining.toFixed(2)}</td>
-                  <td className="p-4 whitespace-nowrap">
-                    <div className="flex justify-center">
-                      <button onClick={() => handleDeleteInvoice(inv)} className="text-red-500 hover:bg-red-50 p-1.5 rounded"><Trash2 size={16} /></button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {filteredInvoices.map(inv => {
+                const treasuryObj = settings.treasuries.find(t => t.id === inv.treasuryId);
+                const treasuryDisplay = treasuryObj?.name || (inv.treasuryId === 'main' ? 'الخزينة الرئيسية' : (inv.treasuryId === 'cash' ? 'كاش الدرج' : inv.treasuryId));
+                const methodDisplay = inv.paymentMethod === 'card' 
+                  ? 'بطاقة / شبكة' 
+                  : inv.paymentMethod === 'transfer' 
+                    ? 'تحويل بنكي' 
+                    : 'نقداً';
+
+                return (
+                  <tr key={inv.id} className="border-b border-slate-100 hover:bg-slate-50">
+                    <td className="p-4 text-slate-600 whitespace-nowrap font-mono">{inv.id}</td>
+                    <td className="p-4 text-slate-600 whitespace-nowrap">{inv.date}</td>
+                    <td className="p-4 font-bold text-slate-800 whitespace-nowrap">{suppliers.find(s => s.id === inv.supplierId)?.name || 'مورد'}</td>
+                    <td className="p-4 text-center font-bold text-slate-800 whitespace-nowrap">{inv.total.toFixed(2)}</td>
+                    <td className="p-4 text-center whitespace-nowrap">
+                      <div className="font-bold text-emerald-600">{inv.paid.toFixed(2)}</div>
+                      {inv.paid > 0 && (
+                        <span className="text-[10px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full font-bold">
+                          {methodDisplay}
+                        </span>
+                      )}
+                    </td>
+                    <td className="p-4 text-center whitespace-nowrap">
+                      {inv.paid > 0 ? (
+                        <span className="text-xs font-bold text-slate-700 bg-slate-100 px-2 py-1 rounded-lg">
+                          {treasuryDisplay}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-slate-400">-</span>
+                      )}
+                    </td>
+                    <td className="p-4 text-center font-bold text-red-600 whitespace-nowrap">{inv.remaining.toFixed(2)}</td>
+                    <td className="p-4 whitespace-nowrap">
+                      <div className="flex justify-center">
+                        <button onClick={() => handleDeleteInvoice(inv)} className="text-red-500 hover:bg-red-50 p-1.5 rounded"><Trash2 size={16} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
               {filteredInvoices.length === 0 && (
-              <tr><td colSpan={7} className="p-4 text-center text-slate-500">لا توجد فواتير مشتريات</td></tr>
+              <tr><td colSpan={8} className="p-4 text-center text-slate-500">لا توجد فواتير مشتريات</td></tr>
             )}
           </tbody>
         </table>
@@ -462,8 +520,21 @@ export function PurchasesScreen({
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">المدفوع الان</label>
-                  <input type="number" min="0" max={total} value={paidAmount} onChange={e => setPaidAmount(Number(e.target.value))} className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary" />
+                  <label className="block text-sm font-bold text-slate-700 mb-1">المدفوع الآن</label>
+                  <input 
+                    type="number" 
+                    min="0" 
+                    max={total} 
+                    value={paidAmount} 
+                    onChange={e => {
+                      const val = Number(e.target.value);
+                      setPaidAmount(val);
+                      if (val > 0 && !treasuryId) {
+                        setTreasuryId(settings.treasuries[0]?.id || 'main');
+                      }
+                    }} 
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary font-mono font-bold" 
+                  />
                 </div>
                 
                 <div className="flex justify-between text-sm font-bold text-red-600 bg-red-50 p-2 rounded">
@@ -472,11 +543,37 @@ export function PurchasesScreen({
                 </div>
                 
                 {paidAmount > 0 && (
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-1">خزينة الدفع</label>
-                    <select value={treasuryId} onChange={e => setTreasuryId(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-primary">
-                      {settings.treasuries.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                    </select>
+                  <div className="space-y-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">طريقة الدفع (للمبلغ المسدد)</label>
+                      <select 
+                        value={paymentMethod} 
+                        onChange={e => setPaymentMethod(e.target.value)} 
+                        className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-primary"
+                      >
+                        <option value="cash">نقداً (كاش)</option>
+                        <option value="card">بطاقة / شبكة (فيزا - مدى - نقاط بيع)</option>
+                        <option value="transfer">تحويل بنكي / محفظة إلكترونية</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">خزينة السحب والخصم</label>
+                      <select 
+                        value={treasuryId} 
+                        onChange={e => handleTreasuryChange(e.target.value)} 
+                        className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-primary"
+                      >
+                        {settings.treasuries.map(t => (
+                          <option key={t.id} value={t.id}>
+                            {t.name} {t.isMain ? '(الرئيسية)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-[10px] text-slate-500 mt-1">
+                        سيتم خصم مبلغ {paidAmount.toFixed(2)} {settings.currency} فوراً من هذه الخزينة وتسجيل حركة الصرف.
+                      </p>
+                    </div>
                   </div>
                 )}
                 

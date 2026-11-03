@@ -1105,6 +1105,7 @@ export interface AppSettings {
   showDashboardAnalytics?: boolean;
   showEmployeeAnalytics?: boolean;
   hrSettings?: HRSettings;
+  hr_settings?: HRSettings;
   bookingRules?: BookingRulesSettings;
   vipSettings?: VIPSettings;
   tierSettings?: ClientTierSettings;
@@ -1665,6 +1666,8 @@ export interface PurchaseInvoiceItem {
 
 export interface PurchaseInvoice {
   id: string;
+  salonId?: string;
+  branchId?: string;
   supplierId: string;
   date: string;
   items: PurchaseInvoiceItem[];
@@ -1674,6 +1677,7 @@ export interface PurchaseInvoice {
   paid: number;
   remaining: number;
   treasuryId: string;
+  paymentMethod?: string;
   notes?: string;
 }
 

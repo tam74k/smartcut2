@@ -1395,6 +1395,16 @@ export const DB = {
         } catch (e) {}
       }
 
+      // استعادة وحماية إعدادات الموارد البشرية والعمل الإضافي وقواعد التأخير من أي مصدر متاح
+      const hrFromRoot = data.hr_settings || (data as any).hrSettings;
+      const hrFromUi = uiSet.hrSettings || uiSet.hr_settings;
+      if (hrFromRoot && typeof hrFromRoot === 'object' && Object.keys(hrFromRoot).length > 0) {
+        res.hrSettings = hrFromRoot;
+      } else if (hrFromUi && typeof hrFromUi === 'object' && Object.keys(hrFromUi).length > 0) {
+        res.hrSettings = hrFromUi;
+      }
+      res.hr_settings = res.hrSettings;
+
       return res;
     } catch (e) { return null; }
   },
@@ -1449,7 +1459,9 @@ export const DB = {
         allowNonCashTips: allowNonCashTipsValue,
         enableDualPricing: settings.enableDualPricing !== undefined ? Boolean(settings.enableDualPricing) : (existingUiSettings.enableDualPricing ?? false),
         whatsappEnabled: settings.whatsappEnabled !== undefined ? Boolean(settings.whatsappEnabled) : (existingUiSettings.whatsappEnabled ?? (existing?.whatsapp_enabled !== undefined ? toBool(existing.whatsapp_enabled) : true)),
-        whatsappSettings: settings.whatsappSettings || existingUiSettings.whatsappSettings || null
+        whatsappSettings: settings.whatsappSettings || existingUiSettings.whatsappSettings || null,
+        hrSettings: settings.hrSettings || settings.hr_settings || existingUiSettings.hrSettings || existingUiSettings.hr_settings || existing?.hr_settings || null,
+        hr_settings: settings.hrSettings || settings.hr_settings || existingUiSettings.hrSettings || existingUiSettings.hr_settings || existing?.hr_settings || null
       };
 
       const safeSalonName = (settings.salonName && settings.salonName !== 'صالون سمارت كت')
@@ -1526,7 +1538,7 @@ export const DB = {
         supabase_url: settings.supabaseUrl || existing?.supabase_url || null,
         supabase_anon_key: settings.supabaseAnonKey || existing?.supabase_anon_key || null,
         supabase_enabled: settings.supabaseEnabled ?? existing?.supabase_enabled ?? false,
-        hr_settings: settings.hrSettings || existing?.hr_settings || null,
+        hr_settings: settings.hrSettings || settings.hr_settings || existingUiSettings.hrSettings || existing?.hr_settings || null,
         booking_rules: bookingRulesMerged,
         vip_settings: settings.vipSettings || existing?.vip_settings || null,
         tier_settings: settings.tierSettings || existing?.tier_settings || null,
@@ -1540,13 +1552,51 @@ export const DB = {
       };
 
       let error: any = null;
-      if (existing && existing.id) {
-        const res = await client.from('app_settings').update(snap).eq('id', existing.id);
+      let attempts = 0;
+      while (attempts < 6) {
+        attempts++;
+        const res = (existing && existing.id)
+          ? await client.from('app_settings').update(snap).eq('id', existing.id)
+          : await client.from('app_settings').insert(snap);
+
+        if (!res.error) {
+          error = null;
+          break;
+        }
+
         error = res.error;
-      } else {
-        const res = await client.from('app_settings').insert(snap);
-        error = res.error;
+        const errMsg = res.error.message || '';
+
+        // Check for missing column in schema cache
+        const missingColMatch = errMsg.match(/Could not find the '([^']+)' column of '([^']+)'/i)
+          || errMsg.match(/column "([^"]+)" of relation "([^"]+)" does not exist/i);
+
+        if (missingColMatch) {
+          const missingCol = missingColMatch[1];
+          console.warn(`DB.saveSettings stripping unknown column '${missingCol}' and retrying...`);
+          delete snap[missingCol];
+          continue;
+        }
+
+        // Specific optional columns that might not exist in older app_settings table schemas
+        const optionalCols = [
+          'hr_settings', 'vip_settings', 'tier_settings', 'evolution_branch_instances',
+          'ai_provider', 'ai_api_key', 'ai_model', 'show_dashboard_analytics',
+          'show_employee_analytics', 'tips_direct_cash_deduction', 'deposit_refund_allowed_days',
+          'instant_commission_from_drawer'
+        ];
+        let pruned = false;
+        for (const col of optionalCols) {
+          if (errMsg.includes(col) && snap[col] !== undefined) {
+            delete snap[col];
+            pruned = true;
+          }
+        }
+        if (pruned) continue;
+
+        break;
       }
+
       if (error) { 
         console.error('DB.saveSettings error:', error.message); 
         return false; 
@@ -3328,13 +3378,28 @@ export const DB = {
     const client = sb(); if (!client || !p) return null;
     const validSalonId = toSalonUUID(salonId || p.salonId || getSalonId());
     const validBranchId = toBranchUUID(p.branchId);
-    const { error } = await client.from('purchase_invoices').upsert({
-      id: p.id, salon_id: validSalonId, branch_id: validBranchId,
-      supplier_id: p.supplierId || null, date: p.date,
-      subtotal: p.subtotal ?? 0, discount: p.discount ?? 0, total: p.total ?? 0,
-      paid: p.paid ?? 0, remaining: p.remaining ?? 0, treasury_id: p.treasuryId || null,
-      notes: p.notes || null, items: p.items || []
-    }, { onConflict: 'id' });
+    const snap: any = {
+      id: p.id,
+      salon_id: validSalonId,
+      branch_id: validBranchId,
+      supplier_id: p.supplierId || null,
+      date: p.date,
+      subtotal: p.subtotal ?? 0,
+      discount: p.discount ?? 0,
+      total: p.total ?? 0,
+      paid: p.paid ?? 0,
+      remaining: p.remaining ?? 0,
+      treasury_id: p.treasuryId || null,
+      payment_method: p.paymentMethod || p.payment_method || 'cash',
+      notes: p.notes || null,
+      items: p.items || []
+    };
+    let { error } = await client.from('purchase_invoices').upsert(snap, { onConflict: 'id' });
+    if (error && (error.message?.includes('payment_method') || error.message?.includes('schema cache'))) {
+      delete snap.payment_method;
+      const retry = await client.from('purchase_invoices').upsert(snap, { onConflict: 'id' });
+      error = retry.error;
+    }
     if (error) { console.error('DB.savePurchaseInvoice error:', error.message); return null; }
     return p;
   },

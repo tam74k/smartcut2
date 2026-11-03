@@ -855,7 +855,9 @@ export function SettingsScreen({
         tipPayoutMethod: chosenTipMethod,
         tip_payout_method: chosenTipMethod,
         tipsDirectCashDeduction: !isPooledMethod,
-        tips_direct_cash_deduction: !isPooledMethod
+        tips_direct_cash_deduction: !isPooledMethod,
+        hrSettings: settings.hrSettings,
+        hr_settings: settings.hrSettings
       };
 
       localStorage.setItem('smartcut_app_settings', JSON.stringify(normalizedSettings));
@@ -3211,6 +3213,15 @@ export function SettingsScreen({
                     </p>
                   </div>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-sm transition-all self-end sm:self-center"
+                >
+                  <Save size={16} />
+                  حفظ قواعد الدوام والإضافي
+                </button>
               </div>
 
               {/* SECTION 1: OVERTIME (العمل الإضافي) */}
@@ -3591,6 +3602,21 @@ export function SettingsScreen({
                     </p>
                   </div>
                 </div>
+              </div>
+
+              {/* Bottom Sticky Action Bar */}
+              <div className="pt-4 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 bg-white">
+                <p className="text-xs text-slate-500 font-bold">
+                  * يتم حفظ وتطبيق هذه القواعد فوراً على كافة حسابات ساعات العمل والرواتب والتايم شيت وسجلات البصمة.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  className="w-full sm:w-auto flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-6 py-2.5 rounded-xl text-xs sm:text-sm shadow-md transition-all active:scale-95"
+                >
+                  <Save size={18} />
+                  حفظ إعدادات الدوام والعمل الإضافي والتأخير
+                </button>
               </div>
 
             </div>

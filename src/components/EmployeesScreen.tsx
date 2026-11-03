@@ -1065,12 +1065,25 @@ export function EmployeesScreen({
     setActiveEmpId(null);
   };
 
-  const handleSaveHRSettings = () => {
+  const handleSaveHRSettings = async () => {
     if (setSettings) {
-      setSettings({
+      const updated = {
         ...settings,
-        hrSettings: hrSettingsForm
-      });
+        hrSettings: hrSettingsForm,
+        hr_settings: hrSettingsForm
+      };
+      setSettings(updated);
+      try {
+        localStorage.setItem('smartcut_app_settings', JSON.stringify(updated));
+        if (activeBranchId) {
+          SubscriptionService.saveBranchSettings(activeBranchId, updated);
+        }
+        if (settings.salonId) {
+          await DB.saveSettings(settings.salonId, updated);
+        }
+      } catch (e) {
+        console.error('Error saving HR settings in EmployeesScreen:', e);
+      }
       alert('تم حفظ إعدادات الموارد البشرية والدوام بنجاح!');
     }
   };

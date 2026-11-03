@@ -726,9 +726,14 @@ export default function App() {
             setSettings(prev => {
               const isDifferentSalon = prev.salonId && prev.salonId !== sId;
               const base = isDifferentSalon ? {} : prev;
+              const resolvedHr = (dbSettings.hrSettings && typeof dbSettings.hrSettings === 'object' && Object.keys(dbSettings.hrSettings).length > 0)
+                ? dbSettings.hrSettings
+                : (base.hrSettings || prev.hrSettings || (dbSettings as any)?.uiSettings?.hrSettings || undefined);
               const updatedSettings: AppSettings = {
                 ...base,
                 ...dbSettings,
+                hrSettings: resolvedHr,
+                hr_settings: resolvedHr,
                 salonId: sId,
                 salonCode: activeSalon.code || dbSettings.salonCode || '',
                 salonName: (dbSettings.salonName && dbSettings.salonName !== 'صالون سمارت كت') ? dbSettings.salonName : (activeSalon.name || dbSettings.salonName || ''),
@@ -1499,9 +1504,15 @@ export default function App() {
         applyActiveWorkShift(activeShift, finalBranches[0].id);
       }).catch(() => {});
 
+      const resolvedHr = (dbSettings?.hrSettings && typeof dbSettings.hrSettings === 'object' && Object.keys(dbSettings.hrSettings).length > 0)
+        ? dbSettings.hrSettings
+        : (settings.hrSettings || (dbSettings as any)?.uiSettings?.hrSettings || undefined);
+
       const updatedSettings: AppSettings = {
         ...settings,
         ...(dbSettings || {}),
+        hrSettings: resolvedHr,
+        hr_settings: resolvedHr,
         salonId: s.id,
         salonCode: s.code,
         salonName: dbSettings?.salonName || s.name,
@@ -3721,9 +3732,14 @@ export default function App() {
       setSettings(prev => {
         const isDifferentSalon = prev.salonId && prev.salonId !== salon.id;
         const base = isDifferentSalon ? {} : prev;
+        const resolvedHr = (dbSettings?.hrSettings && typeof dbSettings.hrSettings === 'object' && Object.keys(dbSettings.hrSettings).length > 0)
+          ? dbSettings.hrSettings
+          : (base.hrSettings || prev.hrSettings || (dbSettings as any)?.uiSettings?.hrSettings || undefined);
         const updated: AppSettings = {
           ...base,
           ...(dbSettings || {}),
+          hrSettings: resolvedHr,
+          hr_settings: resolvedHr,
           salonId: salon.id,
           salonCode: salon.code,
           salonName: (dbSettings?.salonName && dbSettings.salonName !== 'صالون سمارت كت') ? dbSettings.salonName : salon.name,
