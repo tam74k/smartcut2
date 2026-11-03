@@ -2356,31 +2356,63 @@ export function POSScreen({
     if (onClearInitial) onClearInitial();
   };
 
-  // تصنيفات التبويب النشط (خدمات أو منتجات) لضمان ظهور كافة تصنيفات الخدمات أو المنتجات التابعة
+  // تصنيفات التبويب النشط (خدمات أو منتجات للبيع فقط) لضمان ظهور تصنيفات المنتجات التي تحتوي منتجات للبيع فقط
   const activeCategories = useMemo(() => {
-    const relevantItems = itemTypeFilter === 'service' ? items : products;
-    // استخراج معرّفات وأسماء التصنيفات المستخدمة بالفعل في العناصر
-    const usedCategories = new Set(
-      relevantItems.map((it: any) => String(it.categoryId || it.category_id || it.category || '').trim().toLowerCase()).filter(Boolean)
-    );
+    const cleanCategories = (categories || []).filter(c => c && c.id && c.id !== 'all');
 
-    const cleanCategories = (categories || []).filter(c => c && c.id !== 'all');
+    if (itemTypeFilter === 'product') {
+      // 1. استخراج المنتجات المتاحة للبيع فقط (نشطة وليست مواد خام / مستهلكات)
+      const forSaleProducts = (products || []).filter(p => 
+        p && 
+        p.isActive !== false && 
+        (p as any).productType !== 'raw_material'
+      );
+
+      // 2. تجميع معرّفات وأسماء التصنيفات للمنتجات المعروضة للبيع
+      const usedCategories = new Set<string>();
+      forSaleProducts.forEach((p: any) => {
+        const catId = String(p.categoryId || p.category_id || '').trim().toLowerCase();
+        const catName = String((p as any).category || (p as any).categoryName || '').trim().toLowerCase();
+        if (catId && catId !== 'all') usedCategories.add(catId);
+        if (catName && catName !== 'all') usedCategories.add(catName);
+      });
+
+      // 3. إظهار التصنيفات التي تحتوي على منتجات للبيع فقط وليس كل التصنيفات
+      return cleanCategories.filter(cat => {
+        if (cat.type && cat.type === 'service') return false;
+
+        const idLower = String(cat.id || '').trim().toLowerCase();
+        const nameLower = String(cat.name || '').trim().toLowerCase();
+
+        return usedCategories.has(idLower) || usedCategories.has(nameLower);
+      });
+    }
+
+    // لتبويب الخدمات: إظهار تصنيفات الخدمات التابعة
+    const activeServices = (items || []).filter(i => i && i.isActive !== false);
+    const usedServiceCategories = new Set<string>();
+    activeServices.forEach((s: any) => {
+      const catId = String(s.categoryId || s.category_id || '').trim().toLowerCase();
+      const catName = String((s as any).category || (s as any).categoryName || '').trim().toLowerCase();
+      if (catId && catId !== 'all') usedServiceCategories.add(catId);
+      if (catName && catName !== 'all') usedServiceCategories.add(catName);
+    });
 
     return cleanCategories.filter(cat => {
-      // 1. إذا كان نوع التصنيف محدد صراحة كخدمة أو منتج
-      if (cat.type) {
-        return cat.type === itemTypeFilter;
-      }
-      // 2. إذا لم يكن النوع محدداً، نتحقق مما إذا كان مستخدماً في عناصر التبويب الحالي
+      if (cat.type && cat.type === 'product') return false;
       const idLower = String(cat.id || '').trim().toLowerCase();
       const nameLower = String(cat.name || '').trim().toLowerCase();
-      if (usedCategories.has(idLower) || usedCategories.has(nameLower)) {
-        return true;
-      }
-      // 3. افتراضياً للخدمات إذا لم يكن هناك نوع محدد
-      return itemTypeFilter === 'service';
+      if (usedServiceCategories.has(idLower) || usedServiceCategories.has(nameLower)) return true;
+      return cat.type === 'service';
     });
   }, [categories, itemTypeFilter, items, products]);
+
+  // إعادة ضبط التصنيف إلى 'all' تلقائياً إذا لم يعد التصنيف المختار موجوداً ضمن التصنيفات النشطة
+  useEffect(() => {
+    if (selectedCategory !== 'all' && !activeCategories.some(c => c.id === selectedCategory || c.name === selectedCategory)) {
+      setSelectedCategory('all');
+    }
+  }, [activeCategories, selectedCategory]);
 
   const isMultiPricingEnabled = Boolean(settings.enableMultiPricing ?? settings.enableDualPricing);
   const isForeignerClient = Boolean(!isMultiPricingEnabled && settings.enableDualPricing && selectedClient?.clientType === 'foreigner');
@@ -4846,7 +4878,21 @@ export function POSScreen({
                     الكل
                   </button>
                   {categories
-                    .filter(c => priceCheckType === 'all' || !c.type || c.type === priceCheckType)
+                    .filter(c => {
+                      if (!c || c.id === 'all') return false;
+                      if (priceCheckType === 'product') {
+                        if (c.type && c.type === 'service') return false;
+                        const idLower = String(c.id || '').trim().toLowerCase();
+                        const nameLower = String(c.name || '').trim().toLowerCase();
+                        return (products || []).some(p => {
+                          if (!p || p.isActive === false || (p as any).productType === 'raw_material') return false;
+                          const pCatId = String(p.categoryId || (p as any).category_id || '').trim().toLowerCase();
+                          const pCatName = String((p as any).category || (p as any).categoryName || '').trim().toLowerCase();
+                          return pCatId === idLower || pCatId === nameLower || pCatName === nameLower;
+                        });
+                      }
+                      return priceCheckType === 'all' || !c.type || c.type === priceCheckType;
+                    })
                     .map(c => (
                       <button
                         key={c.id}
