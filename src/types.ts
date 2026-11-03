@@ -1581,6 +1581,8 @@ export interface Product {
   branchId?: string;
   branchCode?: string;
   isActive?: boolean;
+  supplierId?: string;
+  supplierName?: string;
 }
 
 export function getProductStock(p: Product | null | undefined, branchId?: string): number {

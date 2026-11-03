@@ -4,11 +4,13 @@ import {
   TrendingUp, Receipt, CalendarClock, ArrowUpRight, ArrowDownRight, 
   Edit2, FileText, Banknote, Eye, X, Trash2, AlertTriangle, Package,
   Bell, CheckCircle2, Check, Scissors, Calendar, Clock, User, Building2,
-  Landmark, ShoppingBag, ArrowDownLeft, HandCoins, Coins, Wallet, CreditCard
+  Landmark, ShoppingBag, ArrowDownLeft, HandCoins, Coins, Wallet, CreditCard,
+  Printer, Plus, Minus, CheckSquare, Square, ShoppingCart, Truck, RotateCcw
 } from 'lucide-react';
 import { DashboardChartsSection } from './DashboardChartsSection';
 import { AuthService } from '../services/auth';
 import { DB } from '../services/db';
+import { printHtml } from '../utils/print';
 
 export function DashboardScreen({ 
   settings, 
@@ -26,7 +28,10 @@ export function DashboardScreen({
   itemMovements = [],
   activeBranchId,
   branches = [],
-  employees = []
+  employees = [],
+  suppliers = [],
+  currentUser,
+  onNavigateScreen
 }: { 
   settings: AppSettings, 
   isShiftOpen: boolean, 
@@ -43,7 +48,10 @@ export function DashboardScreen({
   itemMovements?: ItemMovement[],
   activeBranchId?: string,
   branches?: Branch[],
-  employees?: any[]
+  employees?: any[],
+  suppliers?: any[],
+  currentUser?: any,
+  onNavigateScreen?: (screen: string) => void
 }) {
   const [advPaymentModal, setAdvPaymentModal] = useState<string | null>(null);
   const [advAmount, setAdvAmount] = useState('');
@@ -53,6 +61,344 @@ export function DashboardScreen({
   const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
   const [viewInvoice, setViewInvoice] = useState<Invoice | null>(null);
   const [previewBooking, setPreviewBooking] = useState<Booking | null>(null);
+
+  // Low Stock Alerts & Purchase Order State
+  const [selectedLowStockIds, setSelectedLowStockIds] = useState<string[]>([]);
+  const [showPurchaseOrderModal, setShowPurchaseOrderModal] = useState(false);
+  const [purchaseOrderQuantities, setPurchaseOrderQuantities] = useState<Record<string, number>>({});
+
+  const lowStockProducts = useMemo(() => {
+    if (!products || !Array.isArray(products)) return [];
+    return products.filter(p => {
+      if (p.isActive === false) return false;
+      const effectiveStock = getProductStock(p, activeBranchId);
+      const effectiveReorder = getProductReorderLimit(p, activeBranchId);
+      return effectiveStock <= effectiveReorder;
+    });
+  }, [products, activeBranchId]);
+
+  const handleToggleSelectLowStock = (id: string) => {
+    setSelectedLowStockIds(prev => {
+      if (prev.includes(id)) {
+        return prev.filter(x => x !== id);
+      } else {
+        const prod = products?.find(p => p.id === id);
+        const reorderLimit = prod ? getProductReorderLimit(prod, activeBranchId) : 5;
+        setPurchaseOrderQuantities(q => ({
+          ...q,
+          [id]: q[id] && q[id] > 0 ? q[id] : Math.max(1, (reorderLimit || 1) * 2)
+        }));
+        return [...prev, id];
+      }
+    });
+  };
+
+  const handleSelectAllLowStock = () => {
+    if (selectedLowStockIds.length === lowStockProducts.length) {
+      setSelectedLowStockIds([]);
+    } else {
+      const allIds = lowStockProducts.map(p => p.id);
+      setSelectedLowStockIds(allIds);
+      setPurchaseOrderQuantities(prev => {
+        const next = { ...prev };
+        lowStockProducts.forEach(p => {
+          if (!next[p.id] || next[p.id] <= 0) {
+            const reorderLimit = getProductReorderLimit(p, activeBranchId);
+            next[p.id] = Math.max(1, (reorderLimit || 1) * 2);
+          }
+        });
+        return next;
+      });
+    }
+  };
+
+  const handleOpenPurchaseOrderModal = () => {
+    if (selectedLowStockIds.length === 0) return;
+    setPurchaseOrderQuantities(prev => {
+      const next = { ...prev };
+      selectedLowStockIds.forEach(id => {
+        if (!next[id] || next[id] <= 0) {
+          const prod = products?.find(p => p.id === id);
+          const reorderLimit = prod ? getProductReorderLimit(prod, activeBranchId) : 5;
+          next[id] = Math.max(1, (reorderLimit || 1) * 2);
+        }
+      });
+      return next;
+    });
+    setShowPurchaseOrderModal(true);
+  };
+
+  const handleUpdateQuantity = (productId: string, delta: number) => {
+    setPurchaseOrderQuantities(prev => {
+      const current = prev[productId] || 1;
+      const nextVal = Math.max(1, current + delta);
+      return { ...prev, [productId]: nextVal };
+    });
+  };
+
+  const handleSetQuantity = (productId: string, value: number) => {
+    const val = Math.max(1, isNaN(value) ? 1 : value);
+    setPurchaseOrderQuantities(prev => ({
+      ...prev,
+      [productId]: val
+    }));
+  };
+
+  const handleResetSuggestedQuantities = () => {
+    setPurchaseOrderQuantities(prev => {
+      const next = { ...prev };
+      selectedLowStockIds.forEach(id => {
+        const prod = products?.find(p => p.id === id);
+        const reorderLimit = prod ? getProductReorderLimit(prod, activeBranchId) : 5;
+        next[id] = Math.max(1, (reorderLimit || 1) * 2);
+      });
+      return next;
+    });
+  };
+
+  const handleRemoveFromPurchaseOrder = (productId: string) => {
+    setSelectedLowStockIds(prev => prev.filter(id => id !== productId));
+  };
+
+  // Group selected items by supplier
+  const purchaseOrderGroups = useMemo(() => {
+    const selectedProds = lowStockProducts.filter(p => selectedLowStockIds.includes(p.id));
+    const groupsMap = new Map<string, {
+      supplierId: string;
+      supplierName: string;
+      supplierPhone?: string;
+      supplierAddress?: string;
+      items: Array<{
+        product: any;
+        stock: number;
+        reorderLimit: number;
+        costPrice: number;
+        suggestedQty: number;
+        totalCost: number;
+      }>;
+      totalItems: number;
+      totalUnits: number;
+      totalCost: number;
+    }>();
+
+    selectedProds.forEach(p => {
+      const supId = p.supplierId || '';
+      const matchedSup = suppliers?.find(s => s.id === supId);
+      const supplierKey = supId || (p.supplierName ? `name_${p.supplierName}` : '__unassigned__');
+      const supplierName = matchedSup?.name || p.supplierName || 'أصناف بدون مورد محدد';
+      const supplierPhone = matchedSup?.phone || '';
+      const supplierAddress = matchedSup?.address || '';
+
+      const stock = getProductStock(p, activeBranchId);
+      const reorderLimit = getProductReorderLimit(p, activeBranchId);
+      const qty = purchaseOrderQuantities[p.id] !== undefined 
+        ? purchaseOrderQuantities[p.id] 
+        : Math.max(1, (reorderLimit || 1) * 2);
+      const costPrice = Number(p.costPrice || 0);
+      const totalCost = costPrice * qty;
+
+      if (!groupsMap.has(supplierKey)) {
+        groupsMap.set(supplierKey, {
+          supplierId: supplierKey,
+          supplierName,
+          supplierPhone,
+          supplierAddress,
+          items: [],
+          totalItems: 0,
+          totalUnits: 0,
+          totalCost: 0
+        });
+      }
+
+      const group = groupsMap.get(supplierKey)!;
+      group.items.push({
+        product: p,
+        stock,
+        reorderLimit,
+        costPrice,
+        suggestedQty: qty,
+        totalCost
+      });
+      group.totalItems += 1;
+      group.totalUnits += qty;
+      group.totalCost += totalCost;
+    });
+
+    return Array.from(groupsMap.values());
+  }, [lowStockProducts, selectedLowStockIds, purchaseOrderQuantities, suppliers, activeBranchId]);
+
+  const totalPOItems = purchaseOrderGroups.reduce((sum, g) => sum + g.totalItems, 0);
+  const totalPOUnits = purchaseOrderGroups.reduce((sum, g) => sum + g.totalUnits, 0);
+  const totalPOCost = purchaseOrderGroups.reduce((sum, g) => sum + g.totalCost, 0);
+
+  const handlePrintPurchaseOrder = (targetSupplierKey?: string) => {
+    const groupsToPrint = targetSupplierKey 
+      ? purchaseOrderGroups.filter(g => g.supplierId === targetSupplierKey)
+      : purchaseOrderGroups;
+
+    if (groupsToPrint.length === 0) return;
+
+    const currentBranchObj = branches?.find(b => b.id === activeBranchId) || { name: 'الفرع الرئيسي' };
+    const dateFormatted = new Date().toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric' });
+    const timeFormatted = new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+    const poNumber = `PO-${Date.now().toString().slice(-6)}`;
+
+    const pagesHtml = groupsToPrint.map((group, groupIndex) => {
+      const isLastGroup = groupIndex === groupsToPrint.length - 1;
+      const pageBreakStyle = isLastGroup ? '' : 'page-break-after: always;';
+
+      const itemsRowsHtml = group.items.map((item, idx) => `
+        <tr style="border-bottom: 1px solid #e2e8f0; ${idx % 2 === 1 ? 'background-color: #f8fafc;' : ''}">
+          <td style="padding: 9px 10px; text-align: center; font-weight: bold; color: #475569;">${idx + 1}</td>
+          <td style="padding: 9px 10px; text-align: right;">
+            <div style="font-weight: bold; color: #0f172a; font-size: 13px;">${item.product.name}</div>
+            ${item.product.barcode ? `<div style="font-size: 11px; color: #64748b; margin-top: 2px;">الباركود: ${item.product.barcode}</div>` : ''}
+          </td>
+          <td style="padding: 9px 10px; text-align: center; color: #dc2626; font-weight: bold; font-family: monospace; font-size: 13px;">${item.stock}</td>
+          <td style="padding: 9px 10px; text-align: center; color: #d97706; font-weight: bold; font-family: monospace; font-size: 13px;">${item.reorderLimit}</td>
+          <td style="padding: 9px 10px; text-align: center; font-weight: bold; font-size: 14px; color: #2563eb; background-color: #eff6ff; border-radius: 4px; font-family: monospace;">
+            ${item.suggestedQty}
+          </td>
+          <td style="padding: 9px 10px; text-align: center; color: #334155; font-family: monospace; font-size: 12px;">
+            ${item.costPrice > 0 ? `${item.costPrice.toFixed(2)} ${settings.currency}` : '-'}
+          </td>
+          <td style="padding: 9px 10px; text-align: left; font-weight: bold; color: #0f172a; font-family: monospace; font-size: 13px;">
+            ${item.costPrice > 0 ? `${item.totalCost.toFixed(2)} ${settings.currency}` : '-'}
+          </td>
+        </tr>
+      `).join('');
+
+      return `
+        <div style="margin-bottom: 30px; ${pageBreakStyle} width: 100%; box-sizing: border-box; padding: 12px 5px; font-family: 'Cairo', sans-serif; direction: rtl;">
+          <!-- Salon Header with Logo and Name -->
+          <div style="border-bottom: 2px solid #0f172a; padding-bottom: 14px; margin-bottom: 18px;">
+            <table style="width: 100%; border-collapse: collapse;">
+              <tr>
+                <td style="text-align: right; vertical-align: middle; width: 40%;">
+                  <h1 style="font-size: 22px; font-weight: 800; color: #0f172a; margin: 0 0 4px 0;">
+                    ${settings.salonName || 'صالون سمارت كت'}
+                  </h1>
+                  <div style="font-size: 13px; color: #475569; font-weight: bold;">
+                    الفرع: ${currentBranchObj.name}
+                  </div>
+                  ${settings.phone ? `<div style="font-size: 12px; color: #64748b; margin-top: 2px;">الهاتف: ${settings.phone}</div>` : ''}
+                  ${settings.taxNumber ? `<div style="font-size: 12px; color: #64748b;">الرقم الضريبي: ${settings.taxNumber}</div>` : ''}
+                </td>
+
+                <td style="text-align: center; vertical-align: middle; width: 25%;">
+                  ${settings.logoUrl ? `
+                    <img src="${settings.logoUrl}" alt="شعار الصالون" style="max-height: 80px; max-width: 150px; object-fit: contain; margin: 0 auto;" />
+                  ` : `
+                    <div style="width: 65px; height: 65px; border-radius: 50%; background-color: #0f172a; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 22px; margin: 0 auto; line-height: 65px; text-align: center;">
+                      SC
+                    </div>
+                  `}
+                </td>
+
+                <td style="text-align: left; vertical-align: middle; width: 35%;">
+                  <div style="background-color: #f8fafc; border: 1px solid #cbd5e1; padding: 10px 14px; border-radius: 8px; display: inline-block; text-align: right; min-width: 190px;">
+                    <div style="font-size: 16px; font-weight: 800; color: #0f172a; margin-bottom: 4px; border-bottom: 1px solid #e2e8f0; padding-bottom: 3px;">
+                      أمر شراء بضاعة
+                    </div>
+                    <div style="font-size: 12px; color: #334155; font-weight: bold;">رقم الطلب: <span style="font-family: monospace; color: #2563eb;">#${poNumber}</span></div>
+                    <div style="font-size: 11px; color: #64748b; margin-top: 3px;">التاريخ: ${dateFormatted}</div>
+                    <div style="font-size: 11px; color: #64748b;">الوقت: ${timeFormatted}</div>
+                  </div>
+                </td>
+              </tr>
+            </table>
+          </div>
+
+          <!-- Supplier Box -->
+          <div style="background-color: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px 16px; margin-bottom: 18px;">
+            <table style="width: 100%; border-collapse: collapse;">
+              <tr>
+                <td style="text-align: right; vertical-align: middle;">
+                  <div style="font-size: 11px; color: #64748b; font-weight: bold; margin-bottom: 2px;">بيانات المورد الموجه إليه الطلب:</div>
+                  <div style="font-size: 16px; font-weight: 800; color: #0f172a;">${group.supplierName}</div>
+                  ${group.supplierAddress ? `<div style="font-size: 12px; color: #475569; margin-top: 2px;">العنوان: ${group.supplierAddress}</div>` : ''}
+                </td>
+                <td style="text-align: left; vertical-align: middle;">
+                  ${group.supplierPhone ? `
+                    <div style="font-size: 13px; font-weight: bold; color: #1e293b; direction: ltr;">
+                      📞 ${group.supplierPhone}
+                    </div>
+                  ` : `
+                    <div style="font-size: 12px; color: #94a3b8;">لا يوجد رقم هاتف مسجل</div>
+                  `}
+                  <div style="font-size: 12px; color: #334155; margin-top: 4px; font-weight: bold;">
+                    عدد الأصناف المطلوبة: <span style="color: #2563eb;">${group.totalItems} صنف</span>
+                  </div>
+                </td>
+              </tr>
+            </table>
+          </div>
+
+          <!-- Items Table -->
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 12px; border: 1px solid #cbd5e1;">
+            <thead>
+              <tr style="background-color: #0f172a; color: #ffffff;">
+                <th style="padding: 8px; width: 35px; text-align: center; border: 1px solid #334155;">#</th>
+                <th style="padding: 8px; text-align: right; border: 1px solid #334155;">الصنف والمواصفات</th>
+                <th style="padding: 8px; width: 80px; text-align: center; border: 1px solid #334155;">المخزون الحالي</th>
+                <th style="padding: 8px; width: 75px; text-align: center; border: 1px solid #334155;">حد الطلب</th>
+                <th style="padding: 8px; width: 90px; text-align: center; border: 1px solid #334155; background-color: #1e3a8a;">الكمية المطلوبة</th>
+                <th style="padding: 8px; width: 95px; text-align: center; border: 1px solid #334155;">سعر التكلفة التقديري</th>
+                <th style="padding: 8px; width: 105px; text-align: left; border: 1px solid #334155;">الإجمالي التقديري</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemsRowsHtml}
+            </tbody>
+            <tfoot>
+              <tr style="background-color: #f1f5f9; font-weight: bold; border-top: 2px solid #0f172a;">
+                <td colspan="4" style="padding: 10px; text-align: right; color: #0f172a; font-size: 13px; border: 1px solid #cbd5e1;">
+                  إجمالي طلبية (${group.supplierName}):
+                </td>
+                <td style="padding: 10px; text-align: center; color: #1e3a8a; font-size: 14px; font-weight: 800; border: 1px solid #cbd5e1; font-family: monospace;">
+                  ${group.totalUnits} قطعة
+                </td>
+                <td style="padding: 10px; text-align: center; color: #64748b; border: 1px solid #cbd5e1;">
+                  -
+                </td>
+                <td style="padding: 10px; text-align: left; color: #0f172a; font-size: 14px; font-weight: 800; border: 1px solid #cbd5e1; font-family: monospace;">
+                  ${group.totalCost > 0 ? `${group.totalCost.toFixed(2)} ${settings.currency}` : '-'}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+
+          <!-- Notes & Terms -->
+          <div style="background-color: #fcfcfd; border: 1px dashed #cbd5e1; border-radius: 6px; padding: 10px 14px; margin-bottom: 25px; font-size: 11px; color: #475569;">
+            <div style="font-weight: bold; color: #0f172a; margin-bottom: 3px;">شروط وملاحظات التوريد:</div>
+            <div>1. يرجى توريد الأصناف طبقاً للمواصفات وتواريخ الصلاحية السارية والمعايير المتفق عليها.</div>
+            <div>2. يرجى إرفاق الفاتورة الأصلية أو إشعار التسليم مع مندوب التوريد عند الاستلام في الفرع.</div>
+          </div>
+
+          <!-- Signatures Section -->
+          <table style="width: 100%; border-collapse: collapse; margin-top: 25px;">
+            <tr>
+              <td style="width: 33%; text-align: center; vertical-align: bottom;">
+                <div style="font-size: 12px; font-weight: bold; color: #1e293b; margin-bottom: 35px;">مسؤول المشتريات / المستودع</div>
+                <div style="border-top: 1px solid #94a3b8; padding-top: 5px; font-size: 11px; color: #64748b; width: 75%; margin: 0 auto;">التوقيع: .....................</div>
+              </td>
+              <td style="width: 33%; text-align: center; vertical-align: bottom;">
+                <div style="font-size: 12px; font-weight: bold; color: #1e293b; margin-bottom: 35px;">اعتماد إدارة الصالون</div>
+                <div style="border-top: 1px solid #94a3b8; padding-top: 5px; font-size: 11px; color: #64748b; width: 75%; margin: 0 auto;">التوقيع والختم</div>
+              </td>
+              <td style="width: 33%; text-align: center; vertical-align: bottom;">
+                <div style="font-size: 12px; font-weight: bold; color: #1e293b; margin-bottom: 35px;">استلام المورد / المندوب</div>
+                <div style="border-top: 1px solid #94a3b8; padding-top: 5px; font-size: 11px; color: #64748b; width: 75%; margin: 0 auto;">التاريخ والتوقيع</div>
+              </td>
+            </tr>
+          </table>
+        </div>
+      `;
+    }).join('');
+
+    const title = targetSupplierKey ? `امر_شراء_${groupsToPrint[0]?.supplierName || 'مورد'}` : 'امر_شراء_نواقص_المخزون';
+    printHtml(pagesHtml, title, 'a4');
+  };
 
   const mainBranch = (branches && branches[0]) || { id: 'b-main', name: 'الفرع الرئيسي' };
   const mainBranchId = mainBranch.id;
@@ -1306,49 +1652,180 @@ export function DashboardScreen({
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 lg:col-span-1">
-          <h3 className="text-base font-bold text-slate-800 mb-3 border-b border-slate-100 pb-2 flex items-center gap-2">
-            <AlertTriangle size={16} className="text-orange-500" />
-            تنبيهات نواقص المخزون
-          </h3>
-          <div className="space-y-3">
-            {(products && products.filter(p => {
-              if (p.isActive === false) return false;
-              const effectiveStock = getProductStock(p, activeBranchId);
-              const effectiveReorder = getProductReorderLimit(p, activeBranchId);
-              return effectiveStock <= effectiveReorder;
-            }).length === 0) ? (
-              <p className="text-sm text-slate-500 text-center py-4">لا يوجد نواقص في المخزون لهذا الفرع</p>
-            ) : (
-              products && products.filter(p => {
-                if (p.isActive === false) return false;
-                const effectiveStock = getProductStock(p, activeBranchId);
-                const effectiveReorder = getProductReorderLimit(p, activeBranchId);
-                return effectiveStock <= effectiveReorder;
-              }).slice(0, 5).map(p => {
-                const effectiveStock = getProductStock(p, activeBranchId);
-                const effectiveReorder = getProductReorderLimit(p, activeBranchId);
-                return (
-                  <div key={p.id} className="flex justify-between items-center p-2 hover:bg-slate-50 rounded-lg transition-colors border border-transparent hover:border-slate-100">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full flex items-center justify-center bg-orange-50 text-orange-500">
-                        <Package size={14} />
-                      </div>
-                      <div>
-                        <p className="font-bold text-slate-800 text-[13px]">{p.name}</p>
-                        <p className="text-[11px] text-slate-500">حد الطلب: {effectiveReorder}</p>
-                      </div>
-                    </div>
-                    <div className="text-left">
-                      <p className="font-bold text-red-600 text-[13px]">{effectiveStock}</p>
-                      <p className="text-[10px] text-slate-500">متبقي</p>
-                    </div>
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 lg:col-span-1 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-3 border-b border-slate-100 pb-2.5">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-orange-100 text-orange-600 flex items-center justify-center shrink-0">
+                  <AlertTriangle size={17} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                    تنبيهات نواقص المخزون
+                    {lowStockProducts.length > 0 && (
+                      <span className="bg-red-50 text-red-600 border border-red-200 text-[11px] font-extrabold px-2 py-0.5 rounded-full">
+                        {lowStockProducts.length}
+                      </span>
+                    )}
+                  </h3>
+                  <p className="text-[11px] text-slate-400">أصناف بلغت حد الطلب أو نفدت</p>
+                </div>
+              </div>
+
+              {lowStockProducts.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleSelectAllLowStock}
+                  className="text-[11px] font-bold text-primary hover:text-primary-dark transition-colors flex items-center gap-1 bg-primary/5 hover:bg-primary/10 px-2 py-1 rounded-md"
+                  title={selectedLowStockIds.length === lowStockProducts.length ? 'إلغاء تحديد الكل' : 'تحديد كل النواقص'}
+                >
+                  {selectedLowStockIds.length === lowStockProducts.length ? (
+                    <>
+                      <CheckSquare size={13} className="text-primary" />
+                      إلغاء الكل
+                    </>
+                  ) : (
+                    <>
+                      <Square size={13} />
+                      تحديد الكل
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+
+            {/* List with vertical scroll */}
+            <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1 select-none custom-scrollbar">
+              {lowStockProducts.length === 0 ? (
+                <div className="py-8 text-center flex flex-col items-center justify-center">
+                  <div className="w-12 h-12 rounded-full bg-emerald-50 text-emerald-500 flex items-center justify-center mb-2">
+                    <CheckCircle2 size={24} />
                   </div>
-                );
-              })
-            )}
+                  <p className="text-sm font-bold text-slate-700">المخزون مكتمل تماماً</p>
+                  <p className="text-xs text-slate-400 mt-0.5">لا توجد أي نواقص في مخزون هذا الفرع حالياً</p>
+                </div>
+              ) : (
+                lowStockProducts.map(p => {
+                  const effectiveStock = getProductStock(p, activeBranchId);
+                  const effectiveReorder = getProductReorderLimit(p, activeBranchId);
+                  const isSelected = selectedLowStockIds.includes(p.id);
+                  const matchedSup = suppliers?.find(s => s.id === p.supplierId);
+                  const supplierDisplayName = matchedSup?.name || p.supplierName;
+                  const suggestedQty = Math.max(1, (effectiveReorder || 1) * 2);
+
+                  return (
+                    <div
+                      key={p.id}
+                      onClick={() => handleToggleSelectLowStock(p.id)}
+                      className={`group flex items-center justify-between p-2.5 rounded-xl border transition-all cursor-pointer ${
+                        isSelected 
+                          ? 'bg-primary/5 border-primary shadow-xs' 
+                          : 'bg-white hover:bg-slate-50 border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleToggleSelectLowStock(p.id);
+                          }}
+                          className={`w-5 h-5 rounded flex items-center justify-center transition-colors shrink-0 ${
+                            isSelected 
+                              ? 'bg-primary text-white' 
+                              : 'border border-slate-300 text-transparent hover:border-primary group-hover:text-slate-300'
+                          }`}
+                          title={isSelected ? 'إلغاء التحديد' : 'إضافة لطلب شراء'}
+                        >
+                          <Check size={13} className={isSelected ? 'block' : 'hidden group-hover:block'} />
+                        </button>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <p className="font-bold text-slate-800 text-[13px] truncate" title={p.name}>
+                              {p.name}
+                            </p>
+                            {p.productType === 'raw_material' && (
+                              <span className="text-[10px] bg-slate-100 text-slate-600 px-1 rounded">خام</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-0.5">
+                            <span>حد الطلب: <b className="text-slate-700">{effectiveReorder}</b></span>
+                            <span className="text-blue-600 font-semibold">• مقترح: {suggestedQty}</span>
+                            {supplierDisplayName && (
+                              <span className="truncate max-w-[110px] text-slate-400" title={`المورد: ${supplierDisplayName}`}>
+                                • {supplierDisplayName}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 pl-1 shrink-0">
+                        <div className="text-left">
+                          <p className={`font-mono font-black text-sm ${effectiveStock <= 0 ? 'text-red-600' : 'text-amber-600'}`}>
+                            {effectiveStock}
+                          </p>
+                          <p className="text-[10px] text-slate-400">متبقي</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleToggleSelectLowStock(p.id);
+                          }}
+                          className={`px-2 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                            isSelected 
+                              ? 'bg-primary text-white shadow-xs' 
+                              : 'bg-slate-100 text-slate-600 hover:bg-primary hover:text-white'
+                          }`}
+                          title={isSelected ? 'إلغاء من الطلب' : 'إضافة لطلب شراء'}
+                        >
+                          {isSelected ? (
+                            <span className="text-[11px]">مضاف</span>
+                          ) : (
+                            <>
+                              <Plus size={12} />
+                              <span className="text-[11px] hidden sm:inline">طلب</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
           </div>
 
+          {/* Bottom Action Bar for Purchase Order Creation */}
+          {selectedLowStockIds.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+              <div className="flex items-center gap-1.5 text-xs text-slate-700">
+                <span className="w-5 h-5 rounded-full bg-primary text-white flex items-center justify-center font-bold text-[11px]">
+                  {selectedLowStockIds.length}
+                </span>
+                <span className="font-bold">أصناف محددة للطلب</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setSelectedLowStockIds([])}
+                  className="text-xs text-slate-500 hover:text-red-600 px-2 py-1.5 rounded-lg transition-colors font-medium"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenPurchaseOrderModal}
+                  className="bg-primary hover:bg-primary-dark text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm hover:shadow transition-all flex items-center gap-1.5"
+                >
+                  <ShoppingCart size={14} />
+                  إنشاء أمر شراء ({selectedLowStockIds.length})
+                </button>
+              </div>
+            </div>
+          )}
         </div>
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 lg:col-span-2 flex flex-col">
           <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
@@ -2184,6 +2661,301 @@ export function DashboardScreen({
           </div>
         );
       })()}
+
+      {/* Purchase Order Generator & Print Modal */}
+      {showPurchaseOrderModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 md:p-6 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-5xl flex flex-col max-h-[92vh] overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="p-4 md:px-6 md:py-4 bg-slate-900 text-white flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-primary/20 border border-primary/30 text-primary flex items-center justify-center shrink-0">
+                  <ShoppingCart size={22} />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base md:text-lg flex items-center gap-2 text-white">
+                    أمر شراء بضاعة (نواقص المخزون)
+                  </h3>
+                  <p className="text-xs text-slate-300">
+                    الفرع: {branches.find(b => b.id === activeBranchId)?.name || 'الفرع الرئيسي'} • مجمع حسب الموردين
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleResetSuggestedQuantities}
+                  className="hidden sm:flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-2 rounded-xl text-xs font-bold transition-colors"
+                  title="إعادة تعيين كافة الكميات إلى حد الطلب × 2"
+                >
+                  <RotateCcw size={14} />
+                  <span>إعادة ضبط المقترح</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handlePrintPurchaseOrder()}
+                  disabled={purchaseOrderGroups.length === 0}
+                  className="bg-primary hover:bg-primary-dark text-white px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md transition-all disabled:opacity-50"
+                >
+                  <Printer size={15} />
+                  <span>طباعة أمر الشراء كاملاً (A4)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowPurchaseOrderModal(false)}
+                  className="w-9 h-9 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Metric Summary Bar */}
+            <div className="p-4 bg-slate-50 border-b border-slate-200 grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-xs">
+                <span className="text-[11px] text-slate-500 font-bold block mb-1">عدد الأصناف المختارة</span>
+                <span className="text-xl font-extrabold text-slate-800 font-mono">{totalPOItems}</span>
+                <span className="text-xs text-slate-400 mr-1">صنف</span>
+              </div>
+
+              <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-xs">
+                <span className="text-[11px] text-slate-500 font-bold block mb-1">إجمالي القطع المطلوبة</span>
+                <span className="text-xl font-extrabold text-primary font-mono">{totalPOUnits}</span>
+                <span className="text-xs text-slate-400 mr-1">قطعة</span>
+              </div>
+
+              <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-xs">
+                <span className="text-[11px] text-slate-500 font-bold block mb-1">التكلفة التقديرية</span>
+                <span className="text-xl font-extrabold text-emerald-600 font-mono">
+                  {totalPOCost.toFixed(2)}
+                </span>
+                <span className="text-xs text-slate-400 mr-1">{settings.currency}</span>
+              </div>
+
+              <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-xs">
+                <span className="text-[11px] text-slate-500 font-bold block mb-1">الموردون الموجه لهم</span>
+                <span className="text-xl font-extrabold text-slate-800 font-mono">{purchaseOrderGroups.length}</span>
+                <span className="text-xs text-slate-400 mr-1">مورد</span>
+              </div>
+            </div>
+
+            {/* Scrollable Groups & Tables */}
+            <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 custom-scrollbar bg-slate-100/50">
+              {purchaseOrderGroups.length === 0 ? (
+                <div className="py-12 text-center bg-white rounded-2xl border border-slate-200 p-8">
+                  <div className="w-16 h-16 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3">
+                    <ShoppingCart size={32} />
+                  </div>
+                  <h4 className="text-base font-bold text-slate-700">لا توجد أصناف محددة في أمر الشراء</h4>
+                  <p className="text-xs text-slate-500 mt-1">يرجى تحديد الأصناف الناقصة من القائمة أولاً لإنشاء الطلب</p>
+                  <button
+                    type="button"
+                    onClick={() => setShowPurchaseOrderModal(false)}
+                    className="mt-4 px-4 py-2 bg-primary text-white rounded-xl text-xs font-bold"
+                  >
+                    العودة لتحديد الأصناف
+                  </button>
+                </div>
+              ) : (
+                purchaseOrderGroups.map((group) => (
+                  <div
+                    key={group.supplierId}
+                    className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden"
+                  >
+                    {/* Supplier Header */}
+                    <div className="p-3.5 md:p-4 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+                          <Truck size={18} />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-extrabold text-sm md:text-base text-slate-800">
+                              {group.supplierName}
+                            </h4>
+                            <span className="bg-slate-200/80 text-slate-700 text-[11px] font-bold px-2 py-0.5 rounded-md">
+                              {group.totalItems} صنف
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3 text-xs text-slate-500 mt-0.5">
+                            {group.supplierPhone && (
+                              <span className="font-mono direction-ltr inline-block">📞 {group.supplierPhone}</span>
+                            )}
+                            {group.supplierAddress && (
+                              <span>📍 {group.supplierAddress}</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <div className="text-left hidden sm:block pl-2">
+                          <span className="text-[11px] text-slate-400 block">إجمالي هذا المورد</span>
+                          <span className="text-xs font-extrabold text-slate-800 font-mono">
+                            {group.totalUnits} قطعة • {group.totalCost > 0 ? `${group.totalCost.toFixed(2)} ${settings.currency}` : 'حسب التوريد'}
+                          </span>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handlePrintPurchaseOrder(group.supplierId)}
+                          className="bg-white hover:bg-blue-50 text-blue-700 border border-blue-200 hover:border-blue-300 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs"
+                        >
+                          <Printer size={14} />
+                          <span>طباعة طلب هذا المورد فقط</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Items Table */}
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-right text-xs">
+                        <thead>
+                          <tr className="bg-slate-100/70 text-slate-600 font-bold border-b border-slate-200">
+                            <th className="p-3 w-10 text-center">#</th>
+                            <th className="p-3">اسم الصنف والمواصفات</th>
+                            <th className="p-3 w-24 text-center">المخزون الحالي</th>
+                            <th className="p-3 w-20 text-center">حد الطلب</th>
+                            <th className="p-3 w-40 text-center">الكمية المطلوبة</th>
+                            <th className="p-3 w-28 text-center">سعر التكلفة</th>
+                            <th className="p-3 w-28 text-left">الإجمالي</th>
+                            <th className="p-3 w-12 text-center">حذف</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {group.items.map((item, idx) => (
+                            <tr key={item.product.id} className="hover:bg-slate-50/80 transition-colors">
+                              <td className="p-3 text-center font-bold text-slate-400 font-mono">
+                                {idx + 1}
+                              </td>
+                              <td className="p-3">
+                                <div className="font-bold text-slate-800 text-[13px]">
+                                  {item.product.name}
+                                </div>
+                                <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
+                                  {item.product.barcode && (
+                                    <span>باركود: {item.product.barcode}</span>
+                                  )}
+                                  {item.product.productType === 'raw_material' ? (
+                                    <span className="text-amber-600">مادة خام</span>
+                                  ) : (
+                                    <span className="text-emerald-600">منتج بيع</span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="p-3 text-center">
+                                <span className={`font-mono font-bold text-xs px-2 py-0.5 rounded-md ${
+                                  item.stock <= 0 ? 'bg-red-50 text-red-600 border border-red-200' : 'text-slate-700'
+                                }`}>
+                                  {item.stock}
+                                </span>
+                              </td>
+                              <td className="p-3 text-center font-mono font-bold text-slate-600">
+                                {item.reorderLimit}
+                              </td>
+                              <td className="p-3 text-center">
+                                <div className="inline-flex items-center border border-slate-200 rounded-xl bg-white shadow-2xs overflow-hidden">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUpdateQuantity(item.product.id, -1)}
+                                    className="p-1.5 text-slate-500 hover:bg-slate-100 active:bg-slate-200 transition-colors"
+                                    title="إنقاص"
+                                  >
+                                    <Minus size={13} />
+                                  </button>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    value={item.suggestedQty}
+                                    onChange={(e) => handleSetQuantity(item.product.id, parseInt(e.target.value) || 1)}
+                                    className="w-14 text-center font-mono font-extrabold text-sm text-primary focus:outline-none py-1 bg-transparent"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUpdateQuantity(item.product.id, 1)}
+                                    className="p-1.5 text-slate-500 hover:bg-slate-100 active:bg-slate-200 transition-colors"
+                                    title="زيادة"
+                                  >
+                                    <Plus size={13} />
+                                  </button>
+                                </div>
+                              </td>
+                              <td className="p-3 text-center font-mono text-slate-700">
+                                {item.costPrice > 0 ? `${item.costPrice.toFixed(2)} ${settings.currency}` : '-'}
+                              </td>
+                              <td className="p-3 text-left font-mono font-bold text-slate-900">
+                                {item.costPrice > 0 ? `${item.totalCost.toFixed(2)} ${settings.currency}` : '-'}
+                              </td>
+                              <td className="p-3 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveFromPurchaseOrder(item.product.id)}
+                                  className="w-7 h-7 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 flex items-center justify-center transition-colors"
+                                  title="حذف هذا الصنف من أمر الشراء"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr className="bg-slate-50 text-slate-800 font-bold border-t border-slate-200">
+                            <td colSpan={4} className="p-3 text-right">
+                              مجموع طلبية ({group.supplierName}):
+                            </td>
+                            <td className="p-3 text-center font-mono font-extrabold text-primary">
+                              {group.totalUnits} قطعة
+                            </td>
+                            <td className="p-3 text-center text-slate-400">-</td>
+                            <td className="p-3 text-left font-mono font-extrabold text-slate-900">
+                              {group.totalCost > 0 ? `${group.totalCost.toFixed(2)} ${settings.currency}` : '-'}
+                            </td>
+                            <td></td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-white border-t border-slate-200 flex flex-wrap items-center justify-between gap-3">
+              <div className="text-xs text-slate-500 flex items-center gap-1.5">
+                <span className="text-amber-500 font-bold">💡 ملاحظة:</span>
+                <span>
+                  الكميات المقترحة مبنية على معادلة (حد الطلب × 2) مع إمكانية تعديل الكمية لأي صنف يدوياً.
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowPurchaseOrderModal(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
+                >
+                  إغلاق
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handlePrintPurchaseOrder()}
+                  disabled={purchaseOrderGroups.length === 0}
+                  className="bg-primary hover:bg-primary-dark text-white px-5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md transition-all disabled:opacity-50"
+                >
+                  <Printer size={15} />
+                  <span>طباعة أمر الشراء كاملاً (A4)</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

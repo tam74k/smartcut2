@@ -3303,6 +3303,7 @@ export default function App() {
           activeBranchId={activeBranchId}
           branches={branches}
           employees={branchEmployees}
+          suppliers={suppliers}
           currentUser={currentUser}
           onNavigateScreen={(screen) => setActiveTab(screen)}
         />
