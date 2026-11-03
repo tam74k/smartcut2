@@ -2413,16 +2413,26 @@ export const DB = {
       const rawClientId = b.clientId || b.customerId || (b as any).client_id;
       const safeClientId = (rawClientId && UUID_REGEX.test(rawClientId)) ? rawClientId : null;
 
+      // Safe date: PostgreSQL bookings.date is DATE NOT NULL.
+      // For postponed bookings or bookings without an explicit date, fall back to creation date or today's date in DB.
+      const fallbackDate = (b.createdAt && typeof b.createdAt === 'string') 
+        ? b.createdAt.slice(0, 10) 
+        : new Date().toISOString().split('T')[0];
+
       const safeDate = (b.date && typeof b.date === 'string' && b.date.trim()) 
         ? b.date.split('T')[0].trim() 
-        : (b.status === 'postponed' ? null : (b.date || new Date().toISOString().split('T')[0]));
+        : fallbackDate;
       const rawTime = b.time || b.startTime || '10:00';
       const safeTime = String(rawTime).includes('T')
         ? (String(rawTime).split('T')[1]?.slice(0, 5) || '10:00')
         : (String(rawTime).slice(0, 8) || '10:00');
 
+      const isPostponed = b.status === 'postponed' || 
+        (typeof b.internalNotes === 'string' && b.internalNotes.includes('[STATUS:POSTPONED]')) ||
+        (typeof b.notes === 'string' && b.notes.includes('[STATUS:POSTPONED]'));
+
       const allowedStatuses = ['pending', 'confirmed', 'completed', 'cancelled', 'no_show', 'postponed'];
-      const safeStatus = allowedStatuses.includes(b.status) ? b.status : 'confirmed';
+      const safeStatus = isPostponed ? 'postponed' : (allowedStatuses.includes(b.status) ? b.status : 'confirmed');
 
       let cleanAdvances = b.advancePayments || b.advance_payments || [];
       if (typeof cleanAdvances === 'string') {
@@ -2435,6 +2445,20 @@ export const DB = {
         try { cleanServices = JSON.parse(cleanServices); } catch { cleanServices = []; }
       }
       if (!Array.isArray(cleanServices)) cleanServices = [];
+
+      let safeInternalNotes = b.internalNotes || (b as any).internal_notes || '';
+      let safeNotes = b.notes || '';
+      if (isPostponed) {
+        if (!safeInternalNotes.includes('[STATUS:POSTPONED]')) {
+          safeInternalNotes = `${safeInternalNotes} [STATUS:POSTPONED]`.trim();
+        }
+        if (!safeNotes.includes('[STATUS:POSTPONED]')) {
+          safeNotes = `${safeNotes} [STATUS:POSTPONED]`.trim();
+        }
+      } else {
+        safeInternalNotes = safeInternalNotes.replace(/\[STATUS:POSTPONED\]/g, '').trim();
+        safeNotes = safeNotes.replace(/\[STATUS:POSTPONED\]/g, '').trim();
+      }
 
       const snap: any = {
         id: b.id || ('B-' + Math.random().toString(36).substring(2, 9).toUpperCase()),
@@ -2453,7 +2477,7 @@ export const DB = {
         time: safeTime,
         status: safeStatus,
         advance_payments: cleanAdvances,
-        notes: b.notes || null,
+        notes: safeNotes || null,
         created_at: b.createdAt || b.created_at || new Date().toISOString()
       };
 
@@ -2464,7 +2488,7 @@ export const DB = {
       if (safeSrvName) snap.service_name = safeSrvName;
       if (b.queueNumber !== undefined && b.queueNumber !== null) snap.queue_number = b.queueNumber;
       if (b.location) snap.location = b.location;
-      if (b.internalNotes) snap.internal_notes = b.internalNotes;
+      if (safeInternalNotes) snap.internal_notes = safeInternalNotes;
       if (b.isPaid !== undefined) snap.is_paid = Boolean(b.isPaid);
       if (b.invoiceId) snap.invoice_id = b.invoiceId;
       if (b.discountType) snap.discount_type = b.discountType;
@@ -2582,9 +2606,17 @@ export const DB = {
         if (pruned) continue;
 
         // 4. Check constraint violation on source or status
-        if (errMsg.includes('source') || errMsg.includes('check constraint')) {
-          snap.source = 'pos';
-          snap.status = 'confirmed';
+        if (errMsg.includes('source') || errMsg.includes('check constraint') || errMsg.includes('bookings_status_check') || error.code === '23514') {
+          if (snap.source && !['pos', 'online', 'phone'].includes(snap.source)) {
+            snap.source = 'pos';
+          }
+          if (snap.status === 'postponed') {
+            // Postgres has a check constraint restricting status to ('pending', 'confirmed', 'completed', 'cancelled', 'no_show')
+            // Fall back to 'pending' in column while [STATUS:POSTPONED] marker is retained in notes & internal_notes
+            snap.status = 'pending';
+          } else {
+            snap.status = 'confirmed';
+          }
           continue;
         }
 
@@ -2602,9 +2634,10 @@ export const DB = {
           source: 'pos',
           services: snap.services || [],
           total_amount: snap.total_amount || 0,
-          date: snap.date,
+          date: snap.date || new Date().toISOString().split('T')[0],
           time: snap.time || '10:00',
-          status: 'confirmed',
+          status: snap.status === 'postponed' ? 'pending' : (snap.status || 'confirmed'),
+          notes: snap.notes || null,
           advance_payments: snap.advance_payments || []
         };
         const minRetry = await client.from('bookings').upsert(minimalSnap, { onConflict: 'id' });
@@ -5488,6 +5521,14 @@ export function dbBookingToApp(row: any): any {
     }
   }
 
+  const rawStatus = (c.status || row.status || 'pending').toString().toLowerCase();
+  const rawNotes = (c.notes || row.notes || '').toString();
+  const rawInternalNotes = (c.internalNotes || row.internal_notes || row.internalNotes || '').toString();
+  const combinedNotes = `${rawNotes} ${rawInternalNotes}`;
+  const isPostponedTagged = combinedNotes.includes('[STATUS:POSTPONED]');
+  const isPostponed = rawStatus === 'postponed' || (isPostponedTagged && rawStatus !== 'completed' && rawStatus !== 'cancelled');
+  const effectiveStatus = isPostponed ? 'postponed' : (rawStatus || 'pending');
+
   return {
     ...c,
     id: c.id || row.id,
@@ -5499,12 +5540,15 @@ export function dbBookingToApp(row: any): any {
     customerEmail: c.customerEmail || row.customer_email || '',
     date,
     time,
-    status: c.status || row.status || 'pending',
+    status: effectiveStatus,
     advancePayments,
     services,
     totalAmount: Number(c.totalAmount ?? row.total_amount ?? c.totalPrice ?? row.total_price ?? 0),
-    notes: c.notes || row.notes || '',
-    internalNotes: c.internalNotes || row.internal_notes || row.internalNotes || '',
+    notes: rawNotes,
+    internalNotes: rawInternalNotes,
+    postponedAt: c.postponedAt || row.postponed_at || (effectiveStatus === 'postponed' ? (c.updatedAt || row.updated_at || c.createdAt || row.created_at) : undefined),
+    postponedBy: c.postponedBy || row.postponed_by || undefined,
+    postponedReason: c.postponedReason || row.postponed_reason || undefined,
     source: c.source || row.source || 'pos',
     bookingCode: c.bookingCode || row.booking_code || '',
     queueNumber: c.queueNumber || row.queue_number || undefined,

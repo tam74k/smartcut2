@@ -6,7 +6,7 @@ import {
 } from '../types';
 import { 
   Calendar as CalendarIcon, Plus, Printer, Edit2, X, ShoppingCart, 
-  Search, ChevronRight, ChevronLeft, Clock, User, Phone, 
+  Search, ChevronRight, ChevronLeft, ChevronsRight, ChevronsLeft, Clock, User, Phone, 
   Scissors, CheckCircle2, AlertCircle, Sparkles, Filter, 
   List, Grid3X3, Eye, CalendarDays, ArrowRight, Sliders, 
   CalendarOff, ShieldAlert, Trash2, Lock, ShieldCheck, Check,
@@ -348,6 +348,15 @@ export function BookingsScreen({
   // Table List Filters
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+
+  // Table List Pagination State
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(15);
+
+  // Reset pagination to page 1 on filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, statusFilter, selectedTech, dateFrom, dateTo, activeBranchId]);
 
   // Modals & Details State
   const [showAddModal, setShowAddModal] = useState(false);
@@ -886,6 +895,32 @@ export function BookingsScreen({
     });
   }, [bookings, dateFrom, dateTo, statusFilter, selectedTech, searchQuery, activeBranchId, isMainBranch]);
 
+  // Bookings Directory Table Pagination calculations
+  const totalBookingsCount = tableFilteredBookings.length;
+  const totalPages = Math.max(1, Math.ceil(totalBookingsCount / pageSize));
+  const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
+  const startIndex = (safeCurrentPage - 1) * pageSize;
+  const endIndex = Math.min(startIndex + pageSize, totalBookingsCount);
+  const paginatedBookings = useMemo(() => {
+    return tableFilteredBookings.slice(startIndex, endIndex);
+  }, [tableFilteredBookings, startIndex, endIndex]);
+
+  const getPageNumbers = () => {
+    const pages: (number | string)[] = [];
+    if (totalPages <= 7) {
+      for (let i = 1; i <= totalPages; i++) pages.push(i);
+    } else {
+      pages.push(1);
+      if (safeCurrentPage > 3) pages.push('...');
+      const start = Math.max(2, safeCurrentPage - 1);
+      const end = Math.min(totalPages - 1, safeCurrentPage + 1);
+      for (let i = start; i <= end; i++) pages.push(i);
+      if (safeCurrentPage < totalPages - 2) pages.push('...');
+      pages.push(totalPages);
+    }
+    return pages;
+  };
+
   // Filtered Bookings for Calendar View
   const calendarFilteredBookings = useMemo(() => {
     return bookings.filter(b => {
@@ -1393,6 +1428,21 @@ export function BookingsScreen({
     const effectiveSource = editingBooking?.source || (newBooking as any)?.source || 'pos';
     const effectiveSalonId = settings.salonId || editingBooking?.salonId || (editingBooking as any)?.salon_id || undefined;
 
+    let finalInternalNotes = (newBooking.internalNotes !== undefined ? newBooking.internalNotes : (editingBooking?.internalNotes || '')).trim();
+    let finalNotes = (newBooking.notes !== undefined ? newBooking.notes : (editingBooking?.notes || '')).trim();
+
+    if (isPostponed) {
+      if (!finalInternalNotes.includes('[STATUS:POSTPONED]')) {
+        finalInternalNotes = `${finalInternalNotes} [STATUS:POSTPONED]`.trim();
+      }
+      if (!finalNotes.includes('[STATUS:POSTPONED]')) {
+        finalNotes = `${finalNotes} [STATUS:POSTPONED]`.trim();
+      }
+    } else {
+      finalInternalNotes = finalInternalNotes.replace(/\[STATUS:POSTPONED\]/g, '').trim();
+      finalNotes = finalNotes.replace(/\[STATUS:POSTPONED\]/g, '').trim();
+    }
+
     const booking: Booking = {
       ...(editingBooking ? editingBooking : {}),
       id: editingBooking ? editingBooking.id : 'B-' + Math.random().toString(36).substr(2, 9).toUpperCase(),
@@ -1404,7 +1454,7 @@ export function BookingsScreen({
       clientName: newBooking.clientName!,
       phone: newBooking.phone!,
       date: effectiveBookingDate,
-      time: newBooking.time!,
+      time: newBooking.time || editingBooking?.time || '10:00',
       status: newBooking.status || editingBooking?.status || 'confirmed',
       postponedAt: (newBooking.status === 'postponed' || (!newBooking.status && editingBooking?.status === 'postponed'))
         ? (editingBooking?.postponedAt || new Date().toISOString())
@@ -1413,8 +1463,8 @@ export function BookingsScreen({
         ? (editingBooking?.postponedBy || currentUserName)
         : undefined,
       location: newBooking.location?.trim() || undefined,
-      notes: newBooking.notes?.trim() || undefined,
-      internalNotes: newBooking.internalNotes?.trim() || undefined,
+      notes: finalNotes || undefined,
+      internalNotes: finalInternalNotes || undefined,
       services: finalServices,
       advancePayments: (newBooking.advancePayments || []).map((a, idx) => ({
         ...a,
@@ -2099,11 +2149,22 @@ export function BookingsScreen({
     const currentUserName = currentUser?.name || 'المستخدم';
     const currentUserId = currentUser?.id;
 
+    let pInternalNotes = (b.internalNotes || '').toString();
+    if (!pInternalNotes.includes('[STATUS:POSTPONED]')) {
+      pInternalNotes = `${pInternalNotes} [STATUS:POSTPONED]`.trim();
+    }
+    let pNotes = (b.notes || '').toString();
+    if (!pNotes.includes('[STATUS:POSTPONED]')) {
+      pNotes = `${pNotes} [STATUS:POSTPONED]`.trim();
+    }
+
     const updatedData: Partial<Booking> = {
       status: 'postponed',
       postponedAt: nowIso,
       postponedBy: currentUserName,
       postponedReason: reason || 'تأجيل لموعد مفتوح',
+      internalNotes: pInternalNotes,
+      notes: pNotes,
       updatedAt: nowIso,
       updatedBy: currentUserId,
       updatedByName: currentUserName,
@@ -2149,9 +2210,11 @@ export function BookingsScreen({
     }
 
     const newNote = `[تم تفعيل الحجز وتحديد موعد جديد: ${rescheduleDate} الساعة ${rescheduleTime}]${rescheduleNotes ? ' - ' + rescheduleNotes : ''}`;
-    const combinedInternalNotes = rescheduleBookingTarget.internalNotes 
+    let combinedInternalNotes = rescheduleBookingTarget.internalNotes 
       ? `${rescheduleBookingTarget.internalNotes}\n${newNote}`
       : newNote;
+    combinedInternalNotes = combinedInternalNotes.replace(/\[STATUS:POSTPONED\]/g, '').trim();
+    const cleanedNotes = (rescheduleBookingTarget.notes || '').replace(/\[STATUS:POSTPONED\]/g, '').trim();
 
     const updatedData: Partial<Booking> = {
       date: rescheduleDate,
@@ -2161,7 +2224,8 @@ export function BookingsScreen({
       updatedAt: nowIso,
       updatedBy: currentUserId,
       updatedByName: currentUserName,
-      internalNotes: combinedInternalNotes
+      internalNotes: combinedInternalNotes,
+      notes: cleanedNotes || undefined
     };
 
     const updatedBooking: Booking = { ...rescheduleBookingTarget, ...updatedData, _localEditedAt: Date.now() };
@@ -2534,6 +2598,133 @@ export function BookingsScreen({
             </div>
           </div>
 
+          {/* Top Horizontal Pagination & Controls Bar (أعلى الجدول) */}
+          <div className="bg-white p-3.5 sm:p-4 rounded-3xl shadow-xs border border-slate-200 flex flex-col md:flex-row items-center justify-between gap-3">
+            {/* Right side (RTL): Count summary & Page Size selector */}
+            <div className="flex flex-wrap items-center gap-3 w-full md:w-auto justify-between md:justify-start">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-500">
+                  عرض <span className="font-extrabold text-slate-900">{totalBookingsCount === 0 ? 0 : startIndex + 1} - {endIndex}</span> من أصل <span className="font-extrabold text-indigo-600">{totalBookingsCount}</span> حجز
+                </span>
+                {totalPages > 1 && (
+                  <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-black px-2 py-0.5 rounded-full shadow-2xs">
+                    صفحة {safeCurrentPage} من {totalPages}
+                  </span>
+                )}
+              </div>
+
+              {/* Page size dropdown */}
+              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-600">
+                <span className="text-[11px] text-slate-400">عدد الحجوزات:</span>
+                <select
+                  value={pageSize}
+                  onChange={e => {
+                    setPageSize(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  className="bg-slate-50 border border-slate-200 hover:border-slate-300 rounded-xl px-2.5 py-1 text-xs font-black text-slate-800 outline-none focus:border-indigo-600 cursor-pointer transition-colors"
+                >
+                  <option value={10}>10 لكل صفحة</option>
+                  <option value={15}>15 لكل صفحة</option>
+                  <option value={25}>25 لكل صفحة</option>
+                  <option value={50}>50 لكل صفحة</option>
+                  <option value={100}>100 لكل صفحة</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Left side (RTL): Horizontal Navigation Buttons (أزرار التنقل الأفقي) */}
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1 w-full md:w-auto justify-center md:justify-end overflow-x-auto py-1">
+                {/* First Page */}
+                <button
+                  onClick={() => setCurrentPage(1)}
+                  disabled={safeCurrentPage === 1}
+                  className={`p-2 rounded-xl border flex items-center justify-center transition-all ${
+                    safeCurrentPage === 1 
+                      ? 'opacity-40 cursor-not-allowed border-slate-200 text-slate-400 bg-slate-50' 
+                      : 'border-slate-200 text-slate-700 bg-white hover:bg-slate-100 hover:border-slate-300 cursor-pointer shadow-2xs'
+                  }`}
+                  title="الصفحة الأولى"
+                >
+                  <ChevronsRight size={15} />
+                </button>
+
+                {/* Previous Page */}
+                <button
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={safeCurrentPage === 1}
+                  className={`px-3 py-1.5 rounded-xl border flex items-center gap-1 text-xs font-bold transition-all ${
+                    safeCurrentPage === 1 
+                      ? 'opacity-40 cursor-not-allowed border-slate-200 text-slate-400 bg-slate-50' 
+                      : 'border-slate-200 text-slate-700 bg-white hover:bg-slate-100 hover:border-slate-300 cursor-pointer shadow-2xs'
+                  }`}
+                  title="الصفحة السابقة"
+                >
+                  <ChevronRight size={15} />
+                  <span className="hidden sm:inline">السابق</span>
+                </button>
+
+                {/* Numbered Page Buttons */}
+                <div className="flex items-center gap-1 px-1">
+                  {getPageNumbers().map((p, idx) => {
+                    if (p === '...') {
+                      return (
+                        <span key={`dots-top-${idx}`} className="px-2 py-1 text-slate-400 font-bold text-xs select-none">
+                          ...
+                        </span>
+                      );
+                    }
+                    const pageNum = p as number;
+                    const isActive = pageNum === safeCurrentPage;
+                    return (
+                      <button
+                        key={`page-top-${pageNum}`}
+                        onClick={() => setCurrentPage(pageNum)}
+                        className={`min-w-[34px] h-[34px] rounded-xl text-xs font-black transition-all flex items-center justify-center ${
+                          isActive
+                            ? 'bg-indigo-600 text-white shadow-xs scale-105'
+                            : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 hover:border-slate-300 cursor-pointer'
+                        }`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Next Page */}
+                <button
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={safeCurrentPage === totalPages}
+                  className={`px-3 py-1.5 rounded-xl border flex items-center gap-1 text-xs font-bold transition-all ${
+                    safeCurrentPage === totalPages 
+                      ? 'opacity-40 cursor-not-allowed border-slate-200 text-slate-400 bg-slate-50' 
+                      : 'border-slate-200 text-slate-700 bg-white hover:bg-slate-100 hover:border-slate-300 cursor-pointer shadow-2xs'
+                  }`}
+                  title="الصفحة التالية"
+                >
+                  <span className="hidden sm:inline">التالي</span>
+                  <ChevronLeft size={15} />
+                </button>
+
+                {/* Last Page */}
+                <button
+                  onClick={() => setCurrentPage(totalPages)}
+                  disabled={safeCurrentPage === totalPages}
+                  className={`p-2 rounded-xl border flex items-center justify-center transition-all ${
+                    safeCurrentPage === totalPages 
+                      ? 'opacity-40 cursor-not-allowed border-slate-200 text-slate-400 bg-slate-50' 
+                      : 'border-slate-200 text-slate-700 bg-white hover:bg-slate-100 hover:border-slate-300 cursor-pointer shadow-2xs'
+                  }`}
+                  title="الصفحة الأخيرة"
+                >
+                  <ChevronsLeft size={15} />
+                </button>
+              </div>
+            )}
+          </div>
+
           {/* Bookings Directory Table */}
           <div className="bg-white rounded-3xl shadow-xs border border-slate-200 overflow-hidden">
             <div className="overflow-x-auto">
@@ -2553,14 +2744,14 @@ export function BookingsScreen({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {tableFilteredBookings.length === 0 ? (
+                  {paginatedBookings.length === 0 ? (
                     <tr>
                       <td colSpan={10} className="p-12 text-center text-slate-400 font-bold">
                         لا توجد أي حجوزات تطابق البحث في هذه الفترة
                       </td>
                     </tr>
                   ) : (
-                    tableFilteredBookings.map(b => {
+                    paginatedBookings.map(b => {
                       const badge = getStatusBadge(b.status);
                       return (
                         <tr key={b.id} className="hover:bg-slate-50 transition-colors">
@@ -2743,6 +2934,60 @@ export function BookingsScreen({
                 </tbody>
               </table>
             </div>
+
+            {/* Bottom Horizontal Pagination Bar */}
+            {totalPages > 1 && (
+              <div className="bg-slate-50 border-t border-slate-200 p-3 sm:p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <span className="text-xs font-bold text-slate-500">
+                  عرض {totalBookingsCount === 0 ? 0 : startIndex + 1} - {endIndex} من أصل {totalBookingsCount} حجز
+                </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setCurrentPage(1)}
+                    disabled={safeCurrentPage === 1}
+                    className={`p-1.5 rounded-xl border transition-all ${
+                      safeCurrentPage === 1 ? 'opacity-40 cursor-not-allowed text-slate-400 border-slate-200' : 'bg-white text-slate-700 hover:bg-slate-100 border-slate-200 cursor-pointer shadow-2xs'
+                    }`}
+                    title="الصفحة الأولى"
+                  >
+                    <ChevronsRight size={14} />
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    disabled={safeCurrentPage === 1}
+                    className={`px-2.5 py-1 rounded-xl border text-xs font-bold transition-all flex items-center gap-1 ${
+                      safeCurrentPage === 1 ? 'opacity-40 cursor-not-allowed text-slate-400 border-slate-200' : 'bg-white text-slate-700 hover:bg-slate-100 border-slate-200 cursor-pointer shadow-2xs'
+                    }`}
+                  >
+                    <ChevronRight size={14} />
+                    <span>السابق</span>
+                  </button>
+                  <span className="text-xs font-black text-indigo-700 bg-indigo-50 border border-indigo-200 px-3 py-1 rounded-xl">
+                    {safeCurrentPage} / {totalPages}
+                  </span>
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                    disabled={safeCurrentPage === totalPages}
+                    className={`px-2.5 py-1 rounded-xl border text-xs font-bold transition-all flex items-center gap-1 ${
+                      safeCurrentPage === totalPages ? 'opacity-40 cursor-not-allowed text-slate-400 border-slate-200' : 'bg-white text-slate-700 hover:bg-slate-100 border-slate-200 cursor-pointer shadow-2xs'
+                    }`}
+                  >
+                    <span>التالي</span>
+                    <ChevronLeft size={14} />
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage(totalPages)}
+                    disabled={safeCurrentPage === totalPages}
+                    className={`p-1.5 rounded-xl border transition-all ${
+                      safeCurrentPage === totalPages ? 'opacity-40 cursor-not-allowed text-slate-400 border-slate-200' : 'bg-white text-slate-700 hover:bg-slate-100 border-slate-200 cursor-pointer shadow-2xs'
+                    }`}
+                    title="الصفحة الأخيرة"
+                  >
+                    <ChevronsLeft size={14} />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
