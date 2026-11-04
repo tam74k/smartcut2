@@ -140,7 +140,7 @@ export function BookingReceiptModal({ booking, settings, onClose, onPrint }: Boo
             </div>
 
             {/* Info list on single lines */}
-            <div className="space-y-0.5 text-[11px] font-bold text-black border-y border-dashed border-black py-1 leading-tight">
+            <div className="space-y-0.5 text-[11px] font-bold text-black border-y border-solid border-black py-1 leading-tight">
               <div className="flex justify-between gap-2 whitespace-nowrap">
                 <span className="truncate">العميل: {booking.clientName}</span>
                 <span>التاريخ: {booking.date}</span>
@@ -162,7 +162,7 @@ export function BookingReceiptModal({ booking, settings, onClose, onPrint }: Boo
                 <span>البند (خدمة / منتج)</span>
                 <span>السعر</span>
               </div>
-              <div className="divide-y divide-dotted divide-black">
+              <div className="divide-y divide-solid divide-black">
                 {servicesList.map(s => {
                   const isProd = s.type === 'product';
                   const qty = Math.max(1, Number(s.quantity) || 1);
@@ -194,7 +194,7 @@ export function BookingReceiptModal({ booking, settings, onClose, onPrint }: Boo
             </div>
 
             {/* Totals Section */}
-            <div className="border-t border-dashed border-black pt-1 space-y-0.5 text-[11px] font-bold text-black leading-tight">
+            <div className="border-t border-solid border-black pt-1 space-y-0.5 text-[11px] font-bold text-black leading-tight">
               {totalDiscounts > 0 && (
                 <div className="flex justify-between whitespace-nowrap">
                   <span>إجمالي البنود:</span>
@@ -213,7 +213,7 @@ export function BookingReceiptModal({ booking, settings, onClose, onPrint }: Boo
                   <span className="font-mono">-{generalDiscount.toFixed(2)} {settings.currency}</span>
                 </div>
               )}
-              <div className="flex justify-between font-bold text-black border-y border-dashed border-black py-0.5 whitespace-nowrap">
+              <div className="flex justify-between font-bold text-black border-y border-solid border-black py-0.5 whitespace-nowrap">
                 <span>الصافي الإجمالي:</span>
                 <span className="font-mono">{netTotal.toFixed(2)} {settings.currency}</span>
               </div>
@@ -241,21 +241,21 @@ export function BookingReceiptModal({ booking, settings, onClose, onPrint }: Boo
             </div>
 
             {/* Creation date & time on single line */}
-            <div className="flex justify-between border-t border-dashed border-black pt-1 mt-1 text-[10px] font-bold text-black whitespace-nowrap">
+            <div className="flex justify-between border-t border-solid border-black pt-1 mt-1 text-[10px] font-bold text-black whitespace-nowrap">
               <span>تاريخ ووقت إنشاء الحجز:</span>
               <span className="font-mono">{createdDateTimeStr}</span>
             </div>
 
             {/* Salon Notes */}
             {settings.bookingNotes && (
-              <div className="p-1 border border-dashed border-black text-center text-[10px] font-bold whitespace-pre-wrap text-black">
+              <div className="p-1 border border-solid border-black text-center text-[10px] font-bold whitespace-pre-wrap text-black">
                 {settings.bookingNotes}
               </div>
             )}
 
             {/* Multi-line address & contact phones directly beneath */}
             {(cleanAddress || settings.phone) && (
-              <div className="pt-1 border-t border-dashed border-black text-center text-[10px] font-bold text-black space-y-0.5">
+              <div className="pt-1 border-t border-solid border-black text-center text-[10px] font-bold text-black space-y-0.5">
                 {cleanAddress && (
                   <div className="break-words leading-tight">
                     العنوان: {cleanAddress}

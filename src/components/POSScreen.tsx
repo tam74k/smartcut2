@@ -99,13 +99,13 @@ function buildReceiptHtml(completedInvoice: Invoice, settings: AppSettings): str
             ${generateBarcodeSvgString(completedInvoice.id, { height: 32, width: 1.3, fontSize: 10 })}
           </div>
         ` : ''}
-        <div style="border-bottom: 1px dashed #000; margin: 12px 0;"></div>
+        <div style="border-bottom: 1px solid #000; margin: 12px 0;"></div>
         <p style="font-size: 13px; margin: 0;">رقم الفاتورة: ${completedInvoice.id}</p>
         <p style="font-size: 13px; margin: 0;">التاريخ: ${formatInvoiceDateTimeDisplay(completedInvoice.date, 'ar-SA')}</p>
         ${completedInvoice.clientName ? `<p style="font-size: 13px; margin: 5px 0 0 0;">العميل: ${completedInvoice.clientName}</p>` : ''}
       </div>
       
-      <div style="border-bottom: 1px dashed #000; margin: 10px 0;"></div>
+      <div style="border-bottom: 1px solid #000; margin: 10px 0;"></div>
       
       <table style="width: 100%; font-size: 13px; text-align: right; border-collapse: collapse;">
         <thead>
@@ -117,7 +117,7 @@ function buildReceiptHtml(completedInvoice: Invoice, settings: AppSettings): str
         </thead>
         <tbody>
           ${items.map(item => `
-            <tr style="border-bottom: 1px dotted #ccc;">
+            <tr style="border-bottom: 1px solid #000;">
               <td style="padding: 8px 0;">
                 <div style="font-weight: bold;">${item.serviceName}</div>
                 ${(item as any).discount > 0 ? `<div style="font-size: 10px; color: #b91c1c; font-weight: bold;">(خصم: -${Number((item as any).discount).toFixed(2)})</div>` : ''}
@@ -130,7 +130,7 @@ function buildReceiptHtml(completedInvoice: Invoice, settings: AppSettings): str
         </tbody>
       </table>
       
-      <div style="border-bottom: 1px dashed #000; margin: 10px 0;"></div>
+      <div style="border-bottom: 1px solid #000; margin: 10px 0;"></div>
       
       <div style="font-size: 14px; line-height: 1.8;">
         <div style="display: flex; justify-content: space-between;">
@@ -154,7 +154,7 @@ function buildReceiptHtml(completedInvoice: Invoice, settings: AppSettings): str
           </div>
         ` : ''}
         ${advAmt > 0 ? `
-          <div style="margin: 4px 0; padding: 4px 0; border-top: 1px dotted #a7f3d0; border-bottom: 1px dotted #a7f3d0;">
+          <div style="margin: 4px 0; padding: 4px 0; border-top: 1px solid #000; border-bottom: 1px solid #000;">
             <div style="display: flex; justify-content: space-between; color: #059669; font-weight: bold;">
               <span>المدفوع مقدماً (عربون الحجز):</span>
               <span>- ${advAmt.toFixed(2)}</span>
@@ -176,7 +176,7 @@ function buildReceiptHtml(completedInvoice: Invoice, settings: AppSettings): str
           <span>${Number(completedInvoice.total).toFixed(2)} ${settings.currency}</span>
         </div>
         ${completedInvoice.paymentMethods && completedInvoice.paymentMethods.length > 0 ? `
-          <div style="margin-top: 10px; padding-top: 10px; border-top: 1px dashed #ccc; font-size: 12px;">
+          <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #000; font-size: 12px;">
             <div style="font-weight: bold; margin-bottom: 5px;">طرق الدفع:</div>
             ${completedInvoice.paymentMethods.map(pm => `
               <div style="display: flex; justify-content: space-between;">

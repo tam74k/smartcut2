@@ -62,8 +62,12 @@ export function getPrintStyles(paperSize: '80mm' | '58mm' | 'a4' = '80mm', isLan
     .text-2xl { font-size: 22px !important; }
     .border-b { border-bottom: 1px solid #000 !important; }
     .border-t { border-top: 1px solid #000 !important; }
+    .border-y { border-top: 1px solid #000 !important; border-bottom: 1px solid #000 !important; }
     .border-black { border-color: #000 !important; }
-    .border-dashed { border-style: dashed !important; }
+    .border-dashed { border-style: solid !important; }
+    .border-dotted { border-style: solid !important; }
+    .divide-dotted > * + * { border-style: solid !important; border-color: #000 !important; }
+    .divide-dashed > * + * { border-style: solid !important; border-color: #000 !important; }
     .border { border: 1px solid #000 !important; }
     .bg-gray-100, .bg-slate-50, .bg-slate-100 { background-color: #ffffff !important; }
     .bg-emerald-50 { background-color: #ffffff !important; }

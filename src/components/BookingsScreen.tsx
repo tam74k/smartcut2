@@ -1965,7 +1965,7 @@ export function BookingsScreen({
         </div>
 
         <!-- Info List on single lines without booking number -->
-        <div style="border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 4px 0; margin-bottom: 4px; font-size: 11px; font-weight: bold; color: #000; line-height: 1.45;">
+        <div style="border-top: 1px solid #000; border-bottom: 1px solid #000; padding: 4px 0; margin-bottom: 4px; font-size: 11px; font-weight: bold; color: #000; line-height: 1.45;">
           <div style="display: flex; justify-content: space-between; gap: 8px; white-space: nowrap;">
             <span>التاريخ: <span style="font-weight: bold;">${escapeHtml(booking.date)}</span></span>
             <span>الوقت: <span style="font-weight: bold;">${escapeHtml(formatTo12Hour(booking.time))}</span></span>
@@ -1979,7 +1979,7 @@ export function BookingsScreen({
             <span>جوال العميل: <span style="font-family: monospace; font-weight: bold;" dir="ltr">${escapeHtml(booking.phone || booking.clientPhone || '')}</span></span>
           </div>
           ` : ''}
-          <div style="display: flex; justify-content: space-between; gap: 8px; white-space: nowrap; border-top: 1px dotted #ccc; margin-top: 2px; padding-top: 2px;">
+          <div style="display: flex; justify-content: space-between; gap: 8px; white-space: nowrap; border-top: 1px solid #000; margin-top: 2px; padding-top: 2px;">
             <span>منفذ العملية (الموظف):</span>
             <span style="font-weight: bold;">${escapeHtml(booking.createdByName || (booking as any).created_by_name || booking.createdBy || currentUser?.name || (currentUser as any)?.username || 'الموظف')}</span>
           </div>
@@ -1997,7 +1997,7 @@ export function BookingsScreen({
             const lineDisc = calculateServiceLineDiscount(s);
             const lineFinal = calculateServiceLinePrice(s);
             return `
-              <div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 0; border-bottom: 1px dotted #000; font-weight: bold; color: #000; white-space: nowrap; gap: 6px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 0; border-bottom: 1px solid #000; font-weight: bold; color: #000; white-space: nowrap; gap: 6px;">
                 <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
                   <span style="font-weight: bold;">${escapeHtml(s.serviceName)}</span>
                   ${qty > 1 ? `<span style="font-weight: bold;"> (×${qty})</span>` : ''}
@@ -2013,7 +2013,7 @@ export function BookingsScreen({
         </div>
 
         <!-- Totals on single lines -->
-        <div style="border-top: 1px dashed #000; padding-top: 3px; margin-bottom: 4px; font-size: 11px; font-weight: bold; color: #000; line-height: 1.4;">
+        <div style="border-top: 1px solid #000; padding-top: 3px; margin-bottom: 4px; font-size: 11px; font-weight: bold; color: #000; line-height: 1.4;">
           ${totals.totalDiscounts > 0 ? `
             <div style="display: flex; justify-content: space-between; white-space: nowrap; margin-bottom: 1px; font-weight: bold; color: #000;">
               <span>إجمالي البنود:</span>
@@ -2035,7 +2035,7 @@ export function BookingsScreen({
             </div>
           ` : ''}
 
-          <div style="display: flex; justify-content: space-between; border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 2px 0; margin: 2px 0; white-space: nowrap; font-size: 11px; font-weight: bold; color: #000;">
+          <div style="display: flex; justify-content: space-between; border-top: 1px solid #000; border-bottom: 1px solid #000; padding: 2px 0; margin: 2px 0; white-space: nowrap; font-size: 11px; font-weight: bold; color: #000;">
             <span>الصافي الإجمالي:</span>
             <span style="font-family: monospace; font-weight: bold;">${totals.netTotal.toFixed(2)} ${escapeHtml(settings.currency)}</span>
           </div>
@@ -2062,19 +2062,19 @@ export function BookingsScreen({
         </div>
 
         <!-- Creation date & time on single line -->
-        <div style="display: flex; justify-content: space-between; border-top: 1px dashed #000; padding-top: 2px; margin-top: 3px; font-size: 10px; font-weight: bold; color: #000; white-space: nowrap;">
+        <div style="display: flex; justify-content: space-between; border-top: 1px solid #000; padding-top: 2px; margin-top: 3px; font-size: 10px; font-weight: bold; color: #000; white-space: nowrap;">
           <span>تاريخ ووقت إنشاء الحجز:</span>
           <span style="font-family: monospace; font-weight: bold;">${createdDateTimeStr}</span>
         </div>
 
         ${settings.bookingNotes ? `
-          <div style="margin-top: 3px; padding: 3px 5px; border: 1px dashed #000; text-align: center; font-size: 10px; font-weight: bold; white-space: pre-wrap; color: #000;">
+          <div style="margin-top: 3px; padding: 3px 5px; border: 1px solid #000; text-align: center; font-size: 10px; font-weight: bold; white-space: pre-wrap; color: #000;">
             ${escapeHtml(settings.bookingNotes)}
           </div>
         ` : ''}
 
         ${(cleanAddress || contactPhones) ? `
-          <div style="margin-top: 4px; padding-top: 3px; border-top: 1px dashed #000; text-align: center; font-size: 10px; font-weight: bold; line-height: 1.35; color: #000;">
+          <div style="margin-top: 4px; padding-top: 3px; border-top: 1px solid #000; text-align: center; font-size: 10px; font-weight: bold; line-height: 1.35; color: #000;">
             ${cleanAddress ? `
               <div style="white-space: normal; word-break: break-word; font-weight: bold; color: #000; margin-bottom: 2px;">
                 العنوان: ${escapeHtml(cleanAddress)}
@@ -6899,7 +6899,7 @@ export function BookingsScreen({
                   </div>
 
                   {/* Info list on single lines without booking number */}
-                  <div className="space-y-0.5 text-[11px] font-bold text-black border-y border-dashed border-black py-1 leading-tight">
+                  <div className="space-y-0.5 text-[11px] font-bold text-black border-y border-solid border-black py-1 leading-tight">
                     <div className="flex justify-between gap-2 whitespace-nowrap">
                       <span>التاريخ: {previewBooking.date}</span>
                       <span>الوقت: {formatTo12Hour(previewBooking.time)}</span>
@@ -6913,7 +6913,7 @@ export function BookingsScreen({
                         <span>جوال العميل: <span className="font-mono font-bold" dir="ltr">{previewBooking.phone || previewBooking.clientPhone}</span></span>
                       </div>
                     )}
-                    <div className="flex justify-between gap-2 whitespace-nowrap border-t border-dotted border-black pt-0.5 mt-0.5">
+                    <div className="flex justify-between gap-2 whitespace-nowrap border-t border-solid border-black pt-0.5 mt-0.5">
                       <span>منفذ العملية (الموظف):</span>
                       <span className="font-bold">{previewBooking.createdByName || (previewBooking as any).created_by_name || previewBooking.createdBy || currentUser?.name || (currentUser as any)?.username || 'الموظف'}</span>
                     </div>
@@ -6925,7 +6925,7 @@ export function BookingsScreen({
                       <span>البند (خدمة / منتج)</span>
                       <span>السعر</span>
                     </div>
-                    <div className="divide-y divide-dotted divide-black">
+                    <div className="divide-y divide-solid divide-black">
                       {previewBooking.services?.map(s => {
                         const isProd = s.type === 'product';
                         const qty = Math.max(1, Number(s.quantity) || 1);
@@ -6957,7 +6957,7 @@ export function BookingsScreen({
                   </div>
 
                   {/* Totals Section */}
-                  <div className="border-t border-dashed border-black pt-1 space-y-0.5 text-[11px] font-bold text-black leading-tight">
+                  <div className="border-t border-solid border-black pt-1 space-y-0.5 text-[11px] font-bold text-black leading-tight">
                     {totals.totalDiscounts > 0 && (
                       <div className="flex justify-between whitespace-nowrap">
                         <span>إجمالي البنود:</span>
@@ -6976,7 +6976,7 @@ export function BookingsScreen({
                         <span className="font-mono font-bold">-{totals.generalDiscount.toFixed(2)} {settings.currency}</span>
                       </div>
                     )}
-                    <div className="flex justify-between font-bold text-black border-y border-dashed border-black py-0.5 whitespace-nowrap">
+                    <div className="flex justify-between font-bold text-black border-y border-solid border-black py-0.5 whitespace-nowrap">
                       <span>الصافي الإجمالي:</span>
                       <span className="font-mono font-bold">{totals.netTotal.toFixed(2)} {settings.currency}</span>
                     </div>
@@ -7005,21 +7005,21 @@ export function BookingsScreen({
                   </div>
 
                   {/* Creation date & time on single line */}
-                  <div className="flex justify-between border-t border-dashed border-black pt-1 mt-1 text-[10px] font-bold text-black whitespace-nowrap">
+                  <div className="flex justify-between border-t border-solid border-black pt-1 mt-1 text-[10px] font-bold text-black whitespace-nowrap">
                     <span>تاريخ ووقت إنشاء الحجز:</span>
                     <span className="font-mono font-bold">{createdDateTimeStr}</span>
                   </div>
 
                   {/* Salon Notes */}
                   {settings.bookingNotes && (
-                    <div className="p-1 border border-dashed border-black text-center text-[10px] font-bold whitespace-pre-wrap text-black">
+                    <div className="p-1 border border-solid border-black text-center text-[10px] font-bold whitespace-pre-wrap text-black">
                       {settings.bookingNotes}
                     </div>
                   )}
 
                   {/* Footer (address on multiple lines & phone numbers below it) */}
                   {(cleanAddress || contactPhones) && (
-                    <div className="pt-1.5 border-t border-dashed border-black text-center text-[10px] font-bold text-black space-y-0.5">
+                    <div className="pt-1.5 border-t border-solid border-black text-center text-[10px] font-bold text-black space-y-0.5">
                       {cleanAddress && (
                         <div className="leading-tight break-words whitespace-normal font-bold text-black">
                           العنوان: {cleanAddress}

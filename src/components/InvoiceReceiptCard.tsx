@@ -415,7 +415,7 @@ export const InvoiceReceiptCard: React.FC<InvoiceReceiptCardProps> = ({
         )}
       </div>
 
-      <div style={{ borderBottom: '1px dashed #000', margin: '6px 0' }}></div>
+      <div style={{ borderBottom: '1px solid #000', margin: '6px 0' }}></div>
 
       {/* 3. Invoice Metadata List (Each on its own line) */}
       <div style={{ fontSize: '10.5px', fontWeight: 'bold', color: '#000', lineHeight: '1.45', marginBottom: '6px' }}>
@@ -447,7 +447,7 @@ export const InvoiceReceiptCard: React.FC<InvoiceReceiptCardProps> = ({
             <span style={{ fontFamily: 'monospace', fontWeight: 'bold', color: '#000' }}>{settings.taxNumber}</span>
           </div>
         )}
-        <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dotted #000', marginTop: '2px', paddingTop: '2px', color: '#000' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #000', marginTop: '2px', paddingTop: '2px', color: '#000' }}>
           <span>منفذ العملية (الكاشير):</span>
           <span style={{ fontWeight: 'bold', color: '#000' }}>{cashierName}</span>
         </div>
@@ -475,7 +475,7 @@ export const InvoiceReceiptCard: React.FC<InvoiceReceiptCardProps> = ({
         )}
       </div>
 
-      <div style={{ borderBottom: '1px dashed #000', margin: '6px 0' }}></div>
+      <div style={{ borderBottom: '1px solid #000', margin: '6px 0' }}></div>
 
       {/* 4. Services & Products Table */}
       <table style={{ width: '100%', fontSize: '10.5px', textAlign: 'right', borderCollapse: 'collapse', color: '#000', margin: '4px 0' }}>
@@ -494,7 +494,7 @@ export const InvoiceReceiptCard: React.FC<InvoiceReceiptCardProps> = ({
             const lineFinal = (Number(item.price) || 0) * qty;
 
             return (
-              <tr key={item.id || idx} style={{ borderBottom: '1px dotted #000', color: '#000' }}>
+              <tr key={item.id || idx} style={{ borderBottom: '1px solid #000', color: '#000' }}>
                 <td style={{ padding: '3px 0', textAlign: 'right', color: '#000' }}>
                   <div style={{ fontWeight: 'bold', color: '#000', lineHeight: '1.25' }}>
                     {item.serviceName}
@@ -527,7 +527,7 @@ export const InvoiceReceiptCard: React.FC<InvoiceReceiptCardProps> = ({
         </tbody>
       </table>
 
-      <div style={{ borderBottom: '1px dashed #000', margin: '6px 0' }}></div>
+      <div style={{ borderBottom: '1px solid #000', margin: '6px 0' }}></div>
 
       {/* 5. Totals Section */}
       <div style={{ fontSize: '10.5px', lineHeight: '1.45', color: '#000', fontWeight: 'bold' }}>
@@ -566,7 +566,7 @@ export const InvoiceReceiptCard: React.FC<InvoiceReceiptCardProps> = ({
         )}
 
         {totals.advanceDeduction > 0 && (
-          <div style={{ margin: '3px 0', padding: '2px 0', borderTop: '1px dotted #000', borderBottom: '1px dotted #000' }}>
+          <div style={{ margin: '3px 0', padding: '2px 0', borderTop: '1px solid #000', borderBottom: '1px solid #000' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', color: '#000', fontWeight: 'bold' }}>
               <span>المدفوع مقدماً (عربون الحجز):</span>
               <span style={{ fontFamily: 'monospace', fontWeight: 'bold', color: '#000' }}>-{totals.advanceDeduction.toFixed(2)} {settings.currency}</span>
@@ -601,7 +601,7 @@ export const InvoiceReceiptCard: React.FC<InvoiceReceiptCardProps> = ({
           marginTop: '4px',
           paddingTop: '3px',
           borderTop: '1.5px solid #000',
-          borderBottom: totals.isDeferred ? '1px dashed #000' : '1.5px solid #000',
+          borderBottom: totals.isDeferred ? '1px solid #000' : '1.5px solid #000',
           paddingBottom: '3px',
           color: '#000'
         }}>
@@ -647,7 +647,7 @@ export const InvoiceReceiptCard: React.FC<InvoiceReceiptCardProps> = ({
 
         {/* طرق السداد */}
         {totals.isFullyDeferred ? (
-          <div style={{ marginTop: '4px', paddingTop: '3px', borderTop: '1px dashed #000', fontSize: '10px', color: '#000' }}>
+          <div style={{ marginTop: '4px', paddingTop: '3px', borderTop: '1px solid #000', fontSize: '10px', color: '#000' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', color: '#000', fontWeight: 'bold' }}>
               <span>طريقة السداد:</span>
               <span>آجل بالكامل (ذمم عملاء)</span>
@@ -661,7 +661,7 @@ export const InvoiceReceiptCard: React.FC<InvoiceReceiptCardProps> = ({
         ) : (
           <>
             {((invoice.paymentMethods && invoice.paymentMethods.length > 0) || totals.isPartiallyDeferred) && (
-              <div style={{ marginTop: '4px', paddingTop: '3px', borderTop: '1px dashed #000', fontSize: '10px', color: '#000' }}>
+              <div style={{ marginTop: '4px', paddingTop: '3px', borderTop: '1px solid #000', fontSize: '10px', color: '#000' }}>
                 <div style={{ fontWeight: 'bold', marginBottom: '2px', color: '#000' }}>
                   {totals.isPartiallyDeferred ? 'طريقة سداد الدفعة المسددة اليوم:' : 'طرق الدفع:'}
                 </div>
@@ -696,7 +696,7 @@ export const InvoiceReceiptCard: React.FC<InvoiceReceiptCardProps> = ({
 
         {/* سجل دفعات سداد الفاتورة في حال وجود دفعات تاريخية */}
         {invoice.paymentsHistory && invoice.paymentsHistory.length > 1 && (
-          <div style={{ marginTop: '4px', paddingTop: '3px', borderTop: '1px dotted #000', fontSize: '9px', color: '#000' }}>
+          <div style={{ marginTop: '4px', paddingTop: '3px', borderTop: '1px solid #000', fontSize: '9px', color: '#000' }}>
             <div style={{ fontWeight: 'bold', marginBottom: '1px' }}>سجل دفعات سداد الفاتورة:</div>
             {invoice.paymentsHistory.map((pmt: any, idx: number) => (
               <div key={pmt.id || idx} style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'monospace' }}>
@@ -721,7 +721,7 @@ export const InvoiceReceiptCard: React.FC<InvoiceReceiptCardProps> = ({
       )}
 
       {/* 7. Footer: Appreciation, address, and phones */}
-      <div style={{ textAlign: 'center', marginTop: '8px', paddingTop: '5px', borderTop: '1px dashed #000', fontSize: '10px', fontWeight: 'bold', color: '#000' }}>
+      <div style={{ textAlign: 'center', marginTop: '8px', paddingTop: '5px', borderTop: '1px solid #000', fontSize: '10px', fontWeight: 'bold', color: '#000' }}>
         <p style={{ margin: '0 0 3px 0', color: '#000' }}>شكراً لزيارتكم!</p>
         {cleanAddress && (
           <p style={{ fontSize: '9.5px', fontWeight: 'bold', margin: '2px 0', color: '#000', whiteSpace: 'normal', wordBreak: 'break-word' }}>

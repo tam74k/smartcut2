@@ -499,32 +499,32 @@ export function ClosingReportReceipt({
       </div>
 
       <div className="mb-4 text-black">
-        <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold text-black">
+        <div className="flex justify-between border-b border-black border-solid pb-1 mb-1 font-bold text-black">
           <span>عدد الفواتير:</span>
           <span className="text-black font-mono">{invoiceCount}</span>
         </div>
-        <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold text-black">
+        <div className="flex justify-between border-b border-black border-solid pb-1 mb-1 font-bold text-black">
           <span>إجمالي مبيعات الفواتير:</span>
           <span className="text-black font-mono">{totalGrossSales.toFixed(2)}</span>
         </div>
         {totalCashbackUsed > 0 && (
-          <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold text-black">
+          <div className="flex justify-between border-b border-black border-solid pb-1 mb-1 font-bold text-black">
             <span>مسدد من الكاش باك:</span>
             <span className="text-black font-mono">{totalCashbackUsed.toFixed(2)}</span>
           </div>
         )}
         {totalDeferredSales > 0 && (
-          <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold text-black">
+          <div className="flex justify-between border-b border-black border-solid pb-1 mb-1 font-bold text-black">
             <span>المبيعات الآجلة (المتبقي الآجل):</span>
             <span className="text-black font-mono">{totalDeferredSales.toFixed(2)}</span>
           </div>
         )}
-        <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold text-black">
+        <div className="flex justify-between border-b border-black border-solid pb-1 mb-1 font-bold text-black">
           <span>المحصل الفعلي بالخزائن (كاش / شبكة):</span>
           <span className="text-black font-mono">{totalCollectedSales.toFixed(2)}</span>
         </div>
         {initialCash > 0 && (
-          <div className="flex justify-between border-b border-black border-dashed pb-1 mb-1 font-bold text-black">
+          <div className="flex justify-between border-b border-black border-solid pb-1 mb-1 font-bold text-black">
             <span>العهدة الافتتاحية:</span>
             <span className="text-black font-mono">{initialCash}</span>
           </div>
@@ -532,8 +532,8 @@ export function ClosingReportReceipt({
       </div>
 
       {attendanceStats && (
-        <div className="mb-4 border-b border-black border-dashed pb-3 text-black">
-          <div className="font-bold text-center border-y border-black border-dashed py-1 mb-2 bg-white text-black">
+        <div className="mb-4 border-b border-black border-solid pb-3 text-black">
+          <div className="font-bold text-center border-y border-black border-solid py-1 mb-2 bg-white text-black">
             ملخص حضور وبصمة الوردية
           </div>
           <div className="space-y-1 text-xs text-black">
@@ -598,7 +598,7 @@ export function ClosingReportReceipt({
 
         if (visibleTreasuries.length === 0) {
           return (
-            <div className="text-center py-4 my-2 border-y border-black border-dashed text-xs text-black font-bold">
+            <div className="text-center py-4 my-2 border-y border-black border-solid text-xs text-black font-bold">
               لا توجد حركات مالية مسجلة بالخزائن خلال هذه الوردية
             </div>
           );
@@ -611,7 +611,7 @@ export function ClosingReportReceipt({
           if (isMain) {
             return (
               <div key={treasury.id} className="mb-6 text-black border-b border-black pb-4">
-                <h3 className="font-bold text-center border-y border-black border-dashed py-1 mb-2 bg-white text-black text-sm">
+                <h3 className="font-bold text-center border-y border-black border-solid py-1 mb-2 bg-white text-black text-sm">
                   {treasury.name} (الخزينة الرئيسية)
                 </h3>
                 
@@ -635,7 +635,7 @@ export function ClosingReportReceipt({
                     </div>
                   )}
 
-                  <div className="flex justify-between font-bold border-t border-black border-dashed pt-1.5 mt-2 text-sm text-black">
+                  <div className="flex justify-between font-bold border-t border-black border-solid pt-1.5 mt-2 text-sm text-black">
                     <span>إجمالي المسحوب من الرئيسية:</span>
                     <span dir="ltr" className="text-black font-mono font-bold">-{stats.transfersOut.toFixed(2)}</span>
                   </div>
@@ -646,7 +646,7 @@ export function ClosingReportReceipt({
 
           return (
             <div key={treasury.id} className="mb-6 text-black border-b border-black pb-4">
-              <h3 className="font-bold text-center border-y border-black border-dashed py-1 mb-2 bg-white text-black text-sm">
+              <h3 className="font-bold text-center border-y border-black border-solid py-1 mb-2 bg-white text-black text-sm">
                 {treasury.name}
               </h3>
               
@@ -719,7 +719,7 @@ export function ClosingReportReceipt({
                   </div>
                 ))}
                 
-                <div className="flex justify-between font-bold border-t border-black border-dashed pt-1.5 mt-2 text-sm text-black">
+                <div className="flex justify-between font-bold border-t border-black border-solid pt-1.5 mt-2 text-sm text-black">
                   <span>الصافي:</span>
                   <span dir="ltr" className={`font-mono font-black ${stats.net >= 0 ? 'text-black' : 'text-rose-700'}`}>
                     {stats.net >= 0 ? `+${stats.net.toFixed(2)}` : `-${Math.abs(stats.net).toFixed(2)}`}
