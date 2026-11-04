@@ -2595,7 +2595,8 @@ export const DB = {
           'internal_notes', 'location', 'queue_number', 'is_paid', 'invoice_id',
           'discount_type', 'discount_value', 'discount_amount',
           'employee_id', 'employee_name', 'service_id', 'service_name', 'branch_code',
-          'start_time', 'end_time', 'timezone'
+          'start_time', 'end_time', 'timezone',
+          'postponed_at', 'postponed_by', 'postponed_reason'
         ];
         for (const col of optionalCols) {
           if (errMsg.includes(col) && snap[col] !== undefined) {
@@ -5526,7 +5527,7 @@ export function dbBookingToApp(row: any): any {
   const rawInternalNotes = (c.internalNotes || row.internal_notes || row.internalNotes || '').toString();
   const combinedNotes = `${rawNotes} ${rawInternalNotes}`;
   const isPostponedTagged = combinedNotes.includes('[STATUS:POSTPONED]');
-  const isPostponed = rawStatus === 'postponed' || (isPostponedTagged && rawStatus !== 'completed' && rawStatus !== 'cancelled');
+  const isPostponed = rawStatus === 'postponed' || isPostponedTagged;
   const effectiveStatus = isPostponed ? 'postponed' : (rawStatus || 'pending');
 
   return {

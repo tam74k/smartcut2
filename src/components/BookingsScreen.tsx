@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   Booking, AppSettings, ServiceItem, Employee, Client, Branch, 
   AppUser, BlockedDateEntry, BlockedHourEntry, StaffUnavailabilityEntry,
@@ -352,6 +352,15 @@ export function BookingsScreen({
   // Table List Pagination State
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(15);
+
+  // Table Container Ref for Horizontal Scrolling (أزرار التنقل الأفقي للجدول)
+  const tableScrollRef = useRef<HTMLDivElement>(null);
+  const scrollTableRight = () => {
+    tableScrollRef.current?.scrollBy({ left: 300, behavior: 'smooth' });
+  };
+  const scrollTableLeft = () => {
+    tableScrollRef.current?.scrollBy({ left: -300, behavior: 'smooth' });
+  };
 
   // Reset pagination to page 1 on filter changes
   useEffect(() => {
@@ -2135,13 +2144,64 @@ export function BookingsScreen({
     }
   };
 
-  // تأجيل الحجز لموعد مفتوح بدون تحديد تاريخ جديد
-  const handlePostponeBooking = async (b: Booking, reason?: string) => {
-    if (b.status === 'completed' || b.status === 'cancelled') {
-      alert('لا يمكن تأجيل حجز مكتمل أو ملغي.');
-      return;
+  // تغيير حالة الحجز مباشرة (بما فيها الحجوزات المكتملة والملغية)
+  const handleQuickStatusChange = async (b: Booking, newStatus: string) => {
+    if (b.status === newStatus) return;
+
+    const nowIso = new Date().toISOString();
+    const currentUserName = currentUser?.name || 'المستخدم';
+    const currentUserId = currentUser?.id;
+    const isPostponed = newStatus === 'postponed';
+
+    let updatedInternalNotes = (b.internalNotes || '').toString();
+    let updatedNotes = (b.notes || '').toString();
+
+    if (isPostponed) {
+      if (!updatedInternalNotes.includes('[STATUS:POSTPONED]')) {
+        updatedInternalNotes = `${updatedInternalNotes} [STATUS:POSTPONED]`.trim();
+      }
+      if (!updatedNotes.includes('[STATUS:POSTPONED]')) {
+        updatedNotes = `${updatedNotes} [STATUS:POSTPONED]`.trim();
+      }
+    } else {
+      updatedInternalNotes = updatedInternalNotes.replace(/\[STATUS:POSTPONED\]/g, '').trim();
+      updatedNotes = updatedNotes.replace(/\[STATUS:POSTPONED\]/g, '').trim();
     }
 
+    const updatedBooking: Booking = {
+      ...b,
+      status: newStatus as any,
+      postponedAt: isPostponed ? (b.postponedAt || nowIso) : (newStatus === 'confirmed' ? undefined : b.postponedAt),
+      postponedBy: isPostponed ? (b.postponedBy || currentUserName) : (newStatus === 'confirmed' ? undefined : b.postponedBy),
+      postponedReason: isPostponed ? (b.postponedReason || 'تأجيل لموعد مفتوح') : b.postponedReason,
+      internalNotes: updatedInternalNotes || undefined,
+      notes: updatedNotes || undefined,
+      updatedAt: nowIso,
+      updatedBy: currentUserId,
+      updatedByName: currentUserName,
+      _localEditedAt: Date.now()
+    };
+
+    setBookings((prev: Booking[]) => prev.map(item => item.id === b.id ? updatedBooking : item));
+
+    try {
+      const stored = localStorage.getItem('smartcut_bookings');
+      if (stored) {
+        const list = JSON.parse(stored);
+        const nextList = list.map((item: any) => item.id === b.id ? updatedBooking : item);
+        localStorage.setItem('smartcut_bookings', JSON.stringify(nextList));
+      }
+    } catch (e) {}
+
+    await DB.saveBooking(updatedBooking, settings.salonId);
+
+    if (selectedBookingDetails?.id === b.id) {
+      setSelectedBookingDetails(updatedBooking);
+    }
+  };
+
+  // تأجيل الحجز لموعد مفتوح بدون تحديد تاريخ جديد (متاح لجميع الحالات بما فيها المكتملة والملغية)
+  const handlePostponeBooking = async (b: Booking, reason?: string) => {
     const confirmMsg = `هل ترغب في تأجيل حجز العميل (${b.clientName}) لموعد مفتوح؟\nسيتم نقل الحجز إلى تبويب (الحجوزات المؤجلة) مع الاحتفاظ بكافة الخدمات والعربون.`;
     if (!window.confirm(confirmMsg)) return;
 
@@ -2599,18 +2659,16 @@ export function BookingsScreen({
           </div>
 
           {/* Top Horizontal Pagination & Controls Bar (أعلى الجدول) */}
-          <div className="bg-white p-3.5 sm:p-4 rounded-3xl shadow-xs border border-slate-200 flex flex-col md:flex-row items-center justify-between gap-3">
-            {/* Right side (RTL): Count summary & Page Size selector */}
-            <div className="flex flex-wrap items-center gap-3 w-full md:w-auto justify-between md:justify-start">
+          <div className="bg-white p-3.5 sm:p-4 rounded-3xl shadow-xs border border-slate-200 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+            {/* Right side (RTL): Count summary, Page Size selector & Horizontal Table Scroll Buttons */}
+            <div className="flex flex-wrap items-center gap-3 justify-between lg:justify-start">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-bold text-slate-500">
                   عرض <span className="font-extrabold text-slate-900">{totalBookingsCount === 0 ? 0 : startIndex + 1} - {endIndex}</span> من أصل <span className="font-extrabold text-indigo-600">{totalBookingsCount}</span> حجز
                 </span>
-                {totalPages > 1 && (
-                  <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-black px-2 py-0.5 rounded-full shadow-2xs">
-                    صفحة {safeCurrentPage} من {totalPages}
-                  </span>
-                )}
+                <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-black px-2 py-0.5 rounded-full shadow-2xs">
+                  صفحة {safeCurrentPage} من {totalPages}
+                </span>
               </div>
 
               {/* Page size dropdown */}
@@ -2624,6 +2682,7 @@ export function BookingsScreen({
                   }}
                   className="bg-slate-50 border border-slate-200 hover:border-slate-300 rounded-xl px-2.5 py-1 text-xs font-black text-slate-800 outline-none focus:border-indigo-600 cursor-pointer transition-colors"
                 >
+                  <option value={5}>5 لكل صفحة</option>
                   <option value={10}>10 لكل صفحة</option>
                   <option value={15}>15 لكل صفحة</option>
                   <option value={25}>25 لكل صفحة</option>
@@ -2631,103 +2690,128 @@ export function BookingsScreen({
                   <option value={100}>100 لكل صفحة</option>
                 </select>
               </div>
-            </div>
 
-            {/* Left side (RTL): Horizontal Navigation Buttons (أزرار التنقل الأفقي) */}
-            {totalPages > 1 && (
-              <div className="flex items-center gap-1 w-full md:w-auto justify-center md:justify-end overflow-x-auto py-1">
-                {/* First Page */}
+              {/* أزرار التمرير والتنقل الأفقي لمحتوى وأعمدة الجدول */}
+              <div className="flex items-center gap-1 bg-slate-50 p-1 rounded-2xl border border-slate-200" title="التنقل والتمرير الأفقي بين أعمدة الجدول">
                 <button
-                  onClick={() => setCurrentPage(1)}
-                  disabled={safeCurrentPage === 1}
-                  className={`p-2 rounded-xl border flex items-center justify-center transition-all ${
-                    safeCurrentPage === 1 
-                      ? 'opacity-40 cursor-not-allowed border-slate-200 text-slate-400 bg-slate-50' 
-                      : 'border-slate-200 text-slate-700 bg-white hover:bg-slate-100 hover:border-slate-300 cursor-pointer shadow-2xs'
-                  }`}
-                  title="الصفحة الأولى"
+                  type="button"
+                  onClick={scrollTableRight}
+                  className="px-2.5 py-1 rounded-xl bg-white hover:bg-indigo-50 hover:text-indigo-600 text-slate-700 text-xs font-bold border border-slate-200 shadow-2xs flex items-center gap-1 cursor-pointer transition-all active:scale-95"
+                  title="تمرير محتوى الجدول لليمين"
                 >
-                  <ChevronsRight size={15} />
+                  <ChevronRight size={14} className="text-indigo-600" />
+                  <span>تمرير يمين</span>
                 </button>
-
-                {/* Previous Page */}
                 <button
-                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                  disabled={safeCurrentPage === 1}
-                  className={`px-3 py-1.5 rounded-xl border flex items-center gap-1 text-xs font-bold transition-all ${
-                    safeCurrentPage === 1 
-                      ? 'opacity-40 cursor-not-allowed border-slate-200 text-slate-400 bg-slate-50' 
-                      : 'border-slate-200 text-slate-700 bg-white hover:bg-slate-100 hover:border-slate-300 cursor-pointer shadow-2xs'
-                  }`}
-                  title="الصفحة السابقة"
+                  type="button"
+                  onClick={scrollTableLeft}
+                  className="px-2.5 py-1 rounded-xl bg-white hover:bg-indigo-50 hover:text-indigo-600 text-slate-700 text-xs font-bold border border-slate-200 shadow-2xs flex items-center gap-1 cursor-pointer transition-all active:scale-95"
+                  title="تمرير محتوى الجدول لليسار"
                 >
-                  <ChevronRight size={15} />
-                  <span className="hidden sm:inline">السابق</span>
-                </button>
-
-                {/* Numbered Page Buttons */}
-                <div className="flex items-center gap-1 px-1">
-                  {getPageNumbers().map((p, idx) => {
-                    if (p === '...') {
-                      return (
-                        <span key={`dots-top-${idx}`} className="px-2 py-1 text-slate-400 font-bold text-xs select-none">
-                          ...
-                        </span>
-                      );
-                    }
-                    const pageNum = p as number;
-                    const isActive = pageNum === safeCurrentPage;
-                    return (
-                      <button
-                        key={`page-top-${pageNum}`}
-                        onClick={() => setCurrentPage(pageNum)}
-                        className={`min-w-[34px] h-[34px] rounded-xl text-xs font-black transition-all flex items-center justify-center ${
-                          isActive
-                            ? 'bg-indigo-600 text-white shadow-xs scale-105'
-                            : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 hover:border-slate-300 cursor-pointer'
-                        }`}
-                      >
-                        {pageNum}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Next Page */}
-                <button
-                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                  disabled={safeCurrentPage === totalPages}
-                  className={`px-3 py-1.5 rounded-xl border flex items-center gap-1 text-xs font-bold transition-all ${
-                    safeCurrentPage === totalPages 
-                      ? 'opacity-40 cursor-not-allowed border-slate-200 text-slate-400 bg-slate-50' 
-                      : 'border-slate-200 text-slate-700 bg-white hover:bg-slate-100 hover:border-slate-300 cursor-pointer shadow-2xs'
-                  }`}
-                  title="الصفحة التالية"
-                >
-                  <span className="hidden sm:inline">التالي</span>
-                  <ChevronLeft size={15} />
-                </button>
-
-                {/* Last Page */}
-                <button
-                  onClick={() => setCurrentPage(totalPages)}
-                  disabled={safeCurrentPage === totalPages}
-                  className={`p-2 rounded-xl border flex items-center justify-center transition-all ${
-                    safeCurrentPage === totalPages 
-                      ? 'opacity-40 cursor-not-allowed border-slate-200 text-slate-400 bg-slate-50' 
-                      : 'border-slate-200 text-slate-700 bg-white hover:bg-slate-100 hover:border-slate-300 cursor-pointer shadow-2xs'
-                  }`}
-                  title="الصفحة الأخيرة"
-                >
-                  <ChevronsLeft size={15} />
+                  <span>تمرير يسار</span>
+                  <ChevronLeft size={14} className="text-indigo-600" />
                 </button>
               </div>
-            )}
+            </div>
+
+            {/* Left side (RTL): Horizontal Pagination Buttons (أزرار التنقل الأفقي بين الصفحات - ظاهرة دائماً) */}
+            <div className="flex items-center gap-1 justify-center lg:justify-end overflow-x-auto py-1">
+              {/* First Page */}
+              <button
+                type="button"
+                onClick={() => setCurrentPage(1)}
+                disabled={safeCurrentPage === 1}
+                className={`p-2 rounded-xl border flex items-center justify-center transition-all ${
+                  safeCurrentPage === 1 
+                    ? 'opacity-40 cursor-not-allowed border-slate-200 text-slate-400 bg-slate-50' 
+                    : 'border-slate-200 text-slate-700 bg-white hover:bg-slate-100 hover:border-slate-300 cursor-pointer shadow-2xs'
+                }`}
+                title="الصفحة الأولى"
+              >
+                <ChevronsRight size={15} />
+              </button>
+
+              {/* Previous Page */}
+              <button
+                type="button"
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={safeCurrentPage === 1}
+                className={`px-3 py-1.5 rounded-xl border flex items-center gap-1 text-xs font-bold transition-all ${
+                  safeCurrentPage === 1 
+                    ? 'opacity-40 cursor-not-allowed border-slate-200 text-slate-400 bg-slate-50' 
+                    : 'border-slate-200 text-slate-700 bg-white hover:bg-slate-100 hover:border-slate-300 cursor-pointer shadow-2xs'
+                }`}
+                title="الصفحة السابقة"
+              >
+                <ChevronRight size={15} />
+                <span className="hidden sm:inline">السابق</span>
+              </button>
+
+              {/* Numbered Page Buttons */}
+              <div className="flex items-center gap-1 px-1">
+                {getPageNumbers().map((p, idx) => {
+                  if (p === '...') {
+                    return (
+                      <span key={`dots-top-${idx}`} className="px-2 py-1 text-slate-400 font-bold text-xs select-none">
+                        ...
+                      </span>
+                    );
+                  }
+                  const pageNum = p as number;
+                  const isActive = pageNum === safeCurrentPage;
+                  return (
+                    <button
+                      type="button"
+                      key={`page-top-${pageNum}`}
+                      onClick={() => setCurrentPage(pageNum)}
+                      className={`min-w-[34px] h-[34px] rounded-xl text-xs font-black transition-all flex items-center justify-center ${
+                        isActive
+                          ? 'bg-indigo-600 text-white shadow-xs scale-105'
+                          : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 hover:border-slate-300 cursor-pointer'
+                      }`}
+                    >
+                      {pageNum}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Next Page */}
+              <button
+                type="button"
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={safeCurrentPage === totalPages}
+                className={`px-3 py-1.5 rounded-xl border flex items-center gap-1 text-xs font-bold transition-all ${
+                  safeCurrentPage === totalPages 
+                    ? 'opacity-40 cursor-not-allowed border-slate-200 text-slate-400 bg-slate-50' 
+                    : 'border-slate-200 text-slate-700 bg-white hover:bg-slate-100 hover:border-slate-300 cursor-pointer shadow-2xs'
+                }`}
+                title="الصفحة التالية"
+              >
+                <span className="hidden sm:inline">التالي</span>
+                <ChevronLeft size={15} />
+              </button>
+
+              {/* Last Page */}
+              <button
+                type="button"
+                onClick={() => setCurrentPage(totalPages)}
+                disabled={safeCurrentPage === totalPages}
+                className={`p-2 rounded-xl border flex items-center justify-center transition-all ${
+                  safeCurrentPage === totalPages 
+                    ? 'opacity-40 cursor-not-allowed border-slate-200 text-slate-400 bg-slate-50' 
+                    : 'border-slate-200 text-slate-700 bg-white hover:bg-slate-100 hover:border-slate-300 cursor-pointer shadow-2xs'
+                }`}
+                title="الصفحة الأخيرة"
+              >
+                <ChevronsLeft size={15} />
+              </button>
+            </div>
           </div>
 
           {/* Bookings Directory Table */}
           <div className="bg-white rounded-3xl shadow-xs border border-slate-200 overflow-hidden">
-            <div className="overflow-x-auto">
+            <div ref={tableScrollRef} className="overflow-x-auto scroll-smooth">
               <table className="w-full text-right text-xs">
                 <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
                   <tr>
@@ -2845,62 +2929,78 @@ export function BookingsScreen({
                             )}
                           </td>
                           <td className="p-3.5 text-center">
-                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-black border ${badge.bg}`}>
-                              {badge.label}
-                            </span>
+                            <select
+                              value={b.status}
+                              onChange={e => handleQuickStatusChange(b, e.target.value)}
+                              className={`px-2.5 py-1 rounded-full text-[10px] font-black border outline-none cursor-pointer transition-all ${badge.bg}`}
+                              title="تغيير حالة الحجز مباشرة (مؤجل، مؤكد، انتظار، مكتمل، ملغي)"
+                            >
+                              <option value="confirmed" className="bg-white text-slate-800 font-bold">مؤكد</option>
+                              <option value="pending" className="bg-white text-slate-800 font-bold">قيد الانتظار</option>
+                              <option value="postponed" className="bg-white text-slate-800 font-bold">مؤجل (موعد مفتوح)</option>
+                              <option value="completed" className="bg-white text-slate-800 font-bold">مكتمل</option>
+                              <option value="cancelled" className="bg-white text-slate-800 font-bold">ملغي</option>
+                            </select>
                           </td>
                           <td className="p-3.5">
                             <div className="flex items-center justify-center gap-1.5">
+                              {/* 1. Cashier button (for active bookings) */}
                               {b.status !== 'completed' && b.status !== 'cancelled' && (
-                                <>
-                                  <button
-                                    onClick={() => onToPOS({
-                                      ...b,
-                                      advancePayments: getBookingAdvances(b)
-                                    })}
-                                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1.5 rounded-xl text-[11px] font-black flex items-center gap-1 shadow-xs cursor-pointer"
-                                    title="تحويل مباشر لنقطة البيع POS"
-                                  >
-                                    <ShoppingCart size={13} />
-                                    <span>كاشير</span>
-                                  </button>
-                                  <button
-                                    onClick={() => handleEdit(b)}
-                                    className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl cursor-pointer"
-                                    title="تعديل"
-                                  >
-                                    <Edit2 size={13} />
-                                  </button>
-                                  {b.status === 'postponed' ? (
-                                    <button
-                                      onClick={() => {
-                                        setRescheduleBookingTarget(b);
-                                        setRescheduleDate(defaultBookingDate);
-                                        setRescheduleTime(b.time || '10:00');
-                                      }}
-                                      className="bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1.5 rounded-xl text-[11px] font-black flex items-center gap-1 shadow-xs cursor-pointer"
-                                      title="تحديد موعد جديد للحجز وتأكيده"
-                                    >
-                                      <CalendarIcon size={12} />
-                                      <span>تحديد موعد</span>
-                                    </button>
-                                  ) : (
-                                    <button
-                                      onClick={() => handlePostponeBooking(b)}
-                                      className="p-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-xl cursor-pointer"
-                                      title="تأجيل الحجز لموعد مفتوح"
-                                    >
-                                      <Clock size={13} />
-                                    </button>
-                                  )}
-                                  <button
-                                    onClick={() => cancelBooking(b.id)}
-                                    className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl cursor-pointer"
-                                    title="إلغاء الحجز"
-                                  >
-                                    <XCircle size={13} />
-                                  </button>
-                                </>
+                                <button
+                                  onClick={() => onToPOS({
+                                    ...b,
+                                    advancePayments: getBookingAdvances(b)
+                                  })}
+                                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1.5 rounded-xl text-[11px] font-black flex items-center gap-1 shadow-xs cursor-pointer"
+                                  title="تحويل مباشر لنقطة البيع POS"
+                                >
+                                  <ShoppingCart size={13} />
+                                  <span>كاشير</span>
+                                </button>
+                              )}
+
+                              {/* 2. Edit button: Always visible for ALL statuses including completed and cancelled */}
+                              <button
+                                onClick={() => handleEdit(b)}
+                                className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl cursor-pointer transition-colors"
+                                title="تعديل الحجز وبياناته"
+                              >
+                                <Edit2 size={13} />
+                              </button>
+
+                              {/* 3. Postpone or Reschedule button: Available for all statuses */}
+                              {b.status === 'postponed' ? (
+                                <button
+                                  onClick={() => {
+                                    setRescheduleBookingTarget(b);
+                                    setRescheduleDate(defaultBookingDate);
+                                    setRescheduleTime(b.time || '10:00');
+                                  }}
+                                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1.5 rounded-xl text-[11px] font-black flex items-center gap-1 shadow-xs cursor-pointer"
+                                  title="تحديد موعد جديد للحجز وتأكيده"
+                                >
+                                  <CalendarIcon size={12} />
+                                  <span>تحديد موعد</span>
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => handlePostponeBooking(b)}
+                                  className="p-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-xl cursor-pointer transition-colors"
+                                  title="تأجيل الحجز لموعد مفتوح"
+                                >
+                                  <Clock size={13} />
+                                </button>
+                              )}
+
+                              {/* 4. Cancel button (if not already cancelled or completed) */}
+                              {b.status !== 'completed' && b.status !== 'cancelled' && (
+                                <button
+                                  onClick={() => cancelBooking(b.id)}
+                                  className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl cursor-pointer transition-colors"
+                                  title="إلغاء الحجز"
+                                >
+                                  <XCircle size={13} />
+                                </button>
                               )}
                               <button
                                 onClick={() => printBooking(b)}
