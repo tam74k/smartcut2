@@ -4821,7 +4821,7 @@ export function BookingsScreen({
                         placeholder="أدخل رقم الموبايل مثلاً: 05XXXXXXXX"
                         required
                         dir="ltr"
-                        autoFocus
+                        autoFocus={!editingBooking}
                       />
 
                       {/* Clear Input Button */}
