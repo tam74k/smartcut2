@@ -1414,6 +1414,7 @@ export function HRScreen({
         }
 
         // Calculate Daily Target & Commission dynamically per salon policy & employee settings
+        const empTargetType = emp.targetType || ((Number(emp.dailyTargetAmount) > 0) ? 'daily' : ((Number(emp.monthlyTargetAmount || emp.target) > 0) ? 'monthly' : 'none'));
         const dailyTargetCalc = calculateEmployeeTargetCommission({
           employee: emp,
           settings,
