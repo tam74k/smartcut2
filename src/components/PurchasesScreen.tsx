@@ -19,6 +19,7 @@ export function PurchasesScreen({
   setTransactions,
   shiftData,
   activeBranchId,
+  branches = [],
   currentUser
 }: {
   settings: AppSettings;
@@ -32,8 +33,9 @@ export function PurchasesScreen({
   setItemMovements: (im: ItemMovement[]) => void;
   transactions: Transaction[];
   setTransactions: (t: Transaction[]) => void;
-  shiftData: { isOpen: boolean; date: string };
+  shiftData: { isOpen: boolean; date: string; id?: string; shiftCode?: string; code?: string };
   activeBranchId?: string;
+  branches?: any[];
   currentUser?: any;
 }) {
   const [showAddModal, setShowAddModal] = useState(false);
@@ -114,7 +116,7 @@ export function PurchasesScreen({
     const targetTreasuryName = selectedTreasuryObj?.name || 'الخزينة';
     const supplierObj = suppliers.find(s => s.id === supplierId);
     const supplierName = supplierObj?.name || 'مورد';
-    const activeBranch = branches.find(b => b.id === activeBranchId);
+    const activeBranch = (branches || []).find(b => b.id === activeBranchId);
 
     const newInvoice: PurchaseInvoice = {
       id: invoiceId,

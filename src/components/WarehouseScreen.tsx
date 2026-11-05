@@ -301,10 +301,10 @@ export function WarehouseScreen({
           setItemMovements={setItemMovements}
           transactions={transactions}
           setTransactions={setTransactions}
-          shiftData={{
-            isOpen: shiftData.isOpen,
-            date: shiftData.date
-          }}
+          shiftData={shiftData}
+          activeBranchId={activeBranchId}
+          branches={branches}
+          currentUser={currentUser}
         />
       )}
 
