@@ -4197,6 +4197,7 @@ export const DB = {
         fingerprint_code: fpCode,
         timestamp: validTimestamp,
         type: type,
+        log_type: type,
         device_ip: fl.deviceIp || fl.device_ip || null,
         status: fl.status || (fl.source === 'manual' ? 'manual' : 'synced'),
         notes: fl.notes || null,
@@ -4211,6 +4212,7 @@ export const DB = {
           fingerprint_code: snap.fingerprint_code,
           timestamp: snap.timestamp,
           type: snap.type,
+          log_type: snap.type,
           status: snap.status
         };
         if (snap.branch_id) minimalSnap.branch_id = snap.branch_id;

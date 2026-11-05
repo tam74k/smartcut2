@@ -298,17 +298,17 @@ export function HRScreen({
   }, [employees]);
 
   // Fallback internal logs state to guarantee resilience if prop is missing or setter is undefined
-  const [localLogs, setLocalLogs] = useState<FingerprintLog[]>(fingerprintLogs || []);
+  const [localLogs, setLocalLogs] = useState<FingerprintLog[]>(() => fingerprintLogs || []);
 
   useEffect(() => {
-    if (fingerprintLogs && fingerprintLogs.length > 0) {
+    if (fingerprintLogs) {
       setLocalLogs(fingerprintLogs);
     }
   }, [fingerprintLogs]);
 
   const effectiveFingerprintLogs = useMemo(() => {
-    return (fingerprintLogs && fingerprintLogs.length > 0) ? fingerprintLogs : localLogs;
-  }, [fingerprintLogs, localLogs]);
+    return localLogs.length > 0 ? localLogs : (fingerprintLogs || []);
+  }, [localLogs, fingerprintLogs]);
   
   const [showBiometricModal, setShowBiometricModal] = useState(false);
 
@@ -1061,7 +1061,7 @@ export function HRScreen({
 
         const hasManualOrDeviceLog = (override.status === 'absent')
           ? false
-          : (Boolean(checkInLog || checkOutLog) || override.checkIn !== undefined || override.checkOut !== undefined || override.status === 'regular');
+          : (Boolean(checkInLog || checkOutLog) || (override.checkIn !== undefined && override.checkIn !== '') || (override.checkOut !== undefined && override.checkOut !== '') || override.status === 'regular');
         const todayIsoStr = new Date().toISOString().split('T')[0];
         const isTodayOrPast = dateStr <= todayIsoStr;
         const hasWork = workRevenue > 0;
@@ -1126,17 +1126,25 @@ export function HRScreen({
           statusLabel = override.statusLabel || 'حضور';
           absenceDeduction = 0;
 
-          const inTimeStr = (override.checkIn !== undefined && override.checkIn !== '')
-            ? override.checkIn
-            : (extractTime(checkInLog?.timestamp) || scheduledCheckIn);
+          let inTimeStr: string | null = null;
+          if (override.checkIn !== undefined) {
+            inTimeStr = override.checkIn ? override.checkIn : null;
+          } else if (checkInLog?.timestamp) {
+            inTimeStr = extractTime(checkInLog.timestamp);
+          } else {
+            inTimeStr = scheduledCheckIn;
+          }
           checkIn = inTimeStr ? `${inTimeStr}:00` : null;
 
-          const outTimeStr = (override.checkOut !== undefined && override.checkOut !== '')
-            ? override.checkOut
-            : extractTime(checkOutLog?.timestamp);
+          let outTimeStr: string | null = null;
+          if (override.checkOut !== undefined) {
+            outTimeStr = override.checkOut ? override.checkOut : null;
+          } else if (checkOutLog?.timestamp) {
+            outTimeStr = extractTime(checkOutLog.timestamp);
+          }
 
           // Scheduled vs Actual check in
-          const inParts = inTimeStr.split(':').map(Number);
+          const inParts = (inTimeStr || scheduledCheckIn || '09:00').split(':').map(Number);
           const actualInMin = inParts[0] * 60 + (inParts[1] || 0);
 
           const remainingFreeMinutes = Math.max(0, maxMonthlyPermissionMinutes - accumulatedPermissionMinutes);
@@ -1819,9 +1827,16 @@ export function HRScreen({
       const dateStr = attendanceForm.date;
       const nextDateStr = getNextDateStr(dateStr);
       
-      const isAbsentAction = attendanceForm.status === 'absent' || 
-                             Boolean(attendanceForm.notes?.includes('غياب')) || 
-                             (!attendanceForm.checkIn && !attendanceForm.checkOut);
+      const cleanCheckIn = (attendanceForm.checkIn || '').trim();
+      const cleanCheckOut = (attendanceForm.checkOut || '').trim();
+      const hasTimesEntered = Boolean(cleanCheckIn || cleanCheckOut);
+
+      // It is ONLY an absent action if NO times are entered AND (status is absent OR notes indicate absence)
+      const isAbsentAction = (!hasTimesEntered) || (attendanceForm.status === 'absent' && !hasTimesEntered);
+
+      const finalNotes = hasTimesEntered && (attendanceForm.notes?.includes('غياب') || attendanceForm.notes === 'غياب')
+        ? (attendanceForm.notes.replace(/غياب/g, '').trim() || 'تسجيل يدوي / تعديل من TimeSheet')
+        : (attendanceForm.notes || (hasTimesEntered ? 'تسجيل يدوي / تعديل من TimeSheet' : 'غياب'));
 
       // Robust search: find ALL existing shift logs for this employee belonging to dateStr shift
       const shiftLogs = (effectiveFingerprintLogs || []).filter(l => {
@@ -1843,33 +1858,41 @@ export function HRScreen({
       const newLogsToSave: FingerprintLog[] = [];
 
       if (!isAbsentAction) {
-        const inTimestamp = `${dateStr}T${attendanceForm.checkIn || '09:00'}:00`;
         const checkInId = shiftLogs.find(l => isCheckInLogType(l))?.id || generateId();
         const checkOutId = shiftLogs.find(l => isCheckOutLogType(l))?.id || generateId();
 
-        const inLog: FingerprintLog = {
-          id: checkInId,
-          salonId: targetEmp.salonId || settings.salonId,
-          branchId: targetEmp.branchId || (settings as any).branchId,
-          employeeId: targetEmp.id,
-          employeeName: targetEmp.name,
-          fingerprintCode: targetEmp.fingerprintCode || 'FP-' + targetEmp.id.slice(0, 4),
-          timestamp: inTimestamp,
-          type: 'check_in',
-          status: 'manual',
-          processedDate: dateStr,
-          processed_date: dateStr,
-          notes: attendanceForm.notes || 'تسجيل يدوي / تعديل من TimeSheet'
-        };
-        newLogsToSave.push(inLog);
+        if (cleanCheckIn) {
+          const inTimestamp = `${dateStr}T${cleanCheckIn}:00`;
+          const inLog: FingerprintLog = {
+            id: checkInId,
+            salonId: targetEmp.salonId || settings.salonId,
+            salon_id: targetEmp.salonId || settings.salonId,
+            branchId: targetEmp.branchId || (settings as any).branchId,
+            branch_id: targetEmp.branchId || (settings as any).branchId,
+            employeeId: targetEmp.id,
+            employee_id: targetEmp.id,
+            employeeName: targetEmp.name,
+            employee_name: targetEmp.name,
+            fingerprintCode: targetEmp.fingerprintCode || 'FP-' + targetEmp.id.slice(0, 4),
+            fingerprint_code: targetEmp.fingerprintCode || 'FP-' + targetEmp.id.slice(0, 4),
+            timestamp: inTimestamp,
+            type: 'check_in',
+            log_type: 'check_in',
+            status: 'manual',
+            processedDate: dateStr,
+            processed_date: dateStr,
+            notes: finalNotes
+          };
+          newLogsToSave.push(inLog);
+        }
 
-        if (attendanceForm.checkOut) {
+        if (cleanCheckOut) {
           const isOvernight = Boolean(attendanceForm.isNextDayCheckout);
           const actualOutTs = isOvernight
-            ? `${nextDateStr}T${attendanceForm.checkOut}:00`
-            : `${dateStr}T${attendanceForm.checkOut}:00`;
+            ? `${nextDateStr}T${cleanCheckOut}:00`
+            : `${dateStr}T${cleanCheckOut}:00`;
 
-          const cleanUserNotes = (attendanceForm.notes || '')
+          const cleanUserNotes = (finalNotes || '')
             .replace(/انصراف بعد منتصف الليل \(\+1 يوم\)/gi, '')
             .replace(/انصراف بعد منتصف الليل/gi, '')
             .replace(/بعد منتصف الليل/gi, '')
@@ -1882,12 +1905,18 @@ export function HRScreen({
           const outLog: FingerprintLog = {
             id: checkOutId,
             salonId: targetEmp.salonId || settings.salonId,
+            salon_id: targetEmp.salonId || settings.salonId,
             branchId: targetEmp.branchId || (settings as any).branchId,
+            branch_id: targetEmp.branchId || (settings as any).branchId,
             employeeId: targetEmp.id,
+            employee_id: targetEmp.id,
             employeeName: targetEmp.name,
+            employee_name: targetEmp.name,
             fingerprintCode: targetEmp.fingerprintCode || 'FP-' + targetEmp.id.slice(0, 4),
+            fingerprint_code: targetEmp.fingerprintCode || 'FP-' + targetEmp.id.slice(0, 4),
             timestamp: actualOutTs,
             type: 'check_out',
+            log_type: 'check_out',
             status: 'manual',
             processedDate: dateStr,
             processed_date: dateStr,
@@ -1902,13 +1931,21 @@ export function HRScreen({
       // 1. Delete all old shift logs that are no longer kept
       for (const oldLog of shiftLogs) {
         if (!newLogsToSave.some(nl => String(nl.id) === String(oldLog.id))) {
-          await DB.deleteFingerprintLog(oldLog.id);
+          try {
+            await DB.deleteFingerprintLog(oldLog.id);
+          } catch (delErr) {
+            console.warn('Could not delete old shift log from DB:', delErr);
+          }
         }
       }
 
       // 2. Save each new log to Supabase
       for (const log of newLogsToSave) {
-        await DB.saveFingerprintLog(log);
+        try {
+          await DB.saveFingerprintLog(log);
+        } catch (saveErr) {
+          console.warn('Could not save shift log to DB:', saveErr);
+        }
       }
 
       // 3. Update in-memory state in App and locally
@@ -1940,12 +1977,12 @@ export function HRScreen({
         ...prev,
         [rowKey]: {
           ...prev[rowKey],
-          checkIn: isAbsentAction ? '' : (attendanceForm.checkIn || ''),
-          checkOut: isAbsentAction ? '' : (attendanceForm.checkOut || ''),
+          checkIn: isAbsentAction ? '' : cleanCheckIn,
+          checkOut: isAbsentAction ? '' : cleanCheckOut,
           isNextDayCheckout: isAbsentAction ? false : Boolean(attendanceForm.isNextDayCheckout),
           status: isAbsentAction ? 'absent' : 'regular',
           statusLabel: isAbsentAction ? 'غياب' : 'حضور',
-          notes: attendanceForm.notes
+          notes: finalNotes
         }
       }));
 
@@ -1983,7 +2020,11 @@ export function HRScreen({
     });
 
     for (const l of logsToDelete) {
-      await DB.deleteFingerprintLog(l.id);
+      try {
+        await DB.deleteFingerprintLog(l.id);
+      } catch (delErr) {
+        console.warn('Could not delete fingerprint log:', delErr);
+      }
     }
 
     const deleteFn = (prev: FingerprintLog[]) => (prev || []).filter(l => !logsToDelete.some(dl => String(dl.id) === String(l.id)));
@@ -2021,14 +2062,14 @@ export function HRScreen({
     const isOvernight = override?.isNextDayCheckout !== undefined 
       ? Boolean(override.isNextDayCheckout) 
       : Boolean(row.checkOut?.includes('(+1)'));
-    const status = override?.status || (row.status === 'absent' ? 'absent' : 'regular');
+    const status = override?.status ? override.status : (row.status === 'absent' ? 'regular' : row.status);
     setAttendanceForm({
       empId: row.employee.id,
       date: row.dateStr,
       checkIn: cleanIn,
       checkOut: cleanOut,
       isNextDayCheckout: isOvernight,
-      status: status,
+      status: status === 'absent' ? 'regular' : status,
       notes: override?.notes || ''
     });
     setShowAttendanceModal(true);
