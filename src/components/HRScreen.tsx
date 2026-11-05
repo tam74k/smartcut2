@@ -882,19 +882,25 @@ export function HRScreen({
           }
         }
 
-        // 4. Invoices & Sales on this date
-        const dayInvoices = invoices.filter(inv => inv.date?.startsWith(dateStr));
+        // 4. Invoices & Sales on this date (across the entire salon)
+        const dayInvoices = invoices.filter(inv => {
+          const isCancelled = inv.status === 'cancelled' || (inv as any).is_cancelled || (inv as any).isCancelled || inv.status === 'refunded';
+          if (isCancelled) return false;
+          const rawDate = inv.date || (inv as any).created_at || (inv as any).createdAt || '';
+          return rawDate.startsWith(dateStr);
+        });
         let workRevenue = 0;
         let invoiceExecutionCommission = 0;
-        let exemptExecutionCommission = 0; // عمولات الخدمات المعفاة من التارجت (تصرف فورياً دائماً)
+        let exemptExecutionCommission = 0; // عمولات الخدمات المعفاة من التارجت
         let invoiceReferralCommission = 0;
 
         dayInvoices.forEach(inv => {
           inv.items?.forEach(item => {
             const isPerformer = (item.employeeId && item.employeeId === emp.id) || (!item.employeeId && item.technicianName && item.technicianName === emp.name);
             if (isPerformer) {
-              const qty = item.quantity || 1;
-              const itemTotal = (item.price || 0) * qty;
+              const qty = Number(item.quantity) || 1;
+              const price = Number(item.price) || 0;
+              const itemTotal = price * qty;
               workRevenue += itemTotal;
 
               const srv = (services || []).find(s => s.id === item.itemId || s.id === item.id || s.name === item.serviceName);
@@ -906,13 +912,21 @@ export function HRScreen({
                   const srvAmt = Number(srv.employeeCommissionAmount ?? srv.commissionAmount ?? 0);
                   const srvPct = Number(srv.employeeCommissionPercentage ?? srv.commissionRate ?? 0);
                   const rawBase = Number(srv.commissionableAmount ?? item.commissionableAmount ?? 0);
-                  const commBase = rawBase > 0 ? rawBase : (item.price || 0);
+                  const commBase = rawBase > 0 ? (rawBase * qty) : itemTotal;
                   if (srvAmt > 0) itemComm = srvAmt * qty;
-                  else if (srvPct > 0) itemComm = (srvPct / 100) * commBase * qty;
+                  else if (srvPct > 0) itemComm = (srvPct / 100) * commBase;
                 } else {
                   const prod = (products || []).find((p: any) => p.id === item.itemId || p.id === item.id || p.name === item.serviceName);
-                  if (prod && prod.commission > 0) itemComm = prod.commission * qty;
+                  if (prod && Number(prod.commission) > 0) itemComm = Number(prod.commission) * qty;
                 }
+              }
+
+              // Also check employee commissionRate if itemComm is still 0
+              if (itemComm <= 0 && emp.commissionRate && Number(emp.commissionRate) > 0) {
+                const empRate = Number(emp.commissionRate);
+                const rawBase = Number(item.commissionableAmount ?? 0);
+                const commBase = rawBase > 0 ? (rawBase * qty) : itemTotal;
+                itemComm = (empRate / 100) * commBase;
               }
 
               if (isExempt) {
@@ -921,11 +935,23 @@ export function HRScreen({
                 invoiceExecutionCommission += itemComm;
               }
             }
-            if ((item.referralEmployeeId && item.referralEmployeeId === emp.id) || (!item.referralEmployeeId && item.referralEmployeeName && item.referralEmployeeName === emp.name)) {
-              const qty = item.quantity || 1;
-              const refComm = (item.referralCommissionAmount !== undefined && item.referralCommissionAmount > 0)
-                ? (item.referralCommissionAmount * qty)
+
+            const isReferral = (item.referralEmployeeId && item.referralEmployeeId === emp.id) || (!item.referralEmployeeId && item.referralEmployeeName && item.referralEmployeeName === emp.name);
+            if (isReferral) {
+              const qty = Number(item.quantity) || 1;
+              let refComm = (item.referralCommissionAmount !== undefined && Number(item.referralCommissionAmount) > 0)
+                ? (Number(item.referralCommissionAmount) * qty)
                 : 0;
+              if (refComm <= 0) {
+                const srv = (services || []).find(s => s.id === item.itemId || s.id === item.id || s.name === item.serviceName);
+                if (srv && srv.referralCommissionAmount && Number(srv.referralCommissionAmount) > 0) {
+                  if (srv.referralCommissionType === 'percentage') {
+                    refComm = (Number(srv.referralCommissionAmount) / 100) * (item.price || 0) * qty;
+                  } else {
+                    refComm = Number(srv.referralCommissionAmount) * qty;
+                  }
+                }
+              }
               invoiceReferralCommission += refComm;
             }
           });
@@ -951,30 +977,24 @@ export function HRScreen({
         });
 
         const totalReferralCommission = Math.max(invoiceReferralCommission, financialReferralCommissions);
+        const totalExecutionCommission = invoiceExecutionCommission + exemptExecutionCommission + directCommissions;
 
-        // تحديد نظام التارجت للموظف
-        const empTargetType = emp.targetType || ((Number(emp.dailyTargetAmount) > 0) ? 'daily' : ((Number(emp.monthlyTargetAmount || emp.target) > 0) ? 'monthly' : 'none'));
+        // حساب عمولة الموظف الإجمالية:
+        // نسبة الموظف في التايم شيت تحسب جميع عمولاته المستحقة في أي مكان (تنفيذ خدمات ومبيعات + إحالة + عمولات مباشرة)
+        let fixedRateCommission = 0;
+        if (emp.commissionRate && Number(emp.commissionRate) > 0 && workRevenue > 0) {
+          fixedRateCommission = workRevenue * (Number(emp.commissionRate) / 100);
+        } else if (emp.commissionModel === 'tiered_brackets' && emp.commissionTiers && emp.commissionTiers.length > 0) {
+          fixedRateCommission = calculateEmployeeCommission(emp, workRevenue);
+        }
 
-        let totalDailyCommission = 0;
+        let totalDailyCommission = Math.max(
+          totalExecutionCommission + totalReferralCommission,
+          fixedRateCommission + totalReferralCommission
+        );
 
-        if (empTargetType === 'monthly') {
-          // الموظف تارجته شهري:
-          // لا تظهر أي عمولات مستحقة للموظف إلا على الخدمات التي لا تخضع للتارجت فقط (معفاة) + عمولة الإحالة
-          totalDailyCommission = exemptExecutionCommission + totalReferralCommission;
-        } else if (empTargetType === 'daily') {
-          // الموظف تارجته يومي:
-          // عمولة الخدمات المعفاة الفورية + عمولة الإحالة (وعمولة التارجت اليومي تضاف في خانة التارجت اليومي أدناه)
-          totalDailyCommission = exemptExecutionCommission + totalReferralCommission;
-        } else {
-          // بدون تارجت: احتساب العمولات العادية لكامل الشغل
-          const totalExecutionCommission = Math.max(invoiceExecutionCommission + exemptExecutionCommission, directCommissions);
-          const commResult = calculateEmployeeTotalCommission({
-            employee: emp,
-            totalWork: workRevenue,
-            serviceExecutionCommission: totalExecutionCommission,
-            referralCommission: totalReferralCommission
-          });
-          totalDailyCommission = commResult.totalCommission;
+        if (emp.allowDualCommission) {
+          totalDailyCommission = totalExecutionCommission + fixedRateCommission + totalReferralCommission;
         }
 
         const dailyRate = isTerminated ? 0 : baseDailyRate;
@@ -1420,11 +1440,10 @@ export function HRScreen({
         );
 
         if (status === 'absent') {
-          // As per rule: Any day without attendance is absent.
-          // Net must NEVER be positive: it is either 0 (if absence deduction is 1 day),
-          // or negative (if absence deduction is >= 2 days, or if advances/penalties exist).
+          // As per rule: Any day without attendance is absent. Basic salary is zeroed/penalized,
+          // but any commissions earned from services/sales are preserved for the employee!
           const baseAbsentNet = dailyRate - absenceDeduction;
-          netDaily = Math.min(0, baseAbsentNet - advances - specialPenalty - commissionPaid);
+          netDaily = Math.min(0, baseAbsentNet - advances - specialPenalty) + totalDailyCommission + effectiveDailyTargetCommission - commissionPaid;
         }
 
         rows.push({
@@ -1558,7 +1577,7 @@ export function HRScreen({
 
         if (r.status === 'absent') {
           const baseAbsentNet = r.dailyRate - r.absenceDeduction;
-          r.netDaily = Math.min(0, baseAbsentNet - r.advances - r.specialPenalty - r.commissionPaid);
+          r.netDaily = Math.min(0, baseAbsentNet - r.advances - r.specialPenalty) + totalComm - r.commissionPaid;
         } else {
           // Extra safeguard: if status is not absent, absenceDeduction MUST be 0
           r.absenceDeduction = 0;
@@ -2156,11 +2175,101 @@ export function HRScreen({
   const commStats = useMemo(() => {
     if (!selectedCommEmp) return { earnedCommissions: 0, paidCommissions: 0, unpaidCommissions: 0 };
     const empRows = timesheetRows.filter(r => r.employee.id === selectedCommEmp.id);
-    const earned = empRows.reduce((sum, r) => sum + (r.commissionAmount || 0) + (r.dailyTargetCommission || 0), 0);
-    const paid = empRows.reduce((sum, r) => sum + (r.commissionPaid || 0), 0);
-    const unpaid = Math.max(0, earned - paid);
-    return { earnedCommissions: earned, paidCommissions: paid, unpaidCommissions: unpaid };
-  }, [selectedCommEmp, timesheetRows]);
+    const relevantRows = commTargetDate ? empRows.filter(r => r.dateStr === commTargetDate) : empRows;
+
+    if (relevantRows.length > 0) {
+      const earned = relevantRows.reduce((sum, r) => sum + (r.commissionAmount || 0) + (r.dailyTargetCommission || 0), 0);
+      const paid = relevantRows.reduce((sum, r) => sum + (r.commissionPaid || 0), 0);
+      const unpaid = Math.max(0, earned - paid);
+      return { earnedCommissions: earned, paidCommissions: paid, unpaidCommissions: unpaid };
+    }
+
+    // Direct fallback if timesheetRows doesn't contain rows for this employee (e.g. viewMode is single_employee for another staff)
+    const targetPeriod = commTargetMonth || selectedMonth || new Date().toISOString().substring(0, 7);
+    const empInvoices = invoices.filter(inv => {
+      const isCancelled = inv.status === 'cancelled' || (inv as any).is_cancelled || (inv as any).isCancelled || inv.status === 'refunded';
+      if (isCancelled) return false;
+      const rawDate = inv.date || (inv as any).created_at || (inv as any).createdAt || '';
+      if (commTargetDate) return rawDate.startsWith(commTargetDate);
+      return rawDate.startsWith(targetPeriod);
+    });
+
+    let directEarned = 0;
+    empInvoices.forEach(inv => {
+      (inv.items || []).forEach(item => {
+        const isPerformer = (item.employeeId && item.employeeId === selectedCommEmp.id) || 
+                            (!item.employeeId && item.technicianName && item.technicianName === selectedCommEmp.name);
+        if (isPerformer) {
+          const qty = Number(item.quantity) || 1;
+          const price = Number(item.price) || 0;
+          const itemTotal = price * qty;
+          let comm = Number(item.employeeCommission ?? item.commissionAmount ?? (item as any).commission ?? 0);
+          if (comm <= 0) {
+            const srv = (services || []).find(s => s.id === item.itemId || s.id === item.id || s.name === item.serviceName);
+            if (srv) {
+              const srvAmt = Number(srv.employeeCommissionAmount ?? srv.commissionAmount ?? 0);
+              const srvPct = Number(srv.employeeCommissionPercentage ?? srv.commissionRate ?? 0);
+              const rawBase = Number(srv.commissionableAmount ?? item.commissionableAmount ?? 0);
+              const commBase = rawBase > 0 ? (rawBase * qty) : itemTotal;
+              if (srvAmt > 0) comm = srvAmt * qty;
+              else if (srvPct > 0) comm = (srvPct / 100) * commBase;
+            } else {
+              const prod = (products || []).find((p: any) => p.id === item.itemId || p.id === item.id || p.name === item.serviceName);
+              if (prod && Number(prod.commission) > 0) comm = Number(prod.commission) * qty;
+            }
+          }
+          if (comm <= 0 && selectedCommEmp.commissionRate && Number(selectedCommEmp.commissionRate) > 0) {
+            const rawBase = Number(item.commissionableAmount ?? 0);
+            const commBase = rawBase > 0 ? (rawBase * qty) : itemTotal;
+            comm = (Number(selectedCommEmp.commissionRate) / 100) * commBase;
+          }
+          directEarned += comm;
+        }
+
+        const isRef = (item.referralEmployeeId && item.referralEmployeeId === selectedCommEmp.id) || 
+                      (!item.referralEmployeeId && item.referralEmployeeName && item.referralEmployeeName === selectedCommEmp.name);
+        if (isRef) {
+          const qty = Number(item.quantity) || 1;
+          let refComm = (item.referralCommissionAmount !== undefined && Number(item.referralCommissionAmount) > 0)
+            ? (Number(item.referralCommissionAmount) * qty)
+            : 0;
+          if (refComm <= 0) {
+            const srv = (services || []).find(s => s.id === item.itemId || s.id === item.id || s.name === item.serviceName);
+            if (srv && srv.referralCommissionAmount && Number(srv.referralCommissionAmount) > 0) {
+              if (srv.referralCommissionType === 'percentage') {
+                refComm = (Number(srv.referralCommissionAmount) / 100) * (item.price || 0) * qty;
+              } else {
+                refComm = Number(srv.referralCommissionAmount) * qty;
+              }
+            }
+          }
+          directEarned += refComm;
+        }
+      });
+    });
+
+    (selectedCommEmp.financialRecords || []).forEach(r => {
+      const rDate = r.date || '';
+      const inScope = commTargetDate ? rDate.startsWith(commTargetDate) : rDate.startsWith(targetPeriod);
+      if (inScope && (r.type === 'commission' || r.type === 'referral_commission')) {
+        directEarned += Number(r.amount) || 0;
+      }
+    });
+
+    const directPaid = (selectedCommEmp.financialRecords || [])
+      .filter(r => r.type === 'commission_payout')
+      .filter(r => {
+        if (commTargetDate) {
+          return (r as any).targetDate === commTargetDate || r.date?.startsWith(commTargetDate);
+        }
+        if ((r as any).targetMonth) return (r as any).targetMonth === targetPeriod;
+        return r.date?.startsWith(targetPeriod);
+      })
+      .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+
+    const directUnpaid = Math.max(0, directEarned - directPaid);
+    return { earnedCommissions: directEarned, paidCommissions: directPaid, unpaidCommissions: directUnpaid };
+  }, [selectedCommEmp, timesheetRows, commTargetDate, commTargetMonth, selectedMonth, invoices, services, products]);
 
   const handleDisburseCommission = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -3197,7 +3197,7 @@ export default function App() {
           transactions={branchTransactions} 
           setTransactions={handleSetTransactions} 
           shiftData={shiftData}
-          invoices={branchInvoices}
+          invoices={salonInvoices}
           bookings={branchBookings}
           currentUser={currentUser}
           tips={tips}
@@ -3270,7 +3270,7 @@ export default function App() {
           setEmployees={handleSetEmployees} 
           services={services}
           products={branchProducts}
-          invoices={branchInvoices}
+          invoices={salonInvoices}
           transactions={branchTransactions}
           bookings={branchBookings}
           currentUser={currentUser}
