@@ -2464,98 +2464,9 @@ export default function App() {
             { id: 'card', name: 'شبكة / فيزا', isMain: false }
           ];
       const mainTreasury = definedTreasuries.find(t => t.isMain) || definedTreasuries.find(t => t.id === 'main') || definedTreasuries[0];
-      const newTransactions: Transaction[] = [];
       const now = (shiftData?.isOpen && shiftData?.date) 
         ? (shiftData.date + 'T' + new Date().toTimeString().split(' ')[0]) 
         : new Date().toISOString();
-
-      definedTreasuries.forEach(t => {
-        if (t.id === mainTreasury.id) return;
-
-        // الحماية من التكرار: إذا كانت هناك حركة تصفير مسجلة بالفعل لهذه الوردية وهذه الخزينة، لا تقم بإنشاء حركة مكررة
-        if (currentShiftCode && transactions.some(trx => 
-          ((trx as any).shiftCode === currentShiftCode || (trx as any).shift_code === currentShiftCode) &&
-          isZeroingOrClosingTrx(trx) &&
-          (trx.treasury === t.id || (trx as any).treasuryId === t.id)
-        )) {
-          return;
-        }
-
-        // 1. Transactions directly in this treasury (excluding zeroing sweeps)
-        const tTrx = transactions.filter(trx => 
-          (trx.treasury === t.id || (trx as any).treasuryId === t.id) &&
-          (!trx.salonId || !settings.salonId || trx.salonId === settings.salonId) &&
-          !isZeroingOrClosingTrx(trx)
-        );
-
-        const invoiceIdsInTrx = new Set(
-          tTrx.filter(trx => trx.type === 'in' && ((trx as any).invoiceId || (trx as any).invoice_id))
-            .map(trx => (trx as any).invoiceId || (trx as any).invoice_id)
-        );
-
-        // 2. Add sales from invoices that don't have separate transaction rows
-        const unrecordedInvoiceSales = branchInvoices.reduce((sum, inv) => {
-          if (inv.status === 'cancelled') return sum;
-          if (invoiceIdsInTrx.has(inv.id)) return sum;
-          const methods = inv.paymentMethods && inv.paymentMethods.length > 0
-            ? inv.paymentMethods
-            : [{ amount: Number(inv.total) || 0, treasuryId: inv.paymentMethod || 'cash' }];
-          const matched = methods.filter((m: any) => m.treasuryId === t.id);
-          return sum + matched.reduce((s: number, m: any) => s + (Number(m.amount) || 0), 0);
-        }, 0);
-
-        const totalIn = tTrx.filter(trx => trx.type === 'in').reduce((s, x) => s + (Number(x.amount) || 0), 0) + unrecordedInvoiceSales;
-        const totalOut = tTrx.filter(trx => trx.type === 'out').reduce((s, x) => s + (Number(x.amount) || 0), 0);
-        const net = Math.round((totalIn - totalOut) * 100) / 100;
-
-        if (net > 0) {
-          newTransactions.push({
-            id: 'TRX-OUT-' + Math.random().toString(36).substr(2,9),
-            salonId: settings.salonId,
-            date: now,
-            type: 'out',
-            amount: net,
-            category: 'transfer',
-            subCategory: 'shift_zeroing',
-            isZeroing: true,
-            isShiftZeroing: true,
-            description: `تصفير خزينة (${t.name}) ونقل الرصيد بالكامل (${net} ر.س) إلى (${mainTreasury.name}) - وردية ${currentShiftCode || ''} - فرع ${activeBranch?.name || ''}`,
-            treasury: t.id,
-            branchId: activeBranchId,
-            branchCode: activeBranch?.code,
-            createdBy: currentUser?.name || 'الكاشير',
-            userId: currentUser?.id,
-            userName: currentUser?.name || 'الكاشير',
-            shiftDate: shiftData.date,
-            shiftCode: currentShiftCode
-          } as any);
-          newTransactions.push({
-            id: 'TRX-IN-' + Math.random().toString(36).substr(2,9),
-            salonId: settings.salonId,
-            date: now,
-            type: 'in',
-            amount: net,
-            category: 'transfer',
-            subCategory: 'shift_zeroing',
-            isZeroing: true,
-            isShiftZeroing: true,
-            description: `تحويل تصفير وردية من (${t.name}) بمبلغ (${net} ر.س) إلى (${mainTreasury.name}) - وردية ${currentShiftCode || ''} - فرع ${activeBranch?.name || ''}`,
-            treasury: mainTreasury.id,
-            branchId: activeBranchId,
-            branchCode: activeBranch?.code,
-            createdBy: currentUser?.name || 'الكاشير',
-            userId: currentUser?.id,
-            userName: currentUser?.name || 'الكاشير',
-            shiftDate: shiftData.date,
-            shiftCode: currentShiftCode
-          } as any);
-        }
-      });
-
-      if (newTransactions.length > 0) {
-        setTransactions(prev => [...prev, ...newTransactions]);
-        await DB.saveTransactions(newTransactions, settings.salonId);
-      }
 
       // Persist shift closure in DB
       const shiftInvoices = branchInvoices.filter(i => 

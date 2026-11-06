@@ -1541,10 +1541,10 @@ export function OwnerExecutivePortal({
     ];
 
     const stats = definedTreasuries.map((t, idx) => {
-      // Period transactions for this treasury
-      const periodTrxs = filteredTransactions.filter(trx => trx.treasury === t.id || (trx as any).treasuryId === t.id);
-      // All lifetime transactions for this treasury
-      const allTrxs = transactions.filter(trx => trx.treasury === t.id || (trx as any).treasuryId === t.id);
+      // Period transactions for this treasury (excluding zeroing sweeps)
+      const periodTrxs = filteredTransactions.filter(trx => (trx.treasury === t.id || (trx as any).treasuryId === t.id) && !isZeroingOrClosingTrx(trx));
+      // All lifetime transactions for this treasury (excluding zeroing sweeps)
+      const allTrxs = transactions.filter(trx => (trx.treasury === t.id || (trx as any).treasuryId === t.id) && !isZeroingOrClosingTrx(trx));
 
       // Inflows in period
       const totalIn = periodTrxs.filter(trx => trx.type === 'in').reduce((sum, trx) => sum + (Number(trx.amount) || 0), 0);
