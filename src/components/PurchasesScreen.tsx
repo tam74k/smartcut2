@@ -100,6 +100,9 @@ export function PurchasesScreen({
   };
 
   const handleRemoveItem = (idx: number) => {
+    const item = invoiceItems[idx];
+    const pName = products.find(p => p.id === item?.productId)?.name || 'هذا الصنف';
+    if (!window.confirm(`هل أنت متأكد من إزالة (${pName}) من الفاتورة؟`)) return;
     setInvoiceItems(invoiceItems.filter((_, i) => i !== idx));
   };
 
@@ -227,7 +230,9 @@ export function PurchasesScreen({
   };
 
   const handleDeleteInvoice = (inv: PurchaseInvoice) => {
-    
+    if (!window.confirm(`تحذير: هل أنت متأكد من حذف فاتورة المشتريات رقم (${inv.id})؟\nسيتم عكس أثرها على المخزون وحساب المورد وحركات الخزينة.`)) {
+      return;
+    }
     
     setPurchaseInvoices(purchaseInvoices.filter(i => i.id !== inv.id));
     

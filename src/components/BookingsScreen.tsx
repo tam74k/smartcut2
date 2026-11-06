@@ -1235,6 +1235,9 @@ export function BookingsScreen({
   };
 
   const handleRemoveAdvanceInModal = (advId: string) => {
+    const targetAdv = (newBooking.advancePayments || []).find(a => a.id === advId);
+    const amtStr = targetAdv ? ` بمبلغ ${targetAdv.amount} ${settings.currency}` : '';
+    if (!window.confirm(`هل أنت متأكد من حذف هذه الدفعة المقدمة${amtStr}؟`)) return;
     setNewBooking(prev => ({
       ...prev,
       advancePayments: (prev.advancePayments || []).filter(a => a.id !== advId)
@@ -6544,6 +6547,7 @@ export function BookingsScreen({
                           <button
                             type="button"
                             onClick={() => {
+                              if (!window.confirm('هل أنت متأكد من إلغاء إغلاق هذا اليوم؟')) return;
                               const updatedRules = {
                                 ...settings.bookingRules,
                                 blockedDates: (settings.bookingRules?.blockedDates || []).filter(d => d.id !== bd.id)
@@ -6652,6 +6656,7 @@ export function BookingsScreen({
                           <button
                             type="button"
                             onClick={() => {
+                              if (!window.confirm('هل أنت متأكد من إلغاء إغلاق هذه الساعات؟')) return;
                               const updatedRules = {
                                 ...settings.bookingRules,
                                 blockedHours: (settings.bookingRules?.blockedHours || []).filter(h => h.id !== bh.id)

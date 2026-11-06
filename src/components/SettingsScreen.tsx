@@ -946,6 +946,9 @@ export function SettingsScreen({
   };
 
   const deleteCategory = async (id: string) => {
+    const cat = categories.find(c => c.id === id);
+    const catName = cat ? cat.name : '';
+    if (!window.confirm(`هل أنت متأكد من حذف هذا التصنيف${catName ? ' "' + catName + '"' : ''}؟`)) return;
     setCategories(categories.filter(c => c.id !== id));
     await DB.deleteCategory(id);
   };
@@ -959,6 +962,9 @@ export function SettingsScreen({
   };
 
   const deleteTreasury = (id: string) => {
+    const t = settings.treasuries.find(item => item.id === id);
+    const tName = t ? t.name : '';
+    if (!window.confirm(`هل أنت متأكد من حذف الخزينة${tName ? ' "' + tName + '"' : ''}؟`)) return;
     const updatedTreasuries = settings.treasuries.filter(t => t.id !== id);
     handleChange('treasuries', updatedTreasuries);
   };

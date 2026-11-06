@@ -1103,6 +1103,9 @@ export function DashboardScreen({
 
   const removeServiceFromEdit = (serviceId: string) => {
     if(editingBooking) {
+      const srv = editingBooking.services.find(s => s.id === serviceId);
+      const srvName = srv ? ' "' + srv.name + '"' : '';
+      if (!window.confirm(`هل أنت متأكد من حذف خدمة${srvName} من الحجز؟`)) return;
       setEditingBooking({
         ...editingBooking,
         services: editingBooking.services.filter(s => s.id !== serviceId)
