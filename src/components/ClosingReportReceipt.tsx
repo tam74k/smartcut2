@@ -18,10 +18,23 @@ function extractDatesFromLabel(label: string): string[] {
   return dates.length > 0 ? dates : [matches[0]];
 }
 
+export const isLegacyCorruptZeroingTrx = (t: any): boolean => {
+  if (!t) return false;
+  if (t.isZeroing || t.isShiftZeroing || (t as any).is_zeroing) return true;
+  const sub = String(t.subCategory || (t as any).sub_category || '').toLowerCase();
+  if (sub === 'shift_zeroing' || sub === 'closing_sweep') return true;
+  const desc = String(t.description || '').toLowerCase();
+  if (desc.includes('تصفير خزينة') || desc.includes('تحويل تصفير') || desc.includes('تصفير وردية') || desc.includes('نقل الرصيد بالكامل')) return true;
+  return false;
+};
+
 export const isZeroingOrClosingTrx = (t: any): boolean => {
   if (!t) return false;
-  // التحويلات التشغيلية الحقيقية بين الخزائن ليست تصفير وردية
+  if (isLegacyCorruptZeroingTrx(t)) return true;
+  if (t.isShiftSweep || t.subCategory === 'shift_sweep' || (t as any).sub_category === 'shift_sweep') return true;
   const id = String(t.id || '').toUpperCase();
+  if (id.startsWith('TRX-SWP-OUT-') || id.startsWith('TRX-SWP-IN-')) return true;
+  // التحويلات التشغيلية الحقيقية بين الخزائن ليست تصفير وردية
   if (id.startsWith('TRX-TRF-OUT-') || id.startsWith('TRX-TRF-IN-')) return false;
 
   if (t.isZeroing || t.isShiftZeroing || t.isClosing || t.subCategory === 'shift_zeroing' || (t as any).sub_category === 'shift_zeroing') return true;

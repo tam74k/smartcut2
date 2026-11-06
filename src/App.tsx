@@ -55,6 +55,7 @@ import { InitialSalonSetupModal, DEFAULT_INITIAL_TREASURIES } from './components
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { SubscriptionBanner } from './components/SubscriptionBanner';
 import { ClosingReportReceipt, isZeroingOrClosingTrx } from './components/ClosingReportReceipt';
+import { resolveMainTreasury, isMatchingTreasury } from './utils/treasury';
 import { handlePrintReceipt, directPrintHtml } from './utils/print';
 import { printQueueSlipDirect } from './utils/printQueueSlip';
 import { AuthService, ROLE_LABELS } from './services/auth';
@@ -2456,6 +2457,9 @@ export default function App() {
       if (checkReadOnlyAndWarn()) return;
       const activeBranch = branches.find(b => b.id === activeBranchId) || branches[0];
       const currentShiftCode = (shiftData as any)?.shiftCode;
+      const effectiveShiftCode = currentShiftCode || (shiftData as any)?.shiftCode || (`SH-${(shiftData.date || '').replace(/-/g, '')}-01`);
+      const effectiveShiftId = (shiftData as any)?.shiftId;
+      const shiftDateStr = shiftData.date;
       const definedTreasuries = (settings.treasuries && settings.treasuries.length > 0)
         ? settings.treasuries
         : [
@@ -2463,16 +2467,135 @@ export default function App() {
             { id: 'cash', name: 'كاش (الدرج)', isMain: false },
             { id: 'card', name: 'شبكة / فيزا', isMain: false }
           ];
-      const mainTreasury = definedTreasuries.find(t => t.isMain) || definedTreasuries.find(t => t.id === 'main') || definedTreasuries[0];
+      const mainTreasury = resolveMainTreasury(definedTreasuries);
       const now = (shiftData?.isOpen && shiftData?.date) 
         ? (shiftData.date + 'T' + new Date().toTimeString().split(' ')[0]) 
         : new Date().toISOString();
 
-      // Persist shift closure in DB
+      // 1. تحديد فواتير هذه الوردية فقط
       const shiftInvoices = branchInvoices.filter(i => 
         i.status !== 'cancelled' && 
-        (i.date.startsWith(shiftData.date) || (shiftData.date && (i as any).created_at?.startsWith(shiftData.date)))
+        (
+          (effectiveShiftCode && ((i.shiftCode && i.shiftCode === effectiveShiftCode) || ((i as any).shift_code && (i as any).shift_code === effectiveShiftCode))) ||
+          (effectiveShiftId && (i.shiftId === effectiveShiftId || (i as any).shift_id === effectiveShiftId)) ||
+          (shiftDateStr && (i.date.startsWith(shiftDateStr) || (i.shiftDate && i.shiftDate === shiftDateStr) || ((i as any).created_at && (i as any).created_at.startsWith(shiftDateStr))))
+        )
       );
+
+      // 2. تحديد الحركات التشغيلية لهذه الوردية فقط (مع استبعاد قاطع لأي تحويلات تصفير سابقة)
+      const shiftOperationalTransactions = branchTransactions.filter(trx => {
+        if (trx.subCategory === 'shift_sweep' || trx.subCategory === 'shift_zeroing' || (trx as any).isShiftSweep || (trx as any).isZeroing) return false;
+        if (trx.description?.includes('تحويل إغلاق وردية') || trx.description?.includes('تصفير')) return false;
+
+        const trxCode = (trx.shiftCode || (trx as any).shift_code || '').trim();
+        const trxShiftId = (trx.shiftId || (trx as any).shift_id || '').trim();
+        const trxDate = (trx.shiftDate || (trx as any).shift_date || trx.date || '').split('T')[0].split(' ')[0].trim();
+
+        if (effectiveShiftCode && (trxCode === effectiveShiftCode || trxShiftId === effectiveShiftCode)) return true;
+        if (effectiveShiftId && (trxShiftId === effectiveShiftId || trxCode === effectiveShiftId)) return true;
+        if (shiftDateStr && (trxDate === shiftDateStr || trx.date?.startsWith(shiftDateStr))) return true;
+
+        return false;
+      });
+
+      // 3. تصفير جميع الخزائن غير الرئيسية ونقل صافي مبالغها في هذه الوردية فقط إلى الخزينة الرئيسية
+      const sweepTransactions: Transaction[] = [];
+
+      definedTreasuries.forEach(t => {
+        if (t.id === mainTreasury.id) return;
+
+        // الحماية الصارمة من التكرار: إذا كانت هناك حركة توريد مسجلة مسبقاً لهذه الوردية وهذه الخزينة، لا تكررها
+        const alreadySwept = transactions.some(trx => 
+          ((trx.shiftCode === effectiveShiftCode || (trx as any).shift_code === effectiveShiftCode) ||
+           (trx.shiftDate === shiftDateStr && trx.description?.includes(effectiveShiftCode))) &&
+          (trx.subCategory === 'shift_sweep' || (trx as any).isShiftSweep) &&
+          (trx.treasury === t.id || (trx as any).treasuryId === t.id)
+        );
+        if (alreadySwept) return;
+
+        // أ) الحركات المالية الخاصة بهذه الخزينة في هذه الوردية فقط
+        const tTrx = shiftOperationalTransactions.filter(trx => 
+          isMatchingTreasury(trx.treasury || (trx as any).treasuryId, t.id, settings.treasuries)
+        );
+
+        const invoiceIdsInTrx = new Set(
+          tTrx.filter(trx => trx.type === 'in' && ((trx as any).invoiceId || (trx as any).invoice_id))
+            .map(trx => (trx as any).invoiceId || (trx as any).invoice_id)
+        );
+
+        // ب) مبيعات الفواتير المحصلة في هذه الخزينة في هذه الوردية فقط ولم تنشئ حركة trx مستقلة
+        const unrecordedInvoiceSales = shiftInvoices.reduce((sum, inv) => {
+          if (invoiceIdsInTrx.has(inv.id)) return sum;
+          const methods = inv.paymentMethods && inv.paymentMethods.length > 0
+            ? inv.paymentMethods
+            : [{ amount: Number(inv.total) || 0, treasuryId: inv.paymentMethod || (inv as any).treasuryId || 'cash' }];
+          const matched = methods.filter((m: any) => isMatchingTreasury(m.treasuryId, t.id, settings.treasuries));
+          return sum + matched.reduce((s: number, m: any) => s + (Number(m.amount) || 0), 0);
+        }, 0);
+
+        // ج) صافي ما تم تحصيله في هذه الخزينة خلال هذه الوردية فقط = (الوارد - الصادر)
+        const totalIn = tTrx.filter(trx => trx.type === 'in').reduce((s, x) => s + (Number(x.amount) || 0), 0) + unrecordedInvoiceSales;
+        const totalOut = tTrx.filter(trx => trx.type === 'out' || trx.category === 'expense').reduce((s, x) => s + (Number(x.amount) || 0), 0);
+        const netShiftAmount = Math.round((totalIn - totalOut) * 100) / 100;
+
+        // د) إذا كان صافي الوردية موجباً، يتم توريده بالكامل إلى الخزينة الرئيسية لتصفير الخزينة لهذه الوردية
+        if (netShiftAmount > 0) {
+          const cleanCode = effectiveShiftCode.replace(/[^A-Za-z0-9]/g, '');
+          const outId = `TRX-SWP-OUT-${cleanCode}-${t.id}`;
+          const inId = `TRX-SWP-IN-${cleanCode}-${t.id}`;
+
+          sweepTransactions.push({
+            id: outId,
+            salonId: settings.salonId,
+            date: now,
+            type: 'out',
+            amount: netShiftAmount,
+            category: 'transfer',
+            subCategory: 'shift_sweep',
+            isShiftSweep: true,
+            description: `تحويل إغلاق وردية (${effectiveShiftCode}): توريد رصيد (${t.name}) بمبلغ (${netShiftAmount} ج.م) إلى (${mainTreasury.name}) - فرع ${activeBranch?.name || ''}`,
+            treasury: t.id,
+            treasuryId: t.id,
+            branchId: activeBranchId,
+            branchCode: activeBranch?.code,
+            createdBy: currentUser?.name || 'الكاشير',
+            userId: currentUser?.id,
+            userName: currentUser?.name || 'الكاشير',
+            shiftDate: shiftData.date,
+            shiftCode: effectiveShiftCode,
+            shiftId: effectiveShiftId
+          } as any);
+
+          sweepTransactions.push({
+            id: inId,
+            salonId: settings.salonId,
+            date: now,
+            type: 'in',
+            amount: netShiftAmount,
+            category: 'transfer',
+            subCategory: 'shift_sweep',
+            isShiftSweep: true,
+            description: `تحويل إغلاق وردية (${effectiveShiftCode}): استلام من (${t.name}) بمبلغ (${netShiftAmount} ج.م) إلى (${mainTreasury.name}) - فرع ${activeBranch?.name || ''}`,
+            treasury: mainTreasury.id,
+            treasuryId: mainTreasury.id,
+            branchId: activeBranchId,
+            branchCode: activeBranch?.code,
+            createdBy: currentUser?.name || 'الكاشير',
+            userId: currentUser?.id,
+            userName: currentUser?.name || 'الكاشير',
+            shiftDate: shiftData.date,
+            shiftCode: effectiveShiftCode,
+            shiftId: effectiveShiftId
+          } as any);
+        }
+      });
+
+      if (sweepTransactions.length > 0) {
+        setTransactions(prev => [...prev, ...sweepTransactions]);
+        await DB.saveTransactions(sweepTransactions, settings.salonId);
+      }
+
+      // Persist shift closure in DB
       const totalSales = shiftInvoices.reduce((s, i) => s + (Number(i.total) || 0), 0);
       const totalCashSales = shiftInvoices.reduce((s, i) => {
         const splits = i.paymentMethods && i.paymentMethods.length > 0
@@ -2513,7 +2636,6 @@ export default function App() {
       const expectedCash = Math.max(0, initialCashNum + totalCashSales + cashInTrx - cashOutTrx);
 
       const nowIso = new Date().toISOString();
-      const effectiveShiftCode = currentShiftCode || (shiftData as any)?.shiftCode || (`SH-${(shiftData.date || '').replace(/-/g, '')}-01`);
 
       const closedShift: Partial<WorkShift> = {
         id: (shiftData as any).shiftId || ('SHIFT-' + Math.random().toString(36).substr(2, 9).toUpperCase()),

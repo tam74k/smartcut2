@@ -8,7 +8,7 @@ import { getBookingAdvances } from './BookingsScreen';
 import { printThermalFinancialVoucher } from './ThermalFinancialVoucher';
 import { resolveMainTreasury, isMatchingTreasury, getTransactionTargetTreasuryId, getTreasuryLabel } from '../utils/treasury';
 import { formatInvoiceDateTimeDisplay } from '../utils/timezone';
-import { isZeroingOrClosingTrx } from './ClosingReportReceipt';
+import { isLegacyCorruptZeroingTrx } from './ClosingReportReceipt';
 
 const isStaffAdvance = (t: any): boolean => {
   if (!t) return false;
@@ -411,7 +411,7 @@ export function TreasuryScreen({
 
     (transactions || []).forEach(t => {
       if (!t || !t.id) return;
-      if (isZeroingOrClosingTrx(t)) return;
+      if (isLegacyCorruptZeroingTrx(t)) return;
 
       if (seenTrxKeys.has(t.id)) return;
 

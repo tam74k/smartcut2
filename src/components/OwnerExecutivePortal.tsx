@@ -532,6 +532,16 @@ const isStaffSalary = (t: any) => {
   );
 };
 
+export const isLegacyCorruptZeroingTrx = (t: any): boolean => {
+  if (!t) return false;
+  if (t.isZeroing || t.isShiftZeroing || (t as any).is_zeroing) return true;
+  const sub = String(t.subCategory || (t as any).sub_category || '').toLowerCase();
+  if (sub === 'shift_zeroing' || sub === 'closing_sweep') return true;
+  const desc = String(t.description || '').toLowerCase();
+  if (desc.includes('تصفير خزينة') || desc.includes('تحويل تصفير') || desc.includes('تصفير وردية') || desc.includes('نقل الرصيد بالكامل')) return true;
+  return false;
+};
+
 export const isZeroingOrClosingTrx = (t: any): boolean => {
   if (!t) return false;
   if (t.isZeroing || t.isShiftZeroing || t.isClosing || t.subCategory === 'shift_zeroing' || (t as any).sub_category === 'shift_zeroing') return true;
@@ -1541,10 +1551,10 @@ export function OwnerExecutivePortal({
     ];
 
     const stats = definedTreasuries.map((t, idx) => {
-      // Period transactions for this treasury (excluding zeroing sweeps)
-      const periodTrxs = filteredTransactions.filter(trx => (trx.treasury === t.id || (trx as any).treasuryId === t.id) && !isZeroingOrClosingTrx(trx));
-      // All lifetime transactions for this treasury (excluding zeroing sweeps)
-      const allTrxs = transactions.filter(trx => (trx.treasury === t.id || (trx as any).treasuryId === t.id) && !isZeroingOrClosingTrx(trx));
+      // Period transactions for this treasury (excluding legacy corrupt sweeps)
+      const periodTrxs = filteredTransactions.filter(trx => (trx.treasury === t.id || (trx as any).treasuryId === t.id) && !isLegacyCorruptZeroingTrx(trx));
+      // All lifetime transactions for this treasury (excluding legacy corrupt sweeps)
+      const allTrxs = transactions.filter(trx => (trx.treasury === t.id || (trx as any).treasuryId === t.id) && !isLegacyCorruptZeroingTrx(trx));
 
       // Inflows in period
       const totalIn = periodTrxs.filter(trx => trx.type === 'in').reduce((sum, trx) => sum + (Number(trx.amount) || 0), 0);
