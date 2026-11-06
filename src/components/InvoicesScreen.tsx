@@ -53,9 +53,9 @@ export function InvoicesScreen({
 }: { 
   settings: AppSettings;
   invoices: Invoice[];
-  setInvoices: (i: Invoice[]) => void;
+  setInvoices: (i: Invoice[] | ((prev: Invoice[]) => Invoice[])) => void;
   transactions: Transaction[];
-  setTransactions: (t: Transaction[]) => void;
+  setTransactions: (t: Transaction[] | ((prev: Transaction[]) => Transaction[])) => void;
   clients: Client[];
   setClients: (c: Client[]) => void;
   allSalonClients?: Client[];
@@ -174,17 +174,35 @@ export function InvoicesScreen({
       return;
     }
 
-    if (window.confirm(`تحذير: هل أنت متأكد من حذف الفاتورة رقم (${inv.id}) نهائياً من النظام وقاعدة البيانات؟ سيتم عكس وتعديل رصيد الخزائن المرتبطة بها.`)) {
-      // 1. Delete from DB
+    if (!window.confirm(`تحذير: هل أنت متأكد من حذف الفاتورة رقم (${inv.id}) نهائياً من النظام وقاعدة البيانات؟\nسيتم حذف الفاتورة نهائياً وإلغاء حركاتها المالية وعكس أثرها بالكامل.`)) {
+      return;
+    }
+
+    try {
+      // 1. Delete from DB & clean all caches
       await DB.deleteInvoice(inv.id);
       
-      // 2. Remove from state
-      setInvoices(invoices.filter(i => i.id !== inv.id));
+      // 2. Remove from state using functional updater (guarantees safe deletion across branch filters)
+      setInvoices((prev: Invoice[]) => (prev || []).filter(i => i.id !== inv.id));
 
-      // 3. Reverse any financial transactions for this invoice
-      setTransactions(transactions.filter(t => (t as any).invoiceId !== inv.id && !t.description?.includes(inv.id)));
+      // 3. Reverse any financial transactions for this invoice in state
+      setTransactions((prev: Transaction[]) => (prev || []).filter(t => (t as any).invoiceId !== inv.id && !t.description?.includes(inv.id) && !t.id.includes(inv.id)));
       
-      alert(`تم حذف الفاتورة ${inv.id} بنجاح.`);
+      // 4. Clean local cache directly
+      try {
+        const cached = localStorage.getItem('smartcut_invoices_cache');
+        if (cached) {
+          const list = JSON.parse(cached);
+          if (Array.isArray(list)) {
+            localStorage.setItem('smartcut_invoices_cache', JSON.stringify(list.filter((i: any) => i.id !== inv.id)));
+          }
+        }
+      } catch (e) {}
+
+      alert(`تم حذف الفاتورة ${inv.id} نهائياً بنجاح.`);
+    } catch (err: any) {
+      console.error('Failed to delete invoice:', err);
+      alert(`حدث خطأ أثناء حذف الفاتورة من قاعدة البيانات: ${err?.message || 'خطأ غير معروف'}\nيرجى المحاولة مجدداً أو مراجعة اتصال الإنترنت.`);
     }
   };
   

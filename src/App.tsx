@@ -576,12 +576,13 @@ export default function App() {
   // Refs to prevent duplicate initialization and redundant fetches
   const hasInitializedRef = useRef<boolean>(false);
   const loadedSectionsRef = useRef<Set<string>>(new Set());
+  const deletedInvoiceIdsRef = useRef<Set<string>>(new Set());
 
   // Function to apply tab section data into state
   const applySectionData = useCallback((section: string, data: any) => {
     if (!data) return;
     if (data.invoices) {
-      setInvoices(data.invoices.map(dbInvoiceToApp));
+      setInvoices(data.invoices.map(dbInvoiceToApp).filter((i: Invoice) => !deletedInvoiceIdsRef.current.has(i.id)));
     }
     if (data.transactions) {
       setTransactions(data.transactions.map(dbTransactionToApp));
@@ -820,7 +821,7 @@ export default function App() {
 
           DB.fetchInvoices(sId).then(dbInvs => {
             if (dbInvs && dbInvs.length > 0) {
-              setInvoices(dbInvs.map(dbInvoiceToApp));
+              setInvoices(dbInvs.map(dbInvoiceToApp).filter((i: Invoice) => !deletedInvoiceIdsRef.current.has(i.id)));
             }
           }).catch(() => {});
 
@@ -985,8 +986,15 @@ export default function App() {
       if (event?.action === 'delete') {
         const delId = event.id || event.filters?.id || event.data?.id;
         if (delId) {
-          if (event.table === 'invoices') setInvoices(prev => prev.filter(i => i.id !== delId));
-          if (event.table === 'transactions') setTransactions(prev => prev.filter(t => t.id !== delId));
+          if (event.table === 'invoices') {
+            deletedInvoiceIdsRef.current.add(delId);
+            setInvoices(prev => (prev || []).filter(i => i.id !== delId));
+            return;
+          }
+          if (event.table === 'transactions') {
+            setTransactions(prev => (prev || []).filter(t => t.id !== delId));
+            return;
+          }
         }
       }
       try {
@@ -996,7 +1004,7 @@ export default function App() {
         ]);
 
         if (dbInvs && Array.isArray(dbInvs)) {
-          setInvoices(dbInvs.map(dbInvoiceToApp));
+          setInvoices(dbInvs.map(dbInvoiceToApp).filter((i: Invoice) => !deletedInvoiceIdsRef.current.has(i.id)));
         }
 
         if (dbTrxs && Array.isArray(dbTrxs)) {
@@ -2011,6 +2019,16 @@ export default function App() {
         return i.status !== old.status || i.paid !== old.paid || i.remaining !== old.remaining || i.total !== old.total || i.updatedAt !== old.updatedAt || i.settledAt !== old.settledAt;
       });
       changed.forEach(inv => DB.saveInvoice(inv, currentSalonId));
+
+      // Track removed invoices and ensure DB deletion if not already deleted
+      const nextIds = new Set(tagged.map(i => i.id));
+      const removedIds = currentSalonInvs.filter(i => !nextIds.has(i.id)).map(i => i.id);
+      if (removedIds.length > 0 && typeof updater === 'function') {
+        removedIds.forEach(id => {
+          deletedInvoiceIdsRef.current.add(id);
+          DB.deleteInvoice(id).catch(e => console.warn('Auto delete invoice sync error:', e));
+        });
+      }
 
       return [...other, ...tagged];
     });

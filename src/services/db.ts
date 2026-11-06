@@ -3516,19 +3516,87 @@ export const DB = {
 
   // ---- حذف فاتورة ومعاملاتها المالية المرتبطة نهائياً من قاعدة البيانات ----
   async deleteInvoice(invoiceId: string) {
+    if (!invoiceId) return false;
     const client = sb();
-    if (!client) return false;
+
+    // 1. Immediately clean up all local caches so offline / startup will never resurrect it
     try {
-      // 1. Delete all transactions linked to this invoice from DB
+      const cached = localStorage.getItem('smartcut_invoices_cache');
+      if (cached) {
+        const list = JSON.parse(cached);
+        if (Array.isArray(list)) {
+          localStorage.setItem('smartcut_invoices_cache', JSON.stringify(list.filter((i: any) => i.id !== invoiceId)));
+        }
+      }
+    } catch (e) {}
+
+    try {
+      const cached = localStorage.getItem('smartcut_invoices');
+      if (cached) {
+        const list = JSON.parse(cached);
+        if (Array.isArray(list)) {
+          localStorage.setItem('smartcut_invoices', JSON.stringify(list.filter((i: any) => i.id !== invoiceId)));
+        }
+      }
+    } catch (e) {}
+
+    try {
+      const held = localStorage.getItem('smartcut_held_invoices');
+      if (held) {
+        const list = JSON.parse(held);
+        if (Array.isArray(list)) {
+          localStorage.setItem('smartcut_held_invoices', JSON.stringify(list.filter((h: any) => h.id !== invoiceId && h.invoiceId !== invoiceId)));
+        }
+      }
+    } catch (e) {}
+
+    if (!client) return true;
+
+    try {
+      // 2. Delete all transactions linked to this invoice from DB (by invoice_id, description, or id)
       await client.from('transactions').delete().eq('invoice_id', invoiceId);
       await client.from('transactions').delete().ilike('description', `%${invoiceId}%`);
+      await client.from('transactions').delete().ilike('id', `%${invoiceId}%`);
+
+      // 3. Cascade delete tips, promo usages, item movements, held invoices
       try { await client.from('tips').delete().eq('invoice_id', invoiceId); } catch (e) {}
       try { await client.from('promo_code_usages').delete().eq('invoice_id', invoiceId); } catch (e) {}
-      // 2. Delete the invoice itself from DB
+      try { await client.from('item_movements').delete().eq('reference_id', invoiceId); } catch (e) {}
+      try { await client.from('held_invoices').delete().eq('id', invoiceId); } catch (e) {}
+
+      // 4. Safely unlink any bookings connected to this invoice so it doesn't get locked
+      try {
+        await client.from('bookings').update({ invoice_id: null, is_paid: false }).eq('invoice_id', invoiceId);
+      } catch (e) {}
+
+      // 5. Safely unlink any complaints connected to this invoice
+      try {
+        await client.from('client_complaints').update({ related_invoice_id: null }).eq('related_invoice_id', invoiceId);
+      } catch (e) {}
+
+      // 6. Delete the invoice itself from DB
       const { error } = await client.from('invoices').delete().eq('id', invoiceId);
-      if (error) { console.error('DB.deleteInvoice error:', error.message); return false; }
+      if (error) {
+        console.error('DB.deleteInvoice error from Supabase:', error.message);
+        throw new Error(error.message);
+      }
+
+      // 7. Re-verify removal from local cache
+      try {
+        const cached = localStorage.getItem('smartcut_invoices_cache');
+        if (cached) {
+          const list = JSON.parse(cached);
+          if (Array.isArray(list)) {
+            localStorage.setItem('smartcut_invoices_cache', JSON.stringify(list.filter((i: any) => i.id !== invoiceId)));
+          }
+        }
+      } catch (e) {}
+
       return true;
-    } catch (e) { console.error('DB.deleteInvoice exception:', e); return false; }
+    } catch (e: any) {
+      console.error('DB.deleteInvoice exception:', e);
+      throw e;
+    }
   },
 
   // ---- حذف معاملة مالية من قاعدة البيانات ----
