@@ -5,8 +5,9 @@ import {
   Wrench, ShieldAlert, Camera, Crown, Sparkles, PauseCircle, PlayCircle,
   FilePlus2, Layers, Zap, AlertCircle, DollarSign, Coffee, Sliders, Save, AlertTriangle, Loader2,
   Printer, Eye, FileText, RotateCcw, Barcode, Hourglass, CheckCircle, Check,
-  Wallet, Ticket, Edit3, Gift, Lock, Info, Star, UserCheck, TableProperties
+  Wallet, Ticket, Edit3, Gift, Lock, Info, Star, UserCheck, TableProperties, MessageSquare
 } from 'lucide-react';
+import { EvolutionApiService } from '../services/evolutionApiService';
 import { 
   AppSettings, CartItem, ServiceItem, Booking, Invoice, Client, Category, Employee,
   getClientTier, getNextClientTier, calculateClientTotalSpend, ClientTierConfig, HeldInvoice, PromoCode, PromoCodeUsage, TipRecord, AdvancePayment, ClientPreferences, Transaction, FingerprintLog, SalesReturn, Branch,
@@ -430,6 +431,7 @@ export function POSScreen({
   const [activeAdvancePayments, setActiveAdvancePayments] = useState<AdvancePayment[]>([]);
   const [activeBookingId, setActiveBookingId] = useState<string | undefined>(undefined);
   const [activeQueueNumber, setActiveQueueNumber] = useState<number | null>(null);
+  const [isSendingInvoiceWhatsApp, setIsSendingInvoiceWhatsApp] = useState(false);
 
   // Promo Code State
   const [promoCodeInput, setPromoCodeInput] = useState('');
@@ -5104,11 +5106,11 @@ export function POSScreen({
               </div>
             </div>
 
-            <div className="p-4 bg-white border-t border-slate-100 flex items-center gap-3">
+            <div className="p-4 bg-white border-t border-slate-100 flex items-center gap-2">
               <button 
                 type="button"
                 onClick={handleCloseReceiptModal}
-                className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95 text-xs"
+                className="py-3 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 text-xs"
                 title="إغلاق الشاشة وبدء فاتورة جديدة"
               >
                 <X size={16} />
@@ -5117,10 +5119,41 @@ export function POSScreen({
 
               <button 
                 type="button"
+                disabled={isSendingInvoiceWhatsApp}
+                onClick={async () => {
+                  if (!completedInvoice) return;
+                  const phone = completedInvoice.clientPhone || (completedInvoice as any).phone;
+                  if (!phone || phone.length < 7 || phone === '0000000000') {
+                    alert('رقم هاتف العميل غير مسجل في هذه الفاتورة.');
+                    return;
+                  }
+                  setIsSendingInvoiceWhatsApp(true);
+                  try {
+                    const res = await EvolutionApiService.sendInvoiceWhatsApp(settings, completedInvoice, activeBranchId);
+                    if (res.success) {
+                      alert('تم إرسال فاتورة المبيعات (PDF) بنجاح عبر الواتساب للعميل ✨');
+                    } else {
+                      alert(`فشل الإرسال: ${res.error || 'تعذر الإرسال'}`);
+                    }
+                  } catch (err: any) {
+                    alert(`خطأ أثناء الإرسال: ${err?.message || err}`);
+                  } finally {
+                    setIsSendingInvoiceWhatsApp(false);
+                  }
+                }}
+                className="py-3 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 text-xs whitespace-nowrap"
+                title="إرسال الفاتورة كملف PDF إلى هاتف العميل عبر الواتساب"
+              >
+                {isSendingInvoiceWhatsApp ? <Loader2 size={15} className="animate-spin" /> : <MessageSquare size={15} />}
+                <span>{isSendingInvoiceWhatsApp ? 'جارٍ الإرسال...' : 'واتساب PDF'}</span>
+              </button>
+
+              <button 
+                type="button"
                 onClick={() => {
                   executePrintInvoiceReceipt('receipt-content', completedInvoice.id);
                 }}
-                className="flex-[1.4] py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl shadow-md shadow-emerald-600/25 transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95 text-xs"
+                className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl shadow-md shadow-emerald-600/25 transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95 text-xs whitespace-nowrap"
                 title="طباعة الفاتورة على طابعة الإيصالات الحرارية"
               >
                 <Printer size={18} />

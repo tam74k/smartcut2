@@ -1,5 +1,6 @@
 import { AppSettings } from '../types';
 import { DB } from './db';
+import { generateBookingPdfBase64, generateInvoicePdfBase64 } from '../utils/pdfReceiptGenerator';
 
 export interface EvolutionSendResult {
   success: boolean;
@@ -279,6 +280,78 @@ export const EvolutionApiService = {
   },
 
   /**
+   * إرسال مستند/ملف (مثل PDF) عبر الواتساب في الذاكرة دون حفظ أي ملف
+   */
+  async sendDocumentMessage(
+    settings: AppSettings,
+    phone: string,
+    pdfBase64: string,
+    fileName: string,
+    caption?: string,
+    branchId?: string
+  ): Promise<EvolutionSendResult> {
+    if (settings.whatsappEnabled === false) {
+      return { success: false, error: 'خدمة الواتساب معطلة حالياً في الإعدادات' };
+    }
+    if (!this.isConfigured(settings, branchId)) {
+      return { success: false, error: 'لم يتم ربط وتفعيل حساب Evolution API لهذا الصالون بعد' };
+    }
+
+    const instance = this.getInstanceName(settings, branchId)!;
+    const apiKey = settings.evolutionApiKey || settings.waApiKey || '';
+    const baseUrl = this.getBaseUrl(settings);
+    const formattedPhone = formatWhatsAppNumber(phone, settings.country);
+
+    const validation = validateExternalUrl(baseUrl);
+    if (!validation.isValid) {
+      return { success: false, error: validation.error || 'عنوان السيرفر غير مصرح به' };
+    }
+
+    // تجهيز كود Base64 النظيف وتنسيق اسم الملف
+    const rawBase64 = pdfBase64.replace(/^data:[^;]+;base64,/, '');
+    const cleanFileName = fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`;
+
+    try {
+      const res = await fetch(`${baseUrl}/message/sendMedia/${instance}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': apiKey
+        },
+        body: JSON.stringify({
+          number: formattedPhone,
+          mediatype: 'document',
+          mimetype: 'application/pdf',
+          caption: caption || '',
+          media: rawBase64,
+          fileName: cleanFileName,
+          options: {
+            delay: 1200,
+            presence: 'composing'
+          }
+        })
+      });
+
+      const data = await res.json();
+      if (res.ok && (data?.key?.id || data?.status === 'SUCCESS' || data?.messageId)) {
+        return { success: true, messageId: data?.key?.id || data?.messageId };
+      } else {
+        console.warn('sendMedia returned non-ok, falling back to text:', data);
+        if (caption) {
+          return this.sendTextMessage(settings, phone, caption, branchId);
+        }
+        return { success: false, error: data?.message || data?.error || 'فشل إرسال ملف الـ PDF' };
+      }
+    } catch (err: any) {
+      console.warn('sendMedia exception, falling back to sendTextMessage:', err);
+      if (caption) {
+        return this.sendTextMessage(settings, phone, caption, branchId);
+      }
+      return { success: false, error: err?.message || 'خطأ في الاتصال بسيرفر الواتساب' };
+    }
+  },
+
+  /**
    * فحص حالة اتصال جلسة واتساب تابعة للمنظومة مباشرة بمعلومية الرابط والمفتاح واسم الجلسة
    */
   async checkPlatformConnection(
@@ -472,7 +545,7 @@ export const EvolutionApiService = {
   },
 
   /**
-   * 1. إرسال الفاتورة للعميل تلقائياً
+   * 1. إرسال الفاتورة للعميل تلقائياً كملف PDF في الذاكرة ومرفق معه نص الرسالة
    */
   async sendInvoiceWhatsApp(settings: AppSettings, invoice: any, branchId?: string): Promise<EvolutionSendResult> {
     if (settings.whatsappEnabled === false) return { success: false, error: 'الواتساب معطل' };
@@ -501,11 +574,25 @@ export const EvolutionApiService = {
       salonName: settings.salonName || 'صالون سمارت كت'
     });
 
+    const branchObj = settings.branches?.find(b => b.id === (branchId || invoice.branchId));
+
+    // توليد ملف الـ PDF لفاتورة المبيعات في الذاكرة وإرساله مباشرة دون حفظ أي ملف
+    try {
+      const pdfBase64 = await generateInvoicePdfBase64(invoice, settings, branchObj);
+      if (pdfBase64) {
+        const invCode = invoice.invoiceNumber || invoice.id || 'invoice';
+        const fileName = `فاتورة_${invCode}.pdf`;
+        return await this.sendDocumentMessage(settings, phone, pdfBase64, fileName, message, branchId || invoice.branchId);
+      }
+    } catch (pdfErr) {
+      console.warn('Could not generate invoice PDF in memory, falling back to text message:', pdfErr);
+    }
+
     return this.sendTextMessage(settings, phone, message, branchId || invoice.branchId);
   },
 
   /**
-   * 2. إرسال تأكيد الحجز للعميل تلقائياً
+   * 2. إرسال تأكيد الحجز للعميل تلقائياً كملف PDF في الذاكرة ومرفق معه نص الرسالة
    */
   async sendBookingConfirmationWhatsApp(settings: AppSettings, booking: any, branchId?: string): Promise<EvolutionSendResult> {
     if (settings.whatsappEnabled === false) return { success: false, error: 'الواتساب معطل' };
@@ -532,6 +619,18 @@ export const EvolutionApiService = {
       salonAddress: branchObj?.address || settings.address || '',
       salonName: settings.salonName || 'صالون سمارت كت'
     });
+
+    // توليد ملف الـ PDF لإيصال الحجز في الذاكرة وإرساله مباشرة دون حفظ أي ملف
+    try {
+      const pdfBase64 = await generateBookingPdfBase64(booking, settings, branchObj);
+      if (pdfBase64) {
+        const bokCode = booking.bookingCode || booking.queueNumber || booking.id || 'booking';
+        const fileName = `ايصال_حجز_${bokCode}.pdf`;
+        return await this.sendDocumentMessage(settings, phone, pdfBase64, fileName, message, branchId || booking.branchId);
+      }
+    } catch (pdfErr) {
+      console.warn('Could not generate booking PDF in memory, falling back to text message:', pdfErr);
+    }
 
     return this.sendTextMessage(settings, phone, message, branchId || booking.branchId);
   },
