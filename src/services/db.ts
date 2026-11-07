@@ -1180,6 +1180,12 @@ export const DB = {
           error = retry.error;
           continue;
         }
+        if (error.message && (error.message.includes('role') || error.message.includes('check constraint') || error.message.includes('users_role_check')) && snap.role === 'makeup_artist') {
+          snap.role = 'custom';
+          const retry = await client.from('users').upsert(snap, { onConflict: 'username' });
+          error = retry.error;
+          continue;
+        }
         break;
       }
       if (error) { 
@@ -5635,7 +5641,10 @@ export function dbServiceToApp(row: any) {
 export function dbUserToApp(row: any): any {
   if (!row) return {} as any;
   const c = toCamel(row);
-  const role = (c.role === 'kiosk' || (Array.isArray(c.screens) && c.screens.includes('kiosk') && c.screens.length === 1)) ? 'kiosk' : (c.role || 'cashier');
+  const isMakeupArtist = c.role === 'makeup_artist' || (Array.isArray(c.screens) && c.screens.includes('makeup_artist_portal') && c.screens.length === 1);
+  const role = isMakeupArtist 
+    ? 'makeup_artist' 
+    : ((c.role === 'kiosk' || (Array.isArray(c.screens) && c.screens.includes('kiosk') && c.screens.length === 1)) ? 'kiosk' : (c.role || 'cashier'));
   
   // Parse screens
   let screens = c.screens;

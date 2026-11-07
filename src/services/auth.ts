@@ -111,6 +111,8 @@ export const ACTION_CATALOG: ActionMeta[] = [
   { id: 'manage_clients', name: 'إدارة وتعديل وحذف بيانات العملاء', category: 'الموظفون والعملاء', description: 'التحكم في قاعدة بيانات العملاء ونقاط الولاء' },
   { id: 'manage_booking_settings', name: 'ضبط إعدادات الحجوزات وإغلاق الساعات والأيام', category: 'الموظفون والعملاء', description: 'التحكم في إغلاق الأيام والساعات وسعة الحجوزات وإتاحة الفنيين' },
   { id: 'manage_bookings_delete', name: 'حذف الحجوزات والمواعيد نهائياً', category: 'الموظفون والعملاء', description: 'السماح بإظهار واستخدام زر الحذف النهائي للحجز من النظام وقاعدة البيانات' },
+  { id: 'manage_makeup_artists', name: 'إدارة الميكب ارتست وتخصيص الخدمات والأسعار', category: 'الكتالوج والخدمات', description: 'إضافة وتعديل وحذف الميكب ارتست وتحديد الخدمات والأسعار المخصصة لكل ارتست' },
+  { id: 'makeup_artist_booking', name: 'تسجيل حجوزات العرائس وتحصيل العرابين', category: 'المبيعات', description: 'حجز مواعيد العرائس واستلام العربون وتوريده للصالون وإرسال إيصال الحجز عبر الواتساب' },
 
   // Reports, Analytics & System
   { id: 'view_reports', name: 'الاطلاع على التقارير المالية والتشغيلية', category: 'التقارير والإدارة', description: 'مشاهدة الأرباح والإيرادات ومبيعات الخدمات وإغلاق اليوم' },
@@ -189,7 +191,7 @@ export const DEFAULT_ROLE_PRESETS: Record<UserRole, { screens: string[]; actions
   },
   makeup_artist: {
     screens: ['makeup_artist_portal'],
-    actions: []
+    actions: ['makeup_artist_booking']
   },
   programmer: {
     screens: ['*'],

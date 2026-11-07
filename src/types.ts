@@ -119,6 +119,10 @@ export type ActionPermission =
   | 'manage_promo_codes'
   | 'manage_tips'
 
+  // Makeup Artists & Bridal Bookings
+  | 'manage_makeup_artists'
+  | 'makeup_artist_booking'
+
   // Reports, Analytics & System Management
   | 'view_reports' 
   | 'view_system_analytics'

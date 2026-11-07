@@ -87,6 +87,16 @@ export const NEW_PERMISSIONS: Record<string, { label: string; badgeClass: string
     label: 'تصفية وصرف العمولات',
     badgeClass: 'bg-violet-100 text-violet-900 border-violet-300 font-extrabold',
     desc: 'اعتماد وتصفية وصرف عمولات الخدمات والمبيعات المستحقة للموظفين'
+  },
+  manage_makeup_artists: {
+    label: 'جديد: إدارة الميكب ارتست وتخصيص الخدمات',
+    badgeClass: 'bg-pink-100 text-pink-900 border-pink-300 font-extrabold',
+    desc: 'إضافة وتعديل وحذف حسابات الميكب ارتست وتخصيص أسعار الخدمات'
+  },
+  makeup_artist_booking: {
+    label: 'جديد: حجز العرائس وتحصيل العربون',
+    badgeClass: 'bg-rose-100 text-rose-900 border-rose-300 font-extrabold',
+    desc: 'حجز مواعيد العرائس، استلام العربون، وإرسال إيصال الحجز PDF بالواتساب'
   }
 };
 
@@ -201,6 +211,23 @@ export const SYSTEM_MODULES: SystemModule[] = [
     screenIds: ['services', 'clients', 'complaints'],
     actionIds: [
       'manage_clients'
+    ]
+  },
+  {
+    id: 'makeup_artists',
+    name: 'الميكب ارتست وبوابة حجوزات العرائس',
+    shortName: 'الميكب ارتست',
+    description: 'إدارة حسابات الميكب ارتست، تخصيص الخدمات والأسعار، وحجز العرائس ومتابعة العرابين',
+    icon: Sparkles,
+    color: 'pink',
+    badgeBg: 'bg-pink-50',
+    badgeText: 'text-pink-700',
+    borderClass: 'border-pink-200',
+    headerBgClass: 'bg-pink-50/80',
+    screenIds: ['makeup_artists', 'makeup_artist_portal'],
+    actionIds: [
+      'manage_makeup_artists',
+      'makeup_artist_booking'
     ]
   },
   {

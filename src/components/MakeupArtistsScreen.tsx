@@ -167,14 +167,14 @@ export function MakeupArtistsScreen({
     const systemUser: AppUser = {
       id: targetUserId,
       salonId: settings.salonId,
-      salonCode: settings.salonCode,
+      salonCode: settings.salonCode || 'SC-01',
       name: formData.name.trim(),
       username: cleanUsername,
       password: finalPassword,
       phone: formData.phone.trim(),
       role: 'makeup_artist',
       screens: ['makeup_artist_portal'],
-      actions: [],
+      actions: ['makeup_artist_booking'],
       active: formData.isActive
     };
 

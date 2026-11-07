@@ -4047,6 +4047,7 @@ export default function App() {
           AuthService.logout();
           setCurrentUser(null);
           setIsArtistRoute(false);
+          window.location.href = '/';
         }}
       />
     );

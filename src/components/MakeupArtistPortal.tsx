@@ -124,8 +124,6 @@ export function MakeupArtistPortal({
     setCurrentArtist(null);
     if (onLogout) {
       onLogout();
-    } else if (onSwitchToMainApp) {
-      onSwitchToMainApp();
     } else {
       window.location.href = '/';
     }
@@ -393,7 +391,7 @@ export function MakeupArtistPortal({
           )}
 
           <div className="pt-3 flex gap-2">
-            {onSwitchToMainApp && (
+            {onSwitchToMainApp && currentUser && (currentUser.role === 'admin' || currentUser.role === 'owner' || currentUser.role === 'programmer') && (
               <button
                 type="button"
                 onClick={onSwitchToMainApp}
@@ -441,7 +439,7 @@ export function MakeupArtistPortal({
           </div>
 
           <div className="flex items-center gap-2">
-            {onSwitchToMainApp && currentUser && currentUser.role !== 'makeup_artist' && (
+            {onSwitchToMainApp && currentUser && (currentUser.role === 'admin' || currentUser.role === 'owner' || currentUser.role === 'programmer') && (
               <button
                 type="button"
                 onClick={onSwitchToMainApp}
