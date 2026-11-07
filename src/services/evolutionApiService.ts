@@ -307,8 +307,10 @@ export const EvolutionApiService = {
       return { success: false, error: validation.error || 'عنوان السيرفر غير مصرح به' };
     }
 
-    // تجهيز كود Base64 النظيف وتنسيق اسم الملف
-    const rawBase64 = pdfBase64.replace(/^data:[^;]+;base64,/, '');
+    // تجهيز كود Base64 الصافي بشكل قطعي دون أي بادئة Data-URI
+    const rawBase64 = pdfBase64.includes('base64,') 
+      ? pdfBase64.split('base64,')[1].trim() 
+      : pdfBase64.trim();
     const cleanFileName = fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`;
 
     try {
@@ -333,17 +335,17 @@ export const EvolutionApiService = {
       });
 
       const data = await res.json();
-      if (res.ok && (data?.key?.id || data?.status === 'SUCCESS' || data?.messageId)) {
-        return { success: true, messageId: data?.key?.id || data?.messageId };
+      if (res.ok && (data?.key?.id || data?.key || data?.status === 'SUCCESS' || data?.messageId || data?.id)) {
+        return { success: true, messageId: data?.key?.id || data?.messageId || data?.id || 'OK' };
       } else {
-        console.warn('sendMedia returned non-ok, falling back to text:', data);
+        console.error('sendMedia returned non-ok, falling back to text:', data);
         if (caption) {
           return this.sendTextMessage(settings, phone, caption, branchId);
         }
         return { success: false, error: data?.message || data?.error || 'فشل إرسال ملف الـ PDF' };
       }
     } catch (err: any) {
-      console.warn('sendMedia exception, falling back to sendTextMessage:', err);
+      console.error('sendMedia exception, falling back to sendTextMessage:', err);
       if (caption) {
         return this.sendTextMessage(settings, phone, caption, branchId);
       }
@@ -581,11 +583,12 @@ export const EvolutionApiService = {
       const pdfBase64 = await generateInvoicePdfBase64(invoice, settings, branchObj);
       if (pdfBase64) {
         const invCode = invoice.invoiceNumber || invoice.id || 'invoice';
-        const fileName = `فاتورة_${invCode}.pdf`;
+        const cleanInvCode = String(invCode).replace(/[^A-Za-z0-9_-]/g, '_');
+        const fileName = `Invoice-${cleanInvCode}.pdf`;
         return await this.sendDocumentMessage(settings, phone, pdfBase64, fileName, message, branchId || invoice.branchId);
       }
     } catch (pdfErr) {
-      console.warn('Could not generate invoice PDF in memory, falling back to text message:', pdfErr);
+      console.error('Could not generate invoice PDF in memory, falling back to text message:', pdfErr);
     }
 
     return this.sendTextMessage(settings, phone, message, branchId || invoice.branchId);
@@ -625,11 +628,12 @@ export const EvolutionApiService = {
       const pdfBase64 = await generateBookingPdfBase64(booking, settings, branchObj);
       if (pdfBase64) {
         const bokCode = booking.bookingCode || booking.queueNumber || booking.id || 'booking';
-        const fileName = `ايصال_حجز_${bokCode}.pdf`;
+        const cleanBokCode = String(bokCode).replace(/[^A-Za-z0-9_-]/g, '_');
+        const fileName = `Booking-${cleanBokCode}.pdf`;
         return await this.sendDocumentMessage(settings, phone, pdfBase64, fileName, message, branchId || booking.branchId);
       }
     } catch (pdfErr) {
-      console.warn('Could not generate booking PDF in memory, falling back to text message:', pdfErr);
+      console.error('Could not generate booking PDF in memory, falling back to text message:', pdfErr);
     }
 
     return this.sendTextMessage(settings, phone, message, branchId || booking.branchId);

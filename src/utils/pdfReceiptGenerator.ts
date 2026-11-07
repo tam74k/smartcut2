@@ -47,9 +47,12 @@ export async function convertHtmlToPdfBase64(htmlContent: string): Promise<strin
 
   const container = document.createElement('div');
   container.style.position = 'fixed';
-  container.style.left = '-9999px';
   container.style.top = '0';
-  container.style.width = '330px';
+  container.style.left = '0';
+  container.style.zIndex = '-9999';
+  container.style.opacity = '0';
+  container.style.pointerEvents = 'none';
+  container.style.width = '340px';
   container.style.backgroundColor = '#ffffff';
   container.style.color = '#000000';
   container.style.padding = '12px';
@@ -61,11 +64,29 @@ export async function convertHtmlToPdfBase64(htmlContent: string): Promise<strin
   document.body.appendChild(container);
 
   try {
+    // انتظار تحميل أو فك تشفير أي صور داخل المحتوى (مثل الشعار) قبل الالتقاط
+    const images = Array.from(container.querySelectorAll('img'));
+    if (images.length > 0) {
+      await Promise.all(
+        images.map(img => {
+          if (img.complete) return Promise.resolve();
+          if (typeof img.decode === 'function') {
+            return img.decode().catch(() => {});
+          }
+          return new Promise(resolve => {
+            img.onload = () => resolve(true);
+            img.onerror = () => resolve(false);
+            setTimeout(resolve, 500);
+          });
+        })
+      );
+    }
+
     // التقاط الـ Canvas بدقة مضاعفة (2x) لضمان وضوح نصوص الخط العربي
     const canvas = await html2canvas(container, {
       scale: 2,
       useCORS: true,
-      allowTaint: true,
+      allowTaint: false, // يجب أن تكون false لمنع تلوث الـ Canvas عند استخراج DataURL
       logging: false,
       backgroundColor: '#ffffff'
     });
@@ -81,7 +102,9 @@ export async function convertHtmlToPdfBase64(htmlContent: string): Promise<strin
     });
 
     pdf.addImage(imgData, 'PNG', 0, 0, imgWidthMm, imgHeightMm);
-    return pdf.output('datauristring');
+    const dataUri = pdf.output('datauristring');
+    // استخراج كود Base64 الصافي بدون أي بادئة Data-URI ليقبلها سيرفر Evolution API فوراً
+    return dataUri.includes('base64,') ? dataUri.split('base64,')[1].trim() : dataUri.trim();
   } finally {
     if (container.parentNode) {
       document.body.removeChild(container);
