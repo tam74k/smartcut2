@@ -686,6 +686,8 @@ export default function App() {
             setActiveTab('owner_portal');
           } else if (user.role === 'barber') {
             setActiveTab('barber_portal');
+          } else if (user.role === 'makeup_artist' || (user.screens?.includes('makeup_artist_portal') && !user.screens?.includes('*') && user.screens?.length === 1)) {
+            setActiveTab('makeup_artist_portal');
           } else if (user.role === 'kiosk' || (user.screens?.includes('kiosk') && !user.screens?.includes('*') && user.screens?.length === 1)) {
             setActiveTab('kiosk');
           } else if (!AuthService.canAccess('pos', user)) {
@@ -3473,6 +3475,32 @@ export default function App() {
           currentUser={currentUser}
         />
       );
+      case 'makeup_artist_portal': return (
+        <MakeupArtistPortal
+          settings={settings}
+          branches={branches}
+          services={branchServices}
+          bookings={bookings}
+          currentUser={currentUser}
+          onSaveBooking={(newB) => {
+            handleSetBookings((prev: Booking[]) => [newB, ...prev]);
+            if (settings.whatsappEnabled !== false && settings.whatsappSettings?.sendBookingToClient) {
+              EvolutionApiService.sendBookingConfirmationWhatsApp(settings, newB, newB.branchId || activeBranchId)
+                .catch(err => console.error('Portal booking WhatsApp error:', err));
+            }
+          }}
+          onCancelBooking={(bId) => {
+            handleSetBookings((prev: Booking[]) => prev.map(b => b.id === bId ? { ...b, status: 'cancelled' } : b));
+          }}
+          onSwitchToMainApp={() => {
+            setActiveTab('makeup_artists');
+          }}
+          onLogout={() => {
+            AuthService.logout();
+            setCurrentUser(null);
+          }}
+        />
+      );
       case 'invoices': return (
         <InvoicesScreen 
           settings={settings} 
@@ -3885,6 +3913,8 @@ export default function App() {
       setActiveTab('owner_portal');
     } else if (u.role === 'barber' || (u.screens?.includes('barber_portal') && !u.screens?.includes('*') && u.screens?.length === 1)) {
       setActiveTab('barber_portal');
+    } else if (u.role === 'makeup_artist' || (u.screens?.includes('makeup_artist_portal') && !u.screens?.includes('*') && u.screens?.length === 1)) {
+      setActiveTab('makeup_artist_portal');
     } else if (u.role === 'kiosk' || (u.screens?.includes('kiosk') && !u.screens?.includes('*') && u.screens?.length === 1)) {
       setActiveTab('kiosk');
     } else {
@@ -3969,22 +3999,54 @@ export default function App() {
     );
   }
 
-  // 3A. STANDALONE MAKEUP ARTIST COLLABORATION PORTAL (/artist, /mua, or ?portal=artist)
-  if (isArtistRoute) {
+  // 3A. STANDALONE MAKEUP ARTIST COLLABORATION PORTAL (/artist, /mua, ?portal=artist, or makeup_artist role)
+  const isDedicatedArtistUser = currentUser?.role === 'makeup_artist' || 
+    (currentUser && currentUser.screens?.includes('makeup_artist_portal') && !currentUser.screens?.includes('*') && currentUser.screens?.length === 1);
+
+  if (isArtistRoute || isDedicatedArtistUser) {
+    if (!currentUser) {
+      return (
+        <LoginScreen 
+          onLoginSuccess={handleApplyLoginSuccess} 
+          settings={settings}
+          onOpenSaaSAdmin={() => {
+            const adminUser = AuthService.quickLogin('admin');
+            if (adminUser) {
+              setCurrentUser(adminUser);
+              setActiveTab('dashboard');
+            }
+          }}
+        />
+      );
+    }
+
     return (
       <MakeupArtistPortal
         settings={settings}
         branches={branches}
-        services={services}
+        services={branchServices}
         bookings={bookings}
+        currentUser={currentUser}
         onSaveBooking={(newB) => {
           handleSetBookings((prev: Booking[]) => [newB, ...prev]);
+          if (settings.whatsappEnabled !== false && settings.whatsappSettings?.sendBookingToClient) {
+            EvolutionApiService.sendBookingConfirmationWhatsApp(settings, newB, newB.branchId || activeBranchId)
+              .catch(err => console.error('Portal booking WhatsApp error:', err));
+          }
         }}
         onCancelBooking={(bId) => {
           handleSetBookings((prev: Booking[]) => prev.map(b => b.id === bId ? { ...b, status: 'cancelled' } : b));
         }}
         onSwitchToMainApp={() => {
-          window.location.href = '/';
+          if (currentUser.role !== 'makeup_artist') {
+            setIsArtistRoute(false);
+            setActiveTab('makeup_artists');
+          }
+        }}
+        onLogout={() => {
+          AuthService.logout();
+          setCurrentUser(null);
+          setIsArtistRoute(false);
         }}
       />
     );

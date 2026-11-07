@@ -58,6 +58,8 @@ export const SCREEN_CATALOG: ScreenMeta[] = [
   { id: 'permissions', name: 'إدارة الصلاحيات والمستخدمين', category: 'الإدارة والنظام', description: 'التحكم بالمستخدمين وإنشاء الأدوار المخصصة وتوزيع الصلاحيات' },
   { id: 'saas_subscriptions', name: 'إدارة اشتراكات الصالونات (SaaS)', category: 'الإدارة والنظام', description: 'متابعة الصالونات المسجلة، الفترات التجريبية، وتجديد الاشتراكات والربط مع Evolution API' },
   { id: 'ai_assistant', name: 'المساعد الذكي وإدارة العمليات', category: 'الذكاء الاصطناعي والمساعد', description: 'شات ذكي للاستعلام الفوري وتنفيذ العمليات والحجوزات والإحصائيات بالأوامر' },
+  { id: 'makeup_artists', name: 'إدارة الميكب ارتست والخدمات المخصصة', category: 'الكتالوج والخدمات', description: 'إضافة الميكب ارتست، تخصيص الخدمات والأسعار، ومتابعة العرابين والحسابات' },
+  { id: 'makeup_artist_portal', name: 'بوابة الميكب ارتست للحجوزات والعرائس', category: 'المبيعات', description: 'بوابة خاصة للميكب ارتست لإدخال حجوزات العرائس ومتابعة العرابين وحالات التحويل' },
   { id: 'settings', name: 'إعدادات النظام والمنشأة', category: 'الإدارة والنظام', description: 'بيانات الصالون، الرقم الضريبي، إعدادات ZATCA، والربط السحابي' }
 ];
 
@@ -185,6 +187,10 @@ export const DEFAULT_ROLE_PRESETS: Record<UserRole, { screens: string[]; actions
     screens: ['kiosk'],
     actions: []
   },
+  makeup_artist: {
+    screens: ['makeup_artist_portal'],
+    actions: []
+  },
   programmer: {
     screens: ['*'],
     actions: ['*']
@@ -205,6 +211,7 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   barber: 'فني / حلاق (Barber)',
   kiosk: 'جهاز حجز الأدوار وطابور الانتظار (Kiosk / تابلت الأرقام)',
   accountant: 'محاسب مالي (Accountant)',
+  makeup_artist: 'ميكب ارتست (Makeup Artist)',
   custom: 'دور مخصص (Custom Role)',
   programmer: 'المبرمج والمطور الرئيسي (Master Developer)'
 };

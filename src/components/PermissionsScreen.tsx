@@ -233,6 +233,9 @@ export function PermissionsScreen({
       if (!userForm.branchId && branches.length > 0) {
         userForm.branchId = branches[0].id;
       }
+    } else if (userForm.role === 'makeup_artist') {
+      finalScreens = ['makeup_artist_portal'];
+      finalActions = [];
     } else if (userForm.role === 'custom' && userForm.customRoleId) {
       const selectedCustomRole = roles.find(r => r.id === userForm.customRoleId);
       if (selectedCustomRole) {
@@ -1195,6 +1198,7 @@ export function PermissionsScreen({
                     <option value="cashier">كاشير (Cashier)</option>
                     <option value="receptionist">موظف استقبال (Receptionist)</option>
                     <option value="barber">فني / حلاق (Barber)</option>
+                    <option value="makeup_artist">ميكب ارتست (Makeup Artist - بوابة حجوزات العرائس)</option>
                     <option value="kiosk">جهاز حجز الأدوار وطابور الانتظار (Kiosk / تابلت الأرقام)</option>
                   </optgroup>
                   {roles.length > 0 && (

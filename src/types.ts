@@ -1,4 +1,4 @@
-export type UserRole = 'programmer' | 'owner' | 'admin' | 'supervisor' | 'cashier' | 'receptionist' | 'barber' | 'accountant' | 'warehouse_manager' | 'kiosk' | 'custom';
+export type UserRole = 'programmer' | 'owner' | 'admin' | 'supervisor' | 'cashier' | 'receptionist' | 'barber' | 'accountant' | 'warehouse_manager' | 'kiosk' | 'custom' | 'makeup_artist';
 
 // 1. صلاحيات الشاشات (ScreenPermission)
 export type ScreenPermission =
@@ -949,6 +949,7 @@ export interface MakeupArtist {
   phone: string;
   username: string;
   password?: string;
+  userId?: string; // معرّف المستخدم في جدول مستخدمي النظام users
   notes?: string;
   isActive: boolean;
   createdAt: string;
