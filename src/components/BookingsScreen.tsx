@@ -95,19 +95,23 @@ export function calculateServiceLinePrice(s: any): number {
 
 // Calculate comprehensive booking financial totals including item discounts and general discount
 export function calculateBookingTotals(b: Partial<Booking>) {
-  const services = b.services || [];
+  let rawServices = b?.services;
+  if (typeof rawServices === 'string') {
+    try { rawServices = JSON.parse(rawServices); } catch { rawServices = []; }
+  }
+  const services = Array.isArray(rawServices) ? rawServices : [];
   const grossServices = services.reduce((sum, s) => {
-    const qty = Math.max(1, Number(s.quantity) || 1);
-    return sum + (Number(s.price || 0) * qty);
+    const qty = Math.max(1, Number(s?.quantity) || 1);
+    return sum + (Number(s?.price || 0) * qty);
   }, 0);
-  const lineDiscounts = services.reduce((sum, s) => sum + calculateServiceLineDiscount(s), 0);
+  const lineDiscounts = services.reduce((sum, s) => sum + (s ? calculateServiceLineDiscount(s) : 0), 0);
   const subtotalAfterLines = Math.max(0, grossServices - lineDiscounts);
 
   // قاعدة عدم الجمع بين خصمين: إذا وُجدت خصومات على بنود الخدمات، لا يُطبّق خصم الإجمالي
   let generalDiscount = 0;
-  const genVal = Number(b.discountValue || 0);
+  const genVal = Number(b?.discountValue || 0);
   if (lineDiscounts === 0 && genVal > 0) {
-    if (b.discountType === 'percentage') {
+    if (b?.discountType === 'percentage') {
       generalDiscount = (grossServices * Math.min(100, Math.max(0, genVal))) / 100;
     } else {
       generalDiscount = Math.min(grossServices, Math.max(0, genVal));
@@ -116,7 +120,13 @@ export function calculateBookingTotals(b: Partial<Booking>) {
 
   const totalDiscounts = lineDiscounts > 0 ? lineDiscounts : generalDiscount;
   const netTotal = Math.max(0, grossServices - totalDiscounts);
-  const advances = (b.advancePayments || []).reduce((sum, a) => sum + Number(a.amount || 0), 0);
+
+  let rawAdvances = b?.advancePayments || (b as any)?.advance_payments;
+  if (typeof rawAdvances === 'string') {
+    try { rawAdvances = JSON.parse(rawAdvances); } catch { rawAdvances = []; }
+  }
+  const advancesList = Array.isArray(rawAdvances) ? rawAdvances : [];
+  const advances = advancesList.reduce((sum, a) => sum + Number(a?.amount || 0), 0);
   const remaining = Math.max(0, netTotal - advances);
 
   return {
@@ -262,7 +272,8 @@ export function BookingsScreen({
   };
 
   const handleSendBookingReminder = async (targetBooking: Booking) => {
-    if (!targetBooking.phone) {
+    const bPhone = targetBooking.phone || (targetBooking as any).clientPhone;
+    if (!bPhone) {
       alert('لا يوجد رقم هاتف مسجل لهذا العميل.');
       return;
     }
@@ -295,7 +306,8 @@ export function BookingsScreen({
   };
 
   const handleResendBookingConfirmation = async (targetBooking: Booking) => {
-    if (!targetBooking.phone) {
+    const bPhone = targetBooking.phone || (targetBooking as any).clientPhone;
+    if (!bPhone) {
       alert('لا يوجد رقم هاتف مسجل لهذا العميل.');
       return;
     }
@@ -370,6 +382,7 @@ export function BookingsScreen({
   // Modals & Details State
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
+  const [sendWhatsAppOnSave, setSendWhatsAppOnSave] = useState(true);
   const [selectedBookingDetails, setSelectedBookingDetails] = useState<Booking | null>(null);
   const [previewBooking, setPreviewBooking] = useState<Booking | null>(null);
 
@@ -1056,6 +1069,7 @@ export function BookingsScreen({
     } else {
       setTechToAdd('');
     }
+    setSendWhatsAppOnSave(settings.whatsappEnabled !== false && settings.whatsappSettings?.sendBookingToClient !== false);
     setShowAddModal(true);
   };
 
@@ -1573,8 +1587,10 @@ export function BookingsScreen({
       }
     }
 
-    // إرسال تأكيد الحجز للعميل تلقائياً عبر الواتساب إذا كان الحجز جديداً والخيار مفعلاً
-    if (!editingBooking && settings.whatsappEnabled !== false && settings.whatsappSettings?.sendBookingToClient) {
+    // إرسال تأكيد الحجز للعميل تلقائياً كملف PDF في الذاكرة عبر الواتساب إذا كان الحجز جديداً والخيار مفعلاً أو تم اختياره
+    const shouldSendWhatsApp = settings.whatsappEnabled !== false && 
+      ((!editingBooking && settings.whatsappSettings?.sendBookingToClient) || sendWhatsAppOnSave);
+    if (shouldSendWhatsApp) {
       EvolutionApiService.sendBookingConfirmationWhatsApp(settings, booking, bBranchId)
         .catch(err => console.error('Booking confirmation WhatsApp send error:', err));
     }
@@ -1671,6 +1687,7 @@ export function BookingsScreen({
       discountType: b.discountType || 'fixed',
       discountValue: b.discountValue || 0
     });
+    setSendWhatsAppOnSave(false);
     setShowAddModal(true);
     setSelectedBookingDetails(null);
   };
@@ -5990,7 +6007,20 @@ export function BookingsScreen({
                   </div>
                 );
               })()}
-              <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                {settings.whatsappEnabled !== false && (
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 select-none cursor-pointer bg-emerald-50/70 border border-emerald-200 px-3 py-2 rounded-xl hover:bg-emerald-100/70 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={sendWhatsAppOnSave}
+                      onChange={(e) => setSendWhatsAppOnSave(e.target.checked)}
+                      className="rounded text-emerald-600 focus:ring-emerald-500 w-3.5 h-3.5 cursor-pointer"
+                    />
+                    <span className="flex items-center gap-1 text-emerald-900 font-bold">
+                      <span>إرسال إيصال الحجز (PDF) عبر الواتساب</span>
+                    </span>
+                  </label>
+                )}
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}

@@ -553,11 +553,19 @@ export const EvolutionApiService = {
     if (settings.whatsappEnabled === false) return { success: false, error: 'الواتساب معطل' };
     if (!settings.whatsappSettings?.sendInvoiceToClient) return { success: false, error: 'إرسال الفواتير للعملاء غير مفعل' };
     const phone = invoice.clientPhone || invoice.phone;
-    if (!phone || phone.length < 7 || phone === '0000000000') return { success: false, error: 'رقم هاتف العميل غير مسجل أو غير صالح' };
+    if (!phone || String(phone).replace(/\D/g, '').length < 7 || phone === '0000000000') return { success: false, error: 'رقم هاتف العميل غير مسجل أو غير صالح' };
 
-    const servicesList = Array.isArray(invoice.items) 
-      ? invoice.items.map((it: any) => it.serviceName || it.name || 'خدمة').join('، ')
-      : 'خدمات متنوعة';
+    let servicesList = 'خدمات متنوعة';
+    if (Array.isArray(invoice.items)) {
+      servicesList = invoice.items.map((it: any) => it.serviceName || it.name || 'خدمة').join('، ');
+    } else if (typeof invoice.items === 'string') {
+      try {
+        const parsed = JSON.parse(invoice.items);
+        if (Array.isArray(parsed)) {
+          servicesList = parsed.map((it: any) => it.serviceName || it.name || 'خدمة').join('، ');
+        }
+      } catch (e) {}
+    }
 
     const remaining = Number(invoice.remaining ?? 0);
     const remainingText = remaining > 0.01 ? `⏳ المتبقي (آجل): ${remaining.toFixed(2)} ${settings.currency || 'ر.س'}` : '';
@@ -600,24 +608,35 @@ export const EvolutionApiService = {
   async sendBookingConfirmationWhatsApp(settings: AppSettings, booking: any, branchId?: string): Promise<EvolutionSendResult> {
     if (settings.whatsappEnabled === false) return { success: false, error: 'الواتساب معطل' };
     if (!settings.whatsappSettings?.sendBookingToClient) return { success: false, error: 'إرسال تأكيد الحجز للعملاء غير مفعل' };
-    const phone = booking.phone;
-    if (!phone || phone.length < 7) return { success: false, error: 'رقم هاتف العميل غير صالح' };
+    const phone = booking.phone || booking.clientPhone || booking.customerPhone;
+    if (!phone || String(phone).replace(/\D/g, '').length < 7) {
+      return { success: false, error: 'رقم هاتف العميل غير صالح أو غير مسجل' };
+    }
 
-    const servicesList = Array.isArray(booking.services)
-      ? booking.services.map((s: any) => s.serviceName || s.name || 'خدمة').join('، ')
-      : 'خدمات الحجز';
+    let servicesList = 'خدمات الحجز';
+    if (Array.isArray(booking.services)) {
+      servicesList = booking.services.map((s: any) => s.serviceName || s.name || 'خدمة').join('، ');
+    } else if (typeof booking.services === 'string') {
+      try {
+        const parsed = JSON.parse(booking.services);
+        if (Array.isArray(parsed)) {
+          servicesList = parsed.map((s: any) => s.serviceName || s.name || 'خدمة').join('، ');
+        }
+      } catch (e) {}
+    }
 
     const branchObj = settings.branches?.find(b => b.id === (branchId || booking.branchId));
     const branchName = branchObj?.name || 'الفرع الرئيسي';
 
+    const rawBookingCode = booking.bookingCode || booking.queueNumber || booking.id || '';
     const template = settings.whatsappSettings?.bookingTemplate || DEFAULT_WHATSAPP_TEMPLATES.bookingTemplate;
     const message = interpolateTemplate(template, {
       clientName: booking.clientName || 'عميلنا العزيز',
-      bookingId: booking.bookingCode || booking.queueNumber || booking.id,
-      date: booking.date,
-      time: booking.time,
+      bookingId: String(rawBookingCode),
+      date: booking.date || '',
+      time: booking.time || '',
       services: servicesList,
-      employeeName: booking.employeeName || 'حسب التوفر',
+      employeeName: booking.employeeName || (booking as any).barberName || 'حسب التوفر',
       branchName,
       salonAddress: branchObj?.address || settings.address || '',
       salonName: settings.salonName || 'صالون سمارت كت'

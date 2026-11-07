@@ -46,16 +46,18 @@ export async function convertHtmlToPdfBase64(htmlContent: string): Promise<strin
   }
 
   const container = document.createElement('div');
+  // وضع العنصر خلف كافة عناصر الواجهة وبمعدل عتامة 1 كاملة حتى لا يراه المستخدم
+  // وفي نفس الوقت يستطيع html2canvas التقاط كافة النصوص والخطوط والألوان بدقة كاملة
   container.style.position = 'fixed';
   container.style.top = '0';
   container.style.left = '0';
-  container.style.zIndex = '-9999';
-  container.style.opacity = '0';
+  container.style.zIndex = '-99999';
+  container.style.opacity = '1';
   container.style.pointerEvents = 'none';
   container.style.width = '340px';
   container.style.backgroundColor = '#ffffff';
   container.style.color = '#000000';
-  container.style.padding = '12px';
+  container.style.padding = '14px';
   container.style.boxSizing = 'border-box';
   container.style.direction = 'rtl';
   container.style.fontFamily = "'Cairo', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
@@ -64,6 +66,13 @@ export async function convertHtmlToPdfBase64(htmlContent: string): Promise<strin
   document.body.appendChild(container);
 
   try {
+    // انتظار تحميل خطوط النظام أو خط كايرو إن وُجد لضمان سلامة رسم النصوص العربية
+    if ((document as any).fonts && typeof (document as any).fonts.ready?.then === 'function') {
+      try {
+        await (document as any).fonts.ready;
+      } catch (e) {}
+    }
+
     // انتظار تحميل أو فك تشفير أي صور داخل المحتوى (مثل الشعار) قبل الالتقاط
     const images = Array.from(container.querySelectorAll('img'));
     if (images.length > 0) {
@@ -88,7 +97,12 @@ export async function convertHtmlToPdfBase64(htmlContent: string): Promise<strin
       useCORS: true,
       allowTaint: false, // يجب أن تكون false لمنع تلوث الـ Canvas عند استخراج DataURL
       logging: false,
-      backgroundColor: '#ffffff'
+      backgroundColor: '#ffffff',
+      onclone: (_clonedDoc, clonedElement) => {
+        clonedElement.style.opacity = '1';
+        clonedElement.style.visibility = 'visible';
+        clonedElement.style.display = 'block';
+      }
     });
 
     const imgData = canvas.toDataURL('image/png');
@@ -121,14 +135,35 @@ export function generateBookingReceiptHtml(
   branchObj?: any,
   currentUser?: any
 ): string {
-  const totals = calculateBookingTotals(booking);
+  // تفكيك بنود الخدمات والدفعات بحذر لضمان عدم حدوث استثناءات
+  let rawServices = booking.services;
+  if (typeof rawServices === 'string') {
+    try { rawServices = JSON.parse(rawServices); } catch { rawServices = []; }
+  }
+  const servicesList: any[] = Array.isArray(rawServices) ? rawServices : [];
+
+  let rawAdvances = booking.advancePayments || (booking as any).advance_payments;
+  if (typeof rawAdvances === 'string') {
+    try { rawAdvances = JSON.parse(rawAdvances); } catch { rawAdvances = []; }
+  }
+  const advancesList: any[] = Array.isArray(rawAdvances) ? rawAdvances : [];
+
+  const safeBooking: Booking = {
+    ...booking,
+    services: servicesList,
+    advancePayments: advancesList
+  };
+
+  const totals = calculateBookingTotals(safeBooking);
   const totalAdv = totals.advances;
   const remainingAmt = totals.remaining;
   const salonTitle = settings.salonName || 'صالون سمارت كت';
   const branchName = branchObj?.name || 'الفرع الرئيسي';
-  const barcodeCode = booking.bookingCode || booking.queueNumber || booking.id || 'B000000';
+  const rawBarcode = booking.bookingCode || booking.queueNumber || booking.id || 'B000000';
+  const barcodeCode = String(rawBarcode).trim() || 'B000000';
   const barcodeSvg = generateCode39Svg(barcodeCode, 20);
   const currency = settings.currency || 'ر.س';
+  const clientPhoneNumber = booking.phone || (booking as any).clientPhone || (booking as any).customerPhone || '';
 
   return `
     <div style="max-width: 310px; margin: 0 auto; font-family: 'Cairo', system-ui, sans-serif; font-size: 11px; font-weight: bold; line-height: 1.4; color: #000; text-align: right; direction: rtl; background: #fff;">
@@ -152,21 +187,21 @@ export function generateBookingReceiptHtml(
       <!-- بيانات الحجز والعميل -->
       <div style="border-top: 1.5px solid #000; border-bottom: 1.5px solid #000; padding: 6px 0; margin-bottom: 6px; font-size: 11px; line-height: 1.6;">
         <div style="display: flex; justify-content: space-between; gap: 8px;">
-          <span>📅 التاريخ: <b>${escapeHtml(booking.date)}</b></span>
+          <span>📅 التاريخ: <b>${escapeHtml(booking.date || '')}</b></span>
           <span>⏰ الوقت: <b>${escapeHtml(formatTo12Hour(booking.time))}</b></span>
         </div>
         <div style="display: flex; justify-content: space-between; gap: 8px;">
-          <span>👤 العميل: <b>${escapeHtml(booking.clientName)}</b></span>
+          <span>👤 العميل: <b>${escapeHtml(booking.clientName || 'عميل حجز')}</b></span>
           <span>📍 المكان: <b>${escapeHtml(booking.location || 'داخل الصالون')}</b></span>
         </div>
-        ${(booking.phone || booking.clientPhone) ? `
+        ${clientPhoneNumber ? `
         <div style="display: flex; justify-content: space-between; gap: 8px;">
-          <span>📱 الجوال: <b dir="ltr">${escapeHtml(booking.phone || booking.clientPhone || '')}</b></span>
+          <span>📱 الجوال: <b dir="ltr">${escapeHtml(clientPhoneNumber)}</b></span>
         </div>
         ` : ''}
         <div style="display: flex; justify-content: space-between; gap: 8px; border-top: 1px solid #ddd; margin-top: 3px; padding-top: 3px;">
           <span>✂️ الموظف المختار:</span>
-          <b>${escapeHtml(booking.employeeName || 'حسب التوفر')}</b>
+          <b>${escapeHtml((booking as any).employeeName || (booking as any).barberName || 'حسب التوفر')}</b>
         </div>
       </div>
 
@@ -176,13 +211,13 @@ export function generateBookingReceiptHtml(
           <span>الخدمة / البند</span>
           <span>السعر</span>
         </div>
-        ${(booking.services || []).map(s => {
-          const qty = Math.max(1, Number(s.quantity) || 1);
-          const price = Number(s.price || 0) * qty;
+        ${servicesList.map(s => {
+          const qty = Math.max(1, Number(s?.quantity) || 1);
+          const price = Number(s?.price || 0) * qty;
           return `
             <div style="display: flex; justify-content: space-between; align-items: center; padding: 3px 0; border-bottom: 1px dashed #ccc; gap: 6px;">
               <div>
-                <span>${escapeHtml(s.serviceName || (s as any).name)}</span>
+                <span>${escapeHtml(s?.serviceName || s?.name || 'خدمة')}</span>
                 ${qty > 1 ? `<span> (×${qty})</span>` : ''}
               </div>
               <div style="font-family: monospace; white-space: nowrap;">
@@ -242,16 +277,29 @@ export function generateInvoiceReceiptHtml(
   branchObj?: any,
   currentUser?: any
 ): string {
-  const totals = calculateInvoiceReceiptTotals(invoice, settings);
+  let rawItems = invoice.items;
+  if (typeof rawItems === 'string') {
+    try { rawItems = JSON.parse(rawItems); } catch { rawItems = []; }
+  }
+  const itemsList: any[] = Array.isArray(rawItems) ? rawItems : [];
+
+  const safeInvoice: Invoice = {
+    ...invoice,
+    items: itemsList
+  };
+
+  const totals = calculateInvoiceReceiptTotals(safeInvoice, settings);
   const salonTitle = settings.salonName || 'صالون سمارت كت';
   const branchName = branchObj?.name || 'الفرع الرئيسي';
-  const invoiceNum = invoice.invoiceNumber || invoice.id;
+  const rawInvoiceNum = invoice.invoiceNumber || invoice.id || 'INV000000';
+  const invoiceNum = String(rawInvoiceNum).trim() || 'INV000000';
   const barcodeSvg = generateCode39Svg(invoiceNum, 20);
   const currency = settings.currency || 'ر.س';
   const cashier = invoice.cashierName || invoice.createdBy || (invoice as any).created_by || currentUser?.name || 'الكاشير';
 
   const dateStr = (invoice.date || new Date().toISOString()).split('T')[0];
   const timeStr = invoice.time || (invoice.date?.includes('T') ? invoice.date.split('T')[1].slice(0, 5) : '');
+  const invoiceClientPhone = invoice.clientPhone || (invoice as any).phone || '';
 
   return `
     <div style="max-width: 310px; margin: 0 auto; font-family: 'Cairo', system-ui, sans-serif; font-size: 11px; font-weight: bold; line-height: 1.4; color: #000; text-align: right; direction: rtl; background: #fff;">
@@ -284,9 +332,9 @@ export function generateInvoiceReceiptHtml(
           <span>👤 العميل: <b>${escapeHtml(invoice.clientName || 'عميل نقدي')}</b></span>
           <span>💼 الكاشير: <b>${escapeHtml(cashier)}</b></span>
         </div>
-        ${invoice.clientPhone ? `
+        ${invoiceClientPhone ? `
         <div style="display: flex; justify-content: space-between; gap: 8px;">
-          <span>📱 الجوال: <b dir="ltr">${escapeHtml(invoice.clientPhone)}</b></span>
+          <span>📱 الجوال: <b dir="ltr">${escapeHtml(invoiceClientPhone)}</b></span>
         </div>
         ` : ''}
       </div>
@@ -297,14 +345,14 @@ export function generateInvoiceReceiptHtml(
           <span>الخدمة / المنتج</span>
           <span>الإجمالي</span>
         </div>
-        ${(invoice.items || []).map((it: any) => {
-          const qty = Math.max(1, Number(it.quantity) || 1);
-          const price = (Number(it.price) || 0) * qty;
-          const employeeName = it.employeeName || it.barberName;
+        ${itemsList.map((it: any) => {
+          const qty = Math.max(1, Number(it?.quantity) || 1);
+          const price = (Number(it?.price) || 0) * qty;
+          const employeeName = it?.employeeName || it?.barberName;
           return `
             <div style="display: flex; justify-content: space-between; align-items: center; padding: 3px 0; border-bottom: 1px dashed #ccc; gap: 6px;">
               <div>
-                <span>${escapeHtml(it.serviceName || it.name || 'بند')}</span>
+                <span>${escapeHtml(it?.serviceName || it?.name || 'بند')}</span>
                 ${qty > 1 ? `<span> (×${qty})</span>` : ''}
                 ${employeeName ? `<span style="font-size: 9px; color: #555; display: block;">[الموظف: ${escapeHtml(employeeName)}]</span>` : ''}
               </div>
