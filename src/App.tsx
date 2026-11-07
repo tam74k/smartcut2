@@ -43,6 +43,8 @@ import { BarberLoginScreen } from './components/BarberLoginScreen';
 import { BarberPortalScreen } from './components/BarberPortalScreen';
 import { SaaSProgrammerPortal } from './components/SaaSProgrammerPortal';
 import { ClientReservationPortal } from './components/ClientReservationPortal';
+import { MakeupArtistPortal } from './components/MakeupArtistPortal';
+import { MakeupArtistsScreen } from './components/MakeupArtistsScreen';
 import { KioskTabletScreen } from './components/KioskTabletScreen';
 import { QueueCallingScreen } from './components/QueueCallingScreen';
 import { ManagerAIChatScreen } from './components/ManagerAIChatScreen';
@@ -161,12 +163,24 @@ export default function App() {
     return false;
   };
 
+  // Dedicated Route for Standalone Makeup Artist Collaboration Portal (/artist, /mua, ?portal=artist)
+  const isArtistQuery = () => {
+    if (typeof window === 'undefined') return false;
+    const path = window.location.pathname.toLowerCase();
+    const hash = window.location.hash.toLowerCase();
+    const search = window.location.search.toLowerCase();
+    if (path.endsWith('/artist') || path.includes('/artist/') || path.endsWith('/mua') || path.includes('/mua/')) return true;
+    if (hash.includes('artist') || hash.includes('mua') || search.includes('portal=artist') || search.includes('portal=mua') || search.includes('artist=true')) return true;
+    return false;
+  };
+
   // Dedicated Route for Standalone Online Client Reservation Portal (/reservation, /booking, or ?salonCode)
   const isReservationQuery = () => {
     if (typeof window === 'undefined') return false;
-    // CRITICAL: Kiosk and Barber routes must NOT be intercepted by reservation portal!
+    // CRITICAL: Kiosk, Barber and Artist routes must NOT be intercepted by reservation portal!
     if (isKioskQuery()) return false;
     if (isBarberQuery()) return false;
+    if (isArtistQuery()) return false;
 
     const path = window.location.pathname.toLowerCase();
     const hash = window.location.hash.toLowerCase();
@@ -182,12 +196,14 @@ export default function App() {
   const [isBarberRoute, setIsBarberRoute] = useState<boolean>(isBarberQuery);
   const [isReservationRoute, setIsReservationRoute] = useState<boolean>(isReservationQuery);
   const [isKioskRoute, setIsKioskRoute] = useState<boolean>(isKioskQuery);
+  const [isArtistRoute, setIsArtistRoute] = useState<boolean>(isArtistQuery);
 
   useEffect(() => {
     const checkRoutes = () => {
       setIsBarberRoute(isBarberQuery());
       setIsReservationRoute(isReservationQuery());
       setIsKioskRoute(isKioskQuery());
+      setIsArtistRoute(isArtistQuery());
     };
     window.addEventListener('popstate', checkRoutes);
     window.addEventListener('hashchange', checkRoutes);
@@ -3447,6 +3463,16 @@ export default function App() {
         />
         );
       }
+      case 'makeup_artists': return (
+        <MakeupArtistsScreen
+          settings={settings}
+          branches={branches}
+          services={branchServices}
+          bookings={bookings}
+          activeBranchId={activeBranchId}
+          currentUser={currentUser}
+        />
+      );
       case 'invoices': return (
         <InvoicesScreen 
           settings={settings} 
@@ -3693,6 +3719,7 @@ export default function App() {
     { id: 'dashboard', icon: LayoutDashboard, label: 'لوحة التحكم' },
     { id: 'queue_calling', icon: Radio, label: 'المناداة وطابور الانتظار' },
     { id: 'bookings', icon: Calendar, label: 'الحجوزات' },
+    { id: 'makeup_artists', icon: Sparkles, label: 'الميكب ارتست' },
     { id: 'expenses', icon: Banknote, label: 'المصروفات' },
     { id: 'treasury', icon: Wallet, label: 'الخزائن والماليات' },
     { id: 'invoices', icon: Receipt, label: 'الفواتير' },
@@ -3931,6 +3958,27 @@ export default function App() {
             EvolutionApiService.sendBookingConfirmationWhatsApp(settings, newB, newB.branchId || activeBranchId)
               .catch(err => console.error('Portal booking WhatsApp error:', err));
           }
+        }}
+        onCancelBooking={(bId) => {
+          handleSetBookings((prev: Booking[]) => prev.map(b => b.id === bId ? { ...b, status: 'cancelled' } : b));
+        }}
+        onSwitchToMainApp={() => {
+          window.location.href = '/';
+        }}
+      />
+    );
+  }
+
+  // 3A. STANDALONE MAKEUP ARTIST COLLABORATION PORTAL (/artist, /mua, or ?portal=artist)
+  if (isArtistRoute) {
+    return (
+      <MakeupArtistPortal
+        settings={settings}
+        branches={branches}
+        services={services}
+        bookings={bookings}
+        onSaveBooking={(newB) => {
+          handleSetBookings((prev: Booking[]) => [newB, ...prev]);
         }}
         onCancelBooking={(bId) => {
           handleSetBookings((prev: Booking[]) => prev.map(b => b.id === bId ? { ...b, status: 'cancelled' } : b));

@@ -921,6 +921,39 @@ export interface Booking {
   reminderTomorrowSentAt?: string;
   reminderTodaySent?: boolean;
   reminderTodaySentAt?: string;
+  artistId?: string; // معرف الميكب ارتست التابع لها الحجز
+  artistName?: string; // اسم الميكب ارتست
+  depositStatus?: 'none' | 'in_artist_custody' | 'transfer_pending' | 'salon_received'; // حالة العربون (في عهدة الارتست / بانتظار اعتماد الصالون / مستلم ومعتمد بالخزينة)
+  depositTransferMethod?: string; // طريقة تحويل العربون (كاش / انستاباي / فودافون كاش / بنكي)
+  depositTransferNotes?: string; // ملاحظات أو رقم عملية التحويل
+  depositTransferRequestedAt?: string; // توقيت طلب تسليم العربون للصالون
+  depositReceivedAt?: string; // توقيت تأكيد الاستلام من الصالون
+  depositReceivedBy?: string; // اسم الموظف / المدير الذي أكد الاستلام
+  depositReceivedTreasuryId?: string; // معرف الخزينة التي أودع فيها العربون
+}
+
+export interface ArtistAssignedService {
+  serviceId: string;
+  serviceName: string;
+  originalPrice: number;
+  customPrice: number;
+  durationMinutes?: number;
+  isEnabled: boolean;
+}
+
+export interface MakeupArtist {
+  id: string;
+  salonId: string;
+  branchId?: string;
+  name: string;
+  phone: string;
+  username: string;
+  password?: string;
+  notes?: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt?: string;
+  assignedServices: ArtistAssignedService[];
 }
 
 export interface CartItem { 

@@ -1,7 +1,7 @@
 import { SubscriptionService } from './subscriptionService';
 import { SupabaseService } from './supabase';
 import { dataUrlToBlob } from '../utils/imageUpload';
-import { HeldInvoice } from '../types';
+import { HeldInvoice, MakeupArtist, Booking, Transaction } from '../types';
 import { sealUserRecord } from '../utils/securityCrypto';
 import { localSalonTimeToUtcIso, utcToSalonLocal, getSalonTimezone } from '../utils/timezone';
 
@@ -2488,6 +2488,14 @@ export const DB = {
       if (safeSrvName) snap.service_name = safeSrvName;
       if (b.queueNumber !== undefined && b.queueNumber !== null) snap.queue_number = b.queueNumber;
       if (b.location) snap.location = b.location;
+      if (b.artistId || b.artistName || b.depositStatus) {
+        const muaTag = `[MUA:${b.artistId || ''}|${b.artistName || ''}|${b.depositStatus || 'in_artist_custody'}|${b.depositTransferMethod || ''}|${b.depositTransferNotes || ''}|${b.depositReceivedAt || ''}|${b.depositReceivedTreasuryId || ''}]`;
+        if (!safeInternalNotes.includes('[MUA:')) {
+          safeInternalNotes = `${safeInternalNotes} ${muaTag}`.trim();
+        } else {
+          safeInternalNotes = safeInternalNotes.replace(/\[MUA:[^\]]+\]/, muaTag).trim();
+        }
+      }
       if (safeInternalNotes) snap.internal_notes = safeInternalNotes;
       if (b.isPaid !== undefined) snap.is_paid = Boolean(b.isPaid);
       if (b.invoiceId) snap.invoice_id = b.invoiceId;
@@ -2652,6 +2660,163 @@ export const DB = {
     } catch (e) {
       console.error('DB.saveBooking exception:', e);
       return null;
+    }
+  },
+
+  // ---- الميكب ارتست (Makeup Artists Collaboration) ----
+  async fetchMakeupArtists(salonId?: string): Promise<MakeupArtist[]> {
+    const validSalonId = toSalonUUID(salonId || getSalonId());
+    const cacheKey = `smartcut_makeup_artists_${validSalonId}`;
+    let list: MakeupArtist[] = [];
+
+    // 1. Try fetching from Supabase app_settings.settings_json
+    try {
+      const client = sb();
+      if (client && validSalonId) {
+        const { data, error } = await client
+          .from('app_settings')
+          .select('settings_json')
+          .eq('salon_id', validSalonId)
+          .maybeSingle();
+
+        if (!error && data && data.settings_json) {
+          const raw = typeof data.settings_json === 'string' ? JSON.parse(data.settings_json) : data.settings_json;
+          if (Array.isArray(raw?.makeupArtists)) {
+            list = raw.makeupArtists;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('DB.fetchMakeupArtists error:', e);
+    }
+
+    // 2. Fallback to localStorage cache
+    if (!list || list.length === 0) {
+      try {
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            list = parsed;
+          }
+        }
+      } catch (e) {}
+    }
+
+    return list || [];
+  },
+
+  async saveMakeupArtists(artists: MakeupArtist[], salonId?: string): Promise<boolean> {
+    const validSalonId = toSalonUUID(salonId || getSalonId());
+    const cacheKey = `smartcut_makeup_artists_${validSalonId}`;
+    try {
+      localStorage.setItem(cacheKey, JSON.stringify(artists));
+    } catch (e) {}
+
+    try {
+      const client = sb();
+      if (client && validSalonId) {
+        const { data } = await client
+          .from('app_settings')
+          .select('id, settings_json')
+          .eq('salon_id', validSalonId)
+          .maybeSingle();
+
+        let currentJson = (data && data.settings_json) 
+          ? (typeof data.settings_json === 'string' ? JSON.parse(data.settings_json) : data.settings_json) 
+          : {};
+        
+        currentJson.makeupArtists = artists;
+
+        await client
+          .from('app_settings')
+          .update({ settings_json: currentJson, updated_at: new Date().toISOString() })
+          .eq('salon_id', validSalonId);
+        return true;
+      }
+    } catch (e) {
+      console.error('DB.saveMakeupArtists error:', e);
+    }
+    return true;
+  },
+
+  async saveMakeupArtist(artist: MakeupArtist, salonId?: string): Promise<boolean> {
+    const validSalonId = toSalonUUID(salonId || artist.salonId || getSalonId());
+    const current = await this.fetchMakeupArtists(validSalonId);
+    const idx = current.findIndex(a => a.id === artist.id);
+    let updated: MakeupArtist[];
+    if (idx >= 0) {
+      updated = current.map(a => a.id === artist.id ? { ...a, ...artist, updatedAt: new Date().toISOString() } : a);
+    } else {
+      updated = [{ ...artist, createdAt: artist.createdAt || new Date().toISOString() }, ...current];
+    }
+    return await this.saveMakeupArtists(updated, validSalonId);
+  },
+
+  async deleteMakeupArtist(artistId: string, salonId?: string): Promise<boolean> {
+    const validSalonId = toSalonUUID(salonId || getSalonId());
+    const current = await this.fetchMakeupArtists(validSalonId);
+    const updated = current.filter(a => a.id !== artistId);
+    return await this.saveMakeupArtists(updated, validSalonId);
+  },
+
+  /**
+   * تأكيد واعتماد استلام عربون الميكب ارتست بالموافقة المزدوجة وإدخاله في خزينة الصالون فوراً
+   */
+  async confirmArtistDepositReceipt(
+    booking: Booking,
+    treasuryId: string,
+    receivedBy: string,
+    salonId?: string
+  ): Promise<{ success: boolean; error?: string }> {
+    const validSalonId = toSalonUUID(salonId || booking.salonId || getSalonId());
+    try {
+      const depositAmount = (booking.advancePayments || []).reduce((s, a) => s + (Number(a.amount) || 0), 0) || Number(booking.paidDeposit || 0);
+      if (depositAmount <= 0) {
+        return { success: false, error: 'قيمة العربون صفر أو غير محددة.' };
+      }
+
+      const nowIso = new Date().toISOString();
+      const updatedBooking: Booking = {
+        ...booking,
+        depositStatus: 'salon_received',
+        depositReceivedAt: nowIso,
+        depositReceivedBy: receivedBy,
+        depositReceivedTreasuryId: treasuryId,
+        advancePayments: (booking.advancePayments && booking.advancePayments.length > 0)
+          ? booking.advancePayments.map(a => ({ ...a, treasuryId, isPaid: true }))
+          : [{
+              id: 'ADV-' + Date.now(),
+              amount: depositAmount,
+              date: nowIso,
+              treasuryId,
+              paymentMethod: booking.depositTransferMethod || 'cash',
+              notes: `عربون معتمد من الميكب ارتست (${booking.artistName || 'غير محدد'})`
+            }]
+      };
+
+      // Create official transaction in salon treasury
+      const advTrx: Transaction = {
+        id: `TRX-ADV-MUA-${booking.id}-${Date.now()}`,
+        date: nowIso,
+        type: 'in',
+        amount: depositAmount,
+        category: 'مقدم حجز',
+        description: `عربون حجز عروسة (#${booking.bookingCode || booking.id} - العميل: ${booking.clientName}) مستلم من الميكب ارتست: ${booking.artistName || 'غير محدد'}`,
+        treasury: treasuryId,
+        bookingId: booking.id,
+        createdBy: receivedBy,
+        userName: receivedBy,
+        salonId: validSalonId
+      };
+
+      await DB.saveTransaction(advTrx);
+      await DB.saveBooking(updatedBooking, validSalonId);
+
+      return { success: true };
+    } catch (e: any) {
+      console.error('DB.confirmArtistDepositReceipt error:', e);
+      return { success: false, error: e?.message || 'فشل اعتماد استلام العربون' };
     }
   },
 
@@ -5600,23 +5765,57 @@ export function dbBookingToApp(row: any): any {
   const isPostponed = rawStatus === 'postponed' || isPostponedTagged;
   const effectiveStatus = isPostponed ? 'postponed' : (rawStatus || 'pending');
 
-  return {
-    ...c,
-    id: c.id || row.id,
-    salonId: c.salonId || row.salon_id,
-    branchId: c.branchId || row.branch_id,
-    clientName: c.clientName || row.client_name || c.customerName || row.customer_name || 'عميل نقدي',
-    phone: c.phone || row.phone || c.clientPhone || row.client_phone || c.customerPhone || row.customer_phone || '',
-    customerId: c.customerId || c.clientId || row.client_id || undefined,
-    customerEmail: c.customerEmail || row.customer_email || '',
-    date,
-    time,
-    status: effectiveStatus,
-    advancePayments,
-    services,
-    totalAmount: Number(c.totalAmount ?? row.total_amount ?? c.totalPrice ?? row.total_price ?? 0),
-    notes: rawNotes,
-    internalNotes: rawInternalNotes,
+    // Makeup Artist Collaboration metadata
+    let artistId = c.artistId || row.artist_id || undefined;
+    let artistName = c.artistName || row.artist_name || undefined;
+    let depositStatus = c.depositStatus || row.deposit_status || undefined;
+    let depositTransferMethod = c.depositTransferMethod || row.deposit_transfer_method || undefined;
+    let depositTransferNotes = c.depositTransferNotes || row.deposit_transfer_notes || undefined;
+    let depositTransferRequestedAt = c.depositTransferRequestedAt || row.deposit_transfer_requested_at || undefined;
+    let depositReceivedAt = c.depositReceivedAt || row.deposit_received_at || undefined;
+    let depositReceivedBy = c.depositReceivedBy || row.deposit_received_by || undefined;
+    let depositReceivedTreasuryId = c.depositReceivedTreasuryId || row.deposit_received_treasury_id || undefined;
+
+    if (rawInternalNotes && rawInternalNotes.includes('[MUA:')) {
+      const match = rawInternalNotes.match(/\[MUA:([^\]]+)\]/);
+      if (match && match[1]) {
+        const parts = match[1].split('|');
+        if (!artistId) artistId = parts[0] || undefined;
+        if (!artistName) artistName = parts[1] || undefined;
+        if (!depositStatus) depositStatus = (parts[2] as any) || undefined;
+        if (!depositTransferMethod) depositTransferMethod = parts[3] || undefined;
+        if (!depositTransferNotes) depositTransferNotes = parts[4] || undefined;
+        if (!depositReceivedAt) depositReceivedAt = parts[5] || undefined;
+        if (!depositReceivedTreasuryId) depositReceivedTreasuryId = parts[6] || undefined;
+      }
+    }
+
+    return {
+      ...c,
+      id: c.id || row.id,
+      salonId: c.salonId || row.salon_id,
+      branchId: c.branchId || row.branch_id,
+      clientName: c.clientName || row.client_name || c.customerName || row.customer_name || 'عميل نقدي',
+      phone: c.phone || row.phone || c.clientPhone || row.client_phone || c.customerPhone || row.customer_phone || '',
+      customerId: c.customerId || c.clientId || row.client_id || undefined,
+      customerEmail: c.customerEmail || row.customer_email || '',
+      date,
+      time,
+      status: effectiveStatus,
+      advancePayments,
+      services,
+      totalAmount: Number(c.totalAmount ?? row.total_amount ?? c.totalPrice ?? row.total_price ?? 0),
+      notes: rawNotes,
+      internalNotes: rawInternalNotes,
+      artistId,
+      artistName,
+      depositStatus: depositStatus || (artistId ? 'in_artist_custody' : undefined),
+      depositTransferMethod,
+      depositTransferNotes,
+      depositTransferRequestedAt,
+      depositReceivedAt,
+      depositReceivedBy,
+      depositReceivedTreasuryId,
     postponedAt: c.postponedAt || row.postponed_at || (effectiveStatus === 'postponed' ? (c.updatedAt || row.updated_at || c.createdAt || row.created_at) : undefined),
     postponedBy: c.postponedBy || row.postponed_by || undefined,
     postponedReason: c.postponedReason || row.postponed_reason || undefined,

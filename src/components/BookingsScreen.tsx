@@ -384,6 +384,9 @@ export function BookingsScreen({
   const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
   const [sendWhatsAppOnSave, setSendWhatsAppOnSave] = useState(true);
   const [selectedBookingDetails, setSelectedBookingDetails] = useState<Booking | null>(null);
+  const [confirmDepositTarget, setConfirmDepositTarget] = useState<Booking | null>(null);
+  const [selectedDepositTreasury, setSelectedDepositTreasury] = useState<string>('');
+  const [isConfirmingDeposit, setIsConfirmingDeposit] = useState(false);
   const [previewBooking, setPreviewBooking] = useState<Booking | null>(null);
 
   // Reschedule / Postpone Modal State
@@ -4175,6 +4178,61 @@ export function BookingsScreen({
                     )}
                   </div>
 
+                  {/* Makeup Artist Collaboration Details */}
+                  {selectedBookingDetails.artistName && (
+                    <div className="bg-pink-50/80 border border-pink-200 rounded-2xl p-3.5 space-y-2 shadow-2xs">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 text-xs font-black text-pink-950">
+                          <span>💄 حجز ميكب ارتست: <b className="text-pink-700 font-extrabold">{selectedBookingDetails.artistName}</b></span>
+                        </div>
+                        <span className="text-[10px] bg-pink-100 text-pink-800 font-bold px-2 py-0.5 rounded-full border border-pink-200">
+                          شريك الصالون
+                        </span>
+                      </div>
+
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-pink-100 text-xs">
+                        <div>
+                          <span className="text-slate-600 block text-[11px]">حالة العربون:</span>
+                          {selectedBookingDetails.depositStatus === 'salon_received' ? (
+                            <span className="text-emerald-700 font-bold flex items-center gap-1">
+                              <CheckCircle2 size={13} />
+                              <span>مستلم ومعتمد بالخزينة</span>
+                            </span>
+                          ) : selectedBookingDetails.depositStatus === 'transfer_pending' ? (
+                            <span className="text-amber-700 font-bold flex items-center gap-1">
+                              <Clock size={13} />
+                              <span>طلب تسليم معلق بانتظار الاعتماد ({selectedBookingDetails.depositTransferMethod || 'تحويل'})</span>
+                            </span>
+                          ) : (
+                            <span className="text-slate-700 font-bold">
+                              العربون في عهدة الارتست (لم يدخل الصالون بعد)
+                            </span>
+                          )}
+                        </div>
+
+                        {selectedBookingDetails.depositStatus === 'transfer_pending' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setConfirmDepositTarget(selectedBookingDetails);
+                              setSelectedDepositTreasury(availableTreasuries[0]?.id || 'cash');
+                            }}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-black px-3.5 py-1.5 rounded-xl text-xs flex items-center gap-1 shadow-sm cursor-pointer transition-colors"
+                          >
+                            <Check size={14} />
+                            <span>تأكيد استلام العربون بالخزينة</span>
+                          </button>
+                        )}
+                      </div>
+
+                      {selectedBookingDetails.depositTransferNotes && (
+                        <div className="text-[11px] text-pink-900 bg-white/80 p-2 rounded-lg border border-pink-200/60">
+                          تفاصيل التحويل: {selectedBookingDetails.depositTransferNotes}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* Internal Admin Notes (ملاحظات داخلية خاصة بالإدارة) */}
                   {selectedBookingDetails.internalNotes && (
                     <div className="bg-amber-50/80 border border-amber-200/90 rounded-2xl p-3 space-y-1.5 shadow-2xs">
@@ -7093,6 +7151,139 @@ export function BookingsScreen({
           </div>
         );
       })()}
+
+      {/* ========================================================================= */}
+      {/* CONFIRM ARTIST DEPOSIT MODAL (تأكيد استلام عربون الميكب ارتست بالخزينة) */}
+      {/* ========================================================================= */}
+      {confirmDepositTarget && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 border border-slate-200" dir="rtl">
+            <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                  <CheckCircle2 size={18} />
+                </div>
+                <h3 className="font-bold text-base text-slate-800">تأكيد استلام عربون الميكب ارتست</h3>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setConfirmDepositTarget(null)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 text-xs">
+              <div className="bg-emerald-50/80 border border-emerald-200 rounded-xl p-3.5 space-y-1.5">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-600">الميكب ارتست:</span>
+                  <span className="font-bold text-slate-900 text-sm">{confirmDepositTarget.artistName}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-600">حجز العروسة:</span>
+                  <span className="font-bold text-slate-900">{confirmDepositTarget.clientName} (#{confirmDepositTarget.bookingCode || confirmDepositTarget.id})</span>
+                </div>
+                <div className="flex justify-between items-center border-t border-emerald-200/60 pt-1.5 mt-1">
+                  <span className="text-slate-700 font-bold">مبلغ العربون المستلم:</span>
+                  <span className="font-mono font-black text-emerald-800 text-base">
+                    {getBookingTotalAdvances(confirmDepositTarget) || confirmDepositTarget.paidDeposit || 0} {settings.currency}
+                  </span>
+                </div>
+                {confirmDepositTarget.depositTransferMethod && (
+                  <div className="flex justify-between items-center text-[11px] text-emerald-900">
+                    <span>طريقة التحويل المرسلة:</span>
+                    <span className="font-bold">{confirmDepositTarget.depositTransferMethod}</span>
+                  </div>
+                )}
+                {confirmDepositTarget.depositTransferNotes && (
+                  <div className="text-[11px] text-slate-700 bg-white/80 p-2 rounded-lg border border-emerald-200">
+                    ملاحظات: {confirmDepositTarget.depositTransferNotes}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  إيداع العربون في خزينة الصالون *
+                </label>
+                <select
+                  value={selectedDepositTreasury}
+                  onChange={(e) => setSelectedDepositTreasury(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-800 focus:outline-hidden focus:border-emerald-500 font-bold cursor-pointer"
+                >
+                  {availableTreasuries.map(t => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} (رصيد: {Number(t.balance || 0).toFixed(2)} {settings.currency})
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  سيتم إنشاء حركة إيداع رسمي فوراً بهذه الخزينة وتحديث رصيد الوردية
+                </p>
+              </div>
+
+              <div className="flex gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setConfirmDepositTarget(null)}
+                  className="flex-1 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="button"
+                  disabled={isConfirmingDeposit}
+                  onClick={async () => {
+                    setIsConfirmingDeposit(true);
+                    try {
+                      const res = await DB.confirmArtistDepositReceipt(
+                        confirmDepositTarget,
+                        selectedDepositTreasury || availableTreasuries[0]?.id || 'cash',
+                        currentUser?.name || 'مدير الصالون',
+                        settings.salonId
+                      );
+
+                      if (res.success) {
+                        alert('تم تأكيد استلام العربون بنجاح وتم تقييده في الخزينة المختارة.');
+                        // Update in local bookings
+                        setBookings(prev => prev.map(b => b.id === confirmDepositTarget.id ? {
+                          ...b,
+                          depositStatus: 'salon_received',
+                          depositReceivedAt: new Date().toISOString(),
+                          depositReceivedBy: currentUser?.name || 'مدير الصالون',
+                          depositReceivedTreasuryId: selectedDepositTreasury || availableTreasuries[0]?.id || 'cash'
+                        } : b));
+
+                        if (selectedBookingDetails && selectedBookingDetails.id === confirmDepositTarget.id) {
+                          setSelectedBookingDetails(prev => prev ? {
+                            ...prev,
+                            depositStatus: 'salon_received',
+                            depositReceivedAt: new Date().toISOString(),
+                            depositReceivedBy: currentUser?.name || 'مدير الصالون',
+                            depositReceivedTreasuryId: selectedDepositTreasury || availableTreasuries[0]?.id || 'cash'
+                          } : null);
+                        }
+
+                        setConfirmDepositTarget(null);
+                      } else {
+                        alert('فشل الاعتماد: ' + (res.error || 'خطأ غير معروف'));
+                      }
+                    } catch (err: any) {
+                      alert('حدث خطأ: ' + (err?.message || err));
+                    } finally {
+                      setIsConfirmingDeposit(false);
+                    }
+                  }}
+                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black shadow-sm cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  {isConfirmingDeposit ? 'جارٍ التقييد...' : 'تأكيد واستلام النقدية'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
