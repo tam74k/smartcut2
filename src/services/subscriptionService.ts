@@ -1,6 +1,7 @@
 import { SalonTenant, AppUser, Branch, AppSettings, SubscriptionPaymentRecord } from '../types';
 import { AuthService } from './auth';
 import { DB } from './db';
+import { safeStorage } from '../utils/safeStorage';
 
 const STORAGE_KEYS = {
   SALONS: 'smartcut_saas_salons',
@@ -359,9 +360,9 @@ export const SubscriptionService = {
 
     // 2. Save active salon settings to localStorage
     try {
-      localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(initialSettings));
-      localStorage.setItem(STORAGE_KEYS.CURRENT_SALON, JSON.stringify(newSalon));
-      localStorage.setItem(`smartcut_settings_${salonId}`, JSON.stringify(initialSettings));
+      safeStorage.setAppSettings(initialSettings);
+      safeStorage.setItem(STORAGE_KEYS.CURRENT_SALON, JSON.stringify(newSalon));
+      safeStorage.setItem(`smartcut_settings_${salonId}`, JSON.stringify(initialSettings));
     } catch (e) {
       console.error('Failed to save initial settings to localStorage:', e);
     }
@@ -399,8 +400,8 @@ export const SubscriptionService = {
       AuthService.saveUser(newAdminUser);
       this.saveBranches([...allBranches.filter(b => b.id !== branchId && b.id !== newBranch.id), newBranch]);
       try {
-        localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(initialSettings));
-        localStorage.setItem(`smartcut_settings_${salonId}`, JSON.stringify(initialSettings));
+        safeStorage.setAppSettings(initialSettings);
+        safeStorage.setItem(`smartcut_settings_${salonId}`, JSON.stringify(initialSettings));
       } catch (e) {}
 
       await DB.saveSettings(salonId, initialSettings);
@@ -671,7 +672,7 @@ export const SubscriptionService = {
     };
 
     try {
-      localStorage.setItem(`smartcut_branch_settings_${branchId}`, JSON.stringify(branchSettings));
+      safeStorage.setItem(`smartcut_branch_settings_${branchId}`, JSON.stringify(branchSettings));
     } catch (e) {}
 
     return branchSettings;
@@ -682,12 +683,12 @@ export const SubscriptionService = {
    */
   saveBranchSettings(branchId: string, settings: AppSettings): void {
     try {
-      localStorage.setItem(`smartcut_branch_settings_${branchId}`, JSON.stringify(settings));
+      safeStorage.setItem(`smartcut_branch_settings_${branchId}`, JSON.stringify(settings));
       
       const branches = this.getBranches();
       const branch = branches.find(b => b.id === branchId);
       if (branch?.isMain) {
-        localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
+        safeStorage.setAppSettings(settings);
       }
       
       // Keep branch metadata strictly synced

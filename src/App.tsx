@@ -68,6 +68,7 @@ import { SubscriptionService, evictExcessLocalStorage } from './services/subscri
 import { QueueService } from './services/queueService';
 import { completeBookingAndCreateHeldInvoice } from './services/bookingHeldInvoiceService';
 import { EvolutionApiService } from './services/evolutionApiService';
+import { safeStorage } from './utils/safeStorage';
 import { hasEmployeeFixedCommission } from './utils/commissionHelper';
 import { 
   AppSettings, Transaction, Booking, Invoice, ServiceItem, Category, Employee, Product, AppUser, 
@@ -772,8 +773,8 @@ export default function App() {
                 expenseCategories: (Array.isArray(dbSettings.expenseCategories) && dbSettings.expenseCategories.length > 0) ? dbSettings.expenseCategories : (prev.expenseCategories || []),
               };
               try {
-                localStorage.setItem('smartcut_app_settings', JSON.stringify(updatedSettings));
-                localStorage.setItem('smartcut_active_salon_id', sId);
+                safeStorage.setAppSettings(updatedSettings);
+                safeStorage.setItem('smartcut_active_salon_id', sId);
               } catch (e) {}
               return updatedSettings;
             });
@@ -1549,7 +1550,7 @@ export default function App() {
         evolutionInstanceName: s.evolutionInstanceName
       };
       setSettings(updatedSettings);
-      try { localStorage.setItem('smartcut_app_settings', JSON.stringify(updatedSettings)); } catch (e) {}
+      safeStorage.setAppSettings(updatedSettings);
 
       setSubscription({
         id: s.id,
@@ -2355,7 +2356,7 @@ export default function App() {
     if (checkReadOnlyAndWarn()) return;
     setSettings(prev => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
-      localStorage.setItem('smartcut_app_settings', JSON.stringify(next));
+      safeStorage.setAppSettings(next);
       if (activeBranchId) {
         SubscriptionService.saveBranchSettings(activeBranchId, next);
       }
@@ -3832,7 +3833,7 @@ export default function App() {
     if (customSettings) {
       setSettings(customSettings);
       try {
-        localStorage.setItem('smartcut_app_settings', JSON.stringify(customSettings));
+        safeStorage.setAppSettings(customSettings);
       } catch (e) {}
     } else if (salon) {
       const dbSettings = await DB.fetchSettings(salon.id);
@@ -3858,7 +3859,7 @@ export default function App() {
           evolutionInstanceName: salon.evolutionInstanceName || dbSettings?.evolutionInstanceName || ''
         };
         try {
-          localStorage.setItem('smartcut_app_settings', JSON.stringify(updated));
+          safeStorage.setAppSettings(updated);
         } catch (e) {}
         return updated;
       });

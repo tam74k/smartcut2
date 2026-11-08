@@ -23,6 +23,7 @@ import { EmployeeFullProfileView } from './EmployeeFullProfileView';
 import { printThermalFinancialVoucher, FinancialVoucherData } from './ThermalFinancialVoucher';
 import { getCommissionModelLabel, calculateEmployeeCommission } from '../utils/commissionHelper';
 import { DB } from '../services/db';
+import { safeStorage } from '../utils/safeStorage';
 import { AuthService } from '../services/auth';
 
 export function EmployeesScreen({ 
@@ -1074,7 +1075,7 @@ export function EmployeesScreen({
       };
       setSettings(updated);
       try {
-        localStorage.setItem('smartcut_app_settings', JSON.stringify(updated));
+        safeStorage.setAppSettings(updated);
         if (activeBranchId) {
           SubscriptionService.saveBranchSettings(activeBranchId, updated);
         }

@@ -27,6 +27,7 @@ import { BookingsImportModal } from './BookingsImportModal';
 import { EvolutionApiService } from '../services/evolutionApiService';
 import { MessageCircle, Send, Copy } from 'lucide-react';
 import { generateCode39Svg } from '../utils/printQueueSlip';
+import { safeStorage } from '../utils/safeStorage';
 
 // Format time string (e.g. "14:30" or "09:00") into 12-hour format with AM/PM (ص / م)
 export function formatTo12Hour(timeStr?: string): string {
@@ -6924,7 +6925,7 @@ export function BookingsScreen({
                       if (setSettings) {
                         const newSettings = { ...settings, bookingRules: updatedRules };
                         setSettings(newSettings);
-                        try { localStorage.setItem('smartcut_app_settings', JSON.stringify(newSettings)); } catch(e){}
+                        safeStorage.setAppSettings(newSettings);
                         alert('تم حفظ إعدادات السعة ومواعيد العمل بنجاح.');
                       }
                     }}
@@ -6981,7 +6982,7 @@ export function BookingsScreen({
                         if (setSettings) {
                           const newSettings = { ...settings, bookingRules: updatedRules };
                           setSettings(newSettings);
-                          try { localStorage.setItem('smartcut_app_settings', JSON.stringify(newSettings)); } catch(e){}
+                          safeStorage.setAppSettings(newSettings);
                         }
                       }}
                       className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-2.5 rounded-xl text-xs cursor-pointer shadow-md shadow-indigo-600/20"
@@ -7011,7 +7012,7 @@ export function BookingsScreen({
                               if (setSettings) {
                                 const newSettings = { ...settings, bookingRules: updatedRules };
                                 setSettings(newSettings);
-                                try { localStorage.setItem('smartcut_app_settings', JSON.stringify(newSettings)); } catch(e){}
+                                safeStorage.setAppSettings(newSettings);
                               }
                             }}
                             className="bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold px-3 py-1.5 rounded-xl flex items-center gap-1 cursor-pointer transition-colors"
@@ -7089,7 +7090,7 @@ export function BookingsScreen({
                         if (setSettings) {
                           const newSettings = { ...settings, bookingRules: updatedRules };
                           setSettings(newSettings);
-                          try { localStorage.setItem('smartcut_app_settings', JSON.stringify(newSettings)); } catch(e){}
+                          safeStorage.setAppSettings(newSettings);
                         }
                       }}
                       className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-2.5 rounded-xl text-xs cursor-pointer shadow-md shadow-indigo-600/20"
@@ -7120,7 +7121,7 @@ export function BookingsScreen({
                               if (setSettings) {
                                 const newSettings = { ...settings, bookingRules: updatedRules };
                                 setSettings(newSettings);
-                                try { localStorage.setItem('smartcut_app_settings', JSON.stringify(newSettings)); } catch(e){}
+                                safeStorage.setAppSettings(newSettings);
                               }
                             }}
                             className="bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold px-3 py-1.5 rounded-xl flex items-center gap-1 cursor-pointer"
@@ -7200,7 +7201,7 @@ export function BookingsScreen({
                         if (setSettings) {
                           const newSettings = { ...settings, bookingRules: updatedRules };
                           setSettings(newSettings);
-                          try { localStorage.setItem('smartcut_app_settings', JSON.stringify(newSettings)); } catch(e){}
+                          safeStorage.setAppSettings(newSettings);
                         }
                       }}
                       className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-2.5 rounded-xl text-xs cursor-pointer shadow-md shadow-indigo-600/20"
@@ -7230,7 +7231,7 @@ export function BookingsScreen({
                               if (setSettings) {
                                 const newSettings = { ...settings, bookingRules: updatedRules };
                                 setSettings(newSettings);
-                                try { localStorage.setItem('smartcut_app_settings', JSON.stringify(newSettings)); } catch(e){}
+                                safeStorage.setAppSettings(newSettings);
                               }
                             }}
                             className="bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold px-3 py-1.5 rounded-xl flex items-center gap-1 cursor-pointer"

@@ -23,6 +23,7 @@ import {
   saveAiCredentials 
 } from '../services/geminiSqlService';
 import { DEFAULT_WHATSAPP_TEMPLATES, EvolutionApiService } from '../services/evolutionApiService';
+import { safeStorage, compressImageToDataUrl } from '../utils/safeStorage';
 
 export function SettingsScreen({ 
   settings, 
@@ -667,7 +668,7 @@ export function SettingsScreen({
     setSettings(prev => {
       const updated = { ...prev, ...updates };
       try {
-        localStorage.setItem('smartcut_app_settings', JSON.stringify(updated));
+        safeStorage.setAppSettings(updated);
         if (activeBranchId) {
           SubscriptionService.saveBranchSettings(activeBranchId, updated);
         }
@@ -860,7 +861,7 @@ export function SettingsScreen({
         hr_settings: settings.hrSettings
       };
 
-      localStorage.setItem('smartcut_app_settings', JSON.stringify(normalizedSettings));
+      safeStorage.setAppSettings(normalizedSettings);
       if (activeBranchId) {
         SubscriptionService.saveBranchSettings(activeBranchId, normalizedSettings);
       }
@@ -969,14 +970,16 @@ export function SettingsScreen({
     handleChange('treasuries', updatedTreasuries);
   };
 
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        handleChange('logoUrl', event.target?.result as string);
-      };
-      reader.readAsDataURL(file);
+      try {
+        const compressedUrl = await compressImageToDataUrl(file, 260, 260, 0.8);
+        handleChange('logoUrl', compressedUrl);
+      } catch (err: any) {
+        console.error('Logo upload error:', err);
+        alert('تعذر معالجة صورة الشعار: ' + (err?.message || 'خطأ غير معروف'));
+      }
     }
   };
 

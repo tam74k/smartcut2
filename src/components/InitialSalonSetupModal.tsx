@@ -7,6 +7,7 @@ import {
 import { COUNTRY_CURRENCY_MAP, getCountryMeta, SubscriptionService } from '../services/subscriptionService';
 import { AppSettings, Branch } from '../types';
 import { DB } from '../services/db';
+import { safeStorage } from '../utils/safeStorage';
 
 interface InitialSalonSetupModalProps {
   isOpen: boolean;
@@ -144,8 +145,8 @@ export function InitialSalonSetupModal({ isOpen, onComplete }: InitialSalonSetup
       } catch (err) {
         console.warn('DB.saveSettings notice:', err);
       }
-      localStorage.setItem('smartcut_app_settings', JSON.stringify(newSettings));
-      localStorage.setItem('smartcut_active_salon_id', salonId);
+      safeStorage.setAppSettings(newSettings);
+      safeStorage.setItem('smartcut_active_salon_id', salonId);
       SubscriptionService.saveBranchSettings(mainBranchId, newSettings);
 
       // تحديث بيانات المستخدم الحالي (admin) ليرتبط بهذا الصالون والفرع الرئيسي
