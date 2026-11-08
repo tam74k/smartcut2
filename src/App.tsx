@@ -4029,6 +4029,9 @@ export default function App() {
         currentUser={currentUser}
         onSaveBooking={(newB) => {
           handleSetBookings((prev: Booking[]) => [newB, ...prev.filter(b => b.id !== newB.id)]);
+          if (newB.depositStatus !== 'salon_received' || !newB.paidDeposit) {
+            handleSetTransactions((prev: Transaction[]) => prev.filter(t => (t as any).bookingId !== newB.id && (t as any).booking_id !== newB.id && !t.id.includes(newB.id)));
+          }
         }}
         onCancelBooking={(bId) => {
           handleSetBookings((prev: Booking[]) => prev.map(b => b.id === bId ? { ...b, status: 'cancelled' } : b));

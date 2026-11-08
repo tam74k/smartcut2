@@ -269,6 +269,14 @@ export function MakeupArtistPortal({
       if (editingBooking) {
         // Updating existing booking
         const existingAdv = editingBooking.advancePayments || [];
+        const prevDeposit = editingBooking.paidDeposit || (existingAdv.reduce((s, a) => s + (Number(a.amount) || 0), 0) || 0);
+        const isDepositChanged = Math.abs(prevDeposit - newBookingTotals.advances) > 0.001;
+
+        // إذا تم تغيير مبلغ العربون وكان مقيداً سابقاً بالصالون، نقوم بتصفير الحركة القديمة من الخزينة حتى لا تتضاعف المبالغ
+        if (isDepositChanged && (editingBooking.depositStatus === 'salon_received' || newBookingTotals.advances <= 0)) {
+          await DB.deleteTransactionsByBookingId(editingBooking.id, editingBooking.bookingCode);
+        }
+
         const advancePaymentsList = newBookingTotals.advances > 0 ? [{
           id: existingAdv[0]?.id || ('ADV-' + Date.now()),
           amount: newBookingTotals.advances,
@@ -278,6 +286,13 @@ export function MakeupArtistPortal({
             ? `عربون حجز عروسة تم تحويله للصالون (${depositMethod}) - بانتظار الاعتماد` 
             : (existingAdv[0]?.notes || 'العربون في عهدة الميكب ارتست')
         }, ...existingAdv.slice(1)] : [];
+
+        // إذا تغير مبلغ العربون، تعود حالة العربون إلى بانتظار التحويل أو في العهدة حتى يؤكده الصالون بالمبلغ الجديد
+        const nextDepositStatus = newBookingTotals.advances <= 0 
+          ? 'none' 
+          : (isDepositChanged 
+              ? (depositHandoverNow ? 'transfer_pending' : 'in_artist_custody') 
+              : (depositHandoverNow ? 'transfer_pending' : (editingBooking.depositStatus || 'in_artist_custody')));
 
         const updatedBooking: Booking = {
           ...editingBooking,
@@ -290,9 +305,7 @@ export function MakeupArtistPortal({
           advancePayments: advancePaymentsList,
           totalAmount: newBookingTotals.netTotal,
           paidDeposit: newBookingTotals.advances,
-          depositStatus: newBookingTotals.advances <= 0 
-            ? 'none' 
-            : (depositHandoverNow ? 'transfer_pending' : (editingBooking.depositStatus === 'salon_received' ? 'salon_received' : 'in_artist_custody')),
+          depositStatus: nextDepositStatus,
           depositTransferMethod: depositHandoverNow ? depositMethod : editingBooking.depositTransferMethod,
           depositTransferNotes: depositHandoverNow ? depositNotes.trim() : editingBooking.depositTransferNotes,
           depositTransferRequestedAt: depositHandoverNow ? (editingBooking.depositTransferRequestedAt || nowIso) : undefined,

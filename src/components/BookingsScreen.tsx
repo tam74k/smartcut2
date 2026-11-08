@@ -1570,6 +1570,7 @@ export function BookingsScreen({
         ...a,
         id: a.id || ('ADV-' + (editingBooking?.id || bookingCreatedAt || Date.now()) + '-' + idx)
       })),
+      paidDeposit: (newBooking.advancePayments || []).reduce((sum, a) => sum + (Number(a.amount) || 0), 0),
       totalAmount: totals.netTotal,
       discountType: finalDiscountType,
       discountValue: finalDiscountValue,
@@ -1590,10 +1591,6 @@ export function BookingsScreen({
       _localEditedAt: Date.now()
     };
 
-    // Calculate newly added advance payments to generate financial transactions
-    const prevAdvIds = new Set((editingBooking?.advancePayments || []).map(a => a.id).filter(Boolean));
-    const brandNewAdvances = (booking.advancePayments || []).filter(a => a.id && !prevAdvIds.has(a.id));
-
     if (editingBooking) {
       setBookings((prev: Booking[]) => prev.map(b => b.id === booking.id ? { ...b, ...booking, _localEditedAt: Date.now() } : b));
     } else {
@@ -1611,56 +1608,139 @@ export function BookingsScreen({
 
     await DB.saveBooking(booking, settings.salonId);
 
-    // Auto generate financial transactions for brand new advance payments on their payment date
-    // Note: Do NOT auto-generate treasury transaction for artist bookings if deposit is not confirmed received by salon
+    // =========================================================================
+    // تزامن حركة الخزينة للعربون وضبطها بدقة عند التعديل حتى لا تتضاعف المبالغ
+    // =========================================================================
     const isUnconfirmedArtistDeposit = Boolean(booking.artistId && booking.depositStatus !== 'salon_received');
-    if (brandNewAdvances.length > 0 && !isUnconfirmedArtistDeposit) {
-      const effectiveShiftDate = (shiftData && shiftData.isOpen && shiftData.date) ? shiftData.date : undefined;
-      const advancesToRecord = brandNewAdvances.filter(adv => {
-        const advTrxId = `TRX-ADV-${adv.id}`;
-        const alreadyExists = (transactions || []).some(t =>
-          t.id === advTrxId ||
-          ((t.bookingId === booking.id || (t as any).booking_id === booking.id || (typeof t.description === 'string' && t.description.includes(booking.id))) &&
-            Math.abs(t.amount - adv.amount) < 0.01 &&
-            (t.category === 'مقدم حجز' || t.category === 'booking_advance' || t.category === 'advance'))
-        );
-        return !alreadyExists;
-      });
+    const validAdvances = isUnconfirmedArtistDeposit
+      ? []
+      : (booking.advancePayments || []).filter(a => Number(a.amount) > 0 && a.treasuryId);
 
-      if (advancesToRecord.length > 0) {
-        const newTrxs: Transaction[] = advancesToRecord.map(adv => {
-          const advDatePart = adv.date ? adv.date.split('T')[0] : (effectiveShiftDate || new Date().toISOString().split('T')[0]);
-          const transDate = advDatePart + 'T' + new Date().toTimeString().split(' ')[0];
-          const isShiftMatch = Boolean(effectiveShiftDate && advDatePart === effectiveShiftDate);
-          const transShiftDate = isShiftMatch ? effectiveShiftDate : advDatePart;
-          const transShiftId = isShiftMatch ? ((shiftData as any).shiftId || (shiftData as any).id) : undefined;
-          return {
-            id: `TRX-ADV-${adv.id}`,
-            date: transDate,
-            shiftDate: transShiftDate,
-            type: 'in',
-            amount: adv.amount,
-            category: 'مقدم حجز',
-            description: `دفعة مقدمة / عربون لحجز #${booking.bookingCode || booking.id} - العميل: ${booking.clientName}`,
-            treasury: adv.treasuryId,
-            bookingId: booking.id,
-            shiftId: transShiftId,
-            createdBy: currentUser?.name || 'الكاشير',
-            userId: currentUser?.id,
-            userName: currentUser?.name || 'الكاشير',
-            branchId: bBranchId,
-            salonId: settings.salonId
-          };
-        });
+    // 1. استخراج الحركات المالية الحالية المسجلة في الخزينة لعربون هذا الحجز
+    const existingAdvanceTrxs = (transactions || []).filter(t => {
+      if (t.type !== 'in') return false;
+      const isAdvCategory = t.category === 'مقدم حجز' || t.category === 'booking_advance' || t.category === 'advance';
+      if (!isAdvCategory) return false;
 
-        if (setTransactions) {
-          const newIds = new Set(newTrxs.map(t => t.id));
-          setTransactions((prev: Transaction[]) => [...prev.filter(t => !newIds.has(t.id)), ...newTrxs]);
+      const matchBookingId = (t as any).bookingId === booking.id || (t as any).booking_id === booking.id;
+      const matchTrxId = t.id.startsWith(`TRX-ADV-${booking.id}`) || t.id.includes(booking.id);
+      const matchDesc = typeof t.description === 'string' && (
+        t.description.includes(booking.id) ||
+        (booking.bookingCode && t.description.includes(booking.bookingCode))
+      );
+      return matchBookingId || matchTrxId || matchDesc;
+    });
+
+    const effectiveShiftDate = (shiftData && shiftData.isOpen && shiftData.date) ? shiftData.date : undefined;
+
+    const trxsToSave: Transaction[] = [];
+    const pool = [...existingAdvanceTrxs];
+    const paired: { adv: AdvancePayment; existing?: Transaction }[] = [];
+
+    // المطابقة أولاً برقم تعريف الدفعة الصريح لضمان دقة الربط
+    validAdvances.forEach(adv => {
+      const advTrxId = `TRX-ADV-${adv.id}`;
+      const idx = pool.findIndex(t => t.id === advTrxId);
+      if (idx !== -1) {
+        paired.push({ adv, existing: pool.splice(idx, 1)[0] });
+      }
+    });
+
+    // المطابقة ثانياً بأي حركات قائمة للحجز لتحديث المبالغ في نفس الحركة دون إنشاء مكررات
+    validAdvances.forEach(adv => {
+      const alreadyPaired = paired.some(p => p.adv.id === adv.id);
+      if (!alreadyPaired) {
+        let idx = pool.findIndex(t => t.treasury === adv.treasuryId);
+        if (idx === -1 && pool.length > 0) {
+          idx = 0;
         }
-        for (const t of newTrxs) {
-          await DB.saveTransaction(t);
+        if (idx !== -1) {
+          paired.push({ adv, existing: pool.splice(idx, 1)[0] });
+        } else {
+          paired.push({ adv, existing: undefined });
         }
       }
+    });
+
+    // الحركات القديمة الزائدة التي تم إلغاؤها أو تقليل عدد الدفعات تصبح ملغاة ويتم حذفها من الخزينة فوراً
+    const trxsToDelete = [...pool];
+
+    // تجهيز الحركات المالية المحدثة والجديدة
+    paired.forEach(({ adv, existing }) => {
+      const advDatePart = adv.date ? adv.date.split('T')[0] : (effectiveShiftDate || new Date().toISOString().split('T')[0]);
+      const transDate = advDatePart + 'T' + new Date().toTimeString().split(' ')[0];
+      const isShiftMatch = Boolean(effectiveShiftDate && advDatePart === effectiveShiftDate);
+      const transShiftDate = isShiftMatch ? effectiveShiftDate : advDatePart;
+      const transShiftId = isShiftMatch ? ((shiftData as any).shiftId || (shiftData as any).id) : undefined;
+      const advTrxId = existing ? existing.id : `TRX-ADV-${adv.id}`;
+
+      if (existing) {
+        // تحديث الحركة القائمة بالمبلغ والخزينة الجديدة
+        const updatedTrx: Transaction = {
+          ...existing,
+          amount: Number(adv.amount),
+          treasury: adv.treasuryId,
+          date: existing.date || transDate,
+          shiftDate: existing.shiftDate || transShiftDate,
+          shiftId: existing.shiftId || transShiftId,
+          description: `دفعة مقدمة / عربون لحجز #${booking.bookingCode || booking.id} - العميل: ${booking.clientName}${adv.notes ? ' • ' + adv.notes : ''}`,
+          branchId: bBranchId,
+          salonId: settings.salonId,
+          updatedAt: new Date().toISOString()
+        };
+        trxsToSave.push(updatedTrx);
+      } else {
+        // إنشاء حركة جديدة
+        const newTrx: Transaction = {
+          id: advTrxId,
+          date: transDate,
+          shiftDate: transShiftDate,
+          type: 'in',
+          amount: Number(adv.amount),
+          category: 'مقدم حجز',
+          description: `دفعة مقدمة / عربون لحجز #${booking.bookingCode || booking.id} - العميل: ${booking.clientName}${adv.notes ? ' • ' + adv.notes : ''}`,
+          treasury: adv.treasuryId,
+          bookingId: booking.id,
+          shiftId: transShiftId,
+          createdBy: currentUser?.name || 'الكاشير',
+          userId: currentUser?.id,
+          userName: currentUser?.name || 'الكاشير',
+          branchId: bBranchId,
+          salonId: settings.salonId
+        };
+        trxsToSave.push(newTrx);
+      }
+    });
+
+    // 2. حذف الحركات الملغاة من قاعدة البيانات
+    if (trxsToDelete.length > 0) {
+      for (const t of trxsToDelete) {
+        await DB.deleteTransaction(t.id);
+      }
+    }
+
+    // 3. حفظ الحركات المحدثة والجديدة في قاعدة البيانات
+    if (trxsToSave.length > 0) {
+      for (const t of trxsToSave) {
+        await DB.saveTransaction(t);
+      }
+    }
+
+    // 4. تحديث حالة الخزينة محلياً في الذاكرة دون تكرار أو مضاعفة
+    if (setTransactions) {
+      const deleteIds = new Set(trxsToDelete.map(t => t.id));
+      const savedMap = new Map(trxsToSave.map(t => [t.id, t]));
+
+      setTransactions((prev: Transaction[]) => {
+        // استبعاد المحذوفات
+        const filtered = prev.filter(t => !deleteIds.has(t.id));
+        // استبدال المحدثات
+        const updated = filtered.map(t => savedMap.has(t.id) ? savedMap.get(t.id)! : t);
+        // إضافة الحركات الجديدة بالكامل
+        const existingIds = new Set(updated.map(t => t.id));
+        const brandNew = trxsToSave.filter(t => !existingIds.has(t.id));
+        return [...brandNew, ...updated];
+      });
     }
 
     // إرسال تأكيد الحجز أو إشعار التعديل للعميل تلقائياً كملف PDF في الذاكرة عبر الواتساب مرفقاً به إيصال الحجز المحدث
@@ -7419,6 +7499,13 @@ export function BookingsScreen({
 
                       if (res.success) {
                         alert('تم تأكيد استلام العربون بنجاح وتم تقييده في الخزينة المختارة.');
+                        // Update in local transactions state without duplicating
+                        if (setTransactions && res.transaction) {
+                          setTransactions(prev => [
+                            res.transaction!,
+                            ...prev.filter(t => t.id !== res.transaction!.id && (t as any).bookingId !== confirmDepositTarget.id && (t as any).booking_id !== confirmDepositTarget.id)
+                          ]);
+                        }
                         // Update in local bookings
                         setBookings(prev => prev.map(b => b.id === confirmDepositTarget.id ? {
                           ...b,

@@ -2801,6 +2801,9 @@ export const DB = {
             }]
       };
 
+      // Clean up any old duplicate transactions for this booking in DB first
+      await DB.deleteTransactionsByBookingId(booking.id, booking.bookingCode);
+
       // Create official transaction in salon treasury
       const advTrx: Transaction = {
         id: `TRX-ADV-MUA-${booking.id}-${Date.now()}`,
@@ -2819,7 +2822,7 @@ export const DB = {
       await DB.saveTransaction(advTrx);
       await DB.saveBooking(updatedBooking, validSalonId);
 
-      return { success: true };
+      return { success: true, transaction: advTrx };
     } catch (e: any) {
       console.error('DB.confirmArtistDepositReceipt error:', e);
       return { success: false, error: e?.message || 'فشل اعتماد استلام العربون' };
@@ -3777,6 +3780,14 @@ export const DB = {
     try {
       const { error } = await client.from('transactions').delete().eq('id', transactionId);
       if (error) { console.error('DB.deleteTransaction error:', error.message); return false; }
+      try {
+        const stored = localStorage.getItem('smartcut_transactions');
+        if (stored) {
+          const list = JSON.parse(stored);
+          const next = (list || []).filter((t: any) => t.id !== transactionId);
+          localStorage.setItem('smartcut_transactions', JSON.stringify(next));
+        }
+      } catch (e) {}
       return true;
     } catch (e) { console.error('DB.deleteTransaction exception:', e); return false; }
   },
@@ -3789,6 +3800,15 @@ export const DB = {
       if (validIds.length === 0) return true;
       const { error } = await client.from('transactions').delete().in('id', validIds);
       if (error) console.warn('DB.deleteTransactionsByIds error:', error.message);
+      try {
+        const idSet = new Set(validIds);
+        const stored = localStorage.getItem('smartcut_transactions');
+        if (stored) {
+          const list = JSON.parse(stored);
+          const next = (list || []).filter((t: any) => !idSet.has(t.id));
+          localStorage.setItem('smartcut_transactions', JSON.stringify(next));
+        }
+      } catch (e) {}
       return !error;
     } catch (e) {
       console.warn('DB.deleteTransactionsByIds exception:', e);
