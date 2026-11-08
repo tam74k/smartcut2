@@ -40,6 +40,17 @@ export const DEFAULT_WHATSAPP_TEMPLATES = {
 📍 الفرع: {branchName}
 يرجى التكرم بالحضور قبل الموعد بـ 10 دقائق. نتطلع لزيارتكم! ✨`,
 
+  bookingUpdateTemplate: `أهلاً بك أستاذ/أستاذة {clientName} 🌸
+تم تعديل تفاصيل وموعد حجزك بنجاح في {salonName}:
+🎫 رقم الحجز: #{bookingId}
+📅 الموعد بعد التعديل: {date} الساعة {time}
+✂️ الخدمات: {services}
+💈 الموظف: {employeeName}
+📍 الفرع: {branchName}
+{locationText}
+📎 مرفق إيصال الحجز المحدّث (PDF) بعد التعديل بكافة التفاصيل.
+يرجى التكرم بالحضور قبل الموعد بـ 10 دقائق. نسعد دائماً بخدمتكم! ✨`,
+
   advanceTemplate: `السلام عليكم يا أستاذ {employeeName} 💼
 إشعار مالي من إدارة {salonName}:
 تم تسجيل صرف سلفة نقدية لحسابكم:
@@ -603,11 +614,14 @@ export const EvolutionApiService = {
   },
 
   /**
-   * 2. إرسال تأكيد الحجز للعميل تلقائياً كملف PDF في الذاكرة ومرفق معه نص الرسالة
+   * 2. إرسال تأكيد الحجز أو إشعار تعديل الحجز للعميل تلقائياً كملف PDF في الذاكرة ومرفق معه نص الرسالة
    */
-  async sendBookingConfirmationWhatsApp(settings: AppSettings, booking: any, branchId?: string): Promise<EvolutionSendResult> {
+  async sendBookingConfirmationWhatsApp(settings: AppSettings, booking: any, branchId?: string, isUpdate: boolean = false): Promise<EvolutionSendResult> {
     if (settings.whatsappEnabled === false) return { success: false, error: 'الواتساب معطل' };
-    if (!settings.whatsappSettings?.sendBookingToClient) return { success: false, error: 'إرسال تأكيد الحجز للعملاء غير مفعل' };
+    const isBookingSendEnabled = isUpdate
+      ? (settings.whatsappSettings?.sendBookingUpdateToClient ?? settings.whatsappSettings?.sendBookingToClient ?? true)
+      : (settings.whatsappSettings?.sendBookingToClient !== false);
+    if (!isBookingSendEnabled) return { success: false, error: isUpdate ? 'إرسال تعديل الحجز للعملاء غير مفعل' : 'إرسال تأكيد الحجز للعملاء غير مفعل' };
     const phone = booking.phone || booking.clientPhone || booking.customerPhone;
     if (!phone || String(phone).replace(/\D/g, '').length < 7) {
       return { success: false, error: 'رقم هاتف العميل غير صالح أو غير مسجل' };
@@ -629,7 +643,11 @@ export const EvolutionApiService = {
     const branchName = branchObj?.name || 'الفرع الرئيسي';
 
     const rawBookingCode = booking.bookingCode || booking.queueNumber || booking.id || '';
-    const template = settings.whatsappSettings?.bookingTemplate || DEFAULT_WHATSAPP_TEMPLATES.bookingTemplate;
+    let template = isUpdate
+      ? (settings.whatsappSettings?.bookingUpdateTemplate || DEFAULT_WHATSAPP_TEMPLATES.bookingUpdateTemplate)
+      : (settings.whatsappSettings?.bookingTemplate || DEFAULT_WHATSAPP_TEMPLATES.bookingTemplate);
+
+    const locationText = booking.location ? `📍 المكان: ${booking.location}` : '';
     const message = interpolateTemplate(template, {
       clientName: booking.clientName || 'عميلنا العزيز',
       bookingId: String(rawBookingCode),
@@ -639,16 +657,17 @@ export const EvolutionApiService = {
       employeeName: booking.employeeName || (booking as any).barberName || 'حسب التوفر',
       branchName,
       salonAddress: branchObj?.address || settings.address || '',
-      salonName: settings.salonName || 'صالون سمارت كت'
+      salonName: settings.salonName || 'صالون سمارت كت',
+      locationText
     });
 
     // توليد ملف الـ PDF لإيصال الحجز في الذاكرة وإرساله مباشرة دون حفظ أي ملف
     try {
-      const pdfBase64 = await generateBookingPdfBase64(booking, settings, branchObj);
+      const pdfBase64 = await generateBookingPdfBase64(booking, settings, branchObj, undefined, isUpdate);
       if (pdfBase64) {
         const bokCode = booking.bookingCode || booking.queueNumber || booking.id || 'booking';
         const cleanBokCode = String(bokCode).replace(/[^A-Za-z0-9_-]/g, '_');
-        const fileName = `Booking-${cleanBokCode}.pdf`;
+        const fileName = isUpdate ? `Booking-Updated-${cleanBokCode}.pdf` : `Booking-${cleanBokCode}.pdf`;
         return await this.sendDocumentMessage(settings, phone, pdfBase64, fileName, message, branchId || booking.branchId);
       }
     } catch (pdfErr) {

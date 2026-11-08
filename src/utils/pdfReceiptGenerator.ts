@@ -133,7 +133,8 @@ export function generateBookingReceiptHtml(
   booking: Booking,
   settings: AppSettings,
   branchObj?: any,
-  currentUser?: any
+  currentUser?: any,
+  isUpdate: boolean = false
 ): string {
   // تفكيك بنود الخدمات والدفعات بحذر لضمان عدم حدوث استثناءات
   let rawServices = booking.services;
@@ -171,7 +172,11 @@ export function generateBookingReceiptHtml(
         ${settings.logoUrl ? `<img src="${sanitizeUrl(settings.logoUrl)}" style="max-height: 48px; margin: 0 auto 4px; display: block;" />` : ''}
         <div style="font-size: 16px; font-weight: 800; margin: 0; color: #000;">${escapeHtml(salonTitle)}</div>
         <div style="font-size: 11px; color: #333; margin-top: 1px;">فرع: ${escapeHtml(branchName)}</div>
-        <div style="display: inline-block; border: 1.5px solid #000; padding: 2px 10px; font-size: 12px; font-weight: 800; margin-top: 4px; color: #000; border-radius: 4px;">إيصال حجز مؤكد</div>
+        <div style="display: inline-block; border: 1.5px solid #000; padding: 2px 10px; font-size: 12px; font-weight: 800; margin-top: 4px; color: #000; border-radius: 4px;">${isUpdate || Boolean(booking.updatedAt) ? 'إيصال حجز معدل ومحدث' : 'إيصال حجز مؤكد'}</div>
+        ${(isUpdate || Boolean(booking.updatedAt)) ? `
+        <div style="background: #fef3c7; border: 1px solid #f59e0b; color: #92400e; padding: 2px 6px; font-size: 10px; font-weight: bold; margin-top: 3px; border-radius: 4px; text-align: center;">
+          ⚠️ تم تحديث موعد وتفاصيل هذا الحجز
+        </div>` : ''}
       </div>
 
       <!-- الباركود -->
@@ -422,9 +427,10 @@ export async function generateBookingPdfBase64(
   booking: Booking,
   settings: AppSettings,
   branchObj?: any,
-  currentUser?: any
+  currentUser?: any,
+  isUpdate: boolean = false
 ): Promise<string> {
-  const html = generateBookingReceiptHtml(booking, settings, branchObj, currentUser);
+  const html = generateBookingReceiptHtml(booking, settings, branchObj, currentUser, isUpdate);
   return await convertHtmlToPdfBase64(html);
 }
 

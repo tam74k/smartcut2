@@ -1075,6 +1075,7 @@ export interface EtaEgyptSettings {
 export interface WhatsAppNotificationsConfig {
   sendInvoiceToClient?: boolean;
   sendBookingToClient?: boolean;
+  sendBookingUpdateToClient?: boolean;
   sendAdvanceToEmployee?: boolean;
   sendBookingReminderToClient?: boolean;
   sendTomorrowBookingsToOwner?: boolean;
@@ -1084,6 +1085,7 @@ export interface WhatsAppNotificationsConfig {
   // Custom message templates
   invoiceTemplate?: string;
   bookingTemplate?: string;
+  bookingUpdateTemplate?: string;
   advanceTemplate?: string;
   reminderTemplate?: string;
   ownerTomorrowTemplate?: string;

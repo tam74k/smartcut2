@@ -4006,6 +4006,13 @@ export function SettingsScreen({
               activeColor: 'text-purple-600 bg-purple-50 border-purple-200'
             },
             {
+              id: 'sendBookingUpdateToClient',
+              title: 'إشعار تعديل الحجز للعميل',
+              desc: 'إرسال رسالة واتساب مع إيصال PDF المحدث تلقائياً للعميل عند تعديل موعد أو تفاصيل الحجز',
+              icon: CalendarCheck,
+              activeColor: 'text-indigo-600 bg-indigo-50 border-indigo-200'
+            },
+            {
               id: 'sendAdvanceToEmployee',
               title: 'إرسال السلفة للموظف',
               desc: 'إرسال إشعار فوري على واتساب الموظف عند صرف سلفة نقدية على راتبه',
@@ -4062,6 +4069,13 @@ export function SettingsScreen({
               title: 'تأكيد الحجز',
               icon: CalendarCheck,
               tags: ['{clientName}', '{bookingId}', '{date}', '{time}', '{services}', '{employeeName}', '{branchName}', '{salonAddress}', '{salonName}']
+            },
+            {
+              id: 'booking_update',
+              configKey: 'bookingUpdateTemplate',
+              title: 'تعديل الحجز',
+              icon: CalendarCheck,
+              tags: ['{clientName}', '{bookingId}', '{date}', '{time}', '{services}', '{employeeName}', '{branchName}', '{salonAddress}', '{locationText}', '{salonName}']
             },
             {
               id: 'advance',
@@ -4392,7 +4406,7 @@ export function SettingsScreen({
                     {TEMPLATE_TABS.map(tab => {
                       const isSelected = tab.id === selectedWaTemplateTab;
                       const TabIcon = tab.icon;
-                      const isTriggerEnabled = Boolean((waCfg as any)[tab.id === 'owner_tomorrow' ? 'sendTomorrowBookingsToOwner' : tab.id === 'invoice' ? 'sendInvoiceToClient' : tab.id === 'booking' ? 'sendBookingToClient' : tab.id === 'advance' ? 'sendAdvanceToEmployee' : tab.id === 'reminder' ? 'sendBookingReminderToClient' : tab.id === 'birthday' ? 'sendBirthdayGreeting' : 'sendReactivationOffers']);
+                      const isTriggerEnabled = Boolean((waCfg as any)[tab.id === 'owner_tomorrow' ? 'sendTomorrowBookingsToOwner' : tab.id === 'invoice' ? 'sendInvoiceToClient' : tab.id === 'booking' ? 'sendBookingToClient' : tab.id === 'booking_update' ? 'sendBookingUpdateToClient' : tab.id === 'advance' ? 'sendAdvanceToEmployee' : tab.id === 'reminder' ? 'sendBookingReminderToClient' : tab.id === 'birthday' ? 'sendBirthdayGreeting' : 'sendReactivationOffers']);
 
                       return (
                         <button

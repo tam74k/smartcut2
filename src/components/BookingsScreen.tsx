@@ -318,13 +318,15 @@ export function BookingsScreen({
 
     setIsResendingConfirmWhatsApp(true);
     try {
+      const isModified = Boolean(targetBooking.updatedAt || (targetBooking as any).updated_at);
       const res = await EvolutionApiService.sendBookingConfirmationWhatsApp(
         settings,
         targetBooking,
-        targetBooking.branchId || activeBranchId
+        targetBooking.branchId || activeBranchId,
+        isModified
       );
       if (res.success) {
-        alert(`تم إرسال تفاصيل وتأكيد الحجز للعميل (${targetBooking.clientName}) بنجاح.`);
+        alert(`تم إرسال تفاصيل وإيصال الحجز ${isModified ? 'المعدل ' : ''}للعميل (${targetBooking.clientName}) بنجاح.`);
       } else {
         alert(`فشل إرسال التأكيد: ${res.error || 'خطأ غير معروف'}`);
       }
@@ -1661,12 +1663,13 @@ export function BookingsScreen({
       }
     }
 
-    // إرسال تأكيد الحجز للعميل تلقائياً كملف PDF في الذاكرة عبر الواتساب إذا كان الحجز جديداً والخيار مفعلاً أو تم اختياره
+    // إرسال تأكيد الحجز أو إشعار التعديل للعميل تلقائياً كملف PDF في الذاكرة عبر الواتساب مرفقاً به إيصال الحجز المحدث
+    const isUpdate = Boolean(editingBooking);
     const shouldSendWhatsApp = settings.whatsappEnabled !== false && 
-      ((!editingBooking && settings.whatsappSettings?.sendBookingToClient) || sendWhatsAppOnSave);
+      (sendWhatsAppOnSave || (settings.whatsappSettings?.sendBookingToClient !== false && (!editingBooking || settings.whatsappSettings?.sendBookingUpdateToClient !== false)));
     if (shouldSendWhatsApp) {
-      EvolutionApiService.sendBookingConfirmationWhatsApp(settings, booking, bBranchId)
-        .catch(err => console.error('Booking confirmation WhatsApp send error:', err));
+      EvolutionApiService.sendBookingConfirmationWhatsApp(settings, booking, bBranchId, isUpdate)
+        .catch(err => console.error('Booking confirmation/update WhatsApp send error:', err));
     }
 
     // Auto add client to overall salon clients database if new
@@ -1761,7 +1764,7 @@ export function BookingsScreen({
       discountType: b.discountType || 'fixed',
       discountValue: b.discountValue || 0
     });
-    setSendWhatsAppOnSave(false);
+    setSendWhatsAppOnSave(settings.whatsappEnabled !== false && settings.whatsappSettings?.sendBookingToClient !== false);
     setShowAddModal(true);
     setSelectedBookingDetails(null);
   };
@@ -2396,6 +2399,12 @@ export function BookingsScreen({
     } catch (e) {}
 
     await DB.saveBooking(updatedBooking, settings.salonId);
+
+    // Auto send updated booking receipt to client via WhatsApp if enabled
+    if (settings.whatsappEnabled !== false && settings.whatsappSettings?.sendBookingToClient !== false) {
+      EvolutionApiService.sendBookingConfirmationWhatsApp(settings, updatedBooking, updatedBooking.branchId, true)
+        .catch(err => console.error('Reschedule booking confirmation WhatsApp send error:', err));
+    }
 
     const updatedTarget = { ...updatedBooking };
     setRescheduleBookingTarget(null);
@@ -6232,7 +6241,7 @@ export function BookingsScreen({
                       className="rounded text-emerald-600 focus:ring-emerald-500 w-3.5 h-3.5 cursor-pointer"
                     />
                     <span className="flex items-center gap-1 text-emerald-900 font-bold">
-                      <span>إرسال إيصال الحجز (PDF) عبر الواتساب</span>
+                      <span>{editingBooking ? 'إرسال إيصال الحجز المعدل (PDF) عبر الواتساب' : 'إرسال إيصال الحجز (PDF) عبر الواتساب'}</span>
                     </span>
                   </label>
                 )}
