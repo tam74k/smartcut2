@@ -2,10 +2,11 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Sparkles, Calendar, Clock, Phone, User, CheckCircle2, AlertCircle, 
   Send, Plus, LogOut, Search, MapPin, DollarSign, 
-  ArrowLeft, X, Check
+  ArrowLeft, X, Check, Lock, KeyRound, Eye, EyeOff, ShieldCheck, ShieldAlert
 } from 'lucide-react';
 import { AppSettings, Branch, Booking, MakeupArtist, BookingService, Service, AppUser } from '../types';
 import { DB } from '../services/db';
+import { AuthService } from '../services/auth';
 import { EvolutionApiService } from '../services/evolutionApiService';
 import { calculateBookingTotals } from './BookingsScreen';
 
@@ -38,9 +39,19 @@ export function MakeupArtistPortal({
   const [allArtists, setAllArtists] = useState<MakeupArtist[]>([]);
 
   // App Navigation / Views
-  const [activeTab, setActiveTab] = useState<'bookings' | 'new_booking'>('bookings');
+  const [activeTab, setActiveTab] = useState<'bookings' | 'new_booking' | 'change_password'>('bookings');
   const [searchFilter, setSearchFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'upcoming' | 'today' | 'completed' | 'cancelled'>('all');
+
+  // Password Change State
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showOldPassword, setShowOldPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [passwordStatusMsg, setPasswordStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Booking Form State
   const [clientName, setClientName] = useState('');
@@ -267,6 +278,102 @@ export function MakeupArtistPortal({
     }
   };
 
+  // Standard Password Rules Validation
+  const pwdMinLength = newPassword.length >= 6;
+  const pwdHasLetters = /[a-zA-Z\u0621-\u064A]/.test(newPassword);
+  const pwdHasNumbers = /[0-9]/.test(newPassword);
+  const pwdDifferentFromOld = Boolean(newPassword && oldPassword && newPassword !== oldPassword);
+  const pwdMatchesConfirm = Boolean(newPassword && confirmPassword && newPassword === confirmPassword);
+  const isPasswordReadyToSubmit = pwdMinLength && pwdHasLetters && pwdHasNumbers && pwdMatchesConfirm && Boolean(oldPassword);
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordStatusMsg(null);
+
+    if (!currentArtist) {
+      setPasswordStatusMsg({ type: 'error', text: 'لم يتم العثور على بيانات الميكب ارتست الحالية.' });
+      return;
+    }
+
+    if (!oldPassword) {
+      setPasswordStatusMsg({ type: 'error', text: 'يرجى إدخال كلمة المرور الحالية.' });
+      return;
+    }
+
+    if (!pwdMinLength) {
+      setPasswordStatusMsg({ type: 'error', text: 'كلمة المرور الجديدة يجب ألا تقل عن 6 خانات.' });
+      return;
+    }
+
+    if (!pwdHasLetters || !pwdHasNumbers) {
+      setPasswordStatusMsg({ type: 'error', text: 'كلمة المرور الجديدة يجب أن تحتوي على أحرف وأرقام معاً.' });
+      return;
+    }
+
+    if (newPassword === oldPassword) {
+      setPasswordStatusMsg({ type: 'error', text: 'كلمة المرور الجديدة يجب أن تكون مختلفة عن كلمة المرور الحالية.' });
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordStatusMsg({ type: 'error', text: 'كلمة المرور الجديدة غير متطابقة مع تأكيدها.' });
+      return;
+    }
+
+    setIsChangingPassword(true);
+    try {
+      // 1. Verify old password against current artist and current user
+      const artistOldPass = String(currentArtist.password || '').trim();
+      const userOldPass = String(currentUser?.password || (currentUser as any)?.passwordHash || (currentUser as any)?.password_hash || '').trim();
+
+      const matchesArtist = artistOldPass ? (artistOldPass === oldPassword.trim()) : true;
+      const matchesUser = userOldPass ? (userOldPass === oldPassword.trim()) : true;
+
+      if (!matchesArtist && !matchesUser) {
+        setPasswordStatusMsg({ type: 'error', text: 'كلمة المرور الحالية غير صحيحة.' });
+        setIsChangingPassword(false);
+        return;
+      }
+
+      // 2. Update user in AuthService & DB users table
+      if (currentUser) {
+        const userRes = await AuthService.changePasswordAsync(currentUser, oldPassword, newPassword);
+        if (!userRes.success && userRes.message && !userRes.message.includes('لم يتم العثور')) {
+          setPasswordStatusMsg({ type: 'error', text: userRes.message });
+          setIsChangingPassword(false);
+          return;
+        }
+      }
+
+      // 3. Update currentArtist in DB (makeup_artists)
+      const updatedArtist: MakeupArtist = {
+        ...currentArtist,
+        password: newPassword.trim(),
+        updatedAt: new Date().toISOString()
+      };
+      await DB.saveMakeupArtist(updatedArtist, settings.salonId);
+
+      // 4. Update local state & session storage
+      setCurrentArtist(updatedArtist);
+      try {
+        localStorage.setItem('smartcut_artist_session', JSON.stringify(updatedArtist));
+      } catch (err) {}
+
+      setPasswordStatusMsg({ 
+        type: 'success', 
+        text: 'تم تعديل كلمة المرور بنجاح! يمكنكِ الآن استخدام كلمة المرور الجديدة لتسجيل الدخول.' 
+      });
+      setOldPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err: any) {
+      console.error('Error changing makeup artist password:', err);
+      setPasswordStatusMsg({ type: 'error', text: 'حدث خطأ أثناء تغيير كلمة المرور: ' + (err?.message || err) });
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
+
   // Filter bookings for this artist
   const artistBookings = useMemo(() => {
     if (!currentArtist) return [];
@@ -454,6 +561,23 @@ export function MakeupArtistPortal({
 
             <button
               type="button"
+              onClick={() => {
+                setPasswordStatusMsg(null);
+                setActiveTab('change_password');
+              }}
+              className={`flex items-center gap-1.5 border px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
+                activeTab === 'change_password'
+                  ? 'bg-pink-100 text-pink-800 border-pink-300'
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200'
+              }`}
+              title="تعديل كلمة المرور"
+            >
+              <KeyRound size={13} />
+              <span className="hidden sm:inline">كلمة المرور</span>
+            </button>
+
+            <button
+              type="button"
               onClick={handleLogoutClick}
               className="flex items-center gap-1.5 bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-700 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer"
               title="تسجيل الخروج"
@@ -493,6 +617,22 @@ export function MakeupArtistPortal({
           >
             <Plus size={16} />
             <span>تسجيل حجز عروسة جديد</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setPasswordStatusMsg(null);
+              setActiveTab('change_password');
+            }}
+            className={`flex-1 py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${
+              activeTab === 'change_password'
+                ? 'bg-white text-pink-700 shadow-xs border border-pink-200/80'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <KeyRound size={15} />
+            <span>تعديل كلمة المرور</span>
           </button>
         </div>
 
@@ -997,6 +1137,187 @@ export function MakeupArtistPortal({
                 })}
               </div>
             )}
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* TAB 3: CHANGE PASSWORD SCREEN */}
+        {/* ========================================================================= */}
+        {activeTab === 'change_password' && (
+          <div className="bg-white border border-slate-200/90 rounded-3xl p-5 sm:p-8 shadow-xs space-y-6 animate-in fade-in max-w-xl mx-auto">
+            <div className="border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-pink-50 border border-pink-200 text-pink-600 flex items-center justify-center font-bold shadow-2xs">
+                  <KeyRound size={22} />
+                </div>
+                <div>
+                  <h2 className="text-base font-black text-slate-900">تعديل كلمة المرور</h2>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    تغيير كلمة المرور الخاصة بحساب الميكب ارتست ({currentArtist.name})
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Status Alert Message */}
+            {passwordStatusMsg && (
+              <div className={`p-4 rounded-2xl border text-xs flex items-start gap-2.5 shadow-2xs ${
+                passwordStatusMsg.type === 'success' 
+                  ? 'bg-emerald-50 border-emerald-300 text-emerald-900' 
+                  : 'bg-rose-50 border-rose-300 text-rose-900'
+              }`}>
+                {passwordStatusMsg.type === 'success' ? (
+                  <CheckCircle2 size={16} className="text-emerald-600 shrink-0 mt-0.5" />
+                ) : (
+                  <AlertCircle size={16} className="text-rose-600 shrink-0 mt-0.5" />
+                )}
+                <div className="font-bold flex-1 leading-relaxed">
+                  {passwordStatusMsg.text}
+                </div>
+                <button 
+                  type="button" 
+                  onClick={() => setPasswordStatusMsg(null)}
+                  className="text-slate-400 hover:text-slate-600 text-xs cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
+            <form onSubmit={handleChangePassword} className="space-y-4">
+              {/* Old Password */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
+                  <span>كلمة المرور الحالية (القديمة) *</span>
+                </label>
+                <div className="relative">
+                  <input
+                    type={showOldPassword ? 'text' : 'password'}
+                    required
+                    value={oldPassword}
+                    onChange={(e) => setOldPassword(e.target.value)}
+                    placeholder="أدخلي كلمة المرور الحالية..."
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-hidden focus:border-pink-500 font-mono pr-3 pl-10"
+                    dir="ltr"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowOldPassword(!showOldPassword)}
+                    className="absolute left-3 top-3 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    title={showOldPassword ? 'إخفاء' : 'إظهار'}
+                  >
+                    {showOldPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* New Password */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  كلمة المرور الجديدة *
+                </label>
+                <div className="relative">
+                  <input
+                    type={showNewPassword ? 'text' : 'password'}
+                    required
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="أدخلي كلمة المرور الجديدة..."
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-hidden focus:border-pink-500 font-mono pr-3 pl-10"
+                    dir="ltr"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    className="absolute left-3 top-3 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    title={showNewPassword ? 'إخفاء' : 'إظهار'}
+                  >
+                    {showNewPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Confirm New Password */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  تأكيد كلمة المرور الجديدة (إعادة كتابتها) *
+                </label>
+                <div className="relative">
+                  <input
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    required
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="أعيدي كتابة كلمة المرور الجديدة للتأكيد..."
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-hidden focus:border-pink-500 font-mono pr-3 pl-10"
+                    dir="ltr"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute left-3 top-3 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    title={showConfirmPassword ? 'إخفاء' : 'إظهار'}
+                  >
+                    {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Password Requirements Checklist (الشروط المتعارف عليها) */}
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/90 space-y-2.5 text-xs">
+                <span className="font-black text-slate-800 block text-[11px] mb-1">
+                  شروط تغيير كلمة المرور:
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                  <div className={`flex items-center gap-1.5 transition-colors ${pwdMinLength ? 'text-emerald-700 font-bold' : 'text-slate-500'}`}>
+                    <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${pwdMinLength ? 'bg-emerald-100 text-emerald-800 font-black' : 'bg-slate-200 text-slate-600'}`}>
+                      {pwdMinLength ? '✓' : '•'}
+                    </div>
+                    <span>6 خانات أو أحرف على الأقل</span>
+                  </div>
+
+                  <div className={`flex items-center gap-1.5 transition-colors ${(pwdHasLetters && pwdHasNumbers) ? 'text-emerald-700 font-bold' : 'text-slate-500'}`}>
+                    <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${(pwdHasLetters && pwdHasNumbers) ? 'bg-emerald-100 text-emerald-800 font-black' : 'bg-slate-200 text-slate-600'}`}>
+                      {(pwdHasLetters && pwdHasNumbers) ? '✓' : '•'}
+                    </div>
+                    <span>تتضمن أحرفاً وأرقاماً معاً</span>
+                  </div>
+
+                  <div className={`flex items-center gap-1.5 transition-colors ${pwdDifferentFromOld ? 'text-emerald-700 font-bold' : 'text-slate-500'}`}>
+                    <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${pwdDifferentFromOld ? 'bg-emerald-100 text-emerald-800 font-black' : 'bg-slate-200 text-slate-600'}`}>
+                      {pwdDifferentFromOld ? '✓' : '•'}
+                    </div>
+                    <span>مختلفة عن كلمة المرور القديمة</span>
+                  </div>
+
+                  <div className={`flex items-center gap-1.5 transition-colors ${pwdMatchesConfirm ? 'text-emerald-700 font-bold' : 'text-slate-500'}`}>
+                    <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${pwdMatchesConfirm ? 'bg-emerald-100 text-emerald-800 font-black' : 'bg-slate-200 text-slate-600'}`}>
+                      {pwdMatchesConfirm ? '✓' : '•'}
+                    </div>
+                    <span>تطابق تأكيد كلمة المرور الجديدة</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Submit Button */}
+              <button
+                type="submit"
+                disabled={isChangingPassword || !isPasswordReadyToSubmit}
+                className="w-full bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-700 hover:to-rose-700 disabled:opacity-40 disabled:cursor-not-allowed text-white py-3.5 rounded-2xl text-xs font-black transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 active:scale-98"
+              >
+                {isChangingPassword ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>جارٍ تحديث كلمة المرور...</span>
+                  </>
+                ) : (
+                  <>
+                    <ShieldCheck size={16} />
+                    <span>حفظ وتحديث كلمة المرور</span>
+                  </>
+                )}
+              </button>
+            </form>
           </div>
         )}
       </main>
