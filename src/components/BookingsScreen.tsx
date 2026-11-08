@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   Booking, AppSettings, ServiceItem, Employee, Client, Branch, 
   AppUser, BlockedDateEntry, BlockedHourEntry, StaffUnavailabilityEntry,
-  AdvancePayment, Transaction, Product, BookingService, BookingRulesSettings
+  AdvancePayment, Transaction, Product, BookingService, BookingRulesSettings, MakeupArtist
 } from '../types';
 import { 
   Calendar as CalendarIcon, Plus, Printer, Edit2, X, ShoppingCart, 
@@ -354,8 +354,38 @@ export function BookingsScreen({
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [activeView, setActiveView] = useState<'day' | 'week' | 'month'>('week');
   const [selectedTech, setSelectedTech] = useState<string>('all');
+  const [selectedArtist, setSelectedArtist] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+
+  // Makeup Artists State (للتصفية والفلترة باسم الميكب ارتست)
+  const [makeupArtistsList, setMakeupArtistsList] = useState<MakeupArtist[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    DB.fetchMakeupArtists(settings.salonId).then(list => {
+      if (isMounted && list) {
+        setMakeupArtistsList(list);
+      }
+    }).catch(e => console.error('Error fetching makeup artists in BookingsScreen:', e));
+    return () => { isMounted = false; };
+  }, [settings.salonId]);
+
+  // Unique list of makeup artists (from database + recorded bookings)
+  const availableArtists = useMemo(() => {
+    const map = new Map<string, { id: string; name: string }>();
+    (makeupArtistsList || []).forEach(a => {
+      if (a.id && a.name) map.set(a.id, { id: a.id, name: a.name });
+    });
+    (bookings || []).forEach(b => {
+      if (b.artistId && b.artistName && !map.has(b.artistId)) {
+        map.set(b.artistId, { id: b.artistId, name: b.artistName });
+      } else if (!b.artistId && b.artistName && !map.has(b.artistName)) {
+        map.set(b.artistName, { id: b.artistName, name: b.artistName });
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+  }, [makeupArtistsList, bookings]);
 
   // Table List Filters
   const [dateFrom, setDateFrom] = useState('');
@@ -377,7 +407,7 @@ export function BookingsScreen({
   // Reset pagination to page 1 on filter changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, statusFilter, selectedTech, dateFrom, dateTo, activeBranchId]);
+  }, [searchQuery, statusFilter, selectedTech, selectedArtist, dateFrom, dateTo, activeBranchId]);
 
   // Modals & Details State
   const [showAddModal, setShowAddModal] = useState(false);
@@ -900,16 +930,29 @@ export function BookingsScreen({
         if (!matchesTech) return false;
       }
 
-      // Search query (name, phone, service, booking ID / barcode)
+      // Artist filter (فلتر باسم الميكب ارتست)
+      if (selectedArtist !== 'all') {
+        if (selectedArtist === 'all_artists') {
+          if (!b.artistId && !b.artistName) return false;
+        } else if (selectedArtist === 'no_artist') {
+          if (b.artistId || b.artistName) return false;
+        } else {
+          const matches = (b.artistId === selectedArtist) || (b.artistName === selectedArtist);
+          if (!matches) return false;
+        }
+      }
+
+      // Search query (name, phone, service, artist, booking ID / barcode)
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matchesClient = b.clientName?.toLowerCase().includes(q);
         const matchesPhone = b.phone?.includes(q);
         const matchesService = b.services?.some(s => s.serviceName?.toLowerCase().includes(q));
+        const matchesArtist = b.artistName?.toLowerCase().includes(q);
         const matchesId = b.id?.toLowerCase().includes(q)
           || (b.bookingCode && b.bookingCode.toLowerCase().includes(q))
           || (b.queueNumber && `b-${b.queueNumber}`.toLowerCase().includes(q));
-        if (!matchesClient && !matchesPhone && !matchesService && !matchesId) return false;
+        if (!matchesClient && !matchesPhone && !matchesService && !matchesId && !matchesArtist) return false;
       }
 
       return true;
@@ -918,7 +961,7 @@ export function BookingsScreen({
       const bKey = (b.date ? b.date.split('T')[0].trim() : '') + (b.time || '');
       return bKey.localeCompare(aKey);
     });
-  }, [bookings, dateFrom, dateTo, statusFilter, selectedTech, searchQuery, activeBranchId, isMainBranch]);
+  }, [bookings, dateFrom, dateTo, statusFilter, selectedTech, selectedArtist, searchQuery, activeBranchId, isMainBranch]);
 
   // Bookings Directory Table Pagination calculations
   const totalBookingsCount = tableFilteredBookings.length;
@@ -964,21 +1007,34 @@ export function BookingsScreen({
         if (!matchesTech) return false;
       }
 
+      // Artist filter (فلتر باسم الميكب ارتست)
+      if (selectedArtist !== 'all') {
+        if (selectedArtist === 'all_artists') {
+          if (!b.artistId && !b.artistName) return false;
+        } else if (selectedArtist === 'no_artist') {
+          if (b.artistId || b.artistName) return false;
+        } else {
+          const matches = (b.artistId === selectedArtist) || (b.artistName === selectedArtist);
+          if (!matches) return false;
+        }
+      }
+
       // Search query
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matchesClient = b.clientName?.toLowerCase().includes(q);
         const matchesPhone = b.phone?.includes(q);
         const matchesService = b.services?.some(s => s.serviceName?.toLowerCase().includes(q));
+        const matchesArtist = b.artistName?.toLowerCase().includes(q);
         const matchesId = b.id?.toLowerCase().includes(q)
           || (b.bookingCode && b.bookingCode.toLowerCase().includes(q))
           || (b.queueNumber && `b-${b.queueNumber}`.toLowerCase().includes(q));
-        if (!matchesClient && !matchesPhone && !matchesService && !matchesId) return false;
+        if (!matchesClient && !matchesPhone && !matchesService && !matchesId && !matchesArtist) return false;
       }
 
       return true;
     });
-  }, [bookings, statusFilter, selectedTech, searchQuery, activeBranchId, isMainBranch]);
+  }, [bookings, statusFilter, selectedTech, selectedArtist, searchQuery, activeBranchId, isMainBranch]);
 
   // Filtered Bookings for Postponed Tab (الحجوزات المؤجلة / موعد مفتوح)
   const postponedBookings = useMemo(() => {
@@ -995,16 +1051,29 @@ export function BookingsScreen({
         if (!matchesTech) return false;
       }
 
+      // Artist filter (فلتر باسم الميكب ارتست)
+      if (selectedArtist !== 'all') {
+        if (selectedArtist === 'all_artists') {
+          if (!b.artistId && !b.artistName) return false;
+        } else if (selectedArtist === 'no_artist') {
+          if (b.artistId || b.artistName) return false;
+        } else {
+          const matches = (b.artistId === selectedArtist) || (b.artistName === selectedArtist);
+          if (!matches) return false;
+        }
+      }
+
       // Search query
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matchesClient = b.clientName?.toLowerCase().includes(q);
         const matchesPhone = b.phone?.includes(q);
         const matchesService = b.services?.some(s => s.serviceName?.toLowerCase().includes(q));
+        const matchesArtist = b.artistName?.toLowerCase().includes(q);
         const matchesId = b.id?.toLowerCase().includes(q)
           || (b.bookingCode && b.bookingCode.toLowerCase().includes(q))
           || (b.queueNumber && `b-${b.queueNumber}`.toLowerCase().includes(q));
-        if (!matchesClient && !matchesPhone && !matchesService && !matchesId) return false;
+        if (!matchesClient && !matchesPhone && !matchesService && !matchesId && !matchesArtist) return false;
       }
 
       return true;
@@ -1013,7 +1082,7 @@ export function BookingsScreen({
       const bTime = b.postponedAt || b.updatedAt || b.createdAt || '';
       return bTime.localeCompare(aTime);
     });
-  }, [bookings, selectedTech, searchQuery, activeBranchId, isMainBranch]);
+  }, [bookings, selectedTech, selectedArtist, searchQuery, activeBranchId, isMainBranch]);
 
   // Group Bookings by Date and Hour Slot for quick lookup in calendar
   const bookingsByDateAndSlot = useMemo(() => {
@@ -2628,9 +2697,9 @@ export function BookingsScreen({
                 />
               </div>
 
-              {(dateFrom || dateTo) && (
+              {(dateFrom || dateTo || selectedArtist !== 'all' || selectedTech !== 'all' || statusFilter !== 'all') && (
                 <button
-                  onClick={() => { setDateFrom(''); setDateTo(''); }}
+                  onClick={() => { setDateFrom(''); setDateTo(''); setSelectedArtist('all'); setSelectedTech('all'); setStatusFilter('all'); }}
                   className="text-xs text-rose-600 hover:text-rose-800 font-bold px-2 py-1 cursor-pointer"
                 >
                   إلغاء التصفية
@@ -2647,7 +2716,7 @@ export function BookingsScreen({
                 >
                   <option value="all">جميع الحالات</option>
                   <option value="confirmed">المؤكدة فقط</option>
-                  <option value="pending">قيد الانتظار</option>
+                  <option value="pending">في انتظار التأكيد</option>
                   <option value="postponed">المؤجلة (موعد مفتوح)</option>
                   <option value="completed">المكتملة</option>
                   <option value="cancelled">الملغاة</option>
@@ -2666,6 +2735,28 @@ export function BookingsScreen({
                   {employees.filter(e => e.isActive !== false).map(e => (
                     <option key={e.id} value={e.id}>{e.name} ({e.role})</option>
                   ))}
+                </select>
+              </div>
+
+              {/* Makeup Artist Filter (فلتر باسم الميكب ارتست) */}
+              <div className="flex items-center gap-1.5 bg-pink-50/80 px-3 py-1.5 rounded-xl border border-pink-200">
+                <Sparkles size={14} className="text-pink-600 shrink-0" />
+                <select
+                  value={selectedArtist}
+                  onChange={e => setSelectedArtist(e.target.value)}
+                  className="bg-transparent text-xs font-bold text-pink-950 outline-none cursor-pointer"
+                  title="تصفية الحجوزات باسم الميكب ارتست"
+                >
+                  <option value="all">كل الميكب ارتست</option>
+                  <option value="all_artists">✨ جميع حجوزات الميكب ارتست</option>
+                  <option value="no_artist">حجوزات الصالون فقط (بدون ارتست)</option>
+                  {availableArtists.length > 0 && (
+                    <optgroup label="الميكب ارتست المتاحين">
+                      {availableArtists.map(artist => (
+                        <option key={artist.id} value={artist.id}>💄 {artist.name}</option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
               </div>
             </div>
@@ -2876,6 +2967,12 @@ export function BookingsScreen({
                           <td className="p-3.5">
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="font-bold text-slate-900">{b.clientName}</span>
+                              {b.artistName && (
+                                <span className="bg-pink-100 text-pink-900 border border-pink-200 text-[9px] font-black px-1.5 py-0.5 rounded-md shadow-2xs inline-flex items-center gap-1" title={`حجز ميكب ارتست: ${b.artistName}`}>
+                                  <Sparkles size={9} className="text-pink-600" />
+                                  <span>{b.artistName}</span>
+                                </span>
+                              )}
                               {b.source === 'online' && (
                                 <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 text-[9px] font-black px-1.5 py-0.5 rounded-md shadow-2xs inline-flex items-center gap-1">
                                   <Globe size={10} className="text-emerald-700" />
@@ -3219,10 +3316,32 @@ export function BookingsScreen({
                 >
                   <option value="all">جميع الحالات</option>
                   <option value="confirmed">المؤكدة فقط</option>
-                  <option value="pending">قيد الانتظار</option>
+                  <option value="pending">في انتظار التأكيد</option>
                   <option value="postponed">المؤجلة (موعد مفتوح)</option>
                   <option value="completed">المكتملة</option>
                   <option value="cancelled">الملغاة</option>
+                </select>
+              </div>
+
+              {/* Makeup Artist Filter (فلتر باسم الميكب ارتست) */}
+              <div className="flex items-center gap-1.5 bg-pink-50/80 px-3 py-1.5 rounded-xl border border-pink-200">
+                <Sparkles size={14} className="text-pink-600 shrink-0" />
+                <select
+                  value={selectedArtist}
+                  onChange={e => setSelectedArtist(e.target.value)}
+                  className="bg-transparent text-xs font-bold text-pink-950 outline-none cursor-pointer"
+                  title="تصفية الحجوزات باسم الميكب ارتست"
+                >
+                  <option value="all">كل الميكب ارتست</option>
+                  <option value="all_artists">✨ جميع حجوزات الميكب ارتست</option>
+                  <option value="no_artist">حجوزات الصالون فقط (بدون ارتست)</option>
+                  {availableArtists.length > 0 && (
+                    <optgroup label="الميكب ارتست المتاحين">
+                      {availableArtists.map(artist => (
+                        <option key={artist.id} value={artist.id}>💄 {artist.name}</option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
               </div>
             </div>
@@ -3303,6 +3422,11 @@ export function BookingsScreen({
                                   <div className="flex justify-between items-start gap-1">
                                     <div className="flex items-center gap-1 min-w-0">
                                       <span className="font-black text-slate-900 truncate">{b.clientName}</span>
+                                      {b.artistName && (
+                                        <span className="text-[9px] font-black text-pink-700 bg-pink-100/90 rounded px-1 py-0.2 shrink-0" title={`ميكب ارتست: ${b.artistName}`}>
+                                          💄 {b.artistName}
+                                        </span>
+                                      )}
                                       {b.internalNotes && (
                                         <Lock size={10} className="text-amber-700 shrink-0" title={`ملاحظة داخلية: ${b.internalNotes}`} />
                                       )}
@@ -3397,6 +3521,11 @@ export function BookingsScreen({
                                     <div className="flex justify-between items-start">
                                       <div className="flex items-center gap-1 min-w-0">
                                         <h4 className="font-black text-slate-900 text-xs truncate">{b.clientName}</h4>
+                                        {b.artistName && (
+                                          <span className="text-[9px] font-black text-pink-700 bg-pink-100/90 rounded px-1.5 py-0.2 shrink-0" title={`ميكب ارتست: ${b.artistName}`}>
+                                            💄 {b.artistName}
+                                          </span>
+                                        )}
                                         {b.internalNotes && (
                                           <Lock size={10} className="text-amber-700 shrink-0" title={`ملاحظة داخلية: ${b.internalNotes}`} />
                                         )}
