@@ -1984,12 +1984,17 @@ export function POSScreen({
       const rawBookingDiscVal = Number(initialBooking.discountValue) || 0;
       const hasOverallDiscount = !hasLineDiscounts && rawBookingDiscVal > 0;
 
+      const isFromArtist = Boolean(initialBooking.artistId || initialBooking.artistName);
+
       const cartItems: CartItem[] = rawBookingServices.map((s: any, idx: number) => {
         const isProduct = s.type === 'product';
         const foundProduct = isProduct ? products.find(p => p.id === (s.serviceId || s.productId)) : undefined;
         const foundService = !isProduct ? items.find(i => i.id === s.serviceId) : undefined;
         const foundItem = isProduct ? foundProduct : foundService;
-        const parsedPrice = Number(s.price) || (foundItem ? Number((foundItem as any).sellPrice ?? (foundItem as any).price) : 0);
+        // Strictly honor custom price coming from booking (especially for makeup artist bookings)
+        const parsedPrice = (s.price !== undefined && s.price !== null && !isNaN(Number(s.price)))
+          ? Number(s.price)
+          : (foundItem ? Number((foundItem as any).sellPrice ?? (foundItem as any).price) : 0);
         const safeOrigPrice = isNaN(parsedPrice) ? 0 : parsedPrice;
         
         const qty = Math.max(1, Number(s.quantity) || 1);
@@ -2005,7 +2010,8 @@ export function POSScreen({
           displayPrice: effectiveLinePrice,
           originalPrice: safeOrigPrice,
           discount: lineDiscount > 0 ? lineDiscount : undefined,
-          type: isProduct ? 'product' : 'service'
+          type: isProduct ? 'product' : 'service',
+          isCustomPrice: true
         } : {
           id: s.serviceId || s.productId || `item-${idx}`,
           name: s.serviceName || s.productName || (isProduct ? 'منتج صالون' : 'خدمة صالون'),
@@ -2015,7 +2021,8 @@ export function POSScreen({
           isActive: true,
           type: isProduct ? 'product' : 'service',
           originalPrice: safeOrigPrice,
-          discount: lineDiscount > 0 ? lineDiscount : undefined
+          discount: lineDiscount > 0 ? lineDiscount : undefined,
+          isCustomPrice: true
         };
         
         return {
@@ -2026,7 +2033,8 @@ export function POSScreen({
           type: isProduct ? 'product' : 'service',
           price: effectiveLinePrice,
           discount: lineDiscount > 0 ? lineDiscount : undefined,
-          originalPrice: safeOrigPrice
+          originalPrice: safeOrigPrice,
+          isCustomPrice: true
         };
       });
       
@@ -2053,8 +2061,14 @@ export function POSScreen({
       }
       if (!Array.isArray(rawAdvances)) rawAdvances = [];
 
-      let advancesSum = rawAdvances.reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0);
-      if (advancesSum === 0 && (initialBooking as any).advancePayment) {
+      // In case of makeup artist booking: if deposit is not confirmed received by salon, do not deduct advance so full amount is billed
+      const isUnconfirmedArtistDeposit = Boolean(initialBooking.artistId && initialBooking.depositStatus !== 'salon_received');
+
+      let advancesSum = isUnconfirmedArtistDeposit 
+        ? 0 
+        : rawAdvances.reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0);
+
+      if (!isUnconfirmedArtistDeposit && advancesSum === 0 && (initialBooking as any).advancePayment) {
         const legacyAdv = Number((initialBooking as any).advancePayment) || 0;
         if (legacyAdv > 0) {
           advancesSum = legacyAdv;
@@ -2069,7 +2083,7 @@ export function POSScreen({
       }
 
       setAdvanceDeduction(advancesSum);
-      setActiveAdvancePayments(rawAdvances);
+      setActiveAdvancePayments(isUnconfirmedArtistDeposit ? [] : rawAdvances);
       setActiveBookingId(initialBooking.id);
       if (initialBooking.queueNumber) {
         setActiveQueueNumber(initialBooking.queueNumber);
@@ -2424,7 +2438,7 @@ export function POSScreen({
     setCart(prevCart => {
       if (!prevCart || prevCart.length === 0) return prevCart;
       return prevCart.map(cartItem => {
-        if (cartItem.type === 'product' || cartItem.item?._isProduct) return cartItem;
+        if (cartItem.type === 'product' || cartItem.item?._isProduct || (cartItem as any).isCustomPrice || (cartItem.item as any)?.isCustomPrice) return cartItem;
         const srvId = cartItem.item?.id;
         const srv = (items || []).find(s => s.id === srvId || s.name === cartItem.item?.name);
         if (!srv) return cartItem;
@@ -2456,7 +2470,7 @@ export function POSScreen({
       if (!prevCart || prevCart.length === 0) return prevCart;
       let changed = false;
       const updated = prevCart.map(cartItem => {
-        if (cartItem.type === 'product' || cartItem.item?._isProduct) return cartItem;
+        if (cartItem.type === 'product' || cartItem.item?._isProduct || (cartItem as any).isCustomPrice || (cartItem.item as any)?.isCustomPrice) return cartItem;
         const srvId = cartItem.item?.id;
         const srv = (items || []).find(s => s.id === srvId);
         if (!srv) return cartItem;

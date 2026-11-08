@@ -4029,10 +4029,6 @@ export default function App() {
         currentUser={currentUser}
         onSaveBooking={(newB) => {
           handleSetBookings((prev: Booking[]) => [newB, ...prev]);
-          if (settings.whatsappEnabled !== false && settings.whatsappSettings?.sendBookingToClient) {
-            EvolutionApiService.sendBookingConfirmationWhatsApp(settings, newB, newB.branchId || activeBranchId)
-              .catch(err => console.error('Portal booking WhatsApp error:', err));
-          }
         }}
         onCancelBooking={(bId) => {
           handleSetBookings((prev: Booking[]) => prev.map(b => b.id === bId ? { ...b, status: 'cancelled' } : b));

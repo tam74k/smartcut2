@@ -47,7 +47,7 @@ export function MakeupArtistPortal({
   const [clientPhone, setClientPhone] = useState('');
   const [bookingDate, setBookingDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [bookingTime, setBookingTime] = useState('14:00');
-  const [bookingLocation, setBookingLocation] = useState('داخل الصالون');
+  const [bookingLocation, setBookingLocation] = useState('');
   const [selectedServiceIds, setSelectedServiceIds] = useState<{ [serviceId: string]: number }>({});
   const [depositAmount, setDepositAmount] = useState<number>(0);
   const [depositHandoverNow, setDepositHandoverNow] = useState(false);
@@ -118,6 +118,13 @@ export function MakeupArtistPortal({
     fetchAndMatch();
     return () => { isMounted = false; };
   }, [settings.salonId, currentUser]);
+
+  // Set default booking location to the makeup artist's name
+  useEffect(() => {
+    if (currentArtist?.name && !bookingLocation) {
+      setBookingLocation(currentArtist.name);
+    }
+  }, [currentArtist?.name, bookingLocation]);
 
   const handleLogoutClick = () => {
     localStorage.removeItem('smartcut_artist_session');
@@ -211,8 +218,8 @@ export function MakeupArtistPortal({
         phone: clientPhone.trim(),
         date: bookingDate,
         time: bookingTime,
-        location: bookingLocation,
-        status: 'confirmed',
+        location: bookingLocation || currentArtist.name,
+        status: 'pending',
         source: 'online',
         services: newBookingTotals.selectedList,
         advancePayments: advancePaymentsList,
@@ -241,12 +248,6 @@ export function MakeupArtistPortal({
         onSaveBooking(newBooking);
       }
 
-      // 3. Auto send WhatsApp PDF Confirmation if enabled
-      if (settings.whatsappEnabled !== false && settings.whatsappSettings?.sendBookingToClient) {
-        EvolutionApiService.sendBookingConfirmationWhatsApp(settings, newBooking, newBooking.branchId)
-          .catch(err => console.error('Error sending WhatsApp confirmation for artist booking:', err));
-      }
-
       alert(`تم تسجيل حجز العروسة (${clientName}) برقم #${bookingCode} بنجاح!`);
 
       // Reset form
@@ -257,6 +258,7 @@ export function MakeupArtistPortal({
       setDepositHandoverNow(false);
       setDepositNotes('');
       setClientNotes('');
+      setBookingLocation(currentArtist?.name || '');
       setActiveTab('bookings');
     } catch (err: any) {
       alert('حدث خطأ أثناء حفظ الحجز: ' + (err?.message || err));
@@ -525,7 +527,7 @@ export function MakeupArtistPortal({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5">رقم الجوال (لإرسال إيصال PDF بالواتساب) *</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">رقم الجوال *</label>
                   <input
                     type="tel"
                     required
@@ -563,12 +565,15 @@ export function MakeupArtistPortal({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5">مكان التنفيذ</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">مكان الحجز / التخصيص</label>
                   <select
                     value={bookingLocation}
                     onChange={(e) => setBookingLocation(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-900 focus:bg-white focus:outline-hidden focus:border-pink-500 cursor-pointer"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-900 focus:bg-white focus:outline-hidden focus:border-pink-500 cursor-pointer font-bold"
                   >
+                    {currentArtist?.name && (
+                      <option value={currentArtist.name}>{currentArtist.name}</option>
+                    )}
                     <option value="داخل الصالون">داخل الصالون</option>
                     <option value="خارجي (فندق / قاعة)">خارجي (فندق / قاعة)</option>
                     <option value="خارجي (منزل العميلة)">خارجي (منزل العميلة)</option>
@@ -759,12 +764,12 @@ export function MakeupArtistPortal({
                 {isSubmitting ? (
                   <>
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span>جارٍ تأكيد الحجز وإرسال الواتساب...</span>
+                    <span>جارٍ تسجيل الحجز...</span>
                   </>
                 ) : (
                   <>
                     <Sparkles size={16} />
-                    <span>تأكيد حجز العروسة وإرسال إيصال PDF بالواتساب</span>
+                    <span>تأكيد تسجيل حجز العروسة</span>
                   </>
                 )}
               </button>

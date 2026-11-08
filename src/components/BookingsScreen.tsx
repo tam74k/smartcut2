@@ -1541,7 +1541,9 @@ export function BookingsScreen({
     await DB.saveBooking(booking, settings.salonId);
 
     // Auto generate financial transactions for brand new advance payments on their payment date
-    if (brandNewAdvances.length > 0) {
+    // Note: Do NOT auto-generate treasury transaction for artist bookings if deposit is not confirmed received by salon
+    const isUnconfirmedArtistDeposit = Boolean(booking.artistId && booking.depositStatus !== 'salon_received');
+    if (brandNewAdvances.length > 0 && !isUnconfirmedArtistDeposit) {
       const effectiveShiftDate = (shiftData && shiftData.isOpen && shiftData.date) ? shiftData.date : undefined;
       const advancesToRecord = brandNewAdvances.filter(adv => {
         const advTrxId = `TRX-ADV-${adv.id}`;
@@ -2138,7 +2140,7 @@ export function BookingsScreen({
         return {
           bg: 'bg-amber-50 text-amber-800 border-amber-300',
           dot: 'bg-amber-500',
-          label: 'انتظار'
+          label: 'في انتظار التأكيد'
         };
       case 'completed':
         return {
@@ -2527,10 +2529,10 @@ export function BookingsScreen({
                   ? 'border-amber-400 ring-2 ring-amber-100 shadow-sm' 
                   : 'border-slate-200 shadow-xs hover:border-slate-300'
               }`}
-              title="تصفية الحجوزات قيد الانتظار"
+              title="تصفية الحجوزات في انتظار التأكيد"
             >
               <div>
-                <p className="text-amber-600 text-[11px] font-bold">قيد الانتظار</p>
+                <p className="text-amber-600 text-[11px] font-bold">في انتظار التأكيد</p>
                 <h4 className="text-xl font-black text-amber-700 mt-0.5">
                   {bookings.filter(b => b.status === 'pending').length}
                 </h4>
@@ -3993,6 +3995,11 @@ export function BookingsScreen({
                                   </span>
                                 )}
                                 <span>{s.serviceName}</span>
+                                {selectedBookingDetails.artistName && (
+                                  <span className="text-[10px] bg-pink-100 text-pink-800 border border-pink-200 px-1.5 py-0.2 rounded font-bold">
+                                    سعر الارتست
+                                  </span>
+                                )}
                                 {qty > 1 && (
                                   <span className="text-[10px] bg-slate-200 text-slate-800 px-1.5 py-0.2 rounded font-mono font-bold">
                                     ×{qty}
@@ -4050,6 +4057,26 @@ export function BookingsScreen({
                         </button>
                       )}
                     </div>
+
+                    {selectedBookingDetails.artistName && selectedBookingDetails.depositStatus !== 'salon_received' && Number(selectedBookingDetails.paidDeposit || 0) > 0 && (
+                      <div className="p-2.5 bg-amber-50 rounded-xl border border-amber-300 text-amber-900 text-xs flex flex-wrap items-center justify-between gap-2 shadow-2xs">
+                        <div className="flex items-center gap-1.5 font-bold">
+                          <Clock size={14} className="text-amber-600 shrink-0" />
+                          <span>عربون معلق طرف الارتست ({Number(selectedBookingDetails.paidDeposit || 0).toFixed(2)} {settings.currency}) • لم يضاف للخزينة بعد</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setConfirmDepositTarget(selectedBookingDetails);
+                            setSelectedDepositTreasury(availableTreasuries[0]?.id || 'cash');
+                          }}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2.5 py-1 rounded-lg text-[11px] shrink-0 cursor-pointer shadow-2xs flex items-center gap-1"
+                        >
+                          <Check size={12} />
+                          <span>تأكيد استلامه بالخزينة</span>
+                        </button>
+                      </div>
+                    )}
 
                     {getBookingAdvances(selectedBookingDetails).length > 0 ? (
                       <div className="space-y-1.5 max-h-36 overflow-y-auto pr-0.5">
@@ -4204,13 +4231,14 @@ export function BookingsScreen({
                               <span>طلب تسليم معلق بانتظار الاعتماد ({selectedBookingDetails.depositTransferMethod || 'تحويل'})</span>
                             </span>
                           ) : (
-                            <span className="text-slate-700 font-bold">
-                              العربون في عهدة الارتست (لم يدخل الصالون بعد)
+                            <span className="text-amber-800 font-bold flex items-center gap-1">
+                              <Clock size={13} />
+                              <span>العربون معلق في عهدة الارتست (لم يدخل الصالون بعد)</span>
                             </span>
                           )}
                         </div>
 
-                        {selectedBookingDetails.depositStatus === 'transfer_pending' && (
+                        {selectedBookingDetails.depositStatus !== 'salon_received' && (Number(selectedBookingDetails.paidDeposit || 0) > 0 || (selectedBookingDetails.advancePayments && selectedBookingDetails.advancePayments.length > 0)) && (
                           <button
                             type="button"
                             onClick={() => {
