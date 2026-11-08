@@ -934,6 +934,7 @@ export interface Booking {
   depositReceivedAt?: string; // توقيت تأكيد الاستلام من الصالون
   depositReceivedBy?: string; // اسم الموظف / المدير الذي أكد الاستلام
   depositReceivedTreasuryId?: string; // معرف الخزينة التي أودع فيها العربون
+  isModified?: boolean; // مؤشر لتحديد ما إذا كان الحجز قد تم تعديله بعد إنشائه
 }
 
 export interface ArtistAssignedService {

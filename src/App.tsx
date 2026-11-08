@@ -4028,7 +4028,7 @@ export default function App() {
         bookings={bookings}
         currentUser={currentUser}
         onSaveBooking={(newB) => {
-          handleSetBookings((prev: Booking[]) => [newB, ...prev]);
+          handleSetBookings((prev: Booking[]) => [newB, ...prev.filter(b => b.id !== newB.id)]);
         }}
         onCancelBooking={(bId) => {
           handleSetBookings((prev: Booking[]) => prev.map(b => b.id === bId ? { ...b, status: 'cancelled' } : b));

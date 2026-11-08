@@ -3787,9 +3787,16 @@ export function BookingsScreen({
                         <tr key={b.id} className="hover:bg-amber-50/30 transition-colors">
                           {/* Code */}
                           <td className="p-3.5">
-                            <span className="font-mono font-bold text-amber-800 bg-amber-100/70 border border-amber-200 px-2 py-0.5 rounded-md text-[11px]">
-                              #{b.bookingCode || b.id.slice(0, 8)}
-                            </span>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {(b.isModified || (b as any).is_modified || (b.updatedAt && b.createdAt && b.updatedAt !== b.createdAt) || ((b as any).updated_at && (b as any).created_at && (b as any).updated_at !== (b as any).created_at)) && (
+                                <span className="font-bold text-amber-900 bg-amber-200 border border-amber-300 px-1.5 py-0.5 rounded text-[10px] shadow-2xs">
+                                  (معدل)
+                                </span>
+                              )}
+                              <span className="font-mono font-bold text-amber-800 bg-amber-100/70 border border-amber-200 px-2 py-0.5 rounded-md text-[11px]">
+                                #{b.bookingCode || b.id.slice(0, 8)}
+                              </span>
+                            </div>
                           </td>
 
                           {/* Client */}

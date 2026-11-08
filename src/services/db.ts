@@ -5838,6 +5838,7 @@ export function dbBookingToApp(row: any): any {
     createdBy: c.createdBy || row.created_by_name || row.created_by || c.createdByName || undefined,
     createdById: c.createdById || row.created_by_id || undefined,
     updatedAt: c.updatedAt || row.updated_at || (row.updated_at ? new Date(row.updated_at).toISOString() : undefined),
+    isModified: Boolean(c.isModified || row.is_modified || (c.updatedAt && c.createdAt && c.updatedAt !== c.createdAt)),
     updatedBy: c.updatedBy || row.updated_by_name || row.updated_by || c.updatedByName || undefined,
     updatedById: c.updatedById || row.updated_by_id || undefined,
     discountType: c.discountType || row.discount_type || undefined,

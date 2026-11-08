@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Sparkles, Calendar, Clock, Phone, User, CheckCircle2, AlertCircle, 
   Send, Plus, LogOut, Search, MapPin, DollarSign, 
-  ArrowLeft, X, Check, Lock, KeyRound, Eye, EyeOff, ShieldCheck, ShieldAlert
+  ArrowLeft, X, Check, Lock, KeyRound, Eye, EyeOff, ShieldCheck, ShieldAlert,
+  Edit2, RotateCcw
 } from 'lucide-react';
 import { AppSettings, Branch, Booking, MakeupArtist, BookingService, Service, AppUser } from '../types';
 import { DB } from '../services/db';
@@ -66,6 +67,9 @@ export function MakeupArtistPortal({
   const [depositNotes, setDepositNotes] = useState('');
   const [clientNotes, setClientNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Edit Booking State
+  const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
 
   // Handover Deposit Modal on Existing Booking
   const [handoverBooking, setHandoverBooking] = useState<Booking | null>(null);
@@ -187,7 +191,61 @@ export function MakeupArtistPortal({
     };
   }, [availableServices, selectedServiceIds, depositAmount]);
 
-  // Submit New Booking
+  // Start Editing an existing booking (Only open/non-executed bookings)
+  const handleStartEditBooking = (b: Booking) => {
+    if (b.status === 'completed' || b.status === 'cancelled') {
+      alert('عذراً، لا يمكن تعديل هذا الحجز لأنه تم تنفيذه أو إلغاؤه بالفعل.');
+      return;
+    }
+
+    setEditingBooking(b);
+    setClientName(b.clientName || '');
+    setClientPhone(b.phone || '');
+    setBookingDate(b.date || new Date().toISOString().split('T')[0]);
+    setBookingTime(b.time || '14:00');
+    setBookingLocation(b.location || currentArtist?.name || '');
+    setClientNotes(b.notes || '');
+
+    // Map existing services to selected quantities
+    const selected: { [serviceId: string]: number } = {};
+    if (Array.isArray(b.services)) {
+      b.services.forEach((s: any) => {
+        const sId = s.id || s.serviceId;
+        if (sId) {
+          selected[sId] = (selected[sId] || 0) + (Number(s.quantity) || 1);
+        }
+      });
+    }
+    setSelectedServiceIds(selected);
+
+    // Extract deposit
+    const totalDep = b.paidDeposit || (b.advancePayments?.reduce((sum, p) => sum + (Number(p.amount) || 0), 0) || 0);
+    setDepositAmount(totalDep);
+    setDepositHandoverNow(b.depositStatus === 'transfer_pending' || b.depositStatus === 'salon_received');
+    setDepositMethod(b.depositTransferMethod || 'انستاباي');
+    setDepositNotes(b.depositTransferNotes || '');
+
+    setActiveTab('new_booking');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingBooking(null);
+    setClientName('');
+    setClientPhone('');
+    setBookingDate(new Date().toISOString().split('T')[0]);
+    setBookingTime('14:00');
+    setBookingLocation(currentArtist?.name || '');
+    setSelectedServiceIds({});
+    setDepositAmount(0);
+    setDepositHandoverNow(false);
+    setDepositMethod('انستاباي');
+    setDepositNotes('');
+    setClientNotes('');
+    setActiveTab('bookings');
+  };
+
+  // Submit New Booking or Save Booking Edits
   const handleCreateBooking = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentArtist) return;
@@ -207,6 +265,69 @@ export function MakeupArtistPortal({
     setIsSubmitting(true);
     try {
       const nowIso = new Date().toISOString();
+
+      if (editingBooking) {
+        // Updating existing booking
+        const existingAdv = editingBooking.advancePayments || [];
+        const advancePaymentsList = newBookingTotals.advances > 0 ? [{
+          id: existingAdv[0]?.id || ('ADV-' + Date.now()),
+          amount: newBookingTotals.advances,
+          date: bookingDate + 'T' + bookingTime + ':00',
+          paymentMethod: depositHandoverNow ? depositMethod : (existingAdv[0]?.paymentMethod || 'cash_with_artist'),
+          notes: depositHandoverNow 
+            ? `عربون حجز عروسة تم تحويله للصالون (${depositMethod}) - بانتظار الاعتماد` 
+            : (existingAdv[0]?.notes || 'العربون في عهدة الميكب ارتست')
+        }, ...existingAdv.slice(1)] : [];
+
+        const updatedBooking: Booking = {
+          ...editingBooking,
+          clientName: clientName.trim(),
+          phone: clientPhone.trim(),
+          date: bookingDate,
+          time: bookingTime,
+          location: bookingLocation || currentArtist.name,
+          services: newBookingTotals.selectedList,
+          advancePayments: advancePaymentsList,
+          totalAmount: newBookingTotals.netTotal,
+          paidDeposit: newBookingTotals.advances,
+          depositStatus: newBookingTotals.advances <= 0 
+            ? 'none' 
+            : (depositHandoverNow ? 'transfer_pending' : (editingBooking.depositStatus === 'salon_received' ? 'salon_received' : 'in_artist_custody')),
+          depositTransferMethod: depositHandoverNow ? depositMethod : editingBooking.depositTransferMethod,
+          depositTransferNotes: depositHandoverNow ? depositNotes.trim() : editingBooking.depositTransferNotes,
+          depositTransferRequestedAt: depositHandoverNow ? (editingBooking.depositTransferRequestedAt || nowIso) : undefined,
+          notes: clientNotes.trim() || undefined,
+          internalNotes: `[حجز ميكب ارتست: ${currentArtist.name}] (معدل) ${clientNotes.trim()}`,
+          updatedAt: nowIso,
+          updated_at: nowIso as any,
+          updatedBy: currentArtist.name,
+          isModified: true
+        };
+
+        // 1. Save in DB / Supabase
+        await DB.saveBooking(updatedBooking, settings.salonId);
+
+        // 2. Notify parent if callback provided
+        if (onSaveBooking) {
+          onSaveBooking(updatedBooking);
+        }
+
+        alert(`تم حفظ وتحديث بيانات حجز العروسة (${clientName}) برقم #${editingBooking.bookingCode || editingBooking.id.slice(-6)} بنجاح!`);
+
+        // Reset form
+        setEditingBooking(null);
+        setClientName('');
+        setClientPhone('');
+        setSelectedServiceIds({});
+        setDepositAmount(0);
+        setDepositHandoverNow(false);
+        setDepositNotes('');
+        setClientNotes('');
+        setBookingLocation(currentArtist?.name || '');
+        setActiveTab('bookings');
+        return;
+      }
+
       const bookingCode = 'MUA-' + Math.floor(1000 + Math.random() * 9000);
       const bId = 'B-MUA-' + Date.now();
 
@@ -615,8 +736,8 @@ export function MakeupArtistPortal({
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <Plus size={16} />
-            <span>تسجيل حجز عروسة جديد</span>
+            {editingBooking ? <Edit2 size={15} /> : <Plus size={16} />}
+            <span>{editingBooking ? `تعديل حجز #${editingBooking.bookingCode || editingBooking.id.slice(-6)}` : 'تسجيل حجز عروسة جديد'}</span>
           </button>
 
           <button
@@ -637,17 +758,52 @@ export function MakeupArtistPortal({
         </div>
 
         {/* ========================================================================= */}
-        {/* TAB 1: NEW BOOKING FOR BRIDE */}
+        {/* TAB 1: NEW BOOKING / EDIT BOOKING FOR BRIDE */}
         {/* ========================================================================= */}
         {activeTab === 'new_booking' && (
           <div className="bg-white border border-slate-200/90 rounded-2xl p-4 sm:p-6 shadow-xs space-y-6 animate-in fade-in">
+            {editingBooking && (
+              <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-300 rounded-2xl p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-900 shadow-2xs">
+                <div className="flex items-center gap-2 font-bold">
+                  <span className="bg-amber-500 text-white px-2 py-0.5 rounded-md text-[11px] font-black">
+                    وضع التعديل
+                  </span>
+                  <span>
+                    أنتِ تقومين بتعديل الحجز رقم #{editingBooking.bookingCode || editingBooking.id.slice(-6)} للعروسة ({editingBooking.clientName})
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCancelEdit}
+                  className="bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer shrink-0 self-start sm:self-auto flex items-center gap-1.5"
+                >
+                  <RotateCcw size={13} />
+                  <span>إلغاء التعديل والعودة</span>
+                </button>
+              </div>
+            )}
+
             <div>
               <h2 className="text-base font-black text-slate-900 flex items-center gap-2">
-                <Sparkles size={18} className="text-pink-600" />
-                <span>حجز موعد عروسة جديد</span>
+                {editingBooking ? (
+                  <>
+                    <Edit2 size={18} className="text-amber-600" />
+                    <span>تعديل بيانات حجز العروسة</span>
+                    <span className="text-xs bg-amber-100 text-amber-800 border border-amber-300 px-2.5 py-0.5 rounded-lg font-mono">
+                      #{editingBooking.bookingCode || editingBooking.id.slice(-6)}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles size={18} className="text-pink-600" />
+                    <span>حجز موعد عروسة جديد</span>
+                  </>
+                )}
               </h2>
               <p className="text-xs text-slate-500 mt-1">
-                الخدمات المتاحة أدناه مخصصة لكِ حصرياً بالأسعار المعتمدة لكِ من إدارة الصالون
+                {editingBooking
+                  ? 'يمكنك تعديل بيانات العروسة، موعد الحضور، الخدمات، والعربون بالأسعار المعتمدة لكِ'
+                  : 'الخدمات المتاحة أدناه مخصصة لكِ حصرياً بالأسعار المعتمدة لكِ من إدارة الصالون'}
               </p>
             </div>
 
@@ -904,12 +1060,12 @@ export function MakeupArtistPortal({
                 {isSubmitting ? (
                   <>
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span>جارٍ تسجيل الحجز...</span>
+                    <span>{editingBooking ? 'جارٍ حفظ التعديلات...' : 'جارٍ تسجيل الحجز...'}</span>
                   </>
                 ) : (
                   <>
-                    <Sparkles size={16} />
-                    <span>تأكيد تسجيل حجز العروسة</span>
+                    {editingBooking ? <Check size={16} /> : <Sparkles size={16} />}
+                    <span>{editingBooking ? 'حفظ وتأكيد تعديلات الحجز' : 'تأكيد تسجيل حجز العروسة'}</span>
                   </>
                 )}
               </button>
@@ -989,6 +1145,13 @@ export function MakeupArtistPortal({
                   const isPendingHandover = b.depositStatus === 'transfer_pending';
                   const isInArtistCustody = b.depositStatus === 'in_artist_custody';
                   const isSalonReceived = b.depositStatus === 'salon_received';
+                  const isModified = Boolean(
+                    b.isModified || 
+                    (b as any).is_modified || 
+                    (b.updatedAt && b.createdAt && b.updatedAt !== b.createdAt) || 
+                    ((b as any).updated_at && (b as any).created_at && (b as any).updated_at !== (b as any).created_at)
+                  );
+                  const canEdit = b.status !== 'completed' && b.status !== 'cancelled';
 
                   return (
                     <div 
@@ -998,6 +1161,11 @@ export function MakeupArtistPortal({
                       {/* Top Info Header */}
                       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
                         <div className="flex items-center gap-2">
+                          {isModified && (
+                            <span className="text-[11px] bg-amber-500 text-white font-black px-2 py-0.5 rounded-md shadow-2xs">
+                              (معدل)
+                            </span>
+                          )}
                           <span className="text-xs font-mono font-bold bg-pink-50 text-pink-700 border border-pink-200 px-2 py-0.5 rounded-lg">
                             #{b.bookingCode || b.id.slice(-6)}
                           </span>
@@ -1106,8 +1274,8 @@ export function MakeupArtistPortal({
                           </div>
 
                           {/* Handover Action button */}
-                          <div className="flex items-center gap-2">
-                            {isInArtistCustody && (
+                          {isInArtistCustody && (
+                            <div>
                               <button
                                 type="button"
                                 onClick={() => handleOpenHandoverModal(b)}
@@ -1116,22 +1284,44 @@ export function MakeupArtistPortal({
                                 <DollarSign size={13} />
                                 <span>تسليم العربون للصالون</span>
                               </button>
-                            )}
-
-                            {/* Resend WhatsApp button */}
-                            <button
-                              type="button"
-                              onClick={() => handleSendBookingWhatsApp(b)}
-                              disabled={isSendingWhatsApp === b.id}
-                              className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
-                              title="إرسال إيصال الحجز كملف PDF للعروسة بالواتساب"
-                            >
-                              <Send size={12} />
-                              <span>{isSendingWhatsApp === b.id ? 'جارٍ الإرسال...' : 'إرسال PDF واتساب'}</span>
-                            </button>
-                          </div>
+                            </div>
+                          )}
                         </div>
                       )}
+
+                      {/* Booking Card Footer Actions */}
+                      <div className="p-2.5 rounded-xl bg-slate-50/80 border border-slate-200/90 flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <div className="flex items-center gap-2">
+                          {canEdit ? (
+                            <button
+                              type="button"
+                              onClick={() => handleStartEditBooking(b)}
+                              className="bg-white hover:bg-pink-50 text-pink-700 border border-pink-200 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs active:scale-98"
+                              title="تعديل بيانات الحجز والخدمات والعربون"
+                            >
+                              <Edit2 size={13} className="text-pink-600" />
+                              <span>تعديل الحجز</span>
+                            </button>
+                          ) : (
+                            <span className="text-[11px] font-bold text-slate-400 bg-slate-200/70 px-2.5 py-1 rounded-lg">
+                              {b.status === 'completed' ? 'الحجز منفذ بالصالون (لا يمكن التعديل)' : 'الحجز ملغي (لا يمكن التعديل)'}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleSendBookingWhatsApp(b)}
+                            disabled={isSendingWhatsApp === b.id}
+                            className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                            title="إرسال إيصال الحجز كملف PDF للعروسة بالواتساب"
+                          >
+                            <Send size={12} />
+                            <span>{isSendingWhatsApp === b.id ? 'جارٍ الإرسال...' : 'إرسال PDF واتساب'}</span>
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   );
                 })}
