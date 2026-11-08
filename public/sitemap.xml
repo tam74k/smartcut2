@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:xhtml="http://www.w3.org/1999/xhtml"
+        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
+  <url>
+    <loc>https://smartcut.pro/</loc>
+    <lastmod>2026-11-08</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+    <image:image>
+      <image:loc>https://smartcut.pro/icon.png</image:loc>
+      <image:title>Smart Cut Pro - نظام إدارة الصالونات ومراكز التجميل السحابي</image:title>
+      <image:caption>برنامج كاشير ونقاط بيع وحجز مواعيد لصالونات الحلاقة ومراكز التجميل والميكب ارتست</image:caption>
+    </image:image>
+  </url>
+  <url>
+    <loc>https://smartcut.pro/?portal=reservation</loc>
+    <lastmod>2026-11-08</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://smartcut.pro/?portal=artist</loc>
+    <lastmod>2026-11-08</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://smartcut.pro/?kiosk=true</loc>
+    <lastmod>2026-11-08</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+</urlset>

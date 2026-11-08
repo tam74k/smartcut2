@@ -1,0 +1,32 @@
+{
+  "name": "Smart Cut Pro | نظام إدارة الصالونات ومراكز التجميل السحابي",
+  "short_name": "Smart Cut Pro",
+  "description": "البرنامج السحابي الأقوى لإدارة صالونات الحلاقة، مراكز التجميل النسائية، المشاغل، والميكب ارتست - نقاط بيع كاشير POS، حجز أونلاين عبر الواتساب، وفاتورة زاتكا الإلكترونية",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f172a",
+  "theme_color": "#064e3b",
+  "lang": "ar",
+  "dir": "rtl",
+  "categories": [
+    "business",
+    "productivity",
+    "utilities",
+    "finance"
+  ],
+  "icons": [
+    {
+      "src": "/icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
