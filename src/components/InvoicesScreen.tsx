@@ -3,7 +3,8 @@ import { AppSettings, Invoice, Transaction, Client, Branch, Product, Employee, S
 import { 
   Search, Filter, Printer, XCircle, Edit, CheckCircle, ChevronDown, 
   ChevronUp, Image as ImageIcon, Wrench, Eye, X, Trash2, RotateCcw,
-  FileSpreadsheet, Hourglass, Gift, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight
+  FileSpreadsheet, Hourglass, Gift, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
+  MessageCircle, Copy, Check
 } from 'lucide-react';
 import { DB } from '../services/db';
 import { InvoicesImportModal } from './InvoicesImportModal';
@@ -107,6 +108,44 @@ export function InvoicesScreen({
   const [adminPasswordTarget, setAdminPasswordTarget] = useState<Invoice | null>(null);
   const [adminPasswordInput, setAdminPasswordInput] = useState('');
   const [adminPasswordError, setAdminPasswordError] = useState(false);
+
+  // Copy Phone Number state & helper
+  const [copiedPhoneId, setCopiedPhoneId] = useState<string | null>(null);
+
+  const handleCopyPhone = async (phone: string, id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!phone) return;
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(phone.trim());
+      } else {
+        const el = document.createElement('textarea');
+        el.value = phone.trim();
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand('copy');
+        document.body.removeChild(el);
+      }
+      setCopiedPhoneId(id);
+      setTimeout(() => setCopiedPhoneId(null), 2000);
+    } catch (err) {
+      console.error('Copy phone error:', err);
+    }
+  };
+
+  const getWhatsAppUrl = (phone?: string) => {
+    if (!phone) return null;
+    let digits = phone.replace(/\D/g, '');
+    if (!digits) return null;
+    if (digits.startsWith('00')) {
+      digits = digits.slice(2);
+    } else if (digits.length === 11 && digits.startsWith('01')) {
+      digits = '2' + digits;
+    } else if (digits.length === 10 && digits.startsWith('05')) {
+      digits = '966' + digits.slice(1);
+    }
+    return `https://wa.me/${digits}`;
+  };
 
   // دالة موحدة لاستخراج تاريخ الفاتورة بصيغة YYYY-MM-DD بدقة
   const getInvoiceLocalDateStr = (inv: { date?: string; shiftDate?: string }): string => {
@@ -660,7 +699,30 @@ export function InvoicesScreen({
                   <td className="px-6 py-4 text-slate-600 font-medium whitespace-nowrap">{formatInvoiceDateTimeDisplay(inv.date, 'ar-EG')}</td>
                   <td className="px-6 py-4">
                     <div className="font-bold text-primary">{inv.clientName}</div>
-                    {inv.clientPhone && <div className="text-xs text-slate-500">{inv.clientPhone}</div>}
+                    {inv.clientPhone && (
+                      <div className="flex items-center gap-1.5 text-xs text-slate-500 font-mono mt-0.5">
+                        <span dir="ltr">{inv.clientPhone}</span>
+                        <div className="relative inline-flex items-center">
+                          <button
+                            type="button"
+                            onClick={(e) => handleCopyPhone(inv.clientPhone!, inv.id, e)}
+                            className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                            title="نسخ رقم الموبايل"
+                          >
+                            {copiedPhoneId === inv.id ? (
+                              <Check size={12} className="text-emerald-600 stroke-[2.5]" />
+                            ) : (
+                              <Copy size={12} />
+                            )}
+                          </button>
+                          {copiedPhoneId === inv.id && (
+                            <span className="absolute -top-7 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm whitespace-nowrap z-20 animate-in fade-in zoom-in-95">
+                              تم نسخ الرقم
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
                     {inv.isRemedyInvoice && (
                       <span className="inline-flex items-center gap-1 bg-purple-100 text-purple-800 text-[10px] font-black px-2 py-0.5 rounded-full mt-1 border border-purple-200">
                         <Wrench size={10} />
@@ -876,6 +938,31 @@ export function InvoicesScreen({
                           <Trash2 size={15} />
                         </button>
                       )}
+
+                      {/* زر فتح محادثة واتساب مباشرة مع العميل */}
+                      {(() => {
+                        const waUrl = getWhatsAppUrl(inv.clientPhone);
+                        return waUrl ? (
+                          <a
+                            href={waUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 flex items-center justify-center transition-colors border border-emerald-200 shadow-2xs"
+                            title={`فتح محادثة واتساب مع العميل (${inv.clientName})`}
+                          >
+                            <MessageCircle size={15} />
+                          </a>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled
+                            className="w-8 h-8 rounded-lg bg-slate-50 text-slate-300 flex items-center justify-center cursor-not-allowed opacity-50"
+                            title="لا يوجد رقم هاتف للعميل"
+                          >
+                            <MessageCircle size={15} />
+                          </button>
+                        );
+                      })()}
                     </div>
                     
                     {/* Hidden printable receipt matching BookingsScreen / POS format */}

@@ -25,7 +25,7 @@ import { escapeHtml, sanitizeUrl } from '../utils/sanitize';
 import { isBarberEmployee } from '../utils/employeeHelper';
 import { BookingsImportModal } from './BookingsImportModal';
 import { EvolutionApiService } from '../services/evolutionApiService';
-import { MessageCircle, Send } from 'lucide-react';
+import { MessageCircle, Send, Copy } from 'lucide-react';
 import { generateCode39Svg } from '../utils/printQueueSlip';
 
 // Format time string (e.g. "14:30" or "09:00") into 12-hour format with AM/PM (ص / م)
@@ -426,6 +426,44 @@ export function BookingsScreen({
   const [rescheduleDate, setRescheduleDate] = useState('');
   const [rescheduleTime, setRescheduleTime] = useState('10:00');
   const [rescheduleNotes, setRescheduleNotes] = useState('');
+
+  // Copy Phone Number state & helper
+  const [copiedPhoneId, setCopiedPhoneId] = useState<string | null>(null);
+
+  const handleCopyPhone = async (phone: string, id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!phone) return;
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(phone.trim());
+      } else {
+        const el = document.createElement('textarea');
+        el.value = phone.trim();
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand('copy');
+        document.body.removeChild(el);
+      }
+      setCopiedPhoneId(id);
+      setTimeout(() => setCopiedPhoneId(null), 2000);
+    } catch (err) {
+      console.error('Copy phone error:', err);
+    }
+  };
+
+  const getWhatsAppUrl = (phone?: string) => {
+    if (!phone) return null;
+    let digits = phone.replace(/\D/g, '');
+    if (!digits) return null;
+    if (digits.startsWith('00')) {
+      digits = digits.slice(2);
+    } else if (digits.length === 11 && digits.startsWith('01')) {
+      digits = '2' + digits;
+    } else if (digits.length === 10 && digits.startsWith('05')) {
+      digits = '966' + digits.slice(1);
+    }
+    return `https://wa.me/${digits}`;
+  };
 
   const defaultBookingDate = (shiftData && shiftData.isOpen && shiftData.date) ? shiftData.date : new Date().toISOString().split('T')[0];
 
@@ -3087,7 +3125,32 @@ export function BookingsScreen({
                               </div>
                             )}
                           </td>
-                          <td className="p-3.5 font-mono text-slate-600">{b.phone}</td>
+                          <td className="p-3.5">
+                            <div className="flex items-center gap-1.5 font-mono text-slate-700">
+                              <span dir="ltr">{b.phone}</span>
+                              {b.phone && (
+                                <div className="relative inline-flex items-center">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleCopyPhone(b.phone, b.id, e)}
+                                    className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                                    title="نسخ رقم الموبايل"
+                                  >
+                                    {copiedPhoneId === b.id ? (
+                                      <Check size={12} className="text-emerald-600 stroke-[2.5]" />
+                                    ) : (
+                                      <Copy size={12} />
+                                    )}
+                                  </button>
+                                  {copiedPhoneId === b.id && (
+                                    <span className="absolute -top-7 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm whitespace-nowrap z-20 animate-in fade-in zoom-in-95">
+                                      تم نسخ الرقم
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </td>
                           <td className="p-3.5 font-bold text-slate-700">
                             {b.services?.length > 0 ? b.services.map(s => (s.quantity && s.quantity > 1) ? `${s.serviceName} (×${s.quantity})` : s.serviceName).join(' + ') : '-'}
                           </td>
@@ -3227,6 +3290,32 @@ export function BookingsScreen({
                               >
                                 <Eye size={13} />
                               </button>
+
+                              {/* WhatsApp Chat button */}
+                              {(() => {
+                                const waUrl = getWhatsAppUrl(b.phone);
+                                return waUrl ? (
+                                  <a
+                                    href={waUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 hover:text-emerald-700 border border-emerald-200 rounded-xl transition-colors cursor-pointer shadow-2xs inline-flex items-center justify-center"
+                                    title={`فتح محادثة واتساب مع العميل (${b.clientName})`}
+                                  >
+                                    <MessageCircle size={13} className="text-emerald-600" />
+                                  </a>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    disabled
+                                    className="p-1.5 bg-slate-100 text-slate-300 rounded-xl cursor-not-allowed opacity-50"
+                                    title="لا يوجد رقم هاتف للعميل"
+                                  >
+                                    <MessageCircle size={13} />
+                                  </button>
+                                );
+                              })()}
+
                               {canDeleteBooking && (
                                 <button
                                   onClick={() => handleDeleteBooking(b.id)}
@@ -3882,18 +3971,28 @@ export function BookingsScreen({
                           {/* Client */}
                           <td className="p-3.5">
                             <div className="font-extrabold text-slate-900 text-[13px]">{b.clientName}</div>
-                            <div className="flex items-center gap-2 text-slate-500 mt-0.5">
-                              <span className="font-mono direction-ltr inline-block">{b.phone}</span>
+                            <div className="flex items-center gap-1.5 text-slate-500 mt-0.5 font-mono">
+                              <span className="direction-ltr inline-block">{b.phone}</span>
                               {b.phone && (
-                                <a
-                                  href={`https://wa.me/${b.phone.replace(/[^0-9]/g, '')}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-emerald-600 hover:text-emerald-700 transition-colors"
-                                  title="مراسلة عبر واتساب"
-                                >
-                                  <MessageCircle size={14} />
-                                </a>
+                                <div className="relative inline-flex items-center">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleCopyPhone(b.phone, `postponed-${b.id}`, e)}
+                                    className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                                    title="نسخ رقم الموبايل"
+                                  >
+                                    {copiedPhoneId === `postponed-${b.id}` ? (
+                                      <Check size={12} className="text-emerald-600 stroke-[2.5]" />
+                                    ) : (
+                                      <Copy size={12} />
+                                    )}
+                                  </button>
+                                  {copiedPhoneId === `postponed-${b.id}` && (
+                                    <span className="absolute -top-7 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm whitespace-nowrap z-20 animate-in fade-in zoom-in-95">
+                                      تم نسخ الرقم
+                                    </span>
+                                  )}
+                                </div>
                               )}
                             </div>
                           </td>
@@ -4007,6 +4106,22 @@ export function BookingsScreen({
                               >
                                 <XCircle size={13} />
                               </button>
+
+                              {/* 6. WhatsApp Chat */}
+                              {(() => {
+                                const waUrl = getWhatsAppUrl(b.phone);
+                                return waUrl ? (
+                                  <a
+                                    href={waUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 hover:text-emerald-700 border border-emerald-200 rounded-xl transition-colors cursor-pointer shadow-2xs inline-flex items-center justify-center"
+                                    title={`فتح محادثة واتساب مع العميل (${b.clientName})`}
+                                  >
+                                    <MessageCircle size={13} className="text-emerald-600" />
+                                  </a>
+                                ) : null;
+                              })()}
                             </div>
                           </td>
                         </tr>
