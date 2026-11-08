@@ -4,6 +4,7 @@ import {
 } from '../types';
 import { AuthService, ROLE_LABELS } from '../services/auth';
 import { DB } from '../services/db';
+import { DEFAULT_INITIAL_TREASURIES } from './InitialSalonSetupModal';
 import { 
   Smartphone, DollarSign, Users, Calendar, Clock, CheckCircle2, AlertTriangle, 
   XCircle, UserCheck, UserX, Plus, RefreshCw, Send, ChevronDown, ArrowUpRight, 
@@ -1535,11 +1536,7 @@ export function OwnerExecutivePortal({
       ? liveTreasuries
       : (settings.treasuries && settings.treasuries.length > 0)
         ? settings.treasuries
-        : [
-            { id: 'main', name: 'الخزنة الرئيسية', isMain: true },
-            { id: 'cash', name: 'كاش (الدرج)', isMain: false },
-            { id: 'card', name: 'شبكة / فيزا', isMain: false }
-          ];
+        : DEFAULT_INITIAL_TREASURIES;
 
     const palette = [
       { color: '#10B981', hoverColor: '#34D399', textColor: 'text-emerald-400', bgBadge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30', icon: Banknote },

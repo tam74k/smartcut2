@@ -32,6 +32,7 @@ import { AppUser, UserRole, AppSettings, Branch } from '../types';
 import { SubscriptionService, COUNTRY_CURRENCY_MAP } from '../services/subscriptionService';
 import { DB } from '../services/db';
 import { EvolutionApiService } from '../services/evolutionApiService';
+import { DEFAULT_INITIAL_TREASURIES } from './InitialSalonSetupModal';
 
 interface LoginScreenProps {
   onLoginSuccess: (user: AppUser, customSettings?: AppSettings, selectedBranch?: Branch) => void;
@@ -207,11 +208,7 @@ export function LoginScreen({ onLoginSuccess, settings, onOpenSaaSAdmin }: Login
               phone: chosenBranch?.phone || salon.phone,
               address: chosenBranch?.address || salon.country,
               logoUrl: salon.logoUrl || '',
-              treasuries: [
-                { id: 'main', name: 'الخزنة الرئيسية', isMain: true },
-                { id: 'cash', name: 'كاش (الدرج)', isMain: false },
-                { id: 'card', name: 'شبكة / فيزا', isMain: false }
-              ],
+              treasuries: DEFAULT_INITIAL_TREASURIES,
               printerName: 'طابعة الكاشير',
               paperSize: '80mm',
               printAutomatically: false,

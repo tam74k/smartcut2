@@ -965,6 +965,15 @@ export function SettingsScreen({
   const deleteTreasury = (id: string) => {
     const t = settings.treasuries.find(item => item.id === id);
     const tName = t ? t.name : '';
+    if (t?.isMain || id === 'main') {
+      alert('لا يمكن حذف الخزينة الرئيسية للنظام');
+      return;
+    }
+    const hasTransactions = transactions.some(trx => trx.treasury === id || (trx as any).treasury_id === id);
+    if (hasTransactions) {
+      alert(`لا يمكن حذف الخزينة "${tName}" نظراً لوجود معاملات مالية سابقة مسجلة بها.\nلحفظ السجلات المحاسبية والمالية يمكنك تصفير رصيدها بالتحويل إلى الخزينة الرئيسية.`);
+      return;
+    }
     if (!window.confirm(`هل أنت متأكد من حذف الخزينة${tName ? ' "' + tName + '"' : ''}؟`)) return;
     const updatedTreasuries = settings.treasuries.filter(t => t.id !== id);
     handleChange('treasuries', updatedTreasuries);

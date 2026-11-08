@@ -2481,11 +2481,7 @@ export default function App() {
       const shiftDateStr = shiftData.date;
       const definedTreasuries = (settings.treasuries && settings.treasuries.length > 0)
         ? settings.treasuries
-        : [
-            { id: 'main', name: 'الخزنة الرئيسية', isMain: true },
-            { id: 'cash', name: 'كاش (الدرج)', isMain: false },
-            { id: 'card', name: 'شبكة / فيزا', isMain: false }
-          ];
+        : DEFAULT_INITIAL_TREASURIES;
       const mainTreasury = resolveMainTreasury(definedTreasuries);
       const now = (shiftData?.isOpen && shiftData?.date) 
         ? (shiftData.date + 'T' + new Date().toTimeString().split(' ')[0]) 

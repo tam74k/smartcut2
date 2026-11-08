@@ -650,7 +650,9 @@ export const SubscriptionService = {
       treasuries: [
         { id: 'main', name: 'الخزنة الرئيسية', isMain: true },
         { id: 'cash', name: 'كاش (الدرج)', isMain: false },
-        { id: 'card', name: 'شبكة / فيزا', isMain: false }
+        { id: 'card', name: 'شبكة / فيزا', isMain: false },
+        { id: 'instapay', name: 'انستاباي', isMain: false },
+        { id: 'vodafone_cash', name: 'فودافون كاش', isMain: false }
       ]
     };
 

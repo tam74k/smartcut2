@@ -1490,9 +1490,18 @@ export const DB = {
         ? settings.commercialReg
         : (existing?.commercial_reg || settings.commercialReg || '1010000000');
 
-      const safeTreasuries = (Array.isArray(settings.treasuries) && settings.treasuries.length > 0)
-        ? settings.treasuries
-        : (existing?.treasuries || []);
+      let safeTreasuries = (Array.isArray(settings.treasuries) && settings.treasuries.length > 0)
+        ? [...settings.treasuries]
+        : (Array.isArray(existing?.treasuries) ? [...existing.treasuries] : []);
+
+      // Safeguard: Never lose existing treasuries due to partial presets or stale local caches
+      if (Array.isArray(existing?.treasuries) && existing.treasuries.length > 0) {
+        for (const ex of existing.treasuries) {
+          if (!safeTreasuries.some(t => t.id === ex.id)) {
+            safeTreasuries.push(ex);
+          }
+        }
+      }
 
       const safeExpenseCategories = (Array.isArray(settings.expenseCategories) && settings.expenseCategories.length > 0)
         ? settings.expenseCategories
