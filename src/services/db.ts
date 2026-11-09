@@ -2248,6 +2248,21 @@ export const DB = {
     const client = sb(); if (!client || !t) return null;
     const validSalonId = toSalonUUID(salonId || t.salonId || getSalonId());
     const validBranchId = toBranchUUID((t as any).branchId);
+
+    // Idempotency Deduplication Guard: Prevent double-click duplicates from creating duplicate entries within 2000ms
+    const dedupeSig = `${validSalonId}_${t.type || 'in'}_${Number(t.amount || 0)}_${t.treasuryId || t.treasury}_${t.category}_${(t.description || '').trim()}`;
+    const nowMs = Date.now();
+    const existingDedupe = (globalThis as any).__smartcut_trx_dedupe || new Map<string, { time: number; result: any }>();
+    (globalThis as any).__smartcut_trx_dedupe = existingDedupe;
+
+    if (existingDedupe.has(dedupeSig)) {
+      const prev = existingDedupe.get(dedupeSig)!;
+      if (nowMs - prev.time < 2000) {
+        console.warn(`[DB.saveTransaction] Duplicate transaction prevented by idempotency guard: "${dedupeSig}"`);
+        return prev.result || t;
+      }
+    }
+
     try {
       const snap: any = {
         id: t.id || ('TRX-' + Math.random().toString(36).substring(2, 9)), 
@@ -2344,6 +2359,7 @@ export const DB = {
         return null;
       }
 
+      existingDedupe.set(dedupeSig, { time: nowMs, result: t });
       return t;
     } catch (e) {
       console.error('DB.saveTransaction exception:', e);

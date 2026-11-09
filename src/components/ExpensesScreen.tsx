@@ -48,6 +48,7 @@ export function ExpensesScreen({
   const [categoryToDelete, setCategoryToDelete] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Filters State
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -239,7 +240,8 @@ export function ExpensesScreen({
     });
   };
 
-  const handleSaveExpense = () => {
+  const handleSaveExpense = async () => {
+    if (isSubmitting) return;
     if (!amount || amount <= 0) {
       setErrorMsg('الرجاء إدخال مبلغ صحيح');
       return;
@@ -261,62 +263,70 @@ export function ExpensesScreen({
     const assignedShiftDate = isMatchingCurrentShift ? shiftData.date : effectiveDay;
     const assignedShiftId = isMatchingCurrentShift ? ((shiftData as any).shiftId || (shiftData as any).id) : undefined;
 
-    if (editingExpenseId) {
-      const actorName = currentUser?.name || currentUser?.username || 'المستخدم';
-      setTransactions(transactions.map(t => {
-        if (t.id === editingExpenseId) {
-          const updated = {
-            ...t,
-            date: tDate,
-            amount: Number(amount),
-            type: 'out',
-            category: 'expense',
-            expenseCategory: expenseCategory,
-            description: description,
-            treasury: treasuryId,
-            shiftDate: assignedShiftDate,
-            shiftId: assignedShiftId,
-            updatedAt: nowIso,
-            updatedBy: actorName,
-            userName: t.userName || actorName,
-            createdBy: t.createdBy || actorName,
-            userId: t.userId || currentUser?.id
-          };
-          DB.saveTransaction(updated, settings.salonId);
-          return updated;
-        }
-        return t;
-      }));
-    } else {
-      const actorName = currentUser?.name || currentUser?.username || 'المستخدم';
-      const newTrx: Transaction = {
-        id: 'EXP-' + Math.random().toString(36).substr(2, 9),
-        date: tDate,
-        createdAt: nowIso,
-        type: 'out',
-        amount: Number(amount),
-        category: 'expense',
-        expenseCategory: expenseCategory,
-        description: description,
-        treasury: treasuryId,
-        salonId: settings.salonId,
-        branchId: activeBranchId,
-        shiftDate: assignedShiftDate,
-        shiftId: assignedShiftId,
-        createdBy: actorName,
-        userName: actorName,
-        userId: currentUser?.id
-      } as any;
-      setTransactions([newTrx, ...transactions]);
-      DB.saveTransaction(newTrx, settings.salonId);
+    setIsSubmitting(true);
+    try {
+      if (editingExpenseId) {
+        const actorName = currentUser?.name || currentUser?.username || 'المستخدم';
+        setTransactions(transactions.map(t => {
+          if (t.id === editingExpenseId) {
+            const updated = {
+              ...t,
+              date: tDate,
+              amount: Number(amount),
+              type: 'out',
+              category: 'expense',
+              expenseCategory: expenseCategory,
+              description: description,
+              treasury: treasuryId,
+              shiftDate: assignedShiftDate,
+              shiftId: assignedShiftId,
+              updatedAt: nowIso,
+              updatedBy: actorName,
+              userName: t.userName || actorName,
+              createdBy: t.createdBy || actorName,
+              userId: t.userId || currentUser?.id
+            };
+            DB.saveTransaction(updated, settings.salonId);
+            return updated;
+          }
+          return t;
+        }));
+      } else {
+        const actorName = currentUser?.name || currentUser?.username || 'المستخدم';
+        const newTrx: Transaction = {
+          id: 'EXP-' + Math.random().toString(36).substr(2, 9),
+          date: tDate,
+          createdAt: nowIso,
+          type: 'out',
+          amount: Number(amount),
+          category: 'expense',
+          expenseCategory: expenseCategory,
+          description: description,
+          treasury: treasuryId,
+          salonId: settings.salonId,
+          branchId: activeBranchId,
+          shiftDate: assignedShiftDate,
+          shiftId: assignedShiftId,
+          createdBy: actorName,
+          userName: actorName,
+          userId: currentUser?.id
+        } as any;
+        setTransactions([newTrx, ...transactions]);
+        await DB.saveTransaction(newTrx, settings.salonId);
 
-      // طباعة إيصال المصروف الحراري فوراً عند الإضافة (مشابه لإيصال السلفة)
-      handlePrintExpenseReceipt(newTrx);
+        // طباعة إيصال المصروف الحراري فوراً عند الإضافة (مشابه لإيصال السلفة)
+        handlePrintExpenseReceipt(newTrx);
+      }
+      setShowAddModal(false);
+      setEditingExpenseId(null);
+      setAmount('');
+      setDescription('');
+    } catch (err: any) {
+      console.error('Error saving expense:', err);
+      setErrorMsg(err?.message || 'حدث خطأ أثناء حفظ المصروف');
+    } finally {
+      setIsSubmitting(false);
     }
-    setShowAddModal(false);
-    setEditingExpenseId(null);
-    setAmount('');
-    setDescription('');
   };
 
   const canManageCategories = AuthService.canDo('manage_expense_categories', currentUser);
@@ -875,10 +885,15 @@ export function ExpensesScreen({
               )}
               <button 
                 onClick={handleSaveExpense} 
-                className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-md"
+                disabled={isSubmitting}
+                className="w-full bg-primary hover:bg-primary-dark disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-md"
               >
-                <Printer size={16} />
-                <span>{editingExpenseId ? 'تحديث المصروف' : 'حفظ وطباعة إيصال المصروف'}</span>
+                {isSubmitting ? (
+                  <span className="inline-block animate-spin">⏳</span>
+                ) : (
+                  <Printer size={16} />
+                )}
+                <span>{isSubmitting ? 'جارٍ الحفظ...' : (editingExpenseId ? 'تحديث المصروف' : 'حفظ وطباعة إيصال المصروف')}</span>
               </button>
             </div>
           </div>

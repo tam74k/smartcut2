@@ -3,6 +3,10 @@ import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { initDoubleClickPreventer } from './utils/doubleClickPreventer';
+
+// Initialize global double-click prevention at the DOM capture phase
+initDoubleClickPreventer(800);
 
 interface ErrorBoundaryProps {
   children: ReactNode;

@@ -420,6 +420,7 @@ export function BookingsScreen({
   const [confirmDepositTarget, setConfirmDepositTarget] = useState<Booking | null>(null);
   const [selectedDepositTreasury, setSelectedDepositTreasury] = useState<string>('');
   const [isConfirmingDeposit, setIsConfirmingDeposit] = useState(false);
+  const [isSubmittingBooking, setIsSubmittingBooking] = useState(false);
   const [previewBooking, setPreviewBooking] = useState<Booking | null>(null);
 
   // Reschedule / Postpone Modal State
@@ -1470,6 +1471,7 @@ export function BookingsScreen({
 
   // Save Booking
   const saveBooking = async () => {
+    if (isSubmittingBooking) return;
     if (!editingBooking && !shiftData?.isOpen) {
       alert('لا يمكن تسجيل حجز جديد والوردية مغلقة. يرجى فتح وردية أولاً من شاشة الورديات.');
       return;
@@ -1480,6 +1482,9 @@ export function BookingsScreen({
       alert('يرجى ملء الحقول الإلزامية: رقم الموبايل، اسم العميل، التاريخ، والوقت');
       return;
     }
+
+    setIsSubmittingBooking(true);
+    try {
 
     const effectiveBookingDate = isPostponed 
       ? (newBooking.date || '')
@@ -1849,7 +1854,13 @@ export function BookingsScreen({
     setTimeout(() => {
       printBooking(booking);
     }, 150);
-  };
+  } catch (err: any) {
+    console.error('Error saving booking:', err);
+    alert('حدث خطأ أثناء حفظ الحجز: ' + (err?.message || 'خطأ غير معروف'));
+  } finally {
+    setIsSubmittingBooking(false);
+  }
+};
 
   const handleEdit = (b: Booking) => {
     setEditingBooking(b);
@@ -6458,9 +6469,17 @@ export function BookingsScreen({
                 <button
                   type="button"
                   onClick={saveBooking}
-                  className="flex-1 sm:flex-initial px-5 py-2 text-xs font-black text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-sm cursor-pointer transition-all active:scale-98"
+                  disabled={isSubmittingBooking}
+                  className="flex-1 sm:flex-initial px-5 py-2 text-xs font-black text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed rounded-xl shadow-sm cursor-pointer transition-all active:scale-98 flex items-center justify-center gap-1.5"
                 >
-                  {editingBooking ? 'حفظ وتثبيت التعديلات' : 'حفظ وتأكيد الحجز'}
+                  {isSubmittingBooking ? (
+                    <>
+                      <span className="inline-block animate-spin">⏳</span>
+                      <span>جارٍ الحفظ...</span>
+                    </>
+                  ) : (
+                    <span>{editingBooking ? 'حفظ وتثبيت التعديلات' : 'حفظ وتأكيد الحجز'}</span>
+                  )}
                 </button>
               </div>
             </div>
