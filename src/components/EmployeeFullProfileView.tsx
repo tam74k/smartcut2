@@ -7,7 +7,7 @@ import {
   TrendingUp, TrendingDown, CheckCircle2, AlertTriangle, XCircle, 
   CalendarRange, Phone, Mail, Award, Scissors, FileText, 
   Sparkles, Check, X, ShieldAlert, BarChart3, PieChart, 
-  Timer, Layers, ChevronLeft, ChevronRight, User, Eye, ShieldCheck, Target
+  Timer, Layers, ChevronLeft, ChevronRight, User, Eye, ShieldCheck, Target, CreditCard
 } from 'lucide-react';
 import { calculateEmployeeCommission, getCommissionModelLabel } from '../utils/commissionHelper';
 import { calculateEmployeeTargetCommission } from '../utils/targetCalculationHelper';
@@ -59,6 +59,7 @@ export function EmployeeFullProfileView({
 
   // Sub-tabs in the detail page
   const [activeSection, setActiveSection] = useState<'jobs' | 'attendance' | 'advances' | 'salaries' | 'overtime' | 'deductions' | 'bonuses'>('jobs');
+  const [showIdCardModal, setShowIdCardModal] = useState(false);
 
   // Presets Handlers
   const handleApplyPreset = (preset: 'today' | 'yesterday' | 'this_month' | 'last_month' | 'last_30' | 'last_90') => {
@@ -656,6 +657,24 @@ export function EmployeeFullProfileView({
                   <Calendar size={12} className="text-indigo-400" />
                   <span>العطلة: {employee.weeklyDaysOff?.join('، ') || 'الجمعة'}</span>
                 </span>
+                {employee.nationalId && (
+                  <span className="flex items-center gap-1 font-mono text-emerald-300 bg-emerald-500/20 px-2 py-0.5 rounded-md border border-emerald-500/30">
+                    <CreditCard size={12} className="text-emerald-400" />
+                    <span>رقم الهوية: {employee.nationalId}</span>
+                  </span>
+                )}
+                {employee.idCardImageUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setShowIdCardModal(true)}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 text-[11px] font-bold border border-amber-500/40 transition-colors shadow-xs"
+                    title="عرض صورة بطاقة الهوية"
+                  >
+                    <CreditCard size={12} className="text-amber-400" />
+                    <span>صورة البطاقة</span>
+                    <Eye size={12} />
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -1687,6 +1706,54 @@ export function EmployeeFullProfileView({
           </div>
         )}
       </div>
+      {/* Modal معاينة صورة البطاقة */}
+      {showIdCardModal && employee.idCardImageUrl && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setShowIdCardModal(false)}
+        >
+          <div 
+            className="bg-white rounded-2xl max-w-2xl w-full p-4 shadow-2xl overflow-hidden relative animate-in fade-in zoom-in-95 duration-150"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <CreditCard className="text-indigo-600" size={20} />
+                <h3 className="font-bold text-slate-800 text-sm">
+                  صورة بطاقة / هوية الموظف: {employee.name}
+                  {employee.nationalId ? ` (${employee.nationalId})` : ''}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowIdCardModal(false)}
+                className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="rounded-xl overflow-hidden bg-slate-900/5 flex items-center justify-center max-h-[75vh]">
+              <img 
+                src={employee.idCardImageUrl} 
+                alt={`بطاقة ${employee.name}`} 
+                className="max-h-[70vh] w-auto max-w-full object-contain rounded-lg shadow-sm"
+              />
+            </div>
+            <div className="mt-3 flex justify-between items-center text-xs text-slate-400">
+              <span>انقر في أي مكان خارج النافذة للإغلاق</span>
+              <a
+                href={employee.idCardImageUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-indigo-600 hover:text-indigo-700 font-bold inline-flex items-center gap-1"
+              >
+                <Eye size={12} />
+                فتح في علامة تبويب جديدة
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

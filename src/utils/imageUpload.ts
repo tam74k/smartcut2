@@ -455,3 +455,105 @@ export async function compressClientBeforeAfterPhoto(file: File): Promise<Compre
     reader.readAsDataURL(file);
   });
 }
+
+
+/**
+ * دالة متقدمة لضغط وتصغير صور بطاقات الهوية / الإقامة للموظفين
+ * تحافظ على أبعاد البطاقة المستطيلة كاملة دون اقتصاص (أقصى بُعد 1000x750 بكسل)
+ * وتضغط الصورة لتكون واضحة وحادة جداً لقراءة الأرقام والأسماء مع حجم مضغوط وخفيف (30 - 75 كيلوبايت)
+ */
+export async function compressIdCardImage(file: File): Promise<CompressedServiceImageResult> {
+  return new Promise((resolve) => {
+    if (!file.type.startsWith('image/')) {
+      resolve({
+        blob: new Blob([]),
+        dataUrl: '',
+        fileSizeKb: 0,
+        fileName: file.name,
+        error: 'الملف المختار ليس صورة صالحة. يرجى اختيار ملف بصيغة JPG أو PNG أو WEBP.'
+      });
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        const maxWidth = 1000;
+        const maxHeight = 750;
+
+        if (width > maxWidth || height > maxHeight) {
+          if (width / maxWidth > height / maxHeight) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          } else {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+
+        canvas.width = Math.max(1, width);
+        canvas.height = Math.max(1, height);
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          const rawBlob = dataUrlToBlob(e.target?.result as string);
+          resolve({
+            blob: rawBlob,
+            dataUrl: e.target?.result as string,
+            fileSizeKb: Math.round(file.size / 1024),
+            fileName: file.name
+          });
+          return;
+        }
+
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+
+        ctx.drawImage(img, 0, 0, width, height);
+
+        let mimeType = 'image/webp';
+        let quality = 0.82;
+        let compressedDataUrl = canvas.toDataURL(mimeType, quality);
+
+        if (!compressedDataUrl.startsWith('data:image/webp')) {
+          mimeType = 'image/jpeg';
+          compressedDataUrl = canvas.toDataURL(mimeType, quality);
+        }
+
+        while (compressedDataUrl.length > 85 * 1024 * 1.33 && quality > 0.45) {
+          quality -= 0.1;
+          compressedDataUrl = canvas.toDataURL(mimeType, quality);
+        }
+
+        const blob = dataUrlToBlob(compressedDataUrl);
+        const estimatedKb = Math.round(blob.size / 1024);
+        const cleanBaseName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+        const extension = mimeType === 'image/webp' ? 'webp' : 'jpg';
+
+        resolve({
+          blob,
+          dataUrl: compressedDataUrl,
+          fileSizeKb: estimatedKb,
+          fileName: `id_card_${cleanBaseName}.${extension}`
+        });
+      };
+
+      img.onerror = () => {
+        resolve({ blob: new Blob([]), dataUrl: '', fileSizeKb: 0, fileName: file.name, error: 'فشل قراءة بيانات صورة البطاقة' });
+      };
+
+      img.src = e.target?.result as string;
+    };
+
+    reader.onerror = () => {
+      resolve({ blob: new Blob([]), dataUrl: '', fileSizeKb: 0, fileName: file.name, error: 'خطأ أثناء تحميل ملف صورة البطاقة' });
+    };
+
+    reader.readAsDataURL(file);
+  });
+}

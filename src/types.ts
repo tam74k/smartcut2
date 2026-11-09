@@ -536,6 +536,8 @@ export interface Employee {
   name: string; 
   email?: string;
   avatarUrl?: string;
+  nationalId?: string; // رقم الهوية / البطاقة / الإقامة
+  idCardImageUrl?: string; // صورة بطاقة الهوية (مضغوطة)
   publicBio?: string; // نبذة وملاحظة تظهر للعملاء في تطبيق الحجز الأونلاين
   hasOnlineAccount?: boolean;
   username?: string;

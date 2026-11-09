@@ -11,9 +11,9 @@ import {
   BarChart3, Settings, ShieldCheck, History, Award, Calendar, FileText, 
   AlertTriangle, Check, X, Printer, UserX, UserCheck, Sparkles, Sliders, Layers,
   Camera, Image as ImageIcon, HeartHandshake, Fingerprint, Package, CheckCircle2, Eye,
-  Target, Users, Zap, Globe, Unlock, Info, Ban, Lightbulb
+  Target, Users, Zap, Globe, Unlock, Info, Ban, Lightbulb, CreditCard
 } from 'lucide-react';
-import { processImageFile, MAX_IMAGE_SIZE_KB, compressEmployeeAvatar } from '../utils/imageUpload';
+import { processImageFile, MAX_IMAGE_SIZE_KB, compressEmployeeAvatar, compressIdCardImage } from '../utils/imageUpload';
 import { HRScreen } from './HRScreen';
 import { EmployeeAnalyticsScreen } from './EmployeeAnalyticsScreen';
 import { TipsScreen } from './TipsScreen';
@@ -138,6 +138,8 @@ export function EmployeesScreen({
     weeklyDaysOff: ['Friday'],
     email: '',
     avatarUrl: '',
+    nationalId: '',
+    idCardImageUrl: '',
     hasOnlineAccount: false,
     isActive: true,
     isBlacklisted: false
@@ -146,6 +148,8 @@ export function EmployeesScreen({
   const [onlineUsername, setOnlineUsername] = useState('');
   const [onlineUserPassword, setOnlineUserPassword] = useState('123456');
   const [usernameStatus, setUsernameStatus] = useState<'idle' | 'checking' | 'available' | 'taken'>('idle');
+  const [previewCardModalUrl, setPreviewCardModalUrl] = useState<string | null>(null);
+  const [isCompressingIdCard, setIsCompressingIdCard] = useState<boolean>(false);
   const checkUsernameTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Modal state for Add/Edit Employee (بطاقة مستقلة عريضة على عمودين)
@@ -231,6 +235,46 @@ export function EmployeesScreen({
 
     if (uploadRes.url) {
       setFormData(prev => ({ ...prev, avatarUrl: uploadRes.url }));
+    }
+  };
+
+  const handleIdCardUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setIsCompressingIdCard(true);
+      // ضغط صورة بطاقة الهوية / الإقامة مع الحفاظ الكامل على أبعادها ووضوح الأرقام
+      const compressed = await compressIdCardImage(file);
+      if (compressed.error) {
+        alert(compressed.error);
+        return;
+      }
+
+      const branchIdToUse = formData.branchId || activeBranchId || settings.branchId;
+      const empId = formData.id || ('emp_' + Math.random().toString(36).substr(2, 7));
+
+      const uploadRes = await DB.uploadEmployeeIdCardImage(
+        compressed.blob,
+        empId,
+        formData.idCardImageUrl,
+        settings.salonId,
+        branchIdToUse
+      );
+
+      if (uploadRes.error) {
+        alert(uploadRes.error);
+        return;
+      }
+
+      if (uploadRes.url) {
+        setFormData(prev => ({ ...prev, idCardImageUrl: uploadRes.url }));
+      }
+    } catch (err: any) {
+      console.error('Error uploading ID card image:', err);
+      alert('حدث خطأ أثناء معالجة صورة البطاقة: ' + (err?.message || 'خطأ غير معروف'));
+    } finally {
+      setIsCompressingIdCard(false);
     }
   };
 
@@ -538,6 +582,8 @@ export function EmployeesScreen({
       targetType: emp.targetType || ((Number(emp.dailyTargetAmount) > 0) ? 'daily' : ((Number(emp.monthlyTargetAmount || emp.target) > 0) ? 'monthly' : 'none')),
       email: emp.email || '',
       avatarUrl: emp.avatarUrl || '',
+      nationalId: emp.nationalId || (emp as any).national_id || '',
+      idCardImageUrl: emp.idCardImageUrl || (emp as any).id_card_image_url || '',
       hasOnlineAccount: emp.hasOnlineAccount || Boolean(linkedUser),
       salaryType: emp.salaryType || 'salary',
       allowDualCommission: emp.allowDualCommission || false,
@@ -1455,6 +1501,25 @@ export function EmployeesScreen({
                                   {emp.email}
                                 </div>
                               )}
+                              {emp.nationalId && (
+                                <div className="flex items-center gap-1 text-[10px] text-slate-600 font-mono mt-0.5">
+                                  <CreditCard size={10} className="text-indigo-500 shrink-0" />
+                                  <span>{emp.nationalId}</span>
+                                  {emp.idCardImageUrl && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setPreviewCardModalUrl(emp.idCardImageUrl || null);
+                                      }}
+                                      className="text-[9px] bg-indigo-50 text-indigo-700 px-1 py-0.2 rounded hover:bg-indigo-100 transition-colors border border-indigo-200 cursor-pointer font-sans"
+                                      title="عرض صورة بطاقة الهوية"
+                                    >
+                                      البطاقة
+                                    </button>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           </div>
                         </td>
@@ -1869,6 +1934,100 @@ export function EmployeesScreen({
                             className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:border-indigo-600 focus:bg-white outline-none"
                             dir="ltr"
                           />
+                        </div>
+                      </div>
+
+                      {/* National ID / Card Number & ID Card Image */}
+                      <div className="p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200/90 space-y-3">
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-800 mb-1 flex items-center justify-between">
+                            <span className="flex items-center gap-1.5">
+                              <CreditCard size={14} className="text-indigo-600" />
+                              <span>رقم الهوية / البطاقة الشخصية / الإقامة</span>
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-normal">اختياري</span>
+                          </label>
+                          <input 
+                            type="text"
+                            value={formData.nationalId || ''}
+                            onChange={e => setFormData({ ...formData, nationalId: e.target.value })}
+                            placeholder="مثال: 29801011234567"
+                            className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:border-indigo-600 focus:bg-white outline-none transition-colors"
+                            dir="ltr"
+                          />
+                        </div>
+
+                        {/* ID Card Image Upload with Auto-Compression */}
+                        <div>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <label className="text-[11px] font-bold text-slate-800 flex items-center gap-1.5">
+                              <FileText size={14} className="text-indigo-600" />
+                              <span>صورة البطاقة / الهوية (مع الضغط التلقائي)</span>
+                            </label>
+                            {formData.idCardImageUrl && (
+                              <button
+                                type="button"
+                                onClick={() => setFormData({ ...formData, idCardImageUrl: '' })}
+                                className="text-[10px] text-rose-600 font-bold hover:underline cursor-pointer"
+                              >
+                                حذف الصورة
+                              </button>
+                            )}
+                          </div>
+
+                          {formData.idCardImageUrl ? (
+                            <div className="relative group rounded-xl overflow-hidden border border-slate-300 bg-white shadow-xs max-h-40 flex items-center justify-center">
+                              <img 
+                                src={formData.idCardImageUrl} 
+                                alt="صورة بطاقة الهوية" 
+                                className="w-full h-auto max-h-40 object-contain cursor-pointer hover:opacity-95 transition-opacity"
+                                onClick={() => setPreviewCardModalUrl(formData.idCardImageUrl || null)}
+                              />
+                              <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setPreviewCardModalUrl(formData.idCardImageUrl || null)}
+                                  className="px-2.5 py-1 bg-white/95 text-slate-800 rounded-lg text-[11px] font-bold flex items-center gap-1 shadow-sm hover:bg-white cursor-pointer"
+                                >
+                                  <Eye size={13} />
+                                  <span>معاينة</span>
+                                </button>
+                                <label className="px-2.5 py-1 bg-indigo-600 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 shadow-sm hover:bg-indigo-700 cursor-pointer">
+                                  <Camera size={13} />
+                                  <span>تغيير</span>
+                                  <input 
+                                    type="file" 
+                                    accept="image/*" 
+                                    className="hidden" 
+                                    onChange={handleIdCardUpload}
+                                  />
+                                </label>
+                              </div>
+                            </div>
+                          ) : (
+                            <label className="border-2 border-dashed border-indigo-200 hover:border-indigo-500 rounded-xl p-3.5 flex flex-col items-center justify-center gap-1 text-center cursor-pointer transition-colors bg-white hover:bg-indigo-50/40">
+                              <div className="w-8 h-8 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                                {isCompressingIdCard ? (
+                                  <span className="animate-spin text-sm">⏳</span>
+                                ) : (
+                                  <CreditCard size={16} />
+                                )}
+                              </div>
+                              <div className="text-xs font-bold text-slate-800">
+                                {isCompressingIdCard ? 'جارٍ ضغط وتحميل صورة البطاقة...' : 'انقر لرفع صورة البطاقة / الهوية'}
+                              </div>
+                              <p className="text-[10px] text-slate-400">
+                                يتم ضغط الصورة تلقائياً لتقليل الحجم مع الحفاظ التام على وضوح البيانات
+                              </p>
+                              <input 
+                                type="file" 
+                                accept="image/*" 
+                                className="hidden" 
+                                disabled={isCompressingIdCard}
+                                onChange={handleIdCardUpload}
+                              />
+                            </label>
+                          )}
                         </div>
                       </div>
 
@@ -3645,6 +3804,59 @@ export function EmployeesScreen({
                 <Check size={15} />
                 <span>تنفيذ وحفظ فوراً</span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ID Card Full Size Zoom / Preview Modal */}
+      {previewCardModalUrl && (
+        <div 
+          className="fixed inset-0 z-[70] bg-slate-900/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in"
+          onClick={() => setPreviewCardModalUrl(null)}
+        >
+          <div 
+            className="bg-white rounded-3xl p-5 max-w-2xl w-full shadow-2xl overflow-hidden relative animate-in zoom-in-95 duration-200"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <CreditCard size={18} className="text-indigo-600" />
+                <span className="font-black text-slate-800 text-sm">صورة بطاقة الهوية / الإقامة</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewCardModalUrl(null)}
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-colors cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="rounded-2xl overflow-hidden bg-slate-50 border border-slate-200 flex items-center justify-center p-2 max-h-[70vh]">
+              <img 
+                src={previewCardModalUrl} 
+                alt="بطاقة الهوية بالحجم الكامل" 
+                className="max-h-[68vh] w-auto max-w-full object-contain rounded-xl"
+              />
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPreviewCardModalUrl(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+              >
+                إغلاق
+              </button>
+              <a 
+                href={previewCardModalUrl} 
+                download="id_card_image.webp" 
+                target="_blank" 
+                rel="noreferrer"
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl transition-colors flex items-center gap-1.5 shadow-sm"
+              >
+                <Eye size={14} />
+                <span>فتح بحجم أكبر</span>
+              </a>
             </div>
           </div>
         </div>

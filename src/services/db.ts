@@ -2887,6 +2887,12 @@ export const DB = {
         name: e.name, 
         email: e.email || null, 
         avatar_url: e.avatarUrl || null,
+        national_id: e.nationalId || (e as any).national_id || null,
+        id_card_image_url: e.idCardImageUrl || (e as any).id_card_image_url || null,
+        notes: JSON.stringify({
+          notes: e.notes || '',
+          idCardImageUrl: e.idCardImageUrl || (e as any).id_card_image_url || ''
+        }),
         public_bio: e.publicBio || null, 
         has_online_account: e.hasOnlineAccount || false,
         user_id: validUserId, 
@@ -3415,6 +3421,23 @@ export const DB = {
       branchId,
       category: 'employees',
       identifier: employeeId,
+      oldImageUrl
+    });
+  },
+
+  async uploadEmployeeIdCardImage(
+    fileOrBlob: File | Blob | string,
+    employeeId: string,
+    oldImageUrl?: string,
+    salonId?: string,
+    branchId?: string
+  ): Promise<{ url: string; error?: string }> {
+    return await DB.uploadBranchImage({
+      fileOrBlob,
+      salonId,
+      branchId,
+      category: 'employees',
+      identifier: `${employeeId}_id_card`,
       oldImageUrl
     });
   },
@@ -5586,6 +5609,18 @@ function parseJsonArray(val: any): any[] {
 export function dbEmployeeToApp(row: any) {
   if (!row) return {} as any;
   const parsedWeeklyOff = parseJsonArray(row.weeklyDaysOff ?? row.weekly_days_off);
+
+  // Extract ID Card Image from direct column or fallback JSON in notes
+  let idCardImg = row.idCardImageUrl || row.id_card_image_url || '';
+  if (!idCardImg && typeof row.notes === 'string' && row.notes.startsWith('{')) {
+    try {
+      const parsedNotes = JSON.parse(row.notes);
+      if (parsedNotes.idCardImageUrl) {
+        idCardImg = parsedNotes.idCardImageUrl;
+      }
+    } catch (_) {}
+  }
+
   return {
     id: row.id,
     salonId: row.salonId || row.salon_id,
@@ -5594,6 +5629,8 @@ export function dbEmployeeToApp(row: any) {
     phone: row.phone || '',
     email: row.email || '',
     avatarUrl: row.avatarUrl || row.avatar_url || '',
+    nationalId: row.nationalId || row.national_id || '',
+    idCardImageUrl: idCardImg,
     publicBio: row.publicBio || row.public_bio || '',
     hasOnlineAccount: toBool(row.hasOnlineAccount !== undefined ? row.hasOnlineAccount : row.has_online_account),
     username: row.username || '',
