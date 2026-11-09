@@ -1064,7 +1064,18 @@ export function DashboardScreen({
     onToPOS(booking);
   };
 
+  const canEditBooking = !currentUser || 
+    currentUser.role === 'admin' || 
+    currentUser.role === 'owner' || 
+    currentUser.role === 'programmer' || 
+    currentUser.actions?.includes('manage_bookings_edit') || 
+    currentUser.actions?.includes('*');
+
   const handleEditBooking = (booking: Booking) => {
+    if (!canEditBooking) {
+      alert('عذراً، لا تملك صلاحية تعديل الحجوزات.');
+      return;
+    }
     setEditingBooking({...booking}); // Clone for editing
   };
 
@@ -1906,9 +1917,11 @@ export function DashboardScreen({
                           >
                             <Eye size={14} /> معاينة
                           </button>
-                          <button onClick={() => handleEditBooking(booking)} className="flex-1 md:flex-none flex items-center justify-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-md text-[12px] font-bold transition-colors cursor-pointer">
-                            <Edit2 size={14} /> تعديل
-                          </button>
+                          {canEditBooking && (
+                            <button onClick={() => handleEditBooking(booking)} className="flex-1 md:flex-none flex items-center justify-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-md text-[12px] font-bold transition-colors cursor-pointer">
+                              <Edit2 size={14} /> تعديل
+                            </button>
+                          )}
                           <button onClick={() => handleToInvoice(booking)} className="flex-1 md:flex-none flex items-center justify-center gap-1.5 bg-primary hover:bg-primary-dark text-white px-3 py-1.5 rounded-md text-[12px] font-bold transition-colors shadow-sm cursor-pointer">
                             <FileText size={14} /> لفاتورة
                           </button>
@@ -2274,13 +2287,15 @@ export function DashboardScreen({
                               >
                                 <Eye size={12} />
                               </button>
-                              <button
-                                onClick={() => handleEditBooking(booking)}
-                                className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors cursor-pointer"
-                                title="تعديل الحجز"
-                              >
-                                <Edit2 size={12} />
-                              </button>
+                              {canEditBooking && (
+                                <button
+                                  onClick={() => handleEditBooking(booking)}
+                                  className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors cursor-pointer"
+                                  title="تعديل الحجز"
+                                >
+                                  <Edit2 size={12} />
+                                </button>
+                              )}
                               <button
                                 onClick={() => handleToInvoice(booking)}
                                 className="p-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg transition-colors cursor-pointer"
@@ -2635,18 +2650,20 @@ export function DashboardScreen({
                 </button>
 
                 <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const b = previewBooking;
-                      setPreviewBooking(null);
-                      handleEditBooking(b);
-                    }}
-                    className="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-700 bg-slate-200/80 hover:bg-slate-200 cursor-pointer flex items-center gap-1.5 transition-colors"
-                  >
-                    <Edit2 size={13} />
-                    <span>تعديل الحجز</span>
-                  </button>
+                  {canEditBooking && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const b = previewBooking;
+                        setPreviewBooking(null);
+                        handleEditBooking(b);
+                      }}
+                      className="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-700 bg-slate-200/80 hover:bg-slate-200 cursor-pointer flex items-center gap-1.5 transition-colors"
+                    >
+                      <Edit2 size={13} />
+                      <span>تعديل الحجز</span>
+                    </button>
+                  )}
 
                   <button
                     type="button"

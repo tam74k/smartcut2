@@ -70,6 +70,7 @@ export const ACTION_CATALOG: ActionMeta[] = [
   { id: 'pos_void', name: 'إلغاء الفاتورة / حذف البنود أثناء البيع', category: 'نقطة البيع والمبيعات', description: 'حذف عناصر من السلة أو إفراغ الفاتورة قبل الدفع' },
   { id: 'pos_reprint', name: 'إعادة طباعة الفواتير السابقة', category: 'نقطة البيع والمبيعات', description: 'طباعة نسخة ثانية من أي فاتورة مبيعات سابقة' },
   { id: 'sales_return', name: 'إنشاء فواتير مرتجع مبيعات', category: 'نقطة البيع والمبيعات', description: 'استرجاع مبالغ فواتير المبيعات وإلغاء تأثيرها المالي' },
+  { id: 'manage_invoices_edit', name: 'تعديل فواتير المبيعات في نقطة البيع (POS)', category: 'نقطة البيع والمبيعات', description: 'السماح بإظهار واستخدام زر تعديل الفاتورة في نقطة البيع وتعديل الخدمات والمنتجات والمبالغ' },
   { id: 'manage_invoices_delete', name: 'حذف فواتير المبيعات نهائياً', category: 'نقطة البيع والمبيعات', description: 'السماح بإظهار واستخدام زر الحذف النهائي للفواتير وإلغاء قيودها المالية' },
   { id: 'manage_queue', name: 'إدارة صف الانتظار والمناداة على العملاء', category: 'نقطة البيع والمبيعات', description: 'التحكم في ترتيب الانتظار، المناداة وتسكين العملاء مع الموظفين' },
 
@@ -110,6 +111,7 @@ export const ACTION_CATALOG: ActionMeta[] = [
   { id: 'hr_manage_commissions', name: 'اعتماد وتصفية وصرف عمولات الخدمات والمبيعات', category: 'الموظفون والعملاء', description: 'تصفية وصرف مستحقات العمولات التراكمية للفنيين والموظفين وإصدار سنداتها' },
   { id: 'manage_clients', name: 'إدارة وتعديل وحذف بيانات العملاء', category: 'الموظفون والعملاء', description: 'التحكم في قاعدة بيانات العملاء ونقاط الولاء' },
   { id: 'manage_booking_settings', name: 'ضبط إعدادات الحجوزات وإغلاق الساعات والأيام', category: 'الموظفون والعملاء', description: 'التحكم في إغلاق الأيام والساعات وسعة الحجوزات وإتاحة الفنيين' },
+  { id: 'manage_bookings_edit', name: 'تعديل الحجوزات والمواعيد والعرابين', category: 'الموظفون والعملاء', description: 'السماح بإظهار واستخدام زر تعديل الحجز وبيانات العميل والمواعيد وقيمة العربون' },
   { id: 'manage_bookings_delete', name: 'حذف الحجوزات والمواعيد نهائياً', category: 'الموظفون والعملاء', description: 'السماح بإظهار واستخدام زر الحذف النهائي للحجز من النظام وقاعدة البيانات' },
   { id: 'manage_makeup_artists', name: 'إدارة الميكب ارتست وتخصيص الخدمات والأسعار', category: 'الكتالوج والخدمات', description: 'إضافة وتعديل وحذف الميكب ارتست وتحديد الخدمات والأسعار المخصصة لكل ارتست' },
   { id: 'makeup_artist_booking', name: 'تسجيل حجوزات العرائس وتحصيل العرابين', category: 'المبيعات', description: 'حجز مواعيد العرائس واستلام العربون وتوريده للصالون وإرسال إيصال الحجز عبر الواتساب' },
@@ -163,7 +165,7 @@ export const DEFAULT_ROLE_PRESETS: Record<UserRole, { screens: string[]; actions
   },
   supervisor: {
     screens: ['dashboard', 'pos', 'queue_calling', 'bookings', 'invoices', 'deferred_invoices', 'sales_returns', 'services', 'warehouse', 'clients', 'employees', 'treasury', 'expenses', 'reports', 'daily_sheet', 'shifts'],
-    actions: ['pos_discount', 'pos_void', 'pos_reprint', 'sales_return', 'manage_invoices_delete', 'manage_queue', 'manage_shifts', 'edit_shift_cash', 'treasury_deposit', 'treasury_withdraw', 'treasury_transfer', 'treasury_view_balance', 'manage_expenses', 'manage_expense_categories', 'manage_products', 'manage_inventory', 'manage_employees', 'manage_salaries', 'manage_hr', 'manage_hr_actions', 'manage_clients', 'manage_booking_settings', 'manage_bookings_delete', 'view_reports', 'export_excel']
+    actions: ['pos_discount', 'pos_void', 'pos_reprint', 'sales_return', 'manage_invoices_edit', 'manage_invoices_delete', 'manage_queue', 'manage_shifts', 'edit_shift_cash', 'treasury_deposit', 'treasury_withdraw', 'treasury_transfer', 'treasury_view_balance', 'manage_expenses', 'manage_expense_categories', 'manage_products', 'manage_inventory', 'manage_employees', 'manage_salaries', 'manage_hr', 'manage_hr_actions', 'manage_clients', 'manage_booking_settings', 'manage_bookings_edit', 'manage_bookings_delete', 'view_reports', 'export_excel']
   },
   warehouse_manager: {
     screens: ['dashboard', 'warehouse', 'products', 'suppliers', 'purchases', 'inventory'],
@@ -252,10 +254,19 @@ export class AuthService {
       if (uName && !seenIds.has(uId) && !seenKeys.has(key)) {
         seenIds.add(uId);
         seenKeys.add(key);
+
+        const isAdminOrOwner = u.role === 'admin' || u.role === 'owner';
+        let userActions = Array.isArray(u.actions) ? [...u.actions] : (isAdminOrOwner ? ['*'] : []);
+        if (isAdminOrOwner && !userActions.includes('*')) {
+          if (!userActions.includes('manage_invoices_edit')) userActions.push('manage_invoices_edit');
+          if (!userActions.includes('manage_bookings_edit')) userActions.push('manage_bookings_edit');
+        }
+
         deduped.push({
           ...u,
           id: uId,
-          username: uName
+          username: uName,
+          actions: userActions
         });
       }
     }

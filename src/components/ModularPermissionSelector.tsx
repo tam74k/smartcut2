@@ -23,6 +23,16 @@ export interface SystemModule {
 }
 
 export const NEW_PERMISSIONS: Record<string, { label: string; badgeClass: string; desc: string }> = {
+  manage_invoices_edit: {
+    label: 'جديد: تعديل الفواتير (POS)',
+    badgeClass: 'bg-amber-100 text-amber-900 border-amber-300 font-extrabold',
+    desc: 'السماح بإظهار واستخدام زر تعديل الفاتورة في نقطة البيع'
+  },
+  manage_bookings_edit: {
+    label: 'جديد: تعديل الحجوزات والمواعيد',
+    badgeClass: 'bg-blue-100 text-blue-900 border-blue-300 font-extrabold',
+    desc: 'السماح بإظهار واستخدام زر تعديل الحجز وبياناته والعرابين'
+  },
   manage_expense_categories: {
     label: 'جديد: بنود وتصنيفات الصرف',
     badgeClass: 'bg-amber-100 text-amber-900 border-amber-300 font-extrabold',
@@ -119,9 +129,11 @@ export const SYSTEM_MODULES: SystemModule[] = [
       'pos_void',
       'pos_reprint',
       'sales_return',
+      'manage_invoices_edit',
       'manage_invoices_delete',
       'manage_queue',
       'manage_booking_settings',
+      'manage_bookings_edit',
       'manage_bookings_delete'
     ]
   },

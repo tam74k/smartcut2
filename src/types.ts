@@ -44,6 +44,7 @@ export type ActionPermission =
   | 'pos_void' 
   | 'pos_reprint'
   | 'sales_return' 
+  | 'manage_invoices_edit'
   | 'manage_invoices_delete'
   | 'manage_queue'
 
@@ -114,6 +115,7 @@ export type ActionPermission =
 
   // Bookings, Partners, Promo Codes & Tips
   | 'manage_booking_settings'
+  | 'manage_bookings_edit'
   | 'manage_bookings_delete'
   | 'manage_partners'
   | 'manage_promo_codes'

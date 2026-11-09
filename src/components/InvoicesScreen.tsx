@@ -180,8 +180,28 @@ export function InvoicesScreen({
     return invDate < todayStr;
   };
 
+  // صلاحيات تعديل وحذف الفواتير
+  const canEditInvoice = !currentUser || 
+    currentUser.role === 'admin' || 
+    currentUser.role === 'owner' || 
+    currentUser.role === 'programmer' || 
+    currentUser.actions?.includes('manage_invoices_edit') || 
+    currentUser.actions?.includes('manage_invoices') || 
+    currentUser.actions?.includes('*');
+
+  const canDeleteInvoice = !currentUser || 
+    currentUser.role === 'admin' || 
+    currentUser.role === 'owner' || 
+    currentUser.role === 'programmer' || 
+    currentUser.actions?.includes('manage_invoices_delete') || 
+    currentUser.actions?.includes('*');
+
   // معالجة بدء تعديل الفاتورة في نقطة البيع
   const handleInitiateEdit = (inv: Invoice) => {
+    if (!canEditInvoice) {
+      alert('عذراً، لا تملك صلاحية تعديل فواتير المبيعات.');
+      return;
+    }
     if (isInvoiceFromPreviousDate(inv)) {
       alert('عذراً، محظور تماماً تعديل الفواتير الصادرة بتاريخ سابق حفاظاً على سلامة الحسابات والورديات المغلقة. التعديل متاح فقط لفواتير اليوم.');
       return;
@@ -190,21 +210,11 @@ export function InvoicesScreen({
       alert('عذراً، لا يمكن تعديل فاتورة ملغاة.');
       return;
     }
-    const isAuthorized = !currentUser || ['admin', 'owner', 'programmer'].includes(currentUser.role) ||
-      currentUser.actions?.includes('manage_invoices') || currentUser.actions?.includes('*');
-
-    if (isAuthorized) {
-      if (onEditInvoiceInPOS) {
-        onEditInvoiceInPOS(inv);
-      }
-    } else {
-      setAdminPasswordTarget(inv);
-      setAdminPasswordInput('');
-      setAdminPasswordError(false);
+    
+    if (onEditInvoiceInPOS) {
+      onEditInvoiceInPOS(inv);
     }
   };
-
-  const canDeleteInvoice = !currentUser || currentUser.role === 'admin' || currentUser.role === 'owner' || currentUser.role === 'programmer' || currentUser.actions?.includes('manage_invoices_delete') || currentUser.actions?.includes('*');
 
   // حذف الفاتورة نهائياً لحساب الأدمن والمالك أو من يملك الصلاحية حتى لو كانت قديمة
   const handleDeleteInvoice = async (inv: Invoice) => {
@@ -885,7 +895,7 @@ export function InvoicesScreen({
                         </button>
                       )}
                       
-                      {(() => {
+                      {canEditInvoice && (() => {
                         const isPrevDate = isInvoiceFromPreviousDate(inv);
                         return (
                           <button 

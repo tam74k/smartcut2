@@ -2154,6 +2154,21 @@ export function POSScreen({
   // استرجاع وفتح الفاتورة بالكامل للتعديل في نقطة البيع
   useEffect(() => {
     if (initialEditingInvoice) {
+      const canEdit = !currentUser || 
+        currentUser.role === 'admin' || 
+        currentUser.role === 'owner' || 
+        currentUser.role === 'programmer' || 
+        currentUser.actions?.includes('manage_invoices_edit') || 
+        currentUser.actions?.includes('manage_invoices') || 
+        currentUser.actions?.includes('*');
+
+      if (!canEdit) {
+        alert('عذراً، لا تملك صلاحية تعديل فواتير المبيعات.');
+        setEditingInvoice(null);
+        if (onClearInitial) onClearInitial();
+        return;
+      }
+
       // فحص صارم ومحكم لمنع فتح وتعديل أي فاتورة صادرة بتاريخ سابق
       const getInvDate = (inv: Invoice): string => {
         const raw = inv.shiftDate?.trim() || inv.date?.trim() || '';

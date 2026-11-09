@@ -203,6 +203,14 @@ export function BookingsScreen({
     currentUser?.role === 'owner' || 
     currentUser?.role === 'programmer';
 
+  // Permission to edit bookings
+  const canEditBooking = !currentUser || 
+    currentUser.role === 'admin' || 
+    currentUser.role === 'owner' || 
+    currentUser.role === 'programmer' || 
+    currentUser.actions?.includes('manage_bookings_edit') || 
+    currentUser.actions?.includes('*');
+
   // Permission to permanently delete bookings
   const canDeleteBooking = !currentUser || 
     currentUser.role === 'admin' || 
@@ -1863,6 +1871,10 @@ export function BookingsScreen({
 };
 
   const handleEdit = (b: Booking) => {
+    if (!canEditBooking) {
+      alert('عذراً، لا تملك صلاحية تعديل الحجوزات والمواعيد.');
+      return;
+    }
     setEditingBooking(b);
     setShowPhoneSuggestions(false);
     setHighlightedPhoneIndex(-1);
@@ -3245,14 +3257,16 @@ export function BookingsScreen({
                                 </button>
                               )}
 
-                              {/* 2. Edit button: Always visible for ALL statuses including completed and cancelled */}
-                              <button
-                                onClick={() => handleEdit(b)}
-                                className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl cursor-pointer transition-colors"
-                                title="تعديل الحجز وبياناته"
-                              >
-                                <Edit2 size={13} />
-                              </button>
+                              {/* 2. Edit button: Controlled by canEditBooking */}
+                              {canEditBooking && (
+                                <button
+                                  onClick={() => handleEdit(b)}
+                                  className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl cursor-pointer transition-colors"
+                                  title="تعديل الحجز وبياناته"
+                                >
+                                  <Edit2 size={13} />
+                                </button>
+                              )}
 
                               {/* 3. Postpone or Reschedule button: Available for all statuses */}
                               {b.status === 'postponed' ? (
@@ -4090,14 +4104,16 @@ export function BookingsScreen({
                               </button>
 
                               {/* 3. Edit */}
-                              <button
-                                type="button"
-                                onClick={() => handleEdit(b)}
-                                className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl cursor-pointer transition-colors"
-                                title="تعديل الحجز"
-                              >
-                                <Edit2 size={13} />
-                              </button>
+                              {canEditBooking && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleEdit(b)}
+                                  className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl cursor-pointer transition-colors"
+                                  title="تعديل الحجز"
+                                >
+                                  <Edit2 size={13} />
+                                </button>
+                              )}
 
                               {/* 4. Details Popover */}
                               <button
@@ -4694,14 +4710,16 @@ export function BookingsScreen({
                         </button>
                       </>
                     )}
-                    <button
-                      type="button"
-                      onClick={() => handleEdit(selectedBookingDetails)}
-                      className="bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 px-3.5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
-                    >
-                      <Edit2 size={14} />
-                      <span>تعديل</span>
-                    </button>
+                    {canEditBooking && (
+                      <button
+                        type="button"
+                        onClick={() => handleEdit(selectedBookingDetails)}
+                        className="bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 px-3.5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                      >
+                        <Edit2 size={14} />
+                        <span>تعديل</span>
+                      </button>
+                    )}
                     {selectedBookingDetails.status === 'postponed' ? (
                       <button
                         type="button"
