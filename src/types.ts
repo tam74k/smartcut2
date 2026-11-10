@@ -1380,7 +1380,6 @@ export interface PartnerTransaction {
   treasuryName?: string;
   description: string;
   createdBy?: string;
-  treasuryId?: string;
   paymentMethod?: string;
   finalTotal?: number;
   isRemedyInvoice?: boolean;

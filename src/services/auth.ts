@@ -256,7 +256,7 @@ export class AuthService {
         seenKeys.add(key);
 
         const isAdminOrOwner = u.role === 'admin' || u.role === 'owner';
-        let userActions = Array.isArray(u.actions) ? [...u.actions] : (isAdminOrOwner ? ['*'] : []);
+        let userActions: ActionPermission[] = Array.isArray(u.actions) ? [...u.actions] : (isAdminOrOwner ? ['*'] : []);
         if (isAdminOrOwner && !userActions.includes('*')) {
           if (!userActions.includes('manage_invoices_edit')) userActions.push('manage_invoices_edit');
           if (!userActions.includes('manage_bookings_edit')) userActions.push('manage_bookings_edit');
