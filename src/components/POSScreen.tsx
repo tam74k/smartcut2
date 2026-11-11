@@ -2062,7 +2062,7 @@ export function POSScreen({
       if (!Array.isArray(rawAdvances)) rawAdvances = [];
 
       // In case of makeup artist booking: if deposit is not confirmed received by salon, do not deduct advance so full amount is billed
-      const isUnconfirmedArtistDeposit = Boolean(initialBooking.artistId && initialBooking.depositStatus !== 'salon_received');
+      const isUnconfirmedArtistDeposit = Boolean((initialBooking.artistId || initialBooking.artistName || initialBooking.depositStatus) && initialBooking.depositStatus !== 'salon_received');
 
       let advancesSum = isUnconfirmedArtistDeposit 
         ? 0 

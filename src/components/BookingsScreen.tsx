@@ -1663,7 +1663,7 @@ export function BookingsScreen({
     // =========================================================================
     // تزامن حركة الخزينة للعربون وضبطها بدقة عند التعديل حتى لا تتضاعف المبالغ
     // =========================================================================
-    const isUnconfirmedArtistDeposit = Boolean(booking.artistId && booking.depositStatus !== 'salon_received');
+    const isUnconfirmedArtistDeposit = Boolean((booking.artistId || booking.artistName || booking.depositStatus) && booking.depositStatus !== 'salon_received');
     const validAdvances = isUnconfirmedArtistDeposit
       ? []
       : (booking.advancePayments || []).filter(a => Number(a.amount) > 0 && a.treasuryId);
@@ -3219,11 +3219,31 @@ export function BookingsScreen({
                               ) : null;
                             })()}
                             {getBookingTotalAdvances(b) > 0 && (
-                              <div className="mt-1 inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-md text-[10px] font-bold">
-                                <span>عربون: {getBookingTotalAdvances(b)}</span>
-                                <span className="text-slate-400">|</span>
-                                <span>متبقي: {Math.max(0, b.totalAmount - getBookingTotalAdvances(b))}</span>
-                              </div>
+                              (b.artistId || b.artistName || b.depositStatus) && b.depositStatus !== 'salon_received' ? (
+                                <div className="mt-1 flex flex-col items-center gap-1">
+                                  <span className="bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded-md text-[10px] font-bold" title="العربون في عهدة الميكب ارتست ولم يتم اعتماده في خزينة الصالون بعد">
+                                    عربون بالعهدة: {getBookingTotalAdvances(b)}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setConfirmDepositTarget(b);
+                                      setSelectedDepositTreasury(availableTreasuries[0]?.id || 'cash');
+                                    }}
+                                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2 py-0.5 rounded text-[10px] flex items-center gap-1 shadow-xs cursor-pointer transition-colors"
+                                    title="تأكيد استلام العربون في خزينة الصالون"
+                                  >
+                                    <Check size={11} />
+                                    <span>تأكيد استلام</span>
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="mt-1 inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-md text-[10px] font-bold">
+                                  <span>عربون: {getBookingTotalAdvances(b)}</span>
+                                  <span className="text-slate-400">|</span>
+                                  <span>متبقي: {Math.max(0, b.totalAmount - getBookingTotalAdvances(b))}</span>
+                                </div>
+                              )
                             )}
                           </td>
                           <td className="p-3.5 text-center">

@@ -99,7 +99,12 @@ export async function createHeldInvoiceFromBooking(
   }
 
   // 3. Calculate advance payment deduction
-  let rawAdvances = booking.advancePayments;
+  const isUnconfirmedArtistDeposit = Boolean(
+    (booking.artistId || booking.artistName || booking.depositStatus) && 
+    booking.depositStatus !== 'salon_received'
+  );
+
+  let rawAdvances = isUnconfirmedArtistDeposit ? [] : booking.advancePayments;
   if (typeof rawAdvances === 'string') {
     try {
       rawAdvances = JSON.parse(rawAdvances);
@@ -109,8 +114,8 @@ export async function createHeldInvoiceFromBooking(
   }
   if (!Array.isArray(rawAdvances)) rawAdvances = [];
 
-  let advanceDeduction = rawAdvances.reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0);
-  if (advanceDeduction === 0 && (booking as any).advancePayment) {
+  let advanceDeduction = isUnconfirmedArtistDeposit ? 0 : rawAdvances.reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0);
+  if (!isUnconfirmedArtistDeposit && advanceDeduction === 0 && (booking as any).advancePayment) {
     const legacyAdv = Number((booking as any).advancePayment) || 0;
     if (legacyAdv > 0) {
       advanceDeduction = legacyAdv;

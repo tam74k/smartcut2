@@ -183,7 +183,13 @@ export function QueueCallingScreen({
           } catch {}
         }
 
-        if (safeAdvances.length > 0) {
+        const isUnconfirmedArtistDeposit = Boolean(
+          (b.artistId || b.artistName || b.depositStatus) && 
+          b.depositStatus !== 'salon_received'
+        );
+        if (isUnconfirmedArtistDeposit) {
+          safeAdvances = [];
+        } else if (safeAdvances.length > 0) {
           advancePayments = safeAdvances;
           advanceDeduction = safeAdvances.reduce((sum, a) => sum + (Number(a.amount) || 0), 0);
         } else if (b.advancePayment && b.advancePayment > 0) {

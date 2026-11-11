@@ -749,6 +749,14 @@ export function DashboardScreen({
     let fromBookingsOnly = 0;
     (branchBookings || []).forEach(b => {
       if (b.status === 'cancelled') return;
+
+      // استبعاد أي عربون يخص حجوزات الميكب ارتست ما لم يتم استلامه واعتماده رسمياً بالصالون
+      const isUnconfirmedArtistDeposit = Boolean(
+        (b.artistId || b.artistName || b.depositStatus) && 
+        b.depositStatus !== 'salon_received'
+      );
+      if (isUnconfirmedArtistDeposit) return;
+
       const bCreationDate = getBookingCreationDate(b);
 
       const advances = (b.advancePayments && Array.isArray(b.advancePayments))
@@ -758,6 +766,9 @@ export function DashboardScreen({
           : []);
 
       advances.forEach((adv: any) => {
+        // استبعاد أي دفعة ما زالت في عهدة الارتست
+        if (adv.paymentMethod === 'cash_with_artist') return;
+
         // استخراج تاريخ سداد الدفعة المقدمة الفعلي
         let advPaymentDate = '';
         if (adv.paymentDate || (adv as any).payment_date) {
@@ -875,7 +886,17 @@ export function DashboardScreen({
 
   const shiftReservationsTotalAdvances = useMemo(() => {
     return currentShiftReservations.reduce((sum, b) => {
-      const advs = b.advancePayments?.reduce((s, p) => s + (Number(p.amount) || 0), 0) || 0;
+      // استبعاد أي عربون لم يتم استلامه واعتماده رسمياً بالصالون
+      const isUnconfirmedArtistDeposit = Boolean(
+        (b.artistId || b.artistName || b.depositStatus) && 
+        b.depositStatus !== 'salon_received'
+      );
+      if (isUnconfirmedArtistDeposit) return sum;
+
+      const advs = b.advancePayments?.reduce((s, p) => {
+        if (p.paymentMethod === 'cash_with_artist') return s;
+        return s + (Number(p.amount) || 0);
+      }, 0) || 0;
       return sum + advs;
     }, 0);
   }, [currentShiftReservations]);
@@ -2257,9 +2278,19 @@ export function DashboardScreen({
                                 {Number(booking.totalAmount || 0).toFixed(2)} {settings.currency}
                               </span>
                               {totalAdv > 0 && (
-                                <span className="text-[10px] font-bold text-teal-700 bg-teal-50 px-1.5 py-0.2 rounded font-mono">
-                                  عربون: {totalAdv.toFixed(2)}
-                                </span>
+                                booking.depositStatus === 'salon_received' ? (
+                                  <span className="text-[10px] font-bold text-teal-700 bg-teal-50 border border-teal-200 px-1.5 py-0.2 rounded font-mono">
+                                    عربون مستلم: {totalAdv.toFixed(2)}
+                                  </span>
+                                ) : (booking.artistId || booking.artistName || booking.depositStatus) ? (
+                                  <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded font-mono" title="العربون في عهدة الميكب ارتست ولم يدخل خزينة الصالون بعد">
+                                    عربون بالعهدة: {totalAdv.toFixed(2)} (معلق)
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] font-bold text-teal-700 bg-teal-50 px-1.5 py-0.2 rounded font-mono">
+                                    عربون: {totalAdv.toFixed(2)}
+                                  </span>
+                                )
                               )}
                             </div>
                           </td>

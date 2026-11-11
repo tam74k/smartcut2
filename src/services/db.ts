@@ -4,6 +4,7 @@ import { dataUrlToBlob } from '../utils/imageUpload';
 import { HeldInvoice, MakeupArtist, Booking, Transaction } from '../types';
 import { sealUserRecord } from '../utils/securityCrypto';
 import { localSalonTimeToUtcIso, utcToSalonLocal, getSalonTimezone } from '../utils/timezone';
+import { getActiveShiftDate } from '../utils/shiftDate';
 
 // ============================================================
 // SmartCut DB Service — طبقة البيانات الموحدة
@@ -2829,6 +2830,9 @@ export const DB = {
       // Clean up any old duplicate transactions for this booking in DB first
       await DB.deleteTransactionsByBookingId(booking.id, booking.bookingCode);
 
+      const activeShift = getActiveShiftDate(undefined, booking.branchId);
+      const effectiveShiftDate = activeShift || nowIso.split('T')[0];
+
       // Create official transaction in salon treasury
       const advTrx: Transaction = {
         id: `TRX-ADV-MUA-${booking.id}-${Date.now()}`,
@@ -2839,6 +2843,8 @@ export const DB = {
         description: `عربون حجز عروسة (#${booking.bookingCode || booking.id} - العميل: ${booking.clientName}) مستلم من الميكب ارتست: ${booking.artistName || 'غير محدد'}`,
         treasury: treasuryId,
         bookingId: booking.id,
+        branchId: booking.branchId || undefined,
+        shiftDate: effectiveShiftDate,
         createdBy: receivedBy,
         userName: receivedBy,
         salonId: validSalonId
