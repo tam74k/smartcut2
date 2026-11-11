@@ -56,6 +56,7 @@ import { TursoCloudSyncModal } from './components/TursoCloudSyncModal';
 import { InitialSalonSetupModal, DEFAULT_INITIAL_TREASURIES } from './components/InitialSalonSetupModal';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { SubscriptionBanner } from './components/SubscriptionBanner';
+import { ResetPasswordScreen } from './components/ResetPasswordScreen';
 import { ClosingReportReceipt, isZeroingOrClosingTrx } from './components/ClosingReportReceipt';
 import { resolveMainTreasury, isMatchingTreasury } from './utils/treasury';
 import { handlePrintReceipt, directPrintHtml } from './utils/print';
@@ -175,10 +176,26 @@ export default function App() {
     return false;
   };
 
+  // Dedicated Route for Reset Password (/reset-password, ?token=..., etc.)
+  const isResetPasswordQuery = () => {
+    if (typeof window === 'undefined') return false;
+    const path = window.location.pathname.toLowerCase();
+    const hash = window.location.hash.toLowerCase();
+    const search = window.location.search.toLowerCase();
+    return (
+      path.includes('/reset-password') ||
+      hash.includes('reset-password') ||
+      search.includes('reset_token=') ||
+      search.includes('resettoken=') ||
+      (search.includes('token=') && !search.includes('portal='))
+    );
+  };
+
   // Dedicated Route for Standalone Online Client Reservation Portal (/reservation, /booking, or ?salonCode)
   const isReservationQuery = () => {
     if (typeof window === 'undefined') return false;
-    // CRITICAL: Kiosk, Barber and Artist routes must NOT be intercepted by reservation portal!
+    // CRITICAL: Reset password, Kiosk, Barber and Artist routes must NOT be intercepted by reservation portal!
+    if (isResetPasswordQuery()) return false;
     if (isKioskQuery()) return false;
     if (isBarberQuery()) return false;
     if (isArtistQuery()) return false;
@@ -194,6 +211,7 @@ export default function App() {
     return false;
   };
 
+  const [isResetPasswordRoute, setIsResetPasswordRoute] = useState<boolean>(isResetPasswordQuery);
   const [isBarberRoute, setIsBarberRoute] = useState<boolean>(isBarberQuery);
   const [isReservationRoute, setIsReservationRoute] = useState<boolean>(isReservationQuery);
   const [isKioskRoute, setIsKioskRoute] = useState<boolean>(isKioskQuery);
@@ -201,6 +219,7 @@ export default function App() {
 
   useEffect(() => {
     const checkRoutes = () => {
+      setIsResetPasswordRoute(isResetPasswordQuery());
       setIsBarberRoute(isBarberQuery());
       setIsReservationRoute(isReservationQuery());
       setIsKioskRoute(isKioskQuery());
@@ -4080,6 +4099,20 @@ export default function App() {
             localStorage.removeItem('smartcut_registered_salon_code');
             localStorage.removeItem('smartcut_kiosk_branch_id');
             localStorage.removeItem('smartcut_kiosk_is_locked');
+            window.history.replaceState({}, '', '/');
+          } catch {}
+        }}
+      />
+    );
+  }
+
+  // 3C. STANDALONE PASSWORD RESET ROUTE (/reset-password or ?token=...)
+  if (isResetPasswordRoute) {
+    return (
+      <ResetPasswordScreen 
+        onNavigateToLogin={() => {
+          setIsResetPasswordRoute(false);
+          try {
             window.history.replaceState({}, '', '/');
           } catch {}
         }}

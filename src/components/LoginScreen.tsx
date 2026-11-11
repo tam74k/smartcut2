@@ -32,6 +32,7 @@ import { AppUser, UserRole, AppSettings, Branch } from '../types';
 import { SubscriptionService, COUNTRY_CURRENCY_MAP } from '../services/subscriptionService';
 import { DB } from '../services/db';
 import { EvolutionApiService } from '../services/evolutionApiService';
+import { PasswordResetService } from '../services/passwordResetService';
 import { DEFAULT_INITIAL_TREASURIES } from './InitialSalonSetupModal';
 
 interface LoginScreenProps {
@@ -85,6 +86,32 @@ export function LoginScreen({ onLoginSuccess, settings, onOpenSaaSAdmin }: Login
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [isSendingReset, setIsSendingReset] = useState(false);
+  const [resetMessage, setResetMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const handleRequestPasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!forgotEmail.trim()) {
+      setResetMessage({ type: 'error', text: 'يرجى إدخال البريد الإلكتروني المسجل لحسابك.' });
+      return;
+    }
+
+    setIsSendingReset(true);
+    setResetMessage(null);
+    try {
+      const res = await PasswordResetService.requestPasswordReset(forgotEmail);
+      if (res.success) {
+        setResetMessage({ type: 'success', text: res.message });
+      } else {
+        setResetMessage({ type: 'error', text: res.message });
+      }
+    } catch (err: any) {
+      setResetMessage({ type: 'error', text: err.message || 'حدث خطأ أثناء محاولة إرسال رابط الاستعادة.' });
+    } finally {
+      setIsSendingReset(false);
+    }
+  };
 
   // Programmer Master Login State
   const [progUsername, setProgUsername] = useState('programmer');
@@ -1017,17 +1044,100 @@ export function LoginScreen({ onLoginSuccess, settings, onOpenSaaSAdmin }: Login
       {/* Forgot Password Modal */}
       {showForgotModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl text-center">
-            <h3 className="font-bold text-base text-slate-800 mb-2">استعادة كلمة المرور</h3>
-            <p className="text-xs text-slate-600 mb-4 leading-relaxed">
-              يرجى التواصل مع مدير النظام (Admin) أو الدخول بحسابك المسجل.
-            </p>
-            <button
-              onClick={() => setShowForgotModal(false)}
-              className="w-full bg-slate-800 text-white font-bold py-2 rounded-xl text-xs hover:bg-slate-900 transition-colors"
-            >
-              حسناً، فهمت
-            </button>
+          <div className="bg-white rounded-3xl p-6 sm:p-7 max-w-md w-full shadow-2xl border border-slate-100 text-right">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                <KeyRound size={20} />
+              </div>
+              <div>
+                <h3 className="font-bold text-base text-slate-800">استعادة كلمة المرور</h3>
+                <p className="text-[11px] text-slate-500">سيتم إرسال رابط تعيين كلمة مرور جديدة إلى بريدك الإلكتروني</p>
+              </div>
+            </div>
+
+            {resetMessage && (
+              <div
+                className={`p-3.5 rounded-xl text-xs font-semibold mb-4 leading-relaxed flex items-start gap-2 ${
+                  resetMessage.type === 'success'
+                    ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+                    : 'bg-rose-50 border border-rose-200 text-rose-700'
+                }`}
+              >
+                {resetMessage.type === 'success' ? (
+                  <CheckCircle2 size={16} className="text-emerald-600 shrink-0 mt-0.5" />
+                ) : (
+                  <AlertCircle size={16} className="text-rose-500 shrink-0 mt-0.5" />
+                )}
+                <span>{resetMessage.text}</span>
+              </div>
+            )}
+
+            {resetMessage?.type === 'success' ? (
+              <div className="space-y-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowForgotModal(false);
+                    setResetMessage(null);
+                    setForgotEmail('');
+                  }}
+                  className="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-2.5 rounded-xl text-xs transition-colors"
+                >
+                  العودة لتسجيل الدخول
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleRequestPasswordReset} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    البريد الإلكتروني المسجل في حسابك
+                  </label>
+                  <div className="relative">
+                    <Mail className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <input
+                      type="email"
+                      value={forgotEmail}
+                      onChange={(e) => setForgotEmail(e.target.value)}
+                      placeholder="name@example.com"
+                      disabled={isSendingReset}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-10 pl-3.5 py-2.5 text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all"
+                      dir="ltr"
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
+                    ملاحظة أمان: لن يتم إرسال الرابط إلا إذا كان الحساب نشطاً في المنظومة وغير معطل.
+                  </p>
+                </div>
+
+                <div className="flex gap-2 pt-2">
+                  <button
+                    type="submit"
+                    disabled={isSendingReset || !forgotEmail.trim()}
+                    className="flex-1 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-700 hover:to-teal-600 text-white font-bold py-2.5 rounded-xl shadow-md text-xs flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                  >
+                    {isSendingReset ? (
+                      <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <>
+                        <span>إرسال رابط الاستعادة</span>
+                        <Send size={14} />
+                      </>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowForgotModal(false);
+                      setResetMessage(null);
+                    }}
+                    disabled={isSendingReset}
+                    className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors"
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}
