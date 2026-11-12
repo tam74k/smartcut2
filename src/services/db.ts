@@ -3658,6 +3658,7 @@ export const DB = {
       remaining: p.remaining ?? 0,
       treasury_id: p.treasuryId || null,
       payment_method: p.paymentMethod || p.payment_method || 'cash',
+      status: p.status || (p.isDraft ? 'draft' : 'completed'),
       notes: p.notes || null,
       items: p.items || []
     };
@@ -3667,9 +3668,15 @@ export const DB = {
       const retry = await client.from('purchase_invoices').upsert(snap, { onConflict: 'id' });
       error = retry.error;
     }
+    if (error && (error.message?.includes('status') || error.message?.includes('column'))) {
+      delete snap.status;
+      const retry = await client.from('purchase_invoices').upsert(snap, { onConflict: 'id' });
+      error = retry.error;
+    }
     if (error) { console.error('DB.savePurchaseInvoice error:', error.message); return null; }
     return p;
   },
+  async deletePurchaseInvoice(id: string) { return DB.remove('purchase_invoices', id); },
 
   // ---- مدفوعات الموردين ----
   async fetchSupplierPayments(salonId?: string) { return DB.fetchAll<any>('supplier_payments', undefined, salonId); },

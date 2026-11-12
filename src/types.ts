@@ -1728,6 +1728,8 @@ export interface PurchaseInvoice {
   treasuryId: string;
   paymentMethod?: string;
   notes?: string;
+  status?: 'completed' | 'draft' | 'held';
+  isDraft?: boolean;
 }
 
 export interface SupplierPayment {

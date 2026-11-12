@@ -86,6 +86,7 @@ export function DashboardChartsSection({
 
   const filteredPurchases = useMemo(() => {
     return purchaseInvoices.filter(p => {
+      if (p.status === 'draft' || p.status === 'held' || p.isDraft) return false;
       const d = p.date.split('T')[0];
       return d >= startDate && d <= endDate;
     });

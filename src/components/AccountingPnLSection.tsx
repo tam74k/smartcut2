@@ -138,6 +138,7 @@ export function AccountingPnLSection({
 
     // 2. Cost of Goods Sold (COGS / المشتريات ومستلزمات التشغيل)
     const periodPurchases = (purchases || []).filter(p => {
+      if (p.status === 'draft' || p.status === 'held' || p.isDraft) return false;
       const d = (p.invoiceDate || p.date || '').split('T')[0];
       return d >= fromDate && d <= toDate && filterByBranch(p.branchId);
     });

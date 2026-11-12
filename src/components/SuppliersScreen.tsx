@@ -350,7 +350,7 @@ export function SuppliersScreen({
                   {/* Will calculate movements */}
                   {(() => {
                     const movements = [];
-                    purchaseInvoices.filter(i => i.supplierId === statementSupplier.id && (!statementFrom || i.date >= statementFrom) && (!statementTo || i.date <= statementTo)).forEach(inv => {
+                    purchaseInvoices.filter(i => i.supplierId === statementSupplier.id && i.status !== 'draft' && i.status !== 'held' && !i.isDraft && (!statementFrom || i.date >= statementFrom) && (!statementTo || i.date <= statementTo)).forEach(inv => {
                       movements.push({ date: inv.date, type: 'purchase', desc: 'فاتورة مشتريات رقم ' + inv.id, in: 0, out: inv.total });
                       if (inv.paid > 0) {
                         movements.push({ date: inv.date, type: 'payment', desc: 'سداد جزئي للفاتورة رقم ' + inv.id, in: inv.paid, out: 0 });
