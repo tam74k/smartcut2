@@ -3530,6 +3530,7 @@ export default function App() {
           activeBranchId={activeBranchId}
           branches={branches}
           currentUser={currentUser}
+          shiftData={shiftData}
           products={branchProducts}
           setProducts={handleSetProducts}
           setItemMovements={handleSetItemMovements}

@@ -28,6 +28,11 @@ export const NEW_PERMISSIONS: Record<string, { label: string; badgeClass: string
     badgeClass: 'bg-amber-100 text-amber-900 border-amber-300 font-extrabold',
     desc: 'السماح بإظهار واستخدام زر تعديل الفاتورة في نقطة البيع'
   },
+  view_past_invoices: {
+    label: 'جديد: استعراض فواتير الأيام السابقة',
+    badgeClass: 'bg-teal-100 text-teal-900 border-teal-300 font-extrabold',
+    desc: 'السماح بالاطلاع على فواتير الأيام السابقة وتغيير التواريخ في سجل الفواتير'
+  },
   manage_bookings_edit: {
     label: 'جديد: تعديل الحجوزات والمواعيد',
     badgeClass: 'bg-blue-100 text-blue-900 border-blue-300 font-extrabold',
@@ -131,6 +136,7 @@ export const SYSTEM_MODULES: SystemModule[] = [
       'sales_return',
       'manage_invoices_edit',
       'manage_invoices_delete',
+      'view_past_invoices',
       'manage_queue',
       'manage_booking_settings',
       'manage_bookings_edit',

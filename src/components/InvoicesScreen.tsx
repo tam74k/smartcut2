@@ -1,10 +1,10 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { AppSettings, Invoice, Transaction, Client, Branch, Product, Employee, ServiceItem, SalesReturn } from '../types';
 import { 
   Search, Filter, Printer, XCircle, Edit, CheckCircle, ChevronDown, 
   ChevronUp, Image as ImageIcon, Wrench, Eye, X, Trash2, RotateCcw,
   FileSpreadsheet, Hourglass, Gift, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
-  MessageCircle, Copy, Check
+  MessageCircle, Copy, Check, Lock, ArrowLeft, ArrowRight
 } from 'lucide-react';
 import { DB } from '../services/db';
 import { InvoicesImportModal } from './InvoicesImportModal';
@@ -51,6 +51,7 @@ export function InvoicesScreen({
   onNavigateToReturns,
   onNavigateToDeferred,
   onEditInvoiceInPOS,
+  shiftData,
 }: { 
   settings: AppSettings;
   invoices: Invoice[];
@@ -74,12 +75,79 @@ export function InvoicesScreen({
   onNavigateToReturns?: () => void;
   onNavigateToDeferred?: () => void;
   onEditInvoiceInPOS?: (invoice: Invoice) => void;
+  shiftData?: { isOpen: boolean; date: string; id?: string; shiftCode?: string; code?: string };
 }) {
   const [showImportModal, setShowImportModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [branchFilter, setBranchFilter] = useState<string>(activeBranchId || 'all');
+
+  // مرجع التمرير الأفقي للجدول
+  const tableScrollRef = useRef<HTMLDivElement>(null);
+
+  // هل المستخدم كاشير مقيد (لا يملك صلاحية رؤية الأيام السابقة أو صلاحيات الإدارة/المالك/المبرمج)؟
+  const isCashierRestricted = useMemo(() => {
+    if (!currentUser) return false;
+    // استثناء صريح للإدارة والمالك والمبرمج ومن يملك صلاحية كاملة أو صلاحية الأيام السابقة
+    if (
+      currentUser.role === 'admin' || 
+      currentUser.role === 'owner' || 
+      currentUser.role === 'programmer' ||
+      currentUser.actions?.includes('*') ||
+      currentUser.actions?.includes('view_past_invoices')
+    ) {
+      return false;
+    }
+    // الكاشير وأي دور آخر مقيد بتاريخ اليوم / الوردية المفتوحة
+    return true;
+  }, [currentUser]);
+
+  // تحديد تاريخ اليوم وتاريخ الوردية المفتوحة
+  const getTodayLocalDateStr = (): string => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  };
+
+  const activeShiftDate = useMemo(() => {
+    if (shiftData?.isOpen && shiftData?.date) {
+      return shiftData.date;
+    }
+    return getTodayLocalDateStr();
+  }, [shiftData]);
+
+  // قفل التواريخ تلقائياً للكاشير على تاريخ الوردية المفتوحة فقط
+  useEffect(() => {
+    if (isCashierRestricted) {
+      setDateFrom(activeShiftDate);
+      setDateTo(activeShiftDate);
+    }
+  }, [isCashierRestricted, activeShiftDate]);
+
+  // دوال التنقل الأفقي السريع في أعمدة الجدول
+  const scrollTableLeft = () => {
+    if (tableScrollRef.current) {
+      tableScrollRef.current.scrollBy({ left: -320, behavior: 'smooth' });
+    }
+  };
+
+  const scrollTableRight = () => {
+    if (tableScrollRef.current) {
+      tableScrollRef.current.scrollBy({ left: 320, behavior: 'smooth' });
+    }
+  };
+
+  const scrollToActions = () => {
+    if (tableScrollRef.current) {
+      tableScrollRef.current.scrollTo({ left: -9999, behavior: 'smooth' });
+    }
+  };
+
+  const scrollToStart = () => {
+    if (tableScrollRef.current) {
+      tableScrollRef.current.scrollTo({ left: 9999, behavior: 'smooth' });
+    }
+  };
 
   useEffect(() => {
     if (activeBranchId) {
@@ -501,15 +569,22 @@ export function InvoicesScreen({
       if (!matchesActiveBranch(inv.branchId, (inv as any).branchCode)) return false;
 
       // Date filter
-      const invDateStr = getInvoiceLocalDateStr(inv);
-      const invSettledDateStr = ((inv as any).settledAt || '').split('T')[0];
-      if (dateFrom) {
-        const matchesFrom = invDateStr >= dateFrom || (invSettledDateStr && invSettledDateStr >= dateFrom);
-        if (!matchesFrom) return false;
-      }
-      if (dateTo) {
-        const matchesTo = invDateStr <= dateTo || (invSettledDateStr && invSettledDateStr <= dateTo);
-        if (!matchesTo) return false;
+      if (isCashierRestricted) {
+        // قيد الكاشير الصارم: يرى فقط فواتير تاريخ الوردية المفتوحة ولا تظهر له أي فواتير لأيام سابقة
+        const invDateStr = getInvoiceLocalDateStr(inv);
+        if (invDateStr !== activeShiftDate) return false;
+      } else {
+        // فحص التواريخ للإدارة والمالك
+        const invDateStr = getInvoiceLocalDateStr(inv);
+        const invSettledDateStr = ((inv as any).settledAt || '').split('T')[0];
+        if (dateFrom) {
+          const matchesFrom = invDateStr >= dateFrom || (invSettledDateStr && invSettledDateStr >= dateFrom);
+          if (!matchesFrom) return false;
+        }
+        if (dateTo) {
+          const matchesTo = invDateStr <= dateTo || (invSettledDateStr && invSettledDateStr <= dateTo);
+          if (!matchesTo) return false;
+        }
       }
       
       // Status filter
@@ -551,7 +626,7 @@ export function InvoicesScreen({
       
       return true;
     }).sort((a, b) => parseDbDateTime(b.date).getTime() - parseDbDateTime(a.date).getTime());
-  }, [invoices, dateFrom, dateTo, statusFilter, paymentFilter, searchQuery, activeBranchId, isMainBranch, branchFilter, salesReturns]);
+  }, [invoices, dateFrom, dateTo, statusFilter, paymentFilter, searchQuery, activeBranchId, isMainBranch, branchFilter, salesReturns, isCashierRestricted, activeShiftDate]);
 
   // Pagination calculation
   const totalInvoices = filteredInvoices.length;
@@ -563,13 +638,21 @@ export function InvoicesScreen({
   }, [filteredInvoices, safeCurrentPage, pageSize]);
 
   return (
-    <div className="p-8 w-full h-full flex flex-col bg-slate-50">
-      <div className="flex justify-between items-center mb-6">
+    <div className="p-3 sm:p-5 lg:p-6 w-full h-full flex flex-col bg-slate-50 min-h-0 overflow-hidden">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4 shrink-0">
         <div>
-          <h2 className="text-2xl font-bold text-slate-800">إدارة الفواتير</h2>
-          <p className="text-slate-500 text-sm mt-1">استعراض وتصفية فواتير النظام</p>
+          <div className="flex items-center gap-2.5">
+            <h2 className="text-xl sm:text-2xl font-black text-slate-800">إدارة الفواتير</h2>
+            {isCashierRestricted && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-100 text-amber-900 border border-amber-300 text-xs font-bold shadow-2xs">
+                <Lock size={12} className="text-amber-700" />
+                <span>فواتير وردية اليوم: {activeShiftDate}</span>
+              </span>
+            )}
+          </div>
+          <p className="text-slate-500 text-xs sm:text-sm mt-0.5">استعراض وتصفية فواتير النظام</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
           <div className="relative">
             <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
             <input 
@@ -577,59 +660,66 @@ export function InvoicesScreen({
               placeholder="بحث بالرقم، الاسم، الجوال..." 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="bg-white border border-slate-200 rounded-lg pr-10 pl-4 py-2 text-sm focus:outline-none focus:border-primary w-64 shadow-sm" 
+              className="bg-white border border-slate-200 rounded-xl pr-10 pl-4 py-2 text-xs sm:text-sm focus:outline-none focus:border-primary w-56 sm:w-64 shadow-2xs" 
             />
           </div>
           <button 
             onClick={() => setShowFilters(!showFilters)}
-            className={`bg-white border border-slate-200 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-slate-50 shadow-sm transition-colors cursor-pointer ${showFilters ? 'text-primary border-primary/50' : 'text-slate-700'}`}
+            className={`bg-white border border-slate-200 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 hover:bg-slate-50 shadow-2xs transition-colors cursor-pointer ${showFilters ? 'text-primary border-primary/50' : 'text-slate-700'}`}
           >
-            <Filter size={16} /> تصفية
-            {showFilters ? <ChevronUp size={16}/> : <ChevronDown size={16}/>}
+            <Filter size={15} /> 
+            <span>تصفية</span>
+            {showFilters ? <ChevronUp size={15}/> : <ChevronDown size={15}/>}
           </button>
 
           {onNavigateToReturns && (
             <button
               onClick={onNavigateToReturns}
-              className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-xs transition-all cursor-pointer active:scale-95"
+              className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer active:scale-95"
               title="الانتقال إلى سجل وإدارة مرتجعات المبيعات"
             >
-              <RotateCcw size={16} />
-              <span>سجل المرتجعات ({salesReturns.length})</span>
+              <RotateCcw size={15} />
+              <span>المرتجعات ({salesReturns.length})</span>
             </button>
           )}
 
           {onNavigateToDeferred && (
             <button
               onClick={onNavigateToDeferred}
-              className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-xs transition-all cursor-pointer active:scale-95"
+              className="bg-amber-500 hover:bg-amber-600 text-white px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer active:scale-95"
               title="الانتقال إلى شاشة إدارة الفواتير الآجلة والذمم والمطالبات"
             >
-              <Hourglass size={16} />
-              <span>الفواتير الآجلة والذمم ({invoices.filter(i => (i.status === 'deferred' || i.status === 'partially_paid' || i.status === 'unpaid' || ((Number(i.remaining) > 0 || Number(i.paid || 0) < Number(i.total || 0) - 0.01) && i.status !== 'completed' && i.status !== 'cancelled' && i.status !== 'bad_debt'))).length})</span>
+              <Hourglass size={15} />
+              <span>الفواتير الآجلة ({invoices.filter(i => (i.status === 'deferred' || i.status === 'partially_paid' || i.status === 'unpaid' || ((Number(i.remaining) > 0 || Number(i.paid || 0) < Number(i.total || 0) - 0.01) && i.status !== 'completed' && i.status !== 'cancelled' && i.status !== 'bad_debt'))).length})</span>
             </button>
           )}
 
           <button 
             onClick={() => setShowImportModal(true)}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-xs transition-all cursor-pointer active:scale-95"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer active:scale-95"
             title="سحب واستيراد فواتير سابقة من ملف إكسل .xlsx مكون من ورقتي عمل"
           >
-            <FileSpreadsheet size={16} />
+            <FileSpreadsheet size={15} />
             <span>سحب من إكسل</span>
           </button>
         </div>
       </div>
 
       {showFilters && (
-        <div className={`bg-white p-4 rounded-xl border border-slate-200 shadow-sm mb-6 grid grid-cols-1 ${branches && branches.length > 1 ? 'md:grid-cols-5' : 'md:grid-cols-4'} gap-4`}>
+        <div className={`bg-white p-4 rounded-2xl border border-slate-200 shadow-sm mb-4 grid grid-cols-1 ${branches && branches.length > 1 ? 'md:grid-cols-5' : 'md:grid-cols-4'} gap-3.5 shrink-0`}>
+          {isCashierRestricted && (
+            <div className={`col-span-1 ${branches && branches.length > 1 ? 'md:col-span-5' : 'md:col-span-4'} bg-amber-50 border border-amber-200 rounded-xl p-2.5 flex items-center gap-2 text-amber-900 text-xs font-bold`}>
+              <Lock size={15} className="text-amber-600 shrink-0" />
+              <span>تنبيه صلاحيات الكاشير: استعراض الفواتير مقيد بتاريخ الوردية المفتوحة الحالية ({activeShiftDate}) فقط، ولا يتاح تعديل التاريخ أو عرض الأيام السابقة.</span>
+            </div>
+          )}
           {branches && branches.length > 1 && (
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">الفرع</label>
               <select 
                 value={branchFilter} 
                 onChange={e => setBranchFilter(e.target.value)} 
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary font-medium"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-primary"
               >
                 <option value="all">جميع الفروع ({invoices.length})</option>
                 {branches.map(b => (
@@ -639,16 +729,56 @@ export function InvoicesScreen({
             </div>
           )}
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">من تاريخ</label>
-            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary" />
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-bold text-slate-700">من تاريخ</label>
+              {isCashierRestricted && (
+                <span className="text-[10px] text-amber-700 font-bold flex items-center gap-0.5">
+                  <Lock size={10} /> مقيد بالوردية
+                </span>
+              )}
+            </div>
+            <input 
+              type="date" 
+              value={isCashierRestricted ? activeShiftDate : dateFrom} 
+              onChange={e => {
+                if (isCashierRestricted) return;
+                setDateFrom(e.target.value);
+              }} 
+              disabled={isCashierRestricted}
+              className={`w-full border rounded-xl px-3 py-2 text-xs font-bold outline-none transition-all ${
+                isCashierRestricted 
+                  ? 'bg-amber-50/70 border-amber-200 text-amber-900 cursor-not-allowed font-mono' 
+                  : 'bg-slate-50 border-slate-200 focus:border-primary'
+              }`} 
+            />
           </div>
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">إلى تاريخ</label>
-            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary" />
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-bold text-slate-700">إلى تاريخ</label>
+              {isCashierRestricted && (
+                <span className="text-[10px] text-amber-700 font-bold flex items-center gap-0.5">
+                  <Lock size={10} /> مقيد بالوردية
+                </span>
+              )}
+            </div>
+            <input 
+              type="date" 
+              value={isCashierRestricted ? activeShiftDate : dateTo} 
+              onChange={e => {
+                if (isCashierRestricted) return;
+                setDateTo(e.target.value);
+              }} 
+              disabled={isCashierRestricted}
+              className={`w-full border rounded-xl px-3 py-2 text-xs font-bold outline-none transition-all ${
+                isCashierRestricted 
+                  ? 'bg-amber-50/70 border-amber-200 text-amber-900 cursor-not-allowed font-mono' 
+                  : 'bg-slate-50 border-slate-200 focus:border-primary'
+              }`} 
+            />
           </div>
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">حالة الفاتورة</label>
-            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)} className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary font-bold">
+            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs outline-none focus:border-primary font-bold">
               <option value="all">الكل</option>
               <option value="completed">مكتملة ومسددة</option>
               <option value="wasel">واصل (خدمات مجانية)</option>
@@ -662,7 +792,7 @@ export function InvoicesScreen({
           </div>
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">طريقة الدفع</label>
-            <select value={paymentFilter} onChange={e => setPaymentFilter(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary font-bold">
+            <select value={paymentFilter} onChange={e => setPaymentFilter(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs outline-none focus:border-primary font-bold">
               <option value="all">الكل</option>
               <option value="wasel_free">واصل (خدمات مجانية)</option>
               {settings.treasuries.map(t => (
@@ -673,27 +803,75 @@ export function InvoicesScreen({
         </div>
       )}
 
-      <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-        <div className="overflow-x-auto flex-1">
-          <table className="w-full text-right text-sm">
-            <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200 sticky top-0 z-10">
+      {/* Table Container with Increased Height & Horizontal Scroll */}
+      <div className="flex-1 min-h-[520px] lg:min-h-[640px] bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col min-h-0">
+        {/* Horizontal Navigation Toolbar */}
+        <div className="flex flex-wrap items-center justify-between gap-2.5 px-4 py-2 bg-slate-100/90 border-b border-slate-200 text-xs font-bold text-slate-700 shrink-0">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+            <span className="text-slate-500 text-[11px] sm:text-xs">التنقل السريع بأعمدة الجدول:</span>
+            <button
+              type="button"
+              onClick={scrollToStart}
+              className="px-2.5 py-1 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg shadow-2xs flex items-center gap-1 transition-all active:scale-95 text-slate-700 hover:text-primary cursor-pointer text-xs"
+              title="الانتقال إلى بداية الجدول (اليمين)"
+            >
+              <span>بداية الجدول</span>
+              <ArrowRight size={13} />
+            </button>
+            <button
+              type="button"
+              onClick={scrollTableRight}
+              className="p-1.5 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg shadow-2xs flex items-center justify-center transition-all active:scale-95 text-slate-700 hover:text-primary cursor-pointer"
+              title="تمرير يمين"
+            >
+              <ChevronRight size={16} />
+            </button>
+            <button
+              type="button"
+              onClick={scrollTableLeft}
+              className="p-1.5 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg shadow-2xs flex items-center justify-center transition-all active:scale-95 text-slate-700 hover:text-primary cursor-pointer"
+              title="تمرير يسار"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <button
+              type="button"
+              onClick={scrollToActions}
+              className="px-3 py-1 bg-gradient-to-r from-amber-100 to-amber-50 hover:from-amber-200 hover:to-amber-100 border border-amber-300 text-amber-900 rounded-lg shadow-2xs flex items-center gap-1 transition-all active:scale-95 cursor-pointer font-black text-xs"
+              title="الانتقال المباشر لليسار إلى عمود الإجراءات والتعديل والطباعة"
+            >
+              <ArrowLeft size={13} />
+              <span>الانتقال لعمود الإجراءات والتعديل</span>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-slate-500 text-[11px]">
+              إجمالي الفواتير المعروضة: <span className="font-mono font-black text-slate-900 bg-white px-2 py-0.5 rounded-md border border-slate-200">{filteredInvoices.length}</span>
+            </span>
+          </div>
+        </div>
+
+        <div ref={tableScrollRef} className="overflow-x-auto overflow-y-auto flex-1 min-h-0 custom-scrollbar scroll-smooth">
+          <table className="w-full text-right text-xs sm:text-sm min-w-[1100px]">
+            <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200 sticky top-0 z-10 shadow-2xs">
               <tr>
-                <th className="px-6 py-4">رقم الفاتورة</th>
-                <th className="px-6 py-4">التاريخ والوقت</th>
-                <th className="px-6 py-4">العميل</th>
-                <th className="px-6 py-4">الخدمات والموظف</th>
-                <th className="px-6 py-4 text-center">طريقة الدفع</th>
-                <th className="px-6 py-4 text-center">الخصم</th>
-                <th className="px-6 py-4 text-center">المسدد كاش باك</th>
-                <th className="px-6 py-4">الإجمالي</th>
-                <th className="px-6 py-4 text-center">الحالة</th>
-                <th className="px-6 py-4 text-center">إجراءات</th>
+                <th className="px-4 sm:px-6 py-3 whitespace-nowrap">رقم الفاتورة</th>
+                <th className="px-4 sm:px-6 py-3 whitespace-nowrap">التاريخ والوقت</th>
+                <th className="px-4 sm:px-6 py-3 whitespace-nowrap">العميل</th>
+                <th className="px-4 sm:px-6 py-3 whitespace-nowrap">الخدمات والموظف</th>
+                <th className="px-4 sm:px-6 py-3 text-center whitespace-nowrap">طريقة الدفع</th>
+                <th className="px-4 sm:px-6 py-3 text-center whitespace-nowrap">الخصم</th>
+                <th className="px-4 sm:px-6 py-3 text-center whitespace-nowrap">المسدد كاش باك</th>
+                <th className="px-4 sm:px-6 py-3 whitespace-nowrap">الإجمالي</th>
+                <th className="px-4 sm:px-6 py-3 text-center whitespace-nowrap">الحالة</th>
+                <th className="px-4 sm:px-6 py-3 text-center whitespace-nowrap bg-slate-100/90 sticky left-0 z-10">إجراءات</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {paginatedInvoices.map((inv) => (
                 <tr key={inv.id} className={`transition-colors ${inv.status === 'cancelled' ? 'bg-red-50/50' : 'hover:bg-slate-50/50'}`}>
-                  <td className="px-6 py-4 font-bold text-slate-800">
+                  <td className="px-4 sm:px-6 py-2.5 sm:py-3 font-bold text-slate-800">
                     <div>{inv.id}</div>
                     {(inv.createdBy || inv.cashierName) && (
                       <div className="text-[10px] text-slate-400 font-normal">
@@ -706,8 +884,8 @@ export function InvoicesScreen({
                       </div>
                     )}
                   </td>
-                  <td className="px-6 py-4 text-slate-600 font-medium whitespace-nowrap">{formatInvoiceDateTimeDisplay(inv.date, 'ar-EG')}</td>
-                  <td className="px-6 py-4">
+                  <td className="px-4 sm:px-6 py-2.5 sm:py-3 text-slate-600 font-medium whitespace-nowrap">{formatInvoiceDateTimeDisplay(inv.date, 'ar-EG')}</td>
+                  <td className="px-4 sm:px-6 py-2.5 sm:py-3">
                     <div className="font-bold text-primary">{inv.clientName}</div>
                     {inv.clientPhone && (
                       <div className="flex items-center gap-1.5 text-xs text-slate-500 font-mono mt-0.5">
@@ -746,7 +924,7 @@ export function InvoicesScreen({
                       </span>
                     )}
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-4 sm:px-6 py-2.5 sm:py-3">
                     <div className="flex flex-col gap-1">
                       {inv.items.map((item, idx) => (
                         <div key={idx} className="text-xs">
@@ -757,7 +935,7 @@ export function InvoicesScreen({
                       ))}
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-center text-xs font-bold text-slate-600">
+                  <td className="px-4 sm:px-6 py-2.5 sm:py-3 text-center text-xs font-bold text-slate-600">
                     {inv.isWaselInvoice || inv.paymentMethod === 'wasel_free' || inv.paymentMethods?.some(pm => pm.treasuryId === 'wasel_free') ? (
                       <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-900 font-black px-2.5 py-1 rounded-full border border-amber-300 shadow-2xs">
                         <Gift size={11} className="text-amber-700" />
@@ -775,9 +953,9 @@ export function InvoicesScreen({
                       }) || '-'
                     )}
                   </td>
-                  <td className="px-6 py-4 text-center font-bold text-red-500">{Number(inv.discount || 0) > 0 ? Number(inv.discount).toFixed(2) : '-'}</td>
-                  <td className="px-6 py-4 text-center font-bold text-blue-600">{Number(inv.cashbackUsed || 0) > 0 ? Number(inv.cashbackUsed).toFixed(2) : '-'}</td>
-                  <td className="px-6 py-4 font-bold text-slate-800">
+                  <td className="px-4 sm:px-6 py-2.5 sm:py-3 text-center font-bold text-red-500">{Number(inv.discount || 0) > 0 ? Number(inv.discount).toFixed(2) : '-'}</td>
+                  <td className="px-4 sm:px-6 py-2.5 sm:py-3 text-center font-bold text-blue-600">{Number(inv.cashbackUsed || 0) > 0 ? Number(inv.cashbackUsed).toFixed(2) : '-'}</td>
+                  <td className="px-4 sm:px-6 py-2.5 sm:py-3 font-bold text-slate-800">
                     <div>{getEffectiveInvoiceTotal(inv).toFixed(2)} {settings.currency}</div>
                     {inv.advanceDeduction !== undefined && Number(inv.advanceDeduction || 0) > 0 && (
                       <div className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 inline-block mt-0.5">
@@ -787,7 +965,7 @@ export function InvoicesScreen({
                     {inv.isRemedyInvoice && <div className="text-[10px] text-purple-700 font-bold">(0.00 إصلاح)</div>}
                     {inv.isWaselInvoice && <div className="text-[10px] text-amber-700 font-bold">(0.00 واصل)</div>}
                   </td>
-                  <td className="px-6 py-4 text-center">
+                  <td className="px-4 sm:px-6 py-2.5 sm:py-3 text-center">
                     {(() => {
                       const invReturns = salesReturns.filter(r => r.originalInvoiceId === inv.id && r.status !== 'cancelled');
                       const totalReturned = invReturns.reduce((sum, r) => sum + (Number(r.totalRefund) || 0), 0);
@@ -861,7 +1039,7 @@ export function InvoicesScreen({
                       return <span className="px-3 py-1 rounded-full text-xs font-bold bg-red-50 text-red-500">ملغاة</span>;
                     })()}
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-4 sm:px-6 py-2.5 sm:py-3 sticky left-0 bg-white/95 backdrop-blur-xs shadow-2xs z-1">
                     <div className="flex items-center justify-center gap-1.5">
                       {/* Before / After Photo Preview Button */}
                       {(inv.beforePhotoUrl || inv.afterPhotoUrl) && (
@@ -1013,6 +1191,9 @@ export function InvoicesScreen({
               <option value={25}>25</option>
               <option value={50}>50</option>
               <option value={100}>100</option>
+              <option value={200}>200</option>
+              <option value={500}>500</option>
+              <option value={1000}>1000</option>
             </select>
             <span>فاتورة لكل صفحة</span>
             <span className="text-slate-400 mx-1">|</span>

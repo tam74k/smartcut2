@@ -46,6 +46,7 @@ export type ActionPermission =
   | 'sales_return' 
   | 'manage_invoices_edit'
   | 'manage_invoices_delete'
+  | 'view_past_invoices'
   | 'manage_queue'
 
   // Shifts, Treasuries & Financials
