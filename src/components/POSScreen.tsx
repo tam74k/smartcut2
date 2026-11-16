@@ -3423,12 +3423,12 @@ export function POSScreen({
             <button
               type="button"
               onClick={() => setIsActionsMenuOpen(prev => !prev)}
-              className="h-10 bg-gradient-to-r from-primary to-primary-focus hover:brightness-105 text-white px-3 sm:px-3.5 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md shadow-primary/20 transition-all cursor-pointer shrink-0 whitespace-nowrap active:scale-95"
+              className="h-10 bg-indigo-700 hover:bg-indigo-800 text-white px-3.5 sm:px-4 rounded-xl text-xs font-black flex items-center gap-2 shadow-md shadow-indigo-700/25 border border-indigo-800 transition-all cursor-pointer shrink-0 whitespace-nowrap active:scale-95"
               title="قائمة إجراءات سريعة (سلف، إجازات، خصومات، مكافآت، مصروفات، دوام)"
             >
-              <SlidersHorizontal size={15} className="shrink-0" />
-              <span>إجراءات</span>
-              <ChevronDown size={14} className={`transition-transform duration-200 ${isActionsMenuOpen ? 'rotate-180' : ''}`} />
+              <SlidersHorizontal size={16} className="shrink-0 text-amber-300 stroke-[2.5]" />
+              <span className="text-white font-black tracking-wide">إجراءات</span>
+              <ChevronDown size={14} className={`text-indigo-200 transition-transform duration-200 ${isActionsMenuOpen ? 'rotate-180' : ''}`} />
             </button>
 
             {/* Dropdown Menu */}
