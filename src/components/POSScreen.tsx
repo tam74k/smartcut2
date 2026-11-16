@@ -5,13 +5,14 @@ import {
   Wrench, ShieldAlert, Camera, Crown, Sparkles, PauseCircle, PlayCircle,
   FilePlus2, Layers, Zap, AlertCircle, DollarSign, Coffee, Sliders, Save, AlertTriangle, Loader2,
   Printer, Eye, FileText, RotateCcw, Barcode, Hourglass, CheckCircle, Check,
-  Wallet, Ticket, Edit3, Gift, Lock, Info, Star, UserCheck, TableProperties, MessageSquare
+  Wallet, Ticket, Edit3, Gift, Lock, Info, Star, UserCheck, TableProperties, MessageSquare,
+  ChevronDown, SlidersHorizontal, CalendarCheck, Award, MinusCircle
 } from 'lucide-react';
 import { EvolutionApiService } from '../services/evolutionApiService';
 import { 
   AppSettings, CartItem, ServiceItem, Booking, Invoice, Client, Category, Employee,
   getClientTier, getNextClientTier, calculateClientTotalSpend, ClientTierConfig, HeldInvoice, PromoCode, PromoCodeUsage, TipRecord, AdvancePayment, ClientPreferences, Transaction, FingerprintLog, SalesReturn, Branch,
-  getServicePrice
+  getServicePrice, EmployeeFinancialRecord, EmployeeLeaveRecord
 } from '../types';
 import { processImageFile, MAX_IMAGE_SIZE_KB, compressClientBeforeAfterPhoto } from '../utils/imageUpload';
 import { ComplaintsService } from '../services/complaintsService';
@@ -630,6 +631,466 @@ export function POSScreen({
   const [employeeSchedules, setEmployeeSchedules] = useState<Record<string, { checkIn: string, checkOut: string }>>({});
   const [bulkCheckIn, setBulkCheckIn] = useState('09:00');
   const [bulkCheckOut, setBulkCheckOut] = useState('18:00');
+
+  const activeEmployees = useMemo(() => {
+    return (employees || []).filter(e => !e.isBlacklisted);
+  }, [employees]);
+
+  const treasuryBalances = useMemo(() => {
+    const map: Record<string, number> = {};
+    (transactions || []).forEach(t => {
+      if (!t.treasury) return;
+      if (t.type === 'in') {
+        map[t.treasury] = (map[t.treasury] || 0) + Number(t.amount || 0);
+      } else if (t.type === 'out') {
+        map[t.treasury] = (map[t.treasury] || 0) - Number(t.amount || 0);
+      }
+    });
+    return map;
+  }, [transactions]);
+
+  // Actions Menu State (زر قائمة إجراءات على يمين صندوق البحث)
+  const [isActionsMenuOpen, setIsActionsMenuOpen] = useState(false);
+  const actionsMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (actionsMenuRef.current && !actionsMenuRef.current.contains(event.target as Node)) {
+        setIsActionsMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // 1. Advance Modal State & Handlers (شاشة إضافة السلفة العادية)
+  const [showAdvanceModal, setShowAdvanceModal] = useState(false);
+  const [advanceEmpId, setAdvanceEmpId] = useState('');
+  const [advanceAmount, setAdvanceAmount] = useState<number | ''>('');
+  const [advanceDate, setAdvanceDate] = useState('');
+  const [advanceTreasuryId, setAdvanceTreasuryId] = useState('');
+  const [advanceNote, setAdvanceNote] = useState('');
+  const [isSavingAdvance, setIsSavingAdvance] = useState(false);
+
+  const handleOpenAdvanceModal = (targetEmpId?: string) => {
+    if (!AuthService.canDo('hr_manage_advances', currentUser)) {
+      alert('عذراً، ليس لديك صلاحية صرف وإدارة السلف النقدية (hr_manage_advances).');
+      return;
+    }
+    const defaultEmp = targetEmpId || activeEmployees[0]?.id || '';
+    const initialDay = shiftData?.isOpen && shiftData.date 
+      ? shiftData.date 
+      : (shiftDate || new Date().toISOString().split('T')[0]);
+    const defaultTreasury = settings.treasuries?.find(t => !t.isMain)?.id 
+      || settings.treasuries?.[0]?.id 
+      || 'cash';
+
+    setAdvanceEmpId(defaultEmp);
+    setAdvanceAmount('');
+    setAdvanceDate(initialDay);
+    setAdvanceTreasuryId(defaultTreasury);
+    setAdvanceNote('سلفة نقدية على حساب الراتب');
+    setIsSavingAdvance(false);
+    setShowAdvanceModal(true);
+  };
+
+  const handleSaveAdvance = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!AuthService.canDo('hr_manage_advances', currentUser)) {
+      alert('عذراً، ليس لديك صلاحية صرف وإدارة السلف النقدية (hr_manage_advances).');
+      return;
+    }
+    if (!advanceEmpId) {
+      alert('الرجاء اختيار الموظف المستفيد');
+      return;
+    }
+    const amt = Number(advanceAmount);
+    if (isNaN(amt) || amt <= 0) {
+      alert('الرجاء إدخال مبلغ صحيح للسلفة');
+      return;
+    }
+    if (!advanceTreasuryId) {
+      alert('الرجاء اختيار الخزينة المنصرف منها المبلغ');
+      return;
+    }
+
+    const targetEmp = employees.find(emp => emp.id === advanceEmpId);
+    if (!targetEmp) {
+      alert('الموظف غير موجود');
+      return;
+    }
+
+    try {
+      setIsSavingAdvance(true);
+      const treasuryName = settings.treasuries?.find(t => t.id === advanceTreasuryId)?.name || 'الخزينة الرئيسية';
+      const branchCodeToUse = settings.branches?.find(b => b.id === activeBranchId)?.code || (targetEmp as any).branchCode || 'BR-01';
+      const formattedTime = new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
+      const fullDateTime = `${advanceDate} ${formattedTime}`;
+
+      // 1. إنشاء قيد مالي في الخزينة
+      const trxId = 'TRX-ADV-' + Math.random().toString(36).substring(2, 9);
+      const newTrx: Transaction = {
+        id: trxId,
+        date: advanceDate + 'T' + new Date().toTimeString().split(' ')[0],
+        shiftDate: shiftData?.isOpen ? shiftData.date : undefined,
+        type: 'out',
+        amount: amt,
+        category: 'hr_advance',
+        description: `سلفة نقدية للموظف (${targetEmp.name}) - ${advanceNote || 'سلفة على حساب الراتب'}`,
+        treasury: advanceTreasuryId,
+        salonId: (targetEmp as any).salonId || settings.salonId,
+        branchId: targetEmp.branchId || activeBranchId,
+        branchCode: branchCodeToUse,
+        createdBy: currentUser?.name || currentUser?.username || 'الكاشير',
+        userName: currentUser?.name || currentUser?.username || 'الكاشير',
+        userId: currentUser?.id
+      } as any;
+
+      if (setTransactions) {
+        setTransactions(prev => [newTrx, ...(prev || [])]);
+      }
+      await DB.saveTransaction(newTrx, settings.salonId);
+
+      // 2. تسجيل السلفة في السجل المالي للموظف
+      const newRecord: EmployeeFinancialRecord = {
+        id: 'FIN-' + Math.random().toString(36).substring(2, 9),
+        date: advanceDate,
+        type: 'advance',
+        amount: amt,
+        treasuryId: advanceTreasuryId,
+        note: advanceNote || 'سلفة نقدية على حساب الراتب'
+      };
+
+      const updatedEmp: Employee = {
+        ...targetEmp,
+        financialRecords: [...(targetEmp.financialRecords || []), newRecord]
+      };
+
+      if (setEmployees) {
+        setEmployees(employees.map(emp => emp.id === targetEmp.id ? updatedEmp : emp));
+      }
+      await DB.saveEmployee(updatedEmp, settings.salonId);
+
+      // 3. طباعة إيصال السلفة 80mm
+      const voucherNumber = `ADV-${Math.floor(100000 + Math.random() * 900000)}`;
+      printThermalFinancialVoucher(settings, {
+        voucherType: 'advance',
+        voucherNumber,
+        date: fullDateTime,
+        employeeName: targetEmp.name,
+        employeeCode: targetEmp.fingerprintCode || targetEmp.id,
+        employeeRole: targetEmp.role,
+        amount: amt,
+        treasuryName,
+        note: advanceNote || 'سلفة نقدية على حساب الراتب',
+        issuedBy: currentUser?.name || currentUser?.username || 'الكاشير'
+      });
+
+      // 4. إرسال واتساب إن وجد
+      if (settings.whatsappEnabled !== false && settings.whatsappSettings?.sendAdvanceToEmployee) {
+        EvolutionApiService.sendAdvanceWhatsApp(settings, targetEmp, {
+          amount: amt,
+          date: advanceDate,
+          treasuryName,
+          note: advanceNote
+        }, targetEmp.branchId || activeBranchId).catch(err => console.error('Advance WhatsApp send error:', err));
+      }
+
+      setShowAdvanceModal(false);
+      alert(`تم تسجيل وصرف السلفة للموظف (${targetEmp.name}) بمبلغ ${amt.toFixed(2)} ${settings.currency} بنجاح وطباعة السند.`);
+    } catch (err: any) {
+      console.error('Error saving advance:', err);
+      alert('حدث خطأ أثناء تسجيل السلفة: ' + (err?.message || err));
+    } finally {
+      setIsSavingAdvance(false);
+    }
+  };
+
+  // 2. Leave Modal State & Handlers (إضافة إجازة)
+  const [showLeaveModal, setShowLeaveModal] = useState(false);
+  const [leaveEmpId, setLeaveEmpId] = useState('');
+  const [leaveStartDate, setLeaveStartDate] = useState('');
+  const [leaveEndDate, setLeaveEndDate] = useState('');
+  const [leaveType, setLeaveType] = useState<'paid' | 'unpaid'>('paid');
+  const [leaveReason, setLeaveReason] = useState('إجازة اعتيادية سنوية');
+  const [isSavingLeave, setIsSavingLeave] = useState(false);
+
+  const leaveDaysCount = useMemo(() => {
+    if (!leaveStartDate || !leaveEndDate) return 1;
+    const s = new Date(leaveStartDate);
+    const e = new Date(leaveEndDate);
+    if (isNaN(s.getTime()) || isNaN(e.getTime())) return 1;
+    const diff = Math.round((e.getTime() - s.getTime()) / (1000 * 3600 * 24));
+    return Math.max(1, diff + 1);
+  }, [leaveStartDate, leaveEndDate]);
+
+  const handleOpenLeaveModal = (targetEmpId?: string) => {
+    if (!AuthService.canDo('hr_manage_leaves', currentUser)) {
+      alert('عذراً، ليس لديك صلاحية تسجيل الإجازات (hr_manage_leaves).');
+      return;
+    }
+    const today = shiftData?.isOpen && shiftData.date ? shiftData.date : new Date().toISOString().split('T')[0];
+    setLeaveEmpId(targetEmpId || activeEmployees[0]?.id || '');
+    setLeaveStartDate(today);
+    setLeaveEndDate(today);
+    setLeaveType('paid');
+    setLeaveReason('إجازة اعتيادية سنوية');
+    setIsSavingLeave(false);
+    setShowLeaveModal(true);
+  };
+
+  const handleSaveLeave = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!AuthService.canDo('hr_manage_leaves', currentUser)) {
+      alert('عذراً، ليس لديك صلاحية تسجيل الإجازات (hr_manage_leaves).');
+      return;
+    }
+    if (!leaveEmpId) {
+      alert('الرجاء اختيار الموظف');
+      return;
+    }
+    if (!leaveStartDate || !leaveEndDate) {
+      alert('الرجاء تحديد تاريخ بداية ونهاية الإجازة');
+      return;
+    }
+    if (leaveStartDate > leaveEndDate) {
+      alert('تاريخ نهاية الإجازة لا يمكن أن يكون قبل تاريخ البداية');
+      return;
+    }
+
+    const targetEmp = employees.find(emp => emp.id === leaveEmpId);
+    if (!targetEmp) {
+      alert('الموظف غير موجود');
+      return;
+    }
+
+    try {
+      setIsSavingLeave(true);
+      const newLeaveRecord: EmployeeLeaveRecord = {
+        id: 'LEV-' + Math.random().toString(36).substring(2, 9).toUpperCase(),
+        startDate: leaveStartDate,
+        endDate: leaveEndDate,
+        type: leaveType,
+        daysCount: leaveDaysCount,
+        reason: leaveReason.trim() || (leaveType === 'paid' ? 'إجازة اعتيادية مدفوعة الأجر' : 'إجازة بدون أجر'),
+        note: leaveReason.trim() || (leaveType === 'paid' ? 'إجازة اعتيادية مدفوعة الأجر' : 'إجازة بدون أجر'),
+        createdAt: new Date().toISOString(),
+        approvedBy: currentUser?.name || currentUser?.username || 'الكاشير'
+      };
+
+      const updatedEmp: Employee = {
+        ...targetEmp,
+        leaveRecords: [...(targetEmp.leaveRecords || []), newLeaveRecord]
+      };
+
+      if (setEmployees) {
+        setEmployees(employees.map(emp => emp.id === targetEmp.id ? updatedEmp : emp));
+      }
+      await DB.saveEmployee(updatedEmp, settings.salonId);
+
+      setShowLeaveModal(false);
+      alert(`تم تسجيل إجازة الموظف (${targetEmp.name}) لمدة ${leaveDaysCount} يوم بنجاح.`);
+    } catch (err: any) {
+      console.error('Error saving leave:', err);
+      alert('حدث خطأ أثناء تسجيل الإجازة: ' + (err?.message || err));
+    } finally {
+      setIsSavingLeave(false);
+    }
+  };
+
+  // 3. Penalty / Deduction Modal State & Handlers (خصم / جزاء)
+  const [showPenaltyModal, setShowPenaltyModal] = useState(false);
+  const [penaltyEmpId, setPenaltyEmpId] = useState('');
+  const [penaltyType, setPenaltyType] = useState<'penalty_cash' | 'penalty_days'>('penalty_cash');
+  const [penaltyAmount, setPenaltyAmount] = useState<number | ''>('');
+  const [penaltyDays, setPenaltyDays] = useState<number>(1);
+  const [penaltyDate, setPenaltyDate] = useState('');
+  const [penaltyNote, setPenaltyNote] = useState('خصم أو جزاء إداري');
+  const [isSavingPenalty, setIsSavingPenalty] = useState(false);
+
+  const handleOpenPenaltyModal = (targetEmpId?: string) => {
+    if (!AuthService.canDo('hr_manage_penalties', currentUser)) {
+      alert('عذراً، ليس لديك صلاحية تسجيل الخصومات والجزاءات (hr_manage_penalties).');
+      return;
+    }
+    const today = shiftData?.isOpen && shiftData.date ? shiftData.date : new Date().toISOString().split('T')[0];
+    setPenaltyEmpId(targetEmpId || activeEmployees[0]?.id || '');
+    setPenaltyType('penalty_cash');
+    setPenaltyAmount('');
+    setPenaltyDays(1);
+    setPenaltyDate(today);
+    setPenaltyNote('خصم أو جزاء إداري');
+    setIsSavingPenalty(false);
+    setShowPenaltyModal(true);
+  };
+
+  const handleSavePenalty = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!AuthService.canDo('hr_manage_penalties', currentUser)) {
+      alert('عذراً، ليس لديك صلاحية تسجيل الخصومات والجزاءات (hr_manage_penalties).');
+      return;
+    }
+    if (!penaltyEmpId) {
+      alert('الرجاء اختيار الموظف');
+      return;
+    }
+
+    const amt = Number(penaltyAmount);
+    if (penaltyType === 'penalty_cash' && (isNaN(amt) || amt <= 0)) {
+      alert('الرجاء إدخال مبلغ الخصم بشكل صحيح');
+      return;
+    }
+    if (penaltyType === 'penalty_days' && (isNaN(penaltyDays) || penaltyDays <= 0)) {
+      alert('الرجاء إدخال عدد أيام الخصم');
+      return;
+    }
+
+    const targetEmp = employees.find(emp => emp.id === penaltyEmpId);
+    if (!targetEmp) {
+      alert('الموظف غير موجود');
+      return;
+    }
+
+    try {
+      setIsSavingPenalty(true);
+      const formattedTime = new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
+      const fullDateTime = `${penaltyDate} ${formattedTime}`;
+
+      const newRecord: EmployeeFinancialRecord = {
+        id: 'FIN-' + Math.random().toString(36).substring(2, 9),
+        date: penaltyDate,
+        type: penaltyType,
+        amount: penaltyType === 'penalty_cash' ? amt : undefined,
+        days: penaltyType === 'penalty_days' ? penaltyDays : undefined,
+        note: penaltyNote || 'خصم أو جزاء إداري'
+      };
+
+      const updatedEmp: Employee = {
+        ...targetEmp,
+        financialRecords: [...(targetEmp.financialRecords || []), newRecord]
+      };
+
+      if (setEmployees) {
+        setEmployees(employees.map(emp => emp.id === targetEmp.id ? updatedEmp : emp));
+      }
+      await DB.saveEmployee(updatedEmp, settings.salonId);
+
+      // Print 80mm thermal voucher
+      const voucherNumber = `PEN-${Math.floor(100000 + Math.random() * 900000)}`;
+      printThermalFinancialVoucher(settings, {
+        voucherType: 'penalty',
+        voucherNumber,
+        date: fullDateTime,
+        employeeName: targetEmp.name,
+        employeeCode: targetEmp.fingerprintCode || targetEmp.id,
+        employeeRole: targetEmp.role,
+        amount: penaltyType === 'penalty_cash' ? amt : undefined,
+        days: penaltyType === 'penalty_days' ? penaltyDays : undefined,
+        note: penaltyNote || 'خصم وجزاء إداري مسجل على الموظف',
+        issuedBy: currentUser?.name || currentUser?.username || 'الكاشير'
+      });
+
+      setShowPenaltyModal(false);
+      alert(`تم تسجيل الخصم للموظف (${targetEmp.name}) بنجاح وطباعة السند.`);
+    } catch (err: any) {
+      console.error('Error saving penalty:', err);
+      alert('حدث خطأ أثناء تسجيل الخصم: ' + (err?.message || err));
+    } finally {
+      setIsSavingPenalty(false);
+    }
+  };
+
+  // 4. Bonus / Reward Modal State & Handlers (مكافأة)
+  const [showBonusModal, setShowBonusModal] = useState(false);
+  const [bonusEmpId, setBonusEmpId] = useState('');
+  const [bonusAmount, setBonusAmount] = useState<number | ''>('');
+  const [bonusDate, setBonusDate] = useState('');
+  const [bonusNote, setBonusNote] = useState('مكافأة أداء وحافز تميز');
+  const [isSavingBonus, setIsSavingBonus] = useState(false);
+
+  const handleOpenBonusModal = (targetEmpId?: string) => {
+    if (!AuthService.canDo('hr_manage_bonuses', currentUser)) {
+      alert('عذراً، ليس لديك صلاحية تسجيل المكافآت والحوافز (hr_manage_bonuses).');
+      return;
+    }
+    const today = shiftData?.isOpen && shiftData.date ? shiftData.date : new Date().toISOString().split('T')[0];
+    setBonusEmpId(targetEmpId || activeEmployees[0]?.id || '');
+    setBonusAmount('');
+    setBonusDate(today);
+    setBonusNote('مكافأة أداء وحافز تميز');
+    setIsSavingBonus(false);
+    setShowBonusModal(true);
+  };
+
+  const handleSaveBonus = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!AuthService.canDo('hr_manage_bonuses', currentUser)) {
+      alert('عذراً، ليس لديك صلاحية تسجيل المكافآت والحوافز (hr_manage_bonuses).');
+      return;
+    }
+    if (!bonusEmpId) {
+      alert('الرجاء اختيار الموظف');
+      return;
+    }
+
+    const amt = Number(bonusAmount);
+    if (isNaN(amt) || amt <= 0) {
+      alert('الرجاء إدخال مبلغ المكافأة بشكل صحيح');
+      return;
+    }
+
+    const targetEmp = employees.find(emp => emp.id === bonusEmpId);
+    if (!targetEmp) {
+      alert('الموظف غير موجود');
+      return;
+    }
+
+    try {
+      setIsSavingBonus(true);
+      const formattedTime = new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
+      const fullDateTime = `${bonusDate} ${formattedTime}`;
+
+      const newRecord: EmployeeFinancialRecord = {
+        id: 'FIN-' + Math.random().toString(36).substring(2, 9),
+        date: bonusDate,
+        type: 'bonus',
+        amount: amt,
+        note: bonusNote || 'مكافأة أداء وحافز تميز'
+      };
+
+      const updatedEmp: Employee = {
+        ...targetEmp,
+        financialRecords: [...(targetEmp.financialRecords || []), newRecord]
+      };
+
+      if (setEmployees) {
+        setEmployees(employees.map(emp => emp.id === targetEmp.id ? updatedEmp : emp));
+      }
+      await DB.saveEmployee(updatedEmp, settings.salonId);
+
+      // Print 80mm thermal voucher
+      const voucherNumber = `BON-${Math.floor(100000 + Math.random() * 900000)}`;
+      printThermalFinancialVoucher(settings, {
+        voucherType: 'bonus',
+        voucherNumber,
+        date: fullDateTime,
+        employeeName: targetEmp.name,
+        employeeCode: targetEmp.fingerprintCode || targetEmp.id,
+        employeeRole: targetEmp.role,
+        amount: amt,
+        note: bonusNote || 'مكافأة أداء وحافز تميز',
+        issuedBy: currentUser?.name || currentUser?.username || 'الكاشير'
+      });
+
+      setShowBonusModal(false);
+      alert(`تم تسجيل المكافأة للموظف (${targetEmp.name}) بمبلغ ${amt.toFixed(2)} ${settings.currency} بنجاح وطباعة السند.`);
+    } catch (err: any) {
+      console.error('Error saving bonus:', err);
+      alert('حدث خطأ أثناء تسجيل المكافأة: ' + (err?.message || err));
+    } finally {
+      setIsSavingBonus(false);
+    }
+  };
 
   // Held / Suspended Invoices Management (نظام الفواتير المعلقة والمفتوحة)
   const [heldInvoices, setHeldInvoices] = useState<HeldInvoice[]>(() => {
@@ -2955,8 +3416,161 @@ export function POSScreen({
           </div>
         )}
 
-        {/* Search & Action Bar - صف واحد متناسق بدون نزول الأزرار للسطر التالي */}
-        <div className="flex items-center gap-1.5 sm:gap-2 mb-3 lg:mb-4 w-full flex-nowrap overflow-x-auto no-scrollbar">
+        {/* Search & Action Bar - زر قائمة إجراءات على يمين خانة البحث */}
+        <div className="flex items-center gap-1.5 sm:gap-2 mb-3 lg:mb-4 w-full flex-nowrap overflow-x-visible">
+          {/* زر قائمة إجراءات - على يمين صندوق البحث */}
+          <div className="relative shrink-0" ref={actionsMenuRef}>
+            <button
+              type="button"
+              onClick={() => setIsActionsMenuOpen(prev => !prev)}
+              className="h-10 bg-gradient-to-r from-primary to-primary-focus hover:brightness-105 text-white px-3 sm:px-3.5 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md shadow-primary/20 transition-all cursor-pointer shrink-0 whitespace-nowrap active:scale-95"
+              title="قائمة إجراءات سريعة (سلف، إجازات، خصومات، مكافآت، مصروفات، دوام)"
+            >
+              <SlidersHorizontal size={15} className="shrink-0" />
+              <span>إجراءات</span>
+              <ChevronDown size={14} className={`transition-transform duration-200 ${isActionsMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {/* Dropdown Menu */}
+            {isActionsMenuOpen && (
+              <div 
+                className="absolute right-0 top-full mt-1.5 w-60 sm:w-64 bg-white rounded-2xl shadow-2xl border border-slate-200 py-2 z-50 animate-in fade-in zoom-in-95 duration-150 divide-y divide-slate-100"
+                dir="rtl"
+              >
+                {/* قسم الموظفين والرواتب */}
+                <div className="px-1.5 py-1 space-y-0.5">
+                  <div className="px-2.5 py-1 text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                    إجراءات الموظفين
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsActionsMenuOpen(false);
+                      handleOpenAdvanceModal();
+                    }}
+                    className="w-full text-right px-2.5 py-2 hover:bg-amber-50/80 rounded-xl flex items-center gap-2.5 text-xs font-bold text-slate-700 hover:text-amber-900 transition-colors cursor-pointer group"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                      <Banknote size={15} />
+                    </div>
+                    <div>
+                      <div className="font-black text-slate-800 group-hover:text-amber-950">إضافة سلفة لموظف</div>
+                      <div className="text-[10px] text-slate-400">صرف سلفة نقدية على الراتب وسند حراري</div>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsActionsMenuOpen(false);
+                      handleOpenLeaveModal();
+                    }}
+                    className="w-full text-right px-2.5 py-2 hover:bg-blue-50/80 rounded-xl flex items-center gap-2.5 text-xs font-bold text-slate-700 hover:text-blue-900 transition-colors cursor-pointer group"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                      <CalendarCheck size={15} />
+                    </div>
+                    <div>
+                      <div className="font-black text-slate-800 group-hover:text-blue-950">إضافة إجازة</div>
+                      <div className="text-[10px] text-slate-400">إجازة اعتيادية أو بدون أجر</div>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsActionsMenuOpen(false);
+                      handleOpenPenaltyModal();
+                    }}
+                    className="w-full text-right px-2.5 py-2 hover:bg-rose-50/80 rounded-xl flex items-center gap-2.5 text-xs font-bold text-slate-700 hover:text-rose-900 transition-colors cursor-pointer group"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                      <MinusCircle size={15} />
+                    </div>
+                    <div>
+                      <div className="font-black text-slate-800 group-hover:text-rose-950">خصم / جزاء</div>
+                      <div className="text-[10px] text-slate-400">استقطاع مبلغ نقدي أو خصم أيام</div>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsActionsMenuOpen(false);
+                      handleOpenBonusModal();
+                    }}
+                    className="w-full text-right px-2.5 py-2 hover:bg-emerald-50/80 rounded-xl flex items-center gap-2.5 text-xs font-bold text-slate-700 hover:text-emerald-900 transition-colors cursor-pointer group"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                      <Award size={15} />
+                    </div>
+                    <div>
+                      <div className="font-black text-slate-800 group-hover:text-emerald-950">مكافأة تميز</div>
+                      <div className="text-[10px] text-slate-400">صرف حافز أداء وتقدير مالي للموظف</div>
+                    </div>
+                  </button>
+                </div>
+
+                {/* قسم العمليات والوردية */}
+                <div className="px-1.5 py-1 space-y-0.5">
+                  <div className="px-2.5 py-1 text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                    الوردية والعمليات
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsActionsMenuOpen(false);
+                      handleOpenScheduleModal();
+                    }}
+                    className="w-full text-right px-2.5 py-2 hover:bg-amber-50/80 rounded-xl flex items-center gap-2.5 text-xs font-bold text-slate-700 hover:text-amber-900 transition-colors cursor-pointer group"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                      <Clock size={15} />
+                    </div>
+                    <div>
+                      <div className="font-black text-slate-800 group-hover:text-amber-950">مواعيد الدوام</div>
+                      <div className="text-[10px] text-slate-400">تعديل مواعيد حضور وانصراف الموظفين</div>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsActionsMenuOpen(false);
+                      handleOpenQuickExpenseModal();
+                    }}
+                    className="w-full text-right px-2.5 py-2 hover:bg-rose-50/80 rounded-xl flex items-center gap-2.5 text-xs font-bold text-slate-700 hover:text-rose-900 transition-colors cursor-pointer group"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                      <Wallet size={15} />
+                    </div>
+                    <div>
+                      <div className="font-black text-slate-800 group-hover:text-rose-950">المصروفات</div>
+                      <div className="text-[10px] text-slate-400">تسجيل مصروف وسند صرف سريع من الخزينة</div>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsActionsMenuOpen(false);
+                      setShowAttendanceModal(true);
+                    }}
+                    className="w-full text-right px-2.5 py-2 hover:bg-emerald-50/80 rounded-xl flex items-center gap-2.5 text-xs font-bold text-slate-700 hover:text-emerald-900 transition-colors cursor-pointer group"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                      <UserCheck size={15} />
+                    </div>
+                    <div>
+                      <div className="font-black text-slate-800 group-hover:text-emerald-950">الحضور والانصراف</div>
+                      <div className="text-[10px] text-slate-400">تسجيل حضور وانصراف وردية اليوم</div>
+                    </div>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* خانة البحث المرنة بحيث تملأ المساحة المتاحة دون دفع الأزرار */}
           <div className="relative flex-1 min-w-[130px] sm:min-w-[160px] max-w-xs">
             <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
@@ -2970,28 +3584,6 @@ export function POSScreen({
             />
           </div>
 
-          {/* زر مصروفات السريع بجوار خانة البحث مباشرة */}
-          <button
-            type="button"
-            onClick={handleOpenQuickExpenseModal}
-            className="h-10 bg-white hover:bg-rose-50/80 border border-slate-200 hover:border-rose-300 text-slate-700 hover:text-rose-900 px-2.5 sm:px-3 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer shrink-0 whitespace-nowrap active:scale-95"
-            title="تسجيل مصروف سريع جديد بدون مغادرة نقطة البيع"
-          >
-            <Wallet size={15} className="text-rose-600 shrink-0" />
-            <span>مصروفات</span>
-          </button>
-
-          {/* زر حضور وانصراف السريع للوردية كجزء من التايم شيت */}
-          <button
-            type="button"
-            onClick={() => setShowAttendanceModal(true)}
-            className="h-10 bg-white hover:bg-emerald-50/80 border border-slate-200 hover:border-emerald-300 text-slate-700 hover:text-emerald-900 px-2.5 sm:px-3 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer shrink-0 whitespace-nowrap active:scale-95"
-            title="تسجيل حضور وانصراف الموظفين في التايم شيت لوردية اليوم"
-          >
-            <UserCheck size={15} className="text-emerald-600 shrink-0" />
-            <span>حضور وانصراف</span>
-          </button>
-
           {/* زر تقرير أعمال اليوم بالكامل */}
           <button
             type="button"
@@ -3001,17 +3593,6 @@ export function POSScreen({
           >
             <TableProperties size={15} className="text-black shrink-0" />
             <span>تقرير اليومية</span>
-          </button>
-
-          {/* زر تعديل مواعيد الدوام */}
-          <button
-            type="button"
-            onClick={handleOpenScheduleModal}
-            className="h-10 bg-white hover:bg-amber-50/70 border border-slate-200 hover:border-amber-200 text-slate-700 hover:text-amber-900 px-2.5 sm:px-3 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer shrink-0 whitespace-nowrap active:scale-95"
-            title="تعديل مواعيد حضور وانصراف الموظفين"
-          >
-            <Clock size={15} className="text-amber-600 shrink-0" />
-            <span>مواعيد الدوام</span>
           </button>
         </div>
 
@@ -6271,6 +6852,507 @@ export function POSScreen({
           salesReturn={posVoucherReturn}
           settings={settings}
         />
+      )}
+
+      {/* 1. مودال إضافة سلفة لموظف (شاشة إضافة السلفة العادية) */}
+      {showAdvanceModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in duration-150" dir="rtl">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold">
+                  <Banknote size={20} />
+                </div>
+                <div>
+                  <h3 className="font-black text-sm text-slate-900">تسجيل وصرف سلفة جديدة</h3>
+                  <p className="text-[11px] text-slate-500">صرف سلفة نقدية على حساب الراتب وطباعة إيصال الصرف</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAdvanceModal(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {/* اختيار الموظف المستفيد */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">الموظف المستفيد *</label>
+                <select
+                  value={advanceEmpId}
+                  onChange={e => setAdvanceEmpId(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-amber-600 focus:bg-white cursor-pointer"
+                >
+                  <option value="">-- اختر الموظف --</option>
+                  {activeEmployees.map(emp => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.name} ({emp.role || 'موظف'}) - كود: {emp.fingerprintCode || emp.id}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* مبلغ السلفة */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
+                  <span>مبلغ السلفة *</span>
+                  <span className="text-[10px] text-slate-400 font-normal">بالعملة المحلية ({settings.currency})</span>
+                </label>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="any"
+                  value={advanceAmount}
+                  onChange={e => setAdvanceAmount(e.target.value === '' ? '' : Number(e.target.value))}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-black text-amber-800 font-mono outline-none focus:border-amber-600 focus:bg-white"
+                  placeholder="0.00"
+                />
+              </div>
+
+              {/* تاريخ الصرف */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">تاريخ الصرف *</label>
+                <input
+                  type="date"
+                  value={advanceDate}
+                  onChange={e => setAdvanceDate(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-amber-600 focus:bg-white cursor-pointer"
+                />
+              </div>
+
+              {/* الخزينة المنصرف منها */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">الخزينة المنصرف منها كاش *</label>
+                <select
+                  value={advanceTreasuryId}
+                  onChange={e => setAdvanceTreasuryId(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-amber-600 focus:bg-white cursor-pointer"
+                >
+                  {settings.treasuries.map(t => {
+                    const bal = treasuryBalances[t.id] ?? 0;
+                    return (
+                      <option key={t.id} value={t.id}>
+                        {t.name} (رصيد: {Number(bal || 0).toFixed(2)} {settings.currency})
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              {/* البيان والملاحظات */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">البيان والملاحظات</label>
+                <input
+                  type="text"
+                  value={advanceNote}
+                  onChange={e => setAdvanceNote(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-amber-600 focus:bg-white"
+                  placeholder="سلفة نقدية على حساب الراتب..."
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowAdvanceModal(false)}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-xs hover:bg-slate-50 transition-colors cursor-pointer"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                disabled={isSavingAdvance}
+                onClick={handleSaveAdvance}
+                className="flex-1 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-black text-xs shadow-md shadow-amber-600/20 transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5 active:scale-95"
+              >
+                <Printer size={15} />
+                <span>{isSavingAdvance ? 'جاري الصرف...' : 'صرف وطباعة السند'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 2. مودال إضافة إجازة لموظف */}
+      {showLeaveModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in duration-150" dir="rtl">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-blue-100 text-blue-800 flex items-center justify-center font-bold">
+                  <CalendarCheck size={20} />
+                </div>
+                <div>
+                  <h3 className="font-black text-sm text-slate-900">تسجيل إجازة موظف</h3>
+                  <p className="text-[11px] text-slate-500">تسجيل وتوثيق إجازة اعتيادية أو بدون أجر</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowLeaveModal(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {/* الموظف المستفيد */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">الموظف *</label>
+                <select
+                  value={leaveEmpId}
+                  onChange={e => setLeaveEmpId(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-blue-600 focus:bg-white cursor-pointer"
+                >
+                  <option value="">-- اختر الموظف --</option>
+                  {activeEmployees.map(emp => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.name} ({emp.role || 'موظف'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* نوع الإجازة */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">نوع الإجازة:</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setLeaveType('paid')}
+                    className={`py-2 rounded-xl text-xs font-bold border transition-all ${
+                      leaveType === 'paid' ? 'bg-blue-50 border-blue-400 text-blue-800 shadow-xs' : 'bg-slate-50 border-slate-200 text-slate-600'
+                    }`}
+                  >
+                    إجازة مدفوعة الأجر
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLeaveType('unpaid')}
+                    className={`py-2 rounded-xl text-xs font-bold border transition-all ${
+                      leaveType === 'unpaid' ? 'bg-amber-50 border-amber-400 text-amber-800 shadow-xs' : 'bg-slate-50 border-slate-200 text-slate-600'
+                    }`}
+                  >
+                    إجازة بدون أجر
+                  </button>
+                </div>
+              </div>
+
+              {/* التواريخ */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">من تاريخ *</label>
+                  <input
+                    type="date"
+                    value={leaveStartDate}
+                    onChange={e => setLeaveStartDate(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-blue-600 focus:bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">إلى تاريخ *</label>
+                  <input
+                    type="date"
+                    value={leaveEndDate}
+                    onChange={e => setLeaveEndDate(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-blue-600 focus:bg-white"
+                  />
+                </div>
+              </div>
+
+              {/* إجمالي الأيام */}
+              <div className="bg-blue-50/60 border border-blue-200 rounded-xl px-3 py-2 text-xs flex justify-between items-center text-blue-900 font-bold">
+                <span>إجمالي أيام الإجازة:</span>
+                <span className="font-mono text-sm font-black bg-white px-2 py-0.5 rounded-lg border border-blue-200 text-blue-700">
+                  {leaveDaysCount} يوم
+                </span>
+              </div>
+
+              {/* سبب الإجازة */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">سبب الإجازة والملاحظات</label>
+                <input
+                  type="text"
+                  value={leaveReason}
+                  onChange={e => setLeaveReason(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-blue-600 focus:bg-white"
+                  placeholder="إجازة اعتيادية سنوية..."
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowLeaveModal(false)}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-xs hover:bg-slate-50 transition-colors cursor-pointer"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                disabled={isSavingLeave}
+                onClick={handleSaveLeave}
+                className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs shadow-md shadow-blue-600/20 transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5 active:scale-95"
+              >
+                <CalendarCheck size={15} />
+                <span>{isSavingLeave ? 'جاري الحفظ...' : 'حفظ الإجازة'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 3. مودال تسجيل خصم أو جزاء */}
+      {showPenaltyModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in duration-150" dir="rtl">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-rose-100 text-rose-800 flex items-center justify-center font-bold">
+                  <MinusCircle size={20} />
+                </div>
+                <div>
+                  <h3 className="font-black text-sm text-slate-900">تسجيل خصم أو جزاء إداري</h3>
+                  <p className="text-[11px] text-slate-500">استقطاع نقدي أو خصم أيام مع طباعة السند</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPenaltyModal(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {/* الموظف */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">الموظف *</label>
+                <select
+                  value={penaltyEmpId}
+                  onChange={e => setPenaltyEmpId(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-rose-600 focus:bg-white cursor-pointer"
+                >
+                  <option value="">-- اختر الموظف --</option>
+                  {activeEmployees.map(emp => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.name} ({emp.role || 'موظف'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* نوع الخصم */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">نوع الخصم:</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPenaltyType('penalty_cash')}
+                    className={`py-2 rounded-xl text-xs font-bold border transition-all ${
+                      penaltyType === 'penalty_cash' ? 'bg-rose-50 border-rose-400 text-rose-800 shadow-xs' : 'bg-slate-50 border-slate-200 text-slate-600'
+                    }`}
+                  >
+                    مبلغ نقدي ({settings.currency})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPenaltyType('penalty_days')}
+                    className={`py-2 rounded-xl text-xs font-bold border transition-all ${
+                      penaltyType === 'penalty_days' ? 'bg-rose-50 border-rose-400 text-rose-800 shadow-xs' : 'bg-slate-50 border-slate-200 text-slate-600'
+                    }`}
+                  >
+                    خصم أيام من الراتب
+                  </button>
+                </div>
+              </div>
+
+              {/* القيمة أو الأيام */}
+              {penaltyType === 'penalty_days' ? (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">عدد الأيام المخصومة *</label>
+                  <input
+                    type="number"
+                    min="0.5"
+                    step="0.5"
+                    value={penaltyDays}
+                    onChange={e => setPenaltyDays(Number(e.target.value))}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold text-rose-800 outline-none focus:border-rose-600 focus:bg-white"
+                  />
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
+                    <span>مبلغ الخصم *</span>
+                    <span className="text-[10px] text-slate-400 font-normal">بالعملة المحلية ({settings.currency})</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="any"
+                    value={penaltyAmount}
+                    onChange={e => setPenaltyAmount(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-black text-rose-800 font-mono outline-none focus:border-rose-600 focus:bg-white"
+                    placeholder="0.00"
+                  />
+                </div>
+              )}
+
+              {/* تاريخ الخصم */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">تاريخ الخصم *</label>
+                <input
+                  type="date"
+                  value={penaltyDate}
+                  onChange={e => setPenaltyDate(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-rose-600 focus:bg-white"
+                />
+              </div>
+
+              {/* سبب الخصم */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">سبب الخصم والملاحظات</label>
+                <input
+                  type="text"
+                  value={penaltyNote}
+                  onChange={e => setPenaltyNote(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-rose-600 focus:bg-white"
+                  placeholder="سبب الخصم أو الجزاء الإداري..."
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowPenaltyModal(false)}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-xs hover:bg-slate-50 transition-colors cursor-pointer"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                disabled={isSavingPenalty}
+                onClick={handleSavePenalty}
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs shadow-md shadow-rose-600/20 transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5 active:scale-95"
+              >
+                <Printer size={15} />
+                <span>{isSavingPenalty ? 'جاري التسجيل...' : 'تسجيل وطباعة السند'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 4. مودال تسجيل مكافأة وحافز تميز */}
+      {showBonusModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in duration-150" dir="rtl">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
+                  <Award size={20} />
+                </div>
+                <div>
+                  <h3 className="font-black text-sm text-slate-900">تسجيل مكافأة وحافز تميز</h3>
+                  <p className="text-[11px] text-slate-500">صرف مكافأة أداء وتشجيع للموظف مع طباعة السند</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowBonusModal(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {/* الموظف */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">الموظف *</label>
+                <select
+                  value={bonusEmpId}
+                  onChange={e => setBonusEmpId(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-emerald-600 focus:bg-white cursor-pointer"
+                >
+                  <option value="">-- اختر الموظف --</option>
+                  {activeEmployees.map(emp => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.name} ({emp.role || 'موظف'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* مبلغ المكافأة */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
+                  <span>مبلغ المكافأة *</span>
+                  <span className="text-[10px] text-slate-400 font-normal">بالعملة المحلية ({settings.currency})</span>
+                </label>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="any"
+                  value={bonusAmount}
+                  onChange={e => setBonusAmount(e.target.value === '' ? '' : Number(e.target.value))}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-black text-emerald-800 font-mono outline-none focus:border-emerald-600 focus:bg-white"
+                  placeholder="0.00"
+                />
+              </div>
+
+              {/* تاريخ المكافأة */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">تاريخ المكافأة *</label>
+                <input
+                  type="date"
+                  value={bonusDate}
+                  onChange={e => setBonusDate(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-emerald-600 focus:bg-white"
+                />
+              </div>
+
+              {/* سبب المكافأة */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">سبب المكافأة والملاحظات</label>
+                <input
+                  type="text"
+                  value={bonusNote}
+                  onChange={e => setBonusNote(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-emerald-600 focus:bg-white"
+                  placeholder="مكافأة أداء وحافز تميز..."
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowBonusModal(false)}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-xs hover:bg-slate-50 transition-colors cursor-pointer"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                disabled={isSavingBonus}
+                onClick={handleSaveBonus}
+                className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-md shadow-emerald-600/20 transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5 active:scale-95"
+              >
+                <Printer size={15} />
+                <span>{isSavingBonus ? 'جاري التسجيل...' : 'تسجيل وطباعة السند'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

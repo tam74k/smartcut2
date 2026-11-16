@@ -3216,6 +3216,7 @@ export default function App() {
           setTips={handleSetTips}
           currentUser={currentUser}
           transactions={branchTransactions}
+          setTransactions={handleSetTransactions}
           shiftData={shiftData}
           fingerprintLogs={branchFingerprintLogs}
           setFingerprintLogs={setFingerprintLogs}
