@@ -7011,14 +7011,11 @@ export function POSScreen({
                   onChange={e => setAdvanceTreasuryId(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-amber-600 focus:bg-white cursor-pointer"
                 >
-                  {settings.treasuries.map(t => {
-                    const bal = treasuryBalances[t.id] ?? 0;
-                    return (
-                      <option key={t.id} value={t.id}>
-                        {t.name} (رصيد: {Number(bal || 0).toFixed(2)} {settings.currency})
-                      </option>
-                    );
-                  })}
+                  {settings.treasuries.map(t => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
                 </select>
               </div>
 

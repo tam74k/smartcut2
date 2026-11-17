@@ -2301,7 +2301,7 @@ export function HRScreen({
     if (amountVal > currentTreasuryBal) {
       const tName = settings.treasuries.find(t => t.id === commTreasuryId)?.name || 'الخزينة المحددة';
       const proceed = window.confirm(
-        `تنبيه: رصيد خزينة (${tName}) الحالي هو (${Number(currentTreasuryBal || 0).toFixed(2)} ${settings.currency})، وهو أقل من مبلغ العمولة المطلوب صرفه (${Number(amountVal || 0).toFixed(2)} ${settings.currency}).\n\nهل ترغب في المتابعة والصرف؟`
+        `تنبيه: رصيد خزينة (${tName}) غير كافٍ لتغطية مبلغ العمولة المطلوب صرفه (${Number(amountVal || 0).toFixed(2)} ${settings.currency}).\n\nهل ترغب في المتابعة والصرف؟`
       );
       if (!proceed) return;
     }
@@ -2667,7 +2667,7 @@ export function HRScreen({
     if (amt > currentBal) {
       const tName = settings.treasuries.find(t => t.id === newAdvanceForm.treasuryId)?.name || 'الخزينة';
       const proceed = window.confirm(
-        `تنبيه: رصيد الخزينة (${tName}) الحالي هو (${Number(currentBal || 0).toFixed(2)} ${settings.currency})، وهو أقل من مبلغ السلفة المطلوب صرفه (${amt.toFixed(2)} ${settings.currency}).\n\nهل تريد المتابعة والصرف بالسالب؟`
+        `تنبيه: رصيد الخزينة (${tName}) غير كافٍ لصرف مبلغ السلفة المطلوب (${amt.toFixed(2)} ${settings.currency}).\n\nهل تريد المتابعة والصرف بالسالب؟`
       );
       if (!proceed) return;
     }
@@ -5826,14 +5826,11 @@ export function HRScreen({
                   onChange={e => setEditAdvanceForm({ ...editAdvanceForm, treasuryId: e.target.value })}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-emerald-600 focus:bg-white cursor-pointer"
                 >
-                  {settings.treasuries.map(t => {
-                    const bal = treasuryBalances[t.id] ?? 0;
-                    return (
-                      <option key={t.id} value={t.id}>
-                        {t.name} (رصيد: {Number(bal || 0).toFixed(2)} {settings.currency})
-                      </option>
-                    );
-                  })}
+                  {settings.treasuries.map(t => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -5948,14 +5945,11 @@ export function HRScreen({
                   onChange={e => setNewAdvanceForm({ ...newAdvanceForm, treasuryId: e.target.value })}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-emerald-600 focus:bg-white cursor-pointer"
                 >
-                  {settings.treasuries.map(t => {
-                    const bal = treasuryBalances[t.id] ?? 0;
-                    return (
-                      <option key={t.id} value={t.id}>
-                        {t.name} (رصيد: {Number(bal || 0).toFixed(2)} {settings.currency})
-                      </option>
-                    );
-                  })}
+                  {settings.treasuries.map(t => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -6074,14 +6068,11 @@ export function HRScreen({
                   onChange={e => setDisbursementTreasuryId(e.target.value)}
                   className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-emerald-600 outline-none"
                 >
-                  {settings.treasuries.map(t => {
-                    const bal = treasuryBalances[t.id] ?? 0;
-                    return (
-                      <option key={t.id} value={t.id}>
-                        {t.name} (رصيد: {Number(bal || 0).toFixed(2)} {settings.currency})
-                      </option>
-                    );
-                  })}
+                  {settings.treasuries.map(t => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -7149,23 +7140,12 @@ export function HRScreen({
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-amber-600"
                     required
                   >
-                    {settings.treasuries.map(t => {
-                      const bal = treasuryBalances[t.id] ?? 0;
-                      return (
-                        <option key={t.id} value={t.id}>
-                          {t.name} (رصيد: {Number(bal || 0).toFixed(2)} {settings.currency})
-                        </option>
-                      );
-                    })}
+                    {settings.treasuries.map(t => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
                   </select>
-                  {commTreasuryId && (
-                    <div className="mt-1 flex items-center justify-between text-[11px]">
-                      <span className="text-slate-500">الرصيد المتاح في الخزينة:</span>
-                      <span className={`font-mono font-black ${(treasuryBalances[commTreasuryId] ?? 0) > 0 ? 'text-emerald-700' : (treasuryBalances[commTreasuryId] ?? 0) < 0 ? 'text-rose-600' : 'text-slate-600'}`}>
-                        {Number(treasuryBalances[commTreasuryId] || 0).toFixed(2)} {settings.currency}
-                      </span>
-                    </div>
-                  )}
                 </div>
               </div>
 

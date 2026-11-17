@@ -7640,7 +7640,7 @@ export function BookingsScreen({
                 >
                   {availableTreasuries.map(t => (
                     <option key={t.id} value={t.id}>
-                      {t.name} (رصيد: {Number(t.balance || 0).toFixed(2)} {settings.currency})
+                      {t.name}
                     </option>
                   ))}
                 </select>
