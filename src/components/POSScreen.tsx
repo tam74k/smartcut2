@@ -2660,8 +2660,26 @@ export function POSScreen({
       const invDate = getInvDate(initialEditingInvoice);
       const now = new Date();
       const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-      if (invDate && invDate < todayStr) {
-        alert('عذراً، محظور تماماً تعديل الفواتير الصادرة بتاريخ سابق حفاظاً على سلامة الحسابات والورديات المغلقة. التعديل متاح فقط لفواتير اليوم.');
+
+      const isAdminOrOwner = !currentUser || 
+        currentUser.role === 'admin' || 
+        currentUser.role === 'owner' || 
+        currentUser.role === 'programmer' || 
+        currentUser.actions?.includes('*');
+
+      // إتاحة التعديل في حالة ما كان تاريخ الوردية الحالية هو نفس تاريخ إنشاء الفاتورة
+      const isCurrentShiftInvoice = Boolean(
+        (effectiveShiftDate && invDate === effectiveShiftDate) ||
+        (shiftDate && invDate === shiftDate) ||
+        (invDate === todayStr) ||
+        (shiftData?.isOpen && (
+          (shiftData.id && initialEditingInvoice.shiftId === shiftData.id) ||
+          (shiftData.shiftCode && initialEditingInvoice.shiftCode === shiftData.shiftCode)
+        ))
+      );
+
+      if (!isAdminOrOwner && !isCurrentShiftInvoice) {
+        alert('عذراً، محظور تعديل الفواتير الصادرة بتاريخ سابق لوردية سابقة حفاظاً على سلامة الحسابات والورديات المغلقة. التعديل متاح فقط لفواتير تاريخ الوردية الحالية المفتوحة.');
         setEditingInvoice(null);
         if (onClearInitial) onClearInitial();
         return;

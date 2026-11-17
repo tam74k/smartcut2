@@ -239,13 +239,42 @@ export function InvoicesScreen({
     return clean;
   };
 
-  // فحص حاسم ومحكم: هل الفاتورة صادرة بتاريخ سابق (قبل تاريخ اليوم بالتوقيت المحلي)؟
+  // فحص حاسم ومحكم: هل الفاتورة صادرة بتاريخ سابق عن الوردية الحالية المفتوحة؟
   const isInvoiceFromPreviousDate = (inv: Invoice): boolean => {
+    // 1. للمالك والآدمن والمبرمج: لا يوجد أي حظر لتعديل الفواتير
+    if (
+      currentUser?.role === 'admin' || 
+      currentUser?.role === 'owner' || 
+      currentUser?.role === 'programmer' || 
+      currentUser?.actions?.includes('*')
+    ) {
+      return false;
+    }
+
     const invDate = getInvoiceLocalDateStr(inv);
     if (!invDate) return false;
-    const now = new Date();
-    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    return invDate < todayStr;
+
+    // 2. إتاحة التعديل للكاشير في حالة ما كان تاريخ الوردية الحالية هو نفس تاريخ إنشاء الفاتورة
+    if (activeShiftDate && invDate === activeShiftDate) {
+      return false;
+    }
+
+    // 3. إذا كانت الفاتورة منتمية لنفس الوردية المفتوحة الحالية بالمعرف أو الكود
+    if (shiftData?.isOpen && (
+      (shiftData.id && inv.shiftId === shiftData.id) ||
+      (shiftData.shiftCode && inv.shiftCode === shiftData.shiftCode)
+    )) {
+      return false;
+    }
+
+    // 4. إذا كان تاريخ الفاتورة هو تاريخ اليوم الحالي بالتوقيت المحلي
+    const todayStr = getTodayLocalDateStr();
+    if (invDate === todayStr) {
+      return false;
+    }
+
+    // غير ذلك: تعتبر الفاتورة صادرة بتاريخ سابق لوردية سابقة ومغلقة
+    return true;
   };
 
   // صلاحيات تعديل وحذف الفواتير
@@ -271,7 +300,7 @@ export function InvoicesScreen({
       return;
     }
     if (isInvoiceFromPreviousDate(inv)) {
-      alert('عذراً، محظور تماماً تعديل الفواتير الصادرة بتاريخ سابق حفاظاً على سلامة الحسابات والورديات المغلقة. التعديل متاح فقط لفواتير اليوم.');
+      alert('عذراً، محظور تعديل الفواتير الصادرة بتاريخ سابق لوردية سابقة حفاظاً على سلامة الحسابات والورديات المغلقة. التعديل متاح فقط لفواتير تاريخ الوردية الحالية المفتوحة.');
       return;
     }
     if (inv.status === 'cancelled') {
@@ -365,7 +394,7 @@ export function InvoicesScreen({
     if (isValid && adminPasswordTarget) {
       const target = adminPasswordTarget;
       if (isInvoiceFromPreviousDate(target)) {
-        alert('عذراً، محظور تماماً تعديل الفواتير الصادرة بتاريخ سابق حفاظاً على سلامة الحسابات والورديات المغلقة. التعديل متاح فقط لفواتير اليوم.');
+        alert('عذراً، محظور تعديل الفواتير الصادرة بتاريخ سابق لوردية سابقة حفاظاً على سلامة الحسابات والورديات المغلقة. التعديل متاح فقط لفواتير تاريخ الوردية الحالية المفتوحة.');
         setAdminPasswordTarget(null);
         setAdminPasswordInput('');
         setAdminPasswordError(false);
@@ -1088,7 +1117,7 @@ export function InvoicesScreen({
                                 ? 'bg-slate-100 text-slate-300 cursor-not-allowed opacity-40 shadow-none' 
                                 : 'bg-amber-50 text-amber-700 hover:bg-amber-100 cursor-pointer shadow-xs'
                             }`} 
-                            title={isPrevDate ? 'محظور تماماً تعديل الفواتير الصادرة بتاريخ سابق (متاح لفواتير اليوم فقط)' : 'تعديل الفاتورة في نقطة البيع (POS)'}
+                            title={isPrevDate ? 'محظور تعديل الفواتير الصادرة بتاريخ سابق لوردية سابقة (متاح فقط لفواتير تاريخ الوردية الحالية المفتوحة)' : 'تعديل الفاتورة في نقطة البيع (POS)'}
                           >
                             <Edit size={16} />
                           </button>
