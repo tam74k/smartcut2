@@ -6,7 +6,7 @@ import {
   Upload, HardDrive, AlertTriangle, FileCheck, RefreshCcw, Landmark, FileSpreadsheet,
   QrCode, Key, Send, CheckCircle2, ShieldCheck, HelpCircle, Building2, Layers, Clock, DollarSign, Coins,
   Printer, Wifi, Laptop, Lock, UserX, CalendarCheck, Calendar, Settings, Smartphone, Copy, Package, Scissors, Crown, Award, MapPin, ExternalLink,
-  Bot, Eye, EyeOff, Zap, AlertCircle, Power, Gift, Bell, User, ChevronDown, ChevronUp, RotateCcw
+  Bot, Eye, EyeOff, Zap, AlertCircle, Power, Gift, Bell, User, ChevronDown, ChevronUp, RotateCcw, UserCheck
 } from 'lucide-react';
 
 import { AuthService, ROLE_LABELS } from '../services/auth';
@@ -2520,6 +2520,38 @@ export function SettingsScreen({
               <Sparkles size={12} className="text-amber-500 shrink-0" />
               <span>يمكنك تشغيل خادم الطباعة الخفيف على كمبيوتر الاستقبال عبر تشغيل ملف: <code className="text-amber-700 font-bold font-mono">scripts/start_printer_server.bat</code></span>
             </div>
+          </div>
+        </div>
+
+        {/* إلزام تسجيل موظف في الفاتورة في نقطة البيع */}
+        <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
+          <div className="flex items-center gap-2 mb-4 border-b border-slate-100 pb-3">
+            <div className="w-8 h-8 rounded-full bg-indigo-50 text-indigo-700 flex items-center justify-center">
+              <UserCheck size={16} />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-800">قواعد تسجيل الخدمات في نقطة البيع (POS)</h3>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                التحكم في شروط إتمام وسداد الفاتورة وتعيين الموظفين المنفذين
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center justify-between p-3.5 bg-slate-50 rounded-xl border border-slate-200">
+            <div>
+              <p className="font-bold text-[13px] text-slate-800">إلزام تسجيل موظف في الفاتورة في نقطة البيع</p>
+              <p className="text-[11px] text-slate-500 mt-1 max-w-xl leading-relaxed">
+                عند التفعيل، لن يتم تفعيل زر السداد في نقطة البيع (POS) إلا بعد تعبئة وتحديد الموظف المنفذ لجميع الخدمات المضافة في الفاتورة لضمان دقة احتساب العمولات ونسب التارجت.
+              </p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer shrink-0 mr-4">
+              <input 
+                type="checkbox" 
+                className="sr-only peer"
+                checked={Boolean(settings.requireEmployeeForServices)}
+                onChange={(e) => handleChange('requireEmployeeForServices', e.target.checked)}
+              />
+              <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+            </label>
           </div>
         </div>
 

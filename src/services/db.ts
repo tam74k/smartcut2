@@ -1376,6 +1376,7 @@ export const DB = {
 
       res.allowNonCashTips = data.allow_non_cash_tips !== undefined ? toBool(data.allow_non_cash_tips) : (uiSet.allowNonCashTips !== undefined ? toBool(uiSet.allowNonCashTips) : true);
       res.enableDualPricing = data.enable_dual_pricing !== undefined ? toBool(data.enable_dual_pricing) : (uiSet.enableDualPricing !== undefined ? toBool(uiSet.enableDualPricing) : false);
+      res.requireEmployeeForServices = data.require_employee_for_services !== undefined ? toBool(data.require_employee_for_services) : (uiSet.requireEmployeeForServices !== undefined ? toBool(uiSet.requireEmployeeForServices) : false);
       res.whatsappEnabled = data.whatsapp_enabled !== undefined ? toBool(data.whatsapp_enabled) : (uiSet.whatsappEnabled !== undefined ? toBool(uiSet.whatsappEnabled) : true);
       res.whatsappSettings = (typeof data.whatsapp_settings === 'object' && data.whatsapp_settings) ? data.whatsapp_settings : (uiSet.whatsappSettings || {});
 
@@ -1465,6 +1466,7 @@ export const DB = {
         tipPayoutMethod: tipPayoutMethodValue,
         allowNonCashTips: allowNonCashTipsValue,
         enableDualPricing: settings.enableDualPricing !== undefined ? Boolean(settings.enableDualPricing) : (existingUiSettings.enableDualPricing ?? false),
+        requireEmployeeForServices: settings.requireEmployeeForServices !== undefined ? Boolean(settings.requireEmployeeForServices) : (existingUiSettings.requireEmployeeForServices ?? false),
         whatsappEnabled: settings.whatsappEnabled !== undefined ? Boolean(settings.whatsappEnabled) : (existingUiSettings.whatsappEnabled ?? (existing?.whatsapp_enabled !== undefined ? toBool(existing.whatsapp_enabled) : true)),
         whatsappSettings: settings.whatsappSettings || existingUiSettings.whatsappSettings || null,
         hrSettings: settings.hrSettings || settings.hr_settings || existingUiSettings.hrSettings || existingUiSettings.hr_settings || existing?.hr_settings || null,

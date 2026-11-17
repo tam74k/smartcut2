@@ -1178,6 +1178,7 @@ export interface AppSettings {
   deposit_refund_allowed_days?: number;
   enableDualPricing?: boolean; // تفعيل سعرين للخدمة (مواطن وأجنبي)
   enableMultiPricing?: boolean; // تفعيل العمل بالأسعار المتعددة (سعر 1، سعر 2، سعر 3)
+  requireEmployeeForServices?: boolean; // إلزام تسجيل موظف لكل خدمة في الفاتورة في نقطة البيع
 }
 
 export type TargetCalculationPolicy = 1 | 2 | 3 | 4 | 5;

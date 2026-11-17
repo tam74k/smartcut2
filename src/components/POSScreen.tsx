@@ -1797,6 +1797,17 @@ export function POSScreen({
   const rawFinalTotal = Math.max(0, totalBeforeAdvance - (Number(advanceDeduction) || 0));
   const finalTotal = (isRemedyInvoice || isWaselInvoice) ? 0 : rawFinalTotal;
 
+  // فحص إلزام تسجيل موظف لكل خدمة مضافة في الفاتورة في نقطة البيع
+  const hasUnassignedServices = useMemo(() => {
+    if (!settings.requireEmployeeForServices) return false;
+    return cart.some(c => (c.type === 'service' || !c.type) && (!c.employeeId || c.employeeId === 'any' || c.employeeId.trim() === ''));
+  }, [cart, settings.requireEmployeeForServices]);
+
+  const unassignedServicesCount = useMemo(() => {
+    if (!settings.requireEmployeeForServices) return 0;
+    return cart.filter(c => (c.type === 'service' || !c.type) && (!c.employeeId || c.employeeId === 'any' || c.employeeId.trim() === '')).length;
+  }, [cart, settings.requireEmployeeForServices]);
+
   // Tips & Change Calculation
   const isCashPayment = singleTreasury === 'cash' || singleTreasury.includes('cash');
   const receivedNum = Number(receivedAmount) || 0;
@@ -1845,6 +1856,11 @@ export function POSScreen({
     if (isSubmittingPayment) return;
     if (isSubscriptionBlocked) {
       alert('الحساب موقوف أو انتهت فترة الاشتراك. النظام يعمل الآن بوضع الاطلاع فقط (Read-Only) ولا يمكن إنشاء أو سداد فواتير جديدة.');
+      return;
+    }
+    if (hasUnassignedServices) {
+      alert(`عذراً، تنص سياسة الصالون على إلزام تحديد الموظف المنفذ لجميع الخدمات المضافة قبل السداد (يوجد ${unassignedServicesCount} خدمة بدون موظف).`);
+      setShowPaymentModal(false);
       return;
     }
 
@@ -4300,25 +4316,47 @@ export function POSScreen({
                   <div className="grid grid-cols-2 gap-2 pt-1.5 border-t border-slate-100">
                     {/* 1. Performer */}
                     <div>
-                      <label className="block text-[9px] font-bold text-slate-500 mb-0.5 flex items-center gap-1">
-                        <Scissors size={10} className="text-slate-400" />
-                        <span>الفني المنفذ:</span>
-                      </label>
-                      <select 
-                        className="text-[11px] bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 w-full outline-none focus:border-primary cursor-pointer transition-colors font-semibold"
-                        value={c.employeeId}
-                        onChange={(e) => updateEmployee(c.cartId, e.target.value)}
-                      >
-                        <option value="">اختر المنفذ...</option>
-                        {performerEmployees.map(emp => (
-                          <option key={emp.id} value={emp.id}>{emp.name}</option>
-                        ))}
-                        {c.employeeId && !performerEmployees.some(e => e.id === c.employeeId) && (
-                          <option value={c.employeeId}>
-                            {employees.find(e => e.id === c.employeeId)?.name || c.employeeId}
-                          </option>
-                        )}
-                      </select>
+                      {(() => {
+                        const isServiceMissingEmp = Boolean(
+                          settings.requireEmployeeForServices && 
+                          (c.type === 'service' || !c.type) && 
+                          (!c.employeeId || c.employeeId === 'any' || c.employeeId.trim() === '')
+                        );
+                        return (
+                          <>
+                            <label className="block text-[9px] font-bold text-slate-500 mb-0.5 flex items-center justify-between">
+                              <span className="flex items-center gap-1">
+                                <Scissors size={10} className={isServiceMissingEmp ? 'text-rose-600' : 'text-slate-400'} />
+                                <span className={isServiceMissingEmp ? 'text-rose-700 font-black' : ''}>الفني المنفذ:</span>
+                              </span>
+                              {isServiceMissingEmp && (
+                                <span className="text-[8px] text-rose-700 font-black bg-rose-100 px-1 py-0.2 rounded border border-rose-300 animate-pulse">
+                                  مطلوب للسداد
+                                </span>
+                              )}
+                            </label>
+                            <select 
+                              className={`text-[11px] rounded-lg px-2 py-1 w-full outline-none cursor-pointer transition-all font-semibold ${
+                                isServiceMissingEmp
+                                  ? 'bg-rose-50 border-2 border-rose-400 text-rose-950 ring-1 ring-rose-300 focus:border-rose-600'
+                                  : 'bg-slate-50 border border-slate-200 text-slate-800 focus:border-primary'
+                              }`}
+                              value={c.employeeId}
+                              onChange={(e) => updateEmployee(c.cartId, e.target.value)}
+                            >
+                              <option value="">اختر المنفذ...</option>
+                              {performerEmployees.map(emp => (
+                                <option key={emp.id} value={emp.id}>{emp.name}</option>
+                              ))}
+                              {c.employeeId && !performerEmployees.some(e => e.id === c.employeeId) && (
+                                <option value={c.employeeId}>
+                                  {employees.find(e => e.id === c.employeeId)?.name || c.employeeId}
+                                </option>
+                              )}
+                            </select>
+                          </>
+                        );
+                      })()}
                     </div>
 
                     {/* 2. Referral / فتح شغل */}
@@ -4627,11 +4665,28 @@ export function POSScreen({
             </div>
           )}
 
+          {/* تنبيه إلزام تسجيل موظف لكل خدمة مضافة */}
+          {hasUnassignedServices && (
+            <div className="bg-rose-50 border border-rose-300 text-rose-900 rounded-xl p-2.5 flex items-center gap-2 text-xs font-bold animate-in fade-in shadow-2xs">
+              <AlertTriangle size={16} className="text-rose-600 shrink-0" />
+              <div className="leading-tight">
+                <span className="font-black">مطلوب تحديد الموظف المنفذ:</span>
+                <span className="text-[11px] block text-rose-800 font-medium">
+                  يوجد ({unassignedServicesCount}) خدمة بدون موظف. يرجى اختيار المنفذ في السلة لتفعيل السداد.
+                </span>
+              </div>
+            </div>
+          )}
+
           <button 
-            disabled={cart.length === 0 || isSubscriptionBlocked}
+            disabled={cart.length === 0 || isSubscriptionBlocked || hasUnassignedServices}
             onClick={() => {
               if (isSubscriptionBlocked) {
                 alert('عذراً، لا يمكن إصدار فواتير جديدة نظراً لانتهاء الفترة التجريبية للصالون. يرجى تجديد الاشتراك مع الإدارة.');
+                return;
+              }
+              if (hasUnassignedServices) {
+                alert(`عذراً، تنص سياسة الصالون على إلزام تحديد الموظف المنفذ لجميع الخدمات المضافة قبل السداد (يوجد ${unassignedServicesCount} خدمة بدون موظف).`);
                 return;
               }
               if (isWaselInvoice) {
@@ -4653,13 +4708,20 @@ export function POSScreen({
                 setShowPaymentModal(true);
               }
             }} 
-            className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-200 disabled:text-slate-400 text-white font-black py-2.5 px-3 rounded-xl transition-all shadow-md flex items-center justify-between cursor-pointer active:scale-[0.99]"
+            className={`w-full text-white font-black py-2.5 px-3 rounded-xl transition-all shadow-md flex items-center justify-between active:scale-[0.99] ${
+              hasUnassignedServices
+                ? 'bg-slate-300 text-slate-500 cursor-not-allowed shadow-none'
+                : 'bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-200 disabled:text-slate-400 cursor-pointer'
+            }`}
+            title={hasUnassignedServices ? `يجب تعيين الموظف لجميع الخدمات المضافة (${unassignedServicesCount} خدمة متبقية)` : undefined}
           >
             <span className="flex items-center gap-1.5 text-xs">
               <CreditCard size={16} />
               <span>إتمام وسداد الفاتورة</span>
             </span>
-            <span className="text-sm font-black font-mono bg-emerald-700/60 px-2.5 py-0.5 rounded-lg">
+            <span className={`text-sm font-black font-mono px-2.5 py-0.5 rounded-lg ${
+              hasUnassignedServices ? 'bg-slate-400 text-white' : 'bg-emerald-700/60'
+            }`}>
               {finalTotal.toFixed(2)} {settings.currency}
             </span>
           </button>
