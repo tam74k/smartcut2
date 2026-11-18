@@ -1107,6 +1107,21 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
                   </button>
                 </li>
                 <li>
+                  <a href="/saudi-salons/" className="hover:text-emerald-700 transition-colors inline-block">
+                    🇸🇦 صالونات السعودية وزاتكا
+                  </a>
+                </li>
+                <li>
+                  <a href="/egypt-salons/" className="hover:text-emerald-700 transition-colors inline-block">
+                    🇪🇬 صالونات مصر وإنستاباي
+                  </a>
+                </li>
+                <li>
+                  <a href="/uae-gulf-salons/" className="hover:text-emerald-700 transition-colors inline-block">
+                    🇦🇪 صالونات الإمارات والخليج
+                  </a>
+                </li>
+                <li>
                   <button
                     onClick={() => scrollToSection('features')}
                     className="hover:text-emerald-700 transition-colors cursor-pointer"
