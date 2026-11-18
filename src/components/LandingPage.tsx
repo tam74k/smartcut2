@@ -1144,13 +1144,25 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
             {/* Col 4: Solutions */}
             <div className="space-y-3">
               <h4 className="text-sm font-black text-slate-900">حلول المنظومة</h4>
-              <ul className="space-y-2 text-xs font-medium text-slate-500">
-                <li>نقاط البيع السريعة والكاشير</li>
-                <li>تنظيم المواعيد والحجوزات</li>
-                <li>رواتب وعمولات الموظفين</li>
-                <li>مستودع وخامات الصالون</li>
-                <li>شاشات النداء وكيوسك الحجز</li>
-                <li>بوابة خبيرات الميكب آرتست</li>
+              <ul className="space-y-2 text-xs font-medium text-slate-600">
+                <li>
+                  <a href="/barbershop/" className="hover:text-emerald-700 transition-colors inline-block">
+                    صالونات الحلاقة الرجالية
+                  </a>
+                </li>
+                <li>
+                  <a href="/beauty-salon/" className="hover:text-emerald-700 transition-colors inline-block">
+                    المشاغل والصالونات النسائية
+                  </a>
+                </li>
+                <li>
+                  <a href="/salon-pos/" className="hover:text-emerald-700 transition-colors inline-block">
+                    كاشير ونقاط البيع POS
+                  </a>
+                </li>
+                <li>تنظيم المواعيد وحجوزات الواتساب</li>
+                <li>حساب رواتب وعمولات الموظفين</li>
+                <li>مستودع وخامات الصالون والجرد</li>
               </ul>
             </div>
 
