@@ -4858,6 +4858,35 @@ export const DB = {
     return ok;
   },
 
+  // ---- شعارات صالونات العملاء للشريط المتحرك (Partner Salons Showcase) ----
+  async fetchPartnerSalons(): Promise<{ id: string; name: string; logoUrl: string; displayOrder?: number }[]> {
+    const client = sb();
+    if (!client) return [];
+    try {
+      const { data, error } = await client
+        .from('partner_salons')
+        .select('*')
+        .eq('is_active', true)
+        .order('display_order', { ascending: true });
+
+      if (error) {
+        console.warn('DB.fetchPartnerSalons notice:', error.message);
+        return [];
+      }
+      return (data || [])
+        .map((row: any) => ({
+          id: row.id,
+          name: row.name || 'صالون شريك',
+          logoUrl: row.logo_url || row.logoUrl || '',
+          displayOrder: row.display_order ?? 0
+        }))
+        .filter((s: any) => Boolean(s.logoUrl));
+    } catch (e) {
+      console.warn('DB.fetchPartnerSalons exception:', e);
+      return [];
+    }
+  },
+
   async fetchSubscriptionAddons(): Promise<any[]> {
     const client = sb();
     if (client) {

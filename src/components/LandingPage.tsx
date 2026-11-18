@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Scissors,
   Sparkles,
@@ -100,6 +100,47 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
   // Pricing State: Monthly vs Annual (Annual offers 2 months free)
   const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'annual'>('monthly');
   const [currency, setCurrency] = useState<'EGP' | 'USD'>('EGP');
+
+  // Partner / Client Salons for Horizontal Marquee Ticker (من قاعدة البيانات)
+  const [partnerSalons, setPartnerSalons] = useState<{ id: string; name: string; logoUrl: string }[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const loadPartners = async () => {
+      try {
+        const list = await DB.fetchPartnerSalons();
+        if (isMounted) {
+          if (list && list.length > 0) {
+            setPartnerSalons(list);
+          } else {
+            // Default sample partner salons until user populates database table
+            setPartnerSalons([
+              { id: '1', name: 'صالون لوميير بيوتي', logoUrl: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?w=260&auto=format&fit=crop&q=80' },
+              { id: '2', name: 'ذا باربر كلوب', logoUrl: 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?w=260&auto=format&fit=crop&q=80' },
+              { id: '3', name: 'مركز رويال سبا', logoUrl: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=260&auto=format&fit=crop&q=80' },
+              { id: '4', name: 'إيليت صالون آند سبا', logoUrl: 'https://images.unsplash.com/photo-1595476108010-b4d1f102b1b1?w=260&auto=format&fit=crop&q=80' },
+              { id: '5', name: 'صالون برنسيس كير', logoUrl: 'https://images.unsplash.com/photo-1527799820374-dcf8d9d4a388?w=260&auto=format&fit=crop&q=80' },
+              { id: '6', name: 'جولد باربر شوب', logoUrl: 'https://images.unsplash.com/photo-1585747860715-2ba37e788b70?w=260&auto=format&fit=crop&q=80' },
+              { id: '7', name: 'بيوتي لاونج سنتر', logoUrl: 'https://images.unsplash.com/photo-1516975080664-ed2fc6a32937?w=260&auto=format&fit=crop&q=80' }
+            ]);
+          }
+        }
+      } catch (err) {
+        console.warn('Error loading partner salons:', err);
+      }
+    };
+    loadPartners();
+    return () => { isMounted = false; };
+  }, []);
+
+  // Infinite Marquee Cloned Items (ضمان استمرار دوران الشريط بانسيابية تامة)
+  const marqueeLogos = useMemo(() => {
+    if (partnerSalons.length === 0) return [];
+    if (partnerSalons.length < 8) {
+      return [...partnerSalons, ...partnerSalons, ...partnerSalons, ...partnerSalons];
+    }
+    return [...partnerSalons, ...partnerSalons];
+  }, [partnerSalons]);
 
   // Contact Information
   const contactPhone = '+201014889704';
@@ -921,6 +962,60 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
           </div>
         </div>
       </section>
+
+      {/* ========================================================
+          6B. PARTNER SALONS HORIZONTAL MARQUEE (شريط الصالونات المتحرك أسفل الباقات)
+         ======================================================== */}
+      {marqueeLogos.length > 0 && (
+        <section className="py-16 bg-white border-t border-b border-slate-200/80 overflow-hidden">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-8 text-center space-y-2">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold">
+              <Sparkles size={13} className="text-amber-500" />
+              <span>شركاء النجاح • صالونات ومراكز تثق بنا</span>
+            </div>
+            <h3 className="text-2xl sm:text-3xl font-black text-slate-900">
+              صالونات ومراكز تجميل تعتمد على سمارت كت برو
+            </h3>
+            <p className="text-xs sm:text-sm text-slate-500 font-medium max-w-2xl mx-auto">
+              نعتز بثقة نخبة من أرقى صالونات الحلاقة الرجالية، ومراكز التجميل والميكب آرتست، والسبا في إدارة أعمالهم اليومية
+            </p>
+          </div>
+
+          {/* Marquee Ticker Track with Left/Right Gradient Masks */}
+          <div className="relative w-full overflow-hidden py-3 select-none">
+            {/* Gradient Mask (Right Edge - In RTL) */}
+            <div className="pointer-events-none absolute right-0 inset-y-0 w-24 sm:w-44 bg-gradient-to-l from-white via-white/80 to-transparent z-10"></div>
+            {/* Gradient Mask (Left Edge - In RTL) */}
+            <div className="pointer-events-none absolute left-0 inset-y-0 w-24 sm:w-44 bg-gradient-to-r from-white via-white/80 to-transparent z-10"></div>
+
+            {/* Continuous Scrolling Row */}
+            <div className="animate-marquee-rtl flex items-center gap-5 sm:gap-6">
+              {marqueeLogos.map((salon, idx) => (
+                <div
+                  key={`${salon.id}-${idx}`}
+                  title={salon.name}
+                  className="w-44 h-24 sm:w-48 sm:h-24 bg-white border border-slate-200/90 hover:border-emerald-500 rounded-2xl p-3 shadow-2xs hover:shadow-lg transition-all duration-300 flex flex-col items-center justify-center shrink-0 group cursor-pointer"
+                >
+                  <div className="w-full h-14 flex items-center justify-center overflow-hidden">
+                    <img
+                      src={salon.logoUrl}
+                      alt={salon.name}
+                      loading="lazy"
+                      className="max-h-12 max-w-[130px] w-auto h-auto object-contain transition-all duration-300 filter grayscale contrast-115 group-hover:grayscale-0 group-hover:scale-105"
+                      onError={(e) => {
+                        (e.target as HTMLElement).style.display = 'none';
+                      }}
+                    />
+                  </div>
+                  <span className="text-[11px] font-bold text-slate-600 group-hover:text-emerald-700 transition-colors truncate max-w-[140px] text-center mt-1">
+                    {salon.name}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* ========================================================
           7. BOTTOM CTA SECTION (Light Emerald Gradient Banner)
