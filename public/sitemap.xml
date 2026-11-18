@@ -13,4 +13,15 @@
       <image:caption>برنامج كاشير ونقاط بيع وحجز مواعيد لصالونات الحلاقة ومراكز التجميل والميكب ارتست</image:caption>
     </image:image>
   </url>
+  <url>
+    <loc>https://smartcut.besmartapps.com/barbershop/</loc>
+    <lastmod>2026-11-18</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+    <image:image>
+      <image:loc>https://smartcut.besmartapps.com/og-image.jpg</image:loc>
+      <image:title>برنامج صالون حلاقة رجالي كاشير وحجوزات - سمارت كت برو</image:title>
+      <image:caption>نظام إدارة صالونات الحلاقة الرجالية والباربر شوب وحساب عمولات الحلاقين</image:caption>
+    </image:image>
+  </url>
 </urlset>
