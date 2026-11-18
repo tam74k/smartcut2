@@ -625,6 +625,7 @@ export default function App() {
   const hasInitializedRef = useRef<boolean>(false);
   const loadedSectionsRef = useRef<Set<string>>(new Set());
   const deletedInvoiceIdsRef = useRef<Set<string>>(new Set());
+  const processedCheckoutTimestampsRef = useRef<Map<string, number>>(new Map());
 
   // Function to apply tab section data into state
   const applySectionData = useCallback((section: string, data: any) => {
@@ -2754,6 +2755,23 @@ export default function App() {
 
   const handleCheckoutComplete = (invoice: Invoice, paymentSplits: { amount: number, treasuryId: string }[], bookingId?: string) => {
     if (checkReadOnlyAndWarn()) return;
+
+    // صمام أمان حاسم لمنع تكرار معالجة نفس الفاتورة عند بطء الإنترنت أو تكرار النقر
+    const checkoutKey = invoice.id;
+    const now = Date.now();
+    const lastProcessed = processedCheckoutTimestampsRef.current.get(checkoutKey);
+    if (lastProcessed && (now - lastProcessed < 15000)) {
+      console.warn('⚠️ تم تجاهل استدعاء سداد مكرر لنفس الفاتورة لحماية الخزينة والمخزون والعمولات:', invoice.id);
+      return;
+    }
+    processedCheckoutTimestampsRef.current.set(checkoutKey, now);
+
+    // تنظيف السجلات القديمة تلقائياً لتفادي استهلاك الذاكرة
+    if (processedCheckoutTimestampsRef.current.size > 150) {
+      for (const [k, time] of processedCheckoutTimestampsRef.current.entries()) {
+        if (now - time > 60000) processedCheckoutTimestampsRef.current.delete(k);
+      }
+    }
 
     // 1. Add invoice tagged with active branch and salon
     const invoiceWithBranch: Invoice = {

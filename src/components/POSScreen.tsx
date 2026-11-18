@@ -448,6 +448,9 @@ export function POSScreen({
   const [receivedAmount, setReceivedAmount] = useState<number | ''>('');
   const [tipEmployeeId, setTipEmployeeId] = useState<string>('');
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
+  const isSubmittingPaymentRef = useRef(false);
+  const lastCheckoutTimestampRef = useRef(0);
+  const currentCheckoutInvoiceIdRef = useRef<string | null>(null);
 
   // Payment & Receipt Modals State
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -1853,7 +1856,13 @@ export function POSScreen({
   };
 
   const handleConfirmPayment = async (shouldPrint: boolean = false) => {
-    if (isSubmittingPayment) return;
+    // 1. قفل متزامن فوري لمنع أي نقرات مزدوجة أو متزامنة مهما كانت السرعة أو بطء الجهاز
+    const now = Date.now();
+    if (isSubmittingPaymentRef.current || isSubmittingPayment || (now - lastCheckoutTimestampRef.current < 3500)) {
+      console.warn('⚠️ محاولة سداد مكررة تم حجبها فورياً لحماية الفواتير والخزينة من الازدواجية');
+      return;
+    }
+
     if (isSubscriptionBlocked) {
       alert('الحساب موقوف أو انتهت فترة الاشتراك. النظام يعمل الآن بوضع الاطلاع فقط (Read-Only) ولا يمكن إنشاء أو سداد فواتير جديدة.');
       return;
@@ -1876,6 +1885,8 @@ export function POSScreen({
       }
     }
 
+    isSubmittingPaymentRef.current = true;
+    lastCheckoutTimestampRef.current = now;
     setIsSubmittingPayment(true);
     try {
       if (isWaselInvoice) {
@@ -1963,7 +1974,12 @@ export function POSScreen({
     const isPooledDeferredTip = (settings.tipPayoutMethod === 'pooled_deferred' || (settings as any).tip_payout_method === 'pooled_deferred' || settings.tipsDirectCashDeduction === false || (settings as any).tips_direct_cash_deduction === false);
     const tipPayoutMode = isPooledDeferredTip ? 'pooled_deferred' : 'instant_cash';
 
-    const finalInvoiceId = editingInvoice ? editingInvoice.id : ('INV-' + Math.random().toString(36).substr(2,9).toUpperCase());
+    // استخدام نفس معرف الفاتورة لعملية السداد الحالية لضمان عدم التكرار (Idempotency)
+    let finalInvoiceId = editingInvoice ? editingInvoice.id : currentCheckoutInvoiceIdRef.current;
+    if (!finalInvoiceId) {
+      finalInvoiceId = 'INV-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+      currentCheckoutInvoiceIdRef.current = finalInvoiceId;
+    }
     const finalInvoiceDate = editingInvoice ? editingInvoice.date : (effectiveIsShiftOpen ? (effectiveShiftDate + 'T' + new Date().toTimeString().split(' ')[0]) : new Date().toISOString());
 
     const initialInv: Invoice = {
@@ -2317,6 +2333,7 @@ export function POSScreen({
       setSelectedPriceTier(1);
       try { localStorage.removeItem('smartcut_pos_active_draft'); } catch {}
       if (onClearInitial) onClearInitial();
+      currentCheckoutInvoiceIdRef.current = null;
 
       setCompletedInvoice(newInvoice);
       setShowPaymentModal(false);
@@ -2336,8 +2353,12 @@ export function POSScreen({
       }
     } catch (err: any) {
       console.error('Payment confirmation error:', err);
+      currentCheckoutInvoiceIdRef.current = null;
       alert('حدث خطأ أثناء تأكيد الدفع: ' + (err?.message || ''));
     } finally {
+      setTimeout(() => {
+        isSubmittingPaymentRef.current = false;
+      }, 2500);
       setIsSubmittingPayment(false);
     }
   };
@@ -4697,8 +4718,9 @@ export function POSScreen({
           )}
 
           <button 
-            disabled={cart.length === 0 || isSubscriptionBlocked || hasUnassignedServices}
+            disabled={cart.length === 0 || isSubscriptionBlocked || hasUnassignedServices || isSubmittingPayment}
             onClick={() => {
+              if (isSubmittingPayment) return;
               if (isSubscriptionBlocked) {
                 alert('عذراً، لا يمكن إصدار فواتير جديدة نظراً لانتهاء الفترة التجريبية للصالون. يرجى تجديد الاشتراك مع الإدارة.');
                 return;
@@ -4749,10 +4771,34 @@ export function POSScreen({
       {/* Payment Modal */}
       {showPaymentModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh] relative">
+            
+            {/* حجب كامل للشاشة أثناء السداد يمنع أي ضغط بالخطأ أو تكرار عند بطء الإنترنت */}
+            {isSubmittingPayment && (
+              <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-xs z-50 flex flex-col items-center justify-center p-6 text-center text-white select-none pointer-events-auto">
+                <div className="w-14 h-14 rounded-full bg-emerald-500/20 border-2 border-emerald-400 flex items-center justify-center mb-4">
+                  <Loader2 size={30} className="animate-spin text-emerald-400" />
+                </div>
+                <h4 className="text-base font-black mb-1.5 text-white">جاري سداد وتوثيق الفاتورة...</h4>
+                <p className="text-xs text-slate-300 font-medium max-w-xs leading-relaxed">
+                  يتم الآن ترحيل الحسابات وتوثيق الفاتورة، يرجى الانتظار ثوانٍ معدودة وعدم إغلاق النافذة لتجنب التكرار.
+                </p>
+              </div>
+            )}
+
             <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
               <h3 className="font-bold text-lg text-slate-800">طريقة الدفع وسداد الفاتورة</h3>
-              <button onClick={() => setShowPaymentModal(false)} className="text-slate-400 hover:text-red-500 transition-colors"><X size={20}/></button>
+              <button 
+                type="button"
+                disabled={isSubmittingPayment}
+                onClick={() => {
+                  if (isSubmittingPayment) return;
+                  setShowPaymentModal(false);
+                }} 
+                className="text-slate-400 hover:text-red-500 disabled:opacity-20 disabled:pointer-events-none transition-colors cursor-pointer"
+              >
+                <X size={20}/>
+              </button>
             </div>
             
             <div className="p-6 overflow-y-auto space-y-4">
