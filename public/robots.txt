@@ -1,32 +1,37 @@
 # Smart Cut Pro - Robots.txt
-# https://smartcut.pro
+# https://smartcut.besmartapps.com
 
 User-agent: *
 Allow: /
 Disallow: /api/
-Disallow: /admin/system-debug
+Disallow: /admin/
+Disallow: /*?portal=*
+Disallow: /*?kiosk=*
+Disallow: /*?queue=*
+Disallow: /*?display=*
 
-# Specific search engine crawlers
 User-agent: Googlebot
 Allow: /
+Disallow: /api/
+Disallow: /admin/
+Disallow: /*?portal=*
+Disallow: /*?kiosk=*
+Disallow: /*?queue=*
+Disallow: /*?display=*
 
 User-agent: Googlebot-Image
 Allow: /
+Allow: /landing/
+Allow: /og-image.jpg
 
 User-agent: Bingbot
 Allow: /
-
-User-agent: Slurp
-Allow: /
-
-User-agent: DuckDuckBot
-Allow: /
-
-User-agent: Baiduspider
-Allow: /
-
-User-agent: YandexBot
-Allow: /
+Disallow: /api/
+Disallow: /admin/
+Disallow: /*?portal=*
+Disallow: /*?kiosk=*
+Disallow: /*?queue=*
+Disallow: /*?display=*
 
 # Sitemap Index
-Sitemap: https://smartcut.pro/sitemap.xml
+Sitemap: https://smartcut.besmartapps.com/sitemap.xml
