@@ -2381,7 +2381,7 @@ export function EmployeesScreen({
                                   let newModel = formData.commissionModel;
                                   if (val === 'none' && (newModel === 'target_based' || newModel === 'target')) {
                                     newModel = 'none';
-                                  } else if (val !== 'none') {
+                                  } else if (val !== 'none' && (newModel === 'none' || !newModel)) {
                                     newModel = 'target_based';
                                   }
                                   setFormData({ ...formData, targetType: val, commissionModel: newModel });
@@ -2408,8 +2408,7 @@ export function EmployeesScreen({
                                   const val = Math.max(0, Math.min(100, parseFloat(e.target.value) || 0));
                                   setFormData({ 
                                     ...formData, 
-                                    targetCommissionRate: val,
-                                    commissionRate: val 
+                                    targetCommissionRate: val
                                   });
                                 }}
                                 placeholder="مثال: 15"
