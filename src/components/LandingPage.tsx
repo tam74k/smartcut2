@@ -989,25 +989,25 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
             <div className="pointer-events-none absolute left-0 inset-y-0 w-24 sm:w-44 bg-gradient-to-r from-white via-white/80 to-transparent z-10"></div>
 
             {/* Continuous Scrolling Row */}
-            <div className="animate-marquee-rtl flex items-center gap-5 sm:gap-6">
+            <div className="animate-marquee-rtl flex items-center gap-6 sm:gap-8">
               {marqueeLogos.map((salon, idx) => (
                 <div
                   key={`${salon.id}-${idx}`}
                   title={salon.name}
-                  className="w-44 h-24 sm:w-48 sm:h-24 bg-white border border-slate-200/90 hover:border-emerald-500 rounded-2xl p-3 shadow-2xs hover:shadow-lg transition-all duration-300 flex flex-col items-center justify-center shrink-0 group cursor-pointer"
+                  className="w-52 h-36 sm:w-64 sm:h-44 bg-white border border-slate-200/90 hover:border-emerald-500 rounded-2xl p-4 sm:p-5 shadow-xs hover:shadow-xl transition-all duration-300 flex flex-col items-center justify-center shrink-0 group cursor-pointer"
                 >
-                  <div className="w-full h-14 flex items-center justify-center overflow-hidden">
+                  <div className="w-full h-24 sm:h-28 flex items-center justify-center overflow-hidden">
                     <img
                       src={salon.logoUrl}
                       alt={salon.name}
                       loading="lazy"
-                      className="max-h-12 max-w-[130px] w-auto h-auto object-contain transition-all duration-300 filter grayscale contrast-115 group-hover:grayscale-0 group-hover:scale-105"
+                      className="max-h-20 sm:max-h-24 max-w-[170px] sm:max-w-[210px] w-auto h-auto object-contain transition-all duration-300 filter contrast-105 group-hover:scale-105"
                       onError={(e) => {
                         (e.target as HTMLElement).style.display = 'none';
                       }}
                     />
                   </div>
-                  <span className="text-[11px] font-bold text-slate-600 group-hover:text-emerald-700 transition-colors truncate max-w-[140px] text-center mt-1">
+                  <span className="text-xs sm:text-sm font-bold text-slate-700 group-hover:text-emerald-700 transition-colors truncate max-w-[170px] sm:max-w-[210px] text-center mt-2">
                     {salon.name}
                   </span>
                 </div>
