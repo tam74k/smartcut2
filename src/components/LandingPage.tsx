@@ -1144,7 +1144,7 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
             {/* Col 4: Solutions */}
             <div className="space-y-3">
               <h4 className="text-sm font-black text-slate-900">حلول المنظومة</h4>
-              <ul className="space-y-2 text-xs font-medium text-slate-600">
+              <ul className="space-y-1.5 text-xs font-medium text-slate-600">
                 <li>
                   <a href="/barbershop/" className="hover:text-emerald-700 transition-colors inline-block">
                     صالونات الحلاقة الرجالية
@@ -1161,18 +1161,38 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
                   </a>
                 </li>
                 <li>
+                  <a href="/zatca-invoice/" className="hover:text-emerald-700 transition-colors inline-block">
+                    الفاتورة الإلكترونية زاتكا ZATCA
+                  </a>
+                </li>
+                <li>
+                  <a href="/commissions-payroll/" className="hover:text-emerald-700 transition-colors inline-block">
+                    عمولات ورواتب الموظفين والسلف
+                  </a>
+                </li>
+                <li>
                   <a href="/spa-beauty-center/" className="hover:text-emerald-700 transition-colors inline-block">
                     بيوتي سنتر والسبا والمساج
                   </a>
                 </li>
                 <li>
                   <a href="/makeup-artist/" className="hover:text-emerald-700 transition-colors inline-block">
-                    بوابة الميكب ارتست وحجوزات العرائس
+                    بوابة الميكب ارتست والعرائس
                   </a>
                 </li>
                 <li>
                   <a href="/online-booking/" className="hover:text-emerald-700 transition-colors inline-block">
                     حجز مواعيد أونلاين وتأكيد واتساب
+                  </a>
+                </li>
+                <li>
+                  <a href="/inventory-kiosk/" className="hover:text-emerald-700 transition-colors inline-block">
+                    المخزون وكشك الانتظار Kiosk
+                  </a>
+                </li>
+                <li>
+                  <a href="/pricing-comparison/" className="hover:text-emerald-700 transition-colors inline-block font-bold text-emerald-700">
+                    الأسعار ومقارنة البدائل
                   </a>
                 </li>
               </ul>

@@ -47,6 +47,28 @@
     </image:image>
   </url>
   <url>
+    <loc>https://smartcut.besmartapps.com/zatca-invoice/</loc>
+    <lastmod>2026-11-18</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+    <image:image>
+      <image:loc>https://smartcut.besmartapps.com/og-image.jpg</image:loc>
+      <image:title>برنامج الفاتورة الإلكترونية زاتكا ZATCA للصالونات - سمارت كت برو</image:title>
+      <image:caption>نظام الفاتورة الضريبية المبسطة وكود الـ QR المشفر لصالونات التجميل والمشاغل</image:caption>
+    </image:image>
+  </url>
+  <url>
+    <loc>https://smartcut.besmartapps.com/commissions-payroll/</loc>
+    <lastmod>2026-11-18</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+    <image:image>
+      <image:loc>https://smartcut.besmartapps.com/og-image.jpg</image:loc>
+      <image:title>برنامج حساب عمولات الحلاقين والرواتب والسلف - سمارت كت برو</image:title>
+      <image:caption>إدارة عمولات موظفي الصالونات ومسيرات الرواتب والسلف وكشوفات الحساب</image:caption>
+    </image:image>
+  </url>
+  <url>
     <loc>https://smartcut.besmartapps.com/spa-beauty-center/</loc>
     <lastmod>2026-11-18</lastmod>
     <changefreq>weekly</changefreq>
@@ -77,6 +99,28 @@
       <image:loc>https://smartcut.besmartapps.com/og-image.jpg</image:loc>
       <image:title>نظام حجز مواعيد صالونات أونلاين وتأكيد واتساب - سمارت كت برو</image:title>
       <image:caption>رابط حجز مواعيد ذاتي للصالونات مع إرسال إيصالات واتساب PDF</image:caption>
+    </image:image>
+  </url>
+  <url>
+    <loc>https://smartcut.besmartapps.com/inventory-kiosk/</loc>
+    <lastmod>2026-11-18</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+    <image:image>
+      <image:loc>https://smartcut.besmartapps.com/og-image.jpg</image:loc>
+      <image:title>إدارة مخزون الصالونات وكشك الانتظار الذاتي Kiosk - سمارت كت برو</image:title>
+      <image:caption>إدارة مستودعات الصالونات ومواد المعالجة وكشك تنظيم طابور الانتظار</image:caption>
+    </image:image>
+  </url>
+  <url>
+    <loc>https://smartcut.besmartapps.com/pricing-comparison/</loc>
+    <lastmod>2026-11-18</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+    <image:image>
+      <image:loc>https://smartcut.besmartapps.com/og-image.jpg</image:loc>
+      <image:title>أسعار برنامج سمارت كت ومقارنة مع بدائل برامج الصالونات - سمارت كت برو</image:title>
+      <image:caption>باقات وأسعار سمارت كت برو ومقارنة الميزات مع برامج الصالونات الأخرى</image:caption>
     </image:image>
   </url>
 </urlset>
