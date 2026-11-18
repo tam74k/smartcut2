@@ -40,10 +40,12 @@ interface LoginScreenProps {
   settings?: AppSettings;
   salonName?: string;
   onOpenSaaSAdmin?: () => void;
+  initialTab?: 'login' | 'register';
+  onBackToLanding?: () => void;
 }
 
-export function LoginScreen({ onLoginSuccess, settings, onOpenSaaSAdmin }: LoginScreenProps) {
-  const [activeTab, setActiveTab] = useState<'login' | 'register' | 'programmer'>('login');
+export function LoginScreen({ onLoginSuccess, settings, onOpenSaaSAdmin, initialTab = 'login', onBackToLanding }: LoginScreenProps) {
+  const [activeTab, setActiveTab] = useState<'login' | 'register' | 'programmer'>(initialTab);
 
   // Platform Branding & Developer Support Info from Database
   const [platformData, setPlatformData] = useState<{
@@ -487,6 +489,23 @@ export function LoginScreen({ onLoginSuccess, settings, onOpenSaaSAdmin }: Login
 
       <div className="w-full max-w-lg bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/20 p-7 z-10 relative">
         
+        {/* Back to Landing Page Button */}
+        {onBackToLanding && (
+          <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-200/60">
+            <button
+              type="button"
+              onClick={onBackToLanding}
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-emerald-700 hover:bg-emerald-50 px-3 py-1.5 rounded-xl transition-all cursor-pointer border border-slate-200 hover:border-emerald-200"
+            >
+              <ArrowRight size={15} />
+              <span>الرجوع للواجهة الرئيسية</span>
+            </button>
+            <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg">
+              Smart Cut Pro
+            </span>
+          </div>
+        )}
+
         {/* Brand Header */}
         <div className="text-center mb-6">
           {platformData.logoUrl ? (

@@ -39,6 +39,7 @@ import { PromoCodesScreen } from './components/PromoCodesScreen';
 import { TipsScreen } from './components/TipsScreen';
 import { FingerprintLogsScreen } from './components/FingerprintLogsScreen';
 import { LoginScreen } from './components/LoginScreen';
+import { LandingPage } from './components/LandingPage';
 import { BarberLoginScreen } from './components/BarberLoginScreen';
 import { BarberPortalScreen } from './components/BarberPortalScreen';
 import { SaaSProgrammerPortal } from './components/SaaSProgrammerPortal';
@@ -85,6 +86,16 @@ export default function App() {
     } catch {
       return null;
     }
+  });
+
+  // Guest Landing vs Login vs Register State
+  const [guestView, setGuestView] = useState<'landing' | 'login' | 'register'>(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('login') === 'true' || params.get('view') === 'login') return 'login';
+      if (params.get('register') === 'true' || params.get('view') === 'register' || params.get('trial') === 'true') return 'register';
+    } catch {}
+    return 'landing';
   });
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
   const [showUserProfileModal, setShowUserProfileModal] = useState(false);
@@ -1624,6 +1635,7 @@ export default function App() {
     if (confirm('هل ترغب في تسجيل الخروج من النظام؟')) {
       AuthService.logout();
       setCurrentUser(null);
+      setGuestView('landing');
     }
   };
 
@@ -4122,10 +4134,22 @@ export default function App() {
     );
   }
 
-  // 4. STANDARD APP LOGIN SCREEN
+  // 4. PRE-LOGIN LANDING PAGE & LOGIN SCREENS
   if (!currentUser) {
+    if (guestView === 'landing') {
+      return (
+        <LandingPage
+          onLoginClick={() => setGuestView('login')}
+          onStartTrialClick={() => setGuestView('register')}
+          settings={settings}
+        />
+      );
+    }
+
     return (
       <LoginScreen 
+        initialTab={guestView === 'register' ? 'register' : 'login'}
+        onBackToLanding={() => setGuestView('landing')}
         onLoginSuccess={handleApplyLoginSuccess} 
         settings={settings}
         onOpenSaaSAdmin={() => {
