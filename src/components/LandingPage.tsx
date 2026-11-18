@@ -27,6 +27,7 @@ import {
   Headphones
 } from 'lucide-react';
 import { AppSettings } from '../types';
+import { DB } from '../services/db';
 
 interface LandingPageProps {
   onLoginClick: () => void;
@@ -35,6 +36,38 @@ interface LandingPageProps {
 }
 
 export function LandingPage({ onLoginClick, onStartTrialClick, settings }: LandingPageProps) {
+  // Official Platform Logo from Database (Platform-wide logo)
+  const [platformLogo, setPlatformLogo] = useState<string>(() => {
+    try {
+      return localStorage.getItem('smartcut_platform_logo_url') || 'https://api.101488.xyz/storage/v1/object/public/salon-logos/newlogo.jpeg';
+    } catch {
+      return 'https://api.101488.xyz/storage/v1/object/public/salon-logos/newlogo.jpeg';
+    }
+  });
+  const [logoLoadFailed, setLogoLoadFailed] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    const loadPlatformBranding = async () => {
+      try {
+        const pSettings = await DB.fetchPlatformSettings();
+        if (pSettings && isMounted) {
+          const logo = pSettings.platformLogoUrl || pSettings.logoUrl;
+          if (logo) {
+            setPlatformLogo(logo);
+            try {
+              localStorage.setItem('smartcut_platform_logo_url', logo);
+            } catch {}
+          }
+        }
+      } catch (err) {
+        console.warn('Error loading platform logo:', err);
+      }
+    };
+    loadPlatformBranding();
+    return () => { isMounted = false; };
+  }, []);
+
   // Mobile Nav Drawer State
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -90,11 +123,22 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
          ======================================================== */}
       <header className="fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-xs transition-all">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
-          {/* Logo & Brand */}
+          {/* Logo & Brand (Official Platform Logo from Database) */}
           <div className="flex items-center gap-3 cursor-pointer" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-md shadow-emerald-600/20 ring-2 ring-emerald-500/20">
-              <Scissors size={22} className="transform -rotate-12" />
-            </div>
+            {platformLogo && !logoLoadFailed ? (
+              <div className="w-12 h-12 rounded-2xl bg-white p-1 border border-slate-200 shadow-sm flex items-center justify-center overflow-hidden shrink-0">
+                <img
+                  src={platformLogo}
+                  alt="شعار سمارت كت برو"
+                  className="w-full h-full object-contain rounded-xl"
+                  onError={() => setLogoLoadFailed(true)}
+                />
+              </div>
+            ) : (
+              <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-md shadow-emerald-600/20 ring-2 ring-emerald-500/20 shrink-0">
+                <Scissors size={22} className="transform -rotate-12" />
+              </div>
+            )}
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-xl font-black text-slate-900 tracking-tight">سمارت كت برو</span>
@@ -266,6 +310,20 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
 
         {/* Hero Content Overlay */}
         <div className="relative z-10 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center space-y-6">
+          {/* Official Logo Badge in Hero */}
+          {platformLogo && !logoLoadFailed && (
+            <div className="flex justify-center mb-1">
+              <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-3xl bg-white/95 p-2 shadow-2xl border-2 border-white/80 backdrop-blur-md flex items-center justify-center transform hover:scale-105 transition-all">
+                <img
+                  src={platformLogo}
+                  alt="شعار سمارت كت برو الرسمي"
+                  className="w-full h-full object-contain rounded-2xl"
+                  onError={() => setLogoLoadFailed(true)}
+                />
+              </div>
+            </div>
+          )}
+
           {/* Active Slide Pill Badge */}
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/20 border border-white/40 text-white text-xs font-bold backdrop-blur-md shadow-md">
             <Sparkles size={14} className="text-amber-300" />
@@ -914,9 +972,20 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
             {/* Col 1 & 2: Brand Info */}
             <div className="lg:col-span-2 space-y-4 text-right">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-md shadow-emerald-600/20">
-                  <Scissors size={20} className="transform -rotate-12" />
-                </div>
+                {platformLogo && !logoLoadFailed ? (
+                  <div className="w-12 h-12 rounded-2xl bg-white p-1 border border-slate-200 shadow-sm flex items-center justify-center overflow-hidden shrink-0">
+                    <img
+                      src={platformLogo}
+                      alt="شعار سمارت كت برو"
+                      className="w-full h-full object-contain rounded-xl"
+                      onError={() => setLogoLoadFailed(true)}
+                    />
+                  </div>
+                ) : (
+                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-md shadow-emerald-600/20 shrink-0">
+                    <Scissors size={20} className="transform -rotate-12" />
+                  </div>
+                )}
                 <span className="text-xl font-black text-slate-900">سمارت كت برو</span>
               </div>
               <p className="text-xs text-slate-500 leading-relaxed max-w-sm font-medium">
