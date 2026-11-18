@@ -1160,9 +1160,21 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
                     كاشير ونقاط البيع POS
                   </a>
                 </li>
-                <li>تنظيم المواعيد وحجوزات الواتساب</li>
-                <li>حساب رواتب وعمولات الموظفين</li>
-                <li>مستودع وخامات الصالون والجرد</li>
+                <li>
+                  <a href="/spa-beauty-center/" className="hover:text-emerald-700 transition-colors inline-block">
+                    بيوتي سنتر والسبا والمساج
+                  </a>
+                </li>
+                <li>
+                  <a href="/makeup-artist/" className="hover:text-emerald-700 transition-colors inline-block">
+                    بوابة الميكب ارتست وحجوزات العرائس
+                  </a>
+                </li>
+                <li>
+                  <a href="/online-booking/" className="hover:text-emerald-700 transition-colors inline-block">
+                    حجز مواعيد أونلاين وتأكيد واتساب
+                  </a>
+                </li>
               </ul>
             </div>
 

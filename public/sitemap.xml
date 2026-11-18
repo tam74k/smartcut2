@@ -46,4 +46,37 @@
       <image:caption>برنامج كاشير سحابي للصالونات متوافق مع هيئة الزكاة والضريبة والجمارك زاتكا</image:caption>
     </image:image>
   </url>
+  <url>
+    <loc>https://smartcut.besmartapps.com/spa-beauty-center/</loc>
+    <lastmod>2026-11-18</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+    <image:image>
+      <image:loc>https://smartcut.besmartapps.com/og-image.jpg</image:loc>
+      <image:title>برنامج إدارة مركز تجميل وبيوتي سنتر وسبا - سمارت كت برو</image:title>
+      <image:caption>نظام إدارة البيوتي سنتر والمساج والسبا وحجز الغرف</image:caption>
+    </image:image>
+  </url>
+  <url>
+    <loc>https://smartcut.besmartapps.com/makeup-artist/</loc>
+    <lastmod>2026-11-18</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+    <image:image>
+      <image:loc>https://smartcut.besmartapps.com/og-image.jpg</image:loc>
+      <image:title>برنامج ميكب ارتست وحجوزات العرائس والعرابين - سمارت كت برو</image:title>
+      <image:caption>بوابة الميكب ارتست وحجوزات العرائس ونظام اعتماد العرابين</image:caption>
+    </image:image>
+  </url>
+  <url>
+    <loc>https://smartcut.besmartapps.com/online-booking/</loc>
+    <lastmod>2026-11-18</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+    <image:image>
+      <image:loc>https://smartcut.besmartapps.com/og-image.jpg</image:loc>
+      <image:title>نظام حجز مواعيد صالونات أونلاين وتأكيد واتساب - سمارت كت برو</image:title>
+      <image:caption>رابط حجز مواعيد ذاتي للصالونات مع إرسال إيصالات واتساب PDF</image:caption>
+    </image:image>
+  </url>
 </urlset>
