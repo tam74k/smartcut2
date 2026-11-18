@@ -142,7 +142,7 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
             <button
               type="button"
               onClick={onLoginClick}
-              className="px-4 py-2.5 text-xs font-bold text-slate-200 hover:text-white bg-white/5 hover:bg-white/10 border border-white/15 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
+              className="h-10 px-4 text-xs font-bold text-slate-200 hover:text-white bg-white/5 hover:bg-white/10 border border-white/15 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
             >
               <LogIn size={15} />
               <span>تسجيل دخول</span>
@@ -151,7 +151,7 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
             <button
               type="button"
               onClick={onStartTrialClick}
-              className="px-4 py-2.5 text-xs font-black text-slate-950 bg-gradient-to-r from-emerald-400 to-teal-300 hover:from-emerald-300 hover:to-teal-200 rounded-xl transition-all shadow-lg shadow-emerald-500/25 flex items-center gap-1.5 cursor-pointer transform hover:-translate-y-0.5"
+              className="h-10 px-4 text-xs font-black text-slate-950 bg-gradient-to-r from-emerald-400 to-teal-300 hover:from-emerald-300 hover:to-teal-200 rounded-xl transition-all shadow-lg shadow-emerald-500/25 flex items-center gap-1.5 cursor-pointer transform hover:-translate-y-0.5 whitespace-nowrap"
             >
               <Sparkles size={15} className="text-emerald-950" />
               <span>إنشاء حساب تجريبي مجاني 7 أيام</span>
@@ -291,22 +291,22 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
           </p>
 
           {/* Two Prominent Action Buttons on Hero */}
-          <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-4 max-w-lg mx-auto">
+          <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4 max-w-2xl mx-auto">
             <button
               type="button"
               onClick={onStartTrialClick}
-              className="w-full sm:w-auto flex-1 px-8 py-4 text-sm sm:text-base font-black text-slate-950 bg-gradient-to-r from-emerald-400 via-teal-300 to-emerald-400 hover:from-emerald-300 hover:to-teal-200 rounded-2xl shadow-2xl shadow-emerald-500/30 transition-all flex items-center justify-center gap-2 cursor-pointer transform hover:-translate-y-1 active:scale-95 group"
+              className="w-full sm:w-auto h-13 sm:h-14 px-6 sm:px-8 text-sm sm:text-base font-black text-slate-950 bg-gradient-to-r from-emerald-400 via-teal-300 to-emerald-400 hover:from-emerald-300 hover:to-teal-200 rounded-2xl shadow-2xl shadow-emerald-500/30 transition-all flex items-center justify-center gap-2 cursor-pointer transform hover:-translate-y-1 active:scale-95 whitespace-nowrap group shrink-0"
             >
-              <Sparkles size={18} className="text-slate-950 group-hover:rotate-12 transition-transform" />
+              <Sparkles size={18} className="text-slate-950 group-hover:rotate-12 transition-transform shrink-0" />
               <span>إنشاء حساب تجريبي مجاني 7 أيام</span>
             </button>
 
             <button
               type="button"
               onClick={onLoginClick}
-              className="w-full sm:w-auto px-7 py-4 text-sm sm:text-base font-bold text-white bg-slate-900/70 hover:bg-slate-900/90 border border-white/20 hover:border-white/40 rounded-2xl backdrop-blur-md transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xl hover:-translate-y-1"
+              className="w-full sm:w-auto h-13 sm:h-14 px-6 sm:px-8 text-sm sm:text-base font-bold text-white bg-slate-900/80 hover:bg-slate-900 border border-white/20 hover:border-white/40 rounded-2xl backdrop-blur-md transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xl hover:-translate-y-1 active:scale-95 whitespace-nowrap shrink-0"
             >
-              <LogIn size={18} />
+              <LogIn size={18} className="text-slate-200 shrink-0" />
               <span>تسجيل الدخول</span>
             </button>
           </div>
@@ -880,13 +880,13 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
             انضم إلى المئات من أصحاب الصالونات الناجحة واستفد من فترة التجربة المجانية الكاملة لـ 7 أيام واكتشف الفرق بنفسك.
           </p>
 
-          <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-4">
+          <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4 max-w-2xl mx-auto">
             <button
               type="button"
               onClick={onStartTrialClick}
-              className="w-full sm:w-auto px-8 py-4 text-sm sm:text-base font-black text-slate-950 bg-gradient-to-r from-emerald-400 to-teal-300 hover:from-emerald-300 hover:to-teal-200 rounded-2xl shadow-2xl shadow-emerald-500/30 transition-all flex items-center justify-center gap-2 cursor-pointer transform hover:-translate-y-1"
+              className="w-full sm:w-auto h-13 sm:h-14 px-6 sm:px-8 text-sm sm:text-base font-black text-slate-950 bg-gradient-to-r from-emerald-400 to-teal-300 hover:from-emerald-300 hover:to-teal-200 rounded-2xl shadow-2xl shadow-emerald-500/30 transition-all flex items-center justify-center gap-2 cursor-pointer transform hover:-translate-y-1 active:scale-95 whitespace-nowrap shrink-0"
             >
-              <Sparkles size={18} />
+              <Sparkles size={18} className="shrink-0" />
               <span>إنشاء حساب تجريبي مجاني 7 أيام</span>
             </button>
 
@@ -894,9 +894,9 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
               href={whatsappUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="w-full sm:w-auto px-7 py-4 text-sm sm:text-base font-bold text-white bg-emerald-600/30 hover:bg-emerald-600/50 border border-emerald-500/40 rounded-2xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg"
+              className="w-full sm:w-auto h-13 sm:h-14 px-6 sm:px-8 text-sm sm:text-base font-bold text-white bg-emerald-600/30 hover:bg-emerald-600/50 border border-emerald-500/40 rounded-2xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg hover:-translate-y-1 active:scale-95 whitespace-nowrap shrink-0"
             >
-              <MessageCircle size={18} className="text-emerald-400" />
+              <MessageCircle size={18} className="text-emerald-400 shrink-0" />
               <span>محادثة واتساب مباشرة</span>
             </a>
           </div>
