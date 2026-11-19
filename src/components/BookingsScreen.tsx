@@ -28,6 +28,7 @@ import { EvolutionApiService } from '../services/evolutionApiService';
 import { MessageCircle, Send, Copy } from 'lucide-react';
 import { generateCode39Svg } from '../utils/printQueueSlip';
 import { safeStorage } from '../utils/safeStorage';
+import { getSalonTimezone, getSalonNow } from '../utils/timezone';
 
 // Format time string (e.g. "14:30" or "09:00") into 12-hour format with AM/PM (ص / م)
 export function formatTo12Hour(timeStr?: string): string {
@@ -361,8 +362,23 @@ export function BookingsScreen({
   const [openingTimeInput, setOpeningTimeInput] = useState<string>(settings.bookingRules?.openingTime || '10:00');
   const [closingTimeInput, setClosingTimeInput] = useState<string>(settings.bookingRules?.closingTime || '23:00');
 
-  // Calendar Navigation & View State
-  const [currentDate, setCurrentDate] = useState<Date>(new Date());
+  // Effective salon timezone from registered country / settings
+  const effectiveSalonTz = useMemo(() => {
+    const curBranch = branches.find(b => b.id === activeBranchId);
+    return getSalonTimezone(settings, curBranch);
+  }, [settings, branches, activeBranchId]);
+
+  // Current date string strictly in the salon's physical country timezone
+  const salonTodayStr = useMemo(() => {
+    return getSalonNow(effectiveSalonTz).todayStr;
+  }, [effectiveSalonTz]);
+
+  // Calendar Navigation & View State (initialized to Today in salon country timezone)
+  const [currentDate, setCurrentDate] = useState<Date>(() => {
+    const today = getSalonNow(getSalonTimezone(settings)).todayStr;
+    const [y, m, d] = today.split('-').map(Number);
+    return new Date(y, m - 1, d, 12, 0, 0);
+  });
   const [activeView, setActiveView] = useState<'day' | 'week' | 'month'>('week');
   const [selectedTech, setSelectedTech] = useState<string>('all');
   const [selectedArtist, setSelectedArtist] = useState<string>('all');
@@ -824,19 +840,23 @@ export function BookingsScreen({
     );
   }, [retailProducts, productSearchQuery]);
 
-  // Helper date functions
-  const formatDateToYMD = (d: Date) => d.toISOString().split('T')[0];
+  // Helper date functions: formatting strictly as YYYY-MM-DD without browser timezone shift
+  const formatDateToYMD = (d: Date): string => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
 
   const getWeekDays = (baseDate: Date) => {
-    const d = new Date(baseDate);
+    const d = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), 12, 0, 0);
     const day = d.getDay(); // 0 = Sunday
     const diff = d.getDate() - day;
-    const sunday = new Date(d.setDate(diff));
+    const sunday = new Date(d.getFullYear(), d.getMonth(), diff, 12, 0, 0);
 
     const weekDays: Date[] = [];
     for (let i = 0; i < 7; i++) {
-      const nextDay = new Date(sunday);
-      nextDay.setDate(sunday.getDate() + i);
+      const nextDay = new Date(sunday.getFullYear(), sunday.getMonth(), sunday.getDate() + i, 12, 0, 0);
       weekDays.push(nextDay);
     }
     return weekDays;
@@ -845,32 +865,49 @@ export function BookingsScreen({
   const getMonthGrid = (baseDate: Date) => {
     const year = baseDate.getFullYear();
     const month = baseDate.getMonth();
-    const firstDay = new Date(year, month, 1);
-    const lastDay = new Date(year, month + 1, 0);
+    const firstDay = new Date(year, month, 1, 12, 0, 0);
+    const lastDay = new Date(year, month + 1, 0, 12, 0, 0);
 
     const days: { date: Date; isCurrentMonth: boolean; dateStr: string }[] = [];
 
     // Prepend previous month days
     const startDayOfWeek = firstDay.getDay(); // 0 = Sun
     for (let i = startDayOfWeek - 1; i >= 0; i--) {
-      const prevDate = new Date(year, month, -i);
+      const prevDate = new Date(year, month, -i, 12, 0, 0);
       days.push({ date: prevDate, isCurrentMonth: false, dateStr: formatDateToYMD(prevDate) });
     }
 
     // Current month days
     for (let i = 1; i <= lastDay.getDate(); i++) {
-      const curDate = new Date(year, month, i);
+      const curDate = new Date(year, month, i, 12, 0, 0);
       days.push({ date: curDate, isCurrentMonth: true, dateStr: formatDateToYMD(curDate) });
     }
 
     // Append next month days
     const remaining = (7 - (days.length % 7)) % 7;
     for (let i = 1; i <= remaining; i++) {
-      const nextDate = new Date(year, month + 1, i);
+      const nextDate = new Date(year, month + 1, i, 12, 0, 0);
       days.push({ date: nextDate, isCurrentMonth: false, dateStr: formatDateToYMD(nextDate) });
     }
 
     return days;
+  };
+
+  // تحويل الوقت من أي صيغة (12 ساعة م/ص أو 24 ساعة) إلى فترة 24 ساعة قياسية مطابقة لـ timeSlots
+  const normalizeTimeTo24HourSlot = (timeStr?: string): string => {
+    if (!timeStr) return '10:00';
+    const trimmed = timeStr.trim();
+    const isPm = trimmed.includes('م') || trimmed.toUpperCase().includes('PM');
+    const isAm = trimmed.includes('ص') || trimmed.toUpperCase().includes('AM');
+    
+    const match = trimmed.match(/(\d{1,2}):(\d{2})/);
+    if (!match) return '10:00';
+    
+    let hour = parseInt(match[1], 10);
+    if (isPm && hour < 12) hour += 12;
+    if (isAm && hour === 12) hour = 0;
+    
+    return `${String(hour).padStart(2, '0')}:00`;
   };
 
   // Time Slots for Day / Week views (09:00 AM to 11:00 PM)
@@ -907,7 +944,8 @@ export function BookingsScreen({
   };
 
   const handleToday = () => {
-    setCurrentDate(new Date());
+    const [y, m, d] = salonTodayStr.split('-').map(Number);
+    setCurrentDate(new Date(y, m - 1, d, 12, 0, 0));
   };
 
   // Calendar Header Title
@@ -1140,7 +1178,7 @@ export function BookingsScreen({
     calendarFilteredBookings.forEach(b => {
       if (!b.date) return;
       const bDate = b.date.split('T')[0].trim();
-      const hourPart = b.time ? b.time.substring(0, 2) + ':00' : '10:00';
+      const hourPart = normalizeTimeTo24HourSlot(b.time);
       const key = `${bDate}_${hourPart}`;
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(b);
@@ -3592,7 +3630,7 @@ export function BookingsScreen({
                   <Clock size={15} />
                 </div>
                 {getWeekDays(currentDate).map((day, idx) => {
-                  const isToday = formatDateToYMD(day) === formatDateToYMD(new Date());
+                  const isToday = formatDateToYMD(day) === salonTodayStr;
                   return (
                     <div 
                       key={idx} 
@@ -3623,7 +3661,7 @@ export function BookingsScreen({
                     {/* 7 Days Columns */}
                     {getWeekDays(currentDate).map((day, dayIdx) => {
                       const dateStr = formatDateToYMD(day);
-                      const isToday = dateStr === formatDateToYMD(new Date());
+                      const isToday = dateStr === salonTodayStr;
                       const key = `${dateStr}_${timeSlot}`;
                       const slotBookings = bookingsByDateAndSlot.get(key) || [];
 
@@ -3724,8 +3762,8 @@ export function BookingsScreen({
                         const dateStr = formatDateToYMD(currentDate);
                         const empBookings = calendarFilteredBookings.filter(b => 
                           (b.date?.split('T')[0] || b.date) === dateStr &&
-                          (b.time ? b.time.substring(0, 2) + ':00' : '10:00') === timeSlot &&
-                          b.services?.some(s => s.technicianId === emp.id)
+                          normalizeTimeTo24HourSlot(b.time) === timeSlot &&
+                          (b.employeeId === emp.id || b.barberId === emp.id || b.services?.some(s => s.technicianId === emp.id || s.employeeId === emp.id))
                         );
 
                         return (
@@ -3805,7 +3843,7 @@ export function BookingsScreen({
               {/* Month Grid */}
               <div className="grid grid-cols-7 divide-x divide-y divide-slate-100 border-b border-slate-100">
                 {getMonthGrid(currentDate).map((cell, idx) => {
-                  const isToday = cell.dateStr === formatDateToYMD(new Date());
+                  const isToday = cell.dateStr === salonTodayStr;
                   const dayBookings = calendarFilteredBookings.filter(b => (b.date?.split('T')[0] || b.date) === cell.dateStr);
 
                   return (

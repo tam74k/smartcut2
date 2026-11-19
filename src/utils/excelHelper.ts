@@ -318,6 +318,33 @@ export function getCountryTimeZone(country?: string, currency?: string): string 
   if (c.includes('عراق') || c.includes('iraq') || cur === 'IQD') {
     return 'Asia/Baghdad';
   }
+  if (c.includes('لبنان') || c.includes('lebanon') || cur === 'LBP') {
+    return 'Asia/Beirut';
+  }
+  if (c.includes('فلسطين') || c.includes('palestine')) {
+    return 'Asia/Gaza';
+  }
+  if (c.includes('سوريا') || c.includes('syria') || cur === 'SYP') {
+    return 'Asia/Damascus';
+  }
+  if (c.includes('يمن') || c.includes('yemen') || cur === 'YER') {
+    return 'Asia/Aden';
+  }
+  if (c.includes('سودان') || c.includes('sudan') || cur === 'SDG') {
+    return 'Africa/Khartoum';
+  }
+  if (c.includes('ليبيا') || c.includes('libya') || cur === 'LYD') {
+    return 'Africa/Tripoli';
+  }
+  if (c.includes('تونس') || c.includes('tunis') || cur === 'TND') {
+    return 'Africa/Tunis';
+  }
+  if (c.includes('جزائر') || c.includes('algeria') || cur === 'DZD') {
+    return 'Africa/Algiers';
+  }
+  if (c.includes('مغرب') || c.includes('morocco') || cur === 'MAD') {
+    return 'Africa/Casablanca';
+  }
   return 'Asia/Riyadh';
 }
 

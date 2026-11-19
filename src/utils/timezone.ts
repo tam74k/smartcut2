@@ -10,16 +10,53 @@ import { getCountryTimeZone } from './excelHelper';
 
 /**
  * Returns the effective IANA timezone for a Salon / Branch.
- * Priority: Branch Timezone > Salon Settings Timezone > Country Auto-Detection > 'Asia/Riyadh'
+ * Priority: Country Auto-Detection (from registered salon/branch country) > Explicit Timezone > LocalStorage > 'Asia/Riyadh'
  */
-export function getSalonTimezone(settings?: { timezone?: string; country?: string; currency?: string } | null, branch?: { timezone?: string; country?: string; currency?: string } | null): string {
+export function getSalonTimezone(
+  settings?: { timezone?: string; country?: string; currency?: string } | null, 
+  branch?: { timezone?: string; country?: string; currency?: string } | null
+): string {
+  // 1. تحديد المنطقة الزمنية المعتمدة وفقاً للدولة والعملة المسجلة في بيانات الفرع أو الصالون أولاً
+  const country = (branch?.country || settings?.country || '').trim();
+  const currency = (branch?.currency || settings?.currency || '').trim();
+  if (country || currency) {
+    const countryTz = getCountryTimeZone(country, currency);
+    if (countryTz) return countryTz;
+  }
+
+  // 2. إذا تم تحديد حقل timezone صراحة في الفرع أو الإعدادات
   if (branch?.timezone && branch.timezone.trim()) {
     return branch.timezone.trim();
   }
   if (settings?.timezone && settings.timezone.trim()) {
     return settings.timezone.trim();
   }
-  return getCountryTimeZone(branch?.country || settings?.country, branch?.currency || settings?.currency);
+
+  // 3. التحقق من التخزين المحلي (LocalStorage) كاحتياطي موثوق
+  try {
+    if (typeof window !== 'undefined') {
+      const rawSettings = localStorage.getItem('smartcut_settings');
+      if (rawSettings) {
+        const parsed = JSON.parse(rawSettings);
+        if (parsed.country || parsed.currency) {
+          const cTz = getCountryTimeZone(parsed.country, parsed.currency);
+          if (cTz) return cTz;
+        }
+        if (parsed.timezone && parsed.timezone.trim()) return parsed.timezone.trim();
+      }
+      const rawSalon = localStorage.getItem('smartcut_salon');
+      if (rawSalon) {
+        const parsed = JSON.parse(rawSalon);
+        if (parsed.country || parsed.currency) {
+          const cTz = getCountryTimeZone(parsed.country, parsed.currency);
+          if (cTz) return cTz;
+        }
+        if (parsed.timezone && parsed.timezone.trim()) return parsed.timezone.trim();
+      }
+    }
+  } catch (e) {}
+
+  return 'Asia/Riyadh';
 }
 
 /**
