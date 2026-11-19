@@ -1,4 +1,11 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import gsap from 'gsap';
+import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import { useGSAP } from '@gsap/react';
+
+if (typeof window !== 'undefined') {
+  gsap.registerPlugin(ScrollTrigger);
+}
 import {
   Scissors,
   Sparkles,
@@ -157,8 +164,214 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
     }
   };
 
+  // GSAP Animations Container Ref
+  const mainContainerRef = useRef<HTMLDivElement>(null);
+
+  useGSAP(
+    () => {
+      // 1. Hero Section Entrance Timeline (Cinematic Reveal)
+      const heroTl = gsap.timeline({ defaults: { ease: 'power3.out' } });
+
+      heroTl
+        .from('.gsap-hero-logo', {
+          scale: 0.75,
+          opacity: 0,
+          y: -25,
+          duration: 0.85,
+          ease: 'back.out(1.8)',
+        })
+        .from(
+          '.gsap-hero-badge',
+          {
+            y: -15,
+            opacity: 0,
+            duration: 0.5,
+          },
+          '-=0.4'
+        )
+        .from(
+          '.gsap-hero-title',
+          {
+            y: 35,
+            opacity: 0,
+            duration: 0.75,
+          },
+          '-=0.3'
+        )
+        .from(
+          '.gsap-hero-subtitle',
+          {
+            y: 25,
+            opacity: 0,
+            duration: 0.65,
+          },
+          '-=0.4'
+        )
+        .from(
+          '.gsap-hero-desc',
+          {
+            y: 20,
+            opacity: 0,
+            duration: 0.65,
+          },
+          '-=0.4'
+        )
+        .from(
+          '.gsap-hero-btn',
+          {
+            y: 20,
+            opacity: 0,
+            stagger: 0.15,
+            duration: 0.6,
+            ease: 'back.out(1.4)',
+          },
+          '-=0.3'
+        )
+        .from(
+          '.gsap-hero-trust > *',
+          {
+            y: 12,
+            opacity: 0,
+            stagger: 0.08,
+            duration: 0.45,
+          },
+          '-=0.3'
+        );
+
+      // Subtle gentle floating animation for the Hero Logo
+      gsap.to('.gsap-hero-logo', {
+        y: -6,
+        duration: 2.2,
+        repeat: -1,
+        yoyo: true,
+        ease: 'power1.inOut',
+        delay: 1.2,
+      });
+
+      // 2. Stats Ribbon (Animated on Scroll)
+      gsap.from('.gsap-stat-item', {
+        scrollTrigger: {
+          trigger: '.gsap-stats-ribbon',
+          start: 'top 88%',
+          toggleActions: 'play none none none',
+        },
+        y: 25,
+        opacity: 0,
+        scale: 0.96,
+        stagger: 0.1,
+        duration: 0.65,
+        ease: 'back.out(1.4)',
+      });
+
+      // 3. Features Section (ScrollTrigger)
+      gsap.from('.gsap-features-header', {
+        scrollTrigger: {
+          trigger: '#features',
+          start: 'top 80%',
+          toggleActions: 'play none none none',
+        },
+        y: 30,
+        opacity: 0,
+        duration: 0.75,
+        ease: 'power3.out',
+      });
+
+      gsap.from('.gsap-feature-card', {
+        scrollTrigger: {
+          trigger: '.gsap-features-grid',
+          start: 'top 80%',
+          toggleActions: 'play none none none',
+        },
+        y: 35,
+        opacity: 0,
+        stagger: 0.07,
+        duration: 0.6,
+        ease: 'power2.out',
+      });
+
+      // 4. Cross-Device Showcase
+      gsap.from('.gsap-showcase-text', {
+        scrollTrigger: {
+          trigger: '.gsap-showcase-section',
+          start: 'top 75%',
+          toggleActions: 'play none none none',
+        },
+        x: 35,
+        opacity: 0,
+        duration: 0.8,
+        ease: 'power3.out',
+      });
+
+      gsap.from('.gsap-showcase-img', {
+        scrollTrigger: {
+          trigger: '.gsap-showcase-section',
+          start: 'top 75%',
+          toggleActions: 'play none none none',
+        },
+        x: -35,
+        opacity: 0,
+        duration: 0.85,
+        ease: 'power3.out',
+      });
+
+      // 5. Pricing Section
+      gsap.from('.gsap-pricing-header', {
+        scrollTrigger: {
+          trigger: '#pricing',
+          start: 'top 80%',
+          toggleActions: 'play none none none',
+        },
+        y: 30,
+        opacity: 0,
+        duration: 0.75,
+        ease: 'power3.out',
+      });
+
+      gsap.from('.gsap-plan-card', {
+        scrollTrigger: {
+          trigger: '.gsap-plans-grid',
+          start: 'top 75%',
+          toggleActions: 'play none none none',
+        },
+        y: 40,
+        opacity: 0,
+        stagger: 0.14,
+        duration: 0.7,
+        ease: 'power2.out',
+      });
+
+      // 6. Partner Salons Header
+      gsap.from('.gsap-partners-header', {
+        scrollTrigger: {
+          trigger: '.gsap-partners-section',
+          start: 'top 85%',
+          toggleActions: 'play none none none',
+        },
+        y: 25,
+        opacity: 0,
+        duration: 0.65,
+        ease: 'power2.out',
+      });
+
+      // 7. Bottom CTA Banner
+      gsap.from('.gsap-cta-banner', {
+        scrollTrigger: {
+          trigger: '.gsap-cta-section',
+          start: 'top 85%',
+          toggleActions: 'play none none none',
+        },
+        scale: 0.97,
+        y: 25,
+        opacity: 0,
+        duration: 0.75,
+        ease: 'power3.out',
+      });
+    },
+    { scope: mainContainerRef }
+  );
+
   return (
-    <div className="min-h-screen bg-white text-slate-800 font-sans selection:bg-emerald-500 selection:text-white" dir="rtl">
+    <div ref={mainContainerRef} className="min-h-screen bg-white text-slate-800 font-sans selection:bg-emerald-500 selection:text-white" dir="rtl">
       {/* ========================================================
           1. HEADER / NAVBAR (Light Theme)
          ======================================================== */}
@@ -353,7 +566,7 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
         <div className="relative z-10 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center space-y-6">
           {/* Official Logo Badge in Hero */}
           {platformLogo && !logoLoadFailed && (
-            <div className="flex justify-center mb-1">
+            <div className="flex justify-center mb-1 gsap-hero-logo">
               <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-3xl bg-white/95 p-2 shadow-2xl border-2 border-white/80 backdrop-blur-md flex items-center justify-center transform hover:scale-105 transition-all">
                 <img
                   src={platformLogo}
@@ -366,23 +579,23 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
           )}
 
           {/* Active Slide Pill Badge */}
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/20 border border-white/40 text-white text-xs font-bold backdrop-blur-md shadow-md">
+          <div className="gsap-hero-badge inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/20 border border-white/40 text-white text-xs font-bold backdrop-blur-md shadow-md">
             <Sparkles size={14} className="text-amber-300" />
             <span>{slides[currentSlide].badge}</span>
           </div>
 
           {/* Main Title (White) */}
-          <h1 className="text-4xl sm:text-6xl lg:text-7xl font-black text-white tracking-tight leading-tight drop-shadow-lg">
+          <h1 className="gsap-hero-title text-4xl sm:text-6xl lg:text-7xl font-black text-white tracking-tight leading-tight drop-shadow-lg">
             سمارت كت برو
           </h1>
 
           {/* Subtitle (White) */}
-          <h2 className="text-xl sm:text-3xl lg:text-4xl font-extrabold text-white/95 tracking-wide drop-shadow-md">
+          <h2 className="gsap-hero-subtitle text-xl sm:text-3xl lg:text-4xl font-extrabold text-white/95 tracking-wide drop-shadow-md">
             النظام المتخصص لإدارة صالونات التجميل
           </h2>
 
           {/* Powerful Description / Value Offer */}
-          <p className="max-w-3xl mx-auto text-base sm:text-lg text-slate-100 font-medium leading-relaxed drop-shadow-sm">
+          <p className="gsap-hero-desc max-w-3xl mx-auto text-base sm:text-lg text-slate-100 font-medium leading-relaxed drop-shadow-sm">
             المنظومة السحابية الذكية المتكاملة لنقاط البيع السريعة، تنظيم الحجوزات والمواعيد، 
             حساب عمولات ومسير رواتب الموظفين بدقة متناهية، وإدارة المخزون والورديات بكل سهولة واحترافية من أي جهاز.
           </p>
@@ -392,7 +605,7 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
             <button
               type="button"
               onClick={onStartTrialClick}
-              className="w-full sm:w-auto h-13 sm:h-14 px-6 sm:px-8 text-sm sm:text-base font-black text-white bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-500 hover:from-emerald-600 hover:to-teal-600 rounded-2xl shadow-2xl shadow-emerald-500/40 transition-all flex items-center justify-center gap-2 cursor-pointer transform hover:-translate-y-1 active:scale-95 whitespace-nowrap group shrink-0"
+              className="gsap-hero-btn w-full sm:w-auto h-13 sm:h-14 px-6 sm:px-8 text-sm sm:text-base font-black text-white bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-500 hover:from-emerald-600 hover:to-teal-600 rounded-2xl shadow-2xl shadow-emerald-500/40 transition-all flex items-center justify-center gap-2 cursor-pointer transform hover:-translate-y-1 active:scale-95 whitespace-nowrap group shrink-0"
             >
               <Sparkles size={18} className="text-amber-300 group-hover:rotate-12 transition-transform shrink-0" />
               <span>إنشاء حساب تجريبي مجاني 7 أيام</span>
@@ -401,7 +614,7 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
             <button
               type="button"
               onClick={onLoginClick}
-              className="w-full sm:w-auto h-13 sm:h-14 px-6 sm:px-8 text-sm sm:text-base font-black text-slate-900 bg-white hover:bg-slate-50 border border-white/80 rounded-2xl backdrop-blur-md transition-all flex items-center justify-center gap-2 cursor-pointer shadow-2xl hover:-translate-y-1 active:scale-95 whitespace-nowrap shrink-0"
+              className="gsap-hero-btn w-full sm:w-auto h-13 sm:h-14 px-6 sm:px-8 text-sm sm:text-base font-black text-slate-900 bg-white hover:bg-slate-50 border border-white/80 rounded-2xl backdrop-blur-md transition-all flex items-center justify-center gap-2 cursor-pointer shadow-2xl hover:-translate-y-1 active:scale-95 whitespace-nowrap shrink-0"
             >
               <LogIn size={18} className="text-emerald-700 shrink-0" />
               <span>تسجيل الدخول</span>
@@ -409,7 +622,7 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
           </div>
 
           {/* Mini Trust Highlights */}
-          <div className="pt-6 flex flex-wrap items-center justify-center gap-y-2 gap-x-6 text-xs font-semibold text-white drop-shadow-xs">
+          <div className="gsap-hero-trust pt-6 flex flex-wrap items-center justify-center gap-y-2 gap-x-6 text-xs font-semibold text-white drop-shadow-xs">
             <span className="flex items-center gap-1.5">
               <CheckCircle2 size={15} className="text-emerald-400" />
               <span>تفعيل فوري مجاني 7 أيام</span>
@@ -448,21 +661,21 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
       {/* ========================================================
           3. STATS & TRUST RIBBON (Light Card on White)
          ======================================================== */}
-      <section className="relative z-20 -mt-10 max-w-6xl mx-auto px-4 sm:px-6">
+      <section className="relative z-20 -mt-10 max-w-6xl mx-auto px-4 sm:px-6 gsap-stats-ribbon">
         <div className="bg-white border border-slate-200/90 rounded-3xl p-6 sm:p-8 shadow-xl shadow-slate-200/60 grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
-          <div className="space-y-1">
+          <div className="space-y-1 gsap-stat-item">
             <p className="text-3xl sm:text-4xl font-black text-emerald-600 font-mono">+500</p>
             <p className="text-xs sm:text-sm font-bold text-slate-700">صالون ومركز تجميل</p>
           </div>
-          <div className="space-y-1 border-r border-slate-100">
+          <div className="space-y-1 border-r border-slate-100 gsap-stat-item">
             <p className="text-3xl sm:text-4xl font-black text-teal-600 font-mono">+1,000,000</p>
             <p className="text-xs sm:text-sm font-bold text-slate-700">فاتورة وحجز منجز</p>
           </div>
-          <div className="space-y-1 border-r-0 md:border-r border-slate-100">
+          <div className="space-y-1 border-r-0 md:border-r border-slate-100 gsap-stat-item">
             <p className="text-3xl sm:text-4xl font-black text-amber-600 font-mono">99.9%</p>
             <p className="text-xs sm:text-sm font-bold text-slate-700">استقرار سحابي وأمان</p>
           </div>
-          <div className="space-y-1 border-r border-slate-100">
+          <div className="space-y-1 border-r border-slate-100 gsap-stat-item">
             <p className="text-3xl sm:text-4xl font-black text-sky-600 font-mono">24/7</p>
             <p className="text-xs sm:text-sm font-bold text-slate-700">دعم فني وتحديثات</p>
           </div>
@@ -474,7 +687,7 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
          ======================================================== */}
       <section id="features" className="py-24 bg-slate-50/70 border-b border-slate-200/60">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center max-w-3xl mx-auto mb-16 space-y-4">
+          <div className="text-center max-w-3xl mx-auto mb-16 space-y-4 gsap-features-header">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold">
               <Zap size={14} />
               <span>مزايا النظام الأساسية</span>
@@ -488,9 +701,9 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
           </div>
 
           {/* 8 Feature Cards (White Cards with Crisp Light Accents) */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 gsap-features-grid">
             {/* Feature 1 */}
-            <div className="bg-white border border-slate-200/80 hover:border-emerald-500 rounded-3xl p-6 transition-all duration-300 hover:-translate-y-1.5 shadow-sm hover:shadow-xl group">
+            <div className="bg-white border border-slate-200/80 hover:border-emerald-500 rounded-3xl p-6 transition-all duration-300 hover:-translate-y-1.5 shadow-sm hover:shadow-xl group gsap-feature-card">
               <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 mb-5 group-hover:scale-110 transition-transform">
                 <Receipt size={24} />
               </div>
@@ -501,7 +714,7 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
             </div>
 
             {/* Feature 2 */}
-            <div className="bg-white border border-slate-200/80 hover:border-teal-500 rounded-3xl p-6 transition-all duration-300 hover:-translate-y-1.5 shadow-sm hover:shadow-xl group">
+            <div className="bg-white border border-slate-200/80 hover:border-teal-500 rounded-3xl p-6 transition-all duration-300 hover:-translate-y-1.5 shadow-sm hover:shadow-xl group gsap-feature-card">
               <div className="w-12 h-12 rounded-2xl bg-teal-50 border border-teal-200 flex items-center justify-center text-teal-600 mb-5 group-hover:scale-110 transition-transform">
                 <Calendar size={24} />
               </div>
@@ -512,7 +725,7 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
             </div>
 
             {/* Feature 3 */}
-            <div className="bg-white border border-slate-200/80 hover:border-amber-500 rounded-3xl p-6 transition-all duration-300 hover:-translate-y-1.5 shadow-sm hover:shadow-xl group">
+            <div className="bg-white border border-slate-200/80 hover:border-amber-500 rounded-3xl p-6 transition-all duration-300 hover:-translate-y-1.5 shadow-sm hover:shadow-xl group gsap-feature-card">
               <div className="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600 mb-5 group-hover:scale-110 transition-transform">
                 <Users size={24} />
               </div>
@@ -523,7 +736,7 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
             </div>
 
             {/* Feature 4 */}
-            <div className="bg-white border border-slate-200/80 hover:border-indigo-500 rounded-3xl p-6 transition-all duration-300 hover:-translate-y-1.5 shadow-sm hover:shadow-xl group">
+            <div className="bg-white border border-slate-200/80 hover:border-indigo-500 rounded-3xl p-6 transition-all duration-300 hover:-translate-y-1.5 shadow-sm hover:shadow-xl group gsap-feature-card">
               <div className="w-12 h-12 rounded-2xl bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600 mb-5 group-hover:scale-110 transition-transform">
                 <Package size={24} />
               </div>
@@ -534,7 +747,7 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
             </div>
 
             {/* Feature 5 */}
-            <div className="bg-white border border-slate-200/80 hover:border-rose-500 rounded-3xl p-6 transition-all duration-300 hover:-translate-y-1.5 shadow-sm hover:shadow-xl group">
+            <div className="bg-white border border-slate-200/80 hover:border-rose-500 rounded-3xl p-6 transition-all duration-300 hover:-translate-y-1.5 shadow-sm hover:shadow-xl group gsap-feature-card">
               <div className="w-12 h-12 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 mb-5 group-hover:scale-110 transition-transform">
                 <Layers size={24} />
               </div>
@@ -545,7 +758,7 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
             </div>
 
             {/* Feature 6 */}
-            <div className="bg-white border border-slate-200/80 hover:border-sky-500 rounded-3xl p-6 transition-all duration-300 hover:-translate-y-1.5 shadow-sm hover:shadow-xl group">
+            <div className="bg-white border border-slate-200/80 hover:border-sky-500 rounded-3xl p-6 transition-all duration-300 hover:-translate-y-1.5 shadow-sm hover:shadow-xl group gsap-feature-card">
               <div className="w-12 h-12 rounded-2xl bg-sky-50 border border-sky-200 flex items-center justify-center text-sky-600 mb-5 group-hover:scale-110 transition-transform">
                 <Monitor size={24} />
               </div>
@@ -556,7 +769,7 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
             </div>
 
             {/* Feature 7 */}
-            <div className="bg-white border border-slate-200/80 hover:border-purple-500 rounded-3xl p-6 transition-all duration-300 hover:-translate-y-1.5 shadow-sm hover:shadow-xl group">
+            <div className="bg-white border border-slate-200/80 hover:border-purple-500 rounded-3xl p-6 transition-all duration-300 hover:-translate-y-1.5 shadow-sm hover:shadow-xl group gsap-feature-card">
               <div className="w-12 h-12 rounded-2xl bg-purple-50 border border-purple-200 flex items-center justify-center text-purple-600 mb-5 group-hover:scale-110 transition-transform">
                 <BarChart3 size={24} />
               </div>
@@ -567,7 +780,7 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
             </div>
 
             {/* Feature 8 */}
-            <div className="bg-white border border-slate-200/80 hover:border-emerald-500 rounded-3xl p-6 transition-all duration-300 hover:-translate-y-1.5 shadow-sm hover:shadow-xl group">
+            <div className="bg-white border border-slate-200/80 hover:border-emerald-500 rounded-3xl p-6 transition-all duration-300 hover:-translate-y-1.5 shadow-sm hover:shadow-xl group gsap-feature-card">
               <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 mb-5 group-hover:scale-110 transition-transform">
                 <Store size={24} />
               </div>
@@ -583,10 +796,10 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
       {/* ========================================================
           5. CROSS-DEVICE SHOWCASE (White Background)
          ======================================================== */}
-      <section className="py-20 bg-white">
+      <section className="py-20 bg-white gsap-showcase-section">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-center">
-            <div className="lg:col-span-5 space-y-6 text-right">
+            <div className="lg:col-span-5 space-y-6 text-right gsap-showcase-text">
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-teal-50 border border-teal-200 text-teal-700 text-xs font-bold">
                 <Tablet size={14} />
                 <span>توافق تام وعمل فوري</span>
@@ -629,7 +842,7 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
             </div>
 
             {/* Showcase Visual Container */}
-            <div className="lg:col-span-7">
+            <div className="lg:col-span-7 gsap-showcase-img">
               <div className="relative rounded-3xl overflow-hidden border border-slate-200 shadow-2xl group">
                 <img
                   src="/landing/hero1.jpg"
@@ -666,7 +879,7 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
          ======================================================== */}
       <section id="pricing" className="py-24 bg-slate-50/70 border-t border-slate-200/80">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center max-w-3xl mx-auto mb-14 space-y-4">
+          <div className="text-center max-w-3xl mx-auto mb-14 space-y-4 gsap-pricing-header">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold">
               <Star size={14} />
               <span>خطط وأسعار شفافة</span>
@@ -730,9 +943,9 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
           </div>
 
           {/* 3 Subscription Plan Cards (Clean White Cards) */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-stretch">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-stretch gsap-plans-grid">
             {/* Plan 1: Starter */}
-            <div className="bg-white border border-slate-200 rounded-3xl p-8 flex flex-col justify-between shadow-md hover:shadow-xl transition-all">
+            <div className="bg-white border border-slate-200 rounded-3xl p-8 flex flex-col justify-between shadow-md hover:shadow-xl transition-all gsap-plan-card">
               <div>
                 <div className="flex items-center justify-between mb-4">
                   <span className="text-xs font-bold px-3 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
@@ -804,7 +1017,7 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
             </div>
 
             {/* Plan 2: Growth (Popular) */}
-            <div className="relative bg-white border-2 border-emerald-500 rounded-3xl p-8 flex flex-col justify-between shadow-2xl shadow-emerald-500/10 transform lg:-translate-y-3">
+            <div className="relative bg-white border-2 border-emerald-500 rounded-3xl p-8 flex flex-col justify-between shadow-2xl shadow-emerald-500/10 transform lg:-translate-y-3 gsap-plan-card">
               {/* Popular Badge */}
               <div className="absolute -top-3.5 right-1/2 translate-x-1/2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-xs font-black px-4 py-1 rounded-full shadow-md flex items-center gap-1.5">
                 <Sparkles size={13} className="text-amber-200" />
@@ -882,7 +1095,7 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
             </div>
 
             {/* Plan 3: Enterprise */}
-            <div className="bg-white border border-slate-200 rounded-3xl p-8 flex flex-col justify-between shadow-md hover:shadow-xl transition-all">
+            <div className="bg-white border border-slate-200 rounded-3xl p-8 flex flex-col justify-between shadow-md hover:shadow-xl transition-all gsap-plan-card">
               <div>
                 <div className="flex items-center justify-between mb-4">
                   <span className="text-xs font-bold px-3 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
@@ -967,8 +1180,8 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
           6B. PARTNER SALONS HORIZONTAL MARQUEE (شريط الصالونات المتحرك أسفل الباقات)
          ======================================================== */}
       {marqueeLogos.length > 0 && (
-        <section className="py-16 bg-white border-t border-b border-slate-200/80 overflow-hidden">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-8 text-center space-y-2">
+        <section className="py-16 bg-white border-t border-b border-slate-200/80 overflow-hidden gsap-partners-section">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-8 text-center space-y-2 gsap-partners-header">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold">
               <Sparkles size={13} className="text-amber-500" />
               <span>شركاء النجاح • صالونات ومراكز تثق بنا</span>
@@ -1020,8 +1233,8 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
       {/* ========================================================
           7. BOTTOM CTA SECTION (Light Emerald Gradient Banner)
          ======================================================== */}
-      <section className="py-20 relative overflow-hidden bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border-y border-emerald-200">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 text-center space-y-6 relative z-10">
+      <section className="py-20 relative overflow-hidden bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border-y border-emerald-200 gsap-cta-section">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 text-center space-y-6 relative z-10 gsap-cta-banner">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-100 border border-emerald-300 text-emerald-800 text-xs font-bold">
             <Sparkles size={14} className="text-amber-500" />
             <span>ابدأ الآن خلال دقيقة واحدة</span>
