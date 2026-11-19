@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { AppSettings, Invoice, Transaction, Client, Branch, Product, Employee, ServiceItem, SalesReturn } from '../types';
 import { 
   Search, Filter, Printer, XCircle, Edit, CheckCircle, ChevronDown, 
@@ -115,6 +115,79 @@ export function InvoicesScreen({
     }
     return getTodayLocalDateStr();
   }, [shiftData]);
+
+  // استخراج كود الوردية النشطة ومعرفها للفرع الحالي بدقة مطلقة
+  const effectiveShiftCode = useMemo(() => {
+    if (!shiftData?.isOpen) return '';
+    const code = (shiftData as any)?.shiftCode || (shiftData as any)?.code || (shiftData as any)?.shift_code;
+    if (code && typeof code === 'string' && code.trim()) {
+      return code.trim();
+    }
+    try {
+      const raw = localStorage.getItem('smartcut_work_shifts_state');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        const branchKey = activeBranchId || 'b-main';
+        if (parsed[branchKey]?.isOpen && parsed[branchKey]?.shiftCode) {
+          return String(parsed[branchKey].shiftCode).trim();
+        }
+        if (parsed['b-main']?.isOpen && parsed['b-main']?.shiftCode) {
+          return String(parsed['b-main'].shiftCode).trim();
+        }
+      }
+    } catch (e) {}
+    return '';
+  }, [shiftData, activeBranchId]);
+
+  const effectiveShiftId = useMemo(() => {
+    if (!shiftData?.isOpen) return '';
+    const id = (shiftData as any)?.shiftId || (shiftData as any)?.id || (shiftData as any)?.shift_id;
+    if (id && typeof id === 'string' && id.trim()) {
+      return id.trim();
+    }
+    try {
+      const raw = localStorage.getItem('smartcut_work_shifts_state');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        const branchKey = activeBranchId || 'b-main';
+        if (parsed[branchKey]?.isOpen && parsed[branchKey]?.shiftId) {
+          return String(parsed[branchKey].shiftId).trim();
+        }
+        if (parsed['b-main']?.isOpen && parsed['b-main']?.shiftId) {
+          return String(parsed['b-main'].shiftId).trim();
+        }
+      }
+    } catch (e) {}
+    return '';
+  }, [shiftData, activeBranchId]);
+
+  // التحقق القاطع: هل الفاتورة تنتمي للوردية الحالية المفتوحة؟ (بناءً على كود الوردية أو معرفها حصراً)
+  const isInvoiceInCurrentShift = useCallback((inv: Invoice): boolean => {
+    if (!shiftData?.isOpen) return false;
+
+    const invShiftCode = (inv.shiftCode || (inv as any).shift_code || '').trim();
+    const invShiftId = (inv.shiftId || (inv as any).shift_id || '').trim();
+
+    // 1. التطابق المباشر عبر كود الوردية
+    if (effectiveShiftCode && invShiftCode && invShiftCode.toLowerCase() === effectiveShiftCode.toLowerCase()) {
+      return true;
+    }
+
+    // 2. التطابق المباشر عبر معرف الوردية (UUID / id)
+    if (effectiveShiftId && invShiftId && invShiftId.toLowerCase() === effectiveShiftId.toLowerCase()) {
+      return true;
+    }
+
+    // 3. التحقق المتقاطع في حال تم تسجيل المعرف في حقل الكود أو العكس
+    if (effectiveShiftCode && invShiftId && invShiftId.toLowerCase() === effectiveShiftCode.toLowerCase()) {
+      return true;
+    }
+    if (effectiveShiftId && invShiftCode && invShiftCode.toLowerCase() === effectiveShiftId.toLowerCase()) {
+      return true;
+    }
+
+    return false;
+  }, [shiftData?.isOpen, effectiveShiftCode, effectiveShiftId]);
 
   // قفل التواريخ تلقائياً للكاشير على تاريخ الوردية المفتوحة فقط
   useEffect(() => {
@@ -239,9 +312,10 @@ export function InvoicesScreen({
     return clean;
   };
 
-  // فحص حاسم ومحكم: هل الفاتورة صادرة بتاريخ سابق عن الوردية الحالية المفتوحة؟
+  // فحص حاسم ومحكم: هل الفاتورة مسموح للمستخدم تعديلها؟
+  // (للكاشير: مسموح فقط لفواتير الوردية الحالية المفتوحة المطابقة لكود الوردية المسجل في الفاتورة وليس تاريخ إنشائها)
   const isInvoiceFromPreviousDate = (inv: Invoice): boolean => {
-    // 1. للمالك والآدمن والمبرمج: لا يوجد أي حظر لتعديل الفواتير
+    // 1. للمالك والآدمن والمبرمج ومن يملك صلاحية الكل: لا يوجد أي حظر لتعديل الفواتير
     if (
       currentUser?.role === 'admin' || 
       currentUser?.role === 'owner' || 
@@ -251,29 +325,17 @@ export function InvoicesScreen({
       return false;
     }
 
-    const invDate = getInvoiceLocalDateStr(inv);
-    if (!invDate) return false;
+    // 2. إذا كانت الوردية مغلقة: ممنوع التعديل قطعاً للمستخدم المقيد / الكاشير
+    if (!shiftData?.isOpen) {
+      return true;
+    }
 
-    // 2. إتاحة التعديل للكاشير في حالة ما كان تاريخ الوردية الحالية هو نفس تاريخ إنشاء الفاتورة
-    if (activeShiftDate && invDate === activeShiftDate) {
+    // 3. إذا كانت الفاتورة تنتمي حصراً للوردية الحالية المفتوحة عبر كود الوردية
+    if (isInvoiceInCurrentShift(inv)) {
       return false;
     }
 
-    // 3. إذا كانت الفاتورة منتمية لنفس الوردية المفتوحة الحالية بالمعرف أو الكود
-    if (shiftData?.isOpen && (
-      (shiftData.id && inv.shiftId === shiftData.id) ||
-      (shiftData.shiftCode && inv.shiftCode === shiftData.shiftCode)
-    )) {
-      return false;
-    }
-
-    // 4. إذا كان تاريخ الفاتورة هو تاريخ اليوم الحالي بالتوقيت المحلي
-    const todayStr = getTodayLocalDateStr();
-    if (invDate === todayStr) {
-      return false;
-    }
-
-    // غير ذلك: تعتبر الفاتورة صادرة بتاريخ سابق لوردية سابقة ومغلقة
+    // غير ذلك: تعتبر الفاتورة صادرة في وردية سابقة ومغلقة وممنوع تعديلها حتى وإن تشابه تاريخ إنشائها
     return true;
   };
 
@@ -300,7 +362,7 @@ export function InvoicesScreen({
       return;
     }
     if (isInvoiceFromPreviousDate(inv)) {
-      alert('عذراً، محظور تعديل الفواتير الصادرة بتاريخ سابق لوردية سابقة حفاظاً على سلامة الحسابات والورديات المغلقة. التعديل متاح فقط لفواتير تاريخ الوردية الحالية المفتوحة.');
+      alert('عذراً، محظور تعديل الفواتير الصادرة في ورديات سابقة أو مغلقة حفاظاً على سلامة الحسابات. التعديل متاح فقط لفواتير الوردية الحالية المفتوحة.');
       return;
     }
     if (inv.status === 'cancelled') {
@@ -355,6 +417,12 @@ export function InvoicesScreen({
   const handleConfirmCancel = async () => {
     if (!cancelInvoiceTarget) return;
     const invoice = cancelInvoiceTarget;
+
+    if (isInvoiceFromPreviousDate(invoice)) {
+      alert('عذراً، محظور إلغاء الفواتير الصادرة في ورديات سابقة أو مغلقة. الإلغاء متاح فقط لفواتير الوردية الحالية المفتوحة.');
+      setCancelInvoiceTarget(null);
+      return;
+    }
     // 1. Update invoice status in DB & state
     const updatedInv = { 
       ...invoice, 
@@ -394,7 +462,7 @@ export function InvoicesScreen({
     if (isValid && adminPasswordTarget) {
       const target = adminPasswordTarget;
       if (isInvoiceFromPreviousDate(target)) {
-        alert('عذراً، محظور تعديل الفواتير الصادرة بتاريخ سابق لوردية سابقة حفاظاً على سلامة الحسابات والورديات المغلقة. التعديل متاح فقط لفواتير تاريخ الوردية الحالية المفتوحة.');
+        alert('عذراً، محظور تعديل الفواتير الصادرة في ورديات سابقة أو مغلقة حفاظاً على سلامة الحسابات. التعديل متاح فقط لفواتير الوردية الحالية المفتوحة.');
         setAdminPasswordTarget(null);
         setAdminPasswordInput('');
         setAdminPasswordError(false);
@@ -597,11 +665,11 @@ export function InvoicesScreen({
       // Branch filter
       if (!matchesActiveBranch(inv.branchId, (inv as any).branchCode)) return false;
 
-      // Date filter
+      // Date & Shift filter
       if (isCashierRestricted) {
-        // قيد الكاشير الصارم: يرى فقط فواتير تاريخ الوردية المفتوحة ولا تظهر له أي فواتير لأيام سابقة
-        const invDateStr = getInvoiceLocalDateStr(inv);
-        if (invDateStr !== activeShiftDate) return false;
+        // قيد الكاشير الصارم: يرى فقط الفواتير المنشأة في الوردية الحالية المفتوحة بناءً على كود الوردية المسجل في الفاتورة وليس تاريخ الفاتورة
+        if (!shiftData?.isOpen) return false;
+        if (!isInvoiceInCurrentShift(inv)) return false;
       } else {
         // فحص التواريخ للإدارة والمالك
         const invDateStr = getInvoiceLocalDateStr(inv);
@@ -655,7 +723,7 @@ export function InvoicesScreen({
       
       return true;
     }).sort((a, b) => parseDbDateTime(b.date).getTime() - parseDbDateTime(a.date).getTime());
-  }, [invoices, dateFrom, dateTo, statusFilter, paymentFilter, searchQuery, activeBranchId, isMainBranch, branchFilter, salesReturns, isCashierRestricted, activeShiftDate]);
+  }, [invoices, dateFrom, dateTo, statusFilter, paymentFilter, searchQuery, activeBranchId, isMainBranch, branchFilter, salesReturns, isCashierRestricted, shiftData?.isOpen, isInvoiceInCurrentShift]);
 
   // Pagination calculation
   const totalInvoices = filteredInvoices.length;
@@ -675,7 +743,11 @@ export function InvoicesScreen({
             {isCashierRestricted && (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-100 text-amber-900 border border-amber-300 text-xs font-bold shadow-2xs">
                 <Lock size={12} className="text-amber-700" />
-                <span>فواتير وردية اليوم: {activeShiftDate}</span>
+                <span>
+                  {shiftData?.isOpen 
+                    ? `فواتير الوردية الحالية (${effectiveShiftCode || activeShiftDate})` 
+                    : 'الوردية مغلقة حالياً'}
+                </span>
               </span>
             )}
           </div>
@@ -737,9 +809,20 @@ export function InvoicesScreen({
       {showFilters && (
         <div className={`bg-white p-4 rounded-2xl border border-slate-200 shadow-sm mb-4 grid grid-cols-1 ${branches && branches.length > 1 ? 'md:grid-cols-5' : 'md:grid-cols-4'} gap-3.5 shrink-0`}>
           {isCashierRestricted && (
-            <div className={`col-span-1 ${branches && branches.length > 1 ? 'md:col-span-5' : 'md:col-span-4'} bg-amber-50 border border-amber-200 rounded-xl p-2.5 flex items-center gap-2 text-amber-900 text-xs font-bold`}>
-              <Lock size={15} className="text-amber-600 shrink-0" />
-              <span>تنبيه صلاحيات الكاشير: استعراض الفواتير مقيد بتاريخ الوردية المفتوحة الحالية ({activeShiftDate}) فقط، ولا يتاح تعديل التاريخ أو عرض الأيام السابقة.</span>
+            <div className={`col-span-1 ${branches && branches.length > 1 ? 'md:col-span-5' : 'md:col-span-4'} bg-amber-50 border border-amber-200 rounded-xl p-3 flex flex-wrap items-center justify-between gap-2.5 text-amber-900 text-xs font-bold shadow-2xs`}>
+              <div className="flex items-center gap-2">
+                <Lock size={16} className="text-amber-600 shrink-0" />
+                <span>
+                  {shiftData?.isOpen 
+                    ? `تنبيه صلاحيات الكاشير: استعراض الفواتير مقيد حصراً بفواتير الوردية الحالية المفتوحة وفقاً لكود الوردية المسجل بالفاتورة (${effectiveShiftCode || 'غير محدد'})، ولا يمكن استعراض أو تعديل فواتير أي ورديات سابقة حتى وإن فتحت الوردية بتاريخ سابق.`
+                    : 'تنبيه صلاحيات الكاشير: لا توجد وردية مفتوحة حالياً لهذا الفرع. لن تظهر أي فواتير ولن يتاح تعديلها حتى يتم فتح وردية جديدة.'}
+                </span>
+              </div>
+              {effectiveShiftCode && (
+                <span className="px-2.5 py-1 rounded-lg bg-amber-200 text-amber-900 font-mono text-xs font-black shrink-0 border border-amber-300">
+                  كود الوردية: {effectiveShiftCode}
+                </span>
+              )}
             </div>
           )}
           {branches && branches.length > 1 && (
@@ -759,16 +842,16 @@ export function InvoicesScreen({
           )}
           <div>
             <div className="flex items-center justify-between mb-1">
-              <label className="block text-xs font-bold text-slate-700">من تاريخ</label>
+              <label className="block text-xs font-bold text-slate-700">تاريخ الوردية</label>
               {isCashierRestricted && (
                 <span className="text-[10px] text-amber-700 font-bold flex items-center gap-0.5">
-                  <Lock size={10} /> مقيد بالوردية
+                  <Lock size={10} /> كود الوردية
                 </span>
               )}
             </div>
             <input 
-              type="date" 
-              value={isCashierRestricted ? activeShiftDate : dateFrom} 
+              type={isCashierRestricted ? "text" : "date"} 
+              value={isCashierRestricted ? (shiftData?.isOpen ? activeShiftDate : 'وردية مغلقة') : dateFrom} 
               onChange={e => {
                 if (isCashierRestricted) return;
                 setDateFrom(e.target.value);
@@ -783,16 +866,16 @@ export function InvoicesScreen({
           </div>
           <div>
             <div className="flex items-center justify-between mb-1">
-              <label className="block text-xs font-bold text-slate-700">إلى تاريخ</label>
+              <label className="block text-xs font-bold text-slate-700">كود الوردية</label>
               {isCashierRestricted && (
                 <span className="text-[10px] text-amber-700 font-bold flex items-center gap-0.5">
-                  <Lock size={10} /> مقيد بالوردية
+                  <Lock size={10} /> مقيد بالكود
                 </span>
               )}
             </div>
             <input 
-              type="date" 
-              value={isCashierRestricted ? activeShiftDate : dateTo} 
+              type={isCashierRestricted ? "text" : "date"} 
+              value={isCashierRestricted ? (effectiveShiftCode || 'لا يوجد وردية مفتوحة') : dateTo} 
               onChange={e => {
                 if (isCashierRestricted) return;
                 setDateTo(e.target.value);
@@ -1117,7 +1200,7 @@ export function InvoicesScreen({
                                 ? 'bg-slate-100 text-slate-300 cursor-not-allowed opacity-40 shadow-none' 
                                 : 'bg-amber-50 text-amber-700 hover:bg-amber-100 cursor-pointer shadow-xs'
                             }`} 
-                            title={isPrevDate ? 'محظور تعديل الفواتير الصادرة بتاريخ سابق لوردية سابقة (متاح فقط لفواتير تاريخ الوردية الحالية المفتوحة)' : 'تعديل الفاتورة في نقطة البيع (POS)'}
+                            title={isPrevDate ? 'محظور تعديل الفواتير الصادرة في ورديات سابقة أو مغلقة (متاح فقط لفواتير الوردية الحالية المفتوحة)' : 'تعديل الفاتورة في نقطة البيع (POS)'}
                           >
                             <Edit size={16} />
                           </button>
@@ -1200,7 +1283,13 @@ export function InvoicesScreen({
               
               {filteredInvoices.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="text-center py-12 text-slate-500">لا توجد فواتير تطابق شروط التصفية</td>
+                  <td colSpan={10} className="text-center py-12 text-slate-500 font-bold">
+                    {isCashierRestricted && !shiftData?.isOpen 
+                      ? 'لا توجد وردية مفتوحة حالياً لهذا الفرع. يرجى فتح وردية جديدة للبدء في استعراض وإصدار الفواتير.' 
+                      : (isCashierRestricted 
+                          ? `لا توجد فواتير منشأة في الوردية الحالية (${effectiveShiftCode || 'المفتوحة'}) حتى الآن.`
+                          : 'لا توجد فواتير تطابق شروط التصفية')}
+                  </td>
                 </tr>
               )}
             </tbody>

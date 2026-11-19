@@ -2688,19 +2688,23 @@ export function POSScreen({
         currentUser.role === 'programmer' || 
         currentUser.actions?.includes('*');
 
-      // إتاحة التعديل في حالة ما كان تاريخ الوردية الحالية هو نفس تاريخ إنشاء الفاتورة
+      // التحقق الصارم من صلاحية التعديل للكاشير: مسموح فقط لفواتير الوردية الحالية المفتوحة المطابقة لكود الوردية المسجل في الفاتورة
+      const currentShiftCode = (effectiveShiftCode || (shiftData as any)?.shiftCode || (shiftData as any)?.shift_code || '').toString().trim();
+      const currentShiftId = (effectiveShiftId || (shiftData as any)?.shiftId || (shiftData as any)?.id || '').toString().trim();
+      const invShiftCode = (initialEditingInvoice.shiftCode || (initialEditingInvoice as any).shift_code || '').toString().trim();
+      const invShiftId = (initialEditingInvoice.shiftId || (initialEditingInvoice as any).shift_id || '').toString().trim();
+
       const isCurrentShiftInvoice = Boolean(
-        (effectiveShiftDate && invDate === effectiveShiftDate) ||
-        (shiftDate && invDate === shiftDate) ||
-        (invDate === todayStr) ||
-        (shiftData?.isOpen && (
-          (shiftData.id && initialEditingInvoice.shiftId === shiftData.id) ||
-          (shiftData.shiftCode && initialEditingInvoice.shiftCode === shiftData.shiftCode)
-        ))
+        shiftData?.isOpen && (
+          (currentShiftCode && invShiftCode && invShiftCode.toLowerCase() === currentShiftCode.toLowerCase()) ||
+          (currentShiftId && invShiftId && invShiftId.toLowerCase() === currentShiftId.toLowerCase()) ||
+          (currentShiftCode && invShiftId && invShiftId.toLowerCase() === currentShiftCode.toLowerCase()) ||
+          (currentShiftId && invShiftCode && invShiftCode.toLowerCase() === currentShiftId.toLowerCase())
+        )
       );
 
       if (!isAdminOrOwner && !isCurrentShiftInvoice) {
-        alert('عذراً، محظور تعديل الفواتير الصادرة بتاريخ سابق لوردية سابقة حفاظاً على سلامة الحسابات والورديات المغلقة. التعديل متاح فقط لفواتير تاريخ الوردية الحالية المفتوحة.');
+        alert('عذراً، محظور تعديل الفواتير الصادرة في ورديات سابقة أو مغلقة حفاظاً على سلامة الحسابات. التعديل متاح فقط لفواتير الوردية الحالية المفتوحة.');
         setEditingInvoice(null);
         if (onClearInitial) onClearInitial();
         return;
