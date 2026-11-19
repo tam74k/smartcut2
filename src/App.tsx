@@ -1262,8 +1262,8 @@ export default function App() {
         const [updatedBookings, updatedClients, updatedInvoices, updatedTrxs] = await Promise.all([
           DB.fetchBookings(sId, bId),
           DB.fetchClients(sId),
-          DB.fetchInvoices(sId, bId),
-          DB.fetchTransactions(sId, bId)
+          DB.fetchInvoices(sId),
+          DB.fetchTransactions(sId)
         ]);
 
         if (updatedBookings && Array.isArray(updatedBookings)) {
@@ -3548,34 +3548,45 @@ export default function App() {
           }}
         />
       );
-      case 'invoices': return (
-        <InvoicesScreen 
-          settings={settings} 
-          invoices={branchInvoices} 
-          setInvoices={handleSetInvoices} 
-          transactions={branchTransactions} 
-          setTransactions={handleSetTransactions} 
-          clients={branchClients} 
-          allSalonClients={salonClients}
-          setClients={handleSetClients}
-          activeBranchId={activeBranchId}
-          branches={branches}
-          currentUser={currentUser}
-          shiftData={shiftData}
-          products={branchProducts}
-          setProducts={handleSetProducts}
-          setItemMovements={handleSetItemMovements}
-          salesReturns={branchSalesReturns}
-          setSalesReturns={handleSetSalesReturns}
-          onNavigateToDeferred={() => setActiveTab('deferred_invoices')}
-          onEditInvoiceInPOS={(invoice) => {
-            setActiveBookingForPOS(null);
-            setActiveHeldInvoiceForPOS(null);
-            setActiveEditingInvoiceForPOS(invoice);
-            setActiveTab('pos');
-          }}
-        />
-      );
+      case 'invoices': {
+        const isAdminOrFullAccess = Boolean(
+          currentUser && (
+            currentUser.role === 'admin' || 
+            currentUser.role === 'owner' || 
+            currentUser.role === 'programmer' ||
+            currentUser.actions?.includes('*') ||
+            currentUser.actions?.includes('view_all_branches')
+          )
+        );
+        return (
+          <InvoicesScreen 
+            settings={settings} 
+            invoices={isAdminOrFullAccess ? salonInvoices : branchInvoices} 
+            setInvoices={handleSetInvoices} 
+            transactions={isAdminOrFullAccess ? salonTransactions : branchTransactions} 
+            setTransactions={handleSetTransactions} 
+            clients={isAdminOrFullAccess ? salonClients : branchClients} 
+            allSalonClients={salonClients}
+            setClients={handleSetClients}
+            activeBranchId={activeBranchId}
+            branches={branches}
+            currentUser={currentUser}
+            shiftData={shiftData}
+            products={branchProducts}
+            setProducts={handleSetProducts}
+            setItemMovements={handleSetItemMovements}
+            salesReturns={isAdminOrFullAccess ? salonSalesReturns : branchSalesReturns}
+            setSalesReturns={handleSetSalesReturns}
+            onNavigateToDeferred={() => setActiveTab('deferred_invoices')}
+            onEditInvoiceInPOS={(invoice) => {
+              setActiveBookingForPOS(null);
+              setActiveHeldInvoiceForPOS(null);
+              setActiveEditingInvoiceForPOS(invoice);
+              setActiveTab('pos');
+            }}
+          />
+        );
+      }
 
       case 'deferred_invoices': return (
         <DeferredInvoicesScreen 

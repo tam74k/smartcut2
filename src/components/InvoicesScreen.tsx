@@ -81,7 +81,25 @@ export function InvoicesScreen({
   const [searchQuery, setSearchQuery] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [branchFilter, setBranchFilter] = useState<string>(activeBranchId || 'all');
+  // هل المستخدم مدير أو مالك أو مبرمج ولديه وصول كامل للنظام بكافة فروعه؟
+  const isAdminOrFullAccess = useMemo(() => {
+    if (!currentUser) return true;
+    return (
+      currentUser.role === 'admin' || 
+      currentUser.role === 'owner' || 
+      currentUser.role === 'programmer' ||
+      currentUser.actions?.includes('*') ||
+      currentUser.actions?.includes('view_all_branches')
+    );
+  }, [currentUser]);
+
+  // لحساب الإدارة والمالك يتم عرض كافة فروع النظام افتراضياً، وللكاشير يتم قفله على فرعه
+  const [branchFilter, setBranchFilter] = useState<string>(() => {
+    if (!currentUser || currentUser.role === 'admin' || currentUser.role === 'owner' || currentUser.role === 'programmer' || currentUser.actions?.includes('*') || currentUser.actions?.includes('view_all_branches')) {
+      return 'all';
+    }
+    return activeBranchId || 'all';
+  });
 
   // مرجع التمرير الأفقي للجدول
   const tableScrollRef = useRef<HTMLDivElement>(null);
@@ -638,8 +656,11 @@ export function InvoicesScreen({
 
   const matchesActiveBranch = (itemBranchId?: string, itemBranchCode?: string) => {
     if (!branches || branches.length <= 1) return true;
-    const targetBranchId = (branchFilter && branchFilter !== 'all') ? branchFilter : activeBranchId;
-    const curBranch = branches.find(b => b.id === targetBranchId) || branches.find(b => b.id === activeBranchId) || branches[0];
+    // إذا كان فلتر الفرع مضبوطاً على "الكل" أو غير محدد، تُعرض فواتير جميع الفروع بالكامل
+    if (!branchFilter || branchFilter === 'all') return true;
+
+    const curBranch = branches.find(b => b.id === branchFilter);
+    if (!curBranch) return true;
     const isMain = Boolean(curBranch?.isMain || curBranch?.id === branches[0]?.id);
 
     const bId = (itemBranchId || '').trim();
@@ -693,10 +714,12 @@ export function InvoicesScreen({
         const hasPartial = salesReturns.some(r => r.originalInvoiceId === inv.id && r.status !== 'cancelled') && inv.status !== 'refunded';
         if (!hasPartial) return false;
       } else if (statusFilter === 'all') {
-        // في العرض الافتراضي لكافة الفواتير، الفواتير الآجلة غير المسددة مكانها في شاشة الفواتير الآجلة، وتنتقل إلى شاشة الفواتير بعد سدادها بالكامل
-        const isUnpaidDeferred = (inv.status === 'deferred' || inv.status === 'unpaid' || inv.status === 'partially_paid') &&
-          (Number(inv.remaining ?? 0) > 0.01 || Number(inv.paid ?? 0) < Number(inv.total ?? 0) - 0.01);
-        if (isUnpaidDeferred) return false;
+        // لحساب الأدمن والمالك والمبرمج: يشاهد كافة الفواتير المسجلة في النظام بالكامل دون استثناء
+        if (!isAdminOrFullAccess) {
+          const isUnpaidDeferred = (inv.status === 'deferred' || inv.status === 'unpaid' || inv.status === 'partially_paid') &&
+            (Number(inv.remaining ?? 0) > 0.01 || Number(inv.paid ?? 0) < Number(inv.total ?? 0) - 0.01);
+          if (isUnpaidDeferred) return false;
+        }
       } else if (inv.status !== statusFilter) {
         return false;
       }
@@ -723,7 +746,7 @@ export function InvoicesScreen({
       
       return true;
     }).sort((a, b) => parseDbDateTime(b.date).getTime() - parseDbDateTime(a.date).getTime());
-  }, [invoices, dateFrom, dateTo, statusFilter, paymentFilter, searchQuery, activeBranchId, isMainBranch, branchFilter, salesReturns, isCashierRestricted, shiftData?.isOpen, isInvoiceInCurrentShift]);
+  }, [invoices, dateFrom, dateTo, statusFilter, paymentFilter, searchQuery, activeBranchId, isMainBranch, branchFilter, salesReturns, isCashierRestricted, shiftData?.isOpen, isInvoiceInCurrentShift, isAdminOrFullAccess]);
 
   // Pagination calculation
   const totalInvoices = filteredInvoices.length;
