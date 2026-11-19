@@ -58,3 +58,111 @@ body {
 .animate-marquee-rtl:hover {
   animation-play-state: paused;
 }
+
+/* ========================================================
+   Landing Page Animations (Hero Entry & Scroll Reveal)
+   ======================================================== */
+
+@keyframes heroFadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(26px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes heroFadeInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes heroScaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.85) translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes gentleFloat {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+.anim-hero-logo {
+  animation: heroScaleIn 0.85s cubic-bezier(0.16, 1, 0.3, 1) forwards, gentleFloat 3.2s ease-in-out 1.2s infinite;
+}
+
+.anim-hero-badge {
+  animation: heroFadeInDown 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.1s both;
+}
+
+.anim-hero-title {
+  animation: heroFadeInUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.2s both;
+}
+
+.anim-hero-subtitle {
+  animation: heroFadeInUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.3s both;
+}
+
+.anim-hero-desc {
+  animation: heroFadeInUp 0.85s cubic-bezier(0.16, 1, 0.3, 1) 0.4s both;
+}
+
+.anim-hero-buttons {
+  animation: heroFadeInUp 0.85s cubic-bezier(0.16, 1, 0.3, 1) 0.5s both;
+}
+
+.anim-hero-trust {
+  animation: heroFadeInUp 0.9s cubic-bezier(0.16, 1, 0.3, 1) 0.6s both;
+}
+
+/* Scroll Reveal Classes (عند النزول لأسفل) */
+.scroll-reveal {
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity 0.75s cubic-bezier(0.16, 1, 0.3, 1), transform 0.75s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
+}
+
+.scroll-reveal.reveal-left {
+  transform: translateX(-35px);
+}
+
+.scroll-reveal.reveal-right {
+  transform: translateX(35px);
+}
+
+.scroll-reveal.reveal-scale {
+  transform: scale(0.95) translateY(20px);
+}
+
+.scroll-reveal.revealed {
+  opacity: 1 !important;
+  transform: translate(0, 0) scale(1) !important;
+}
+
+/* Stagger Delays for Grid Elements */
+.delay-100 { transition-delay: 100ms; }
+.delay-150 { transition-delay: 150ms; }
+.delay-200 { transition-delay: 200ms; }
+.delay-250 { transition-delay: 250ms; }
+.delay-300 { transition-delay: 300ms; }
+.delay-350 { transition-delay: 350ms; }
+.delay-400 { transition-delay: 400ms; }
