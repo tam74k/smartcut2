@@ -3332,7 +3332,7 @@ export function BookingsScreen({
                 <thead className="bg-slate-50/90 text-slate-700 font-bold border-b border-slate-200">
                   <tr className="divide-x divide-x-reverse divide-slate-100">
                     <th className="py-3.5 px-3 text-center whitespace-nowrap font-black text-slate-700 text-xs">الدور / الرمز</th>
-                    <th className="py-3.5 px-4 text-right whitespace-nowrap font-black text-slate-700 text-xs">العميل</th>
+                    <th className="py-3.5 px-3 text-right whitespace-nowrap font-black text-slate-700 text-xs max-w-[180px]">العميل</th>
                     <th className="py-3.5 px-3.5 text-right whitespace-nowrap font-black text-slate-700 text-xs">الموبايل</th>
                     <th className="py-3.5 px-4 text-right whitespace-nowrap font-black text-slate-700 text-xs">الخدمات المحجوزة</th>
                     <th className="py-3.5 px-3.5 text-right whitespace-nowrap font-black text-slate-700 text-xs">الموظف / الفني</th>
@@ -3370,23 +3370,23 @@ export function BookingsScreen({
                           </td>
 
                           {/* 2. Client Details & Badges */}
-                          <td className="py-3.5 px-4 align-middle">
+                          <td className="py-3.5 px-3 align-middle max-w-[190px]">
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="font-extrabold text-slate-900 text-xs">{b.clientName}</span>
                               {b.artistName && (
-                                <span className="bg-pink-50 text-pink-700 border border-pink-200 text-[10px] font-black px-1.5 py-0.5 rounded-md shadow-2xs inline-flex items-center gap-1" title={`حجز ميكب ارتست: ${b.artistName}`}>
+                                <span className="bg-pink-50 text-pink-700 border border-pink-200 text-[10px] font-black px-1.5 py-0.5 rounded-md shadow-2xs inline-flex items-center gap-1 shrink-0" title={`حجز ميكب ارتست: ${b.artistName}`}>
                                   <Sparkles size={10} className="text-pink-600" />
                                   <span>{b.artistName}</span>
                                 </span>
                               )}
                               {b.source === 'online' && (
-                                <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-black px-1.5 py-0.5 rounded-md shadow-2xs inline-flex items-center gap-1">
+                                <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-black px-1.5 py-0.5 rounded-md shadow-2xs inline-flex items-center gap-1 shrink-0">
                                   <Globe size={10} className="text-emerald-700" />
                                   <span>أونلاين</span>
                                 </span>
                               )}
                               {b.location && (
-                                <span className="bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-bold px-1.5 py-0.5 rounded-md inline-flex items-center gap-0.5" title="مكان الحجز">
+                                <span className="bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-bold px-1.5 py-0.5 rounded-md inline-flex items-center gap-0.5 shrink-0" title="مكان الحجز">
                                   <MapPin size={10} className="text-indigo-600" />
                                   <span>{b.location}</span>
                                 </span>
@@ -3394,12 +3394,23 @@ export function BookingsScreen({
                             </div>
                             {b.internalNotes && (
                               <div 
-                                className="mt-1.5 text-[10px] text-amber-900 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-lg inline-flex items-center gap-1 max-w-xs truncate cursor-help shadow-2xs" 
+                                className="mt-1.5 text-[10px] text-amber-900 bg-amber-50/90 border border-amber-200/90 px-2 py-1 rounded-lg flex items-start gap-1 max-w-[180px] leading-relaxed break-words whitespace-normal shadow-2xs cursor-help" 
                                 title={`ملاحظة داخلية خاصة بالإدارة: ${b.internalNotes}`}
                               >
-                                <Lock size={10} className="text-amber-700 shrink-0" />
-                                <span className="font-black shrink-0 text-amber-800">ملاحظة:</span>
-                                <span className="truncate font-medium">{b.internalNotes}</span>
+                                <Lock size={10} className="text-amber-700 shrink-0 mt-0.5" />
+                                <div className="flex-1 min-w-0">
+                                  <span className="font-black text-amber-800 ml-1">ملاحظة:</span>
+                                  <span className="font-medium">{b.internalNotes}</span>
+                                </div>
+                              </div>
+                            )}
+                            {b.notes && (
+                              <div 
+                                className="mt-1 text-[10px] text-slate-600 bg-slate-50 border border-slate-200 px-2 py-1 rounded-lg flex items-start gap-1 max-w-[180px] leading-relaxed break-words whitespace-normal shadow-2xs cursor-help" 
+                                title={`ملاحظة العميل: ${b.notes}`}
+                              >
+                                <span className="font-bold text-slate-700 shrink-0">ملاحظة:</span>
+                                <span className="flex-1 min-w-0">{b.notes}</span>
                               </div>
                             )}
                           </td>
