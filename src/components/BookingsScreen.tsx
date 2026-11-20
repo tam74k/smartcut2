@@ -2787,18 +2787,6 @@ export function BookingsScreen({
             <span>سحب من إكسل</span>
           </button>
 
-          {/* Send Tomorrow's Bookings to Owner via WhatsApp */}
-          <button
-            type="button"
-            onClick={handleSendTomorrowBookingsToOwner}
-            disabled={isSendingTomorrowWhatsApp}
-            className="h-9 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-3.5 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer whitespace-nowrap shrink-0"
-            title="إرسال قائمة وتفاصيل حجوزات الغد إلى هاتف مالك الصالون عبر الواتساب"
-          >
-            <MessageCircle size={14} />
-            <span>{isSendingTomorrowWhatsApp ? 'جارٍ الإرسال...' : 'حجوزات الغد للمالك'}</span>
-          </button>
-
           {/* Global New Booking Button */}
           <button
             type="button"
