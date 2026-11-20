@@ -2688,59 +2688,112 @@ export function BookingsScreen({
       
       {/* Top Primary Navigation Sub-Tabs & Action Buttons (على مستوى واحد وفي سطر واحد) */}
       <div className="flex items-center justify-between gap-3 bg-white p-2.5 sm:p-3 rounded-2xl border border-slate-200 shadow-xs overflow-x-auto no-scrollbar">
-        {/* Right side (RTL): Navigation Sub-Tabs */}
-        <div className="inline-flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 shrink-0">
+        {/* Right side (RTL): New Booking Button at start of line + Navigation Sub-Tabs */}
+        <div className="flex items-center gap-2.5 shrink-0">
+          {/* Global New Booking Button (في بداية السطر باليمين) */}
           <button
             type="button"
-            onClick={() => setActiveMainTab('table')}
-            className={`h-9 px-3.5 rounded-lg text-xs font-black flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-              activeMainTab === 'table'
-                ? 'bg-white text-indigo-900 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
+            onClick={() => {
+              if (!shiftData?.isOpen) {
+                alert('لا يمكن تسجيل حجز جديد والوردية مغلقة. يرجى فتح وردية أولاً من شاشة الورديات.');
+                return;
+              }
+              const openShiftDate = (shiftData && shiftData.isOpen && shiftData.date) ? shiftData.date : formatDateToYMD(currentDate);
+              setEditingBooking(null);
+              setItemTypeToAdd('service');
+              setServiceToAdd('');
+              setServiceSearchQuery('');
+              setProductToAdd('');
+              setProductSearchQuery('');
+              setIsServiceDropdownOpen(false);
+              setIsProductDropdownOpen(false);
+              setNewBooking({
+                clientName: '',
+                phone: '',
+                date: openShiftDate,
+                time: '10:00',
+                status: 'confirmed',
+                location: '',
+                notes: '',
+                internalNotes: '',
+                services: [],
+                advancePayments: [],
+                totalAmount: 0,
+                discountType: 'fixed',
+                discountValue: 0
+              });
+              setTechToAdd('');
+              setServiceQtyToAdd('1');
+              setEditingPriceServiceId(null);
+              setEditingPriceValue('');
+              setShowPhoneSuggestions(false);
+              setHighlightedPhoneIndex(-1);
+              setMatchingClientInfo(null);
+              setAdvTreasuryInput(availableTreasuries[0]?.id || 'cash');
+              setAdvDateInput(openShiftDate);
+              setShowAddModal(true);
+            }}
+            className="h-9 bg-indigo-600 hover:bg-indigo-700 text-white px-4 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm shadow-indigo-600/20 transition-all cursor-pointer whitespace-nowrap shrink-0 active:scale-95"
+            title="تسجيل حجز موعد جديد للعميل"
           >
-            <List size={15} className={activeMainTab === 'table' ? 'text-indigo-600' : 'text-slate-500'} />
-            <span>جدول الحجوزات (الرئيسي)</span>
-            <span className="bg-indigo-50 text-indigo-700 text-[10px] px-1.5 py-0.5 rounded-full font-bold">
-              {bookings.length}
-            </span>
+            <Plus size={15} />
+            <span>+ حجز موعد جديد</span>
           </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveMainTab('calendar')}
-            className={`h-9 px-3.5 rounded-lg text-xs font-black flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-              activeMainTab === 'calendar'
-                ? 'bg-white text-indigo-900 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <CalendarDays size={15} className={activeMainTab === 'calendar' ? 'text-indigo-600' : 'text-slate-500'} />
-            <span>رزنامة وتقويم الحجوزات</span>
-          </button>
+          {/* Navigation Sub-Tabs */}
+          <div className="inline-flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 shrink-0">
+            <button
+              type="button"
+              onClick={() => setActiveMainTab('table')}
+              className={`h-9 px-3.5 rounded-lg text-xs font-black flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                activeMainTab === 'table'
+                  ? 'bg-white text-indigo-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <List size={15} className={activeMainTab === 'table' ? 'text-indigo-600' : 'text-slate-500'} />
+              <span>جدول الحجوزات (الرئيسي)</span>
+              <span className="bg-indigo-50 text-indigo-700 text-[10px] px-1.5 py-0.5 rounded-full font-bold">
+                {bookings.length}
+              </span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveMainTab('postponed')}
-            className={`h-9 px-3.5 rounded-lg text-xs font-black flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-              activeMainTab === 'postponed'
-                ? 'bg-amber-500 text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Clock size={15} className={activeMainTab === 'postponed' ? 'text-white' : 'text-amber-600'} />
-            <span>الحجوزات المؤجلة</span>
-            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold transition-colors ${
-              activeMainTab === 'postponed' 
-                ? 'bg-white/20 text-white' 
-                : 'bg-amber-100 text-amber-800'
-            }`}>
-              {postponedBookings.length}
-            </span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setActiveMainTab('calendar')}
+              className={`h-9 px-3.5 rounded-lg text-xs font-black flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                activeMainTab === 'calendar'
+                  ? 'bg-white text-indigo-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <CalendarDays size={15} className={activeMainTab === 'calendar' ? 'text-indigo-600' : 'text-slate-500'} />
+              <span>رزنامة وتقويم الحجوزات</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveMainTab('postponed')}
+              className={`h-9 px-3.5 rounded-lg text-xs font-black flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                activeMainTab === 'postponed'
+                  ? 'bg-amber-500 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Clock size={15} className={activeMainTab === 'postponed' ? 'text-white' : 'text-amber-600'} />
+              <span>الحجوزات المؤجلة</span>
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold transition-colors ${
+                activeMainTab === 'postponed' 
+                  ? 'bg-white/20 text-white' 
+                  : 'bg-amber-100 text-amber-800'
+              }`}>
+                {postponedBookings.length}
+              </span>
+            </button>
+          </div>
         </div>
 
-        {/* Left side (RTL): Action Buttons (متناسقة الأحجام وفي سطر واحد بدون تكرار) */}
+        {/* Left side (RTL): Other Actions */}
         <div className="flex items-center gap-2 shrink-0">
           {activeMainTab === 'table' && (
             <button
@@ -2785,55 +2838,6 @@ export function BookingsScreen({
           >
             <FileSpreadsheet size={14} className="text-emerald-600" />
             <span>سحب من إكسل</span>
-          </button>
-
-          {/* Global New Booking Button */}
-          <button
-            type="button"
-            onClick={() => {
-              if (!shiftData?.isOpen) {
-                alert('لا يمكن تسجيل حجز جديد والوردية مغلقة. يرجى فتح وردية أولاً من شاشة الورديات.');
-                return;
-              }
-              const openShiftDate = (shiftData && shiftData.isOpen && shiftData.date) ? shiftData.date : formatDateToYMD(currentDate);
-              setEditingBooking(null);
-              setItemTypeToAdd('service');
-              setServiceToAdd('');
-              setServiceSearchQuery('');
-              setProductToAdd('');
-              setProductSearchQuery('');
-              setIsServiceDropdownOpen(false);
-              setIsProductDropdownOpen(false);
-              setNewBooking({
-                clientName: '',
-                phone: '',
-                date: openShiftDate,
-                time: '10:00',
-                status: 'confirmed',
-                location: '',
-                notes: '',
-                internalNotes: '',
-                services: [],
-                advancePayments: [],
-                totalAmount: 0,
-                discountType: 'fixed',
-                discountValue: 0
-              });
-              setTechToAdd('');
-              setServiceQtyToAdd('1');
-              setEditingPriceServiceId(null);
-              setEditingPriceValue('');
-              setShowPhoneSuggestions(false);
-              setHighlightedPhoneIndex(-1);
-              setMatchingClientInfo(null);
-              setAdvTreasuryInput(availableTreasuries[0]?.id || 'cash');
-              setAdvDateInput(openShiftDate);
-              setShowAddModal(true);
-            }}
-            className="h-9 bg-indigo-600 hover:bg-indigo-700 text-white px-4 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm shadow-indigo-600/20 transition-all cursor-pointer whitespace-nowrap shrink-0"
-          >
-            <Plus size={15} />
-            <span>+ حجز موعد جديد</span>
           </button>
         </div>
       </div>
@@ -3324,19 +3328,19 @@ export function BookingsScreen({
           {/* Bookings Directory Table */}
           <div className="bg-white rounded-3xl shadow-xs border border-slate-200 overflow-hidden">
             <div ref={tableScrollRef} className="overflow-x-auto scroll-smooth">
-              <table className="w-full text-right text-xs">
-                <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
-                  <tr>
-                    <th className="p-3.5 text-center">رقم الدور</th>
-                    <th className="p-3.5">العميل</th>
-                    <th className="p-3.5">الموبايل</th>
-                    <th className="p-3.5">الخدمات المحجوزة</th>
-                    <th className="p-3.5">الموظف / الفني</th>
-                    <th className="p-3.5">تاريخ ووقت الموعد</th>
-                    <th className="p-3.5">سجل الإنشاء والتعديل</th>
-                    <th className="p-3.5 text-center">الإجمالي</th>
-                    <th className="p-3.5 text-center">الحالة</th>
-                    <th className="p-3.5 text-center">إجراءات</th>
+              <table className="w-full text-right text-xs border-collapse">
+                <thead className="bg-slate-50/90 text-slate-700 font-bold border-b border-slate-200">
+                  <tr className="divide-x divide-x-reverse divide-slate-100">
+                    <th className="py-3.5 px-3 text-center whitespace-nowrap font-black text-slate-700 text-xs">الدور / الرمز</th>
+                    <th className="py-3.5 px-4 text-right whitespace-nowrap font-black text-slate-700 text-xs">العميل</th>
+                    <th className="py-3.5 px-3.5 text-right whitespace-nowrap font-black text-slate-700 text-xs">الموبايل</th>
+                    <th className="py-3.5 px-4 text-right whitespace-nowrap font-black text-slate-700 text-xs">الخدمات المحجوزة</th>
+                    <th className="py-3.5 px-3.5 text-right whitespace-nowrap font-black text-slate-700 text-xs">الموظف / الفني</th>
+                    <th className="py-3.5 px-4 text-right whitespace-nowrap font-black text-slate-700 text-xs">تاريخ ووقت الموعد</th>
+                    <th className="py-3.5 px-4 text-right whitespace-nowrap font-black text-slate-700 text-xs">سجل الإنشاء والتعديل</th>
+                    <th className="py-3.5 px-4 text-center whitespace-nowrap font-black text-slate-700 text-xs">الإجمالي والمالية</th>
+                    <th className="py-3.5 px-3 text-center whitespace-nowrap font-black text-slate-700 text-xs">الحالة</th>
+                    <th className="py-3.5 px-4 text-center whitespace-nowrap font-black text-slate-700 text-xs">إجراءات</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -3350,59 +3354,66 @@ export function BookingsScreen({
                     paginatedBookings.map(b => {
                       const badge = getStatusBadge(b.status);
                       return (
-                        <tr key={b.id} className="hover:bg-slate-50 transition-colors">
-                          <td className="p-3.5 text-center">
+                        <tr key={b.id} className="hover:bg-indigo-50/20 transition-all border-b border-slate-100">
+                          {/* 1. Queue Number & Code */}
+                          <td className="py-3.5 px-3 text-center whitespace-nowrap align-middle">
                             {b.queueNumber ? (
-                              <span className="font-mono font-black text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-lg text-xs shadow-2xs">
+                              <span className="inline-flex items-center justify-center font-mono font-black text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-lg text-xs shadow-2xs">
                                 B-{b.queueNumber}
                               </span>
                             ) : (
-                              <span className="text-slate-300 font-mono">-</span>
+                              <span className="text-slate-300 font-mono text-xs">-</span>
                             )}
+                            <span className="block text-[10px] font-mono text-slate-400 mt-1" title="كود الحجز">
+                              {b.bookingCode || `#${b.id.slice(0, 8)}`}
+                            </span>
                           </td>
-                          <td className="p-3.5">
+
+                          {/* 2. Client Details & Badges */}
+                          <td className="py-3.5 px-4 align-middle">
                             <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="font-bold text-slate-900">{b.clientName}</span>
+                              <span className="font-extrabold text-slate-900 text-xs">{b.clientName}</span>
                               {b.artistName && (
-                                <span className="bg-pink-100 text-pink-900 border border-pink-200 text-[9px] font-black px-1.5 py-0.5 rounded-md shadow-2xs inline-flex items-center gap-1" title={`حجز ميكب ارتست: ${b.artistName}`}>
-                                  <Sparkles size={9} className="text-pink-600" />
+                                <span className="bg-pink-50 text-pink-700 border border-pink-200 text-[10px] font-black px-1.5 py-0.5 rounded-md shadow-2xs inline-flex items-center gap-1" title={`حجز ميكب ارتست: ${b.artistName}`}>
+                                  <Sparkles size={10} className="text-pink-600" />
                                   <span>{b.artistName}</span>
                                 </span>
                               )}
                               {b.source === 'online' && (
-                                <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 text-[9px] font-black px-1.5 py-0.5 rounded-md shadow-2xs inline-flex items-center gap-1">
+                                <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-black px-1.5 py-0.5 rounded-md shadow-2xs inline-flex items-center gap-1">
                                   <Globe size={10} className="text-emerald-700" />
                                   <span>أونلاين</span>
                                 </span>
                               )}
                               {b.location && (
-                                <span className="bg-slate-100 text-slate-700 border border-slate-200 text-[9px] font-bold px-1.5 py-0.5 rounded-md flex items-center gap-0.5" title="مكان الحجز">
+                                <span className="bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-bold px-1.5 py-0.5 rounded-md inline-flex items-center gap-0.5" title="مكان الحجز">
                                   <MapPin size={10} className="text-indigo-600" />
                                   <span>{b.location}</span>
                                 </span>
                               )}
                             </div>
-                            <div className="text-[10px] font-mono text-indigo-600">{b.bookingCode || `#${b.id}`}</div>
                             {b.internalNotes && (
                               <div 
-                                className="mt-1 text-[10px] text-amber-900 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-lg flex items-center gap-1 max-w-xs truncate cursor-help shadow-2xs" 
+                                className="mt-1.5 text-[10px] text-amber-900 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-lg inline-flex items-center gap-1 max-w-xs truncate cursor-help shadow-2xs" 
                                 title={`ملاحظة داخلية خاصة بالإدارة: ${b.internalNotes}`}
                               >
                                 <Lock size={10} className="text-amber-700 shrink-0" />
-                                <span className="font-black shrink-0 text-amber-800">ملاحظة داخلية:</span>
+                                <span className="font-black shrink-0 text-amber-800">ملاحظة:</span>
                                 <span className="truncate font-medium">{b.internalNotes}</span>
                               </div>
                             )}
                           </td>
-                          <td className="p-3.5">
-                            <div className="flex items-center gap-1.5 font-mono text-slate-700">
-                              <span dir="ltr">{b.phone}</span>
+
+                          {/* 3. Phone */}
+                          <td className="py-3.5 px-3.5 whitespace-nowrap align-middle">
+                            <div className="inline-flex items-center gap-1.5 font-mono text-slate-700 text-xs bg-slate-50 border border-slate-200/80 px-2 py-1 rounded-xl">
+                              <span dir="ltr" className="font-bold">{b.phone || '-'}</span>
                               {b.phone && (
                                 <div className="relative inline-flex items-center">
                                   <button
                                     type="button"
                                     onClick={(e) => handleCopyPhone(b.phone, b.id, e)}
-                                    className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                                    className="p-1 rounded-md text-slate-400 hover:text-indigo-600 hover:bg-white transition-colors cursor-pointer"
                                     title="نسخ رقم الموبايل"
                                   >
                                     {copiedPhoneId === b.id ? (
@@ -3413,52 +3424,104 @@ export function BookingsScreen({
                                   </button>
                                   {copiedPhoneId === b.id && (
                                     <span className="absolute -top-7 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm whitespace-nowrap z-20 animate-in fade-in zoom-in-95">
-                                      تم نسخ الرقم
+                                      تم النسخ
                                     </span>
                                   )}
                                 </div>
                               )}
                             </div>
                           </td>
-                          <td className="p-3.5 font-bold text-slate-700">
-                            {b.services?.length > 0 ? b.services.map(s => (s.quantity && s.quantity > 1) ? `${s.serviceName} (×${s.quantity})` : s.serviceName).join(' + ') : '-'}
-                          </td>
-                          <td className="p-3.5 text-slate-600">
-                            {b.services?.map(s => s.technicianName).join(', ') || '-'}
-                          </td>
-                          <td className="p-3.5 font-mono text-slate-800 font-bold" dir="ltr">
-                            {b.time} • {b.date?.split('T')[0] || b.date}
-                          </td>
-                          <td className="p-3.5 text-[11px] space-y-1">
-                            <div>
-                              <div className="flex items-center gap-1 text-slate-700">
-                                <span className="text-[9px] font-black text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded">أنشأه</span>
-                                <span className="font-bold text-slate-900">{b.createdByName || (b as any).created_by_name || b.createdBy || 'غير محدد'}</span>
+
+                          {/* 4. Booked Services */}
+                          <td className="py-3.5 px-4 align-middle">
+                            {b.services?.length > 0 ? (
+                              <div className="flex flex-wrap items-center gap-1 max-w-xs">
+                                {b.services.map((s, idx) => (
+                                  <span 
+                                    key={idx}
+                                    className="inline-flex items-center gap-1 bg-slate-100/90 text-slate-800 border border-slate-200 px-2 py-0.5 rounded-lg text-[11px] font-bold"
+                                  >
+                                    <span>{s.serviceName}</span>
+                                    {s.quantity && s.quantity > 1 && (
+                                      <span className="text-indigo-700 bg-indigo-50 font-black px-1 rounded text-[10px]">
+                                        ×{s.quantity}
+                                      </span>
+                                    )}
+                                  </span>
+                                ))}
                               </div>
-                              <div className="text-[10px] text-slate-500 font-mono mt-0.5" dir="ltr">
-                                {formatDateTime(b.createdAt || (b as any).created_at)}
-                              </div>
-                            </div>
-                            {(b.updatedByName || (b as any).updated_by_name || b.updatedAt || (b as any).updated_at) && (
-                              <div className="pt-1 border-t border-slate-100">
-                                <div className="flex items-center gap-1 text-slate-600">
-                                  <span className="text-[9px] font-black text-indigo-800 bg-indigo-50 border border-indigo-200 px-1.5 py-0.2 rounded">عدّله</span>
-                                  <span className="font-bold text-slate-800">{b.updatedByName || (b as any).updated_by_name || 'مستخدم'}</span>
-                                </div>
-                                {(b.updatedAt || (b as any).updated_at) && (
-                                  <div className="text-[9px] text-slate-400 font-mono mt-0.5" dir="ltr">
-                                    {formatDateTime(b.updatedAt || (b as any).updated_at)}
-                                  </div>
-                                )}
-                              </div>
+                            ) : (
+                              <span className="text-slate-400 font-bold">-</span>
                             )}
                           </td>
-                          <td className="p-3.5 text-center font-mono font-black text-slate-900">
-                            <div>{b.totalAmount} {settings.currency}</div>
+
+                          {/* 5. Technician */}
+                          <td className="py-3.5 px-3.5 whitespace-nowrap align-middle">
+                            {(() => {
+                              const techs = Array.from(new Set(b.services?.map(s => s.technicianName).filter(Boolean)));
+                              if (techs.length === 0) return <span className="text-slate-400 font-bold">-</span>;
+                              return (
+                                <div className="flex flex-col gap-0.5">
+                                  {techs.map((t, idx) => (
+                                    <span key={idx} className="text-slate-700 font-bold text-xs flex items-center gap-1">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0"></span>
+                                      <span>{t}</span>
+                                    </span>
+                                  ))}
+                                </div>
+                              );
+                            })()}
+                          </td>
+
+                          {/* 6. Date and Time */}
+                          <td className="py-3.5 px-4 whitespace-nowrap align-middle">
+                            <div className="inline-flex flex-col gap-1">
+                              <div className="inline-flex items-center gap-1.5 bg-indigo-50/80 text-indigo-900 border border-indigo-100 px-2 py-0.5 rounded-lg font-mono font-black text-xs shadow-2xs">
+                                <Clock size={11} className="text-indigo-600 shrink-0" />
+                                <span dir="ltr">{b.time}</span>
+                              </div>
+                              <div className="flex items-center gap-1 text-[11px] font-bold text-slate-500" dir="ltr">
+                                <CalendarIcon size={11} className="text-slate-400 shrink-0" />
+                                <span>{b.date?.split('T')[0] || b.date}</span>
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* 7. Audit Trail */}
+                          <td className="py-3.5 px-4 whitespace-nowrap align-middle text-[11px]">
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-1 text-slate-700">
+                                <span className="text-[9px] font-black text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded">أنشأه</span>
+                                <span className="font-bold text-slate-900 text-xs">{b.createdByName || (b as any).created_by_name || b.createdBy || 'غير محدد'}</span>
+                              </div>
+                              <div className="text-[10px] text-slate-400 font-mono" dir="ltr">
+                                {formatDateTime(b.createdAt || (b as any).created_at)}
+                              </div>
+                              {(b.updatedByName || (b as any).updated_by_name || b.updatedAt || (b as any).updated_at) && (
+                                <div className="pt-1 border-t border-slate-100">
+                                  <div className="flex items-center gap-1 text-slate-600">
+                                    <span className="text-[9px] font-black text-indigo-800 bg-indigo-50 border border-indigo-200 px-1.5 py-0.2 rounded">عدّله</span>
+                                    <span className="font-bold text-slate-800">{b.updatedByName || (b as any).updated_by_name || 'مستخدم'}</span>
+                                  </div>
+                                  {(b.updatedAt || (b as any).updated_at) && (
+                                    <div className="text-[9px] text-slate-400 font-mono mt-0.5" dir="ltr">
+                                      {formatDateTime(b.updatedAt || (b as any).updated_at)}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* 8. Financials / Total */}
+                          <td className="py-3.5 px-4 text-center whitespace-nowrap align-middle">
+                            <div className="font-mono font-black text-slate-900 text-xs">
+                              {b.totalAmount} {settings.currency}
+                            </div>
                             {(() => {
                               const totals = calculateBookingTotals(b);
                               return totals.totalDiscounts > 0 ? (
-                                <div className="text-[10px] text-rose-500 font-bold">
+                                <div className="text-[10px] text-rose-500 font-bold mt-0.5">
                                   خصم: -{totals.totalDiscounts.toFixed(2)}
                                 </div>
                               ) : null;
@@ -3491,11 +3554,13 @@ export function BookingsScreen({
                               )
                             )}
                           </td>
-                          <td className="p-3.5 text-center">
+
+                          {/* 9. Status */}
+                          <td className="py-3.5 px-3 text-center whitespace-nowrap align-middle">
                             <select
                               value={b.status}
                               onChange={e => handleQuickStatusChange(b, e.target.value)}
-                              className={`px-2.5 py-1 rounded-full text-[10px] font-black border outline-none cursor-pointer transition-all ${badge.bg}`}
+                              className={`px-2.5 py-1 rounded-xl text-[10px] font-black border outline-none cursor-pointer transition-all shadow-2xs ${badge.bg}`}
                               title="تغيير حالة الحجز مباشرة (مؤجل، مؤكد، انتظار، مكتمل، ملغي)"
                             >
                               <option value="confirmed" className="bg-white text-slate-800 font-bold">مؤكد</option>
@@ -3505,16 +3570,18 @@ export function BookingsScreen({
                               <option value="cancelled" className="bg-white text-slate-800 font-bold">ملغي</option>
                             </select>
                           </td>
-                          <td className="p-3.5">
+
+                          {/* 10. Actions Toolbar */}
+                          <td className="py-3.5 px-4 whitespace-nowrap align-middle">
                             <div className="flex items-center justify-center gap-1.5">
-                              {/* 1. Cashier button (for active bookings) */}
+                              {/* Primary POS Button */}
                               {b.status !== 'completed' && b.status !== 'cancelled' && (
                                 <button
                                   onClick={() => onToPOS({
                                     ...b,
                                     advancePayments: getBookingAdvances(b)
                                   })}
-                                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1.5 rounded-xl text-[11px] font-black flex items-center gap-1 shadow-xs cursor-pointer"
+                                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 rounded-xl text-[11px] font-black flex items-center gap-1 shadow-xs cursor-pointer transition-all active:scale-95 shrink-0"
                                   title="تحويل مباشر لنقطة البيع POS"
                                 >
                                   <ShoppingCart size={13} />
@@ -3522,100 +3589,113 @@ export function BookingsScreen({
                                 </button>
                               )}
 
-                              {/* 2. Edit button: Controlled by canEditBooking */}
-                              {canEditBooking && (
+                              {/* Secondary Action Buttons Toolbar */}
+                              <div className="inline-flex items-center p-0.5 bg-slate-100 rounded-xl border border-slate-200/80 gap-0.5">
+                                {/* View Details */}
                                 <button
-                                  onClick={() => handleEdit(b)}
-                                  className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl cursor-pointer transition-colors"
-                                  title="تعديل الحجز وبياناته"
+                                  type="button"
+                                  onClick={() => setSelectedBookingDetails(b)}
+                                  className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-600 hover:text-indigo-700 hover:bg-white transition-colors cursor-pointer"
+                                  title="عرض تفاصيل الحجز"
                                 >
-                                  <Edit2 size={13} />
+                                  <Eye size={13} />
                                 </button>
-                              )}
 
-                              {/* 3. Postpone or Reschedule button: Available for all statuses */}
-                              {b.status === 'postponed' ? (
-                                <button
-                                  onClick={() => {
-                                    setRescheduleBookingTarget(b);
-                                    setRescheduleDate(defaultBookingDate);
-                                    setRescheduleTime(b.time || '10:00');
-                                  }}
-                                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1.5 rounded-xl text-[11px] font-black flex items-center gap-1 shadow-xs cursor-pointer"
-                                  title="تحديد موعد جديد للحجز وتأكيده"
-                                >
-                                  <CalendarIcon size={12} />
-                                  <span>تحديد موعد</span>
-                                </button>
-                              ) : (
-                                <button
-                                  onClick={() => handlePostponeBooking(b)}
-                                  className="p-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-xl cursor-pointer transition-colors"
-                                  title="تأجيل الحجز لموعد مفتوح"
-                                >
-                                  <Clock size={13} />
-                                </button>
-                              )}
-
-                              {/* 4. Cancel button (if not already cancelled or completed) */}
-                              {b.status !== 'completed' && b.status !== 'cancelled' && (
-                                <button
-                                  onClick={() => cancelBooking(b.id)}
-                                  className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl cursor-pointer transition-colors"
-                                  title="إلغاء الحجز"
-                                >
-                                  <XCircle size={13} />
-                                </button>
-                              )}
-                              <button
-                                onClick={() => printBooking(b)}
-                                className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl cursor-pointer"
-                                title="طباعة إشعار الحجز"
-                              >
-                                <Printer size={13} />
-                              </button>
-                              <button
-                                onClick={() => setSelectedBookingDetails(b)}
-                                className="p-1.5 bg-slate-100 hover:bg-slate-200 text-indigo-700 rounded-xl cursor-pointer"
-                                title="عرض التفاصيل"
-                              >
-                                <Eye size={13} />
-                              </button>
-
-                              {/* WhatsApp Chat button */}
-                              {(() => {
-                                const waUrl = getWhatsAppUrl(b.phone);
-                                return waUrl ? (
-                                  <a
-                                    href={waUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 hover:text-emerald-700 border border-emerald-200 rounded-xl transition-colors cursor-pointer shadow-2xs inline-flex items-center justify-center"
-                                    title={`فتح محادثة واتساب مع العميل (${b.clientName})`}
+                                {/* Edit Booking */}
+                                {canEditBooking && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleEdit(b)}
+                                    className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-600 hover:text-slate-900 hover:bg-white transition-colors cursor-pointer"
+                                    title="تعديل الحجز وبياناته"
                                   >
-                                    <MessageCircle size={13} className="text-emerald-600" />
-                                  </a>
+                                    <Edit2 size={13} />
+                                  </button>
+                                )}
+
+                                {/* Postpone / Reschedule */}
+                                {b.status === 'postponed' ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setRescheduleBookingTarget(b);
+                                      setRescheduleDate(defaultBookingDate);
+                                      setRescheduleTime(b.time || '10:00');
+                                    }}
+                                    className="px-2 h-7 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black flex items-center gap-1 transition-colors cursor-pointer"
+                                    title="تحديد موعد جديد للحجز وتأكيده"
+                                  >
+                                    <CalendarIcon size={11} />
+                                    <span>تحديد موعد</span>
+                                  </button>
                                 ) : (
                                   <button
                                     type="button"
-                                    disabled
-                                    className="p-1.5 bg-slate-100 text-slate-300 rounded-xl cursor-not-allowed opacity-50"
-                                    title="لا يوجد رقم هاتف للعميل"
+                                    onClick={() => handlePostponeBooking(b)}
+                                    className="w-7 h-7 flex items-center justify-center rounded-lg text-amber-600 hover:text-amber-700 hover:bg-white transition-colors cursor-pointer"
+                                    title="تأجيل الحجز لموعد مفتوح"
                                   >
-                                    <MessageCircle size={13} />
+                                    <Clock size={13} />
                                   </button>
-                                );
-                              })()}
+                                )}
 
-                              {canDeleteBooking && (
+                                {/* Print Booking */}
                                 <button
-                                  onClick={() => handleDeleteBooking(b.id)}
-                                  className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl cursor-pointer transition-colors"
-                                  title="حذف الحجز نهائياً من قاعدة البيانات"
+                                  type="button"
+                                  onClick={() => printBooking(b)}
+                                  className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-600 hover:text-slate-900 hover:bg-white transition-colors cursor-pointer"
+                                  title="طباعة إشعار الحجز"
                                 >
-                                  <Trash2 size={13} />
+                                  <Printer size={13} />
                                 </button>
-                              )}
+
+                                {/* WhatsApp Chat */}
+                                {(() => {
+                                  const waUrl = getWhatsAppUrl(b.phone);
+                                  return waUrl ? (
+                                    <a
+                                      href={waUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="w-7 h-7 flex items-center justify-center rounded-lg text-emerald-600 hover:text-emerald-700 hover:bg-white transition-colors cursor-pointer"
+                                      title={`فتح محادثة واتساب مع العميل (${b.clientName})`}
+                                    >
+                                      <MessageCircle size={13} />
+                                    </a>
+                                  ) : (
+                                    <span
+                                      className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-300 opacity-50 cursor-not-allowed"
+                                      title="لا يوجد رقم هاتف للعميل"
+                                    >
+                                      <MessageCircle size={13} />
+                                    </span>
+                                  );
+                                })()}
+
+                                {/* Cancel Booking */}
+                                {b.status !== 'completed' && b.status !== 'cancelled' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => cancelBooking(b.id)}
+                                    className="w-7 h-7 flex items-center justify-center rounded-lg text-rose-500 hover:text-rose-700 hover:bg-white transition-colors cursor-pointer"
+                                    title="إلغاء الحجز"
+                                  >
+                                    <XCircle size={13} />
+                                  </button>
+                                )}
+
+                                {/* Delete Booking */}
+                                {canDeleteBooking && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteBooking(b.id)}
+                                    className="w-7 h-7 flex items-center justify-center rounded-lg text-rose-500 hover:text-rose-700 hover:bg-white transition-colors cursor-pointer"
+                                    title="حذف الحجز نهائياً من قاعدة البيانات"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           </td>
                         </tr>
