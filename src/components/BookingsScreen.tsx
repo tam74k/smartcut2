@@ -439,56 +439,21 @@ export function BookingsScreen({
   }, [searchQuery, statusFilter, selectedTech, selectedArtist, dateFrom, dateTo, createdDateFrom, createdDateTo, activeBranchId]);
 
   // Collapsible Top Statistics & Filters State (قابلة للطي والفرد لتوفير المساحة)
-  const [showStats, setShowStats] = useState<boolean>(() => {
+  const [isTopExpanded, setIsTopExpanded] = useState<boolean>(() => {
     try {
-      const s = localStorage.getItem('smartcut_bookings_show_stats');
+      const s = localStorage.getItem('smartcut_bookings_show_top');
       return s !== null ? JSON.parse(s) : false;
     } catch {
       return false;
     }
   });
 
-  const [showFilters, setShowFilters] = useState<boolean>(() => {
-    try {
-      const s = localStorage.getItem('smartcut_bookings_show_filters');
-      return s !== null ? JSON.parse(s) : false;
-    } catch {
-      return false;
-    }
-  });
-
-  const isTopExpanded = showStats || showFilters;
-
-  const toggleAllTop = () => {
-    if (isTopExpanded) {
-      setShowStats(false);
-      setShowFilters(false);
-      try {
-        localStorage.setItem('smartcut_bookings_show_stats', 'false');
-        localStorage.setItem('smartcut_bookings_show_filters', 'false');
-      } catch {}
-    } else {
-      setShowStats(true);
-      setShowFilters(true);
-      try {
-        localStorage.setItem('smartcut_bookings_show_stats', 'true');
-        localStorage.setItem('smartcut_bookings_show_filters', 'true');
-      } catch {}
-    }
-  };
-
-  const toggleStats = () => {
-    setShowStats(prev => {
+  const toggleTopExpanded = () => {
+    setIsTopExpanded(prev => {
       const next = !prev;
-      try { localStorage.setItem('smartcut_bookings_show_stats', JSON.stringify(next)); } catch {}
-      return next;
-    });
-  };
-
-  const toggleFilters = () => {
-    setShowFilters(prev => {
-      const next = !prev;
-      try { localStorage.setItem('smartcut_bookings_show_filters', JSON.stringify(next)); } catch {}
+      try {
+        localStorage.setItem('smartcut_bookings_show_top', JSON.stringify(next));
+      } catch {}
       return next;
     });
   };
@@ -2721,47 +2686,51 @@ export function BookingsScreen({
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto w-full h-full overflow-y-auto space-y-5 bg-slate-50 font-sans" dir="rtl">
       
-      {/* Top Primary Navigation Sub-Tabs */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-3xl border border-slate-200 shadow-xs">
-        <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200 shadow-xs">
+      {/* Top Primary Navigation Sub-Tabs & Action Buttons (على مستوى واحد وفي سطر واحد) */}
+      <div className="flex items-center justify-between gap-3 bg-white p-2.5 sm:p-3 rounded-2xl border border-slate-200 shadow-xs overflow-x-auto no-scrollbar">
+        {/* Right side (RTL): Navigation Sub-Tabs */}
+        <div className="inline-flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 shrink-0">
           <button
+            type="button"
             onClick={() => setActiveMainTab('table')}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+            className={`h-9 px-3.5 rounded-lg text-xs font-black flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
               activeMainTab === 'table'
-                ? 'bg-white text-indigo-900 shadow-sm'
+                ? 'bg-white text-indigo-900 shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <List size={16} className={activeMainTab === 'table' ? 'text-indigo-600' : 'text-slate-500'} />
+            <List size={15} className={activeMainTab === 'table' ? 'text-indigo-600' : 'text-slate-500'} />
             <span>جدول الحجوزات (الرئيسي)</span>
-            <span className="bg-indigo-50 text-indigo-700 text-[10px] px-2 py-0.5 rounded-full font-bold">
+            <span className="bg-indigo-50 text-indigo-700 text-[10px] px-1.5 py-0.5 rounded-full font-bold">
               {bookings.length}
             </span>
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveMainTab('calendar')}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+            className={`h-9 px-3.5 rounded-lg text-xs font-black flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
               activeMainTab === 'calendar'
-                ? 'bg-white text-indigo-900 shadow-sm'
+                ? 'bg-white text-indigo-900 shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <CalendarDays size={16} className={activeMainTab === 'calendar' ? 'text-indigo-600' : 'text-slate-500'} />
+            <CalendarDays size={15} className={activeMainTab === 'calendar' ? 'text-indigo-600' : 'text-slate-500'} />
             <span>رزنامة وتقويم الحجوزات</span>
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveMainTab('postponed')}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+            className={`h-9 px-3.5 rounded-lg text-xs font-black flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
               activeMainTab === 'postponed'
-                ? 'bg-amber-500 text-white shadow-sm'
+                ? 'bg-amber-500 text-white shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <Clock size={16} className={activeMainTab === 'postponed' ? 'text-white' : 'text-amber-600'} />
+            <Clock size={15} className={activeMainTab === 'postponed' ? 'text-white' : 'text-amber-600'} />
             <span>الحجوزات المؤجلة</span>
-            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold transition-colors ${
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold transition-colors ${
               activeMainTab === 'postponed' 
                 ? 'bg-white/20 text-white' 
                 : 'bg-amber-100 text-amber-800'
@@ -2771,48 +2740,50 @@ export function BookingsScreen({
           </button>
         </div>
 
-        {/* Action Buttons */}
-        <div className="flex flex-wrap items-center gap-2">
+        {/* Left side (RTL): Action Buttons (متناسقة الأحجام وفي سطر واحد بدون تكرار) */}
+        <div className="flex items-center gap-2 shrink-0">
           {activeMainTab === 'table' && (
             <button
               type="button"
-              onClick={toggleAllTop}
-              className={`px-3.5 py-2.5 rounded-2xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer border shadow-xs ${
+              onClick={toggleTopExpanded}
+              className={`h-9 px-3 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer border shadow-2xs whitespace-nowrap shrink-0 active:scale-95 ${
                 isTopExpanded 
                   ? 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300' 
                   : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'
               }`}
               title={isTopExpanded ? 'طي وإخفاء المربعات الإحصائية والتصفية' : 'فتح وإظهار المربعات الإحصائية والتصفية'}
             >
-              <Sliders size={15} className={isTopExpanded ? 'text-slate-600' : 'text-indigo-600'} />
+              <Sliders size={14} className={isTopExpanded ? 'text-slate-600' : 'text-indigo-600'} />
               <span>{isTopExpanded ? 'طي الإحصائيات والتصفية' : 'فتح الإحصائيات والتصفية'}</span>
               {activeFiltersCount > 0 && !isTopExpanded && (
                 <span className="bg-rose-500 text-white text-[10px] font-black px-1.5 py-0.2 rounded-full">
                   {activeFiltersCount}
                 </span>
               )}
-              {isTopExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              {isTopExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
             </button>
           )}
 
           {canManageBookingSettings && (
             <button
+              type="button"
               onClick={() => setShowRulesModal(true)}
-              className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-3.5 py-2.5 rounded-2xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+              className="h-9 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-3 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer whitespace-nowrap shrink-0"
               title="ضبط إغلاق الأيام والساعات وسعة الحجوزات"
             >
-              <Sliders size={15} className="text-indigo-600" />
+              <Sliders size={14} className="text-indigo-600" />
               <span>إعدادات وتوافر الحجوزات</span>
             </button>
           )}
 
           {/* Excel Import Button */}
           <button
+            type="button"
             onClick={() => setIsImportModalOpen(true)}
-            className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 px-3.5 py-2.5 rounded-2xl text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+            className="h-9 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 px-3 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer whitespace-nowrap shrink-0"
             title="سحب حجوزات سابقة من ملف إكسل (نظام الورقتين المعتمد)"
           >
-            <FileSpreadsheet size={15} className="text-emerald-600" />
+            <FileSpreadsheet size={14} className="text-emerald-600" />
             <span>سحب من إكسل</span>
           </button>
 
@@ -2821,15 +2792,16 @@ export function BookingsScreen({
             type="button"
             onClick={handleSendTomorrowBookingsToOwner}
             disabled={isSendingTomorrowWhatsApp}
-            className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-3.5 py-2.5 rounded-2xl text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+            className="h-9 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-3.5 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer whitespace-nowrap shrink-0"
             title="إرسال قائمة وتفاصيل حجوزات الغد إلى هاتف مالك الصالون عبر الواتساب"
           >
-            <MessageCircle size={15} />
+            <MessageCircle size={14} />
             <span>{isSendingTomorrowWhatsApp ? 'جارٍ الإرسال...' : 'حجوزات الغد للمالك'}</span>
           </button>
 
           {/* Global New Booking Button */}
           <button
+            type="button"
             onClick={() => {
               if (!shiftData?.isOpen) {
                 alert('لا يمكن تسجيل حجز جديد والوردية مغلقة. يرجى فتح وردية أولاً من شاشة الورديات.');
@@ -2870,9 +2842,9 @@ export function BookingsScreen({
               setAdvDateInput(openShiftDate);
               setShowAddModal(true);
             }}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-2xl text-xs font-black flex items-center gap-1.5 shadow-md shadow-indigo-600/20 transition-all cursor-pointer"
+            className="h-9 bg-indigo-600 hover:bg-indigo-700 text-white px-4 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm shadow-indigo-600/20 transition-all cursor-pointer whitespace-nowrap shrink-0"
           >
-            <Plus size={16} />
+            <Plus size={15} />
             <span>+ حجز موعد جديد</span>
           </button>
         </div>
@@ -2884,112 +2856,8 @@ export function BookingsScreen({
       {activeMainTab === 'table' && (
         <div className="space-y-4 animate-in fade-in duration-200">
           
-          {/* Collapsible Bar Header / Quick Controls (شريط التحكم في طي وفرد الإحصائيات والتصفية لتوسيع الجدول) */}
-          <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3.5 rounded-3xl border border-slate-200 shadow-xs">
-            <div className="flex flex-wrap items-center gap-2">
-              {/* Main Toggle Button */}
-              <button
-                type="button"
-                onClick={toggleAllTop}
-                className={`px-4 py-2 rounded-2xl text-xs font-black flex items-center gap-2 transition-all cursor-pointer border shadow-xs active:scale-95 ${
-                  isTopExpanded 
-                    ? 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300' 
-                    : 'bg-indigo-600 hover:bg-indigo-700 text-white border-indigo-600 shadow-indigo-600/25'
-                }`}
-                title={isTopExpanded ? 'طي وإخفاء المربعات الإحصائية والتصفية لتوسيع مساحة الجدول' : 'فتح وإظهار المربعات الإحصائية وخيارات التصفية'}
-              >
-                <Sliders size={15} className={isTopExpanded ? 'text-slate-600' : 'text-white'} />
-                <span>{isTopExpanded ? 'طي الإحصائيات والتصفية' : 'فتح الإحصائيات والتصفية'}</span>
-                {isTopExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-              </button>
-
-              {/* Sub-Toggle 1: Statistics Cards */}
-              <button
-                type="button"
-                onClick={toggleStats}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer border ${
-                  showStats 
-                    ? 'bg-indigo-50 text-indigo-700 border-indigo-200 shadow-2xs' 
-                    : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200'
-                }`}
-                title="إظهار / طي المربعات الإحصائية فقط"
-              >
-                <BarChart3 size={14} className={showStats ? 'text-indigo-600' : 'text-slate-400'} />
-                <span>المربعات الإحصائية</span>
-                {showStats ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-              </button>
-
-              {/* Sub-Toggle 2: Filters Bar */}
-              <button
-                type="button"
-                onClick={toggleFilters}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer border ${
-                  showFilters 
-                    ? 'bg-indigo-50 text-indigo-700 border-indigo-200 shadow-2xs' 
-                    : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200'
-                }`}
-                title="إظهار / طي خيارات التصفية والبحث"
-              >
-                <Filter size={14} className={showFilters ? 'text-indigo-600' : 'text-slate-400'} />
-                <span>التصفية والبحث</span>
-                {activeFiltersCount > 0 && (
-                  <span className="bg-rose-500 text-white text-[10px] font-black px-1.5 py-0.2 rounded-full">
-                    {activeFiltersCount}
-                  </span>
-                )}
-                {showFilters ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-              </button>
-
-              {/* Clear filters if any active */}
-              {hasActiveFilters && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setDateFrom('');
-                    setDateTo('');
-                    setCreatedDateFrom('');
-                    setCreatedDateTo('');
-                    setSelectedArtist('all');
-                    setSelectedTech('all');
-                    setStatusFilter('all');
-                    setSearchQuery('');
-                  }}
-                  className="text-xs text-rose-600 hover:text-rose-800 font-bold px-2 py-1 cursor-pointer flex items-center gap-1 hover:bg-rose-50 rounded-lg transition-colors"
-                  title="إلغاء كافة الفلاتر والبحث المطبق"
-                >
-                  <RotateCcw size={12} />
-                  <span>إلغاء التصفية ({activeFiltersCount})</span>
-                </button>
-              )}
-            </div>
-
-            {/* Quick search input when filters are collapsed so user can still search instantly */}
-            {!showFilters && (
-              <div className="relative w-full sm:w-72">
-                <Search size={14} className="absolute right-3 top-2.5 text-slate-400" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  placeholder="بحث سريع بالعميل، الموبايل..."
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-9 pl-8 py-1.5 text-xs font-bold focus:border-indigo-600 outline-none"
-                />
-                {searchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setSearchQuery('')}
-                    className="absolute left-2.5 top-2 text-slate-400 hover:text-slate-600 text-xs font-black cursor-pointer"
-                    title="مسح البحث"
-                  >
-                    ✕
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-
           {/* Quick Summary Cards (المربعات الإحصائية قابلة للطي والفرد) */}
-          {showStats && (
+          {isTopExpanded && (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 animate-in fade-in slide-in-from-top-2 duration-150">
               <div 
                 onClick={() => setStatusFilter(statusFilter === 'all' ? 'all' : 'all')}
@@ -3112,7 +2980,7 @@ export function BookingsScreen({
           )}
 
           {/* Table Filters & Search Bar (شريط التصفية والبحث قابل للطي والفرد) */}
-          {showFilters && (
+          {isTopExpanded && (
             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-150">
               <div className="flex flex-wrap items-center gap-2.5">
                 {/* موعد الحجز: من وإلى */}
@@ -3243,22 +3111,55 @@ export function BookingsScreen({
                 </div>
               </div>
 
-              {/* Search Input */}
-              <div className="relative w-full sm:w-72">
-                <Search size={15} className="absolute right-3 top-2.5 text-slate-400" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  placeholder="بحث بالعميل، الموبايل، الكود، أو تاريخ الإنشاء..."
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-9 pl-3 py-1.5 text-xs font-bold focus:border-indigo-600 outline-none"
-                />
+              {/* Clear filters & Search Input */}
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                {hasActiveFilters && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDateFrom('');
+                      setDateTo('');
+                      setCreatedDateFrom('');
+                      setCreatedDateTo('');
+                      setSelectedArtist('all');
+                      setSelectedTech('all');
+                      setStatusFilter('all');
+                      setSearchQuery('');
+                    }}
+                    className="text-xs text-rose-600 hover:text-rose-800 font-bold px-2 py-1.5 cursor-pointer flex items-center gap-1 hover:bg-rose-50 rounded-xl transition-colors shrink-0"
+                    title="إلغاء كافة الفلاتر والبحث المطبق"
+                  >
+                    <RotateCcw size={13} />
+                    <span>إلغاء التصفية ({activeFiltersCount})</span>
+                  </button>
+                )}
+
+                <div className="relative w-full sm:w-72">
+                  <Search size={15} className="absolute right-3 top-2.5 text-slate-400" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    placeholder="بحث بالعميل، الموبايل، الكود، أو تاريخ الإنشاء..."
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-9 pl-7 py-1.5 text-xs font-bold focus:border-indigo-600 outline-none"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      className="absolute left-2.5 top-2 text-slate-400 hover:text-slate-600 text-xs font-black cursor-pointer"
+                      title="مسح البحث"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           )}
 
           {/* Top Horizontal Pagination & Controls Bar (أعلى الجدول) */}
-          <div className="bg-white p-3.5 sm:p-4 rounded-3xl shadow-xs border border-slate-200 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+          <div className="bg-white p-3 sm:p-3.5 rounded-2xl shadow-xs border border-slate-200 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
             {/* Right side (RTL): Count summary, Page Size selector & Horizontal Table Scroll Buttons */}
             <div className="flex flex-wrap items-center gap-3 justify-between lg:justify-start">
               <div className="flex items-center gap-2">
@@ -3289,6 +3190,30 @@ export function BookingsScreen({
                   <option value={100}>100 لكل صفحة</option>
                 </select>
               </div>
+
+              {/* Quick search input when top filters are collapsed */}
+              {!isTopExpanded && (
+                <div className="relative w-full sm:w-60">
+                  <Search size={14} className="absolute right-3 top-2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    placeholder="بحث سريع بالعميل، الموبايل..."
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-8 pl-7 py-1 text-xs font-bold focus:border-indigo-600 outline-none"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      className="absolute left-2.5 top-1 text-slate-400 hover:text-slate-600 text-xs font-black cursor-pointer"
+                      title="مسح البحث"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              )}
 
               {/* أزرار التمرير والتنقل الأفقي لمحتوى وأعمدة الجدول */}
               <div className="flex items-center gap-1 bg-slate-50 p-1 rounded-2xl border border-slate-200" title="التنقل والتمرير الأفقي بين أعمدة الجدول">
