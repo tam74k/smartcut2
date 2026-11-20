@@ -215,6 +215,26 @@ export function ShiftsScreen({
         });
       });
 
+      // منع تكرار الورديات في حال وجود أكثر من سجل لنفس كود الوردية والفرع والتاريخ
+      const dedupMap = new Map<string, WorkShift>();
+      merged.forEach(s => {
+        const sCode = (s.shiftCode || (s as any).shift_code || '').trim();
+        const sDate = s.shiftDate || (s as any).shift_date || (s.openedAt ? s.openedAt.split('T')[0] : '');
+        const key = sCode ? `${s.salonId || ''}_${s.branchId || ''}_${sDate}_${sCode}` : s.id;
+        const existing = dedupMap.get(key);
+        if (!existing) {
+          dedupMap.set(key, s);
+        } else {
+          // تفضيل الوردية المغلقة أو ذات المبيعات المحسوبة
+          if (existing.status === 'open' && s.status === 'closed') {
+            dedupMap.set(key, s);
+          } else if ((s.totalSales || (s as any).total_sales || 0) > (existing.totalSales || (existing as any).total_sales || 0)) {
+            dedupMap.set(key, s);
+          }
+        }
+      });
+      merged = Array.from(dedupMap.values());
+
       // Sort: open shifts first, then newest opened_at / shiftDate
       merged.sort((a, b) => {
         if (a.status === 'open' && b.status !== 'open') return -1;

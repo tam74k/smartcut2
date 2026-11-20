@@ -548,6 +548,8 @@ export default function App() {
   const [showOpenModal, setShowOpenModal] = useState(false);
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [isClosingShift, setIsClosingShift] = useState(false);
+  const [isOpeningShift, setIsOpeningShift] = useState(false);
+  const isOpeningShiftRef = useRef(false);
   const [licenseInfo, setLicenseInfo] = useState<LicenseInfo | null>(null);
   const [showLicenseModal, setShowLicenseModal] = useState<boolean>(false);
   const [isProgrammerPortalActive, setIsProgrammerPortalActive] = useState<boolean>(() => {
@@ -2401,104 +2403,129 @@ export default function App() {
   };
 
   const handleOpenShift = async () => {
-    if (checkReadOnlyAndWarn()) return;
-    if (shiftData.isOpen || branchShifts[activeBranchId]?.isOpen) {
-      alert('لا يمكن فتح وردية جديدة: توجد وردية مفتوحة بالفعل لهذا الفرع! يرجى إغلاق وردية هذا الفرع أولاً.');
-      return;
-    }
+    if (isOpeningShiftRef.current || isOpeningShift) return;
+    isOpeningShiftRef.current = true;
+    setIsOpeningShift(true);
 
-    // التحقق الصارم من قاعدة البيانات لمنع فتح أكثر من وردية لنفس الفرع عبر الأجهزة
     try {
-      const activeDbShift = await DB.getActiveWorkShift(settings.salonId, activeBranchId);
-      if (activeDbShift && (activeDbShift.status === 'open' || !activeDbShift.closedAt)) {
-        applyActiveWorkShift(activeDbShift, activeBranchId);
-        alert(`تم رصد وردية مفتوحة للفرع: توجد وردية عمل مفتوحة بالفعل لهذا الفرع في قاعدة البيانات (كود الوردية: ${activeDbShift.shiftCode || activeDbShift.id}). جرى استعادتها.`);
-        setShowOpenModal(false);
+      if (checkReadOnlyAndWarn()) return;
+      if (shiftData.isOpen || branchShifts[activeBranchId]?.isOpen) {
+        alert('لا يمكن فتح وردية جديدة: توجد وردية مفتوحة بالفعل لهذا الفرع! يرجى إغلاق وردية هذا الفرع أولاً.');
         return;
       }
-    } catch (e) {
-      console.warn('Error checking active shift in DB:', e);
-    }
 
-    const shiftDateVal = openShiftForm.date?.trim() || getLocalTodayDateString();
-    const activeBranch = branches.find(b => b.id === activeBranchId) || branches[0];
-    const shiftId = 'SHIFT-' + Math.random().toString(36).substr(2, 9).toUpperCase();
-    const nowIso = new Date().toISOString();
-
-    const cleanDate = shiftDateVal.replace(/-/g, '');
-    let nextSeq = 1;
-    try {
-      const existingShifts = await DB.fetchWorkShifts(settings.salonId, activeBranchId);
-      const sameDayShifts = existingShifts.filter((s: any) => (s.shiftDate === shiftDateVal) || (s.shift_date === shiftDateVal));
-      if (sameDayShifts.length > 0) {
-        let maxNum = 0;
-        sameDayShifts.forEach((s: any) => {
-          const code = s.shiftCode || s.shift_code || '';
-          const match = code.match(/SH-\d+-(\d+)/);
-          if (match) {
-            const num = parseInt(match[1], 10);
-            if (!isNaN(num) && num > maxNum) maxNum = num;
-          }
-        });
-        nextSeq = Math.max(maxNum + 1, sameDayShifts.length + 1);
+      // التحقق الصارم من قاعدة البيانات لمنع فتح أكثر من وردية لنفس الفرع عبر الأجهزة
+      try {
+        const activeDbShift = await DB.getActiveWorkShift(settings.salonId, activeBranchId);
+        if (activeDbShift && (activeDbShift.status === 'open' || !activeDbShift.closedAt)) {
+          applyActiveWorkShift(activeDbShift, activeBranchId);
+          alert(`تم رصد وردية مفتوحة للفرع: توجد وردية عمل مفتوحة بالفعل لهذا الفرع في قاعدة البيانات (كود الوردية: ${activeDbShift.shiftCode || activeDbShift.id}). جرى استعادتها.`);
+          setShowOpenModal(false);
+          return;
+        }
+      } catch (e) {
+        console.warn('Error checking active shift in DB:', e);
       }
-    } catch (e) {
-      console.warn('Could not fetch existing shifts for sequence:', e);
-    }
-    const shiftCode = `SH-${cleanDate}-${String(nextSeq).padStart(2, '0')}`;
 
-    if (openShiftForm.initialCash > 0) {
-      const cashTreasury = settings.treasuries.find(t => t.id === 'cash') || settings.treasuries[0];
-      const newTrx: Transaction = {
-        id: 'TRX-CUSTODY-' + Math.random().toString(36).substr(2,9),
-        date: shiftDateVal + 'T' + new Date().toTimeString().split(' ')[0],
-        type: 'in',
-        amount: openShiftForm.initialCash,
-        category: 'عهدة افتتاحية',
-        description: `عهدة افتتاحية للوردية (${shiftCode} - ${currentUser?.name || 'الكاشير'}) - فرع ${activeBranch?.name || ''}`,
-        treasury: cashTreasury.id,
-        createdBy: currentUser?.name || 'الكاشير',
-        userId: currentUser?.id,
-        userName: currentUser?.name || 'الكاشير',
-        shiftDate: shiftDateVal,
-        shiftCode: shiftCode,
+      const shiftDateVal = openShiftForm.date?.trim() || getLocalTodayDateString();
+      const activeBranch = branches.find(b => b.id === activeBranchId) || branches[0];
+      const shiftId = 'SHIFT-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+      const nowIso = new Date().toISOString();
+
+      const cleanDate = shiftDateVal.replace(/-/g, '');
+      let nextSeq = 1;
+      try {
+        const existingShifts = await DB.fetchWorkShifts(settings.salonId, activeBranchId);
+        const sameDayShifts = existingShifts.filter((s: any) => (s.shiftDate === shiftDateVal) || (s.shift_date === shiftDateVal));
+        if (sameDayShifts.length > 0) {
+          let maxNum = 0;
+          sameDayShifts.forEach((s: any) => {
+            const code = s.shiftCode || s.shift_code || '';
+            const match = code.match(/SH-\d+-(\d+)/);
+            if (match) {
+              const num = parseInt(match[1], 10);
+              if (!isNaN(num) && num > maxNum) maxNum = num;
+            }
+          });
+          nextSeq = Math.max(maxNum + 1, sameDayShifts.length + 1);
+        }
+      } catch (e) {
+        console.warn('Could not fetch existing shifts for sequence:', e);
+      }
+      const shiftCode = `SH-${cleanDate}-${String(nextSeq).padStart(2, '0')}`;
+
+      // تحقق إضافي أخير قبل الحفظ لمنع أي تضارب متزامن
+      try {
+        const doubleCheckActive = await DB.getActiveWorkShift(settings.salonId, activeBranchId);
+        if (doubleCheckActive && (doubleCheckActive.status === 'open' || !doubleCheckActive.closedAt)) {
+          applyActiveWorkShift(doubleCheckActive, activeBranchId);
+          alert(`تنبيه: تم فتح وردية للتو لهذا الفرع (كود: ${doubleCheckActive.shiftCode || doubleCheckActive.id}). تم تفعيلها.`);
+          setShowOpenModal(false);
+          return;
+        }
+      } catch (e) {
+        // ignore
+      }
+
+      if (openShiftForm.initialCash > 0) {
+        const cashTreasury = settings.treasuries.find(t => t.id === 'cash') || settings.treasuries[0];
+        const newTrx: Transaction = {
+          id: 'TRX-CUSTODY-' + Math.random().toString(36).substr(2,9),
+          date: shiftDateVal + 'T' + new Date().toTimeString().split(' ')[0],
+          type: 'in',
+          amount: openShiftForm.initialCash,
+          category: 'عهدة افتتاحية',
+          description: `عهدة افتتاحية للوردية (${shiftCode} - ${currentUser?.name || 'الكاشير'}) - فرع ${activeBranch?.name || ''}`,
+          treasury: cashTreasury.id,
+          createdBy: currentUser?.name || 'الكاشير',
+          userId: currentUser?.id,
+          userName: currentUser?.name || 'الكاشير',
+          shiftDate: shiftDateVal,
+          shiftCode: shiftCode,
+          branchId: activeBranchId,
+          branchCode: activeBranch?.code
+        };
+        handleSetTransactions(prev => [...prev, newTrx]);
+      }
+
+      const newWorkShift: WorkShift = {
+        id: shiftId,
+        shiftCode,
+        salonId: settings.salonId,
         branchId: activeBranchId,
-        branchCode: activeBranch?.code
+        shiftDate: shiftDateVal,
+        openedAt: nowIso,
+        openedByUserId: currentUser?.id,
+        openedByUserName: currentUser?.name || 'الكاشير',
+        openedByName: currentUser?.name || 'الكاشير',
+        openedByRole: currentUser?.role || 'cashier',
+        initialCash: Number(openShiftForm.initialCash) || 0,
+        status: 'open',
+        createdAt: nowIso
       };
-      handleSetTransactions(prev => [...prev, newTrx]);
+
+      setShiftData({ 
+        isOpen: true, 
+        date: shiftDateVal, 
+        initialCash: Number(openShiftForm.initialCash) || 0, 
+        shiftId, 
+        shiftCode,
+        branchId: activeBranchId,
+        openedAt: nowIso,
+        openedByUserId: currentUser?.id,
+        openedByUserName: currentUser?.name || 'الكاشير',
+        openedByName: currentUser?.name || 'الكاشير',
+        openedByRole: currentUser?.role || 'cashier'
+      });
+      setShowOpenModal(false);
+      await DB.saveWorkShift(newWorkShift);
+    } catch (err) {
+      console.error('Error opening shift:', err);
+      alert('حدث خطأ أثناء فتح الوردية، يرجى المحاولة مرة أخرى.');
+    } finally {
+      isOpeningShiftRef.current = false;
+      setIsOpeningShift(false);
     }
-
-    const newWorkShift: WorkShift = {
-      id: shiftId,
-      shiftCode,
-      salonId: settings.salonId,
-      branchId: activeBranchId,
-      shiftDate: shiftDateVal,
-      openedAt: nowIso,
-      openedByUserId: currentUser?.id,
-      openedByUserName: currentUser?.name || 'الكاشير',
-      openedByName: currentUser?.name || 'الكاشير',
-      openedByRole: currentUser?.role || 'cashier',
-      initialCash: Number(openShiftForm.initialCash) || 0,
-      status: 'open',
-      createdAt: nowIso
-    };
-
-    setShiftData({ 
-      isOpen: true, 
-      date: shiftDateVal, 
-      initialCash: Number(openShiftForm.initialCash) || 0, 
-      shiftId, 
-      shiftCode,
-      branchId: activeBranchId,
-      openedAt: nowIso,
-      openedByUserId: currentUser?.id,
-      openedByUserName: currentUser?.name || 'الكاشير',
-      openedByName: currentUser?.name || 'الكاشير',
-      openedByRole: currentUser?.role || 'cashier'
-    });
-    setShowOpenModal(false);
-    await DB.saveWorkShift(newWorkShift);
   };
 
   const handleConfirmCloseShift = async () => {
@@ -4917,9 +4944,10 @@ export default function App() {
               </button>
               <button 
                 onClick={handleOpenShift} 
-                className="flex-1 py-2.5 text-xs font-extrabold bg-emerald-600 text-white hover:bg-emerald-700 rounded-xl shadow-md transition-all"
+                disabled={isOpeningShift}
+                className={`flex-1 py-2.5 text-xs font-extrabold bg-emerald-600 text-white rounded-xl shadow-md transition-all ${isOpeningShift ? 'opacity-60 cursor-not-allowed' : 'hover:bg-emerald-700'}`}
               >
-                تأكيد وفتح الوردية
+                {isOpeningShift ? 'جارٍ فتح الوردية...' : 'تأكيد وفتح الوردية'}
               </button>
             </div>
           </div>
