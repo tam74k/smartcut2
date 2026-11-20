@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   AppSettings, 
   Invoice, 
@@ -24,7 +24,13 @@ import {
   AlertCircle, 
   Layers,
   Banknote,
-  Calendar
+  Calendar,
+  ArrowRight,
+  ArrowLeft,
+  ChevronRight,
+  ChevronLeft,
+  ChevronsRight,
+  ChevronsLeft
 } from 'lucide-react';
 import { DB } from '../services/db';
 import { ClosingReportReceipt } from './ClosingReportReceipt';
@@ -69,6 +75,48 @@ export function ShiftsScreen({
   const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'closed'>('all');
   const [branchFilter, setBranchFilter] = useState<string>(activeBranchId || 'all');
   const [selectedShiftForDetails, setSelectedShiftForDetails] = useState<WorkShift | null>(null);
+
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(20);
+
+  // Horizontal scroll ref for table
+  const tableScrollRef = useRef<HTMLDivElement>(null);
+
+  // دوال التنقل الأفقي السريع في أعمدة الجدول
+  const scrollTableRight = () => {
+    if (tableScrollRef.current) {
+      tableScrollRef.current.scrollBy({ left: 350, behavior: 'smooth' });
+    }
+  };
+
+  const scrollTableLeft = () => {
+    if (tableScrollRef.current) {
+      tableScrollRef.current.scrollBy({ left: -350, behavior: 'smooth' });
+    }
+  };
+
+  const scrollToStart = () => {
+    if (tableScrollRef.current) {
+      const el = tableScrollRef.current;
+      el.scrollTo({ left: 9999, behavior: 'smooth' });
+      if (el.scrollLeft <= 0) {
+        el.scrollTo({ left: 0, behavior: 'smooth' });
+      }
+    }
+  };
+
+  const scrollToEnd = () => {
+    if (tableScrollRef.current) {
+      const el = tableScrollRef.current;
+      el.scrollTo({ left: -9999, behavior: 'smooth' });
+      setTimeout(() => {
+        if (el && el.scrollLeft === 0 && el.scrollWidth > el.clientWidth) {
+          el.scrollTo({ left: el.scrollWidth, behavior: 'smooth' });
+        }
+      }, 50);
+    }
+  };
 
   // Helper to identify shift zeroing/closing
   const isZeroingOrClosingTrx = (t: any): boolean => {
@@ -411,10 +459,42 @@ export function ShiftsScreen({
     });
   }, [shifts, statusFilter, branchFilter, searchTerm]);
 
+  // Reset to first page when search, branch or status filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter, branchFilter, pageSize]);
+
+  const totalShifts = filteredShifts.length;
+  const effectivePageSize = pageSize === 0 ? (totalShifts || 1) : pageSize;
+  const totalPages = Math.max(1, Math.ceil(totalShifts / effectivePageSize));
+  const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
+
+  const paginatedShifts = useMemo(() => {
+    if (pageSize === 0) return filteredShifts;
+    const start = (safeCurrentPage - 1) * pageSize;
+    return filteredShifts.slice(start, start + pageSize);
+  }, [filteredShifts, safeCurrentPage, pageSize]);
+
+  const getPageNumbers = () => {
+    if (totalPages <= 7) {
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+    const pages: (number | string)[] = [1];
+    if (safeCurrentPage > 3) pages.push('...');
+    const start = Math.max(2, safeCurrentPage - 1);
+    const end = Math.min(totalPages - 1, safeCurrentPage + 1);
+    for (let i = start; i <= end; i++) {
+      pages.push(i);
+    }
+    if (safeCurrentPage < totalPages - 2) pages.push('...');
+    pages.push(totalPages);
+    return pages;
+  };
+
   // Grouped shifts by shiftDate to show sub-totals and highlight current shift
   const groupedShiftsByDate = useMemo(() => {
     const map = new Map<string, WorkShift[]>();
-    filteredShifts.forEach(shift => {
+    paginatedShifts.forEach(shift => {
       const d = shift.shiftDate || (shift.openedAt ? shift.openedAt.split('T')[0] : 'غير محدد');
       if (!map.has(d)) {
         map.set(d, []);
@@ -469,7 +549,7 @@ export function ShiftsScreen({
         hasOpenShift
       };
     });
-  }, [filteredShifts, invoices, transactions, settings.treasuries]);
+  }, [paginatedShifts, invoices, transactions, settings.treasuries]);
 
   // Overall metrics summary
   const summaryMetrics = useMemo(() => {
@@ -680,8 +760,89 @@ export function ShiftsScreen({
             <p className="text-xs text-black">يمكنك تعديل معايير البحث أو فتح وردية جديدة من شاشة نقطة البيع</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-right border-collapse text-xs text-black">
+          <>
+            {/* Horizontal Navigation & Page Status Toolbar Above Table */}
+            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 bg-slate-100/90 border-b border-black text-xs font-bold text-black shrink-0">
+              {/* Horizontal Scroll Navigation Buttons */}
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                <span className="text-black font-black text-[11px] sm:text-xs flex items-center gap-1">
+                  <span>التنقل الأفقي بالجدول:</span>
+                </span>
+
+                <button
+                  type="button"
+                  onClick={scrollToStart}
+                  className="px-2.5 py-1 bg-white hover:bg-slate-200 border border-black rounded-lg shadow-2xs flex items-center gap-1 transition-all active:scale-95 text-black cursor-pointer text-xs font-bold"
+                  title="الانتقال إلى بداية الجدول (اليمين: التاريخ والكود)"
+                >
+                  <span>بداية الجدول</span>
+                  <ArrowRight size={13} />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={scrollTableRight}
+                  className="p-1.5 bg-white hover:bg-slate-200 border border-black rounded-lg shadow-2xs flex items-center justify-center transition-all active:scale-95 text-black cursor-pointer"
+                  title="تمرير يمين"
+                >
+                  <ChevronRight size={16} />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={scrollTableLeft}
+                  className="p-1.5 bg-white hover:bg-slate-200 border border-black rounded-lg shadow-2xs flex items-center justify-center transition-all active:scale-95 text-black cursor-pointer"
+                  title="تمرير يسار"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={scrollToEnd}
+                  className="px-2.5 py-1 bg-white hover:bg-slate-200 border border-black rounded-lg shadow-2xs flex items-center gap-1 transition-all active:scale-95 text-black cursor-pointer text-xs font-bold"
+                  title="الانتقال إلى نهاية الجدول (اليسار: الصافي وتفاصيل الوردية)"
+                >
+                  <ArrowLeft size={13} />
+                  <span>نهاية الجدول (الصافي)</span>
+                </button>
+              </div>
+
+              {/* Pagination Quick Status / Mini-Nav */}
+              {totalShifts > 0 && (
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-slate-600 font-bold hidden md:inline">
+                    عرض {pageSize === 0 ? totalShifts : Math.min(pageSize, totalShifts)} من أصل {totalShifts} وردية
+                  </span>
+                  <span className="bg-white border border-black px-2.5 py-1 rounded-lg font-mono font-black text-black">
+                    صفحة {safeCurrentPage} من {totalPages}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      disabled={safeCurrentPage <= 1}
+                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                      className="p-1 bg-white hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed border border-black rounded-lg cursor-pointer transition-colors"
+                      title="الصفحة السابقة"
+                    >
+                      <ChevronRight size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={safeCurrentPage >= totalPages}
+                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                      className="p-1 bg-white hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed border border-black rounded-lg cursor-pointer transition-colors"
+                      title="الصفحة التالية"
+                    >
+                      <ChevronLeft size={14} />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div ref={tableScrollRef} className="overflow-x-auto">
+              <table className="w-full text-right border-collapse text-xs text-black">
               <thead>
                 <tr className="bg-white border-b-2 border-black font-black text-black">
                   <th className="py-3 px-3 text-center border-l border-black">م</th>
@@ -900,8 +1061,114 @@ export function ShiftsScreen({
               </tbody>
             </table>
           </div>
-        )}
-      </div>
+
+          {/* Full Pagination Controls Bar */}
+          {totalShifts > 0 && (
+            <div className="border-t-2 border-black bg-slate-50 px-4 sm:px-6 py-3.5 flex flex-col sm:flex-row justify-between items-center gap-3 text-xs font-bold text-black">
+              {/* Page Size Selector & Count */}
+              <div className="flex flex-wrap items-center gap-2">
+                <span>عرض</span>
+                <select
+                  value={pageSize}
+                  onChange={e => {
+                    setPageSize(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  className="bg-white border border-black rounded-lg px-2.5 py-1 outline-hidden font-bold text-black shadow-2xs cursor-pointer"
+                >
+                  <option value={10}>10</option>
+                  <option value={20}>20</option>
+                  <option value={30}>30</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                  <option value={0}>عرض الكل</option>
+                </select>
+                <span>وردية لكل صفحة</span>
+                <span className="text-slate-300 mx-1">|</span>
+                <span className="font-extrabold text-black">
+                  {pageSize === 0 
+                    ? `عرض جميع الورديات (${totalShifts})` 
+                    : `عرض ${((safeCurrentPage - 1) * pageSize) + 1} - ${Math.min(safeCurrentPage * pageSize, totalShifts)} من إجمالي ${totalShifts} وردية`}
+                </span>
+              </div>
+
+              {/* Pagination Buttons & Page Numbers */}
+              {totalPages > 1 && (
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    disabled={safeCurrentPage <= 1}
+                    onClick={() => setCurrentPage(1)}
+                    className="p-1.5 bg-white border border-black rounded-lg hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors shadow-2xs"
+                    title="الصفحة الأولى"
+                  >
+                    <ChevronsRight size={15} />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={safeCurrentPage <= 1}
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    className="px-2.5 py-1 bg-white border border-black rounded-lg hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors shadow-2xs flex items-center gap-1"
+                    title="الصفحة السابقة"
+                  >
+                    <ChevronRight size={15} />
+                    <span className="hidden sm:inline text-xs">السابق</span>
+                  </button>
+
+                  {/* Page numbers */}
+                  <div className="flex items-center gap-1 mx-1">
+                    {getPageNumbers().map((p, idx) => {
+                      if (p === '...') {
+                        return (
+                          <span key={`ellipsis-${idx}`} className="px-1.5 text-slate-400 font-bold">
+                            ...
+                          </span>
+                        );
+                      }
+                      const isCurrent = p === safeCurrentPage;
+                      return (
+                        <button
+                          key={`page-${p}`}
+                          type="button"
+                          onClick={() => setCurrentPage(Number(p))}
+                          className={`min-w-[30px] h-7 px-1.5 rounded-lg text-xs font-mono font-black transition-all cursor-pointer ${
+                            isCurrent
+                              ? 'bg-black text-white shadow-xs'
+                              : 'bg-white text-black hover:bg-slate-100 border border-black'
+                          }`}
+                        >
+                          {p}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={safeCurrentPage >= totalPages}
+                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                    className="px-2.5 py-1 bg-white border border-black rounded-lg hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors shadow-2xs flex items-center gap-1"
+                    title="الصفحة التالية"
+                  >
+                    <span className="hidden sm:inline text-xs">التالي</span>
+                    <ChevronLeft size={15} />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={safeCurrentPage >= totalPages}
+                    onClick={() => setCurrentPage(totalPages)}
+                    className="p-1.5 bg-white border border-black rounded-lg hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors shadow-2xs"
+                    title="الصفحة الأخيرة"
+                  >
+                    <ChevronsLeft size={15} />
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </div>
 
       {/* Modal: Full Shift Report Details for the Selected Shift */}
       {selectedShiftForDetails && (
