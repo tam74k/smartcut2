@@ -417,6 +417,8 @@ export function BookingsScreen({
   // Table List Filters
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [createdDateFrom, setCreatedDateFrom] = useState('');
+  const [createdDateTo, setCreatedDateTo] = useState('');
 
   // Table List Pagination State
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -434,7 +436,7 @@ export function BookingsScreen({
   // Reset pagination to page 1 on filter changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, statusFilter, selectedTech, selectedArtist, dateFrom, dateTo, activeBranchId]);
+  }, [searchQuery, statusFilter, selectedTech, selectedArtist, dateFrom, dateTo, createdDateFrom, createdDateTo, activeBranchId]);
 
   // Modals & Details State
   const [showAddModal, setShowAddModal] = useState(false);
@@ -1002,11 +1004,32 @@ export function BookingsScreen({
       // Branch filter
       if (!matchesActiveBranch((b as any).branchId, (b as any).branchCode)) return false;
 
-      // Date range filter
+      // Date range filter (موعد الحجز)
       if (statusFilter !== 'postponed') {
         const bDate = b.date ? b.date.split('T')[0].trim() : '';
         if (dateFrom && bDate && bDate < dateFrom) return false;
         if (dateTo && bDate && bDate > dateTo) return false;
+      }
+
+      // Creation date filter (تاريخ إنشاء وتسجيل الحجز)
+      if (createdDateFrom || createdDateTo) {
+        const rawCreated = b.createdAt || (b as any).created_at;
+        if (!rawCreated) return false;
+        let cDateStr = '';
+        try {
+          const d = new Date(rawCreated);
+          if (!isNaN(d.getTime())) {
+            const pad = (n: number) => n.toString().padStart(2, '0');
+            cDateStr = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+          } else {
+            cDateStr = String(rawCreated).split('T')[0].split(' ')[0].trim();
+          }
+        } catch {
+          cDateStr = String(rawCreated).split('T')[0].split(' ')[0].trim();
+        }
+
+        if (createdDateFrom && cDateStr < createdDateFrom) return false;
+        if (createdDateTo && cDateStr > createdDateTo) return false;
       }
 
       // Status filter
@@ -1030,9 +1053,9 @@ export function BookingsScreen({
         }
       }
 
-      // Search query (name, phone, service, artist, booking ID / barcode)
+      // Search query (name, phone, service, artist, booking ID / barcode, or creation date)
       if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
+        const q = searchQuery.toLowerCase().trim();
         const matchesClient = b.clientName?.toLowerCase().includes(q);
         const matchesPhone = b.phone?.includes(q);
         const matchesService = b.services?.some(s => s.serviceName?.toLowerCase().includes(q));
@@ -1040,7 +1063,34 @@ export function BookingsScreen({
         const matchesId = b.id?.toLowerCase().includes(q)
           || (b.bookingCode && b.bookingCode.toLowerCase().includes(q))
           || (b.queueNumber && `b-${b.queueNumber}`.toLowerCase().includes(q));
-        if (!matchesClient && !matchesPhone && !matchesService && !matchesId && !matchesArtist) return false;
+
+        // المطابقة في تاريخ إنشاء الحجز
+        const rawCreated = b.createdAt || (b as any).created_at;
+        let matchesCreatedAt = false;
+        if (rawCreated) {
+          const createdIso = String(rawCreated).toLowerCase();
+          let localYMD = '';
+          let localDMY = '';
+          try {
+            const d = new Date(rawCreated);
+            if (!isNaN(d.getTime())) {
+              const pad = (n: number) => n.toString().padStart(2, '0');
+              const y = d.getFullYear().toString();
+              const m = pad(d.getMonth() + 1);
+              const day = pad(d.getDate());
+              localYMD = `${y}-${m}-${day}`;
+              localDMY = `${day}-${m}-${y}`;
+            }
+          } catch {
+            // ignore
+          }
+          matchesCreatedAt = createdIso.includes(q) 
+            || localYMD.includes(q) 
+            || localDMY.includes(q)
+            || formatBookingCreatedAt(b).toLowerCase().includes(q);
+        }
+
+        if (!matchesClient && !matchesPhone && !matchesService && !matchesId && !matchesArtist && !matchesCreatedAt) return false;
       }
 
       return true;
@@ -1049,7 +1099,7 @@ export function BookingsScreen({
       const bKey = (b.date ? b.date.split('T')[0].trim() : '') + (b.time || '');
       return bKey.localeCompare(aKey);
     });
-  }, [bookings, dateFrom, dateTo, statusFilter, selectedTech, selectedArtist, searchQuery, activeBranchId, isMainBranch]);
+  }, [bookings, dateFrom, dateTo, createdDateFrom, createdDateTo, statusFilter, selectedTech, selectedArtist, searchQuery, activeBranchId, isMainBranch]);
 
   // Bookings Directory Table Pagination calculations
   const totalBookingsCount = tableFilteredBookings.length;
@@ -2864,31 +2914,73 @@ export function BookingsScreen({
           {/* Table Filters & Search Bar */}
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2.5">
-              {/* Date From */}
-              <div className="flex items-center gap-1 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
-                <span className="text-[11px] font-bold text-slate-500">من:</span>
+              {/* موعد الحجز: من وإلى */}
+              <div className="flex items-center gap-1 bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-200" title="تصفية بتاريخ موعد وتوقيت الحجز">
+                <CalendarIcon size={13} className="text-slate-400 shrink-0" />
+                <span className="text-[11px] font-bold text-slate-500">الموعد:</span>
+                <span className="text-[10px] text-slate-400 font-bold">من</span>
                 <input
                   type="date"
                   value={dateFrom}
                   onChange={e => setDateFrom(e.target.value)}
                   className="bg-transparent text-xs font-bold text-slate-800 outline-none"
+                  title="تاريخ موعد الحجز من"
                 />
-              </div>
-
-              {/* Date To */}
-              <div className="flex items-center gap-1 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
-                <span className="text-[11px] font-bold text-slate-500">إلى:</span>
+                <span className="text-[10px] text-slate-400 font-bold">إلى</span>
                 <input
                   type="date"
                   value={dateTo}
                   onChange={e => setDateTo(e.target.value)}
                   className="bg-transparent text-xs font-bold text-slate-800 outline-none"
+                  title="تاريخ موعد الحجز إلى"
                 />
+                {(dateFrom || dateTo) && (
+                  <button
+                    type="button"
+                    onClick={() => { setDateFrom(''); setDateTo(''); }}
+                    className="text-[10px] text-slate-400 hover:text-rose-600 font-bold px-1 cursor-pointer transition-colors"
+                    title="مسح فلتر موعد الحجز"
+                  >
+                    ✕
+                  </button>
+                )}
               </div>
 
-              {(dateFrom || dateTo || selectedArtist !== 'all' || selectedTech !== 'all' || statusFilter !== 'all') && (
+              {/* تاريخ إنشاء وتسجيل الحجز: من وإلى */}
+              <div className="flex items-center gap-1.5 bg-emerald-50/80 px-2.5 py-1.5 rounded-xl border border-emerald-200" title="تصفية الحجوزات بتاريخ ووقت تسجيلها وإنشائها في النظام">
+                <Clock size={13} className="text-emerald-700 shrink-0" />
+                <span className="text-[11px] font-black text-emerald-900">إنشاء الحجز:</span>
+                <span className="text-[10px] font-bold text-emerald-700">من</span>
+                <input
+                  type="date"
+                  value={createdDateFrom}
+                  onChange={e => setCreatedDateFrom(e.target.value)}
+                  className="bg-transparent text-xs font-bold text-emerald-950 outline-none"
+                  title="تاريخ إنشاء الحجز من"
+                />
+                <span className="text-[10px] font-bold text-emerald-700">إلى</span>
+                <input
+                  type="date"
+                  value={createdDateTo}
+                  onChange={e => setCreatedDateTo(e.target.value)}
+                  className="bg-transparent text-xs font-bold text-emerald-950 outline-none"
+                  title="تاريخ إنشاء الحجز إلى"
+                />
+                {(createdDateFrom || createdDateTo) && (
+                  <button
+                    type="button"
+                    onClick={() => { setCreatedDateFrom(''); setCreatedDateTo(''); }}
+                    className="text-[11px] font-black text-emerald-800 hover:text-rose-600 px-1 cursor-pointer transition-colors"
+                    title="مسح فلتر تاريخ إنشاء الحجز"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              {(dateFrom || dateTo || createdDateFrom || createdDateTo || selectedArtist !== 'all' || selectedTech !== 'all' || statusFilter !== 'all') && (
                 <button
-                  onClick={() => { setDateFrom(''); setDateTo(''); setSelectedArtist('all'); setSelectedTech('all'); setStatusFilter('all'); }}
+                  onClick={() => { setDateFrom(''); setDateTo(''); setCreatedDateFrom(''); setCreatedDateTo(''); setSelectedArtist('all'); setSelectedTech('all'); setStatusFilter('all'); }}
                   className="text-xs text-rose-600 hover:text-rose-800 font-bold px-2 py-1 cursor-pointer"
                 >
                   إلغاء التصفية
@@ -2951,13 +3043,13 @@ export function BookingsScreen({
             </div>
 
             {/* Search Input */}
-            <div className="relative w-full sm:w-64">
+            <div className="relative w-full sm:w-72">
               <Search size={15} className="absolute right-3 top-2.5 text-slate-400" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                placeholder="بحث باسم العميل أو الموبايل أو الخدمة..."
+                placeholder="بحث بالعميل، الموبايل، الكود، أو تاريخ الإنشاء..."
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-9 pl-3 py-1.5 text-xs font-bold focus:border-indigo-600 outline-none"
               />
             </div>
