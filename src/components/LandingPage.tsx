@@ -490,11 +490,11 @@ export function LandingPage({ onLoginClick, onStartTrialClick, settings }: Landi
       <section className="relative z-20 -mt-10 max-w-6xl mx-auto px-4 sm:px-6">
         <div className="bg-white border border-slate-200/90 rounded-3xl p-6 sm:p-8 shadow-xl shadow-slate-200/60 grid grid-cols-2 md:grid-cols-4 gap-6 text-center scroll-reveal reveal-scale">
           <div className="space-y-1 scroll-reveal delay-100">
-            <p className="text-3xl sm:text-4xl font-black text-emerald-600 font-mono">+500</p>
+            <p className="text-3xl sm:text-4xl font-black text-emerald-600 font-mono">+200</p>
             <p className="text-xs sm:text-sm font-bold text-slate-700">صالون ومركز تجميل</p>
           </div>
           <div className="space-y-1 border-r border-slate-100 scroll-reveal delay-200">
-            <p className="text-3xl sm:text-4xl font-black text-teal-600 font-mono">+1,000,000</p>
+            <p className="text-3xl sm:text-4xl font-black text-teal-600 font-mono">+500,000</p>
             <p className="text-xs sm:text-sm font-bold text-slate-700">فاتورة وحجز منجز</p>
           </div>
           <div className="space-y-1 border-r-0 md:border-r border-slate-100 scroll-reveal delay-300">
