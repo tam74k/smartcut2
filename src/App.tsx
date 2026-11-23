@@ -1080,6 +1080,7 @@ export default function App() {
         if (delId) {
           if (event.table === 'invoices') {
             deletedInvoiceIdsRef.current.add(delId);
+            DB.deletedInvoiceIds.add(delId);
             setInvoices(prev => (prev || []).filter(i => i.id !== delId));
             return;
           }
@@ -2118,11 +2119,56 @@ export default function App() {
     });
   };
 
+  const handleDeleteInvoice = useCallback(async (invoiceId: string) => {
+    if (!invoiceId) return;
+    deletedInvoiceIdsRef.current.add(invoiceId);
+    DB.deletedInvoiceIds.add(invoiceId);
+
+    // Immediately evict from React state (both invoices and associated transactions)
+    setInvoices(prev => (prev || []).filter(i => i.id !== invoiceId));
+    setTransactions(prev => (prev || []).filter(t => (t as any).invoiceId !== invoiceId && !t.description?.includes(invoiceId) && !t.id.includes(invoiceId)));
+
+    try {
+      await DB.deleteInvoice(invoiceId);
+    } catch (e) {
+      console.error('Error deleting invoice from DB:', e);
+      throw e;
+    }
+  }, []);
+
+  // Global listener for invoice deletions across modules / sidecars
+  useEffect(() => {
+    const handleInvoiceDeletedEvent = (e: any) => {
+      const invId = e.detail?.invoiceId;
+      if (invId) {
+        deletedInvoiceIdsRef.current.add(invId);
+        DB.deletedInvoiceIds.add(invId);
+        setInvoices(prev => (prev || []).filter(i => i.id !== invId));
+        setTransactions(prev => (prev || []).filter(t => (t as any).invoiceId !== invId && !t.description?.includes(invId) && !t.id.includes(invId)));
+      }
+    };
+    window.addEventListener('smartcut:invoice-deleted', handleInvoiceDeletedEvent);
+    return () => window.removeEventListener('smartcut:invoice-deleted', handleInvoiceDeletedEvent);
+  }, []);
+
   const handleSetInvoices = (updater: Invoice[] | ((prev: Invoice[]) => Invoice[])) => {
     if (checkReadOnlyAndWarn()) return;
     setInvoices(prev => {
       const currentSalonInvs = prev.filter(i => !i.salonId || i.salonId === currentSalonId || (i as any).salon_id === currentSalonId);
-      const next = typeof updater === 'function' ? updater(currentSalonInvs) : updater;
+      const isFunction = typeof updater === 'function';
+      const next = isFunction ? updater(currentSalonInvs) : updater;
+      const nextMap = new Map((next || []).map(i => [i.id, i]));
+
+      // If functional updater was used and removed any invoices, register them as deleted
+      if (isFunction) {
+        currentSalonInvs.forEach(i => {
+          if (!nextMap.has(i.id)) {
+            deletedInvoiceIdsRef.current.add(i.id);
+            DB.deletedInvoiceIds.add(i.id);
+          }
+        });
+      }
+
       const tagged = next.map(i => ({ ...i, salonId: i.salonId || currentSalonId, branchId: i.branchId || activeBranchId }));
       const other = prev.filter(i => i.salonId && i.salonId !== currentSalonId && (i as any).salon_id !== currentSalonId);
       
@@ -2135,9 +2181,11 @@ export default function App() {
       });
       changed.forEach(inv => DB.saveInvoice(inv, currentSalonId));
 
-      // Preserve any existing invoices not in next to avoid accidental omission
-      const nextMap = new Map(tagged.map(i => [i.id, i]));
-      const retainedOld = currentSalonInvs.filter(i => !nextMap.has(i.id) && !deletedInvoiceIdsRef.current.has(i.id));
+      // If updater was a function, it received all currentSalonInvs, so next is definitive for this salon (never resurrect removed invoices).
+      // If updater was an array (e.g. from a component filtered to a single branch), preserve invoices of other branches only:
+      const retainedOld = isFunction
+        ? []
+        : currentSalonInvs.filter(i => !nextMap.has(i.id) && i.branchId && i.branchId !== activeBranchId && !deletedInvoiceIdsRef.current.has(i.id) && !DB.deletedInvoiceIds.has(i.id));
 
       return [...other, ...tagged, ...retainedOld];
     });
@@ -3646,6 +3694,7 @@ export default function App() {
             settings={settings} 
             invoices={isAdminOrFullAccess ? salonInvoices : branchInvoices} 
             setInvoices={handleSetInvoices} 
+            onDeleteInvoice={handleDeleteInvoice}
             transactions={isAdminOrFullAccess ? salonTransactions : branchTransactions} 
             setTransactions={handleSetTransactions} 
             clients={isAdminOrFullAccess ? salonClients : branchClients} 

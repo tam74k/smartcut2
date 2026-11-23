@@ -197,6 +197,7 @@ export async function ensureCoreSchema(): Promise<void> {
 // Generic CRUD
 // ============================================================
 export const DB = {
+  deletedInvoiceIds: new Set<string>(),
 
   // توليد UUID متوافق
   generateUUID(): string {
@@ -369,6 +370,9 @@ export const DB = {
       });
 
       let resultData = data;
+      if (table === 'invoices') {
+        resultData = resultData.filter(row => !DB.deletedInvoiceIds.has(row.id));
+      }
       
       return resultData.map(row => {
         const camel = toCamel(row);
@@ -1951,10 +1955,10 @@ export const DB = {
     const validSalonId = salonId ? toSalonUUID(salonId) : undefined;
     const filter = (branchId && branchId !== 'all') ? { branch_id: toBranchUUID(branchId) || branchId } : undefined;
     const list = await DB.fetchAll<any>('invoices', filter, validSalonId);
-    if (list && list.length > 0) return list.map(dbInvoiceToApp);
+    if (list && list.length > 0) return list.map(dbInvoiceToApp).filter(i => !DB.deletedInvoiceIds.has(i.id));
     try {
       const cached = localStorage.getItem('smartcut_invoices_cache');
-      return cached ? JSON.parse(cached).map(dbInvoiceToApp) : [];
+      return cached ? JSON.parse(cached).map(dbInvoiceToApp).filter((i: any) => !DB.deletedInvoiceIds.has(i.id)) : [];
     } catch {
       return [];
     }
@@ -3759,6 +3763,15 @@ export const DB = {
   // ---- حذف فاتورة ومعاملاتها المالية المرتبطة نهائياً من قاعدة البيانات ----
   async deleteInvoice(invoiceId: string) {
     if (!invoiceId) return false;
+    this.deletedInvoiceIds.add(invoiceId);
+
+    // Notify any active listener/component immediately
+    if (typeof window !== 'undefined') {
+      try {
+        window.dispatchEvent(new CustomEvent('smartcut:invoice-deleted', { detail: { invoiceId } }));
+      } catch (e) {}
+    }
+
     const client = sb();
 
     // 1. Immediately clean up all local caches so offline / startup will never resurrect it

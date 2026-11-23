@@ -51,11 +51,13 @@ export function InvoicesScreen({
   onNavigateToReturns,
   onNavigateToDeferred,
   onEditInvoiceInPOS,
+  onDeleteInvoice,
   shiftData,
 }: { 
   settings: AppSettings;
   invoices: Invoice[];
   setInvoices: (i: Invoice[] | ((prev: Invoice[]) => Invoice[])) => void;
+  onDeleteInvoice?: (invoiceId: string) => Promise<void> | void;
   transactions: Transaction[];
   setTransactions: (t: Transaction[] | ((prev: Transaction[]) => Transaction[])) => void;
   clients: Client[];
@@ -434,16 +436,22 @@ export function InvoicesScreen({
     }
 
     try {
-      // 1. Delete from DB & clean all caches
-      await DB.deleteInvoice(inv.id);
-      
-      // 2. Remove from state using functional updater (guarantees safe deletion across branch filters)
-      setInvoices((prev: Invoice[]) => (prev || []).filter(i => i.id !== inv.id));
+      // 1. Delete from DB & clean all state
+      if (onDeleteInvoice) {
+        await onDeleteInvoice(inv.id);
+      } else {
+        await DB.deleteInvoice(inv.id);
+        setInvoices((prev: Invoice[]) => (prev || []).filter(i => i.id !== inv.id));
+        setTransactions((prev: Transaction[]) => (prev || []).filter(t => (t as any).invoiceId !== inv.id && !t.description?.includes(inv.id) && !t.id.includes(inv.id)));
+      }
 
-      // 3. Reverse any financial transactions for this invoice in state
-      setTransactions((prev: Transaction[]) => (prev || []).filter(t => (t as any).invoiceId !== inv.id && !t.description?.includes(inv.id) && !t.id.includes(inv.id)));
+      // 2. Dismiss any modal that was targeting this invoice
+      if (showPayModal?.id === inv.id) setShowPayModal(null);
+      if (cancelInvoiceTarget?.id === inv.id) setCancelInvoiceTarget(null);
+      if (returnTargetInvoice?.id === inv.id) setReturnTargetInvoice(null);
+      if (adminPasswordTarget?.id === inv.id) setAdminPasswordTarget(null);
       
-      // 4. Clean local cache directly
+      // 3. Clean local cache directly
       try {
         const cached = localStorage.getItem('smartcut_invoices_cache');
         if (cached) {
