@@ -136,7 +136,6 @@ export function InvoicesScreen({
 
   // استخراج كود الوردية النشطة ومعرفها للفرع الحالي بدقة مطلقة
   const effectiveShiftCode = useMemo(() => {
-    if (!shiftData?.isOpen) return '';
     const code = (shiftData as any)?.shiftCode || (shiftData as any)?.code || (shiftData as any)?.shift_code;
     if (code && typeof code === 'string' && code.trim()) {
       return code.trim();
@@ -146,19 +145,16 @@ export function InvoicesScreen({
       if (raw) {
         const parsed = JSON.parse(raw);
         const branchKey = activeBranchId || 'b-main';
-        if (parsed[branchKey]?.isOpen && parsed[branchKey]?.shiftCode) {
-          return String(parsed[branchKey].shiftCode).trim();
-        }
-        if (parsed['b-main']?.isOpen && parsed['b-main']?.shiftCode) {
-          return String(parsed['b-main'].shiftCode).trim();
-        }
+        if (parsed[branchKey]?.shiftCode) return String(parsed[branchKey].shiftCode).trim();
+        if (parsed['b-main']?.shiftCode) return String(parsed['b-main'].shiftCode).trim();
+        const anyS: any = Object.values(parsed).find((s: any) => s?.isOpen && s?.shiftCode);
+        if (anyS?.shiftCode) return String(anyS.shiftCode).trim();
       }
     } catch (e) {}
     return '';
   }, [shiftData, activeBranchId]);
 
   const effectiveShiftId = useMemo(() => {
-    if (!shiftData?.isOpen) return '';
     const id = (shiftData as any)?.shiftId || (shiftData as any)?.id || (shiftData as any)?.shift_id;
     if (id && typeof id === 'string' && id.trim()) {
       return id.trim();
@@ -168,21 +164,17 @@ export function InvoicesScreen({
       if (raw) {
         const parsed = JSON.parse(raw);
         const branchKey = activeBranchId || 'b-main';
-        if (parsed[branchKey]?.isOpen && parsed[branchKey]?.shiftId) {
-          return String(parsed[branchKey].shiftId).trim();
-        }
-        if (parsed['b-main']?.isOpen && parsed['b-main']?.shiftId) {
-          return String(parsed['b-main'].shiftId).trim();
-        }
+        if (parsed[branchKey]?.shiftId || parsed[branchKey]?.id) return String(parsed[branchKey].shiftId || parsed[branchKey].id).trim();
+        if (parsed['b-main']?.shiftId || parsed['b-main']?.id) return String(parsed['b-main'].shiftId || parsed['b-main'].id).trim();
+        const anyS: any = Object.values(parsed).find((s: any) => s?.isOpen && (s?.shiftId || s?.id));
+        if (anyS?.shiftId || anyS?.id) return String(anyS.shiftId || anyS.id).trim();
       }
     } catch (e) {}
     return '';
   }, [shiftData, activeBranchId]);
 
-  // التحقق القاطع: هل الفاتورة تنتمي للوردية الحالية المفتوحة؟ (بناءً على كود الوردية أو معرفها حصراً)
+  // التحقق القاطع: هل الفاتورة تنتمي للوردية الحالية المفتوحة؟
   const isInvoiceInCurrentShift = useCallback((inv: Invoice): boolean => {
-    if (!shiftData?.isOpen) return false;
-
     const invShiftCode = (inv.shiftCode || (inv as any).shift_code || '').trim();
     const invShiftId = (inv.shiftId || (inv as any).shift_id || '').trim();
 
@@ -200,12 +192,28 @@ export function InvoicesScreen({
     if (effectiveShiftCode && invShiftId && invShiftId.toLowerCase() === effectiveShiftCode.toLowerCase()) {
       return true;
     }
-    if (effectiveShiftId && invShiftCode && invShiftCode.toLowerCase() === effectiveShiftId.toLowerCase()) {
+    if (effectiveShiftId && invShiftCode && invShiftCode.toLowerCase() === effectiveShiftCode.toLowerCase()) {
       return true;
     }
 
+    // 4. إذا كانت الوردية الحالية مفتوحة ويوجد تطابق في التاريخ أو توقيت الإنشاء
+    if (shiftData?.isOpen) {
+      const invDateStr = getInvoiceLocalDateStr(inv);
+      const invCreatedDateStr = ((inv as any).createdAt || (inv as any).created_at || '').split('T')[0];
+      if (activeShiftDate && (invDateStr === activeShiftDate || invCreatedDateStr === activeShiftDate)) {
+        return true;
+      }
+      if (shiftData.openedAt && ((inv as any).createdAt || (inv as any).created_at)) {
+        const invTime = new Date((inv as any).createdAt || (inv as any).created_at).getTime();
+        const openTime = new Date(shiftData.openedAt).getTime();
+        if (invTime >= openTime - 60000) {
+          return true;
+        }
+      }
+    }
+
     return false;
-  }, [shiftData?.isOpen, effectiveShiftCode, effectiveShiftId]);
+  }, [shiftData?.isOpen, shiftData?.openedAt, effectiveShiftCode, effectiveShiftId, activeShiftDate]);
 
   // قفل التواريخ تلقائياً للكاشير على تاريخ الوردية المفتوحة فقط
   useEffect(() => {
@@ -670,6 +678,7 @@ export function InvoicesScreen({
       if (curBranch?.id && bId === curBranch.id) return true;
       if (curBranch?.code && bId.toLowerCase() === curBranch.code.toLowerCase()) return true;
       if (curBranch?.name && bId.toLowerCase() === curBranch.name.toLowerCase()) return true;
+      if (isMain && (bId === 'b-main' || (branches[0] && bId === branches[0].id))) return true;
       return false;
     }
     if (bCode && curBranch?.code) {
@@ -688,19 +697,23 @@ export function InvoicesScreen({
 
       // Date & Shift filter
       if (isCashierRestricted) {
-        // قيد الكاشير الصارم: يرى فقط الفواتير المنشأة في الوردية الحالية المفتوحة بناءً على كود الوردية المسجل في الفاتورة وليس تاريخ الفاتورة
-        if (!shiftData?.isOpen) return false;
+        // قيد الكاشير الصارم: يرى فقط الفواتير المنشأة في الوردية الحالية المفتوحة
         if (!isInvoiceInCurrentShift(inv)) return false;
       } else {
-        // فحص التواريخ للإدارة والمالك
+        // فحص التواريخ للإدارة والمالك مع شمول تاريخ الإنشاء لمنع اختفاء فواتير اليوم
         const invDateStr = getInvoiceLocalDateStr(inv);
         const invSettledDateStr = ((inv as any).settledAt || '').split('T')[0];
+        const invCreatedDateStr = ((inv as any).createdAt || (inv as any).created_at || '').split('T')[0];
         if (dateFrom) {
-          const matchesFrom = invDateStr >= dateFrom || (invSettledDateStr && invSettledDateStr >= dateFrom);
+          const matchesFrom = invDateStr >= dateFrom || 
+                              (invSettledDateStr && invSettledDateStr >= dateFrom) ||
+                              (invCreatedDateStr && invCreatedDateStr >= dateFrom);
           if (!matchesFrom) return false;
         }
         if (dateTo) {
-          const matchesTo = invDateStr <= dateTo || (invSettledDateStr && invSettledDateStr <= dateTo);
+          const matchesTo = invDateStr <= dateTo || 
+                            (invSettledDateStr && invSettledDateStr <= dateTo) ||
+                            (invCreatedDateStr && invCreatedDateStr <= dateTo);
           if (!matchesTo) return false;
         }
       }
@@ -865,10 +878,10 @@ export function InvoicesScreen({
           )}
           <div>
             <div className="flex items-center justify-between mb-1">
-              <label className="block text-xs font-bold text-slate-700">تاريخ الوردية</label>
+              <label className="block text-xs font-bold text-slate-700">{isCashierRestricted ? 'تاريخ الوردية' : 'من تاريخ'}</label>
               {isCashierRestricted && (
                 <span className="text-[10px] text-amber-700 font-bold flex items-center gap-0.5">
-                  <Lock size={10} /> كود الوردية
+                  <Lock size={10} /> تاريخ الوردية
                 </span>
               )}
             </div>
@@ -889,7 +902,7 @@ export function InvoicesScreen({
           </div>
           <div>
             <div className="flex items-center justify-between mb-1">
-              <label className="block text-xs font-bold text-slate-700">كود الوردية</label>
+              <label className="block text-xs font-bold text-slate-700">{isCashierRestricted ? 'كود الوردية' : 'إلى تاريخ'}</label>
               {isCashierRestricted && (
                 <span className="text-[10px] text-amber-700 font-bold flex items-center gap-0.5">
                   <Lock size={10} /> مقيد بالكود

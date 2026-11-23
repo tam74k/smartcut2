@@ -445,15 +445,23 @@ export default function App() {
     // 1. Direct active branch shift
     const current = branchShifts[activeBranchId];
     if (current && typeof current.isOpen === 'boolean') return current;
-    // Fallback only if no activeBranchId is set
-    if (!activeBranchId && branchShifts['b-main']) return branchShifts['b-main'];
+    // 2. Direct 'b-main' fallback
+    if (branchShifts['b-main'] && typeof branchShifts['b-main'].isOpen === 'boolean') return branchShifts['b-main'];
+    // 3. Main branch UUID fallback from branches list
+    const mainBranch = branches.find(b => b.isMain);
+    if (mainBranch && branchShifts[mainBranch.id] && typeof branchShifts[mainBranch.id].isOpen === 'boolean') {
+      return branchShifts[mainBranch.id];
+    }
+    // 4. Any open shift fallback across all branch keys
+    const anyOpen = Object.values(branchShifts).find((s: any) => s && s.isOpen === true);
+    if (anyOpen) return anyOpen;
     return { isOpen: false, date: '', initialCash: 0 };
-  }, [branchShifts, activeBranchId]);
+  }, [branchShifts, activeBranchId, branches]);
 
   const setShiftData = (updater: any) => {
     setBranchShifts(prev => {
       const branchKey = activeBranchId || 'b-main';
-      const current = prev[branchKey] || { isOpen: false, date: '', initialCash: 0 };
+      const current = prev[branchKey] || prev['b-main'] || { isOpen: false, date: '', initialCash: 0 };
       const next = typeof updater === 'function' ? updater(current) : updater;
       const updated = {
         ...prev,
@@ -461,6 +469,9 @@ export default function App() {
       };
       if (next?.branchId && next.branchId !== branchKey) {
         updated[next.branchId] = next;
+      }
+      if (branchKey === 'b-main' || !prev['b-main']) {
+        updated['b-main'] = next;
       }
       try { localStorage.setItem('smartcut_work_shifts_state', JSON.stringify(updated)); } catch (e) {}
       return updated;
@@ -477,7 +488,7 @@ export default function App() {
     // 2. الاعتماد على قاعدة البيانات: إذا كان جدول work_shifts يحتوي على وردية مفتوحة لهذا الفرع تحديداً
     if (activeShift.isOpen === true || activeShift.status === 'open' || (!activeShift.closedAt && !activeShift.isClosed && activeShift.shiftDate)) {
       setBranchShifts(prev => {
-        const current = prev[branchId];
+        const current = prev[branchId] || prev['b-main'];
         const shiftCode = activeShift.shiftCode || activeShift.shift_code || current?.shiftCode || `SH-${(activeShift.shiftDate || '').replace(/-/g, '')}-01`;
         if (
           current?.isOpen === true &&
@@ -499,12 +510,21 @@ export default function App() {
           openedByUserName: activeShift.openedByUserName || (activeShift as any).opened_by_user_name || activeShift.openedByName,
           openedByName: activeShift.openedByName || (activeShift as any).opened_by_name || activeShift.openedByUserName,
           openedByRole: activeShift.openedByRole || (activeShift as any).opened_by_role || 'cashier',
-          branchId
+          branchId: activeShift.branchId || activeShift.branch_id || branchId
         };
         const updated = {
           ...prev,
           [branchId]: shiftObj
         };
+        if (activeShift.branchId && activeShift.branchId !== branchId) {
+          updated[activeShift.branchId] = shiftObj;
+        }
+        if (activeShift.branch_id && activeShift.branch_id !== branchId) {
+          updated[activeShift.branch_id] = shiftObj;
+        }
+        if (branchId === 'b-main' || !prev['b-main'] || prev['b-main']?.shiftId === activeShift.id) {
+          updated['b-main'] = shiftObj;
+        }
         try { localStorage.setItem('smartcut_work_shifts_state', JSON.stringify(updated)); } catch (e) {}
         return updated;
       });
@@ -514,22 +534,32 @@ export default function App() {
     // 3. التحقق القاطع من إغلاق الوردية لهذا الفرع
     if (activeShift.hasDefinitiveProof && (activeShift.isClosed || activeShift.status === 'closed')) {
       setBranchShifts(prev => {
-        const current = prev[branchId];
+        const current = prev[branchId] || prev['b-main'];
         if (!current?.isOpen) return prev;
         if (current.shiftId && activeShift.id && current.shiftId !== activeShift.id) {
           return prev;
         }
-        const updated = {
-          ...prev,
-          [branchId]: {
-            isOpen: false,
-            date: '',
-            initialCash: 0,
-            shiftId: undefined,
-            shiftCode: undefined,
-            lastClosedAt: activeShift.closedAt || new Date().toISOString()
-          }
+        const closedShiftObj = {
+          isOpen: false,
+          date: activeShift.shiftDate || current.date,
+          initialCash: 0,
+          shiftId: activeShift.id,
+          shiftCode: activeShift.shiftCode || current.shiftCode,
+          lastClosedAt: activeShift.closedAt || new Date().toISOString()
         };
+        const updated: any = {
+          ...prev,
+          [branchId]: closedShiftObj
+        };
+        if (activeShift.branchId && activeShift.branchId !== branchId) {
+          updated[activeShift.branchId] = closedShiftObj;
+        }
+        if (activeShift.branch_id && activeShift.branch_id !== branchId) {
+          updated[activeShift.branch_id] = closedShiftObj;
+        }
+        if (branchId === 'b-main' || prev['b-main']?.shiftId === activeShift.id) {
+          updated['b-main'] = closedShiftObj;
+        }
         try { localStorage.setItem('smartcut_work_shifts_state', JSON.stringify(updated)); } catch (e) {}
         return updated;
       });
@@ -633,7 +663,17 @@ export default function App() {
   const applySectionData = useCallback((section: string, data: any) => {
     if (!data) return;
     if (data.invoices) {
-      setInvoices(data.invoices.map(dbInvoiceToApp).filter((i: Invoice) => !deletedInvoiceIdsRef.current.has(i.id)));
+      const mapped = data.invoices.map(dbInvoiceToApp).filter((i: Invoice) => !deletedInvoiceIdsRef.current.has(i.id));
+      const mappedIdSet = new Set(mapped.map((i: any) => i.id));
+      setInvoices(prev => {
+        const localRecent = (prev || []).filter(i => {
+          if (mappedIdSet.has(i.id)) return false;
+          if (deletedInvoiceIdsRef.current.has(i.id)) return false;
+          const createdTime = i.createdAt ? new Date(i.createdAt).getTime() : 0;
+          return (Date.now() - createdTime) < 900000;
+        });
+        return localRecent.length > 0 ? [...localRecent, ...mapped] : mapped;
+      });
     }
     if (data.transactions) {
       setTransactions(data.transactions.map(dbTransactionToApp));
@@ -1057,7 +1097,17 @@ export default function App() {
         ]);
 
         if (dbInvs && Array.isArray(dbInvs)) {
-          setInvoices(dbInvs.map(dbInvoiceToApp).filter((i: Invoice) => !deletedInvoiceIdsRef.current.has(i.id)));
+          const mapped = dbInvs.map(dbInvoiceToApp).filter((i: Invoice) => !deletedInvoiceIdsRef.current.has(i.id));
+          const mappedIdSet = new Set(mapped.map((i: any) => i.id));
+          setInvoices(prev => {
+            const localRecent = (prev || []).filter(i => {
+              if (mappedIdSet.has(i.id)) return false;
+              if (deletedInvoiceIdsRef.current.has(i.id)) return false;
+              const createdTime = i.createdAt ? new Date(i.createdAt).getTime() : 0;
+              return (Date.now() - createdTime) < 900000;
+            });
+            return localRecent.length > 0 ? [...localRecent, ...mapped] : mapped;
+          });
         }
 
         if (dbTrxs && Array.isArray(dbTrxs)) {
@@ -1379,7 +1429,17 @@ export default function App() {
 
         // Sync Invoices
         if (polledInvoices && Array.isArray(polledInvoices)) {
-          setInvoices(polledInvoices.map(dbInvoiceToApp));
+          const mapped = polledInvoices.map(dbInvoiceToApp).filter((i: Invoice) => !deletedInvoiceIdsRef.current.has(i.id));
+          const mappedIdSet = new Set(mapped.map((i: any) => i.id));
+          setInvoices(prev => {
+            const localRecent = (prev || []).filter(i => {
+              if (mappedIdSet.has(i.id)) return false;
+              if (deletedInvoiceIdsRef.current.has(i.id)) return false;
+              const createdTime = i.createdAt ? new Date(i.createdAt).getTime() : 0;
+              return (Date.now() - createdTime) < 900000;
+            });
+            return localRecent.length > 0 ? [...localRecent, ...mapped] : mapped;
+          });
         }
 
         // Sync Transactions
@@ -1662,6 +1722,7 @@ export default function App() {
       if (curBranch?.id && bId === curBranch.id) return true;
       if (curBranch?.code && bId.toLowerCase() === curBranch.code.toLowerCase()) return true;
       if (curBranch?.name && bId.toLowerCase() === curBranch.name.toLowerCase()) return true;
+      if (isCurMain && (bId === 'b-main' || (branches[0] && bId === branches[0].id))) return true;
       return false;
     }
     if (bCode && curBranch?.code) {
