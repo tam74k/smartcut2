@@ -669,8 +669,7 @@ export default function App() {
         const localRecent = (prev || []).filter(i => {
           if (mappedIdSet.has(i.id)) return false;
           if (deletedInvoiceIdsRef.current.has(i.id)) return false;
-          const createdTime = i.createdAt ? new Date(i.createdAt).getTime() : 0;
-          return (Date.now() - createdTime) < 900000;
+          return true;
         });
         return localRecent.length > 0 ? [...localRecent, ...mapped] : mapped;
       });
@@ -1103,8 +1102,7 @@ export default function App() {
             const localRecent = (prev || []).filter(i => {
               if (mappedIdSet.has(i.id)) return false;
               if (deletedInvoiceIdsRef.current.has(i.id)) return false;
-              const createdTime = i.createdAt ? new Date(i.createdAt).getTime() : 0;
-              return (Date.now() - createdTime) < 900000;
+              return true;
             });
             return localRecent.length > 0 ? [...localRecent, ...mapped] : mapped;
           });
@@ -1435,8 +1433,7 @@ export default function App() {
             const localRecent = (prev || []).filter(i => {
               if (mappedIdSet.has(i.id)) return false;
               if (deletedInvoiceIdsRef.current.has(i.id)) return false;
-              const createdTime = i.createdAt ? new Date(i.createdAt).getTime() : 0;
-              return (Date.now() - createdTime) < 900000;
+              return true;
             });
             return localRecent.length > 0 ? [...localRecent, ...mapped] : mapped;
           });
@@ -1713,7 +1710,8 @@ export default function App() {
   const isItemInBranch = (itemBranchId?: string, itemBranchCode?: string) => {
     if (branches.length <= 1) return true;
     const curBranch = activeBranch || branches.find(b => b.id === activeBranchId) || branches[0];
-    const isCurMain = Boolean(curBranch?.isMain || curBranch?.id === branches[0]?.id);
+    const mainBranch = branches.find(b => b.isMain) || branches[0];
+    const isCurMain = Boolean(curBranch?.isMain || curBranch?.id === 'b-main' || curBranch?.id === mainBranch?.id);
 
     const bId = (itemBranchId || '').trim();
     const bCode = (itemBranchCode || '').trim();
@@ -1722,12 +1720,14 @@ export default function App() {
       if (curBranch?.id && bId === curBranch.id) return true;
       if (curBranch?.code && bId.toLowerCase() === curBranch.code.toLowerCase()) return true;
       if (curBranch?.name && bId.toLowerCase() === curBranch.name.toLowerCase()) return true;
-      if (isCurMain && (bId === 'b-main' || (branches[0] && bId === branches[0].id))) return true;
+      if (isCurMain && (bId === 'b-main' || bId === mainBranch?.id || (branches[0] && bId === branches[0].id))) return true;
+      if (bId === 'b-main' && isCurMain) return true;
       return false;
     }
     if (bCode && curBranch?.code) {
       if (bCode.toLowerCase() === curBranch.code.toLowerCase()) return true;
       if (curBranch?.name && bCode.toLowerCase() === curBranch.name.toLowerCase()) return true;
+      if (isCurMain && mainBranch?.code && bCode.toLowerCase() === mainBranch.code.toLowerCase()) return true;
       return false;
     }
 
@@ -2135,17 +2135,11 @@ export default function App() {
       });
       changed.forEach(inv => DB.saveInvoice(inv, currentSalonId));
 
-      // Track removed invoices and ensure DB deletion if not already deleted
-      const nextIds = new Set(tagged.map(i => i.id));
-      const removedIds = currentSalonInvs.filter(i => !nextIds.has(i.id)).map(i => i.id);
-      if (removedIds.length > 0 && typeof updater === 'function') {
-        removedIds.forEach(id => {
-          deletedInvoiceIdsRef.current.add(id);
-          DB.deleteInvoice(id).catch(e => console.warn('Auto delete invoice sync error:', e));
-        });
-      }
+      // Preserve any existing invoices not in next to avoid accidental omission
+      const nextMap = new Map(tagged.map(i => [i.id, i]));
+      const retainedOld = currentSalonInvs.filter(i => !nextMap.has(i.id) && !deletedInvoiceIdsRef.current.has(i.id));
 
-      return [...other, ...tagged];
+      return [...other, ...tagged, ...retainedOld];
     });
   };
 
@@ -2871,6 +2865,7 @@ export default function App() {
       cashierName: invoice.cashierName || currentUser?.name || currentUser?.username || undefined,
       createdBy: invoice.createdBy || currentUser?.username || currentUser?.name || undefined,
       createdById: invoice.createdById || currentUser?.id || undefined,
+      createdAt: invoice.createdAt || (invoice as any)?.created_at || new Date().toISOString(),
       shiftId: invoice.shiftId || (shiftData?.isOpen ? (shiftData as any).shiftId : undefined),
       shiftCode: invoice.shiftCode || (shiftData?.isOpen ? (shiftData as any).shiftCode : undefined),
       shiftDate: invoice.shiftDate || (shiftData?.isOpen ? shiftData.date : undefined),

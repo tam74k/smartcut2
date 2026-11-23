@@ -334,6 +334,10 @@ export const DB = {
         if (extraFilters) {
           Object.entries(extraFilters).forEach(([k, v]) => { q = q.eq(k, v); });
         }
+        // Deterministic ordering to prevent rows shifting across range pages during pagination
+        if (table === 'invoices' || table === 'transactions' || table === 'bookings' || table === 'work_shifts') {
+          q = q.order('created_at', { ascending: false });
+        }
         q = q.range(page * pageSize, (page + 1) * pageSize - 1);
 
         const { data, error } = await q;
@@ -1985,6 +1989,7 @@ export const DB = {
       : (inv.updatedAt || inv.updated_at || null);
 
     // تحديث كائن الفاتورة في الذاكرة والكاش المحلي ليبقى متزامناً بالكامل
+    inv.createdAt = inv.createdAt || inv.created_at || new Date().toISOString();
     inv.cashierId = effectiveCashierId || inv.cashierId;
     inv.cashierName = effectiveCashierName || inv.cashierName;
     inv.createdBy = effectiveCreatedBy || inv.createdBy;
@@ -3980,30 +3985,36 @@ export const DB = {
       const validSalonId = toSalonUUID(sId);
       if (!validSalonId) return null;
 
-      // 1. استعلام فوري ومباشر عن أي وردية حالتها 'open' وغير مغلقة لهذا الصالون
-      const { data: openData, error: openError } = await client
+      // Single definitive query to fetch latest shifts for the salon
+      const { data: shiftRows, error } = await client
         .from('work_shifts')
         .select('*')
         .eq('salon_id', validSalonId)
-        .eq('status', 'open')
         .order('opened_at', { ascending: false })
-        .limit(20);
+        .limit(30);
 
-      const openShifts = (!openError && openData && Array.isArray(openData))
-        ? openData.filter((s: any) => s.status === 'open' && !s.closed_at)
-        : [];
+      if (error) {
+        console.error('DB.getActiveWorkShift query error:', error.message);
+        return { error: true, message: error.message };
+      }
 
+      if (!shiftRows || !Array.isArray(shiftRows) || shiftRows.length === 0) {
+        return { isOpen: false, isClosed: true, hasDefinitiveProof: true, noShifts: true };
+      }
+
+      // Check open shifts
+      const openShifts = shiftRows.filter((s: any) => (s.status === 'open' || !s.closed_at) && s.status !== 'closed');
       if (openShifts.length > 0) {
         const targetBranchId = branchId && branchId !== 'all' ? (toBranchUUID(branchId) || branchId) : null;
         let matchedShift = openShifts[0];
 
-        // مطابقة على الفرع إذا تم تحديده
-        if (targetBranchId) {
+        if (targetBranchId && targetBranchId !== 'b-main') {
           const exactMatch = openShifts.find((s: any) => s.branch_id === targetBranchId);
           if (exactMatch) matchedShift = exactMatch;
         } else {
-          const genericMatch = openShifts.find((s: any) => !s.branch_id || s.branch_id === 'b-main' || s.branch_id === 'all');
-          if (genericMatch) matchedShift = genericMatch;
+          // If branch is 'b-main' or unspecified, match main branch, b-main, or the most recent open shift
+          const mainMatch = openShifts.find((s: any) => !s.branch_id || s.branch_id === 'b-main' || s.branch_id === 'all');
+          if (mainMatch) matchedShift = mainMatch;
         }
 
         const sDate = matchedShift.shift_date || new Date().toISOString().split('T')[0];
@@ -4018,41 +4029,8 @@ export const DB = {
         };
       }
 
-      // 2. إذا لم نجد أي وردية بحالة open، نجلب آخر 50 وردية لتأكيد حالة الإغلاق
-      const { data, error } = await client
-        .from('work_shifts')
-        .select('*')
-        .eq('salon_id', validSalonId)
-        .order('opened_at', { ascending: false })
-        .limit(50);
-
-      if (error) {
-        console.error('DB.getActiveWorkShift error:', error.message);
-        return { error: true, message: error.message };
-      }
-
-      if (!data || data.length === 0) {
-        // لا يوجد أي وردية سابقة مسجلة في قاعدة البيانات
-        return { isOpen: false, isClosed: true, hasDefinitiveProof: true, noShifts: true };
-      }
-
-      // فحص أمان إضافي للورديات المفتوحة
-      const fallbackOpen = data.filter((s: any) => (s.status === 'open' || !s.closed_at) && s.status !== 'closed');
-      if (fallbackOpen.length > 0) {
-        const m = fallbackOpen[0];
-        const sDate = m.shift_date || new Date().toISOString().split('T')[0];
-        const sCode = m.shift_code || m.shiftCode || `SH-${sDate.replace(/-/g, '')}-01`;
-        return {
-          ...toCamel(m),
-          shiftCode: sCode,
-          isOpen: true,
-          status: 'open',
-          hasDefinitiveProof: true
-        };
-      }
-
-      // لا توجد أي وردية مفتوحة، نرجع آخر وردية مغلقة
-      const closedShifts = data.filter((s: any) => s.status === 'closed' || !!s.closed_at);
+      // If no open shift exists, return the latest closed shift
+      const closedShifts = shiftRows.filter((s: any) => s.status === 'closed' || !!s.closed_at);
       if (closedShifts.length > 0) {
         const latestClosed = closedShifts[0];
         const sDate = latestClosed.shift_date || new Date().toISOString().split('T')[0];

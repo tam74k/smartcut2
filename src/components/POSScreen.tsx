@@ -1995,6 +1995,7 @@ export function POSScreen({
       updatedByName: currentUser?.name || currentUser?.username || undefined,
       updatedById: currentUser?.id || undefined,
       updatedAt: new Date().toISOString(),
+      createdAt: editingInvoice?.createdAt || (editingInvoice as any)?.created_at || new Date().toISOString(),
       date: finalInvoiceDate,
       clientName: isWaselInvoice && waselRecipientName.trim()
         ? (selectedClient ? `${selectedClient.name} (${waselRecipientName.trim()})` : waselRecipientName.trim())

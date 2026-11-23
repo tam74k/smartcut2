@@ -175,6 +175,7 @@ export function InvoicesScreen({
 
   // التحقق القاطع: هل الفاتورة تنتمي للوردية الحالية المفتوحة؟
   const isInvoiceInCurrentShift = useCallback((inv: Invoice): boolean => {
+    if (!inv) return false;
     const invShiftCode = (inv.shiftCode || (inv as any).shift_code || '').trim();
     const invShiftId = (inv.shiftId || (inv as any).shift_id || '').trim();
 
@@ -196,24 +197,44 @@ export function InvoicesScreen({
       return true;
     }
 
+    const invDateStr = getInvoiceLocalDateStr(inv);
+    const invCreatedDateStr = ((inv as any).createdAt || (inv as any).created_at || '').split('T')[0];
+    const todayStr = getTodayLocalDateStr();
+
     // 4. إذا كانت الوردية الحالية مفتوحة ويوجد تطابق في التاريخ أو توقيت الإنشاء
     if (shiftData?.isOpen) {
-      const invDateStr = getInvoiceLocalDateStr(inv);
-      const invCreatedDateStr = ((inv as any).createdAt || (inv as any).created_at || '').split('T')[0];
       if (activeShiftDate && (invDateStr === activeShiftDate || invCreatedDateStr === activeShiftDate)) {
         return true;
       }
-      if (shiftData.openedAt && ((inv as any).createdAt || (inv as any).created_at)) {
-        const invTime = new Date((inv as any).createdAt || (inv as any).created_at).getTime();
+      if (invDateStr === todayStr || invCreatedDateStr === todayStr) {
+        return true;
+      }
+      if (shiftData.openedAt && ((inv as any).createdAt || (inv as any).created_at || inv.date)) {
+        const invTime = new Date((inv as any).createdAt || (inv as any).created_at || inv.date).getTime();
         const openTime = new Date(shiftData.openedAt).getTime();
-        if (invTime >= openTime - 60000) {
+        if (!isNaN(invTime) && !isNaN(openTime) && invTime >= openTime - 120000) {
           return true;
         }
+      }
+    } else {
+      // حماية إضافية: إذا كانت حالة الوردية جاري استعلامها أو غير مؤكدة، نطابق فواتير تاريخ اليوم
+      if (invDateStr === todayStr || invCreatedDateStr === todayStr) {
+        return true;
+      }
+    }
+
+    // 5. إذا كانت الفاتورة أنشئت بواسطة الكاشير الحالي في تاريخ اليوم أو تاريخ الوردية
+    const invUser = (inv.cashierId || (inv as any).cashier_id || inv.createdBy || (inv as any).created_by || '').toString().toLowerCase();
+    const curUserId = (currentUser?.id || '').toLowerCase();
+    const curUserName = (currentUser?.username || currentUser?.name || '').toLowerCase();
+    if (invUser && (invUser === curUserId || invUser === curUserName)) {
+      if (invDateStr === todayStr || invCreatedDateStr === todayStr || invDateStr === activeShiftDate || invCreatedDateStr === activeShiftDate) {
+        return true;
       }
     }
 
     return false;
-  }, [shiftData?.isOpen, shiftData?.openedAt, effectiveShiftCode, effectiveShiftId, activeShiftDate]);
+  }, [shiftData?.isOpen, shiftData?.openedAt, effectiveShiftCode, effectiveShiftId, activeShiftDate, currentUser]);
 
   // قفل التواريخ تلقائياً للكاشير على تاريخ الوردية المفتوحة فقط
   useEffect(() => {
@@ -668,8 +689,9 @@ export function InvoicesScreen({
     if (!branchFilter || branchFilter === 'all') return true;
 
     const curBranch = branches.find(b => b.id === branchFilter);
+    const mainBranch = branches.find(b => b.isMain) || branches[0];
     if (!curBranch) return true;
-    const isMain = Boolean(curBranch?.isMain || curBranch?.id === branches[0]?.id);
+    const isMain = Boolean(curBranch?.isMain || curBranch?.id === 'b-main' || curBranch?.id === mainBranch?.id);
 
     const bId = (itemBranchId || '').trim();
     const bCode = (itemBranchCode || '').trim();
@@ -678,12 +700,14 @@ export function InvoicesScreen({
       if (curBranch?.id && bId === curBranch.id) return true;
       if (curBranch?.code && bId.toLowerCase() === curBranch.code.toLowerCase()) return true;
       if (curBranch?.name && bId.toLowerCase() === curBranch.name.toLowerCase()) return true;
-      if (isMain && (bId === 'b-main' || (branches[0] && bId === branches[0].id))) return true;
+      if (isMain && (bId === 'b-main' || bId === mainBranch?.id || (branches[0] && bId === branches[0].id))) return true;
+      if (bId === 'b-main' && isMain) return true;
       return false;
     }
     if (bCode && curBranch?.code) {
       if (bCode.toLowerCase() === curBranch.code.toLowerCase()) return true;
       if (curBranch?.name && bCode.toLowerCase() === curBranch.name.toLowerCase()) return true;
+      if (isMain && mainBranch?.code && bCode.toLowerCase() === mainBranch.code.toLowerCase()) return true;
       return false;
     }
 
@@ -758,7 +782,12 @@ export function InvoicesScreen({
       }
       
       return true;
-    }).sort((a, b) => parseDbDateTime(b.date).getTime() - parseDbDateTime(a.date).getTime());
+    }).sort((a, b) => {
+      const timeB = parseDbDateTime(b.createdAt || (b as any).created_at || b.date).getTime();
+      const timeA = parseDbDateTime(a.createdAt || (a as any).created_at || a.date).getTime();
+      if (timeB !== timeA) return timeB - timeA;
+      return String(b.id || '').localeCompare(String(a.id || ''));
+    });
   }, [invoices, dateFrom, dateTo, statusFilter, paymentFilter, searchQuery, activeBranchId, isMainBranch, branchFilter, salesReturns, isCashierRestricted, shiftData?.isOpen, isInvoiceInCurrentShift, isAdminOrFullAccess]);
 
   // Pagination calculation
