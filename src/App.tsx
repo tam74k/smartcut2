@@ -71,6 +71,7 @@ import { QueueService } from './services/queueService';
 import { completeBookingAndCreateHeldInvoice } from './services/bookingHeldInvoiceService';
 import { EvolutionApiService } from './services/evolutionApiService';
 import { safeStorage } from './utils/safeStorage';
+import { getSalonTimezone, getSalonNow } from './utils/timezone';
 import { hasEmployeeFixedCommission } from './utils/commissionHelper';
 import { 
   AppSettings, Transaction, Booking, Invoice, ServiceItem, Category, Employee, Product, AppUser, 
@@ -603,8 +604,14 @@ export default function App() {
   });
 
   const getLocalTodayDateString = () => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    try {
+      const activeBranch = branches.find(b => b.id === activeBranchId);
+      const tz = getSalonTimezone(settings, activeBranch);
+      return getSalonNow(tz).todayStr;
+    } catch {
+      const now = new Date();
+      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    }
   };
 
   const [openShiftForm, setOpenShiftForm] = useState({ date: getLocalTodayDateString(), initialCash: 0 });
@@ -2572,8 +2579,10 @@ export default function App() {
         console.warn('Error checking active shift in DB:', e);
       }
 
-      const shiftDateVal = openShiftForm.date?.trim() || getLocalTodayDateString();
       const activeBranch = branches.find(b => b.id === activeBranchId) || branches[0];
+      const salonTz = getSalonTimezone(settings, activeBranch);
+      const salonNow = getSalonNow(salonTz);
+      const shiftDateVal = openShiftForm.date?.trim() || salonNow.todayStr;
       const shiftId = 'SHIFT-' + Math.random().toString(36).substr(2, 9).toUpperCase();
       const nowIso = new Date().toISOString();
 
@@ -2616,7 +2625,7 @@ export default function App() {
         const cashTreasury = settings.treasuries.find(t => t.id === 'cash') || settings.treasuries[0];
         const newTrx: Transaction = {
           id: 'TRX-CUSTODY-' + Math.random().toString(36).substr(2,9),
-          date: shiftDateVal + 'T' + new Date().toTimeString().split(' ')[0],
+          date: shiftDateVal + 'T' + salonNow.timeWithSeconds,
           type: 'in',
           amount: openShiftForm.initialCash,
           category: 'عهدة افتتاحية',
@@ -2679,6 +2688,8 @@ export default function App() {
     try {
       if (checkReadOnlyAndWarn()) return;
       const activeBranch = branches.find(b => b.id === activeBranchId) || branches[0];
+      const salonTz = getSalonTimezone(settings, activeBranch);
+      const salonNow = getSalonNow(salonTz);
       const currentShiftCode = (shiftData as any)?.shiftCode;
       const effectiveShiftCode = currentShiftCode || (shiftData as any)?.shiftCode || (`SH-${(shiftData.date || '').replace(/-/g, '')}-01`);
       const effectiveShiftId = (shiftData as any)?.shiftId;
@@ -2688,7 +2699,7 @@ export default function App() {
         : DEFAULT_INITIAL_TREASURIES;
       const mainTreasury = resolveMainTreasury(definedTreasuries);
       const now = (shiftData?.isOpen && shiftData?.date) 
-        ? (shiftData.date + 'T' + new Date().toTimeString().split(' ')[0]) 
+        ? (shiftData.date + 'T' + salonNow.timeWithSeconds) 
         : new Date().toISOString();
 
       // 1. تحديد فواتير هذه الوردية فقط

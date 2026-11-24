@@ -288,6 +288,14 @@ export function parseDbDateTime(dateRaw?: string | Date | null): Date {
 
   if (typeof dateRaw === 'string') {
     const trimmed = dateRaw.trim();
+    if (!trimmed) return new Date();
+
+    const hasTzOffset = trimmed.endsWith('Z') || /[+-]\d{2}(?::?\d{2})?$/.test(trimmed);
+    if (hasTzOffset) {
+      const d = new Date(trimmed);
+      if (!isNaN(d.getTime())) return d;
+    }
+
     // Match: YYYY-MM-DD or YYYY/MM/DD followed by T or space, then HH:mm(:ss)?
     const match = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})[T\s](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/);
     if (match) {
@@ -314,20 +322,79 @@ export function parseDbDateTime(dateRaw?: string | Date | null): Date {
   return isNaN(fallback.getTime()) ? new Date() : fallback;
 }
 
+function formatDateTimeWithTz(
+  d: Date,
+  timeZone: string,
+  locale: string = 'ar-EG',
+  options?: Intl.DateTimeFormatOptions
+): string {
+  if (options) {
+    return new Intl.DateTimeFormat(locale, { ...options, timeZone }).format(d);
+  }
+
+  const dtf = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  });
+
+  const parts = dtf.formatToParts(d);
+  const m: Record<string, string> = {};
+  for (const p of parts) m[p.type] = p.value;
+
+  const year = m.year;
+  const month = m.month;
+  const day = m.day;
+  const hourNum = parseInt(m.hour, 10);
+  const minute = m.minute;
+  const second = m.second || '00';
+
+  const isPm = hourNum >= 12;
+  const hour12 = hourNum === 0 ? 12 : (hourNum > 12 ? hourNum - 12 : hourNum);
+  const period = isPm ? 'م' : 'ص';
+
+  return `${year}/${month}/${day}, ${hour12}:${minute}:${second} ${period}`;
+}
+
 /**
- * Format invoice date & time strictly matching the exact values stored in the database.
- * Bypasses all browser and local machine timezone offsets.
+ * Format invoice and shift date & time.
+ * If timestamp has timezone information (UTC Z or offset like +00:00), converts strictly to salon's physical timezone.
+ * If timestamp is naive local wall-clock, preserves exact literal digits.
  */
 export function formatInvoiceDateTimeDisplay(
   dateRaw?: string | Date | null,
   locale: string = 'ar-EG',
-  options?: Intl.DateTimeFormatOptions
+  options?: Intl.DateTimeFormatOptions,
+  timeZone?: string
 ): string {
   if (!dateRaw) return '-';
 
+  const effectiveTz = timeZone || getSalonTimezone();
+
+  if (dateRaw instanceof Date) {
+    if (isNaN(dateRaw.getTime())) return '-';
+    return formatDateTimeWithTz(dateRaw, effectiveTz, locale, options);
+  }
+
   if (typeof dateRaw === 'string') {
     const trimmed = dateRaw.trim();
-    // Match: YYYY-MM-DD or YYYY/MM/DD followed by T or space, then HH:mm(:ss)?
+    if (!trimmed) return '-';
+
+    // 1. Check if the string has explicit timezone indicator (ends with 'Z' or has '+00:00' or '+00' or '-04:00')
+    const hasTzOffset = trimmed.endsWith('Z') || /[+-]\d{2}(?::?\d{2})?$/.test(trimmed);
+    if (hasTzOffset) {
+      const d = new Date(trimmed);
+      if (!isNaN(d.getTime())) {
+        return formatDateTimeWithTz(d, effectiveTz, locale, options);
+      }
+    }
+
+    // 2. Naive local wall-clock string (e.g. '2026-11-24T11:42:05')
     const match = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})[T\s](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/);
     if (match) {
       const year = match[1];
@@ -344,6 +411,8 @@ export function formatInvoiceDateTimeDisplay(
       if (!options) {
         return `${year}/${month}/${day}, ${hour12}:${minute}:${second} ${period}`;
       }
+      const naiveDate = new Date(parseInt(year, 10), parseInt(month, 10) - 1, parseInt(day, 10), hourNum, parseInt(minute, 10), parseInt(second, 10));
+      return naiveDate.toLocaleString(locale, options);
     }
   }
 
