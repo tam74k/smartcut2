@@ -57,7 +57,7 @@ export function InvoicesScreen({
   settings: AppSettings;
   invoices: Invoice[];
   setInvoices: (i: Invoice[] | ((prev: Invoice[]) => Invoice[])) => void;
-  onDeleteInvoice?: (invoiceId: string) => Promise<void> | void;
+  onDeleteInvoice?: (invoiceId: string, invoiceNumber?: string) => Promise<void> | void;
   transactions: Transaction[];
   setTransactions: (t: Transaction[] | ((prev: Transaction[]) => Transaction[])) => void;
   clients: Client[];
@@ -437,12 +437,21 @@ export function InvoicesScreen({
 
     try {
       // 1. Delete from DB & clean all state
+      const cleanId = inv.id.replace(/^INV-+/i, '').trim();
+      const isInvoiceTrx = (t: Transaction) => {
+        const rawInv = (t as any).invoiceId || (t as any).invoice_id;
+        if (rawInv && (rawInv === inv.id || rawInv === inv.invoiceNumber || rawInv.includes(cleanId))) return true;
+        if (t.id.includes(inv.id) || (inv.invoiceNumber && t.id.includes(inv.invoiceNumber)) || t.id.includes(cleanId)) return true;
+        if (t.description?.includes(inv.id) || (inv.invoiceNumber && t.description?.includes(inv.invoiceNumber)) || (cleanId && t.description?.includes(cleanId))) return true;
+        return false;
+      };
+
       if (onDeleteInvoice) {
-        await onDeleteInvoice(inv.id);
+        await onDeleteInvoice(inv.id, inv.invoiceNumber);
       } else {
-        await DB.deleteInvoice(inv.id);
+        await DB.deleteInvoice(inv.id, inv.invoiceNumber);
         setInvoices((prev: Invoice[]) => (prev || []).filter(i => i.id !== inv.id));
-        setTransactions((prev: Transaction[]) => (prev || []).filter(t => (t as any).invoiceId !== inv.id && !t.description?.includes(inv.id) && !t.id.includes(inv.id)));
+        setTransactions((prev: Transaction[]) => (prev || []).filter(t => !isInvoiceTrx(t)));
       }
 
       // 2. Dismiss any modal that was targeting this invoice
@@ -491,8 +500,15 @@ export function InvoicesScreen({
     setInvoices(invoices.map(inv => inv.id === invoice.id ? updatedInv : inv));
 
     // 2. Remove financial effect from DB & state
-    await DB.deleteTransactionsByInvoiceId(invoice.id);
-    setTransactions(transactions.filter(t => !t.description?.includes(invoice.id) && (t as any).invoiceId !== invoice.id));
+    await DB.deleteTransactionsByInvoiceId(invoice.id, invoice.invoiceNumber);
+    const cancelCleanId = invoice.id.replace(/^INV-+/i, '').trim();
+    setTransactions((prev: Transaction[]) => (prev || []).filter(t => {
+      const rawInv = (t as any).invoiceId || (t as any).invoice_id;
+      if (rawInv && (rawInv === invoice.id || rawInv === invoice.invoiceNumber || rawInv.includes(cancelCleanId))) return false;
+      if (t.id.includes(invoice.id) || (invoice.invoiceNumber && t.id.includes(invoice.invoiceNumber)) || t.id.includes(cancelCleanId)) return false;
+      if (t.description?.includes(invoice.id) || (invoice.invoiceNumber && t.description?.includes(invoice.invoiceNumber)) || (cancelCleanId && t.description?.includes(cancelCleanId))) return false;
+      return true;
+    }));
 
     // 3. Revert cashback if it was used
     if (invoice.cashbackUsed && invoice.clientId) {

@@ -2119,17 +2119,42 @@ export default function App() {
     });
   };
 
-  const handleDeleteInvoice = useCallback(async (invoiceId: string) => {
+  const handleDeleteInvoice = useCallback(async (invoiceId: string, invoiceNumber?: string) => {
     if (!invoiceId) return;
+    const cleanId = invoiceId.replace(/^TRX-+/i, '').replace(/^INV-+/i, '').replace(/-\d+$/, '').trim();
+    const cleanNum = invoiceNumber ? invoiceNumber.replace(/^TRX-+/i, '').replace(/^INV-+/i, '').replace(/-\d+$/, '').trim() : '';
+
     deletedInvoiceIdsRef.current.add(invoiceId);
     DB.deletedInvoiceIds.add(invoiceId);
+    if (cleanId) {
+      deletedInvoiceIdsRef.current.add(cleanId);
+      DB.deletedInvoiceIds.add(cleanId);
+    }
+    if (invoiceNumber) {
+      deletedInvoiceIdsRef.current.add(invoiceNumber);
+      DB.deletedInvoiceIds.add(invoiceNumber);
+    }
+    if (cleanNum) {
+      deletedInvoiceIdsRef.current.add(cleanNum);
+      DB.deletedInvoiceIds.add(cleanNum);
+    }
+
+    const matchesInvoice = (t: any) => {
+      const rawInv = (t.invoiceId || t.invoice_id || '').trim();
+      const tId = (t.id || '').trim();
+      const desc = (t.description || '').trim();
+      if (rawInv && (rawInv === invoiceId || rawInv === invoiceNumber || (cleanId && rawInv.includes(cleanId)))) return true;
+      if (tId.includes(invoiceId) || (invoiceNumber && tId.includes(invoiceNumber)) || (cleanId && tId.includes(cleanId))) return true;
+      if (desc.includes(invoiceId) || (invoiceNumber && desc.includes(invoiceNumber)) || (cleanId && desc.includes(cleanId))) return true;
+      return false;
+    };
 
     // Immediately evict from React state (both invoices and associated transactions)
-    setInvoices(prev => (prev || []).filter(i => i.id !== invoiceId));
-    setTransactions(prev => (prev || []).filter(t => (t as any).invoiceId !== invoiceId && !t.description?.includes(invoiceId) && !t.id.includes(invoiceId)));
+    setInvoices(prev => (prev || []).filter(i => i.id !== invoiceId && (!cleanId || !i.id.includes(cleanId))));
+    setTransactions(prev => (prev || []).filter(t => !matchesInvoice(t)));
 
     try {
-      await DB.deleteInvoice(invoiceId);
+      await DB.deleteInvoice(invoiceId, invoiceNumber);
     } catch (e) {
       console.error('Error deleting invoice from DB:', e);
       throw e;
@@ -2140,11 +2165,29 @@ export default function App() {
   useEffect(() => {
     const handleInvoiceDeletedEvent = (e: any) => {
       const invId = e.detail?.invoiceId;
+      const invNum = e.detail?.invoiceNumber;
       if (invId) {
+        const cleanId = invId.replace(/^TRX-+/i, '').replace(/^INV-+/i, '').replace(/-\d+$/, '').trim();
         deletedInvoiceIdsRef.current.add(invId);
         DB.deletedInvoiceIds.add(invId);
-        setInvoices(prev => (prev || []).filter(i => i.id !== invId));
-        setTransactions(prev => (prev || []).filter(t => (t as any).invoiceId !== invId && !t.description?.includes(invId) && !t.id.includes(invId)));
+        if (cleanId) {
+          deletedInvoiceIdsRef.current.add(cleanId);
+          DB.deletedInvoiceIds.add(cleanId);
+        }
+        if (invNum) {
+          deletedInvoiceIdsRef.current.add(invNum);
+          DB.deletedInvoiceIds.add(invNum);
+        }
+        setInvoices(prev => (prev || []).filter(i => i.id !== invId && (!cleanId || !i.id.includes(cleanId))));
+        setTransactions(prev => (prev || []).filter(t => {
+          const rawInv = (t.invoiceId || t.invoice_id || '').trim();
+          const tId = (t.id || '').trim();
+          const desc = (t.description || '').trim();
+          if (rawInv && (rawInv === invId || rawInv === invNum || (cleanId && rawInv.includes(cleanId)))) return false;
+          if (tId.includes(invId) || (invNum && tId.includes(invNum)) || (cleanId && tId.includes(cleanId))) return false;
+          if (desc.includes(invId) || (invNum && desc.includes(invNum)) || (cleanId && desc.includes(cleanId))) return false;
+          return true;
+        }));
       }
     };
     window.addEventListener('smartcut:invoice-deleted', handleInvoiceDeletedEvent);

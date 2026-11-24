@@ -3761,16 +3761,22 @@ export const DB = {
   },
 
   // ---- حذف فاتورة ومعاملاتها المالية المرتبطة نهائياً من قاعدة البيانات ----
-  async deleteInvoice(invoiceId: string) {
+  async deleteInvoice(invoiceId: string, invoiceNumber?: string, salonId?: string) {
     if (!invoiceId) return false;
     this.deletedInvoiceIds.add(invoiceId);
+    const cleanId = invoiceId.replace(/^TRX-+/i, '').replace(/^INV-+/i, '').replace(/-\d+$/, '').trim();
+    if (cleanId) this.deletedInvoiceIds.add(cleanId);
+    if (invoiceNumber) this.deletedInvoiceIds.add(invoiceNumber);
 
     // Notify any active listener/component immediately
     if (typeof window !== 'undefined') {
       try {
-        window.dispatchEvent(new CustomEvent('smartcut:invoice-deleted', { detail: { invoiceId } }));
+        window.dispatchEvent(new CustomEvent('smartcut:invoice-deleted', { detail: { invoiceId, invoiceNumber } }));
       } catch (e) {}
     }
+
+    // 1. Immediately clean up all linked transactions in localStorage and DB
+    await this.deleteTransactionsByInvoiceId(invoiceId, invoiceNumber, salonId);
 
     const client = sb();
 
@@ -3897,15 +3903,73 @@ export const DB = {
     }
   },
 
-  async deleteTransactionsByInvoiceId(invoiceId: string) {
+  async deleteTransactionsByInvoiceId(invoiceId: string, invoiceNumber?: string, salonId?: string) {
+    if (!invoiceId) return false;
     const client = sb();
-    if (!client || !invoiceId) return false;
+    const cleanId = invoiceId.replace(/^TRX-+/i, '').replace(/^INV-+/i, '').replace(/-\d+$/, '').trim();
+    const cleanNum = invoiceNumber ? invoiceNumber.replace(/^TRX-+/i, '').replace(/^INV-+/i, '').replace(/-\d+$/, '').trim() : '';
+
+    // Register in deleted IDs
+    this.deletedInvoiceIds.add(invoiceId);
+    if (cleanId) this.deletedInvoiceIds.add(cleanId);
+    if (invoiceNumber) this.deletedInvoiceIds.add(invoiceNumber);
+    if (cleanNum) this.deletedInvoiceIds.add(cleanNum);
+
+    // 1. Immediately clean up local cache of transactions in localStorage
     try {
+      const stored = localStorage.getItem('smartcut_transactions');
+      if (stored) {
+        const list = JSON.parse(stored);
+        if (Array.isArray(list)) {
+          const next = list.filter((t: any) => {
+            const rawInv = t.invoiceId || t.invoice_id;
+            const tDesc = t.description || '';
+            const tId = t.id || '';
+            if (rawInv && (rawInv === invoiceId || rawInv === invoiceNumber || (cleanId && rawInv.includes(cleanId)))) return false;
+            if (tId.includes(invoiceId) || (invoiceNumber && tId.includes(invoiceNumber)) || (cleanId && tId.includes(cleanId))) return false;
+            if (tDesc.includes(invoiceId) || (invoiceNumber && tDesc.includes(invoiceNumber)) || (cleanId && tDesc.includes(cleanId))) return false;
+            return true;
+          });
+          localStorage.setItem('smartcut_transactions', JSON.stringify(next));
+        }
+      }
+    } catch (e) {}
+
+    if (!client) return true;
+
+    try {
+      // Direct delete by invoice_id
       await client.from('transactions').delete().eq('invoice_id', invoiceId);
+      if (invoiceNumber && invoiceNumber !== invoiceId) {
+        await client.from('transactions').delete().eq('invoice_id', invoiceNumber);
+      }
+      if (cleanId && cleanId !== invoiceId) {
+        await client.from('transactions').delete().eq('invoice_id', cleanId);
+      }
+
+      // Delete by description
       await client.from('transactions').delete().ilike('description', `%${invoiceId}%`);
+      if (invoiceNumber && invoiceNumber !== invoiceId) {
+        await client.from('transactions').delete().ilike('description', `%${invoiceNumber}%`);
+      }
+      if (cleanId && cleanId.length >= 4) {
+        await client.from('transactions').delete().ilike('description', `%${cleanId}%`);
+      }
+
+      // Delete by id
       await client.from('transactions').delete().ilike('id', `%${invoiceId}%`);
+      if (invoiceNumber && invoiceNumber !== invoiceId) {
+        await client.from('transactions').delete().ilike('id', `%${invoiceNumber}%`);
+      }
+      if (cleanId && cleanId.length >= 4) {
+        await client.from('transactions').delete().ilike('id', `%${cleanId}%`);
+      }
+
       return true;
-    } catch (e) { return false; }
+    } catch (e) {
+      console.warn('deleteTransactionsByInvoiceId exception:', e);
+      return false;
+    }
   },
 
   // ---- حذف حجز نهائياً من قاعدة البيانات مع تصفير كامل أثره المالي (Cascade / Financial Voiding) ----

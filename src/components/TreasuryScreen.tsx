@@ -415,6 +415,24 @@ export function TreasuryScreen({
 
       if (seenTrxKeys.has(t.id)) return;
 
+      // استبعاد أي حركة تنتمي لفاتورة محذوفة نهائياً أو ملغاة
+      const rawInvId = (t as any).invoiceId || (t as any).invoice_id || (typeof t.id === 'string' ? t.id.match(/INV-[A-Z0-9-]+/i)?.[0] : null) || (typeof t.description === 'string' ? t.description.match(/INV-[A-Z0-9-]+/i)?.[0] : null);
+      const cleanInvId = getCleanInvoiceId(rawInvId);
+      if (rawInvId) {
+        if (DB.deletedInvoiceIds.has(rawInvId) || (cleanInvId && DB.deletedInvoiceIds.has(cleanInvId))) {
+          return;
+        }
+        if ((t.category === 'sales' || t.category === 'مبيعات') && Array.isArray(invoices)) {
+          const matchedInv = invoices.find(i => i.id === rawInvId || (cleanInvId && getCleanInvoiceId(i.id) === cleanInvId) || i.invoiceNumber === rawInvId);
+          if (matchedInv && (matchedInv.status === 'cancelled' || (matchedInv as any).is_cancelled)) {
+            return;
+          }
+          if (invoices.length > 0 && !matchedInv) {
+            return;
+          }
+        }
+      }
+
       // إذا كانت هناك حركة مصطنعة بادئة بـ TRX-INV-INV- وتوجد حركة أصلية مسجلة لنفس الفاتورة، نتجاهل المصطنعة تماماً
       if (typeof t.id === 'string' && t.id.startsWith('TRX-INV-INV-')) {
         const invMatch = t.id.match(/INV-[A-Z0-9-]+/i)?.[0];
@@ -430,8 +448,6 @@ export function TreasuryScreen({
       }
 
       // منع تكرار نفس الحركة (بنفس الـ ID أو نفس الفاتورة/الحجز وطريقة الدفع والمبلغ والتاريخ)
-      const rawInvId = (t as any).invoiceId || (t as any).invoice_id || (typeof t.id === 'string' ? t.id.match(/INV-[A-Z0-9-]+/i)?.[0] : null) || (typeof t.description === 'string' ? t.description.match(/INV-[A-Z0-9-]+/i)?.[0] : null);
-      const cleanInvId = getCleanInvoiceId(rawInvId);
       const bId = (t as any).bookingId || (t as any).booking_id || (typeof t.id === 'string' ? t.id.match(/BOK-[A-Z0-9-]+/i)?.[0] : null);
 
       let dedupKey = t.id;
