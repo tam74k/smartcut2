@@ -408,24 +408,23 @@ export function ClosingReportReceipt({
       return assigned === treasuryId;
     });
 
-    // Track invoice IDs that already exist as transactions in tTrx to avoid double counting
-    const isInvoiceInTrx = (invId: string) => {
-      if (!invId) return false;
-      const cleanInvId = invId.replace(/^TRX-+/i, '').replace(/^INV-+/i, '').replace(/-\d+$/, '').trim().toUpperCase();
-      return tTrx.some(t => {
-        if (!t || t.type !== 'in') return false;
-        const tInvId = (t as any).invoiceId || (t as any).invoice_id;
-        if (tInvId && (tInvId === invId || (cleanInvId && tInvId.replace(/^INV-+/i, '').toUpperCase() === cleanInvId))) return true;
-        if (typeof t.id === 'string' && (t.id.includes(invId) || (cleanInvId && t.id.toUpperCase().includes(cleanInvId)))) return true;
-        if (typeof t.description === 'string' && (t.description.includes(invId) || (cleanInvId && t.description.toUpperCase().includes(cleanInvId)))) return true;
-        return false;
+    // فحص ما إذا كانت الحركة المالية تتبع فاتورة
+    const isTrxLinkedToInvoice = (t: any): boolean => {
+      const tInvId = (t as any).invoiceId || (t as any).invoice_id;
+      if (tInvId) return true;
+      const cleanId = String(t.id || '').toUpperCase();
+      if (cleanId.startsWith('TRX-INV-') || cleanId.includes('INV-')) return true;
+      const desc = String(t.description || '').toUpperCase();
+      if (desc.includes('فاتورة') || desc.includes('INV-')) return true;
+      return effectiveInvoices.some(inv => {
+        const cleanInvId = inv.id.replace(/^INV-+/i, '').trim().toUpperCase();
+        return cleanInvId ? (cleanId.includes(cleanInvId) || desc.includes(cleanInvId)) : false;
       });
     };
 
-    // Sum sales for this treasury from shift invoices not yet recorded as individual transactions
-    const invoiceSales = isMain ? 0 : effectiveInvoices.reduce((sum, inv) => {
+    // مبيعات الفواتير المحصلة في هذه الخزينة من واقع فواتير الوردية الفعلية
+    const rawInvoiceSales = isMain ? 0 : effectiveInvoices.reduce((sum, inv) => {
       if (inv.status === 'cancelled') return sum;
-      if (isInvoiceInTrx(inv.id)) return sum;
       if (inv.status === 'deferred' && (!inv.paid || Number(inv.paid) === 0) && (!inv.paymentMethods || inv.paymentMethods.length === 0)) {
         return sum;
       }
@@ -444,13 +443,30 @@ export function ClosingReportReceipt({
       return sum + matched.reduce((s: number, m: any) => s + (Number(m.amount) || 0), 0);
     }, 0);
 
+    // أي حركات فواتير مسجلة في tTrx إذا كانت الفاتورة نفسها غير محملة في effectiveInvoices
+    const unlistedInvoiceTrxSales = isMain ? 0 : tTrx.filter(t => 
+      t.type === 'in' && 
+      !isBookingDepositTrx(t) && 
+      isTrxLinkedToInvoice(t) && 
+      !effectiveInvoices.some(inv => {
+        const cleanInvId = inv.id.replace(/^INV-+/i, '').trim().toUpperCase();
+        const tInvId = (t as any).invoiceId || (t as any).invoice_id;
+        return (tInvId && tInvId === inv.id) || (cleanInvId && String(t.id || '').toUpperCase().includes(cleanInvId));
+      })
+    ).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+
+    const invoiceSales = rawInvoiceSales + unlistedInvoiceTrxSales;
+
     const recordedBookingDepositsList = isMain ? [] : tTrx.filter(t => isBookingDepositTrx(t));
     const bookingDeposits = recordedBookingDepositsList.reduce((s, x) => s + (Number(x.amount) || 0), 0);
 
-    const otherSales = isMain ? 0 : tTrx.filter(t => t.type === 'in' && !isBookingDepositTrx(t) && (
-      t.category === 'sales' || 
-      t.category === 'مبيعات'
-    )).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    // مبيعات أخرى: فقط الحركات النقدية الإيرادية التي لا تتبع أي فاتورة وليست عربون حجز
+    const otherSales = isMain ? 0 : tTrx.filter(t => 
+      t.type === 'in' && 
+      !isBookingDepositTrx(t) && 
+      !isTrxLinkedToInvoice(t) && 
+      (t.category === 'sales' || t.category === 'مبيعات')
+    ).reduce((s, x) => s + (Number(x.amount) || 0), 0);
 
     const recordedSales = bookingDeposits + otherSales;
     const income = invoiceSales + recordedSales;
