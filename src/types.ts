@@ -860,6 +860,8 @@ export interface AdvancePayment {
   paymentMethod?: string;
   notes?: string;
   shiftDate?: string;
+  shiftId?: string;
+  shiftCode?: string;
   paymentDate?: string;
 }
 

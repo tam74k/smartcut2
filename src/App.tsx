@@ -535,16 +535,15 @@ export default function App() {
     if (activeShift.hasDefinitiveProof && (activeShift.isClosed || activeShift.status === 'closed')) {
       setBranchShifts(prev => {
         const current = prev[branchId] || prev['b-main'];
-        if (!current?.isOpen) return prev;
-        if (current.shiftId && activeShift.id && current.shiftId !== activeShift.id) {
+        if (current?.isOpen && current.shiftId && activeShift.id && current.shiftId !== activeShift.id) {
           return prev;
         }
         const closedShiftObj = {
           isOpen: false,
-          date: activeShift.shiftDate || current.date,
+          date: activeShift.shiftDate || current?.date || '',
           initialCash: 0,
           shiftId: activeShift.id,
-          shiftCode: activeShift.shiftCode || current.shiftCode,
+          shiftCode: activeShift.shiftCode || current?.shiftCode,
           lastClosedAt: activeShift.closedAt || new Date().toISOString()
         };
         const updated: any = {
@@ -557,7 +556,7 @@ export default function App() {
         if (activeShift.branch_id && activeShift.branch_id !== branchId) {
           updated[activeShift.branch_id] = closedShiftObj;
         }
-        if (branchId === 'b-main' || prev['b-main']?.shiftId === activeShift.id) {
+        if (branchId === 'b-main' || !prev['b-main'] || prev['b-main']?.shiftId === activeShift.id) {
           updated['b-main'] = closedShiftObj;
         }
         try { localStorage.setItem('smartcut_work_shifts_state', JSON.stringify(updated)); } catch (e) {}
@@ -4993,6 +4992,7 @@ export default function App() {
                       settings={settings}
                       reportTitle="تقرير الوردية المفتوحة حالياً"
                       shiftCode={activeShiftCode}
+                      shiftId={activeShiftId}
                       transactions={shiftTrxs}
                       invoices={shiftInvs}
                       dateLabel={shiftData.date}

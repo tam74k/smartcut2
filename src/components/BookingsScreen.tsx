@@ -1523,6 +1523,7 @@ export function BookingsScreen({
     const isShiftMatch = Boolean(effectiveShiftDate && advDate === effectiveShiftDate);
     const advShiftDate = isShiftMatch ? effectiveShiftDate : advDate;
     const advShiftId = isShiftMatch ? ((shiftData as any)?.shiftId || (shiftData as any)?.id) : undefined;
+    const advShiftCode = isShiftMatch ? ((shiftData as any)?.shiftCode || (shiftData as any)?.shift_code) : undefined;
 
     const newAdv: AdvancePayment = {
       id: 'ADV-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
@@ -1532,6 +1533,7 @@ export function BookingsScreen({
       date: advDate,
       shiftDate: advShiftDate,
       shiftId: advShiftId,
+      shiftCode: advShiftCode,
       paymentMethod: quickAdvMethod || 'cash',
       notes: quickAdvNotes.trim() || undefined
     };
@@ -1582,6 +1584,7 @@ export function BookingsScreen({
         treasury: tId,
         bookingId: updatedBooking.id,
         shiftId: advShiftId,
+        shiftCode: advShiftCode,
         createdBy: currentUser?.name || 'الكاشير',
         userId: currentUser?.id,
         userName: currentUser?.name || 'الكاشير',
@@ -1849,6 +1852,7 @@ export function BookingsScreen({
       const isShiftMatch = Boolean(effectiveShiftDate && advDatePart === effectiveShiftDate);
       const transShiftDate = isShiftMatch ? effectiveShiftDate : advDatePart;
       const transShiftId = isShiftMatch ? ((shiftData as any).shiftId || (shiftData as any).id) : undefined;
+      const transShiftCode = isShiftMatch ? ((shiftData as any)?.shiftCode || (shiftData as any)?.shift_code) : undefined;
       const advTrxId = existing ? existing.id : `TRX-ADV-${adv.id}`;
 
       if (existing) {
@@ -1860,6 +1864,7 @@ export function BookingsScreen({
           date: existing.date || transDate,
           shiftDate: existing.shiftDate || transShiftDate,
           shiftId: existing.shiftId || transShiftId,
+          shiftCode: existing.shiftCode || transShiftCode,
           description: `دفعة مقدمة / عربون لحجز #${booking.bookingCode || booking.id} - العميل: ${booking.clientName}${adv.notes ? ' • ' + adv.notes : ''}`,
           branchId: bBranchId,
           salonId: settings.salonId,
@@ -1879,6 +1884,7 @@ export function BookingsScreen({
           treasury: adv.treasuryId,
           bookingId: booking.id,
           shiftId: transShiftId,
+          shiftCode: transShiftCode,
           createdBy: currentUser?.name || 'الكاشير',
           userId: currentUser?.id,
           userName: currentUser?.name || 'الكاشير',

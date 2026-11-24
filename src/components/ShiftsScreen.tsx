@@ -345,6 +345,7 @@ export function ShiftsScreen({
       const desc = String(t.description || '');
       if (code && (tCode === code || tShiftId === code || desc.includes(code))) return true;
       if (shiftId && (tCode === shiftId || tShiftId === shiftId)) return true;
+      if (shiftDate && (t.shiftDate === shiftDate || (t.date && t.date.startsWith(shiftDate))) && !tCode && !tShiftId) return true;
       if (!code && !shiftId && shiftDate) {
         return t.shiftDate === shiftDate || t.date?.startsWith(shiftDate);
       }
@@ -1220,7 +1221,10 @@ export function ShiftsScreen({
                     const tShiftId = (t.shiftId || (t as any).shift_id || '').trim();
                     const desc = String(t.description || '');
                     if (targetCode && (tCode === targetCode || tShiftId === targetCode || desc.includes(targetCode))) return true;
-                    if (targetId && (tCode === targetId || tShiftId === targetId)) return true;
+                    if (targetId && (tCode === targetId || tShiftId === targetId || desc.includes(targetId))) return true;
+                    if (targetDate && (t.shiftDate === targetDate || (t.date && t.date.startsWith(targetDate))) && !tCode && !tShiftId) {
+                      return true;
+                    }
                     if (!targetCode && !targetId) return t.shiftDate === targetDate || t.date?.startsWith(targetDate);
                     return false;
                   });
@@ -1230,6 +1234,7 @@ export function ShiftsScreen({
                       settings={settings}
                       reportTitle={`تقرير إغلاق الوردية (${selectedShiftForDetails.shiftCode || ''})`}
                       shiftCode={selectedShiftForDetails.shiftCode}
+                      shiftId={targetId}
                       transactions={shiftTrxs}
                       invoices={shiftInvs}
                       dateLabel={selectedShiftForDetails.shiftDate}

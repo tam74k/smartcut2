@@ -86,6 +86,7 @@ export function ClosingReportReceipt({
   initialCash = 0,
   userName,
   shiftCode,
+  shiftId,
   fingerprintLogs = [],
   employees = [],
   attendanceSummary
@@ -98,6 +99,7 @@ export function ClosingReportReceipt({
   initialCash?: number,
   userName?: string,
   shiftCode?: string,
+  shiftId?: string,
   fingerprintLogs?: FingerprintLog[],
   employees?: Employee[],
   attendanceSummary?: {
@@ -291,30 +293,63 @@ export function ClosingReportReceipt({
   };
 
   const targetShiftCode = (shiftCode || '').trim();
+  const targetShiftId = (shiftId || '').trim();
 
-  // تصفية الفواتير بدقة طبقاً لكود الوردية الحالي وليس التاريخ (إذا تم تمرير كود الوردية)
+  // تصفية الفواتير بدقة طبقاً لكود أو معرف الوردية الحالي
   const effectiveInvoices = useMemo(() => {
-    if (!targetShiftCode) return invoices.filter(inv => inv.status !== 'cancelled');
+    if (!targetShiftCode && !targetShiftId) return invoices.filter(inv => inv.status !== 'cancelled');
     const matched = invoices.filter(inv => {
       if (inv.status === 'cancelled') return false;
       const invCode = (inv.shiftCode || (inv as any).shift_code || '').trim();
       const invShiftId = (inv.shiftId || (inv as any).shift_id || '').trim();
-      return invCode === targetShiftCode || invShiftId === targetShiftCode;
+      if (targetShiftCode && (invCode === targetShiftCode || invShiftId === targetShiftCode)) return true;
+      if (targetShiftId && (invCode === targetShiftId || invShiftId === targetShiftId)) return true;
+      return false;
     });
     return matched.length > 0 ? matched : invoices.filter(inv => inv.status !== 'cancelled');
-  }, [invoices, targetShiftCode]);
+  }, [invoices, targetShiftCode, targetShiftId]);
 
-  // تصفية الحركات المالية بدقة طبقاً لكود الوردية الحالي مع استبعاد حركات الإغلاق والتصفير نهائياً
+  // التحقق مما إذا كانت الحركة المالية عبارة عن دفعة مقدمة / عربون حجز
+  const isBookingDepositTrx = (t: any): boolean => {
+    if (t.type !== 'in') return false;
+    const cat = String(t.category || '').toLowerCase();
+    const desc = String(t.description || '').toLowerCase();
+    return (
+      cat === 'مقدم حجز' || 
+      cat === 'booking_advance' || 
+      cat === 'advance' ||
+      cat === 'deposit' ||
+      cat.includes('عربون') ||
+      cat.includes('مقدم') ||
+      Boolean(t.bookingId || (t as any).booking_id) ||
+      desc.includes('عربون') ||
+      desc.includes('دفعة مقدمة') ||
+      desc.includes('مقدم حجز')
+    );
+  };
+
+  // تصفية الحركات المالية بدقة طبقاً لكود أو معرف الوردية الحالي مع استبعاد حركات الإغلاق والتصفير نهائياً
   const effectiveTransactions = useMemo(() => {
     return transactions.filter(t => {
       if (isZeroingOrClosingTrx(t)) return false;
-      if (!targetShiftCode) return true;
+      if (!targetShiftCode && !targetShiftId) return true;
       const tCode = (t.shiftCode || (t as any).shift_code || '').trim();
       const tShiftId = (t.shiftId || (t as any).shift_id || '').trim();
       const desc = String(t.description || '');
-      return tCode === targetShiftCode || tShiftId === targetShiftCode || desc.includes(targetShiftCode);
+
+      // 1. مطابقة كود الوردية أو معرف الوردية
+      if (targetShiftCode && (tCode === targetShiftCode || tShiftId === targetShiftCode || desc.includes(targetShiftCode))) return true;
+      if (targetShiftId && (tCode === targetShiftId || tShiftId === targetShiftId || desc.includes(targetShiftId))) return true;
+
+      // 2. مطابقة التاريخ إذا كانت الحركة تخص تاريخ الوردية ولا تخص وردية أخرى
+      const tShiftDate = t.shiftDate || (t as any).shift_date || (t.date ? t.date.split('T')[0] : '');
+      if (dateLabel && tShiftDate === dateLabel && !tCode && !tShiftId) {
+        return true;
+      }
+
+      return false;
     });
-  }, [transactions, targetShiftCode]);
+  }, [transactions, targetShiftCode, targetShiftId, dateLabel]);
 
   // قائمة ديناميكية شاملة لجميع الخزائن وطرق الدفع المستخدمة لضمان عدم إغفال أي طريقة دفع (فيزا، انستاباي، فودافون كاش، الخ)
   const allReportTreasuries = useMemo(() => {
@@ -409,13 +444,15 @@ export function ClosingReportReceipt({
       return sum + matched.reduce((s: number, m: any) => s + (Number(m.amount) || 0), 0);
     }, 0);
 
-    const recordedSales = isMain ? 0 : tTrx.filter(t => t.type === 'in' && (
+    const recordedBookingDepositsList = isMain ? [] : tTrx.filter(t => isBookingDepositTrx(t));
+    const bookingDeposits = recordedBookingDepositsList.reduce((s, x) => s + (Number(x.amount) || 0), 0);
+
+    const otherSales = isMain ? 0 : tTrx.filter(t => t.type === 'in' && !isBookingDepositTrx(t) && (
       t.category === 'sales' || 
-      t.category === 'booking_advance' || 
-      t.category === 'مبيعات' || 
-      t.category === 'مقدم حجز'
+      t.category === 'مبيعات'
     )).reduce((s, x) => s + (Number(x.amount) || 0), 0);
 
+    const recordedSales = bookingDeposits + otherSales;
     const income = invoiceSales + recordedSales;
 
     // البقشيش المصروف
@@ -447,12 +484,38 @@ export function ClosingReportReceipt({
       : (income + transfersIn) - (expenses + tips + commissions + transfersOut);
 
     return {
-      income, expenses, commissions, tips, transfersIn, transfersOut, initialCashSum, net, isMain,
+      income, invoiceSales, bookingDeposits, bookingDepositsList: recordedBookingDepositsList, otherSales,
+      expenses, commissions, tips, transfersIn, transfersOut, initialCashSum, net, isMain,
       incomingTransfersList, outgoingTransfersList
     };
   };
 
-  // إجمالي المبيعات المحصلة فعلياً بكافة طرق الدفع والخزائن في هذه الوردية
+  // إجمالي مبيعات الفواتير المحصلة فعلياً بكافة الخزائن
+  const totalCollectedInvoiceSales = useMemo(() => {
+    const mainTreasury = resolveMainTreasury(settings.treasuries);
+    return allReportTreasuries.reduce((acc, t) => {
+      const isMain = t.isMain || t.id === 'main' || t.id === mainTreasury.id;
+      if (isMain) return acc;
+      return acc + getStats(t.id).invoiceSales;
+    }, 0);
+  }, [allReportTreasuries, effectiveTransactions, effectiveInvoices]);
+
+  // إجمالي مبالغ عربين ومقدمات الحجز المحصلة فعلياً بكافة الخزائن في هذه الوردية
+  const totalCollectedBookingDeposits = useMemo(() => {
+    const mainTreasury = resolveMainTreasury(settings.treasuries);
+    return allReportTreasuries.reduce((acc, t) => {
+      const isMain = t.isMain || t.id === 'main' || t.id === mainTreasury.id;
+      if (isMain) return acc;
+      return acc + getStats(t.id).bookingDeposits;
+    }, 0);
+  }, [allReportTreasuries, effectiveTransactions, effectiveInvoices]);
+
+  // قائمة جميع حركات عربين الحجز في الوردية
+  const allBookingDepositsList = useMemo(() => {
+    return effectiveTransactions.filter(isBookingDepositTrx);
+  }, [effectiveTransactions]);
+
+  // إجمالي الدخل المحصل الفعلي بالخزائن في هذه الوردية (فواتير + عربين حجز + مبيعات أخرى)
   const totalCollectedSales = useMemo(() => {
     const mainTreasury = resolveMainTreasury(settings.treasuries);
     return allReportTreasuries.reduce((acc, t) => {
@@ -492,7 +555,7 @@ export function ClosingReportReceipt({
   }, [effectiveInvoices]);
 
   // إجمالي مبيعات الفواتير شاملاً كافة طرق الدفع + الآجل + الكاش باك
-  const totalGrossSales = totalCollectedSales + totalDeferredSales + totalCashbackUsed;
+  const totalGrossSales = totalCollectedInvoiceSales + totalDeferredSales + totalCashbackUsed;
 
   const invoiceCount = effectiveInvoices.length;
 
@@ -520,6 +583,12 @@ export function ClosingReportReceipt({
           <span>إجمالي مبيعات الفواتير:</span>
           <span className="text-black font-mono">{totalGrossSales.toFixed(2)}</span>
         </div>
+        {totalCollectedBookingDeposits > 0 && (
+          <div className="flex justify-between border-b border-black border-solid pb-1 mb-1 font-bold text-black bg-slate-50 px-1 rounded">
+            <span>عربين ومقدمات الحجز ({allBookingDepositsList.length}):</span>
+            <span className="text-black font-mono">+{totalCollectedBookingDeposits.toFixed(2)}</span>
+          </div>
+        )}
         {totalCashbackUsed > 0 && (
           <div className="flex justify-between border-b border-black border-solid pb-1 mb-1 font-bold text-black">
             <span>مسدد من الكاش باك:</span>
@@ -533,7 +602,7 @@ export function ClosingReportReceipt({
           </div>
         )}
         <div className="flex justify-between border-b border-black border-solid pb-1 mb-1 font-bold text-black">
-          <span>المحصل الفعلي بالخزائن (كاش / شبكة):</span>
+          <span>المحصل الفعلي بالخزائن (فواتير + عربين):</span>
           <span className="text-black font-mono">{totalCollectedSales.toFixed(2)}</span>
         </div>
         {initialCash > 0 && (
@@ -690,10 +759,36 @@ export function ClosingReportReceipt({
                   </div>
                 ))}
 
-                {stats.income > 0 && (
+                {stats.invoiceSales > 0 && (
                   <div className="flex justify-between text-black font-semibold">
-                    <span>الدخل من المبيعات:</span>
-                    <span className="text-black font-mono">+{stats.income.toFixed(2)}</span>
+                    <span>مبيعات الفواتير:</span>
+                    <span className="text-black font-mono">+{stats.invoiceSales.toFixed(2)}</span>
+                  </div>
+                )}
+                {stats.bookingDeposits > 0 && (
+                  <div className="border border-black/40 rounded p-1.5 bg-slate-50/80 my-1">
+                    <div className="flex justify-between text-black font-bold">
+                      <span>مقدمات وعربون الحجز ({stats.bookingDepositsList.length}):</span>
+                      <span className="text-black font-mono">+{stats.bookingDeposits.toFixed(2)}</span>
+                    </div>
+                    {stats.bookingDepositsList.map((tx: any, idx: number) => (
+                      <div key={tx.id || idx} className="flex justify-between text-[11px] text-slate-700 pr-2 pt-0.5 border-t border-black/10 mt-0.5">
+                        <span className="truncate max-w-[200px]" title={tx.description}>{tx.description || 'عربون حجز'}</span>
+                        <span className="font-mono font-bold shrink-0">+{Number(tx.amount || 0).toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {stats.otherSales > 0 && (
+                  <div className="flex justify-between text-black font-semibold">
+                    <span>مبيعات أخرى:</span>
+                    <span className="text-black font-mono">+{stats.otherSales.toFixed(2)}</span>
+                  </div>
+                )}
+                {stats.income > 0 && stats.invoiceSales > 0 && stats.bookingDeposits > 0 && (
+                  <div className="flex justify-between text-black font-bold border-t border-dotted border-black/30 pt-1">
+                    <span>إجمالي الدخل المحصل:</span>
+                    <span className="text-black font-mono font-black">+{stats.income.toFixed(2)}</span>
                   </div>
                 )}
                 {stats.expenses > 0 && (
