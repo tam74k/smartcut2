@@ -76,8 +76,9 @@ export function formatDateTime(dtStr?: string): string {
   }
 }
 
-// Calculate discount amount for a single service line
-export { calculateServiceLineDiscount, calculateServiceLinePrice, calculateBookingTotals } from '../utils/bookingTotals';
+// Booking calculation utilities
+import { calculateServiceLineDiscount, calculateServiceLinePrice, calculateBookingTotals } from '../utils/bookingTotals';
+export { calculateServiceLineDiscount, calculateServiceLinePrice, calculateBookingTotals };
 
 export function getBookingAdvances(b: any): AdvancePayment[] {
   if (!b) return [];
