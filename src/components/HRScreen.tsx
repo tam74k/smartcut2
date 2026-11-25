@@ -2338,8 +2338,8 @@ export function HRScreen({
       if (DB.saveTransaction) {
         await DB.saveTransaction(trx);
       }
-      if (setTransactions && transactions) {
-        setTransactions([...transactions, trx]);
+      if (setTransactions) {
+        setTransactions((prev: Transaction[]) => [trx, ...(prev || []).filter(t => t.id !== trx.id)]);
       }
 
       // 2. Add EmployeeFinancialRecord to target employee
@@ -2718,8 +2718,8 @@ export function HRScreen({
       if (DB.saveTransaction) {
         await DB.saveTransaction(trx, settings.salonId);
       }
-      if (setTransactions && transactions) {
-        setTransactions([...transactions, trx]);
+      if (setTransactions) {
+        setTransactions((prev: Transaction[]) => [trx, ...(prev || []).filter(t => t.id !== trx.id)]);
       }
 
       // 2. Financial record in employee
@@ -3259,8 +3259,9 @@ export function HRScreen({
         await DB.saveTransaction(trx);
       }
     }
-    if (setTransactions && transactions) {
-      setTransactions([...transactions, ...newTrxs]);
+    if (setTransactions) {
+      const newIds = new Set(newTrxs.map(t => t.id));
+      setTransactions((prev: Transaction[]) => [...newTrxs, ...(prev || []).filter(t => !newIds.has(t.id))]);
     }
     setEmployees(updatedEmployees);
     if (DB.saveEmployee) {

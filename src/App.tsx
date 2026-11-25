@@ -2249,17 +2249,23 @@ export default function App() {
     if (checkReadOnlyAndWarn()) return;
     setTransactions(prev => {
       const currentSalonTrxs = prev.filter(t => !(t as any).salonId || (t as any).salonId === currentSalonId || (t as any).salon_id === currentSalonId);
-      const next = typeof updater === 'function' ? updater(currentSalonTrxs) : updater;
+      const isFunction = typeof updater === 'function';
+      const next = isFunction ? updater(currentSalonTrxs) : updater;
       const tagged = next.map(t => dbTransactionToApp({ ...t, salonId: (t as any).salonId || currentSalonId, branchId: (t as any).branchId || activeBranchId }));
-      const seenIds = new Set<string>();
-      const dedupedTagged = tagged.filter(t => {
-        if (!t.id) return false;
-        if (seenIds.has(t.id)) return false;
-        seenIds.add(t.id);
-        return true;
+      
+      const nextMap = new Map<string, Transaction>();
+      tagged.forEach(t => {
+        if (t.id) nextMap.set(t.id, t);
       });
+
+      // If updater was an array from a branch-specific view, retain all existing transactions of other branches or not in nextMap
+      const retainedOld = isFunction
+        ? []
+        : currentSalonTrxs.filter(t => !nextMap.has(t.id));
+
+      const dedupedTagged = Array.from(nextMap.values());
       const other = prev.filter(t => (t as any).salonId && (t as any).salonId !== currentSalonId && (t as any).salon_id !== currentSalonId);
-      const res = [...other, ...dedupedTagged];
+      const res = [...other, ...dedupedTagged, ...retainedOld];
 
       // Save only new or modified transactions instead of re-saving the entire database
       const prevMap = new Map(currentSalonTrxs.map(t => [t.id, t]));
@@ -2271,13 +2277,6 @@ export default function App() {
 
       if (changed.length > 0) {
         DB.saveTransactions(changed, currentSalonId);
-      }
-
-      // Delete from DB any transactions removed by updater
-      const nextIds = new Set(tagged.map(t => t.id));
-      const removedIds = currentSalonTrxs.filter(t => !nextIds.has(t.id)).map(t => t.id);
-      if (removedIds.length > 0) {
-        DB.deleteTransactionsByIds(removedIds);
       }
 
       return res;

@@ -396,8 +396,9 @@ export function getNowLocalDateTimeStr(baseDate?: string): string {
 }
 
 /**
- * Ensures any date/time string is normalized to local wall-clock timestamp "YYYY-MM-DDTHH:mm:ss" (without Z or UTC offsets).
- * If the input is in UTC (ends with 'Z' or '+00:00'), it is converted to salon/local wall-clock time.
+ * Ensures any date/time string is normalized to strict local wall-clock timestamp "YYYY-MM-DDTHH:mm:ss".
+ * Extracts the exact literal recorded digits without allowing database UTC serialization (+00:00 or Z)
+ * to shift or add unwanted hours (+2:00) to financial records.
  */
 export function ensureLocalDateTimeStr(dateRaw?: string | Date | null, timeZone?: string): string {
   if (!dateRaw) return getNowLocalDateTimeStr();
@@ -412,27 +413,33 @@ export function ensureLocalDateTimeStr(dateRaw?: string | Date | null, timeZone?
   const trimmed = String(dateRaw).trim();
   if (!trimmed) return getNowLocalDateTimeStr();
 
-  const hasTzOffset = trimmed.endsWith('Z') || /[+-]\d{2}(?::?\d{2})?$/.test(trimmed);
-  if (hasTzOffset) {
-    const d = new Date(trimmed);
-    if (!isNaN(d.getTime())) {
-      const local = utcToSalonLocal(d, effectiveTz);
-      return `${local.dateStr}T${local.timeWithSeconds}`;
-    }
+  // Extract exact literal wall-clock digits: YYYY-MM-DD and HH:mm:ss
+  const match = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})[T\s](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/);
+  if (match) {
+    const y = match[1];
+    const m = match[2].padStart(2, '0');
+    const d = match[3].padStart(2, '0');
+    const h = match[4].padStart(2, '0');
+    const min = match[5].padStart(2, '0');
+    const sec = match[6] ? match[6].padStart(2, '0') : '00';
+    return `${y}-${m}-${d}T${h}:${min}:${sec}`;
   }
 
-  // Already a local naive timestamp (e.g. "2026-11-25T14:30:00" or "2026-11-25 14:30:00")
-  if (trimmed.includes(' ') && !trimmed.includes('T')) {
-    return trimmed.replace(' ', 'T');
+  // Date only: YYYY-MM-DD
+  const dateOnly = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (dateOnly) {
+    const y = dateOnly[1];
+    const m = dateOnly[2].padStart(2, '0');
+    const d = dateOnly[3].padStart(2, '0');
+    return `${y}-${m}-${d}T00:00:00`;
   }
+
   return trimmed;
 }
 
 /**
  * Format invoice, transaction, advance, expense and receipt date & time.
- * Strictly formats according to the salon/local wall-clock time.
- * If the string has an explicit UTC/timezone indicator, converts it to salon timezone.
- * If naive, directly extracts exact wall-clock digits.
+ * Strictly formats according to the exact local wall-clock digits without timezone shifting.
  */
 export function formatInvoiceDateTimeDisplay(
   dateRaw?: string | Date | null,
@@ -441,50 +448,35 @@ export function formatInvoiceDateTimeDisplay(
   timeZone?: string
 ): string {
   if (!dateRaw) return '-';
-  const effectiveTz = timeZone || getSalonTimezone();
 
   if (dateRaw instanceof Date) {
     if (isNaN(dateRaw.getTime())) return '-';
+    const effectiveTz = timeZone || getSalonTimezone();
     return formatDateTimeWithTz(dateRaw, effectiveTz, locale, options);
   }
 
-  if (typeof dateRaw === 'string') {
-    const trimmed = dateRaw.trim();
-    if (!trimmed) return '-';
+  const cleanIso = ensureLocalDateTimeStr(dateRaw, timeZone);
+  const match = cleanIso.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
+  if (match) {
+    const year = match[1];
+    const month = match[2];
+    const day = match[3];
+    const hourNum = parseInt(match[4], 10);
+    const minute = match[5];
+    const second = match[6];
 
-    // 1. If explicit UTC indicator (Z or +00:00), convert to target salon timezone
-    const hasTzOffset = trimmed.endsWith('Z') || /[+-]\d{2}(?::?\d{2})?$/.test(trimmed);
-    if (hasTzOffset) {
-      const d = new Date(trimmed);
-      if (!isNaN(d.getTime())) {
-        return formatDateTimeWithTz(d, effectiveTz, locale, options);
-      }
+    const isPm = hourNum >= 12;
+    const hour12 = hourNum === 0 ? 12 : (hourNum > 12 ? hourNum - 12 : hourNum);
+    const period = isPm ? 'م' : 'ص';
+
+    if (!options) {
+      return `${year}/${month}/${day}, ${hour12}:${minute}:${second} ${period}`;
     }
-
-    // 2. Extract exact literal digits: YYYY-MM-DD or YYYY/MM/DD followed by T or space, then HH:mm(:ss)?
-    const match = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})[T\s](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/);
-    if (match) {
-      const year = match[1];
-      const month = match[2].padStart(2, '0');
-      const day = match[3].padStart(2, '0');
-      const hourNum = parseInt(match[4], 10);
-      const minute = match[5].padStart(2, '0');
-      const second = match[6] ? match[6].padStart(2, '0') : '00';
-
-      const isPm = hourNum >= 12;
-      const hour12 = hourNum === 0 ? 12 : (hourNum > 12 ? hourNum - 12 : hourNum);
-      const period = isPm ? 'م' : 'ص';
-
-      if (!options) {
-        return `${year}/${month}/${day}, ${hour12}:${minute}:${second} ${period}`;
-      }
-      const naiveDate = new Date(parseInt(year, 10), parseInt(month, 10) - 1, parseInt(day, 10), hourNum, parseInt(minute, 10), parseInt(second, 10));
-      return naiveDate.toLocaleString(locale, options);
-    }
+    const naiveDate = new Date(parseInt(year, 10), parseInt(month, 10) - 1, parseInt(day, 10), hourNum, parseInt(minute, 10), parseInt(second, 10));
+    return naiveDate.toLocaleString(locale, options);
   }
 
-  const d = parseDbDateTime(dateRaw);
-  return d.toLocaleString(locale, options);
+  return cleanIso;
 }
 
 /**

@@ -311,7 +311,7 @@ export function ExpensesScreen({
           userName: actorName,
           userId: currentUser?.id
         } as any;
-        setTransactions([newTrx, ...transactions]);
+        setTransactions((prev: Transaction[]) => [newTrx, ...(prev || []).filter(t => t.id !== newTrx.id)]);
         await DB.saveTransaction(newTrx, settings.salonId);
 
         // طباعة إيصال المصروف الحراري فوراً عند الإضافة (مشابه لإيصال السلفة)

@@ -202,7 +202,7 @@ export function TreasuryScreen({
         await DB.saveTransaction(trxOut, settings.salonId);
         await DB.saveTransaction(trxIn, settings.salonId);
 
-        setTransactions((prev: Transaction[]) => [...prev, trxOut, trxIn]);
+        setTransactions((prev: Transaction[]) => [trxOut, trxIn, ...(prev || []).filter(t => t.id !== trxOut.id && t.id !== trxIn.id)]);
       } else {
         const selectedTreasuryObj = settings.treasuries.find(t => t.id === treasuryId);
         const trx: Transaction = {
@@ -228,7 +228,7 @@ export function TreasuryScreen({
         } as any;
 
         await DB.saveTransaction(trx, settings.salonId);
-        setTransactions((prev: Transaction[]) => [...prev, trx]);
+        setTransactions((prev: Transaction[]) => [trx, ...(prev || []).filter(t => t.id !== trx.id)]);
       }
       
       setModalType(null);

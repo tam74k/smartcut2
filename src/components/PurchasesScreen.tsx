@@ -304,7 +304,7 @@ export function PurchasesScreen({
         userName: actorName,
         userId: activeUser?.id
       };
-      setTransactions([...transactions, purTrx]);
+      setTransactions((prev: Transaction[]) => [purTrx, ...(prev || []).filter(t => t.id !== purTrx.id)]);
       DB.saveTransaction(purTrx, settings.salonId);
     }
 

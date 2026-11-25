@@ -2386,7 +2386,7 @@ export const DB = {
       salon_id: validSalonId, 
       branch_id: validBranchId,
       branch_code: (t as any).branchCode || null,
-      date: t.date || new Date().toISOString(), 
+      date: ensureLocalDateTimeStr(t.date), 
       type: t.type || 'in', 
       amount: Number(t.amount || 0), 
       category: t.category || 'sales',
@@ -3651,7 +3651,10 @@ export const DB = {
   async deleteSupplier(id: string) { return DB.remove('suppliers', id); },
 
   // ---- فواتير الشراء ----
-  async fetchPurchaseInvoices(salonId?: string) { return DB.fetchAll<any>('purchase_invoices', undefined, salonId); },
+  async fetchPurchaseInvoices(salonId?: string) {
+    const list = await DB.fetchAll<any>('purchase_invoices', undefined, salonId);
+    return (list || []).map(p => ({ ...p, date: ensureLocalDateTimeStr(p.date || p.created_at) }));
+  },
   async savePurchaseInvoice(p: any, salonId?: string) {
     const client = sb(); if (!client || !p) return null;
     const validSalonId = toSalonUUID(salonId || p.salonId || getSalonId());
@@ -3661,7 +3664,7 @@ export const DB = {
       salon_id: validSalonId,
       branch_id: validBranchId,
       supplier_id: p.supplierId || null,
-      date: p.date,
+      date: ensureLocalDateTimeStr(p.date),
       subtotal: p.subtotal ?? 0,
       discount: p.discount ?? 0,
       total: p.total ?? 0,
@@ -3690,14 +3693,17 @@ export const DB = {
   async deletePurchaseInvoice(id: string) { return DB.remove('purchase_invoices', id); },
 
   // ---- مدفوعات الموردين ----
-  async fetchSupplierPayments(salonId?: string) { return DB.fetchAll<any>('supplier_payments', undefined, salonId); },
+  async fetchSupplierPayments(salonId?: string) {
+    const list = await DB.fetchAll<any>('supplier_payments', undefined, salonId);
+    return (list || []).map(sp => ({ ...sp, date: ensureLocalDateTimeStr(sp.date || sp.created_at) }));
+  },
   async saveSupplierPayment(sp: any, salonId?: string) {
     const client = sb(); if (!client || !sp) return null;
     const validSalonId = toSalonUUID(salonId || sp.salonId || getSalonId());
     const validBranchId = toBranchUUID(sp.branchId);
     const { error } = await client.from('supplier_payments').upsert({
       id: sp.id, salon_id: validSalonId, branch_id: validBranchId,
-      supplier_id: sp.supplierId, date: sp.date, amount: sp.amount ?? 0,
+      supplier_id: sp.supplierId, date: ensureLocalDateTimeStr(sp.date), amount: sp.amount ?? 0,
       treasury_id: sp.treasuryId, notes: sp.notes || null
     }, { onConflict: 'id' });
     if (error) { console.error('DB.saveSupplierPayment error:', error.message); return null; }
