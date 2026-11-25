@@ -430,7 +430,7 @@ export function EmployeesScreen({
 
       const record: EmployeeFinancialRecord = {
         id: 'FIN-' + Math.random().toString(36).substring(2, 9),
-        date: quickActionForm.date,
+        date: `${effectiveActionDate}T${currentTimeStr}`,
         type: 'advance',
         amount: quickActionForm.amount,
         treasuryId: quickActionForm.treasuryId,
@@ -967,7 +967,7 @@ export function EmployeesScreen({
 
         const record: EmployeeFinancialRecord = {
           id: 'FIN-' + Math.random().toString(36).substring(2, 9),
-          date: advanceForm.date,
+          date: `${effectiveAdvanceDate}T${currentTimeStr}`,
           type: 'advance',
           amount: advanceForm.amount,
           treasuryId: advanceForm.treasuryId,

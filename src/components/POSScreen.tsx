@@ -1989,7 +1989,14 @@ export function POSScreen({
       finalInvoiceId = 'INV-' + Math.random().toString(36).substr(2, 9).toUpperCase();
       currentCheckoutInvoiceIdRef.current = finalInvoiceId;
     }
-    const finalInvoiceDate = editingInvoice ? editingInvoice.date : (effectiveIsShiftOpen ? (effectiveShiftDate + 'T' + new Date().toTimeString().split(' ')[0]) : new Date().toISOString());
+    const checkoutNow = new Date();
+    const chkHours = String(checkoutNow.getHours()).padStart(2, '0');
+    const chkMinutes = String(checkoutNow.getMinutes()).padStart(2, '0');
+    const chkSeconds = String(checkoutNow.getSeconds()).padStart(2, '0');
+    const chkTimeStr = `${chkHours}:${chkMinutes}:${chkSeconds}`;
+    const chkTodayStr = `${checkoutNow.getFullYear()}-${String(checkoutNow.getMonth() + 1).padStart(2, '0')}-${String(checkoutNow.getDate()).padStart(2, '0')}`;
+    const effectiveBaseDate = (effectiveIsShiftOpen && effectiveShiftDate) ? effectiveShiftDate : chkTodayStr;
+    const finalInvoiceDate = editingInvoice ? editingInvoice.date : `${effectiveBaseDate}T${chkTimeStr}`;
 
     const initialInv: Invoice = {
       id: finalInvoiceId,
@@ -2022,7 +2029,7 @@ export function POSScreen({
         : ((paymentMode === 'deferred' || paymentMode === 'partial') ? (deferredNotes || undefined) : undefined),
       paymentsHistory: paymentMode === 'partial' ? [{
         id: 'PMT-' + Date.now(),
-        date: effectiveIsShiftOpen ? (effectiveShiftDate + 'T' + new Date().toTimeString().split(' ')[0]) : new Date().toISOString(),
+        date: `${effectiveBaseDate}T${chkTimeStr}`,
         amount: actualPaid,
         paymentMethod: settings.treasuries.find(t => t.id === singleTreasury)?.name || singleTreasury || 'كاش',
         treasuryId: singleTreasury || 'cash',

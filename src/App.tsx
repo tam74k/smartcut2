@@ -681,7 +681,12 @@ export default function App() {
       });
     }
     if (data.transactions) {
-      setTransactions(data.transactions.map(dbTransactionToApp));
+      const mapped = data.transactions.map(dbTransactionToApp);
+      const mappedIdSet = new Set(mapped.map((t: any) => t.id));
+      setTransactions(prev => {
+        const localRecent = (prev || []).filter(t => !mappedIdSet.has(t.id));
+        return localRecent.length > 0 ? [...localRecent, ...mapped] : mapped;
+      });
     }
     if (data.bookings) {
       setBookings(data.bookings.map(dbBookingToApp));
@@ -3350,10 +3355,10 @@ export default function App() {
           await DB.deleteTransactionsByIds(oldTrxIds);
         }
         await DB.deleteTransactionsByInvoiceId(invoiceWithBranch.id);
-        const saved = await DB.saveInvoice(invoiceWithBranch, settings.salonId);
-        if (saved && newTrxs.length > 0) {
-          await DB.saveTransactions(newTrxs, settings.salonId);
-        }
+        await Promise.all([
+          DB.saveInvoice(invoiceWithBranch, settings.salonId),
+          newTrxs.length > 0 ? DB.saveTransactions(newTrxs, settings.salonId) : Promise.resolve(true)
+        ]);
       } catch (err) {
         console.error('DB checkout persistence error:', err);
       }

@@ -7,7 +7,7 @@ import { DB } from '../services/db';
 import { getBookingAdvances } from './BookingsScreen';
 import { printThermalFinancialVoucher } from './ThermalFinancialVoucher';
 import { resolveMainTreasury, isMatchingTreasury, getTransactionTargetTreasuryId, getTreasuryLabel } from '../utils/treasury';
-import { formatInvoiceDateTimeDisplay } from '../utils/timezone';
+import { formatInvoiceDateTimeDisplay, parseDbDateTime } from '../utils/timezone';
 import { isLegacyCorruptZeroingTrx } from './ClosingReportReceipt';
 
 const isStaffAdvance = (t: any): boolean => {
@@ -427,9 +427,6 @@ export function TreasuryScreen({
           if (matchedInv && (matchedInv.status === 'cancelled' || (matchedInv as any).is_cancelled)) {
             return;
           }
-          if (invoices.length > 0 && !matchedInv) {
-            return;
-          }
         }
       }
 
@@ -713,12 +710,12 @@ export function TreasuryScreen({
 
     let filtered = [...unifiedTransactions];
     if (fromDate) {
-      filtered = filtered.filter(t => new Date(t.date) >= new Date(fromDate));
+      filtered = filtered.filter(t => parseDbDateTime(t.date) >= parseDbDateTime(fromDate));
     }
     if (toDate) {
-      const to = new Date(toDate);
+      const to = parseDbDateTime(toDate);
       to.setHours(23, 59, 59, 999);
-      filtered = filtered.filter(t => new Date(t.date) <= to);
+      filtered = filtered.filter(t => parseDbDateTime(t.date) <= to);
     }
     if (categoryFilter === 'custody') {
       filtered = filtered.filter(t => t.category === 'عهدة افتتاحية' || t.category === 'initial_cash');
@@ -735,7 +732,7 @@ export function TreasuryScreen({
     } else if (categoryFilter === 'deposit_withdraw') {
       filtered = filtered.filter(t => t.category === 'deposit' || t.category === 'withdrawal' || t.category === 'partner_deposit' || t.category === 'partner_withdrawal');
     }
-    return filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    return filtered.sort((a, b) => parseDbDateTime(b.date).getTime() - parseDbDateTime(a.date).getTime());
   }, [unifiedTransactions, fromDate, toDate, categoryFilter]);
 
   const totalBranchBalance = useMemo(() => {

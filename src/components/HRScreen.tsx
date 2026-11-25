@@ -23,6 +23,7 @@ import { getActiveShiftDate, getEffectiveDateTime, getEffectiveDateOnly } from '
 import { AuthService } from '../services/auth';
 import { BiometricImportModal } from './BiometricImportModal';
 import { EvolutionApiService } from '../services/evolutionApiService';
+import { parseDbDateTime, getTodayLocalDateStr } from '../utils/timezone';
 
 // Helper to reliably match date strings (YYYY-MM-DD) across ISO strings, space-delimited timestamps, and local timezone
 const isSameDay = (ts?: string, targetDateStr?: string): boolean => {
@@ -404,7 +405,7 @@ export function HRScreen({
   }>({
     empId: '',
     amount: '',
-    date: new Date().toISOString().split('T')[0],
+    date: getTodayLocalDateStr(),
     treasuryId: '',
     note: ''
   });
@@ -2447,7 +2448,7 @@ export function HRScreen({
       });
     });
 
-    return list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    return list.sort((a, b) => parseDbDateTime(b.date).getTime() - parseDbDateTime(a.date).getTime());
   }, [employees, transactions, settings.treasuries]);
 
   // Filtered advances
@@ -2722,7 +2723,7 @@ export function HRScreen({
       // 2. Financial record in employee
       const finRecord: EmployeeFinancialRecord = {
         id: advId,
-        date: newAdvanceForm.date,
+        date: `${effectiveAdvanceDate}T${currentTimeStr}`,
         type: 'advance',
         amount: amt,
         treasuryId: newAdvanceForm.treasuryId,
@@ -2767,7 +2768,7 @@ export function HRScreen({
       setNewAdvanceForm({
         empId: activeEmployees[0]?.id || '',
         amount: '',
-        date: new Date().toISOString().split('T')[0],
+        date: getTodayLocalDateStr(),
         treasuryId: settings.treasuries[0]?.id || '',
         note: ''
       });

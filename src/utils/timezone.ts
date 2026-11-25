@@ -356,6 +356,17 @@ function formatDateTimeWithTz(
 }
 
 /**
+ * Returns today's local date in user's current environment as "YYYY-MM-DD".
+ */
+export function getTodayLocalDateStr(): string {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
  * Format invoice, transaction, advance, expense and receipt date & time.
  * Strictly extracts the exact wall-clock values recorded by the user,
  * bypassing PostgreSQL timestamptz UTC offset conversions (+00:00).
