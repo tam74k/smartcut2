@@ -380,6 +380,7 @@ export function DeferredInvoicesScreen({
 
     setIsSubmittingSettle(true);
     try {
+      const nowIso = new Date().toISOString();
       const nowLocalDateTime = getNowLocalDateTimeStr();
       const treasuryObj = availableTreasuries.find(t => t.id === settleTreasury);
       const treasuryName = treasuryObj?.name || settleTreasury;

@@ -258,6 +258,7 @@ export function ExpensesScreen({
 
     const effectiveDay = transactionDate || (shiftData && shiftData.isOpen && shiftData.date ? shiftData.date : getTodayLocalDateStr());
     const tDate = `${effectiveDay}T${getCurrentLocalTimeStr()}`;
+    const nowIso = new Date().toISOString();
     const isMatchingCurrentShift = Boolean(shiftData && shiftData.isOpen && shiftData.date === effectiveDay);
     const assignedShiftDate = isMatchingCurrentShift ? shiftData.date : effectiveDay;
     const assignedShiftId = isMatchingCurrentShift ? ((shiftData as any).shiftId || (shiftData as any).id) : undefined;

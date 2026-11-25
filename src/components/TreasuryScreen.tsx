@@ -136,6 +136,7 @@ export function TreasuryScreen({
 
     const effectiveDay = transactionDate || (shiftData && shiftData.isOpen && shiftData.date ? shiftData.date : getTodayLocalDateStr());
     const date = `${effectiveDay}T${getCurrentLocalTimeStr()}`;
+    const nowIso = new Date().toISOString();
     const isMatchingCurrentShift = Boolean(shiftData && shiftData.isOpen && shiftData.date === effectiveDay);
     const sDate = isMatchingCurrentShift ? shiftData.date : effectiveDay;
     const sId = isMatchingCurrentShift ? ((shiftData as any).shiftId || (shiftData as any).id) : undefined;
