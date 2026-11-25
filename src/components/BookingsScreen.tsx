@@ -97,6 +97,122 @@ export function getBookingTotalAdvances(b: any): number {
   return getBookingAdvances(b).reduce((sum, a) => sum + (Number(a.amount) || 0), 0);
 }
 
+// Helper to format booking creation date & time (تاريخ ووقت إنشاء الحجز) - 12-hour format
+export function formatBookingCreatedAt(booking: Booking): string {
+  if (!booking) return '';
+  const createdRaw = booking.createdAt || (booking as any).created_at;
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  if (createdRaw) {
+    const d = new Date(createdRaw);
+    if (!isNaN(d.getTime())) {
+      const datePart = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+      const hours = d.getHours();
+      const minutes = pad(d.getMinutes());
+      const ampm = hours >= 12 ? 'م' : 'ص';
+      const formattedHours = pad(hours % 12 || 12);
+      return `${datePart} - ${formattedHours}:${minutes} ${ampm}`;
+    }
+  }
+  const d = new Date();
+  const datePart = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const hours = d.getHours();
+  const minutes = pad(d.getMinutes());
+  const ampm = hours >= 12 ? 'م' : 'ص';
+  const formattedHours = pad(hours % 12 || 12);
+  return `${datePart} - ${formattedHours}:${minutes} ${ampm}`;
+}
+
+// Helper to normalize Arabic text for search matching
+export function normalizeArabicText(text?: string | null): string {
+  if (!text) return '';
+  return String(text)
+    .toLowerCase()
+    .replace(/[أإآٱ]/g, 'ا')
+    .replace(/ة/g, 'ه')
+    .replace(/ى/g, 'ي')
+    .replace(/[\u064B-\u065F\u0670]/g, '') // remove tashkeel/diacritics
+    .replace(/ـ/g, '') // remove tatweel
+    .replace(/[^\w\s\u0600-\u06FF]/g, ' ')
+    .trim();
+}
+
+// Helper to normalize phone numbers (convert Arabic-Indic numerals to ASCII, extract digits)
+export function normalizePhone(phone?: string | null): string {
+  if (!phone) return '';
+  const arabicIndicMap: Record<string, string> = {
+    '٠': '0', '١': '1', '٢': '2', '٣': '3', '٤': '4',
+    '٥': '5', '٦': '6', '٧': '7', '٨': '8', '٩': '9'
+  };
+  const asciiPhone = String(phone).replace(/[٠-٩]/g, d => arabicIndicMap[d] || d);
+  return asciiPhone.replace(/\D/g, '');
+}
+
+// Comprehensive search matcher for bookings across table, calendar and postponed views
+export function matchesBookingSearch(b: Booking, searchQuery: string): boolean {
+  if (!searchQuery || !searchQuery.trim()) return true;
+  const rawQ = searchQuery.trim();
+  const normQ = normalizeArabicText(rawQ);
+  const qTokens = normQ.split(/\s+/).filter(Boolean);
+  const qDigits = normalizePhone(rawQ);
+
+  // Normalize services safely
+  const rawServices = b.services || (b as any).items;
+  let servicesList: any[] = [];
+  if (Array.isArray(rawServices)) {
+    servicesList = rawServices;
+  } else if (typeof rawServices === 'string') {
+    try {
+      const parsed = JSON.parse(rawServices);
+      if (Array.isArray(parsed)) servicesList = parsed;
+    } catch {}
+  }
+
+  // Safe client name
+  const normClient = normalizeArabicText(b.clientName);
+
+  // Safe phone
+  const rawPhone = String(b.phone || '');
+  const normPhoneDigits = normalizePhone(rawPhone);
+
+  // Safe services names & technician names
+  const servicesText = servicesList
+    .map(s => `${s?.serviceName || s?.name || ''} ${s?.technicianName || s?.employeeName || ''}`)
+    .join(' ');
+  const normServices = normalizeArabicText(servicesText);
+
+  // Safe artist
+  const normArtist = normalizeArabicText(b.artistName);
+
+  // Safe IDs, codes, barcode, queue
+  const idText = `${b.id || ''} ${b.bookingCode || ''} ${(b as any).booking_code || ''} ${b.queueNumber ? `b-${b.queueNumber}` : ''} ${b.queueNumber || ''}`.toLowerCase();
+
+  // Safe notes
+  const notesText = normalizeArabicText(`${b.notes || ''} ${b.clientNotes || ''}`);
+
+  // Creation date formatting
+  const formattedCreation = formatBookingCreatedAt(b);
+  const rawCreated = String(b.createdAt || (b as any).created_at || '');
+  const creationText = `${rawCreated} ${formattedCreation}`.toLowerCase();
+
+  // Booking scheduled date
+  const scheduledDateText = String(b.date || '').toLowerCase();
+
+  // Composite searchable text
+  const compositeSearchableText = `${normClient} ${normServices} ${normArtist} ${idText} ${notesText} ${creationText} ${scheduledDateText}`;
+
+  // Phone matching: matches if user typed at least 3 digits
+  const phoneMatches = qDigits.length >= 3 && (normPhoneDigits.includes(qDigits) || rawPhone.includes(qDigits));
+
+  // Multi-token match: every word typed by user must appear in composite text
+  const allTokensMatch = qTokens.length > 0 && qTokens.every(tok => compositeSearchableText.includes(tok));
+
+  // Raw fallback matching (in case of exact alphanumeric codes)
+  const rawLowerQ = rawQ.toLowerCase();
+  const rawMatch = idText.includes(rawLowerQ) || rawPhone.includes(rawLowerQ);
+
+  return Boolean(phoneMatches || allTokensMatch || rawMatch);
+}
+
 export function BookingsScreen({ 
   settings, 
   setSettings,
@@ -1027,44 +1143,9 @@ export function BookingsScreen({
         }
       }
 
-      // Search query (name, phone, service, artist, booking ID / barcode, or creation date)
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        const matchesClient = b.clientName?.toLowerCase().includes(q);
-        const matchesPhone = b.phone?.includes(q);
-        const matchesService = b.services?.some(s => s.serviceName?.toLowerCase().includes(q));
-        const matchesArtist = b.artistName?.toLowerCase().includes(q);
-        const matchesId = b.id?.toLowerCase().includes(q)
-          || (b.bookingCode && b.bookingCode.toLowerCase().includes(q))
-          || (b.queueNumber && `b-${b.queueNumber}`.toLowerCase().includes(q));
-
-        // المطابقة في تاريخ إنشاء الحجز
-        const rawCreated = b.createdAt || (b as any).created_at;
-        let matchesCreatedAt = false;
-        if (rawCreated) {
-          const createdIso = String(rawCreated).toLowerCase();
-          let localYMD = '';
-          let localDMY = '';
-          try {
-            const d = new Date(rawCreated);
-            if (!isNaN(d.getTime())) {
-              const pad = (n: number) => n.toString().padStart(2, '0');
-              const y = d.getFullYear().toString();
-              const m = pad(d.getMonth() + 1);
-              const day = pad(d.getDate());
-              localYMD = `${y}-${m}-${day}`;
-              localDMY = `${day}-${m}-${y}`;
-            }
-          } catch {
-            // ignore
-          }
-          matchesCreatedAt = createdIso.includes(q) 
-            || localYMD.includes(q) 
-            || localDMY.includes(q)
-            || formatBookingCreatedAt(b).toLowerCase().includes(q);
-        }
-
-        if (!matchesClient && !matchesPhone && !matchesService && !matchesId && !matchesArtist && !matchesCreatedAt) return false;
+      // Search query (comprehensive multi-token, normalized Arabic, phone, service, artist, code, date)
+      if (searchQuery.trim() && !matchesBookingSearch(b, searchQuery)) {
+        return false;
       }
 
       return true;
@@ -1132,16 +1213,8 @@ export function BookingsScreen({
       }
 
       // Search query
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const matchesClient = b.clientName?.toLowerCase().includes(q);
-        const matchesPhone = b.phone?.includes(q);
-        const matchesService = b.services?.some(s => s.serviceName?.toLowerCase().includes(q));
-        const matchesArtist = b.artistName?.toLowerCase().includes(q);
-        const matchesId = b.id?.toLowerCase().includes(q)
-          || (b.bookingCode && b.bookingCode.toLowerCase().includes(q))
-          || (b.queueNumber && `b-${b.queueNumber}`.toLowerCase().includes(q));
-        if (!matchesClient && !matchesPhone && !matchesService && !matchesId && !matchesArtist) return false;
+      if (searchQuery.trim() && !matchesBookingSearch(b, searchQuery)) {
+        return false;
       }
 
       return true;
@@ -1176,16 +1249,8 @@ export function BookingsScreen({
       }
 
       // Search query
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const matchesClient = b.clientName?.toLowerCase().includes(q);
-        const matchesPhone = b.phone?.includes(q);
-        const matchesService = b.services?.some(s => s.serviceName?.toLowerCase().includes(q));
-        const matchesArtist = b.artistName?.toLowerCase().includes(q);
-        const matchesId = b.id?.toLowerCase().includes(q)
-          || (b.bookingCode && b.bookingCode.toLowerCase().includes(q))
-          || (b.queueNumber && `b-${b.queueNumber}`.toLowerCase().includes(q));
-        if (!matchesClient && !matchesPhone && !matchesService && !matchesId && !matchesArtist) return false;
+      if (searchQuery.trim() && !matchesBookingSearch(b, searchQuery)) {
+        return false;
       }
 
       return true;
@@ -2200,29 +2265,7 @@ export function BookingsScreen({
     }
   };
 
-  // Helper to format booking creation date & time (تاريخ ووقت إنشاء الحجز) - 12-hour format
-  const formatBookingCreatedAt = (booking: Booking): string => {
-    const createdRaw = booking.createdAt || (booking as any).created_at;
-    const pad = (n: number) => n.toString().padStart(2, '0');
-    if (createdRaw) {
-      const d = new Date(createdRaw);
-      if (!isNaN(d.getTime())) {
-        const datePart = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-        const hours = d.getHours();
-        const minutes = pad(d.getMinutes());
-        const ampm = hours >= 12 ? 'م' : 'ص';
-        const formattedHours = pad(hours % 12 || 12);
-        return `${datePart} - ${formattedHours}:${minutes} ${ampm}`;
-      }
-    }
-    const d = new Date();
-    const datePart = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-    const hours = d.getHours();
-    const minutes = pad(d.getMinutes());
-    const ampm = hours >= 12 ? 'م' : 'ص';
-    const formattedHours = pad(hours % 12 || 12);
-    return `${datePart} - ${formattedHours}:${minutes} ${ampm}`;
-  };
+
 
   // Helper to get clean salon/branch address without "جمهورية مصر العربية"
   const getBookingCleanAddress = (booking: Booking): string => {
