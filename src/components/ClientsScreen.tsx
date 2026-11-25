@@ -4,7 +4,7 @@ import {
   Search, UserPlus, Gift, MessageSquare, Receipt, Eye, X, 
   Calendar, Phone, DollarSign, FileText, Printer, CheckCircle2, 
   Clock, Sparkles, User, Scissors, Coffee, Crown, ShieldCheck, 
-  HeartHandshake, Sliders, ChevronLeft, Save, Droplets, Zap,
+  HeartHandshake, Sliders, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Save, Droplets, Zap,
   TrendingUp, Award, HelpCircle, FileSpreadsheet,
   Mail, Edit3, Globe, AlertTriangle, Check, BarChart3, Gem, Star
 } from 'lucide-react';
@@ -138,6 +138,42 @@ export function ClientsScreen({
       (c.notes && c.notes.toLowerCase().includes(term))
     );
   }, [clients, searchTerm, clientTypeFilter]);
+
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(20);
+
+  // Reset pagination on search, filter, or page size change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, clientTypeFilter, pageSize]);
+
+  const totalClients = filteredClients.length;
+  const effectivePageSize = pageSize === 0 ? (totalClients || 1) : pageSize;
+  const totalPages = Math.max(1, Math.ceil(totalClients / effectivePageSize));
+  const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
+
+  const paginatedClients = useMemo(() => {
+    if (pageSize === 0) return filteredClients;
+    const start = (safeCurrentPage - 1) * pageSize;
+    return filteredClients.slice(start, start + pageSize);
+  }, [filteredClients, safeCurrentPage, pageSize]);
+
+  const getPageNumbers = () => {
+    if (totalPages <= 7) {
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+    const pages: (number | string)[] = [1];
+    if (safeCurrentPage > 3) pages.push('...');
+    const start = Math.max(2, safeCurrentPage - 1);
+    const end = Math.min(totalPages - 1, safeCurrentPage + 1);
+    for (let i = start; i <= end; i++) {
+      pages.push(i);
+    }
+    if (safeCurrentPage < totalPages - 2) pages.push('...');
+    pages.push(totalPages);
+    return pages;
+  };
 
   // Helper to get client's invoices across all branches
   const getClientInvoices = (client: Client) => {
@@ -376,7 +412,7 @@ export function ClientsScreen({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredClients.map((client) => {
+              {paginatedClients.map((client) => {
                 const clientInvs = getClientInvoices(client);
                 const totalSpend = getClientTotalSpend(client);
                 const clientTier = getClientTier(client, invoices, settings.tierSettings);
@@ -504,6 +540,111 @@ export function ClientsScreen({
             </tbody>
           </table>
         </div>
+
+        {/* Full Pagination Controls Bar */}
+        {totalClients > 0 && (
+          <div className="border-t border-slate-200 bg-slate-50/90 px-4 sm:px-6 py-3.5 flex flex-col sm:flex-row justify-between items-center gap-3 text-xs font-bold text-slate-700">
+            {/* Page Size Selector & Count */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span>عرض</span>
+              <select
+                value={pageSize}
+                onChange={e => {
+                  setPageSize(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className="bg-white border border-slate-300 rounded-lg px-2.5 py-1 outline-none font-bold text-slate-800 shadow-2xs cursor-pointer focus:border-indigo-600"
+              >
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={30}>30</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+                <option value={0}>عرض الكل</option>
+              </select>
+              <span>عميل لكل صفحة</span>
+              <span className="text-slate-300 mx-1">|</span>
+              <span className="font-extrabold text-slate-900">
+                {pageSize === 0 
+                  ? `عرض جميع العملاء (${totalClients})` 
+                  : `عرض ${((safeCurrentPage - 1) * (pageSize || totalClients)) + 1} - ${Math.min(safeCurrentPage * (pageSize || totalClients), totalClients)} من إجمالي ${totalClients} عميل`}
+              </span>
+            </div>
+
+            {/* Pagination Buttons & Page Numbers */}
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  disabled={safeCurrentPage <= 1}
+                  onClick={() => setCurrentPage(1)}
+                  className="p-1.5 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors shadow-2xs"
+                  title="الصفحة الأولى"
+                >
+                  <ChevronsRight size={15} />
+                </button>
+                <button
+                  type="button"
+                  disabled={safeCurrentPage <= 1}
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  className="px-2.5 py-1 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors shadow-2xs flex items-center gap-1"
+                  title="الصفحة السابقة"
+                >
+                  <ChevronRight size={15} />
+                  <span className="hidden sm:inline text-xs">السابق</span>
+                </button>
+
+                {/* Page numbers */}
+                <div className="flex items-center gap-1 mx-1">
+                  {getPageNumbers().map((p, idx) => {
+                    if (p === '...') {
+                      return (
+                        <span key={`ellipsis-${idx}`} className="px-1.5 text-slate-400 font-bold">
+                          ...
+                        </span>
+                      );
+                    }
+                    const isCurrent = p === safeCurrentPage;
+                    return (
+                      <button
+                        key={`page-${p}`}
+                        type="button"
+                        onClick={() => setCurrentPage(Number(p))}
+                        className={`min-w-[30px] h-7 px-1.5 rounded-lg text-xs font-mono font-black transition-all cursor-pointer ${
+                          isCurrent
+                            ? 'bg-indigo-600 text-white shadow-xs'
+                            : 'bg-white text-slate-800 hover:bg-slate-100 border border-slate-300'
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <button
+                  type="button"
+                  disabled={safeCurrentPage >= totalPages}
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  className="px-2.5 py-1 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors shadow-2xs flex items-center gap-1"
+                  title="الصفحة التالية"
+                >
+                  <span className="hidden sm:inline text-xs">التالي</span>
+                  <ChevronLeft size={15} />
+                </button>
+                <button
+                  type="button"
+                  disabled={safeCurrentPage >= totalPages}
+                  onClick={() => setCurrentPage(totalPages)}
+                  className="p-1.5 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors shadow-2xs"
+                  title="الصفحة الأخيرة"
+                >
+                  <ChevronsLeft size={15} />
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ========================================================================= */}
