@@ -169,20 +169,52 @@ export function AccountingPnLSection({
       (emp.financialRecords || []).forEach((rec: any) => {
         const d = (rec.date || '').split('T')[0];
         if (d >= fromDate && d <= toDate) {
-          if (rec.type === 'salary') totalSalaries += Number(rec.amount) || 0;
-          else if (rec.type === 'advance') totalAdvances += Number(rec.amount) || 0;
+          const isSalRec = rec.type === 'salary' || (rec.type === 'advance' && (rec.id?.startsWith('FIN-SAL-') || rec.note?.includes('مسير رواتب') || rec.note?.includes('تم استلام صافي الراتب')));
+          const isAdvRec = (rec.type === 'advance' || rec.type === 'hr_advance' || rec.type === 'staff_advance') && !isSalRec;
+          if (isSalRec) totalSalaries += Number(rec.amount) || 0;
+          else if (isAdvRec) totalAdvances += Number(rec.amount) || 0;
         }
       });
     });
 
+    const isAdvTrx = (t: any) => {
+      if (t.type === 'in') return false;
+      const cat = (t.category || '').toLowerCase();
+      const expCat = ((t as any).expenseCategory || (t as any).expense_category || '').toLowerCase();
+      const desc = (t.description || '').toLowerCase();
+      return cat === 'staff_advance' || cat === 'hr_advance' || cat === 'advance' || cat.includes('سلف') || expCat.includes('سلف') || desc.includes('سلفة') || desc.includes('سلف');
+    };
+
+    const isSalTrx = (t: any) => {
+      if (t.type === 'in') return false;
+      if (isAdvTrx(t)) return false;
+      const cat = (t.category || '').toLowerCase();
+      const expCat = ((t as any).expenseCategory || (t as any).expense_category || '').toLowerCase();
+      const desc = (t.description || '').toLowerCase();
+      const id = String(t.id || '');
+      return (
+        id.startsWith('TRX-SAL-') ||
+        cat === 'salaries' ||
+        cat === 'salary' ||
+        cat === 'رواتب' ||
+        cat === 'راتب' ||
+        cat.includes('رواتب') ||
+        expCat.includes('رواتب') ||
+        expCat.includes('راتب') ||
+        desc.includes('صرف راتب') ||
+        desc.includes('مسير رواتب') ||
+        desc.includes('صافي الراتب')
+      );
+    };
+
     if (totalSalaries === 0) {
       totalSalaries = periodTransactions
-        .filter(t => (t.category || '').includes('راتب') || (t.description || '').includes('راتب'))
+        .filter(isSalTrx)
         .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
     }
     if (totalAdvances === 0) {
       totalAdvances = periodTransactions
-        .filter(t => (t.category || '').includes('سلفة') || (t.description || '').includes('سلفة'))
+        .filter(isAdvTrx)
         .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
     }
 

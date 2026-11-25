@@ -516,6 +516,7 @@ const isStaffAdvance = (t: any) => {
 const isStaffSalary = (t: any) => {
   const isOut = t.type === 'out' || (t.type as string) === 'expense';
   if (!isOut) return false;
+  if (isStaffAdvance(t)) return false;
   const cat = (t.category || '').toLowerCase();
   const expCat = ((t as any).expenseCategory || '').toLowerCase();
   const desc = (t.description || '').toLowerCase();

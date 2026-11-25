@@ -326,7 +326,49 @@ export function ReportsScreen({
       return d >= activeFrom && d <= activeTo;
     });
 
-    const directExpenseTx = periodTransactions.filter(t => t.type === 'expense');
+    const isAdvTrx = (t: Transaction) => {
+      if (t.type === 'in') return false;
+      const cat = (t.category || '').toLowerCase();
+      const expCat = ((t as any).expenseCategory || (t as any).expense_category || '').toLowerCase();
+      const desc = (t.description || '').toLowerCase();
+      return (
+        cat === 'staff_advance' ||
+        cat === 'hr_advance' ||
+        cat === 'advance' ||
+        cat.includes('سلف') ||
+        expCat === 'staff_advance' ||
+        expCat === 'hr_advance' ||
+        expCat === 'advance' ||
+        expCat.includes('سلف') ||
+        desc.includes('سلفة') ||
+        desc.includes('سلف')
+      );
+    };
+
+    const isSalTrx = (t: Transaction) => {
+      if (t.type === 'in') return false;
+      // السلفة لا تعتبر راتباً حتى لو كُتب في البيان "على حساب الراتب"
+      if (isAdvTrx(t)) return false;
+      const cat = (t.category || '').toLowerCase();
+      const expCat = ((t as any).expenseCategory || (t as any).expense_category || '').toLowerCase();
+      const desc = (t.description || '').toLowerCase();
+      const id = String(t.id || '');
+      return (
+        id.startsWith('TRX-SAL-') ||
+        cat === 'salaries' ||
+        cat === 'salary' ||
+        cat === 'رواتب' ||
+        cat === 'راتب' ||
+        cat.includes('رواتب') ||
+        expCat.includes('رواتب') ||
+        expCat.includes('راتب') ||
+        desc.includes('صرف راتب') ||
+        desc.includes('مسير رواتب') ||
+        desc.includes('صافي الراتب')
+      );
+    };
+
+    const directExpenseTx = periodTransactions.filter(t => (t.type === 'expense' || (t.type === 'out' && t.category === 'expense')) && !isAdvTrx(t) && !isSalTrx(t));
     const customExpenses = (expenses || []).filter(e => {
       const d = (e.date || '').split('T')[0];
       const isBranchMatch = matchesActiveBranch(e.branchId);
@@ -337,7 +379,7 @@ export function ReportsScreen({
       ? customExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0)
       : directExpenseTx.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
 
-    // 3. Salaries Disbursed (الرواتب)
+    // 3. Salaries Disbursed (الرواتب) & Staff Advances (سلف الموظفين)
     let totalSalaries = 0;
     let totalAdvances = 0;
 
@@ -345,24 +387,52 @@ export function ReportsScreen({
       (emp.financialRecords || []).forEach((rec: any) => {
         const d = (rec.date || '').split('T')[0];
         if (d >= activeFrom && d <= activeTo) {
-          if (rec.type === 'salary') {
+          const isSalRec = rec.type === 'salary' || (rec.type === 'advance' && (rec.id?.startsWith('FIN-SAL-') || rec.note?.includes('مسير رواتب') || rec.note?.includes('تم استلام صافي الراتب')));
+          const isAdvRec = (rec.type === 'advance' || rec.type === 'hr_advance' || rec.type === 'staff_advance') && !isSalRec;
+          if (isSalRec) {
             totalSalaries += Number(rec.amount) || 0;
-          } else if (rec.type === 'advance') {
+          } else if (isAdvRec) {
             totalAdvances += Number(rec.amount) || 0;
           }
         }
       });
     });
 
+    const trxSalaries = periodTransactions.filter(isSalTrx);
     if (totalSalaries === 0) {
-      totalSalaries = periodTransactions
-        .filter(t => t.category?.includes('راتب') || t.category?.includes('رواتب') || t.description?.includes('راتب'))
-        .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+      totalSalaries = trxSalaries.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+    } else {
+      trxSalaries.forEach(t => {
+        const amt = Number(t.amount) || 0;
+        const alreadyCounted = branchEmployees.some(emp =>
+          (emp.financialRecords || []).some((rec: any) => {
+            const d = (rec.date || '').split('T')[0];
+            return (rec.type === 'salary' || rec.id?.startsWith('FIN-SAL-')) &&
+              Math.abs((Number(rec.amount) || 0) - amt) < 0.01 &&
+              d >= activeFrom && d <= activeTo;
+          })
+        );
+        if (!alreadyCounted) totalSalaries += amt;
+      });
     }
+
+    const trxAdvances = periodTransactions.filter(isAdvTrx);
     if (totalAdvances === 0) {
-      totalAdvances = periodTransactions
-        .filter(t => t.category?.includes('سلفة') || t.category?.includes('سلف') || t.description?.includes('سلفة'))
-        .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+      totalAdvances = trxAdvances.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+    } else {
+      trxAdvances.forEach(t => {
+        const amt = Number(t.amount) || 0;
+        const alreadyCounted = branchEmployees.some(emp =>
+          (emp.financialRecords || []).some((rec: any) => {
+            const d = (rec.date || '').split('T')[0];
+            const isSal = rec.id?.startsWith('FIN-SAL-') || rec.note?.includes('مسير رواتب') || rec.note?.includes('تم استلام صافي الراتب');
+            return rec.type === 'advance' && !isSal &&
+              Math.abs((Number(rec.amount) || 0) - amt) < 0.01 &&
+              d >= activeFrom && d <= activeTo;
+          })
+        );
+        if (!alreadyCounted) totalAdvances += amt;
+      });
     }
 
     // 4. Purchases Paid + Supplier Payments (المسدد في فواتير المشتريات + دفعات الموردين)
