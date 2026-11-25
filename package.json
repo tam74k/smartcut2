@@ -7,6 +7,7 @@
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build",
     "preview": "vite preview",
+    "deploy:server": "curl -s -X POST http://81.17.102.169:3000/api/deploy/250c354de095ea7d60697310c455450908b3248346eb65b8 -H \"Content-Type: application/json\" -d \"{}\"",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"
   },
