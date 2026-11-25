@@ -1,6 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { AppSettings, Transaction, Treasury, Branch, AppUser, Invoice, Booking } from '../types';
-import { Wallet, ArrowDownRight, ArrowUpRight, ArrowRightLeft, XCircle, Download, Building2, Trash2, Loader2, CalendarCheck, Printer, Banknote, CreditCard, Landmark, Coins, User, X, AlertCircle } from 'lucide-react';
+import { Wallet, ArrowDownRight, ArrowUpRight, ArrowRightLeft, XCircle, Download, Building2, Trash2, Loader2, CalendarCheck, Printer, Banknote, CreditCard, Landmark, Coins, User, X, AlertCircle, Search, ChevronRight, ChevronLeft, ChevronsRight, ChevronsLeft } from 'lucide-react';
 import { exportToExcel } from '../utils/exportExcel';
 import { AuthService } from '../services/auth';
 import { DB } from '../services/db';
@@ -369,6 +369,13 @@ export function TreasuryScreen({
   const [categoryFilter, setCategoryFilter] = useState<
     'all' | 'sales' | 'expense' | 'purchases' | 'payroll' | 'transfer' | 'custody' | 'deposit_withdraw'
   >('all');
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(20);
+  const [searchTerm, setSearchTerm] = useState<string>('');
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [fromDate, toDate, categoryFilter, searchTerm, pageSize]);
 
   // دمج الحركات المسجلة مع أي فواتير مكتملة لم يُسجل لها حركة في جدول transactions مع منع التكرار بشكل قطعي
   const unifiedTransactions = useMemo(() => {
@@ -744,8 +751,49 @@ export function TreasuryScreen({
     } else if (categoryFilter === 'deposit_withdraw') {
       filtered = filtered.filter(t => t.category === 'deposit' || t.category === 'withdrawal' || t.category === 'partner_deposit' || t.category === 'partner_withdrawal');
     }
+
+    if (searchTerm.trim()) {
+      const term = searchTerm.trim().toLowerCase();
+      filtered = filtered.filter(t => {
+        const id = String(t.id || '').toLowerCase();
+        const desc = String(t.description || '').toLowerCase();
+        const cat = String(t.category || '').toLowerCase();
+        const actor = String(getTransactionActorName(t) || '').toLowerCase();
+        const tLabel = String(getTreasuryLabel(getTransactionTargetTreasuryId(t, settings.treasuries), settings.treasuries) || '').toLowerCase();
+        return id.includes(term) || desc.includes(term) || cat.includes(term) || actor.includes(term) || tLabel.includes(term);
+      });
+    }
+
     return filtered.sort((a, b) => parseDbDateTime(b.date).getTime() - parseDbDateTime(a.date).getTime());
-  }, [unifiedTransactions, fromDate, toDate, categoryFilter]);
+  }, [unifiedTransactions, fromDate, toDate, categoryFilter, searchTerm, settings.treasuries]);
+
+  const totalTransactionsCount = filteredTransactions.length;
+  const effectivePageSize = pageSize === 0 ? (totalTransactionsCount || 1) : pageSize;
+  const totalPages = Math.max(1, Math.ceil(totalTransactionsCount / effectivePageSize));
+  const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
+
+  const paginatedTransactions = useMemo(() => {
+    if (pageSize === 0) return filteredTransactions;
+    const start = (safeCurrentPage - 1) * pageSize;
+    return filteredTransactions.slice(start, start + pageSize);
+  }, [filteredTransactions, safeCurrentPage, pageSize]);
+
+  const getPageNumbers = () => {
+    if (totalPages <= 7) {
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+    const pages: (number | string)[] = [1];
+    const start = Math.max(2, safeCurrentPage - 1);
+    const end = Math.min(totalPages - 1, safeCurrentPage + 1);
+
+    if (safeCurrentPage > 3) pages.push('...');
+    for (let i = start; i <= end; i++) {
+      pages.push(i);
+    }
+    if (safeCurrentPage < totalPages - 2) pages.push('...');
+    pages.push(totalPages);
+    return pages;
+  };
 
   const totalBranchBalance = useMemo(() => {
     return settings.treasuries.reduce((sum, t) => sum + getTreasuryTotals(t.id).balance, 0);
@@ -1066,6 +1114,27 @@ export function TreasuryScreen({
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+            {/* Search Input */}
+            <div className="relative flex items-center min-w-[180px] max-w-xs">
+              <Search size={14} className="absolute right-3 text-slate-400 pointer-events-none" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="بحث برقم الحركة، البيان، الشخص..."
+                className="w-full pr-8 pl-7 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:border-indigo-500 shadow-2xs"
+              />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className="absolute left-2.5 text-slate-400 hover:text-red-500 cursor-pointer"
+                  title="مسح البحث"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+
             {/* Category Filter */}
             <div className="flex flex-wrap bg-slate-200/60 p-1 rounded-xl text-xs font-bold gap-1">
               <button 
@@ -1175,7 +1244,7 @@ export function TreasuryScreen({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredTransactions.map((trx) => {
+              {paginatedTransactions.map((trx) => {
                 const isCustody = trx.category === 'عهدة افتتاحية' || trx.category === 'initial_cash';
 
                 return (
@@ -1267,6 +1336,111 @@ export function TreasuryScreen({
             </tbody>
           </table>
         </div>
+
+        {/* Full Pagination Controls Bar */}
+        {totalTransactionsCount > 0 && (
+          <div className="border-t border-slate-200 bg-slate-50/90 px-4 sm:px-6 py-3.5 flex flex-col sm:flex-row justify-between items-center gap-3 text-xs font-bold text-slate-700">
+            {/* Page Size Selector & Count */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span>عرض</span>
+              <select
+                value={pageSize}
+                onChange={e => {
+                  setPageSize(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className="bg-white border border-slate-300 rounded-lg px-2.5 py-1 outline-none font-bold text-slate-800 shadow-2xs cursor-pointer focus:border-indigo-600"
+              >
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={30}>30</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+                <option value={0}>عرض الكل</option>
+              </select>
+              <span>حركة لكل صفحة</span>
+              <span className="text-slate-300 mx-1">|</span>
+              <span className="font-extrabold text-slate-900">
+                {pageSize === 0 
+                  ? `عرض جميع العمليات (${totalTransactionsCount})` 
+                  : `عرض ${((safeCurrentPage - 1) * (pageSize || totalTransactionsCount)) + 1} - ${Math.min(safeCurrentPage * (pageSize || totalTransactionsCount), totalTransactionsCount)} من إجمالي ${totalTransactionsCount} حركة`}
+              </span>
+            </div>
+
+            {/* Pagination Buttons & Page Numbers */}
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  disabled={safeCurrentPage <= 1}
+                  onClick={() => setCurrentPage(1)}
+                  className="p-1.5 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors shadow-2xs"
+                  title="الصفحة الأولى"
+                >
+                  <ChevronsRight size={15} />
+                </button>
+                <button
+                  type="button"
+                  disabled={safeCurrentPage <= 1}
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  className="px-2.5 py-1 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors shadow-2xs flex items-center gap-1"
+                  title="الصفحة السابقة"
+                >
+                  <ChevronRight size={15} />
+                  <span className="hidden sm:inline text-xs">السابق</span>
+                </button>
+
+                {/* Page numbers */}
+                <div className="flex items-center gap-1 mx-1">
+                  {getPageNumbers().map((p, idx) => {
+                    if (p === '...') {
+                      return (
+                        <span key={`ellipsis-${idx}`} className="px-1.5 text-slate-400 font-bold">
+                          ...
+                        </span>
+                      );
+                    }
+                    const isCurrent = p === safeCurrentPage;
+                    return (
+                      <button
+                        key={`page-${p}`}
+                        type="button"
+                        onClick={() => setCurrentPage(Number(p))}
+                        className={`min-w-[30px] h-7 px-1.5 rounded-lg text-xs font-mono font-black transition-all cursor-pointer ${
+                          isCurrent
+                            ? 'bg-indigo-600 text-white shadow-xs'
+                            : 'bg-white text-slate-800 hover:bg-slate-100 border border-slate-300'
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <button
+                  type="button"
+                  disabled={safeCurrentPage >= totalPages}
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  className="px-2.5 py-1 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors shadow-2xs flex items-center gap-1"
+                  title="الصفحة التالية"
+                >
+                  <span className="hidden sm:inline text-xs">التالي</span>
+                  <ChevronLeft size={15} />
+                </button>
+                <button
+                  type="button"
+                  disabled={safeCurrentPage >= totalPages}
+                  onClick={() => setCurrentPage(totalPages)}
+                  className="p-1.5 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors shadow-2xs"
+                  title="الصفحة الأخيرة"
+                >
+                  <ChevronsLeft size={15} />
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Modals */}
