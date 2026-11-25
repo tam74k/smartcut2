@@ -2710,7 +2710,9 @@ export function HRScreen({
         branchCode: branchCodeToUse,
         createdBy: currentUser?.name || currentUser?.username || 'مدير النظام',
         userName: currentUser?.name || currentUser?.username || 'مدير النظام',
-        userId: currentUser?.id
+        userId: currentUser?.id,
+        employeeId: targetEmp.id,
+        employeeName: targetEmp.name
       } as any;
 
       if (DB.saveTransaction) {

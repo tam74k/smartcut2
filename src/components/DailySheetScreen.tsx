@@ -382,10 +382,40 @@ export function DailySheetScreen({
       );
       return (t.type === 'out' || (t.type as string) === 'expense') && isAdvance;
     }).map(t => {
-      const empName = t.userName || (t as any).employeeName || employees.find(e => e.id === t.userId || e.id === (t as any).employeeId)?.name || t.description || 'سلفة موظف';
+      let empName = (t as any).employeeName || (t as any).employee_name;
+      if (!empName && ((t as any).employeeId || (t as any).employee_id)) {
+        const emp = employees.find(e => e.id === (t as any).employeeId || e.id === (t as any).employee_id);
+        if (emp) empName = emp.name;
+      }
+      if (!empName) {
+        const desc = t.description || '';
+        // 1. فحص الاسم داخل أقواس بعد للموظف (مثال: سلفة نقدية للموظف (أحمد محمود))
+        const matchParen = desc.match(/للموظف\s*\(([^)]+)\)/);
+        if (matchParen && matchParen[1].trim()) {
+          empName = matchParen[1].trim();
+        } else {
+          // 2. فحص الاسم المباشر بعد للموظف
+          const matchDirect = desc.match(/للموظف\s+([^-[(]+)/);
+          if (matchDirect && matchDirect[1].trim()) {
+            empName = matchDirect[1].trim();
+          } else {
+            // 3. مطابقة اسم الموظف من قائمة موظفي الصالون الموجود في البيان
+            const matchingEmp = employees.find(e => e.name && desc.includes(e.name));
+            if (matchingEmp) {
+              empName = matchingEmp.name;
+            } else {
+              // 4. مطابقة الحركة من السجلات المالية للموظفين
+              const recEmp = employees.find(e => (e.financialRecords || []).some(r => r.id === t.id || (r.id && desc.includes(r.id))));
+              if (recEmp) {
+                empName = recEmp.name;
+              }
+            }
+          }
+        }
+      }
       return {
         id: t.id,
-        name: empName,
+        name: empName || t.description || 'سلفة موظف',
         amount: Number(t.amount || 0)
       };
     });

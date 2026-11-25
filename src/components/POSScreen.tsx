@@ -755,7 +755,9 @@ export function POSScreen({
         branchCode: branchCodeToUse,
         createdBy: currentUser?.name || currentUser?.username || 'الكاشير',
         userName: currentUser?.name || currentUser?.username || 'الكاشير',
-        userId: currentUser?.id
+        userId: currentUser?.id,
+        employeeId: targetEmp.id,
+        employeeName: targetEmp.name
       } as any;
 
       if (setTransactions) {

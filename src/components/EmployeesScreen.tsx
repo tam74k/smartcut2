@@ -421,7 +421,9 @@ export function EmployeesScreen({
         branchCode: branchCodeToUse,
         createdBy: currentUser?.name || currentUser?.username || 'مدير النظام',
         userName: currentUser?.name || currentUser?.username || 'مدير النظام',
-        userId: currentUser?.id
+        userId: currentUser?.id,
+        employeeId: emp.id,
+        employeeName: emp.name
       } as any;
       if (setTransactions) {
         setTransactions(prev => [...(prev || []), trx]);
@@ -958,7 +960,9 @@ export function EmployeesScreen({
           branchCode: branchCodeToUse,
           createdBy: currentUser?.name || currentUser?.username || 'مدير النظام',
           userName: currentUser?.name || currentUser?.username || 'مدير النظام',
-          userId: currentUser?.id
+          userId: currentUser?.id,
+          employeeId: emp.id,
+          employeeName: emp.name
         } as any;
         if (setTransactions) {
           setTransactions(prev => [...(prev || []), trx]);
