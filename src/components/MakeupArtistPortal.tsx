@@ -9,7 +9,7 @@ import { AppSettings, Branch, Booking, MakeupArtist, BookingService, Service, Ap
 import { DB } from '../services/db';
 import { AuthService } from '../services/auth';
 import { EvolutionApiService } from '../services/evolutionApiService';
-import { calculateBookingTotals } from './BookingsScreen';
+import { calculateBookingTotals } from '../utils/bookingTotals';
 
 interface MakeupArtistPortalProps {
   settings: AppSettings;

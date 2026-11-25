@@ -143,10 +143,36 @@ export function IncomeReportReceipt({
     const cat = (t.category || '').toLowerCase();
     const expCat = ((t as any).expenseCategory || (t as any).expense_category || '').toLowerCase();
     const desc = (t.description || '').toLowerCase();
+    const id = String(t.id || '').toLowerCase();
+    
+    // استبعاد قاطع لأي حركة مبيعات أو فواتير
+    if (
+      Boolean((t as any).invoiceId || (t as any).invoice_id) ||
+      id.startsWith('trx-inv-') ||
+      id.includes('inv-') ||
+      cat === 'sales' ||
+      cat === 'مبيعات' ||
+      expCat === 'sales' ||
+      expCat === 'مبيعات' ||
+      desc.includes('فاتورة') ||
+      desc.includes('مبيعات')
+    ) {
+      return false;
+    }
+
     if (cat === 'transfer' || cat.includes('تحويل') || desc.includes('تحويل') || desc.includes('تصفير')) return false;
-    if (cat === 'sales' || cat === 'مبيعات' || expCat === 'sales' || expCat === 'مبيعات') return false;
     if (cat === 'booking_advance' || cat === 'مقدم حجز' || expCat === 'booking_advance' || expCat === 'مقدم حجز') return false;
-    return cat === 'expense' || cat === 'مصروفات' || cat.includes('مصروف') || (Boolean(expCat) && expCat !== 'sales' && expCat !== 'مبيعات') || isOut;
+
+    // المصروف يجب أن يكون صراحة مصروفاً تشغيلياً وليس أي حركة خروج عشوائية
+    return (
+      cat === 'expense' ||
+      cat === 'مصروفات' ||
+      cat.includes('مصروف') ||
+      expCat === 'expense' ||
+      expCat === 'مصروفات' ||
+      expCat.includes('مصروف') ||
+      (t.type as string) === 'expense'
+    );
   };
 
   const { rows, totals } = useMemo(() => {

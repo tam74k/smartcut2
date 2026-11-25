@@ -3,7 +3,7 @@ import { jsPDF } from 'jspdf';
 import { AppSettings, Booking, Invoice } from '../types';
 import { generateCode39Svg } from './printQueueSlip';
 import { calculateInvoiceReceiptTotals } from '../components/InvoiceReceiptCard';
-import { calculateBookingTotals } from '../components/BookingsScreen';
+import { calculateBookingTotals } from './bookingTotals';
 
 function escapeHtml(str?: string | number | null): string {
   if (str === undefined || str === null) return '';

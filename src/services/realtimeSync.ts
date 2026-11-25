@@ -22,9 +22,7 @@ class RealtimeSyncManager {
   private isConnected = false;
 
   constructor() {
-    if (typeof window !== 'undefined') {
-      this.initSocket();
-    }
+    // Lazy initialization: avoid connecting synchronously during module evaluation to prevent circular TDZ issues
   }
 
   private getSocketUrl(): string | null {
@@ -125,6 +123,7 @@ class RealtimeSyncManager {
   }
 
   public onCloudSyncComplete(callback: (payload: any) => void): () => void {
+    this.initSocket();
     this.cloudSyncListeners.add(callback);
     return () => {
       this.cloudSyncListeners.delete(callback);
@@ -179,6 +178,7 @@ class RealtimeSyncManager {
    * @returns دالة إلغاء الاشتراك
    */
   public subscribe(tables: string | string[], callback: TableListener): () => void {
+    this.initSocket();
     const tableArr = Array.isArray(tables) ? tables : [tables];
 
     tableArr.forEach(tbl => {

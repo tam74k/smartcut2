@@ -33,6 +33,49 @@ export const isBookingAdvanceTransaction = (t?: any): boolean => {
   return false;
 };
 
+export const isStaffAdvanceTransaction = (t?: any): boolean => {
+  if (!t || t.type === 'in') return false;
+  const id = String(t.id || '').toLowerCase();
+  const cat = String(t.category || '').toLowerCase();
+  const expCat = String(t.expenseCategory || t.expense_category || '').toLowerCase();
+  const desc = String(t.description || '').toLowerCase();
+  return (
+    id.startsWith('trx-adv-') ||
+    cat === 'staff_advance' ||
+    cat === 'hr_advance' ||
+    cat === 'advance' ||
+    cat.includes('سلف') ||
+    expCat === 'staff_advance' ||
+    expCat === 'hr_advance' ||
+    expCat === 'advance' ||
+    expCat.includes('سلف') ||
+    desc.includes('سلفة') ||
+    desc.includes('سلف')
+  );
+};
+
+export const isSalaryDisbursementTransaction = (t?: any): boolean => {
+  if (!t || t.type === 'in') return false;
+  if (isStaffAdvanceTransaction(t)) return false;
+  const id = String(t.id || '').toLowerCase();
+  const cat = String(t.category || '').toLowerCase();
+  const expCat = String(t.expenseCategory || t.expense_category || '').toLowerCase();
+  const desc = String(t.description || '').toLowerCase();
+  return (
+    id.startsWith('trx-sal-') ||
+    cat === 'salaries' ||
+    cat === 'salary' ||
+    cat === 'رواتب' ||
+    cat === 'راتب' ||
+    cat.includes('رواتب') ||
+    expCat.includes('رواتب') ||
+    expCat.includes('راتب') ||
+    desc.includes('صرف راتب') ||
+    desc.includes('مسير رواتب') ||
+    desc.includes('صافي الراتب')
+  );
+};
+
 export function ReportsScreen({ 
   settings, 
   transactions, 
@@ -326,53 +369,33 @@ export function ReportsScreen({
       return d >= activeFrom && d <= activeTo;
     });
 
-    const isAdvTrx = (t: Transaction) => {
-      if (t.type === 'in') return false;
-      const cat = (t.category || '').toLowerCase();
-      const expCat = ((t as any).expenseCategory || (t as any).expense_category || '').toLowerCase();
-      const desc = (t.description || '').toLowerCase();
-      return (
-        cat === 'staff_advance' ||
-        cat === 'hr_advance' ||
-        cat === 'advance' ||
-        cat.includes('سلف') ||
-        expCat === 'staff_advance' ||
-        expCat === 'hr_advance' ||
-        expCat === 'advance' ||
-        expCat.includes('سلف') ||
-        desc.includes('سلفة') ||
-        desc.includes('سلف')
-      );
-    };
+    const isAdvTrx = isStaffAdvanceTransaction;
+    const isSalTrx = isSalaryDisbursementTransaction;
 
-    const isSalTrx = (t: Transaction) => {
+    const directExpenseTx = periodTransactions.filter(t => {
       if (t.type === 'in') return false;
-      // السلفة لا تعتبر راتباً حتى لو كُتب في البيان "على حساب الراتب"
-      if (isAdvTrx(t)) return false;
-      const cat = (t.category || '').toLowerCase();
-      const expCat = ((t as any).expenseCategory || (t as any).expense_category || '').toLowerCase();
-      const desc = (t.description || '').toLowerCase();
-      const id = String(t.id || '');
-      return (
-        id.startsWith('TRX-SAL-') ||
-        cat === 'salaries' ||
-        cat === 'salary' ||
-        cat === 'رواتب' ||
-        cat === 'راتب' ||
-        cat.includes('رواتب') ||
-        expCat.includes('رواتب') ||
-        expCat.includes('راتب') ||
-        desc.includes('صرف راتب') ||
-        desc.includes('مسير رواتب') ||
-        desc.includes('صافي الراتب')
-      );
-    };
+      const isOut = t.type === 'out' || (t.type as string) === 'expense';
+      if (!isOut) return false;
+      if (isAdvTrx(t) || isSalTrx(t) || t.category === 'transfer' || isBookingAdvanceTransaction(t)) return false;
+      const cat = String(t.category || '').toLowerCase();
+      const expCat = String(t.expenseCategory || (t as any).expense_category || '').toLowerCase();
+      const desc = String(t.description || '').toLowerCase();
+      const id = String(t.id || '').toLowerCase();
+      if (Boolean((t as any).invoiceId || (t as any).invoice_id) || id.startsWith('trx-inv-') || cat === 'sales' || cat === 'مبيعات' || expCat === 'sales' || expCat === 'مبيعات' || desc.includes('فاتورة') || desc.includes('مبيعات')) return false;
+      return cat === 'expense' || cat === 'مصروفات' || cat.includes('مصروف') || expCat === 'expense' || expCat === 'مصروفات' || expCat.includes('مصروف') || (t.type as string) === 'expense';
+    });
 
-    const directExpenseTx = periodTransactions.filter(t => (t.type === 'expense' || (t.type === 'out' && t.category === 'expense')) && !isAdvTrx(t) && !isSalTrx(t));
     const customExpenses = (expenses || []).filter(e => {
       const d = (e.date || '').split('T')[0];
       const isBranchMatch = matchesActiveBranch(e.branchId);
-      return d >= activeFrom && d <= activeTo && isBranchMatch;
+      if (!isBranchMatch || d < activeFrom || d > activeTo) return false;
+      if (isAdvTrx(e) || isSalTrx(e) || e.category === 'transfer' || isBookingAdvanceTransaction(e)) return false;
+      const cat = String(e.category || '').toLowerCase();
+      const expCat = String(e.expenseCategory || (e as any).expense_category || '').toLowerCase();
+      const desc = String(e.description || '').toLowerCase();
+      const id = String(e.id || '').toLowerCase();
+      if (Boolean((e as any).invoiceId || (e as any).invoice_id) || id.startsWith('trx-inv-') || cat === 'sales' || cat === 'مبيعات' || expCat === 'sales' || expCat === 'مبيعات' || desc.includes('فاتورة') || desc.includes('مبيعات')) return false;
+      return true;
     });
 
     const totalExpenses = customExpenses.length > 0
@@ -2016,9 +2039,22 @@ export function ReportsScreen({
       )
       .reduce((sum, t) => sum + t.amount, 0);
     
+    // المصروفات التشغيلية الفعلية فقط - استبعاد السلف والرواتب والتحويلات والمبيعات
     const expense = filteredTransactions
-      .filter(t => t.type === 'out' && t.category !== 'transfer')
-      .reduce((sum, t) => sum + t.amount, 0);
+      .filter(t => {
+        if (t.type === 'in') return false;
+        const isOut = t.type === 'out' || (t.type as string) === 'expense';
+        if (!isOut) return false;
+        if (t.category === 'transfer' || isBookingAdvanceTransaction(t)) return false;
+        if (isStaffAdvanceTransaction(t) || isSalaryDisbursementTransaction(t)) return false;
+        const cat = String(t.category || '').toLowerCase();
+        const expCat = String(t.expenseCategory || (t as any).expense_category || '').toLowerCase();
+        const desc = String(t.description || '').toLowerCase();
+        const id = String(t.id || '').toLowerCase();
+        if (Boolean((t as any).invoiceId || (t as any).invoice_id) || id.startsWith('trx-inv-') || cat === 'sales' || cat === 'مبيعات' || expCat === 'sales' || expCat === 'مبيعات' || desc.includes('فاتورة') || desc.includes('مبيعات')) return false;
+        return cat === 'expense' || cat === 'مصروفات' || cat.includes('مصروف') || expCat === 'expense' || expCat === 'مصروفات' || expCat.includes('مصروف') || (t.type as string) === 'expense';
+      })
+      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
 
     const custodyTransactions = filteredTransactions.filter(
       t => t.category === 'عهدة افتتاحية' || t.category === 'initial_cash'

@@ -1,4 +1,3 @@
-import { SubscriptionService } from './subscriptionService';
 import { SupabaseService } from './supabase';
 import { dataUrlToBlob } from '../utils/imageUpload';
 import { HeldInvoice, MakeupArtist, Booking, Transaction } from '../types';
@@ -5089,6 +5088,7 @@ export const DB = {
   },
 
   async extendSalonTrialDB(salonId: string, days: number = 7, targetPlan?: string): Promise<any> {
+    const { SubscriptionService } = await import('./subscriptionService');
     const client = sb();
     const validSalonId = toSalonUUID(salonId);
     const salons = SubscriptionService.getSalons();
@@ -5320,6 +5320,7 @@ export const DB = {
   },
 
   async resetSalonToTrialDB(salonId: string, trialDays: number = 7, plan?: string): Promise<any> {
+    const { SubscriptionService } = await import('./subscriptionService');
     const client = sb();
     const validSalonId = toSalonUUID(salonId);
     const salons = SubscriptionService.getSalons();
@@ -5380,6 +5381,7 @@ export const DB = {
   },
 
   async expireSalonSubscriptionDB(salonId: string, reason: string = 'إلغاء الاشتراك من لوحة المبرمج'): Promise<any> {
+    const { SubscriptionService } = await import('./subscriptionService');
     const client = sb();
     const validSalonId = toSalonUUID(salonId);
     const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];

@@ -17,7 +17,17 @@ export default defineConfig(() => {
       rollupOptions: {
         output: {
           manualChunks(id) {
-            if (id.includes('node_modules/jspdf') || id.includes('node_modules/html2canvas') || id.includes('node_modules/xlsx')) {
+            if (
+              id.includes('node_modules/jspdf') || 
+              id.includes('node_modules/html2canvas') || 
+              id.includes('node_modules/xlsx') ||
+              id.includes('node_modules/canvg') ||
+              id.includes('node_modules/core-js') ||
+              id.includes('node_modules/dompurify') ||
+              id.includes('node_modules/stackblur-canvas') ||
+              id.includes('node_modules/rgbcolor') ||
+              id.includes('node_modules/raf')
+            ) {
               return 'vendor-export';
             }
             if (id.includes('node_modules/lucide-react')) {
