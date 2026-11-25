@@ -5,7 +5,7 @@ import {
   ArrowDownRight, Check, FileText, Filter, Search, UserCheck, Sparkles, X
 } from 'lucide-react';
 import { DB } from '../services/db';
-import { formatInvoiceDateTimeDisplay } from '../utils/timezone';
+import { formatInvoiceDateTimeDisplay, getNowLocalDateTimeStr } from '../utils/timezone';
 
 interface TipsScreenProps {
   settings: AppSettings;
@@ -85,7 +85,7 @@ export function TipsScreen({
     e.preventDefault();
     if (!payoutTargetTip) return;
 
-    const now = new Date().toISOString();
+    const now = getNowLocalDateTimeStr();
     let updatedTipRecord: TipRecord | null = null;
     const updated = tips.map(t => {
       if (t.id === payoutTargetTip.id) {

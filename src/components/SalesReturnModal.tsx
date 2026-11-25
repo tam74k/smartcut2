@@ -6,6 +6,7 @@ import {
   Trash2, Plus, Minus, Tag, Check, Barcode
 } from 'lucide-react';
 import { ThermalSalesReturnReceipt } from './ThermalSalesReturnReceipt';
+import { getNowLocalDateTimeStr } from '../utils/timezone';
 
 export interface ManualReturnItem {
   product: Product;
@@ -359,7 +360,7 @@ export const SalesReturnModal: React.FC<SalesReturnModalProps> = ({
         salonId: settings.salonId,
         branchId: (manualReturnItems[0]?.product as any)?.branchId || undefined,
         originalInvoiceId: 'بدون فاتورة',
-        date: now.toISOString(),
+        date: getNowLocalDateTimeStr(),
         clientName: manualClientName.trim() || 'عميل عام (بدون فاتورة)',
         clientPhone: manualClientPhone.trim() || undefined,
         items: returnItemsList,
@@ -421,7 +422,7 @@ export const SalesReturnModal: React.FC<SalesReturnModalProps> = ({
       branchCode: selectedInvoice.branchCode,
       originalInvoiceId: selectedInvoice.id,
       originalInvoiceDate: selectedInvoice.date,
-      date: now.toISOString(),
+      date: getNowLocalDateTimeStr(),
       clientId: selectedInvoice.clientId,
       clientName: selectedInvoice.clientName,
       clientPhone: selectedInvoice.clientPhone,

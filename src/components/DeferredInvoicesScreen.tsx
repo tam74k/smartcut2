@@ -13,7 +13,7 @@ import {
 import { DB } from '../services/db';
 import { executePrintInvoiceReceipt } from './InvoiceReceiptCard';
 import { EvolutionApiService } from '../services/evolutionApiService';
-import { formatInvoiceDateTimeDisplay } from '../utils/timezone';
+import { formatInvoiceDateTimeDisplay, getNowLocalDateTimeStr } from '../utils/timezone';
 
 interface DeferredInvoicesScreenProps {
   settings: AppSettings;
@@ -380,7 +380,7 @@ export function DeferredInvoicesScreen({
 
     setIsSubmittingSettle(true);
     try {
-      const nowIso = new Date().toISOString();
+      const nowLocalDateTime = getNowLocalDateTimeStr();
       const treasuryObj = availableTreasuries.find(t => t.id === settleTreasury);
       const treasuryName = treasuryObj?.name || settleTreasury;
       const newPaid = Number(settleModalInvoice.paid || 0) + payNum;
@@ -419,14 +419,14 @@ export function DeferredInvoicesScreen({
         updatedBy: currentUser?.username || currentUser?.name,
         updatedByName: currentUser?.name || currentUser?.username,
         updatedById: currentUser?.id,
-        updatedAt: nowIso
+        updatedAt: nowLocalDateTime
       };
 
       // 3. Create and record income Transaction to deposit in treasury
       const newTrx: Transaction = {
         id: 'TRX-DEF-' + Math.random().toString(36).substring(2, 9).toUpperCase(),
         salonId: settings.salonId,
-        date: nowIso,
+        date: nowLocalDateTime,
         type: 'in',
         amount: payNum,
         category: 'sales',

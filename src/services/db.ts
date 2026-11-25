@@ -3,7 +3,7 @@ import { SupabaseService } from './supabase';
 import { dataUrlToBlob } from '../utils/imageUpload';
 import { HeldInvoice, MakeupArtist, Booking, Transaction } from '../types';
 import { sealUserRecord } from '../utils/securityCrypto';
-import { localSalonTimeToUtcIso, utcToSalonLocal, getSalonTimezone } from '../utils/timezone';
+import { localSalonTimeToUtcIso, utcToSalonLocal, getSalonTimezone, ensureLocalDateTimeStr, getNowLocalDateTimeStr } from '../utils/timezone';
 import { getActiveShiftDate } from '../utils/shiftDate';
 
 // ============================================================
@@ -1993,7 +1993,8 @@ export const DB = {
       : (inv.updatedAt || inv.updated_at || null);
 
     // تحديث كائن الفاتورة في الذاكرة والكاش المحلي ليبقى متزامناً بالكامل
-    inv.createdAt = inv.createdAt || inv.created_at || new Date().toISOString();
+    inv.createdAt = ensureLocalDateTimeStr(inv.createdAt || inv.created_at);
+    inv.date = ensureLocalDateTimeStr(inv.date);
     inv.cashierId = effectiveCashierId || inv.cashierId;
     inv.cashierName = effectiveCashierName || inv.cashierName;
     inv.createdBy = effectiveCreatedBy || inv.createdBy;
@@ -2041,7 +2042,7 @@ export const DB = {
         client_phone: inv.clientPhone || inv.client_phone || '0000000000',
         cashier_id: effectiveCashierId,
         cashier_name: effectiveCashierName,
-        date: inv.date || new Date().toISOString(),
+        date: ensureLocalDateTimeStr(inv.date),
         subtotal: Number(inv.subtotal ?? inv.total ?? 0),
         discount: Number(inv.discount ?? 0),
         discount_type: inv.discountType || 'fixed',
@@ -2281,7 +2282,7 @@ export const DB = {
         salon_id: validSalonId, 
         branch_id: validBranchId,
         branch_code: (t as any).branchCode || null,
-        date: t.date || new Date().toISOString(), 
+        date: ensureLocalDateTimeStr(t.date), 
         type: t.type || 'in', 
         amount: Number(t.amount || 0), 
         category: t.category || 'sales',
@@ -6182,7 +6183,7 @@ export function dbInvoiceToApp(row: any): any {
     clientId: row.clientId || row.client_id || undefined,
     clientName: row.clientName || row.client_name || 'عميل نقدي',
     clientPhone: row.clientPhone || row.client_phone || '',
-    date: row.date || row.created_at || row.createdAt || new Date().toISOString(),
+    date: ensureLocalDateTimeStr(row.date || row.created_at || row.createdAt),
     subtotal: Number(row.subtotal ?? row.total ?? 0),
     discount: Number(row.discount ?? 0),
     discountType: row.discountType || row.discount_type || 'fixed',
@@ -6243,7 +6244,7 @@ export function dbInvoiceToApp(row: any): any {
     shiftCode: row.shiftCode || row.shift_code || undefined,
     settledAt: row.settledAt || row.settled_at || undefined,
     originalDeferredDate: row.originalDeferredDate || row.original_deferred_date || undefined,
-    createdAt: row.createdAt || row.created_at || undefined,
+    createdAt: row.createdAt || row.created_at ? ensureLocalDateTimeStr(row.createdAt || row.created_at) : undefined,
   };
 }
 
@@ -6259,7 +6260,7 @@ export function dbTransactionToApp(row: any): any {
     salonId: row.salonId || row.salon_id,
     branchId: row.branchId || row.branch_id || undefined,
     branchCode: row.branchCode || row.branch_code || undefined,
-    date: row.date || row.created_at || row.createdAt || row.shift_date || row.shiftDate || new Date().toISOString(),
+    date: ensureLocalDateTimeStr(row.date || row.created_at || row.createdAt || row.shift_date || row.shiftDate),
     type: row.type || 'in',
     amount: Number(row.amount || 0),
     category: row.category || 'sales',

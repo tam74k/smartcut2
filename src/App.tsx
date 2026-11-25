@@ -71,7 +71,7 @@ import { QueueService } from './services/queueService';
 import { completeBookingAndCreateHeldInvoice } from './services/bookingHeldInvoiceService';
 import { EvolutionApiService } from './services/evolutionApiService';
 import { safeStorage } from './utils/safeStorage';
-import { getSalonTimezone, getSalonNow } from './utils/timezone';
+import { getSalonTimezone, getSalonNow, getNowLocalDateTimeStr, ensureLocalDateTimeStr } from './utils/timezone';
 import { hasEmployeeFixedCommission } from './utils/commissionHelper';
 import { 
   AppSettings, Transaction, Booking, Invoice, ServiceItem, Category, Employee, Product, AppUser, 
@@ -2705,7 +2705,7 @@ export default function App() {
       const mainTreasury = resolveMainTreasury(definedTreasuries);
       const now = (shiftData?.isOpen && shiftData?.date) 
         ? (shiftData.date + 'T' + salonNow.timeWithSeconds) 
-        : new Date().toISOString();
+        : getNowLocalDateTimeStr();
 
       // 1. تحديد فواتير هذه الوردية فقط
       const shiftInvoices = branchInvoices.filter(i => 
@@ -2971,7 +2971,7 @@ export default function App() {
       cashierName: invoice.cashierName || currentUser?.name || currentUser?.username || undefined,
       createdBy: invoice.createdBy || currentUser?.username || currentUser?.name || undefined,
       createdById: invoice.createdById || currentUser?.id || undefined,
-      createdAt: invoice.createdAt || (invoice as any)?.created_at || new Date().toISOString(),
+      createdAt: invoice.createdAt || (invoice as any)?.created_at || getNowLocalDateTimeStr(invoice.shiftDate || shiftData?.date),
       shiftId: invoice.shiftId || (shiftData?.isOpen ? (shiftData as any).shiftId : undefined),
       shiftCode: invoice.shiftCode || (shiftData?.isOpen ? (shiftData as any).shiftCode : undefined),
       shiftDate: invoice.shiftDate || (shiftData?.isOpen ? shiftData.date : undefined),
@@ -3251,7 +3251,7 @@ export default function App() {
       .map((split, idx) => ({
         id: `TRX-${invoiceWithBranch.id}-${idx}`,
         salonId: settings.salonId,
-        date: invoiceWithBranch.date,
+        date: ensureLocalDateTimeStr(invoiceWithBranch.date),
         type: 'in',
         amount: Number(split.amount),
         category: 'sales',
@@ -3281,7 +3281,7 @@ export default function App() {
         newTrxs.push({
           id: `TRX-TIP-${invoiceWithBranch.id}`,
           salonId: settings.salonId,
-          date: invoiceWithBranch.date,
+          date: ensureLocalDateTimeStr(invoiceWithBranch.date),
           type: 'out',
           amount: invoice.tipAmount,
           category: 'صرف بقشيش فوري',
@@ -3309,7 +3309,7 @@ export default function App() {
         newTrxs.push({
           id: `TRX-COMM-${invoiceWithBranch.id}-${pIdx}`,
           salonId: settings.salonId,
-          date: invoiceWithBranch.date,
+          date: ensureLocalDateTimeStr(invoiceWithBranch.date),
           type: 'out',
           amount: payout.amount,
           category: 'commission_payout',

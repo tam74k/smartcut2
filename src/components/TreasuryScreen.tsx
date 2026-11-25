@@ -7,7 +7,7 @@ import { DB } from '../services/db';
 import { getBookingAdvances } from './BookingsScreen';
 import { printThermalFinancialVoucher } from './ThermalFinancialVoucher';
 import { resolveMainTreasury, isMatchingTreasury, getTransactionTargetTreasuryId, getTreasuryLabel } from '../utils/treasury';
-import { formatInvoiceDateTimeDisplay, parseDbDateTime } from '../utils/timezone';
+import { formatInvoiceDateTimeDisplay, parseDbDateTime, getTodayLocalDateStr, getCurrentLocalTimeStr } from '../utils/timezone';
 import { isLegacyCorruptZeroingTrx } from './ClosingReportReceipt';
 
 const isStaffAdvance = (t: any): boolean => {
@@ -134,10 +134,8 @@ export function TreasuryScreen({
       return;
     }
 
-    const effectiveDay = transactionDate || (shiftData && shiftData.isOpen && shiftData.date ? shiftData.date : new Date().toISOString().split('T')[0]);
-    const nowIso = new Date().toISOString();
-    const tTime = nowIso.split('T')[1] || '12:00:00.000Z';
-    const date = effectiveDay + 'T' + tTime;
+    const effectiveDay = transactionDate || (shiftData && shiftData.isOpen && shiftData.date ? shiftData.date : getTodayLocalDateStr());
+    const date = `${effectiveDay}T${getCurrentLocalTimeStr()}`;
     const isMatchingCurrentShift = Boolean(shiftData && shiftData.isOpen && shiftData.date === effectiveDay);
     const sDate = isMatchingCurrentShift ? shiftData.date : effectiveDay;
     const sId = isMatchingCurrentShift ? ((shiftData as any).shiftId || (shiftData as any).id) : undefined;

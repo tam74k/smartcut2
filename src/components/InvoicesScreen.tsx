@@ -12,7 +12,7 @@ import { SalesReturnModal } from './SalesReturnModal';
 import { generateCode39Svg } from '../utils/printQueueSlip';
 import { InvoiceReceiptCard, executePrintInvoiceReceipt } from './InvoiceReceiptCard';
 import { isWaselInvoice } from '../utils/commissionHelper';
-import { formatInvoiceDateTimeDisplay, parseDbDateTime } from '../utils/timezone';
+import { formatInvoiceDateTimeDisplay, parseDbDateTime, getNowLocalDateTimeStr, ensureLocalDateTimeStr } from '../utils/timezone';
 
 export const getEffectiveInvoiceTotal = (inv: Invoice | any): number => {
   if (!inv) return 0;
@@ -579,7 +579,7 @@ export function InvoicesScreen({
         .map(pm => ({
           id: 'TRX-RST-' + Math.random().toString(36).substr(2, 9),
           salonId: invoice.salonId,
-          date: new Date().toISOString(),
+          date: ensureLocalDateTimeStr(invoice.date),
           type: 'in' as const,
           amount: pm.amount,
           category: 'sales',
@@ -668,7 +668,7 @@ export function InvoicesScreen({
       // Create transaction
       const newTrx: Transaction = {
         id: 'TRX-' + Math.random().toString(36).substr(2,9),
-        date: new Date().toISOString(),
+        date: getNowLocalDateTimeStr(shiftData?.isOpen ? shiftData.date : undefined),
         type: 'in',
         amount: remainingToPay,
         category: 'sales',
@@ -684,7 +684,7 @@ export function InvoicesScreen({
       status: 'completed', 
       paid: invoice.total,
       remaining: 0,
-      settledAt: new Date().toISOString(),
+      settledAt: getNowLocalDateTimeStr(shiftData?.isOpen ? shiftData.date : undefined),
       cashbackUsed: finalCashbackUsed,
       paymentMethods: paymentMethods,
       updatedBy: currentUser?.username || currentUser?.name,

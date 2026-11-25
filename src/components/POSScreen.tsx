@@ -32,7 +32,7 @@ import { SalesReturnModal } from './SalesReturnModal';
 import { SalesReturnVoucherModal } from './SalesReturnVoucherModal';
 import { generateBarcodeSvgString } from '../utils/barcodeGenerator';
 import { POSAttendanceModal } from './POSAttendanceModal';
-import { formatInvoiceDateTimeDisplay } from '../utils/timezone';
+import { formatInvoiceDateTimeDisplay, getTodayLocalDateStr, getCurrentLocalTimeStr, getNowLocalDateTimeStr } from '../utils/timezone';
 
 const getCartItemPrice = (c: CartItem | any): number => {
   if (!c) return 0;
@@ -552,10 +552,8 @@ export function POSScreen({
     setQuickExpenseError('');
 
     try {
-      const nowIso = new Date().toISOString();
-      const effectiveDay = quickExpenseDate || (shiftData?.isOpen && shiftData.date ? shiftData.date : nowIso.split('T')[0]);
-      const tTime = nowIso.split('T')[1] || '12:00:00.000Z';
-      const tDate = effectiveDay + 'T' + tTime;
+      const effectiveDay = quickExpenseDate || (shiftData?.isOpen && shiftData.date ? shiftData.date : getTodayLocalDateStr());
+      const tDate = `${effectiveDay}T${getCurrentLocalTimeStr()}`;
       const isMatchingCurrentShift = Boolean(shiftData?.isOpen && shiftData.date === effectiveDay);
       const assignedShiftDate = isMatchingCurrentShift ? shiftData.date : effectiveDay;
       const assignedShiftId = isMatchingCurrentShift ? ((shiftData as any)?.shiftId || (shiftData as any)?.id) : undefined;
@@ -2012,8 +2010,8 @@ export function POSScreen({
       updatedBy: currentUser?.username || currentUser?.name || undefined,
       updatedByName: currentUser?.name || currentUser?.username || undefined,
       updatedById: currentUser?.id || undefined,
-      updatedAt: new Date().toISOString(),
-      createdAt: editingInvoice?.createdAt || (editingInvoice as any)?.created_at || new Date().toISOString(),
+      updatedAt: getNowLocalDateTimeStr(),
+      createdAt: editingInvoice?.createdAt || (editingInvoice as any)?.created_at || getNowLocalDateTimeStr(effectiveBaseDate),
       date: finalInvoiceDate,
       clientName: isWaselInvoice && waselRecipientName.trim()
         ? (selectedClient ? `${selectedClient.name} (${waselRecipientName.trim()})` : waselRecipientName.trim())

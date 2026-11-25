@@ -26,11 +26,17 @@ export function getActiveShiftDate(shiftData?: { isOpen: boolean; date: string }
 export function getEffectiveDateTime(shiftData?: { isOpen: boolean; date: string }, fallbackBranchId?: string): string {
   const shiftDate = getActiveShiftDate(shiftData, fallbackBranchId);
   const now = new Date();
-  const timeStr = now.toTimeString().split(' ')[0];
+  const hours = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  const seconds = String(now.getSeconds()).padStart(2, '0');
+  const timeStr = `${hours}:${minutes}:${seconds}`;
   if (shiftDate) {
     return shiftDate + 'T' + timeStr;
   }
-  return now.toISOString();
+  const localYear = now.getFullYear();
+  const localMonth = String(now.getMonth() + 1).padStart(2, '0');
+  const localDay = String(now.getDate()).padStart(2, '0');
+  return `${localYear}-${localMonth}-${localDay}T${timeStr}`;
 }
 
 export function getEffectiveDateOnly(shiftData?: { isOpen: boolean; date: string }, fallbackBranchId?: string): string {

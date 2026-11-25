@@ -23,6 +23,7 @@ import { DB } from '../services/db';
 import { ExpensesImportModal } from './ExpensesImportModal';
 import { AuthService } from '../services/auth';
 import { printThermalFinancialVoucher } from './ThermalFinancialVoucher';
+import { getTodayLocalDateStr, getCurrentLocalTimeStr, formatInvoiceDateTimeDisplay } from '../utils/timezone';
 
 export function ExpensesScreen({
   settings,
@@ -255,10 +256,8 @@ export function ExpensesScreen({
       return;
     }
 
-    const effectiveDay = transactionDate || (shiftData && shiftData.isOpen && shiftData.date ? shiftData.date : new Date().toISOString().split('T')[0]);
-    const nowIso = new Date().toISOString();
-    const tTime = nowIso.split('T')[1] || '12:00:00.000Z';
-    const tDate = effectiveDay + 'T' + tTime;
+    const effectiveDay = transactionDate || (shiftData && shiftData.isOpen && shiftData.date ? shiftData.date : getTodayLocalDateStr());
+    const tDate = `${effectiveDay}T${getCurrentLocalTimeStr()}`;
     const isMatchingCurrentShift = Boolean(shiftData && shiftData.isOpen && shiftData.date === effectiveDay);
     const assignedShiftDate = isMatchingCurrentShift ? shiftData.date : effectiveDay;
     const assignedShiftId = isMatchingCurrentShift ? ((shiftData as any).shiftId || (shiftData as any).id) : undefined;
@@ -739,12 +738,7 @@ export function ExpensesScreen({
                 <tr key={exp.id} className="hover:bg-slate-50/80 transition-colors">
                   <td className="p-4 text-slate-400 font-mono text-[11px]">{idx + 1}</td>
                   <td className="p-4 text-slate-700 font-semibold whitespace-nowrap">
-                    <span className="font-mono">{new Date(exp.date).toLocaleDateString('ar-SA')}</span>
-                    {exp.date.includes('T') && (
-                      <span className="block text-[10px] text-slate-400 font-mono">
-                        {exp.date.split('T')[1]?.substring(0, 5)}
-                      </span>
-                    )}
+                    <span className="font-mono text-xs">{formatInvoiceDateTimeDisplay(exp.date, 'ar-SA')}</span>
                   </td>
                   <td className="p-4 text-slate-800 whitespace-nowrap">
                     <span className="bg-purple-50 text-purple-800 px-3 py-1 rounded-full text-xs font-black border border-purple-200">

@@ -56,6 +56,14 @@ export function getSalonTimezone(
     }
   } catch (e) {}
 
+  // 4. Fallback to client device timezone if detectable
+  try {
+    if (typeof Intl !== 'undefined' && Intl.DateTimeFormat) {
+      const resolved = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (resolved && resolved.trim()) return resolved.trim();
+    }
+  } catch (e) {}
+
   return 'Asia/Riyadh';
 }
 
@@ -367,9 +375,64 @@ export function getTodayLocalDateStr(): string {
 }
 
 /**
+ * Returns current local time string as "HH:mm:ss" in user's device/salon wall clock.
+ */
+export function getCurrentLocalTimeStr(): string {
+  const d = new Date();
+  const hours = String(d.getHours()).padStart(2, '0');
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  const seconds = String(d.getSeconds()).padStart(2, '0');
+  return `${hours}:${minutes}:${seconds}`;
+}
+
+/**
+ * Returns current local timestamp as "YYYY-MM-DDTHH:mm:ss" (without Z or UTC offsets),
+ * respecting an optional baseDate (such as an open shift date or custom user date).
+ */
+export function getNowLocalDateTimeStr(baseDate?: string): string {
+  const datePart = (baseDate && baseDate.trim()) ? baseDate.trim().split('T')[0] : getTodayLocalDateStr();
+  const timePart = getCurrentLocalTimeStr();
+  return `${datePart}T${timePart}`;
+}
+
+/**
+ * Ensures any date/time string is normalized to local wall-clock timestamp "YYYY-MM-DDTHH:mm:ss" (without Z or UTC offsets).
+ * If the input is in UTC (ends with 'Z' or '+00:00'), it is converted to salon/local wall-clock time.
+ */
+export function ensureLocalDateTimeStr(dateRaw?: string | Date | null, timeZone?: string): string {
+  if (!dateRaw) return getNowLocalDateTimeStr();
+  const effectiveTz = timeZone || getSalonTimezone();
+
+  if (dateRaw instanceof Date) {
+    if (isNaN(dateRaw.getTime())) return getNowLocalDateTimeStr();
+    const local = utcToSalonLocal(dateRaw, effectiveTz);
+    return `${local.dateStr}T${local.timeWithSeconds}`;
+  }
+
+  const trimmed = String(dateRaw).trim();
+  if (!trimmed) return getNowLocalDateTimeStr();
+
+  const hasTzOffset = trimmed.endsWith('Z') || /[+-]\d{2}(?::?\d{2})?$/.test(trimmed);
+  if (hasTzOffset) {
+    const d = new Date(trimmed);
+    if (!isNaN(d.getTime())) {
+      const local = utcToSalonLocal(d, effectiveTz);
+      return `${local.dateStr}T${local.timeWithSeconds}`;
+    }
+  }
+
+  // Already a local naive timestamp (e.g. "2026-11-25T14:30:00" or "2026-11-25 14:30:00")
+  if (trimmed.includes(' ') && !trimmed.includes('T')) {
+    return trimmed.replace(' ', 'T');
+  }
+  return trimmed;
+}
+
+/**
  * Format invoice, transaction, advance, expense and receipt date & time.
- * Strictly extracts the exact wall-clock values recorded by the user,
- * bypassing PostgreSQL timestamptz UTC offset conversions (+00:00).
+ * Strictly formats according to the salon/local wall-clock time.
+ * If the string has an explicit UTC/timezone indicator, converts it to salon timezone.
+ * If naive, directly extracts exact wall-clock digits.
  */
 export function formatInvoiceDateTimeDisplay(
   dateRaw?: string | Date | null,
@@ -378,10 +441,10 @@ export function formatInvoiceDateTimeDisplay(
   timeZone?: string
 ): string {
   if (!dateRaw) return '-';
+  const effectiveTz = timeZone || getSalonTimezone();
 
   if (dateRaw instanceof Date) {
     if (isNaN(dateRaw.getTime())) return '-';
-    const effectiveTz = timeZone || getSalonTimezone();
     return formatDateTimeWithTz(dateRaw, effectiveTz, locale, options);
   }
 
@@ -389,7 +452,16 @@ export function formatInvoiceDateTimeDisplay(
     const trimmed = dateRaw.trim();
     if (!trimmed) return '-';
 
-    // Extract exact literal digits: YYYY-MM-DD or YYYY/MM/DD followed by T or space, then HH:mm(:ss)?
+    // 1. If explicit UTC indicator (Z or +00:00), convert to target salon timezone
+    const hasTzOffset = trimmed.endsWith('Z') || /[+-]\d{2}(?::?\d{2})?$/.test(trimmed);
+    if (hasTzOffset) {
+      const d = new Date(trimmed);
+      if (!isNaN(d.getTime())) {
+        return formatDateTimeWithTz(d, effectiveTz, locale, options);
+      }
+    }
+
+    // 2. Extract exact literal digits: YYYY-MM-DD or YYYY/MM/DD followed by T or space, then HH:mm(:ss)?
     const match = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})[T\s](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/);
     if (match) {
       const year = match[1];
