@@ -17,13 +17,17 @@ import {
   Layers,
   ArrowUpDown,
   Printer,
-  Lock
+  Lock,
+  ChevronRight,
+  ChevronLeft,
+  ChevronsRight,
+  ChevronsLeft
 } from 'lucide-react';
 import { DB } from '../services/db';
 import { ExpensesImportModal } from './ExpensesImportModal';
 import { AuthService } from '../services/auth';
 import { printThermalFinancialVoucher } from './ThermalFinancialVoucher';
-import { getTodayLocalDateStr, getCurrentLocalTimeStr, formatInvoiceDateTimeDisplay } from '../utils/timezone';
+import { getTodayLocalDateStr, getCurrentLocalTimeStr, formatInvoiceDateTimeDisplay, parseDbDateTime } from '../utils/timezone';
 
 export function ExpensesScreen({
   settings,
@@ -37,7 +41,7 @@ export function ExpensesScreen({
   settings: AppSettings,
   setSettings: (s: AppSettings) => void,
   transactions: Transaction[],
-  setTransactions: (t: Transaction[]) => void,
+  setTransactions: (t: any) => void,
   shiftData: { isOpen: boolean; date: string; initialCash: number },
   activeBranchId?: string;
   currentUser?: any;
@@ -101,7 +105,7 @@ export function ExpensesScreen({
 
   // Filtered expenses based on category, date range, treasury, and search
   const filteredExpenses = useMemo(() => {
-    return baseExpenses.filter(exp => {
+    const list = baseExpenses.filter(exp => {
       // 1. Category Filter
       if (selectedCategory !== 'all') {
         const cat = exp.expenseCategory || 'عام';
@@ -135,6 +139,8 @@ export function ExpensesScreen({
 
       return true;
     });
+
+    return list.sort((a, b) => parseDbDateTime(b.date).getTime() - parseDbDateTime(a.date).getTime());
   }, [baseExpenses, selectedCategory, startDate, endDate, selectedTreasury, searchQuery, settings.treasuries]);
 
   // Dynamic Calculated Totals
@@ -143,6 +149,42 @@ export function ExpensesScreen({
   }, [filteredExpenses]);
 
   const filteredCount = filteredExpenses.length;
+
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(20);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedCategory, startDate, endDate, selectedTreasury, searchQuery, pageSize]);
+
+  const totalExpensesCount = filteredExpenses.length;
+  const effectivePageSize = pageSize === 0 ? (totalExpensesCount || 1) : pageSize;
+  const totalPages = Math.max(1, Math.ceil(totalExpensesCount / effectivePageSize));
+  const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
+
+  const paginatedExpenses = useMemo(() => {
+    if (pageSize === 0) return filteredExpenses;
+    const start = (safeCurrentPage - 1) * pageSize;
+    return filteredExpenses.slice(start, start + pageSize);
+  }, [filteredExpenses, safeCurrentPage, pageSize]);
+
+  const getPageNumbers = () => {
+    if (totalPages <= 7) {
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+    const pages: (number | string)[] = [1];
+    const start = Math.max(2, safeCurrentPage - 1);
+    const end = Math.min(totalPages - 1, safeCurrentPage + 1);
+
+    if (safeCurrentPage > 3) pages.push('...');
+    for (let i = start; i <= end; i++) {
+      pages.push(i);
+    }
+    if (safeCurrentPage < totalPages - 2) pages.push('...');
+    pages.push(totalPages);
+    return pages;
+  };
 
   const averageExpenseAmount = useMemo(() => {
     return filteredCount > 0 ? (totalFilteredAmount / filteredCount) : 0;
@@ -215,10 +257,20 @@ export function ExpensesScreen({
     setExpenseToDelete(id);
   };
 
-  const confirmDeleteExpense = () => {
-    if (expenseToDelete) {
-      setTransactions(transactions.filter(t => t.id !== expenseToDelete));
-      setExpenseToDelete(null);
+  const confirmDeleteExpense = async () => {
+    if (!expenseToDelete) return;
+    const idToDelete = expenseToDelete;
+
+    // 1. إزالة المصروف فوراً ولحظياً من الجدول دون أي تأخير
+    setTransactions((prev: Transaction[]) => (prev || []).filter(t => t.id !== idToDelete));
+    setExpenseToDelete(null);
+
+    // 2. الحذف النهائي من قاعدة بيانات Supabase
+    try {
+      await DB.deleteTransaction(idToDelete);
+      await DB.remove('transactions', idToDelete);
+    } catch (err) {
+      console.error('Error deleting expense transaction from DB:', err);
     }
   };
 
@@ -267,7 +319,7 @@ export function ExpensesScreen({
     try {
       if (editingExpenseId) {
         const actorName = currentUser?.name || currentUser?.username || 'المستخدم';
-        setTransactions(transactions.map(t => {
+        setTransactions((prev: Transaction[]) => (prev || []).map(t => {
           if (t.id === editingExpenseId) {
             const updated = {
               ...t,
@@ -735,58 +787,61 @@ export function ExpensesScreen({
                 </td>
               </tr>
             ) : (
-              filteredExpenses.map((exp, idx) => (
-                <tr key={exp.id} className="hover:bg-slate-50/80 transition-colors">
-                  <td className="p-4 text-slate-400 font-mono text-[11px]">{idx + 1}</td>
-                  <td className="p-4 text-slate-700 font-semibold whitespace-nowrap">
-                    <span className="font-mono text-xs">{formatInvoiceDateTimeDisplay(exp.date, 'ar-SA')}</span>
-                  </td>
-                  <td className="p-4 text-slate-800 whitespace-nowrap">
-                    <span className="bg-purple-50 text-purple-800 px-3 py-1 rounded-full text-xs font-black border border-purple-200">
-                      {exp.expenseCategory || 'عام'}
-                    </span>
-                  </td>
-                  <td className="p-4 text-slate-700 font-medium">
-                    <p className="line-clamp-2">{exp.description}</p>
-                    {exp.shiftDate && (
-                      <span className="text-[10px] text-slate-400">وردية: {exp.shiftDate}</span>
-                    )}
-                  </td>
-                  <td className="p-4 text-slate-600 whitespace-nowrap">
-                    <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[11px] font-bold">
-                      {settings.treasuries.find(t => t.id === exp.treasury)?.name || exp.treasury}
-                    </span>
-                  </td>
-                  <td className="p-4 font-black text-rose-600 text-sm font-mono text-left whitespace-nowrap">
-                    {exp.amount.toFixed(2)} <span className="text-xs text-slate-500 font-sans font-bold">{settings.currency}</span>
-                  </td>
-                  <td className="p-4 text-center whitespace-nowrap">
-                    <div className="flex items-center justify-center gap-1.5">
-                      <button 
-                        onClick={() => handlePrintExpenseReceipt(exp)} 
-                        className="text-emerald-600 hover:bg-emerald-50 p-2 rounded-lg transition-colors cursor-pointer" 
-                        title="طباعة إيصال المصروف الحراري (80mm / 58mm)"
-                      >
-                        <Printer size={15} />
-                      </button>
-                      <button 
-                        onClick={() => handleEditClick(exp)} 
-                        className="text-blue-600 hover:bg-blue-50 p-2 rounded-lg transition-colors cursor-pointer" 
-                        title="تعديل المصروف"
-                      >
-                        <Edit2 size={15} />
-                      </button>
-                      <button 
-                        onClick={() => handleDeleteExpense(exp.id)} 
-                        className="text-rose-600 hover:bg-rose-50 p-2 rounded-lg transition-colors cursor-pointer" 
-                        title="حذف المصروف"
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))
+              paginatedExpenses.map((exp, idx) => {
+                const rowNum = pageSize === 0 ? idx + 1 : (safeCurrentPage - 1) * pageSize + idx + 1;
+                return (
+                  <tr key={exp.id} className="hover:bg-slate-50/80 transition-colors">
+                    <td className="p-4 text-slate-400 font-mono text-[11px]">{rowNum}</td>
+                    <td className="p-4 text-slate-700 font-semibold whitespace-nowrap">
+                      <span className="font-mono text-xs">{formatInvoiceDateTimeDisplay(exp.date, 'ar-SA')}</span>
+                    </td>
+                    <td className="p-4 text-slate-800 whitespace-nowrap">
+                      <span className="bg-purple-50 text-purple-800 px-3 py-1 rounded-full text-xs font-black border border-purple-200">
+                        {exp.expenseCategory || 'عام'}
+                      </span>
+                    </td>
+                    <td className="p-4 text-slate-700 font-medium">
+                      <p className="line-clamp-2">{exp.description}</p>
+                      {exp.shiftDate && (
+                        <span className="text-[10px] text-slate-400">وردية: {exp.shiftDate}</span>
+                      )}
+                    </td>
+                    <td className="p-4 text-slate-600 whitespace-nowrap">
+                      <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[11px] font-bold">
+                        {settings.treasuries.find(t => t.id === exp.treasury)?.name || exp.treasury}
+                      </span>
+                    </td>
+                    <td className="p-4 font-black text-rose-600 text-sm font-mono text-left whitespace-nowrap">
+                      {exp.amount.toFixed(2)} <span className="text-xs text-slate-500 font-sans font-bold">{settings.currency}</span>
+                    </td>
+                    <td className="p-4 text-center whitespace-nowrap">
+                      <div className="flex items-center justify-center gap-1.5">
+                        <button 
+                          onClick={() => handlePrintExpenseReceipt(exp)} 
+                          className="text-emerald-600 hover:bg-emerald-50 p-2 rounded-lg transition-colors cursor-pointer" 
+                          title="طباعة إيصال المصروف الحراري (80mm / 58mm)"
+                        >
+                          <Printer size={15} />
+                        </button>
+                        <button 
+                          onClick={() => handleEditClick(exp)} 
+                          className="text-blue-600 hover:bg-blue-50 p-2 rounded-lg transition-colors cursor-pointer" 
+                          title="تعديل المصروف"
+                        >
+                          <Edit2 size={15} />
+                        </button>
+                        <button 
+                          onClick={() => handleDeleteExpense(exp.id)} 
+                          className="text-rose-600 hover:bg-rose-50 p-2 rounded-lg transition-colors cursor-pointer" 
+                          title="حذف المصروف"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
           {filteredExpenses.length > 0 && (
@@ -806,6 +861,111 @@ export function ExpensesScreen({
             </tfoot>
           )}
         </table>
+
+        {/* Expenses Pagination Bar */}
+        {totalExpensesCount > 0 && (
+          <div className="border-t border-slate-200 bg-slate-50/90 px-4 sm:px-6 py-3.5 flex flex-col sm:flex-row justify-between items-center gap-3 text-xs font-bold text-slate-700">
+            {/* Page Size Selector & Count */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span>عرض</span>
+              <select
+                value={pageSize}
+                onChange={e => {
+                  setPageSize(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className="bg-white border border-slate-300 rounded-lg px-2.5 py-1 outline-none font-bold text-slate-800 shadow-2xs cursor-pointer focus:border-purple-600"
+              >
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={30}>30</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+                <option value={0}>عرض الكل</option>
+              </select>
+              <span>مصروف لكل صفحة</span>
+              <span className="text-slate-300 mx-1">|</span>
+              <span className="font-extrabold text-slate-900">
+                {pageSize === 0 
+                  ? `عرض جميع المصروفات (${totalExpensesCount})` 
+                  : `عرض ${((safeCurrentPage - 1) * (pageSize || totalExpensesCount)) + 1} - ${Math.min(safeCurrentPage * (pageSize || totalExpensesCount), totalExpensesCount)} من إجمالي ${totalExpensesCount} مصروف`}
+              </span>
+            </div>
+
+            {/* Pagination Buttons & Page Numbers */}
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  disabled={safeCurrentPage <= 1}
+                  onClick={() => setCurrentPage(1)}
+                  className="p-1.5 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors shadow-2xs"
+                  title="الصفحة الأولى"
+                >
+                  <ChevronsRight size={15} />
+                </button>
+                <button
+                  type="button"
+                  disabled={safeCurrentPage <= 1}
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  className="px-2.5 py-1 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors shadow-2xs flex items-center gap-1"
+                  title="الصفحة السابقة"
+                >
+                  <ChevronRight size={15} />
+                  <span className="hidden sm:inline text-xs">السابق</span>
+                </button>
+
+                {/* Page numbers */}
+                <div className="flex items-center gap-1 mx-1">
+                  {getPageNumbers().map((p, idx) => {
+                    if (p === '...') {
+                      return (
+                        <span key={`ellipsis-${idx}`} className="px-1.5 text-slate-400 font-bold">
+                          ...
+                        </span>
+                      );
+                    }
+                    const isCurrent = p === safeCurrentPage;
+                    return (
+                      <button
+                        key={`page-${p}`}
+                        type="button"
+                        onClick={() => setCurrentPage(Number(p))}
+                        className={`min-w-[30px] h-7 px-1.5 rounded-lg text-xs font-mono font-black transition-all cursor-pointer ${
+                          isCurrent
+                            ? 'bg-purple-600 text-white shadow-xs'
+                            : 'bg-white text-slate-800 hover:bg-slate-100 border border-slate-300'
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <button
+                  type="button"
+                  disabled={safeCurrentPage >= totalPages}
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  className="px-2.5 py-1 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors shadow-2xs flex items-center gap-1"
+                  title="الصفحة التالية"
+                >
+                  <span className="hidden sm:inline text-xs">التالي</span>
+                  <ChevronLeft size={15} />
+                </button>
+                <button
+                  type="button"
+                  disabled={safeCurrentPage >= totalPages}
+                  onClick={() => setCurrentPage(totalPages)}
+                  className="p-1.5 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors shadow-2xs"
+                  title="الصفحة الأخيرة"
+                >
+                  <ChevronsLeft size={15} />
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Add Expense Modal */}

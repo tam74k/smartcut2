@@ -2258,10 +2258,10 @@ export default function App() {
         if (t.id) nextMap.set(t.id, t);
       });
 
-      // If updater was an array from a branch-specific view, retain all existing transactions of other branches or not in nextMap
+      // If updater was an array from a branch-specific view, retain only other branches' transactions
       const retainedOld = isFunction
         ? []
-        : currentSalonTrxs.filter(t => !nextMap.has(t.id));
+        : currentSalonTrxs.filter(t => !nextMap.has(t.id) && (Boolean(t.branchId) && Boolean(activeBranchId) && t.branchId !== activeBranchId));
 
       const dedupedTagged = Array.from(nextMap.values());
       const other = prev.filter(t => (t as any).salonId && (t as any).salonId !== currentSalonId && (t as any).salon_id !== currentSalonId);
