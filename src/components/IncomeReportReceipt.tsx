@@ -90,10 +90,11 @@ export function IncomeReportReceipt({
   };
 
   const isStaffAdvance = (t: Transaction) => {
+    if (t.type === 'in') return false;
     const isOut = t.type === 'out' || (t.type as string) === 'expense';
     if (!isOut) return false;
     const cat = (t.category || '').toLowerCase();
-    const expCat = ((t as any).expenseCategory || '').toLowerCase();
+    const expCat = ((t as any).expenseCategory || (t as any).expense_category || '').toLowerCase();
     const desc = (t.description || '').toLowerCase();
     return (
       cat === 'staff_advance' ||
@@ -107,30 +108,45 @@ export function IncomeReportReceipt({
   };
 
   const isPurchase = (t: Transaction) => {
-    if (t.type !== 'out' && (t.type as string) === 'expense') return false;
+    if (t.type === 'in') return false;
+    const isOut = t.type === 'out' || (t.type as string) === 'expense';
+    if (!isOut) return false;
     const cat = (t.category || '').toLowerCase();
-    return cat === 'purchase' || cat === 'مشتريات' || cat === 'supplier_payment' || cat === 'supplier' || cat === 'سداد مورد';
+    const expCat = ((t as any).expenseCategory || (t as any).expense_category || '').toLowerCase();
+    return cat === 'purchase' || cat === 'مشتريات' || cat === 'supplier_payment' || cat === 'supplier' || cat === 'سداد مورد' || expCat === 'purchase' || expCat === 'مشتريات';
   };
 
   const isCommission = (t: Transaction) => {
-    if (t.type !== 'out' && (t.type as string) === 'expense') return false;
+    if (t.type === 'in') return false;
+    const isOut = t.type === 'out' || (t.type as string) === 'expense';
+    if (!isOut) return false;
     const cat = (t.category || '').toLowerCase();
-    return cat === 'commission' || cat === 'commission_payout' || cat === 'عمولة';
+    const expCat = ((t as any).expenseCategory || (t as any).expense_category || '').toLowerCase();
+    return cat === 'commission' || cat === 'commission_payout' || cat === 'عمولة' || expCat.includes('عمولة');
   };
 
   const isSalary = (t: Transaction) => {
-    if (t.type !== 'out' && (t.type as string) === 'expense') return false;
+    if (t.type === 'in') return false;
+    const isOut = t.type === 'out' || (t.type as string) === 'expense';
+    if (!isOut) return false;
     const cat = (t.category || '').toLowerCase();
+    const expCat = ((t as any).expenseCategory || (t as any).expense_category || '').toLowerCase();
     const desc = (t.description || '').toLowerCase();
-    return cat === 'salary' || cat === 'رواتب' || cat === 'راتب' || desc.includes('مسير رواتب');
+    return cat === 'salary' || cat === 'رواتب' || cat === 'راتب' || expCat.includes('راتب') || expCat.includes('رواتب') || desc.includes('مسير رواتب');
   };
 
   const isExpense = (t: Transaction) => {
-    if (t.type !== 'out' && (t.type as string) === 'expense') return false;
+    if (t.type === 'in') return false;
+    const isOut = t.type === 'out' || (t.type as string) === 'expense';
+    if (!isOut) return false;
     if (isStaffAdvance(t) || isPurchase(t) || isCommission(t) || isSalary(t)) return false;
     const cat = (t.category || '').toLowerCase();
-    if (cat === 'transfer' || (t.description && t.description.includes('تحويل'))) return false;
-    return cat === 'expense' || cat === 'مصروفات' || cat.includes('مصروف') || Boolean((t as any).expenseCategory);
+    const expCat = ((t as any).expenseCategory || (t as any).expense_category || '').toLowerCase();
+    const desc = (t.description || '').toLowerCase();
+    if (cat === 'transfer' || cat.includes('تحويل') || desc.includes('تحويل') || desc.includes('تصفير')) return false;
+    if (cat === 'sales' || cat === 'مبيعات' || expCat === 'sales' || expCat === 'مبيعات') return false;
+    if (cat === 'booking_advance' || cat === 'مقدم حجز' || expCat === 'booking_advance' || expCat === 'مقدم حجز') return false;
+    return cat === 'expense' || cat === 'مصروفات' || cat.includes('مصروف') || (Boolean(expCat) && expCat !== 'sales' && expCat !== 'مبيعات') || isOut;
   };
 
   const { rows, totals } = useMemo(() => {
