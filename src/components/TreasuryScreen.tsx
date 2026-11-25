@@ -588,7 +588,7 @@ export function TreasuryScreen({
       if (!isOut) return false;
       const cat = (t.category || '').toLowerCase();
       const desc = (t.description || '').toLowerCase();
-      const expCat = ((t as any).expenseCategory || '').toLowerCase();
+      const expCat = ((t as any).expenseCategory || (t as any).expense_category || '').toLowerCase();
       return (
         cat === 'hr_advance' ||
         cat === 'staff_advance' ||
@@ -602,7 +602,19 @@ export function TreasuryScreen({
 
     // Outflows (المدفوعات والمصروفات)
     const totalExpenses = trxs
-      .filter(t => (t.type === 'out' || (t.type as string) === 'expense') && !isStaffAdvance(t) && (t.category === 'expense' || t.category === 'مصروفات' || t.category?.includes('مصروف') || (t as any).expenseCategory))
+      .filter(t => {
+        const isOut = t.type === 'out' || (t.type as string) === 'expense';
+        if (!isOut) return false;
+        if (isStaffAdvance(t)) return false;
+        const cat = (t.category || '').toLowerCase();
+        const expCat = ((t as any).expenseCategory || (t as any).expense_category || '').toLowerCase();
+        if (cat === 'sales' || cat === 'مبيعات' || expCat === 'sales' || expCat === 'مبيعات') return false;
+        if (cat === 'booking_advance' || cat === 'مقدم حجز' || expCat === 'booking_advance' || expCat === 'مقدم حجز') return false;
+        if (cat === 'purchase' || cat === 'مشتريات' || cat === 'supplier_payment' || cat === 'supplier' || cat === 'سداد مورد') return false;
+        if (cat === 'salary' || cat === 'رواتب' || cat === 'راتب') return false;
+        if (cat === 'commission' || cat === 'commission_payout' || cat === 'عمولة') return false;
+        return cat === 'expense' || cat === 'مصروفات' || cat.includes('مصروف') || Boolean(expCat);
+      })
       .reduce((sum, t) => sum + t.amount, 0);
 
     const totalPurchases = trxs

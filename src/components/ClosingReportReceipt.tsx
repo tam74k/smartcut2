@@ -292,6 +292,87 @@ export function ClosingReportReceipt({
     );
   };
 
+  const isStaffAdvanceTrx = (t: any): boolean => {
+    if (t.type === 'in') return false;
+    const cat = String(t.category || '').toLowerCase();
+    const expCat = String(t.expenseCategory || t.expense_category || '').toLowerCase();
+    const desc = String(t.description || '').toLowerCase();
+    const id = String(t.id || '').toLowerCase();
+    return (
+      id.startsWith('trx-adv') ||
+      cat === 'staff_advance' ||
+      cat === 'hr_advance' ||
+      cat === 'advance' ||
+      cat === 'سلفة موظف' ||
+      cat.includes('سلف') ||
+      expCat.includes('سلف') ||
+      desc.includes('سلفة') ||
+      desc.includes('سلف')
+    );
+  };
+
+  const isSalaryTrx = (t: any): boolean => {
+    if (t.type === 'in') return false;
+    if (isStaffAdvanceTrx(t)) return false;
+    const cat = String(t.category || '').toLowerCase();
+    const expCat = String(t.expenseCategory || t.expense_category || '').toLowerCase();
+    const desc = String(t.description || '').toLowerCase();
+    const id = String(t.id || '').toLowerCase();
+    return (
+      id.startsWith('trx-sal-') ||
+      cat === 'salaries' ||
+      cat === 'salary' ||
+      cat === 'رواتب' ||
+      cat === 'راتب' ||
+      cat.includes('رواتب') ||
+      expCat.includes('رواتب') ||
+      expCat.includes('راتب') ||
+      desc.includes('صرف راتب') ||
+      desc.includes('مسير رواتب') ||
+      desc.includes('صافي الراتب')
+    );
+  };
+
+  const isPurchaseOrSupplierTrx = (t: any): boolean => {
+    if (t.type === 'in') return false;
+    const cat = String(t.category || '').toLowerCase();
+    const expCat = String(t.expenseCategory || t.expense_category || '').toLowerCase();
+    const desc = String(t.description || '').toLowerCase();
+    return (
+      cat === 'purchase' ||
+      cat === 'مشتريات' ||
+      cat === 'supplier_payment' ||
+      cat === 'supplier' ||
+      cat === 'سداد مورد' ||
+      expCat.includes('مشتريات') ||
+      expCat.includes('مورد') ||
+      desc.includes('فاتورة مشتريات') ||
+      desc.includes('سداد مورد') ||
+      desc.includes('دفعة مورد')
+    );
+  };
+
+  const isExplicitExpenseTrx = (t: any): boolean => {
+    if (t.type === 'in') return false;
+    const isOut = t.type === 'out' || (t.type as string) === 'expense';
+    if (!isOut) return false;
+    if (isStaffAdvanceTrx(t)) return false;
+    if (isSalaryTrx(t)) return false;
+    if (isTipTrx(t)) return false;
+    if (isCommissionTrx(t)) return false;
+    if (isRealTransferTrx(t)) return false;
+    if (isPurchaseOrSupplierTrx(t)) return false;
+
+    const cat = String(t.category || '').toLowerCase();
+    const expCat = String(t.expenseCategory || t.expense_category || '').toLowerCase();
+    const desc = String(t.description || '').toLowerCase();
+    if (cat === 'sales' || cat === 'مبيعات' || expCat === 'sales' || expCat === 'مبيعات') return false;
+    if (cat === 'booking_advance' || cat === 'مقدم حجز' || expCat === 'booking_advance' || expCat === 'مقدم حجز') return false;
+    if (cat === 'transfer' || cat.includes('تحويل') || desc.includes('تحويل') || desc.includes('تصفير')) return false;
+
+    return true;
+  };
+
   const targetShiftCode = (shiftCode || '').trim();
   const targetShiftId = (shiftId || '').trim();
 
@@ -485,23 +566,28 @@ export function ClosingReportReceipt({
     const outgoingTransfersList = tTrx.filter(t => (t.type === 'out' || (t.type as string) === 'expense') && isRealTransferTrx(t));
     const transfersOut = outgoingTransfersList.reduce((s, x) => s + (Number(x.amount) || 0), 0);
 
-    // المصروفات
-    const expenses = isMain ? 0 : tTrx.filter(t => 
-      (t.type === 'out' || (t.type as string) === 'expense') && 
-      !isTipTrx(t) && 
-      !isCommissionTrx(t) && 
-      !isRealTransferTrx(t)
-    ).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    // سلف الموظفين
+    const recordedAdvancesList = isMain ? [] : tTrx.filter(t => (t.type === 'out' || (t.type as string) === 'expense') && isStaffAdvanceTrx(t));
+    const advances = recordedAdvancesList.reduce((s, x) => s + (Number(x.amount) || 0), 0);
+
+    // مسيرات الرواتب
+    const recordedSalariesList = isMain ? [] : tTrx.filter(t => (t.type === 'out' || (t.type as string) === 'expense') && isSalaryTrx(t));
+    const salaries = recordedSalariesList.reduce((s, x) => s + (Number(x.amount) || 0), 0);
+
+    // المصروفات التشغيلية والنثرية فقط (مفصولة تماماً عن السلف والرواتب)
+    const recordedExpensesList = isMain ? [] : tTrx.filter(t => isExplicitExpenseTrx(t));
+    const expenses = recordedExpensesList.reduce((s, x) => s + (Number(x.amount) || 0), 0);
 
     const initialCashSum = isMain ? 0 : tTrx.filter(t => t.type === 'in' && (t.category === 'عهدة افتتاحية' || t.category === 'initial_cash')).reduce((s, x) => s + (Number(x.amount) || 0), 0);
 
     const net = isMain 
       ? -transfersOut 
-      : (income + transfersIn) - (expenses + tips + commissions + transfersOut);
+      : (income + transfersIn) - (expenses + advances + salaries + tips + commissions + transfersOut);
 
     return {
       income, invoiceSales, bookingDeposits, bookingDepositsList: recordedBookingDepositsList, otherSales,
-      expenses, commissions, tips, transfersIn, transfersOut, initialCashSum, net, isMain,
+      expenses, recordedExpensesList, advances, advancesList: recordedAdvancesList, salaries, salariesList: recordedSalariesList,
+      commissions, tips, transfersIn, transfersOut, initialCashSum, net, isMain,
       incomingTransfersList, outgoingTransfersList
     };
   };
@@ -677,6 +763,8 @@ export function ClosingReportReceipt({
           return (
             stats.income > 0 ||
             stats.expenses > 0 ||
+            stats.advances > 0 ||
+            stats.salaries > 0 ||
             stats.tips > 0 ||
             stats.commissions > 0 ||
             stats.transfersIn > 0 ||
@@ -808,9 +896,45 @@ export function ClosingReportReceipt({
                   </div>
                 )}
                 {stats.expenses > 0 && (
-                  <div className="flex justify-between text-black font-semibold">
-                    <span>المصروفات:</span>
-                    <span dir="ltr" className="text-black font-mono">-{stats.expenses.toFixed(2)}</span>
+                  <div className="border border-black/40 rounded p-1.5 bg-slate-50/80 my-1">
+                    <div className="flex justify-between text-black font-bold">
+                      <span>المصروفات التشغيلية ({stats.recordedExpensesList.length}):</span>
+                      <span dir="ltr" className="text-black font-mono font-bold">-{stats.expenses.toFixed(2)}</span>
+                    </div>
+                    {stats.recordedExpensesList.map((tx: any, idx: number) => (
+                      <div key={tx.id || idx} className="flex justify-between text-[11px] text-slate-700 pr-2 pt-0.5 border-t border-black/10 mt-0.5">
+                        <span className="truncate max-w-[200px]" title={tx.description}>{tx.description || (tx as any).expenseCategory || 'مصروف عام'}</span>
+                        <span className="font-mono font-bold shrink-0">-{Number(tx.amount || 0).toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {stats.advances > 0 && (
+                  <div className="border border-black/40 rounded p-1.5 bg-slate-50/80 my-1">
+                    <div className="flex justify-between text-black font-bold">
+                      <span>سلف الموظفين ({stats.advancesList.length}):</span>
+                      <span dir="ltr" className="text-black font-mono font-bold">-{stats.advances.toFixed(2)}</span>
+                    </div>
+                    {stats.advancesList.map((tx: any, idx: number) => (
+                      <div key={tx.id || idx} className="flex justify-between text-[11px] text-slate-700 pr-2 pt-0.5 border-t border-black/10 mt-0.5">
+                        <span className="truncate max-w-[200px]" title={tx.description}>{tx.description || 'سلفة موظف'}</span>
+                        <span className="font-mono font-bold shrink-0">-{Number(tx.amount || 0).toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {stats.salaries > 0 && (
+                  <div className="border border-black/40 rounded p-1.5 bg-slate-50/80 my-1">
+                    <div className="flex justify-between text-black font-bold">
+                      <span>مسيرات الرواتب ({stats.salariesList.length}):</span>
+                      <span dir="ltr" className="text-black font-mono font-bold">-{stats.salaries.toFixed(2)}</span>
+                    </div>
+                    {stats.salariesList.map((tx: any, idx: number) => (
+                      <div key={tx.id || idx} className="flex justify-between text-[11px] text-slate-700 pr-2 pt-0.5 border-t border-black/10 mt-0.5">
+                        <span className="truncate max-w-[200px]" title={tx.description}>{tx.description || 'صرف راتب'}</span>
+                        <span className="font-mono font-bold shrink-0">-{Number(tx.amount || 0).toFixed(2)}</span>
+                      </div>
+                    ))}
                   </div>
                 )}
                 {stats.tips > 0 && (

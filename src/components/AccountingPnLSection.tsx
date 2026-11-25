@@ -253,7 +253,7 @@ export function AccountingPnLSection({
           return;
         }
 
-        if (cat.includes('راتب') || desc.includes('راتب') || cat.includes('سلفة') || desc.includes('سلفة')) {
+        if (isAdvTrx(t) || isSalTrx(t) || cat.includes('راتب') || desc.includes('راتب') || cat.includes('سلف') || desc.includes('سلف')) {
           // Already counted in salaries / advances
           return;
         }

@@ -354,7 +354,7 @@ export function DailySheetScreen({
     return transactions.filter(t => {
       if (!isMatchDate(t.date)) return false;
       const cat = String(t.category || '').toLowerCase().trim();
-      const expCat = String(t.expenseCategory || '').toLowerCase().trim();
+      const expCat = String(t.expenseCategory || (t as any).expense_category || '').toLowerCase().trim();
       const desc = String(t.description || '').toLowerCase().trim();
 
       // استبعاد أي تصفير أو تحويلات داخلية بين الخزائن
@@ -374,10 +374,12 @@ export function DailySheetScreen({
         cat === 'commission_payout' || 
         cat === 'salary' || 
         cat === 'سلفة موظف' ||
+        cat.includes('سلف') ||
         expCat.includes('سلف') || 
         expCat.includes('رواتب') || 
         expCat.includes('مرتبات') ||
         desc.includes('سلفة') ||
+        desc.includes('سلف') ||
         desc.includes('راتب')
       );
       return (t.type === 'out' || (t.type as string) === 'expense') && isAdvance;
@@ -430,7 +432,7 @@ export function DailySheetScreen({
     return transactions.filter(t => {
       if (!isMatchDate(t.date)) return false;
       const cat = String(t.category || '').toLowerCase().trim();
-      const expCat = String(t.expenseCategory || '').toLowerCase().trim();
+      const expCat = String(t.expenseCategory || (t as any).expense_category || '').toLowerCase().trim();
       const desc = String(t.description || '').toLowerCase().trim();
 
       // 1. استبعاد قاطع لعمليات تصفير الخزائن وإغلاق الورديات ونقل الأرصدة
@@ -483,10 +485,12 @@ export function DailySheetScreen({
         cat === 'commission_payout' || 
         cat === 'salary' || 
         cat === 'سلفة موظف' ||
+        cat.includes('سلف') ||
         expCat.includes('سلف') || 
         expCat.includes('رواتب') || 
         expCat.includes('مرتبات') ||
         desc.includes('سلفة') ||
+        desc.includes('سلف') ||
         desc.includes('راتب')
       );
       if (isAdvance) return false;

@@ -13,34 +13,78 @@ export function ExpensesReportReceipt({
   userName?: string
 }) {
   const effectiveUserName = userName || settings.ownerName || 'المسؤول';
+
+  const isStaffAdvance = (t: Transaction) => {
+    const cat = String(t.category || '').toLowerCase();
+    const expCat = String((t as any).expenseCategory || (t as any).expense_category || '').toLowerCase();
+    const desc = String(t.description || '').toLowerCase();
+    const id = String(t.id || '').toLowerCase();
+    return (
+      id.startsWith('trx-adv') ||
+      cat === 'staff_advance' ||
+      cat === 'hr_advance' ||
+      cat === 'advance' ||
+      cat === 'سلفة موظف' ||
+      cat.includes('سلف') ||
+      expCat.includes('سلف') ||
+      desc.includes('سلفة') ||
+      desc.includes('سلف')
+    );
+  };
+
+  const isSalary = (t: Transaction) => {
+    if (isStaffAdvance(t)) return false;
+    const cat = String(t.category || '').toLowerCase();
+    const expCat = String((t as any).expenseCategory || (t as any).expense_category || '').toLowerCase();
+    const desc = String(t.description || '').toLowerCase();
+    const id = String(t.id || '').toLowerCase();
+    return (
+      id.startsWith('trx-sal-') ||
+      cat === 'salaries' ||
+      cat === 'salary' ||
+      cat === 'رواتب' ||
+      cat === 'راتب' ||
+      cat.includes('رواتب') ||
+      expCat.includes('رواتب') ||
+      expCat.includes('راتب') ||
+      desc.includes('صرف راتب') ||
+      desc.includes('مسير رواتب')
+    );
+  };
+
+  // حصر المصروفات التشغيلية فقط واستبعاد السلف والرواتب والمبيعات والتحويلات
+  const expenseTransactions = transactions.filter(t => {
+    if (t.type === 'in') return false;
+    const isOut = t.type === 'out' || (t.type as string) === 'expense';
+    if (!isOut) return false;
+    if (isStaffAdvance(t)) return false;
+    if (isSalary(t)) return false;
+    const cat = String(t.category || '').toLowerCase();
+    const expCat = String((t as any).expenseCategory || (t as any).expense_category || '').toLowerCase();
+    const desc = String(t.description || '').toLowerCase();
+    if (cat === 'sales' || cat === 'مبيعات' || expCat === 'sales' || expCat === 'مبيعات') return false;
+    if (cat === 'booking_advance' || cat === 'مقدم حجز' || expCat === 'booking_advance' || expCat === 'مقدم حجز') return false;
+    if (cat === 'transfer' || cat.includes('تحويل') || desc.includes('تحويل') || desc.includes('تصفير')) return false;
+    return true;
+  });
+
   let overallTotal = 0;
+  expenseTransactions.forEach(t => {
+    overallTotal += t.amount;
+  });
 
   const getDisplayCategory = (t: Transaction) => {
-    if (t.category === 'expense' && t.expenseCategory) return t.expenseCategory;
+    if (t.category === 'expense' && (t.expenseCategory || (t as any).expense_category)) return (t.expenseCategory || (t as any).expense_category);
     switch (t.category) {
-    
-      case 'sales': return 'مبيعات';
-      case 'deposit': return 'إيداع';
       case 'expense': return 'مصروفات';
-      case 'staff_advance': return 'سلفة موظف';
-      case 'hr_advance': return 'سلفة موظف';
       case 'purchase': return 'مشتريات';
-      case 'booking_advance': return 'مقدم حجز';
-      case 'transfer': return 'تحويل';
-      case 'commission': return 'عمولة';
-      case 'salary': return 'راتب';
-      case 'عهدة افتتاحية': return 'عهدة افتتاحية';
-      default: return t.category;
+      default: return t.expenseCategory || (t as any).expense_category || t.category;
     }
   };
 
   const getTreasuryName = (id: string) => {
     return settings.treasuries.find(t => t.id === id)?.name || id;
   };
-
-  transactions.forEach(t => {
-    overallTotal += t.amount;
-  });
 
   return (
     <div className="w-[72mm] mx-auto bg-white text-black p-4 text-sm font-sans" id="print-expenses-receipt" style={{ direction: 'rtl' }}>
@@ -66,12 +110,12 @@ export function ExpensesReportReceipt({
             </tr>
           </thead>
           <tbody>
-            {transactions.length === 0 ? (
+            {expenseTransactions.length === 0 ? (
               <tr>
                 <td colSpan={5} className="py-4 text-center text-xs">لا توجد مصروفات</td>
               </tr>
             ) : (
-              transactions.map(t => (
+              expenseTransactions.map(t => (
                 <tr key={t.id} className="border-b border-slate-200">
                   <td className="py-2">{new Date(t.date).toLocaleDateString('ar-SA')}</td>
                   <td className="py-2">{getDisplayCategory(t)}</td>

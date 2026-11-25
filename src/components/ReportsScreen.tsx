@@ -2514,13 +2514,29 @@ export function ReportsScreen({
       const headers = ['رقم السند', 'التاريخ', 'المبلغ', 'التصنيف', 'البيان', 'الخزينة'];
       const filtered = transactions.filter(t => {
         const d = safeSplitDate(t.date);
-        return d >= activeFrom && d <= activeTo && t.type === 'out';
+        if (d < activeFrom || d > activeTo) return false;
+        if (t.type === 'in') return false;
+        const isOut = t.type === 'out' || (t.type as string) === 'expense';
+        if (!isOut) return false;
+        const cat = String(t.category || '').toLowerCase();
+        const expCat = String(t.expenseCategory || (t as any).expense_category || '').toLowerCase();
+        const desc = String(t.description || '').toLowerCase();
+        const id = String(t.id || '').toLowerCase();
+        // استبعاد السلف والرواتب والتحويلات والمبيعات من تقرير المصروفات
+        const isAdv = id.startsWith('trx-adv') || cat === 'staff_advance' || cat === 'hr_advance' || cat === 'advance' || cat.includes('سلف') || expCat.includes('سلف') || desc.includes('سلفة') || desc.includes('سلف');
+        if (isAdv) return false;
+        const isSal = id.startsWith('trx-sal-') || cat === 'salaries' || cat === 'salary' || cat.includes('رواتب') || cat.includes('راتب') || expCat.includes('رواتب') || expCat.includes('راتب') || desc.includes('صرف راتب') || desc.includes('مسير رواتب');
+        if (isSal) return false;
+        if (cat === 'sales' || cat === 'مبيعات' || expCat === 'sales' || expCat === 'مبيعات') return false;
+        if (cat === 'booking_advance' || cat === 'مقدم حجز' || expCat === 'booking_advance' || expCat === 'مقدم حجز') return false;
+        if (cat === 'transfer' || cat.includes('تحويل') || desc.includes('تحويل') || desc.includes('تصفير')) return false;
+        return true;
       });
       const rows = filtered.map(t => [
         t.id,
         t.date,
         t.amount,
-        t.expenseCategory || t.category,
+        t.expenseCategory || (t as any).expense_category || t.category,
         t.description,
         t.treasury
       ]);
@@ -4790,7 +4806,23 @@ function ReportTable({
   if (reportType === 'expenses') {
     const filteredTransactions = transactions.filter((t: Transaction) => {
       const tDateStr = safeSplitDate(t.date);
-      return tDateStr >= activeFrom && tDateStr <= activeTo && t.type === 'out' && t.category !== 'transfer';
+      if (tDateStr < activeFrom || tDateStr > activeTo) return false;
+      if (t.type === 'in') return false;
+      const isOut = t.type === 'out' || (t.type as string) === 'expense';
+      if (!isOut) return false;
+      const cat = String(t.category || '').toLowerCase();
+      const expCat = String(t.expenseCategory || (t as any).expense_category || '').toLowerCase();
+      const desc = String(t.description || '').toLowerCase();
+      const id = String(t.id || '').toLowerCase();
+      // استبعاد السلف والرواتب والتحويلات والمبيعات من تقرير المصروفات
+      const isAdv = id.startsWith('trx-adv') || cat === 'staff_advance' || cat === 'hr_advance' || cat === 'advance' || cat.includes('سلف') || expCat.includes('سلف') || desc.includes('سلفة') || desc.includes('سلف');
+      if (isAdv) return false;
+      const isSal = id.startsWith('trx-sal-') || cat === 'salaries' || cat === 'salary' || cat.includes('رواتب') || cat.includes('راتب') || expCat.includes('رواتب') || expCat.includes('راتب') || desc.includes('صرف راتب') || desc.includes('مسير رواتب');
+      if (isSal) return false;
+      if (cat === 'sales' || cat === 'مبيعات' || expCat === 'sales' || expCat === 'مبيعات') return false;
+      if (cat === 'booking_advance' || cat === 'مقدم حجز' || expCat === 'booking_advance' || expCat === 'مقدم حجز') return false;
+      if (cat === 'transfer' || cat.includes('تحويل') || desc.includes('تحويل') || desc.includes('تصفير')) return false;
+      return true;
     });
 
     const dateLabel = start.toISOString().split('T')[0] === end.toISOString().split('T')[0] 
