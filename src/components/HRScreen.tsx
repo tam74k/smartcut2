@@ -2685,10 +2685,19 @@ export function HRScreen({
       const treasuryName = settings.treasuries.find(t => t.id === newAdvanceForm.treasuryId)?.name || 'الخزينة الرئيسية';
       const branchCodeToUse = settings.branches?.find(b => b.id === activeBranchId)?.code || (targetEmp as any).branchCode || 'BR-01';
 
+      const now = new Date();
+      const hours = String(now.getHours()).padStart(2, '0');
+      const minutes = String(now.getMinutes()).padStart(2, '0');
+      const seconds = String(now.getSeconds()).padStart(2, '0');
+      const currentTimeStr = `${hours}:${minutes}:${seconds}`;
+
+      const todayDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      const effectiveAdvanceDate = newAdvanceForm.date || todayDateStr;
+
       // 1. Transaction
       const trx: Transaction = {
         id: trxId,
-        date: newAdvanceForm.date + 'T' + new Date().toTimeString().split(' ')[0],
+        date: `${effectiveAdvanceDate}T${currentTimeStr}`,
         shiftDate: shiftData?.isOpen ? shiftData.date : undefined,
         type: 'out',
         amount: amt,

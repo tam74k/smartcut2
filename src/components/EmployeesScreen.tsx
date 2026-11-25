@@ -285,7 +285,11 @@ export function EmployeesScreen({
   >(null);
 
   // Modals form states
-  const defaultDate = shiftData?.isOpen ? shiftData.date : new Date().toISOString().split('T')[0];
+  const getTodayLocalDateStr = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+  const defaultDate = shiftData?.isOpen ? shiftData.date : getTodayLocalDateStr();
   const [advanceForm, setAdvanceForm] = useState({ amount: 0, treasuryId: settings.treasuries[0]?.id || '', note: '', date: defaultDate });
   const [penaltyForm, setPenaltyForm] = useState({ type: 'penalty_cash' as 'penalty_cash'|'penalty_days', amount: 0, days: 0, note: '', date: defaultDate });
   const [bonusForm, setBonusForm] = useState({ amount: 0, note: '', date: defaultDate });
@@ -380,8 +384,15 @@ export function EmployeesScreen({
     const emp = employees.find(e => e.id === quickActionForm.empId);
     if (!emp) return;
 
-    const formattedTime = new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
-    const fullDateTime = `${quickActionForm.date} ${formattedTime}`;
+    const now = new Date();
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+    const currentTimeStr = `${hours}:${minutes}:${seconds}`;
+
+    const effectiveActionDate = quickActionForm.date || getTodayLocalDateStr();
+    const formattedTime = now.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
+    const fullDateTime = `${effectiveActionDate} ${formattedTime}`;
 
     if (quickActionForm.type === 'advance') {
       if (quickActionForm.amount <= 0) {
@@ -398,7 +409,7 @@ export function EmployeesScreen({
       const branchCodeToUse = settings.branches?.find(b => b.id === activeBranchId)?.code || (emp as any).branchCode || 'BR-01';
       const trx: Transaction = {
         id: 'TRX-ADV-' + Math.random().toString(36).substring(2, 9),
-        date: quickActionForm.date + 'T' + new Date().toTimeString().split(' ')[0],
+        date: `${effectiveActionDate}T${currentTimeStr}`,
         shiftDate: shiftData?.isOpen ? shiftData.date : undefined,
         type: 'out',
         amount: quickActionForm.amount,
@@ -923,12 +934,19 @@ export function EmployeesScreen({
         if (!advanceForm.treasuryId) { alert('اختر الخزينة'); return emp; }
         if (advanceForm.amount <= 0) { alert('المبلغ غير صحيح'); return emp; }
         
+        const now = new Date();
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        const seconds = String(now.getSeconds()).padStart(2, '0');
+        const currentTimeStr = `${hours}:${minutes}:${seconds}`;
+
+        const effectiveAdvanceDate = advanceForm.date || getTodayLocalDateStr();
         const treasuryName = settings.treasuries.find(t => t.id === advanceForm.treasuryId)?.name || 'الخزنة الرئيسية';
 
         const branchCodeToUse = settings.branches?.find(b => b.id === activeBranchId)?.code || (emp as any).branchCode || 'BR-01';
         const trx: Transaction = {
           id: 'TRX-ADV-' + Math.random().toString(36).substring(2, 9),
-          date: advanceForm.date + 'T' + new Date().toTimeString().split(' ')[0],
+          date: `${effectiveAdvanceDate}T${currentTimeStr}`,
           shiftDate: shiftData?.isOpen ? shiftData.date : undefined,
           type: 'out',
           amount: advanceForm.amount,

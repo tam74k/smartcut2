@@ -290,12 +290,6 @@ export function parseDbDateTime(dateRaw?: string | Date | null): Date {
     const trimmed = dateRaw.trim();
     if (!trimmed) return new Date();
 
-    const hasTzOffset = trimmed.endsWith('Z') || /[+-]\d{2}(?::?\d{2})?$/.test(trimmed);
-    if (hasTzOffset) {
-      const d = new Date(trimmed);
-      if (!isNaN(d.getTime())) return d;
-    }
-
     // Match: YYYY-MM-DD or YYYY/MM/DD followed by T or space, then HH:mm(:ss)?
     const match = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})[T\s](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/);
     if (match) {
@@ -362,9 +356,9 @@ function formatDateTimeWithTz(
 }
 
 /**
- * Format invoice and shift date & time.
- * If timestamp has timezone information (UTC Z or offset like +00:00), converts strictly to salon's physical timezone.
- * If timestamp is naive local wall-clock, preserves exact literal digits.
+ * Format invoice, transaction, advance, expense and receipt date & time.
+ * Strictly extracts the exact wall-clock values recorded by the user,
+ * bypassing PostgreSQL timestamptz UTC offset conversions (+00:00).
  */
 export function formatInvoiceDateTimeDisplay(
   dateRaw?: string | Date | null,
@@ -374,10 +368,9 @@ export function formatInvoiceDateTimeDisplay(
 ): string {
   if (!dateRaw) return '-';
 
-  const effectiveTz = timeZone || getSalonTimezone();
-
   if (dateRaw instanceof Date) {
     if (isNaN(dateRaw.getTime())) return '-';
+    const effectiveTz = timeZone || getSalonTimezone();
     return formatDateTimeWithTz(dateRaw, effectiveTz, locale, options);
   }
 
@@ -385,16 +378,7 @@ export function formatInvoiceDateTimeDisplay(
     const trimmed = dateRaw.trim();
     if (!trimmed) return '-';
 
-    // 1. Check if the string has explicit timezone indicator (ends with 'Z' or has '+00:00' or '+00' or '-04:00')
-    const hasTzOffset = trimmed.endsWith('Z') || /[+-]\d{2}(?::?\d{2})?$/.test(trimmed);
-    if (hasTzOffset) {
-      const d = new Date(trimmed);
-      if (!isNaN(d.getTime())) {
-        return formatDateTimeWithTz(d, effectiveTz, locale, options);
-      }
-    }
-
-    // 2. Naive local wall-clock string (e.g. '2026-11-24T11:42:05')
+    // Extract exact literal digits: YYYY-MM-DD or YYYY/MM/DD followed by T or space, then HH:mm(:ss)?
     const match = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})[T\s](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/);
     if (match) {
       const year = match[1];
@@ -418,4 +402,38 @@ export function formatInvoiceDateTimeDisplay(
 
   const d = parseDbDateTime(dateRaw);
   return d.toLocaleString(locale, options);
+}
+
+/**
+ * Format shift date & time specifically for work_shifts table (opened_at, closed_at),
+ * which are stored as true UTC ISO timestamps and must be converted to salon timezone.
+ */
+export function formatShiftDateTimeDisplay(
+  dateRaw?: string | Date | null,
+  locale: string = 'ar-EG',
+  options?: Intl.DateTimeFormatOptions,
+  timeZone?: string
+): string {
+  if (!dateRaw) return '-';
+  const effectiveTz = timeZone || getSalonTimezone();
+
+  if (dateRaw instanceof Date) {
+    if (isNaN(dateRaw.getTime())) return '-';
+    return formatDateTimeWithTz(dateRaw, effectiveTz, locale, options);
+  }
+
+  if (typeof dateRaw === 'string') {
+    const trimmed = dateRaw.trim();
+    if (!trimmed) return '-';
+
+    const hasTzOffset = trimmed.endsWith('Z') || /[+-]\d{2}(?::?\d{2})?$/.test(trimmed);
+    if (hasTzOffset) {
+      const d = new Date(trimmed);
+      if (!isNaN(d.getTime())) {
+        return formatDateTimeWithTz(d, effectiveTz, locale, options);
+      }
+    }
+  }
+
+  return formatInvoiceDateTimeDisplay(dateRaw, locale, options, timeZone);
 }

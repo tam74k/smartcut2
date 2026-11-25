@@ -36,7 +36,7 @@ import { DB } from '../services/db';
 import { ClosingReportReceipt } from './ClosingReportReceipt';
 import { handlePrintReceipt } from '../utils/print';
 import { exportToExcel } from '../utils/exportExcel';
-import { formatInvoiceDateTimeDisplay, getSalonTimezone, utcToSalonLocal } from '../utils/timezone';
+import { formatInvoiceDateTimeDisplay, formatShiftDateTimeDisplay, getSalonTimezone, utcToSalonLocal } from '../utils/timezone';
 import { resolveMainTreasury, getTransactionTargetTreasuryId } from '../utils/treasury';
 
 interface ShiftsScreenProps {
@@ -606,8 +606,8 @@ export function ShiftsScreen({
         s.shiftDate || '',
         s.shiftCode || s.id || '',
         isShiftOpen ? 'مفتوحة حالياً' : 'مغلقة',
-        s.openedAt ? formatInvoiceDateTimeDisplay(s.openedAt, 'ar-EG', undefined, salonTz) : '-',
-        s.closedAt ? formatInvoiceDateTimeDisplay(s.closedAt, 'ar-EG', undefined, salonTz) : (isShiftOpen ? 'مفتوحة حالياً' : '-'),
+        s.openedAt ? formatShiftDateTimeDisplay(s.openedAt, 'ar-EG', undefined, salonTz) : '-',
+        s.closedAt ? formatShiftDateTimeDisplay(s.closedAt, 'ar-EG', undefined, salonTz) : (isShiftOpen ? 'مفتوحة حالياً' : '-'),
         s.openedByName || s.openedByUserName || 'الكاشير',
         isShiftOpen ? 'قيد العمل' : (s.closedByName || s.closedByUserName || '-'),
         stats.invoiceCount,
@@ -954,7 +954,7 @@ export function ShiftsScreen({
 
                             {/* Open Time */}
                             <td className="py-3 px-3 font-mono border-l border-black whitespace-nowrap text-xs">
-                              {shift.openedAt ? formatInvoiceDateTimeDisplay(shift.openedAt, 'ar-EG', undefined, salonTz) : '-'}
+                              {shift.openedAt ? formatShiftDateTimeDisplay(shift.openedAt, 'ar-EG', undefined, salonTz) : '-'}
                             </td>
 
                             {/* Close Time */}
@@ -962,7 +962,7 @@ export function ShiftsScreen({
                               {isShiftOpen ? (
                                 <span className="font-bold border border-black px-1.5 py-0.5 rounded text-[10px]">مفتوحة حالياً</span>
                               ) : shift.closedAt ? (
-                                formatInvoiceDateTimeDisplay(shift.closedAt, 'ar-EG', undefined, salonTz)
+                                formatShiftDateTimeDisplay(shift.closedAt, 'ar-EG', undefined, salonTz)
                               ) : (
                                 '-'
                               )}

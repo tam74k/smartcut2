@@ -730,11 +730,20 @@ export function POSScreen({
       const formattedTime = new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
       const fullDateTime = `${advanceDate} ${formattedTime}`;
 
+      const now = new Date();
+      const hours = String(now.getHours()).padStart(2, '0');
+      const minutes = String(now.getMinutes()).padStart(2, '0');
+      const seconds = String(now.getSeconds()).padStart(2, '0');
+      const currentTimeStr = `${hours}:${minutes}:${seconds}`;
+
+      const todayDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      const effectiveAdvDate = advanceDate || todayDateStr;
+
       // 1. إنشاء قيد مالي في الخزينة
       const trxId = 'TRX-ADV-' + Math.random().toString(36).substring(2, 9);
       const newTrx: Transaction = {
         id: trxId,
-        date: advanceDate + 'T' + new Date().toTimeString().split(' ')[0],
+        date: `${effectiveAdvDate}T${currentTimeStr}`,
         shiftDate: shiftData?.isOpen ? shiftData.date : undefined,
         type: 'out',
         amount: amt,
