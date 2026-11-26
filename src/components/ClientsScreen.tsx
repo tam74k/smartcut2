@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { handlePrintReceipt } from '../utils/print';
 import { formatInvoiceDateTimeDisplay } from '../utils/timezone';
+import { getEffectiveInvoiceDiscount, getEffectiveInvoiceSubtotal } from '../utils/invoiceTotals';
 import { DB } from '../services/db';
 import { ClientsImportModal } from './ClientsImportModal';
 
@@ -1111,7 +1112,7 @@ export function ClientsScreen({
                                 </span>
                               </td>
                               <td className="py-3 px-3 font-mono text-rose-500 font-bold">
-                                {inv.discount > 0 ? `-${inv.discount}` : '0.00'}
+                                {getEffectiveInvoiceDiscount(inv) > 0 ? `-${getEffectiveInvoiceDiscount(inv).toFixed(2)}` : '0.00'}
                               </td>
                               <td className="py-3 px-3 font-mono font-black text-emerald-600 text-sm">
                                 {inv.total.toFixed(2)} {settings.currency}
@@ -1235,12 +1236,12 @@ export function ClientsScreen({
             <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-1.5 text-xs font-bold">
               <div className="flex justify-between text-slate-600">
                 <span>الإجمالي قبل الخصم:</span>
-                <span className="font-mono">{(viewInvoiceDetails.total + (viewInvoiceDetails.discount || 0)).toFixed(2)} {settings.currency}</span>
+                <span className="font-mono">{getEffectiveInvoiceSubtotal(viewInvoiceDetails).toFixed(2)} {settings.currency}</span>
               </div>
-              {viewInvoiceDetails.discount > 0 && (
+              {getEffectiveInvoiceDiscount(viewInvoiceDetails) > 0 && (
                 <div className="flex justify-between text-rose-500">
                   <span>الخصم المطبق:</span>
-                  <span className="font-mono">-{viewInvoiceDetails.discount.toFixed(2)} {settings.currency}</span>
+                  <span className="font-mono">-{getEffectiveInvoiceDiscount(viewInvoiceDetails).toFixed(2)} {settings.currency}</span>
                 </div>
               )}
               <div className="flex justify-between text-slate-900 font-black text-sm pt-2 border-t border-slate-200">

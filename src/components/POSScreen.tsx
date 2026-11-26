@@ -1999,6 +1999,27 @@ export function POSScreen({
     const effectiveBaseDate = (effectiveIsShiftOpen && effectiveShiftDate) ? effectiveShiftDate : chkTodayStr;
     const finalInvoiceDate = editingInvoice ? editingInvoice.date : `${effectiveBaseDate}T${chkTimeStr}`;
 
+    const grossSubtotal = cart.reduce((sum, c) => {
+      const p = getCartItemPrice(c);
+      const rawItem = c?.item || {};
+      const origPrice = Number(c?.originalPrice || rawItem?.originalPrice || (c?.discount ? p + Number(c.discount) : p));
+      return sum + (origPrice * (Number(c.quantity) || 1));
+    }, 0);
+
+    const totalLineDiscounts = cart.reduce((sum, c) => {
+      const p = getCartItemPrice(c);
+      const rawItem = c?.item || {};
+      const origPrice = Number(c?.originalPrice || rawItem?.originalPrice || (c?.discount ? p + Number(c.discount) : p));
+      const explicitDisc = Number(c?.discount || rawItem?.discount || 0);
+      const diff = origPrice > p ? origPrice - p : 0;
+      return sum + (Math.max(explicitDisc, diff) * (Number(c.quantity) || 1));
+    }, 0);
+
+    const effectiveInvoiceDiscount = (isRemedyInvoice || isWaselInvoice)
+      ? (grossSubtotal > 0 ? grossSubtotal : subtotal)
+      : (discountAmount + totalLineDiscounts);
+    const effectiveInvoiceSubtotal = (grossSubtotal > 0 && totalLineDiscounts > 0) ? grossSubtotal : subtotal;
+
     const initialInv: Invoice = {
       id: finalInvoiceId,
       salonId: settings.salonId,
@@ -2019,7 +2040,7 @@ export function POSScreen({
         : (selectedClient ? selectedClient.name : (clientSearch || 'عميل نقدي')),
       clientId: selectedClient ? selectedClient.id : undefined,
       clientPhone: selectedClient ? selectedClient.phone : undefined,
-      subtotal: subtotal,
+      subtotal: effectiveInvoiceSubtotal,
       vatAmount: vatAmount,
       total: finalTotal, // net paid (0 if remedy or wasel)
       paid: actualPaid,
@@ -2037,7 +2058,7 @@ export function POSScreen({
         notes: 'الدفعة الأولى عند إصدار الفاتورة',
         createdBy: currentUser?.name || 'الكاشير'
       }] : [],
-      discount: (isRemedyInvoice || isWaselInvoice) ? subtotal : discountAmount,
+      discount: effectiveInvoiceDiscount,
       paymentMethod: paymentMode === 'deferred' ? 'deferred' : (splits[0]?.treasuryId || 'cash'),
       treasuryId: paymentMode === 'deferred' ? 'deferred' : (splits[0]?.treasuryId || 'main'),
       shiftId: effectiveShiftId,

@@ -13,18 +13,22 @@ import { generateCode39Svg } from '../utils/printQueueSlip';
 import { InvoiceReceiptCard, executePrintInvoiceReceipt } from './InvoiceReceiptCard';
 import { isWaselInvoice } from '../utils/commissionHelper';
 import { formatInvoiceDateTimeDisplay, parseDbDateTime, getNowLocalDateTimeStr, ensureLocalDateTimeStr } from '../utils/timezone';
+import { getEffectiveInvoiceDiscount, getEffectiveInvoiceSubtotal } from '../utils/invoiceTotals';
+
+export { getEffectiveInvoiceDiscount, getEffectiveInvoiceSubtotal };
 
 export const getEffectiveInvoiceTotal = (inv: Invoice | any): number => {
   if (!inv) return 0;
   if (inv.total !== undefined && inv.total !== null && Number(inv.total) > 0) {
     return Number(inv.total);
   }
+  const effDiscount = getEffectiveInvoiceDiscount(inv);
   if (inv.subtotal !== undefined && inv.subtotal !== null && Number(inv.subtotal) > 0) {
-    return Math.max(0, Number(inv.subtotal) - Number(inv.discount || 0));
+    return Math.max(0, Number(inv.subtotal) - effDiscount);
   }
   if (Array.isArray(inv.items) && inv.items.length > 0) {
     const sum = inv.items.reduce((acc: number, it: any) => acc + (Number(it.price || 0) * (Number(it.quantity) || 1)), 0);
-    if (sum > 0) return Math.max(0, sum - Number(inv.discount || 0));
+    if (sum > 0) return Math.max(0, sum - effDiscount);
   }
   return Number(inv.total || 0);
 };
@@ -1154,7 +1158,18 @@ export function InvoicesScreen({
                       }) || '-'
                     )}
                   </td>
-                  <td className="px-4 sm:px-6 py-2.5 sm:py-3 text-center font-bold text-red-500">{Number(inv.discount || 0) > 0 ? Number(inv.discount).toFixed(2) : '-'}</td>
+                  <td className="px-4 sm:px-6 py-2.5 sm:py-3 text-center">
+                    {(() => {
+                      const effDisc = getEffectiveInvoiceDiscount(inv);
+                      return effDisc > 0 ? (
+                        <span className="inline-block font-mono font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded border border-red-200">
+                          -{effDisc.toFixed(2)}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 font-bold">-</span>
+                      );
+                    })()}
+                  </td>
                   <td className="px-4 sm:px-6 py-2.5 sm:py-3 text-center font-bold text-blue-600">{Number(inv.cashbackUsed || 0) > 0 ? Number(inv.cashbackUsed).toFixed(2) : '-'}</td>
                   <td className="px-4 sm:px-6 py-2.5 sm:py-3 font-bold text-slate-800">
                     <div>{getEffectiveInvoiceTotal(inv).toFixed(2)} {settings.currency}</div>
