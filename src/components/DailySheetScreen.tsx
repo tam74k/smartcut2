@@ -559,6 +559,125 @@ export function DailySheetScreen({
     return totalGrandIncome - totalStaffPayments - totalDayExpenses;
   }, [totalGrandIncome, totalStaffPayments, totalDayExpenses]);
 
+  // Helper to identify cash drawer transactions / accounts
+  const isCashAccount = (treasuryId?: string, treasuryName?: string, paymentMethod?: string) => {
+    const tId = (treasuryId || '').toLowerCase().trim();
+    const tName = (treasuryName || '').toLowerCase().trim();
+    const pm = (paymentMethod || '').toLowerCase().trim();
+
+    if (
+      tId === 'main' || tId.includes('main') || tName.includes('الرئيسية') || tName.includes('رئيسية') ||
+      tId === 'card' || tId.includes('card') || tId === 'visa' || tId.includes('visa') || tName.includes('فيزا') ||
+      tId === 'instapay' || tId.includes('instapay') || tName.includes('انستا') || tName.includes('instapay') ||
+      tId === 'vodafone' || tId.includes('vodafone') || tName.includes('فودافون') ||
+      pm === 'card' || pm === 'visa' || pm === 'instapay' || pm === 'vodafone' || pm === 'deferred'
+    ) {
+      return false;
+    }
+
+    return (
+      tId === 'cash' ||
+      tId.includes('cash') ||
+      tId.includes('كاش') ||
+      tId.includes('درج') ||
+      tName.includes('كاش') ||
+      tName.includes('cash') ||
+      tName.includes('درج') ||
+      pm === 'cash' ||
+      pm.includes('cash') ||
+      pm.includes('كاش') ||
+      pm.includes('درج')
+    );
+  };
+
+  // فواتير الكاش فقط المسددة في درج الكاش
+  const totalCashInvoices = useMemo(() => {
+    let sum = 0;
+    registeredMethods.forEach(m => {
+      if (isCashAccount(m.id, m.name)) {
+        sum += (overallMethodTotals[m.id] || 0);
+      }
+    });
+    return sum;
+  }, [overallMethodTotals, registeredMethods]);
+
+  // المصروفات اليومية الكاش المنصرفة من الدرج فقط
+  const totalCashExpenses = useMemo(() => {
+    return transactions.filter(t => {
+      if (!isMatchDate(t.date)) return false;
+      if (t.type !== 'out' && (t.type as string) !== 'expense') return false;
+      if (!isCashAccount(t.treasuryId, (t as any).treasury_id || t.treasury, t.paymentMethod || (t as any).payment_method)) return false;
+
+      const cat = String(t.category || '').toLowerCase().trim();
+      const desc = String(t.description || '').toLowerCase().trim();
+      const expCat = String(t.expenseCategory || (t as any).expense_category || '').toLowerCase().trim();
+
+      if (desc.includes('تصفير') || desc.includes('نقل الرصيد') || desc.includes('تحويل') || cat.includes('transfer')) return false;
+      if (cat.includes('partner') || cat.includes('drawings') || cat.includes('deposit') || cat.includes('sales')) return false;
+      if (cat.includes('purchase') || cat.includes('مشتريات') || cat.includes('مشتروات') || cat.includes('supplier')) return false;
+
+      const isAdvance = (
+        cat.includes('advance') || cat.includes('salary') || cat.includes('سلف') || 
+        expCat.includes('سلف') || expCat.includes('رواتب') || expCat.includes('مرتبات') ||
+        desc.includes('سلفة') || desc.includes('سلف') || desc.includes('راتب')
+      );
+      if (isAdvance) return false;
+
+      return (
+        cat === 'expense' || cat === 'مصروف' || cat === 'مصروفات' || cat === 'نثريات' ||
+        (t.type as string) === 'expense' || Boolean(expCat) || desc.includes('مصروف')
+      );
+    }).reduce((sum, t) => sum + Number(t.amount || 0), 0);
+  }, [transactions, selectedDate]);
+
+  // السلف والرواتب الكاش المنصرفة من الدرج فقط
+  const totalCashStaffPayments = useMemo(() => {
+    return transactions.filter(t => {
+      if (!isMatchDate(t.date)) return false;
+      if (t.type !== 'out' && (t.type as string) !== 'expense') return false;
+      if (!isCashAccount(t.treasuryId, (t as any).treasury_id || t.treasury, t.paymentMethod || (t as any).payment_method)) return false;
+
+      const cat = String(t.category || '').toLowerCase().trim();
+      const desc = String(t.description || '').toLowerCase().trim();
+      const expCat = String(t.expenseCategory || (t as any).expense_category || '').toLowerCase().trim();
+
+      if (desc.includes('تصفير') || desc.includes('نقل الرصيد') || desc.includes('تحويل') || cat.includes('transfer')) return false;
+
+      return (
+        cat === 'staff_advance' || cat === 'hr_advance' || cat === 'advance' || 
+        cat === 'commission_payout' || cat === 'salary' || cat === 'سلفة موظف' ||
+        cat.includes('سلف') || expCat.includes('سلف') || expCat.includes('رواتب') || 
+        expCat.includes('مرتبات') || desc.includes('سلفة') || desc.includes('سلف') || desc.includes('راتب')
+      );
+    }).reduce((sum, t) => sum + Number(t.amount || 0), 0);
+  }, [transactions, selectedDate]);
+
+  // المشتروات وسداد الموردين الكاش المنصرفة من الدرج فقط
+  const totalCashPurchases = useMemo(() => {
+    return transactions.filter(t => {
+      if (!isMatchDate(t.date)) return false;
+      if (t.type !== 'out' && (t.type as string) !== 'expense') return false;
+      if (!isCashAccount(t.treasuryId, (t as any).treasury_id || t.treasury, t.paymentMethod || (t as any).payment_method)) return false;
+
+      const cat = String(t.category || '').toLowerCase().trim();
+      const desc = String(t.description || '').toLowerCase().trim();
+      const expCat = String(t.expenseCategory || (t as any).expense_category || '').toLowerCase().trim();
+
+      if (desc.includes('تصفير') || desc.includes('نقل الرصيد') || desc.includes('تحويل') || cat.includes('transfer')) return false;
+
+      return (
+        cat === 'purchase' || cat === 'مشتريات' || cat === 'مشتروات' || 
+        cat === 'supplier_payment' || cat === 'supplier' || expCat === 'مشتريات' || expCat === 'مشتروات' ||
+        desc.includes('مشتريات') || desc.includes('مشتروات') || desc.includes('فاتورة شراء') || desc.includes('سداد مورد')
+      );
+    }).reduce((sum, t) => sum + Number(t.amount || 0), 0);
+  }, [transactions, selectedDate]);
+
+  // صافي الكاش المتبقي في الدرج فقط
+  const netCash = useMemo(() => {
+    return totalCashInvoices - totalCashExpenses - totalCashStaffPayments - totalCashPurchases;
+  }, [totalCashInvoices, totalCashExpenses, totalCashStaffPayments, totalCashPurchases]);
+
   // Total columns calculation for colspans
   // Per employee: 1 (ID) + registeredMethods.length + 1 (Tip) + 1 (Wasel)
   const colsPerEmployee = 1 + registeredMethods.length + 1 + 1;
@@ -719,7 +838,11 @@ export function DailySheetScreen({
         ['', ...activeEmployees.flatMap((_, idx) => [`العدد: ${employeeData[idx]?.invoiceCount || 0}`, ...registeredMethods.map(() => ''), '', '']), '', `م: ${totalStaffPayments.toFixed(2)}`, '', `م: ${totalDayExpenses.toFixed(2)}`],
         ['', ...activeEmployees.flatMap((_, idx) => [`الفعلي: ${(employeeData[idx]?.totalSales || 0).toFixed(2)} | بقشيش: +${(employeeData[idx]?.totalTip || 0).toFixed(2)}`, ...registeredMethods.map(() => ''), '', '']), '', '', '', ''],
         ['', ...activeEmployees.flatMap((_, idx) => [`العمولة: ${(employeeData[idx]?.totalCommission || 0).toFixed(2)}`, ...registeredMethods.map(() => ''), '', '']), '', '', '', ''],
-        [`إجمالي الدخل: ${totalGrandIncome.toFixed(2)} (خدمات: ${totalOverallActualSales.toFixed(2)} | بقشيش: +${totalOverallTips.toFixed(2)})`, `صافي الدخل: ${netIncome.toFixed(2)}`]
+        [
+          `إجمالي الدخل: ${totalGrandIncome.toFixed(2)} (خدمات: ${totalOverallActualSales.toFixed(2)} | بقشيش: +${totalOverallTips.toFixed(2)})`, 
+          `صافي الدخل (شامل): ${netIncome.toFixed(2)}`,
+          `صافي الكاش (الدرج): ${netCash.toFixed(2)} (فواتير كاش: ${totalCashInvoices.toFixed(2)} - سلف كاش: ${totalCashStaffPayments.toFixed(2)} - مصروفات كاش: ${totalCashExpenses.toFixed(2)}${totalCashPurchases > 0 ? ` - مشتروات كاش: ${totalCashPurchases.toFixed(2)}` : ''})`
+        ]
       ];
 
       exportToExcel(
@@ -812,7 +935,7 @@ export function DailySheetScreen({
       </div>
 
       {/* Summary KPI Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
         <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
           <span className="text-[11px] font-bold text-slate-500">الحلاقين النشطين</span>
           <div className="flex items-baseline justify-between mt-1">
@@ -866,6 +989,20 @@ export function DailySheetScreen({
               {netIncome.toFixed(0)}
             </span>
             <span className="text-[10px] text-indigo-300 font-bold">{settings.currency}</span>
+          </div>
+        </div>
+
+        <div className="bg-gradient-to-br from-emerald-950 via-teal-950 to-slate-900 p-3.5 rounded-xl text-white shadow-xs flex flex-col justify-between border border-emerald-800/80">
+          <span className="text-[11px] font-bold text-emerald-300">صافي الكاش (الدرج)</span>
+          <div className="flex items-baseline justify-between mt-1">
+            <span className={`text-xl font-black font-mono ${netCash >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+              {netCash.toFixed(0)}
+            </span>
+            <span className="text-[10px] text-emerald-300 font-bold">{settings.currency}</span>
+          </div>
+          <div className="text-[9px] text-emerald-200/80 font-medium mt-1 pt-1 border-t border-emerald-800/50 flex items-center justify-between truncate" title={`فواتير كاش: ${totalCashInvoices.toFixed(0)} | سلف كاش: -${totalCashStaffPayments.toFixed(0)} | مصروفات كاش: -${totalCashExpenses.toFixed(0)}${totalCashPurchases > 0 ? ` | مشتروات كاش: -${totalCashPurchases.toFixed(0)}` : ''}`}>
+            <span>كاش: {totalCashInvoices.toFixed(0)}</span>
+            <span className="text-amber-300">منصرف: -{(totalCashExpenses + totalCashStaffPayments + totalCashPurchases).toFixed(0)}</span>
           </div>
         </div>
       </div>
@@ -1252,10 +1389,37 @@ export function DailySheetScreen({
                   </td>
                 </tr>
 
-                {/* Footer Row 7: Final Net Income */}
-                <tr style={{ height: '48px', backgroundColor: '#1a237e', color: '#ffffff', fontSize: '24px', fontWeight: 'bold', borderTop: '4px double #fff' }}>
-                  <td colSpan={totalTableCols} className="border border-black py-2 px-4 text-center font-black">
-                    صافي الدخل: {netIncome.toFixed(0)} {settings.currency}
+                {/* Footer Row 7: Final Net Income & Net Cash Side-by-Side */}
+                <tr style={{ height: '54px', fontSize: '20px', fontWeight: 'bold', borderTop: '4px double #fff' }}>
+                  <td 
+                    colSpan={Math.floor(totalTableCols / 2)} 
+                    style={{ backgroundColor: '#1a237e', color: '#ffffff' }}
+                    className="border border-black py-2.5 px-3 text-center font-black"
+                  >
+                    <div className="flex flex-col items-center justify-center">
+                      <div className="flex items-center justify-center gap-2">
+                        <span className="text-indigo-200">صافي الدخل (شامل):</span>
+                        <span className="font-mono text-white text-2xl font-black">{netIncome.toFixed(0)} {settings.currency}</span>
+                      </div>
+                      <div className="text-[11px] font-normal text-indigo-200 mt-0.5 opacity-90">
+                        (إجمالي الفواتير: {totalGrandIncome.toFixed(0)} - السلف: {totalStaffPayments.toFixed(0)} - المصروفات: {totalDayExpenses.toFixed(0)})
+                      </div>
+                    </div>
+                  </td>
+                  <td 
+                    colSpan={totalTableCols - Math.floor(totalTableCols / 2)} 
+                    style={{ backgroundColor: netCash >= 0 ? '#004d40' : '#b71c1c', color: '#ffffff' }}
+                    className="border border-black py-2.5 px-3 text-center font-black"
+                  >
+                    <div className="flex flex-col items-center justify-center">
+                      <div className="flex items-center justify-center gap-2">
+                        <span className="text-amber-300">صافي الكاش (المتبقي في الدرج):</span>
+                        <span className="font-mono text-white text-2xl font-black">{netCash.toFixed(0)} {settings.currency}</span>
+                      </div>
+                      <div className="text-[11px] font-normal text-emerald-100 mt-0.5 opacity-95">
+                        (فواتير كاش: {totalCashInvoices.toFixed(0)} - سلف كاش: {totalCashStaffPayments.toFixed(0)} - مصروفات كاش: {totalCashExpenses.toFixed(0)}{totalCashPurchases > 0 ? ` - مشتروات كاش: ${totalCashPurchases.toFixed(0)}` : ''})
+                      </div>
+                    </div>
                   </td>
                 </tr>
               </tfoot>
