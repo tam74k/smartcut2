@@ -1389,8 +1389,8 @@ export function DailySheetScreen({
                   </td>
                 </tr>
 
-                {/* Footer Row 7: Final Net Income & Net Cash Side-by-Side */}
-                <tr style={{ height: '54px', fontSize: '20px', fontWeight: 'bold', borderTop: '4px double #fff' }}>
+                {/* Footer Row 7: Final Net Income & Net Cash Side-by-Side (صافي الدخل - صافي الكاش) */}
+                <tr style={{ height: '54px', fontSize: '22px', fontWeight: 'bold', borderTop: '4px double #fff' }}>
                   <td 
                     colSpan={Math.floor(totalTableCols / 2)} 
                     style={{ backgroundColor: '#1a237e', color: '#ffffff' }}
@@ -1398,7 +1398,7 @@ export function DailySheetScreen({
                   >
                     <div className="flex flex-col items-center justify-center">
                       <div className="flex items-center justify-center gap-2">
-                        <span className="text-indigo-200">صافي الدخل (شامل):</span>
+                        <span className="text-white">صافي الدخل:</span>
                         <span className="font-mono text-white text-2xl font-black">{netIncome.toFixed(0)} {settings.currency}</span>
                       </div>
                       <div className="text-[11px] font-normal text-indigo-200 mt-0.5 opacity-90">
@@ -1413,7 +1413,7 @@ export function DailySheetScreen({
                   >
                     <div className="flex flex-col items-center justify-center">
                       <div className="flex items-center justify-center gap-2">
-                        <span className="text-amber-300">صافي الكاش (المتبقي في الدرج):</span>
+                        <span className="text-white">صافي الكاش:</span>
                         <span className="font-mono text-white text-2xl font-black">{netCash.toFixed(0)} {settings.currency}</span>
                       </div>
                       <div className="text-[11px] font-normal text-emerald-100 mt-0.5 opacity-95">
