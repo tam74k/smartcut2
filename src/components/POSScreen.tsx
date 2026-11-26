@@ -366,6 +366,7 @@ export function POSScreen({
   }, [transactions, effectiveShiftDate]);
 
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [bulkBarberId, setBulkBarberId] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [itemTypeFilter, setItemTypeFilter] = useState<'service' | 'product'>('service');
@@ -1523,6 +1524,7 @@ export function POSScreen({
 
     // 2. تصفير فوري لجميع حقول الفاتورة والعميل والسلة وإنهاء وضع التعديل
     setCart([]);
+    setBulkBarberId('');
     setSelectedClient(null);
     setClientSearch('');
     setDiscount({ type: 'fixed', value: 0 });
@@ -3301,6 +3303,25 @@ export function POSScreen({
     return (employees || []).filter(e => isReferralEligibleEmployee(e));
   }, [employees]);
 
+  // تطبيق الموظف المختار كمنفذ لجميع الخدمات في السلة دفعة واحدة
+  const handleApplyBulkBarber = () => {
+    if (!bulkBarberId) {
+      alert('الرجاء اختيار اسم الموظف أولاً من القائمة المنسدلة.');
+      return;
+    }
+    const serviceItems = cart.filter(c => c.type === 'service' || !c.type);
+    if (serviceItems.length === 0) {
+      alert('لا توجد أي خدمات مضافة في السلة حالياً لتعيين الموظف لها.');
+      return;
+    }
+    setCart(prev => prev.map(c => {
+      if (c.type === 'service' || !c.type) {
+        return { ...c, employeeId: bulkBarberId };
+      }
+      return c;
+    }));
+  };
+
   const addToCart = (item: any) => {
     if (isSubscriptionBlocked) {
       alert('الحساب موقوف أو انتهت فترة الاشتراك. النظام يعمل الآن بوضع الاطلاع فقط (Read-Only) ولا يمكن إضافة عناصر للسلة.');
@@ -3316,7 +3337,7 @@ export function POSScreen({
       item: { ...item, displayPrice: finalPrice },
       quantity: 1,
       price: finalPrice,
-      employeeId: '',
+      employeeId: (!item._isProduct && bulkBarberId) ? bulkBarberId : '',
       referralEmployeeId: '',
       type: item._isProduct ? 'product' : 'service'
     };
@@ -3516,6 +3537,17 @@ export function POSScreen({
 
         {/* Search & Action Bar - زر قائمة إجراءات على يمين خانة البحث */}
         <div className="flex items-center gap-1.5 sm:gap-2 mb-3 lg:mb-4 w-full flex-nowrap overflow-x-visible">
+          {/* زر فاتورة جديدة - يظهر قبل زر إجراءات */}
+          <button
+            type="button"
+            onClick={handleNewInvoice}
+            className="h-10 bg-emerald-600 hover:bg-emerald-500 text-white px-3 sm:px-3.5 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md shadow-emerald-700/25 border border-emerald-700 transition-all active:scale-95 cursor-pointer shrink-0 whitespace-nowrap"
+            title="بدء فاتورة جديدة (سيتم تعليق الفاتورة الحالية تلقائياً إن وجدت)"
+          >
+            <FilePlus2 size={16} className="shrink-0 text-emerald-100" />
+            <span>فاتورة جديدة</span>
+          </button>
+
           {/* زر قائمة إجراءات - على يمين صندوق البحث */}
           <div className="relative shrink-0" ref={actionsMenuRef}>
             <button
@@ -3681,6 +3713,22 @@ export function POSScreen({
               onKeyDown={handleSearchKeyDown}
             />
           </div>
+
+          {/* زر مرتجع - يظهر قبل زر تقرير اليومية */}
+          {canMakeSalesReturn && (
+            <button
+              type="button"
+              onClick={() => {
+                setPosReturnSearch('');
+                setShowPOSReturnInvoicePicker(true);
+              }}
+              className="h-10 bg-rose-700 hover:bg-rose-800 text-white px-3 sm:px-3.5 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md shadow-rose-700/25 border border-rose-800 transition-all active:scale-95 cursor-pointer shrink-0 whitespace-nowrap"
+              title="مرتجع مبيعات - تسجيل مرتجع لفاتورة وطباعة إشعار دائن"
+            >
+              <RotateCcw size={15} className="shrink-0 text-rose-100" />
+              <span>مرتجع</span>
+            </button>
+          )}
 
           {/* زر تقرير أعمال اليوم بالكامل */}
           <button
@@ -3928,41 +3976,19 @@ export function POSScreen({
           </div>
         )}
 
-        {/* 1. Top Quick Action Bar: New Bill / Hold / Held Invoices Counter */}
+        {/* 1. Top Quick Action Bar: Hold / Held Invoices Counter */}
         <div className="p-3 bg-slate-900 text-white flex items-center justify-between gap-2 shadow-xs shrink-0">
           <div className="flex items-center gap-1.5">
             <button
-              onClick={handleNewInvoice}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-all active:scale-95 cursor-pointer"
-              title="بدء فاتورة جديدة (سيتم تعليق الفاتورة الحالية تلقائياً إن وجدت)"
-            >
-              <FilePlus2 size={15} />
-              <span>فاتورة جديدة</span>
-            </button>
-
-            <button
+              type="button"
               disabled={cart.length === 0}
               onClick={handleHoldCurrentInvoice}
-              className="bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800 text-amber-400 border border-slate-700 px-2.5 py-1.5 rounded-xl text-xs font-black flex items-center gap-1 transition-all active:scale-95 cursor-pointer"
+              className="bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800 text-amber-400 border border-slate-700 px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
               title="تعليق الفاتورة الحالية للعودة إليها لاحقاً"
             >
               <PauseCircle size={15} />
-              <span>تعليق</span>
+              <span>تعليق الفاتورة</span>
             </button>
-
-            {canMakeSalesReturn && (
-              <button
-                onClick={() => {
-                  setPosReturnSearch('');
-                  setShowPOSReturnInvoicePicker(true);
-                }}
-                className="bg-rose-950/70 hover:bg-rose-900 text-rose-300 border border-rose-800/80 px-2.5 py-1.5 rounded-xl text-xs font-black flex items-center gap-1 transition-all active:scale-95 cursor-pointer"
-                title="مرتجع مبيعات - تسجيل مرتجع لفاتورة وطباعة إشعار دائن"
-              >
-                <RotateCcw size={14} />
-                <span>مرتجع</span>
-              </button>
-            )}
           </div>
 
           {/* Held Invoices Button & Glowing Badge */}
@@ -4277,6 +4303,38 @@ export function POSScreen({
               )}
             </div>
           )}
+        </div>
+
+        {/* شريط تعيين منفذ جميع الخدمات في السلة (حلاق / كوافير) */}
+        <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border-y border-indigo-100/80 px-3 py-2 flex items-center justify-between gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+            <span className="text-xs font-black text-indigo-950 flex items-center gap-1 shrink-0 whitespace-nowrap">
+              <Scissors size={13} className="text-indigo-600 stroke-[2.5]" />
+              <span>منفذ الخدمات:</span>
+            </span>
+            <select
+              value={bulkBarberId}
+              onChange={(e) => setBulkBarberId(e.target.value)}
+              className="text-xs bg-white border border-indigo-200 text-indigo-950 font-bold rounded-xl px-2.5 py-1.5 w-full outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 shadow-2xs cursor-pointer transition-colors"
+            >
+              <option value="">اختر الموظف (حلاق / كوافير)...</option>
+              {performerEmployees.map(emp => (
+                <option key={emp.id} value={emp.id}>
+                  {emp.name} {emp.role ? `(${emp.role})` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button
+            type="button"
+            onClick={handleApplyBulkBarber}
+            disabled={!bulkBarberId}
+            className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:hover:bg-indigo-600 text-white text-xs font-black px-3.5 py-1.5 rounded-xl shadow-xs transition-all active:scale-95 cursor-pointer shrink-0 flex items-center gap-1.5"
+            title="تعبئة جميع الخدمات في السلة بنفس اسم الموظف كمنفذ للخدمة"
+          >
+            <UserCheck size={14} className="shrink-0" />
+            <span>إضافة</span>
+          </button>
         </div>
 
         {/* 3. Cart Items List (Enlarged & Spacious) */}
