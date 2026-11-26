@@ -993,7 +993,7 @@ export function DailySheetScreen({
         </div>
 
         <div className="bg-gradient-to-br from-emerald-950 via-teal-950 to-slate-900 p-3.5 rounded-xl text-white shadow-xs flex flex-col justify-between border border-emerald-800/80">
-          <span className="text-[11px] font-bold text-emerald-300">صافي الكاش (الدرج)</span>
+          <span className="text-[11px] font-bold text-emerald-300">صافي الكاش</span>
           <div className="flex items-baseline justify-between mt-1">
             <span className={`text-xl font-black font-mono ${netCash >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
               {netCash.toFixed(0)}
