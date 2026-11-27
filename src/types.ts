@@ -1659,12 +1659,16 @@ export function isClientInBranch(client: Client | null | undefined, activeBranch
   const curBranch = branches.find(b => b.id === activeBranchId) || branches.find(b => b.isMain) || branches[0];
   const isMain = Boolean(curBranch?.isMain || curBranch?.id === branches[0]?.id);
 
-  if (client.branchIds && Array.isArray(client.branchIds) && client.branchIds.length > 0) {
-    if (client.branchIds.includes(activeBranchId)) return true;
-    if (curBranch?.code && client.branchIds.includes(curBranch.code)) return true;
-    if (curBranch?.name && client.branchIds.includes(curBranch.name)) return true;
+  // 1. فحص الفروع التي زارها العميل أو يتردد عليها (Visited Branch IDs)
+  const visitedList = client.branchIds || (client.preferences as any)?.visitedBranchIds;
+  if (visitedList && Array.isArray(visitedList) && visitedList.length > 0) {
+    if (visitedList.includes(activeBranchId)) return true;
+    if (curBranch?.id && visitedList.includes(curBranch.id)) return true;
+    if (curBranch?.code && visitedList.includes(curBranch.code)) return true;
+    if (curBranch?.name && visitedList.includes(curBranch.name)) return true;
   }
 
+  // 2. فحص الفرع الأساسي الذي تم تسجيل العميل فيه لأول مرة
   const bId = ((client.branchId || (client as any).branch_id) || '').trim();
   const bCode = ((client as any).branchCode || (client as any).branch_code || '').trim();
 
@@ -1679,6 +1683,7 @@ export function isClientInBranch(client: Client | null | undefined, activeBranch
     return false;
   }
 
+  // في حال كان العميل غير مقيد بفرع محدد يظهر في الفرع الرئيسي فقط
   return isMain;
 }
 

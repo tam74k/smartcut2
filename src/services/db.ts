@@ -1725,7 +1725,10 @@ export const DB = {
         is_blacklisted: c.isBlacklisted || false,
         blacklist_reason: c.blacklistReason || null,
         last_visit: toDateOrNull(c.lastVisit),
-        preferences: c.preferences || {},
+        preferences: {
+          ...(c.preferences || {}),
+          visitedBranchIds: Array.isArray(c.branchIds) ? c.branchIds : (c.preferences?.visitedBranchIds || (c.branchId ? [c.branchId] : []))
+        },
         updated_at: new Date().toISOString()
       };
       const { data, error } = await client.from('clients').upsert(snap, { onConflict: 'id' }).select().single();
@@ -1771,7 +1774,10 @@ export const DB = {
       is_blacklisted: c.isBlacklisted || false,
       blacklist_reason: c.blacklistReason || null,
       last_visit: toDateOrNull(c.lastVisit),
-      preferences: c.preferences || {},
+      preferences: {
+        ...(c.preferences || {}),
+        visitedBranchIds: Array.isArray(c.branchIds) ? c.branchIds : (c.preferences?.visitedBranchIds || (c.branchId ? [c.branchId] : []))
+      },
       updated_at: new Date().toISOString()
     };
   },
@@ -5702,10 +5708,13 @@ export const DB = {
 // تحويل بيانات العميل من snake_case أو camelCase قاعدة البيانات إلى كيان Client في التطبيق
 export function dbClientToApp(row: any) {
   if (!row) return {} as any;
+  const pref = row.preferences || {};
+  const branchIds = row.branchIds || row.branch_ids || pref.visitedBranchIds || pref.branchIds || (row.branch_id ? [row.branch_id] : (row.branchId ? [row.branchId] : []));
   return {
     id: row.id,
     salonId: row.salonId || row.salon_id,
     branchId: row.branchId || row.branch_id,
+    branchIds: Array.isArray(branchIds) ? branchIds : [],
     name: row.name,
     phone: row.phone,
     email: row.email || '',

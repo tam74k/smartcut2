@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { AppSettings, Client, Invoice, ClientPreferences, getClientTier, calculateClientTotalSpend, ClientTierConfig } from '../types';
+import { AppSettings, Client, Invoice, ClientPreferences, getClientTier, calculateClientTotalSpend, ClientTierConfig, isClientInBranch } from '../types';
 import { 
   Search, UserPlus, Gift, MessageSquare, Receipt, Eye, X, 
   Calendar, Phone, DollarSign, FileText, Printer, CheckCircle2, 
@@ -122,6 +122,46 @@ export function ClientsScreen({
       return false;
     }) || null;
   }, [clientForm.referredByPhone, clients]);
+
+  // عملاء الصالون في الفروع الأخرى المطابقين للبحث ولم يزوروا هذا الفرع من قبل
+  const otherBranchMatchedClients = useMemo(() => {
+    if (!searchTerm.trim()) return [];
+    const term = searchTerm.toLowerCase().trim();
+    const cleanDigits = term.replace(/\D/g, '');
+    const pool = (allSalonClients && allSalonClients.length > 0) ? allSalonClients : [];
+    return pool.filter(c => {
+      const inThisBranch = isClientInBranch(c, activeBranchId, branches);
+      if (inThisBranch) return false;
+
+      const phoneDigits = (c.phone || '').replace(/\D/g, '');
+      const isPhoneMatch = cleanDigits.length >= 3 && phoneDigits.includes(cleanDigits);
+      const isNameMatch = c.name && c.name.toLowerCase().includes(term);
+      return isPhoneMatch || isNameMatch;
+    });
+  }, [allSalonClients, searchTerm, activeBranchId, branches]);
+
+  const handleLinkClientToBranch = async (clientToLink: Client) => {
+    if (!activeBranchId) return;
+    const existingBranchIds = Array.isArray(clientToLink.branchIds)
+      ? [...clientToLink.branchIds]
+      : Array.isArray(clientToLink.preferences?.visitedBranchIds)
+        ? [...clientToLink.preferences.visitedBranchIds]
+        : [];
+    const orig = clientToLink.branchId || clientToLink.branchCode;
+    if (orig && !existingBranchIds.includes(orig)) existingBranchIds.push(orig);
+    if (!existingBranchIds.includes(activeBranchId)) existingBranchIds.push(activeBranchId);
+
+    const updatedClient: Client = {
+      ...clientToLink,
+      branchIds: existingBranchIds,
+      preferences: {
+        ...(clientToLink.preferences || {}),
+        visitedBranchIds: existingBranchIds,
+      }
+    };
+    await DB.saveClient(updatedClient);
+    setClients([...clients.filter(c => c.id !== updatedClient.id), updatedClient]);
+  };
 
   // Filtered Clients List
   const filteredClients = useMemo(() => {
@@ -277,6 +317,10 @@ export function ClientsScreen({
         notes: clientForm.notes || matchedSalonClient.notes,
         isVip: clientForm.isVip ?? matchedSalonClient.isVip,
         branchIds: updatedBranchIds,
+        preferences: {
+          ...(matchedSalonClient.preferences || {}),
+          visitedBranchIds: updatedBranchIds
+        },
         branchId: matchedSalonClient.branchId || activeBranchId,
         salonId: settings.salonId || matchedSalonClient.salonId
       };
@@ -396,6 +440,40 @@ export function ClientsScreen({
           </button>
         </div>
       </div>
+
+      {/* عرض عملاء الصالون في الفروع الأخرى المطابقين للبحث عند البحث */}
+      {otherBranchMatchedClients.length > 0 && (
+        <div className="mb-6 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-3xl p-4 shadow-xs animate-in fade-in">
+          <div className="flex items-center gap-2 mb-3 text-amber-900 font-black text-xs">
+            <Sparkles size={16} className="text-amber-600" />
+            <span>تم العثور على ({otherBranchMatchedClients.length}) عميل مسجل في فروع أخرى لنفس الصالون لم يسبق تسجيل زيارتهم لهذا الفرع:</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {otherBranchMatchedClients.map(obClient => {
+              const origBranch = branches.find(b => b.id === obClient.branchId || b.code === obClient.branchCode);
+              return (
+                <div key={obClient.id} className="bg-white/90 border border-amber-200 rounded-2xl p-3 flex items-center justify-between gap-3 shadow-2xs">
+                  <div className="min-w-0">
+                    <div className="font-extrabold text-xs text-slate-900 truncate">{obClient.name}</div>
+                    <div className="text-[11px] font-mono font-bold text-slate-500" dir="ltr">{obClient.phone}</div>
+                    <div className="text-[10px] text-amber-700 font-bold mt-0.5">
+                      الفرع المسجل فيه: {origBranch?.name || 'فرع آخر'}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleLinkClientToBranch(obClient)}
+                    className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-[11px] px-3 py-1.5 rounded-xl shadow-xs transition-colors shrink-0 flex items-center gap-1 cursor-pointer"
+                  >
+                    <Check size={12} />
+                    <span>إضافة لقائمة الفرع</span>
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Clients Table */}
       <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden mb-8">

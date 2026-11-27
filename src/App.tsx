@@ -3376,6 +3376,41 @@ export default function App() {
         .catch(err => console.error('Auto invoice WhatsApp send error:', err));
     }
 
+    // 6. ربط العميل بالفرع الحالي تلقائياً عند إصدار فاتورة لضمان إدراجه في قائمة عملاء الفرع بعد الزيارة دون تكرار
+    if ((invoiceWithBranch.clientId || invoiceWithBranch.clientPhone) && activeBranchId) {
+      const targetClient = (clients || []).find(c => 
+        (invoiceWithBranch.clientId && c.id === invoiceWithBranch.clientId) ||
+        (invoiceWithBranch.clientPhone && c.phone && c.phone.trim() === invoiceWithBranch.clientPhone.trim())
+      );
+      if (targetClient && !isClientInBranch(targetClient, activeBranchId, branches)) {
+        const existingBranchIds = Array.isArray(targetClient.branchIds)
+          ? [...targetClient.branchIds]
+          : Array.isArray(targetClient.preferences?.visitedBranchIds)
+            ? [...targetClient.preferences.visitedBranchIds]
+            : [];
+        const orig = targetClient.branchId || targetClient.branchCode;
+        if (orig && !existingBranchIds.includes(orig)) existingBranchIds.push(orig);
+        if (!existingBranchIds.includes(activeBranchId)) existingBranchIds.push(activeBranchId);
+
+        const updatedClient: Client = {
+          ...targetClient,
+          branchIds: existingBranchIds,
+          preferences: {
+            ...(targetClient.preferences || {}),
+            visitedBranchIds: existingBranchIds,
+          }
+        };
+        DB.saveClient(updatedClient).catch(err => console.error('Error auto-linking client on checkout:', err));
+        setClients(prev => {
+          const exists = prev.some(c => c.id === updatedClient.id);
+          if (exists) {
+            return prev.map(c => c.id === updatedClient.id ? updatedClient : c);
+          }
+          return [updatedClient, ...prev];
+        });
+      }
+    }
+
     setActiveBookingForPOS(null);
     setActiveEditingInvoiceForPOS(null);
   };

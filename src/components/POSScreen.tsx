@@ -12,7 +12,7 @@ import { EvolutionApiService } from '../services/evolutionApiService';
 import { 
   AppSettings, CartItem, ServiceItem, Booking, Invoice, Client, Category, Employee,
   getClientTier, getNextClientTier, calculateClientTotalSpend, ClientTierConfig, HeldInvoice, PromoCode, PromoCodeUsage, TipRecord, AdvancePayment, ClientPreferences, Transaction, FingerprintLog, SalesReturn, Branch,
-  getServicePrice, EmployeeFinancialRecord, EmployeeLeaveRecord
+  getServicePrice, EmployeeFinancialRecord, EmployeeLeaveRecord, isClientInBranch
 } from '../types';
 import { processImageFile, MAX_IMAGE_SIZE_KB, compressClientBeforeAfterPhoto } from '../utils/imageUpload';
 import { ComplaintsService } from '../services/complaintsService';
@@ -1180,8 +1180,9 @@ export function POSScreen({
   // تصفية عملاء الصالون الحالي فقط (بما يشمل كافة فروعه دون أي صالونات أخرى)
   const currentSalonId = settings?.salonId;
   const currentSalonClients = useMemo(() => {
-    return (clients || []).filter(c => !c.salonId || !currentSalonId || c.salonId === currentSalonId);
-  }, [clients, currentSalonId]);
+    const pool = (allSalonClients && allSalonClients.length > 0) ? allSalonClients : (clients || []);
+    return pool.filter(c => !c.salonId || !currentSalonId || c.salonId === currentSalonId);
+  }, [allSalonClients, clients, currentSalonId]);
 
   // قائمة الاقتراحات والإكمال التلقائي لأرقام وأسماء العملاء مع كتابة كل رقم
   const phoneSuggestions = useMemo(() => {
@@ -1258,7 +1259,45 @@ export function POSScreen({
   }, [showReceiptModal]);
 
   const handleSelectClient = (client: Client) => {
-    setSelectedClient(client);
+    let clientToSelect = client;
+    if (activeBranchId) {
+      const isAlreadyIn = isClientInBranch(client, activeBranchId, branches);
+      if (!isAlreadyIn) {
+        const existingBranchIds = Array.isArray(client.branchIds)
+          ? [...client.branchIds]
+          : Array.isArray(client.preferences?.visitedBranchIds)
+            ? [...client.preferences.visitedBranchIds]
+            : [];
+        const originalBranchId = client.branchId || client.branchCode;
+        if (originalBranchId && !existingBranchIds.includes(originalBranchId)) {
+          existingBranchIds.push(originalBranchId);
+        }
+        if (!existingBranchIds.includes(activeBranchId)) {
+          existingBranchIds.push(activeBranchId);
+        }
+        clientToSelect = {
+          ...client,
+          branchIds: existingBranchIds,
+          preferences: {
+            ...(client.preferences || {}),
+            visitedBranchIds: existingBranchIds,
+          }
+        };
+        // حفظ التحديث فوراً في قاعدة البيانات دون تكرار أي سجل
+        DB.saveClient(clientToSelect).catch(err => console.error('Error auto-linking client to branch:', err));
+        if (setClients) {
+          setClients((prev: Client[]) => {
+            const exists = prev.some(c => c.id === clientToSelect.id);
+            if (exists) {
+              return prev.map(c => c.id === clientToSelect.id ? clientToSelect : c);
+            } else {
+              return [clientToSelect, ...prev];
+            }
+          });
+        }
+      }
+    }
+    setSelectedClient(clientToSelect);
     setClientSearch('');
     setShowSuggestions(false);
     setHighlightedIndex(-1);
@@ -2424,9 +2463,15 @@ export function POSScreen({
 
   const handleClientSearch = () => {
     if (!clientSearch.trim()) return;
-    const found = clients.find(c => c.phone === clientSearch.trim() || c.name === clientSearch.trim());
+    const term = clientSearch.trim().toLowerCase();
+    const cleanDigits = term.replace(/\D/g, '');
+    const found = currentSalonClients.find(c => {
+      const p = (c.phone || '').replace(/\D/g, '');
+      return (cleanDigits && (p === cleanDigits || (cleanDigits.length >= 7 && (p.endsWith(cleanDigits) || cleanDigits.endsWith(p))))) || 
+             (c.name && c.name.toLowerCase() === term);
+    });
     if (found) {
-      setSelectedClient(found);
+      handleSelectClient(found);
     } else {
       setNewClientForm(prev => ({ ...prev, phone: clientSearch.replace(/[^0-9]/g, '') }));
       setShowAddClientModal(true);
@@ -2445,7 +2490,11 @@ export function POSScreen({
 
     let savedClient: Client;
     if (matchedSalonClientInPOS) {
-      const existingBranchIds = Array.isArray(matchedSalonClientInPOS.branchIds) ? matchedSalonClientInPOS.branchIds : [];
+      const existingBranchIds = Array.isArray(matchedSalonClientInPOS.branchIds)
+        ? [...matchedSalonClientInPOS.branchIds]
+        : Array.isArray(matchedSalonClientInPOS.preferences?.visitedBranchIds)
+          ? [...matchedSalonClientInPOS.preferences.visitedBranchIds]
+          : [];
       const branchIdFallback = matchedSalonClientInPOS.branchId ? [matchedSalonClientInPOS.branchId] : [];
       const updatedBranchIds = Array.from(new Set([
         ...existingBranchIds,
@@ -2461,6 +2510,10 @@ export function POSScreen({
         referredByPhone: cleanReferredBy || matchedSalonClientInPOS.referredByPhone,
         dob: (newClientForm.dobDay && newClientForm.dobMonth) ? `${newClientForm.dobMonth}-${newClientForm.dobDay}` : matchedSalonClientInPOS.dob,
         branchIds: updatedBranchIds,
+        preferences: {
+          ...(matchedSalonClientInPOS.preferences || {}),
+          visitedBranchIds: updatedBranchIds
+        },
         branchId: matchedSalonClientInPOS.branchId || activeBranchId,
         salonId: settings.salonId || matchedSalonClientInPOS.salonId
       };
@@ -4131,6 +4184,8 @@ export function POSScreen({
                           const isHighlighted = idx === highlightedIndex;
                           const tier = getClientTier(client, invoices, settings.tierSettings);
                           const cashbackVal = client.cashback !== undefined ? client.cashback : (client.loyaltyPoints || 0);
+                          const isFromOtherBranch = !isClientInBranch(client, activeBranchId, branches);
+                          const originBranch = branches.find(b => b.id === client.branchId || b.code === client.branchCode);
 
                           return (
                             <button
@@ -4150,8 +4205,13 @@ export function POSScreen({
                                   {client.name.charAt(0) || <User size={14} className="text-slate-400" />}
                                 </div>
                                 <div className="min-w-0">
-                                  <div className="flex items-center gap-1.5">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
                                     <span className="font-extrabold text-xs text-slate-900 truncate">{client.name}</span>
+                                    {isFromOtherBranch && (
+                                      <span className="text-[8px] font-black px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-900 border border-amber-300 shrink-0">
+                                        زيارة جديدة (مسجل في {originBranch?.name || 'فرع آخر'})
+                                      </span>
+                                    )}
                                     {tier && (
                                       <span className={`text-[8px] font-black px-1.5 py-0.2 rounded-md ${tier.badgeBg} ${tier.badgeText} shrink-0`}>
                                         {tier.name}
