@@ -20,6 +20,7 @@ import { TipsScreen } from './TipsScreen';
 import { FingerprintLogsScreen } from './FingerprintLogsScreen';
 import { EmployeeCustodyModal } from './EmployeeCustodyModal';
 import { EmployeeFullProfileView } from './EmployeeFullProfileView';
+import { SalaryDisbursementsLog } from './SalaryDisbursementsLog';
 import { printThermalFinancialVoucher, FinancialVoucherData } from './ThermalFinancialVoucher';
 import { getCommissionModelLabel, calculateEmployeeCommission } from '../utils/commissionHelper';
 import { DB } from '../services/db';
@@ -75,6 +76,8 @@ export function EmployeesScreen({
   const [activeSubTab, setActiveSubTab] = useState<
     'list' | 'timesheet' | 'tips' | 'fingerprint_logs' | 'salary_history' | 'shift_schedule_history' | 'end_of_service' | 'permissions' | 'hr_settings' | 'analytics'
   >('list');
+
+  const [salaryTabMode, setSalaryTabMode] = useState<'disbursements' | 'increments'>('disbursements');
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -2799,62 +2802,104 @@ export function EmployeesScreen({
       )}
 
 
-      {/* SUB-TAB 3: SALARY INCREMENTS HISTORY */}
+      {/* SUB-TAB 3: SALARY DISBURSEMENTS & INCREMENTS HISTORY */}
       {activeSubTab === 'salary_history' && (
-        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs space-y-6">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-100 pb-4">
-            <div>
-              <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
-                <History size={18} className="text-indigo-600" />
-                سجل تطور وزيادات الرواتب (Salary Progression History)
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                حفظ تسلسل زيادات الرواتب مع حماية العمليات والرواتب القديمة من التعديل بأثر رجعي
-              </p>
-            </div>
+        <div className="space-y-4">
+          {/* Sub-navigation Segmented Control */}
+          <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-2xl w-fit">
+            <button
+              type="button"
+              onClick={() => setSalaryTabMode('disbursements')}
+              className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
+                salaryTabMode === 'disbursements'
+                  ? 'bg-white text-indigo-700 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Banknote size={15} />
+              <span>سجل صرف الرواتب للموظفين (سندات الصرف والترحيل)</span>
+            </button>
 
             <button
-              onClick={() => handleOpenActionModal(employees[0]?.id || '', 'salary_increase')}
-              className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm cursor-pointer"
+              type="button"
+              onClick={() => setSalaryTabMode('increments')}
+              className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
+                salaryTabMode === 'increments'
+                  ? 'bg-white text-indigo-700 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
             >
               <TrendingUp size={15} />
-              <span>+ تسجيل زيادة راتب لموظف</span>
+              <span>سجل تطور وزيادات الرواتب (Salary Progression)</span>
             </button>
           </div>
 
+          {salaryTabMode === 'disbursements' ? (
+            <SalaryDisbursementsLog
+              settings={settings}
+              employees={employees}
+              setEmployees={setEmployees}
+              transactions={transactions}
+              setTransactions={setTransactions}
+              currentUser={currentUser}
+              activeBranchId={activeBranchId}
+            />
+          ) : (
+            <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs space-y-6">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-100 pb-4">
+                <div>
+                  <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                    <History size={18} className="text-indigo-600" />
+                    سجل تطور وزيادات الرواتب (Salary Progression History)
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    حفظ تسلسل زيادات الرواتب مع حماية العمليات والرواتب القديمة من التعديل بأثر رجعي
+                  </p>
+                </div>
 
-          <div className="overflow-x-auto border border-slate-100 rounded-2xl">
-            <table className="w-full text-right text-xs">
-              <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
-                <tr>
-                  <th className="p-3">الموظف</th>
-                  <th className="p-3">تاريخ الزيادة</th>
-                  <th className="p-3">الراتب السابق</th>
-                  <th className="p-3">الراتب الجديد</th>
-                  <th className="p-3">مقدار الزيادة</th>
-                  <th className="p-3">السبب / الملاحظات</th>
-                  <th className="p-3">المعتمد</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {employees.flatMap(emp => 
-                  (emp.salaryHistory || []).map((sh, idx) => (
-                    <tr key={`${emp.id}-${idx}`} className="hover:bg-slate-50">
-                      <td className="p-3 font-bold text-slate-900">{emp.name}</td>
-                      <td className="p-3 font-mono text-slate-600">{sh.date}</td>
-                      <td className="p-3 font-mono text-slate-500">{Number(sh.previousSalary || 0).toFixed(2)} {settings.currency}</td>
-                      <td className="p-3 font-mono font-bold text-emerald-700">{Number(sh.newSalary || 0).toFixed(2)} {settings.currency}</td>
-                      <td className="p-3 font-mono font-bold text-indigo-600">
-                        +{(Number(sh.newSalary || 0) - Number(sh.previousSalary || 0)).toFixed(2)} {settings.currency}
-                      </td>
-                      <td className="p-3 text-slate-600">{sh.reason || '-'}</td>
-                      <td className="p-3 font-bold text-slate-700">{sh.approvedBy || 'مدير النظام'}</td>
+                <button
+                  onClick={() => handleOpenActionModal(employees[0]?.id || '', 'salary_increase')}
+                  className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm cursor-pointer"
+                >
+                  <TrendingUp size={15} />
+                  <span>+ تسجيل زيادة راتب لموظف</span>
+                </button>
+              </div>
+
+              <div className="overflow-x-auto border border-slate-100 rounded-2xl">
+                <table className="w-full text-right text-xs">
+                  <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
+                    <tr>
+                      <th className="p-3">الموظف</th>
+                      <th className="p-3">تاريخ الزيادة</th>
+                      <th className="p-3">الراتب السابق</th>
+                      <th className="p-3">الراتب الجديد</th>
+                      <th className="p-3">مقدار الزيادة</th>
+                      <th className="p-3">السبب / الملاحظات</th>
+                      <th className="p-3">المعتمد</th>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {employees.flatMap(emp => 
+                      (emp.salaryHistory || []).map((sh, idx) => (
+                        <tr key={`${emp.id}-${idx}`} className="hover:bg-slate-50">
+                          <td className="p-3 font-bold text-slate-900">{emp.name}</td>
+                          <td className="p-3 font-mono text-slate-600">{sh.date}</td>
+                          <td className="p-3 font-mono text-slate-500">{Number(sh.previousSalary || 0).toFixed(2)} {settings.currency}</td>
+                          <td className="p-3 font-mono font-bold text-emerald-700">{Number(sh.newSalary || 0).toFixed(2)} {settings.currency}</td>
+                          <td className="p-3 font-mono font-bold text-indigo-600">
+                            +{(Number(sh.newSalary || 0) - Number(sh.previousSalary || 0)).toFixed(2)} {settings.currency}
+                          </td>
+                          <td className="p-3 text-slate-600">{sh.reason || '-'}</td>
+                          <td className="p-3 font-bold text-slate-700">{sh.approvedBy || 'مدير النظام'}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

@@ -22,6 +22,7 @@ import { DB, calculateFingerprintProcessedDate, getFingerprintProcessedDate } fr
 import { getActiveShiftDate, getEffectiveDateTime, getEffectiveDateOnly } from '../utils/shiftDate';
 import { AuthService } from '../services/auth';
 import { BiometricImportModal } from './BiometricImportModal';
+import { SalaryDisbursementsLog } from './SalaryDisbursementsLog';
 import { EvolutionApiService } from '../services/evolutionApiService';
 import { parseDbDateTime, getTodayLocalDateStr } from '../utils/timezone';
 
@@ -3076,6 +3077,7 @@ export function HRScreen({
 
   // Batch Salary Disbursement State
   const [showDisbursementModal, setShowDisbursementModal] = useState(false);
+  const [showSalaryDisbursementsModal, setShowSalaryDisbursementsModal] = useState(false);
   const [disbursementTreasuryId, setDisbursementTreasuryId] = useState(settings.treasuries[0]?.id || '');
   const [disbursementDate, setDisbursementDate] = useState(() => getEffectiveDateOnly(shiftData, activeBranchId || settings.branchId));
   const [disbursementNote, setDisbursementNote] = useState(`مسير رواتب شهر ${selectedMonth}`);
@@ -3212,9 +3214,15 @@ export function HRScreen({
       ? `${effectiveShiftDate}T${nowTimeStr}`
       : `${disbursementDate}T${nowTimeStr}`;
 
-    targets.forEach(item => {
+    const targetPairs = targets.map(item => ({
+      item,
+      trxId: 'TRX-SAL-' + Math.random().toString(36).substring(2, 9),
+      finId: 'FIN-SAL-' + Math.random().toString(36).substring(2, 9)
+    }));
+
+    targetPairs.forEach(({ item, trxId, finId }) => {
       const trx: Transaction = {
-        id: 'TRX-SAL-' + Math.random().toString(36).substring(2, 9),
+        id: trxId,
         date: trxDate,
         shiftDate: (disbursementDate === effectiveShiftDate) ? effectiveShiftDate : undefined,
         type: 'out',
@@ -3228,6 +3236,8 @@ export function HRScreen({
         userName: currentUser?.name || currentUser?.username || 'مدير النظام',
         userId: currentUser?.id
       };
+      (trx as any).salaryRecordId = finId;
+      (trx as any).employeeId = item.emp.id;
       newTrxs.push(trx);
 
       // طباعة سند صرف الراتب الحراري 80mm
@@ -3248,18 +3258,21 @@ export function HRScreen({
 
     // 3. توثيق حركة صرف الراتب في الملف المالي للموظف بنوع 'salary' (وليس 'advance')
     const updatedEmployees = employees.map(e => {
-      const target = targets.find(t => t.emp.id === e.id);
-      if (!target) return e;
+      const pair = targetPairs.find(p => p.item.emp.id === e.id);
+      if (!pair) return e;
+      const target = pair.item;
 
       const finRecord: EmployeeFinancialRecord = {
-        id: 'FIN-SAL-' + Math.random().toString(36).substring(2, 9),
+        id: pair.finId,
         date: disbursementDate,
         type: 'salary', // نوع الراتب الرسمي لمنع تسجيله كسلفة
         amount: target.netPayable,
         treasuryId: disbursementTreasuryId,
         note: `مسير رواتب: تم استلام صافي الراتب (${Number(target.netPayable || 0).toFixed(2)} ${settings.currency}) عن شهر (${selectedMonth}) فترة ${startDate} إلى ${endDate}`,
         payrollPeriod: { startDate, endDate, month: selectedMonth },
-        periodKey: `${selectedMonth}_${target.emp.id}`
+        periodKey: `${selectedMonth}_${target.emp.id}`,
+        transactionId: pair.trxId,
+        createdByName: currentUser?.name || currentUser?.username || 'مدير النظام'
       };
 
       return {
@@ -3964,6 +3977,24 @@ export function HRScreen({
                     <div className="flex flex-col">
                       <span className="font-bold text-slate-900">صرف مسير الرواتب</span>
                       <span className="text-[10px] text-slate-400 font-normal">اعتماد وصرف رواتب الشهر وتوليد السندات</span>
+                    </div>
+                  </button>
+
+                  {/* 1.1 سجل صرف الرواتب للموظفين */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowActionsDropdown(false);
+                      setShowSalaryDisbursementsModal(true);
+                    }}
+                    className="w-full text-right px-2.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2.5 hover:bg-slate-50 text-slate-800 cursor-pointer transition-colors"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 border border-indigo-100">
+                      <History size={15} />
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="font-bold text-slate-900">سجل صرف الرواتب</span>
+                      <span className="text-[10px] text-slate-400 font-normal">عرض وتدقيق وتعديل وإلغاء سندات صرف الرواتب</span>
                     </div>
                   </button>
 
@@ -6173,6 +6204,24 @@ export function HRScreen({
                 <span>طباعة القسيمة</span>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* SALARY DISBURSEMENTS LOG MODAL */}
+      {showSalaryDisbursementsModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-5">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-6xl w-full p-2 sm:p-4 max-h-[92vh] overflow-y-auto animate-in fade-in zoom-in duration-150" dir="rtl">
+            <SalaryDisbursementsLog
+              settings={settings}
+              employees={employees}
+              setEmployees={setEmployees}
+              transactions={transactions}
+              setTransactions={setTransactions}
+              currentUser={currentUser}
+              activeBranchId={activeBranchId}
+              onClose={() => setShowSalaryDisbursementsModal(false)}
+            />
           </div>
         </div>
       )}

@@ -452,6 +452,8 @@ export interface EmployeeFinancialRecord {
   periodKey?: string;
   targetDate?: string;
   targetMonth?: string;
+  transactionId?: string;
+  createdByName?: string;
 }
 
 export interface EmployeeLeaveRecord {
