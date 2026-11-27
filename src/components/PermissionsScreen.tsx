@@ -264,6 +264,31 @@ export function PermissionsScreen({
     } else if (userForm.role === 'makeup_artist') {
       finalScreens = ['makeup_artist_portal'];
       finalActions = ['makeup_artist_booking'];
+    } else if (userForm.role === 'accountant') {
+      // شاشات المحاسب المالي: التقارير والملخصات وشؤون العاملين للرواتب فقط (بدون نقطة بيع وبدون إعدادات)
+      const allowedAccountantScreens = new Set(['dashboard', 'reports', 'invoices', 'deferred_invoices', 'treasury', 'expenses', 'hr', 'daily_sheet', 'shifts']);
+      finalScreens = (userForm.screens && userForm.screens.length > 0)
+        ? userForm.screens.filter(s => allowedAccountantScreens.has(s))
+        : ['dashboard', 'reports', 'invoices', 'deferred_invoices', 'treasury', 'expenses', 'hr', 'daily_sheet', 'shifts'];
+
+      // المحاسب للقراءة فقط في كل النظام، مع إمكانية منحه تسجيل الرواتب والسلف وصرف الرواتب والمكافآت
+      const allowedAccountantActions = new Set<ActionPermission>([
+        'view_reports',
+        'export_excel',
+        'pos_reprint',
+        'treasury_view_balance',
+        'manage_salaries',
+        'hr_manage_advances',
+        'hr_manage_bonuses',
+        'hr_disburse_payroll',
+        'hr_disburse_salaries',
+        'hr_print_slips',
+        'hr_view_timesheet',
+        'view_past_invoices'
+      ]);
+      finalActions = (userForm.actions && userForm.actions.length > 0)
+        ? (userForm.actions.filter(a => allowedAccountantActions.has(a)) as ActionPermission[])
+        : ['view_reports', 'export_excel', 'pos_reprint', 'treasury_view_balance', 'manage_salaries', 'hr_manage_advances', 'hr_manage_bonuses', 'hr_disburse_payroll', 'hr_disburse_salaries', 'hr_print_slips', 'hr_view_timesheet', 'view_past_invoices'];
     } else if (userForm.role === 'custom' && userForm.customRoleId) {
       const selectedCustomRole = roles.find(r => r.id === userForm.customRoleId);
       if (selectedCustomRole) {
@@ -1232,7 +1257,7 @@ export function PermissionsScreen({
                     <option value="owner">مالك الصالون (Executive Owner - بوابة المالك التنفيذية)</option>
                     <option value="admin">مدير النظام (Admin - كافة الصلاحيات)</option>
                     <option value="supervisor">مشرف صالون عام (Supervisor)</option>
-                    <option value="accountant">محاسب مالي (Accountant)</option>
+                    <option value="accountant">محاسب مالي (Accountant - تقارير وملخصات ورواتب للقراءة فقط)</option>
                     <option value="warehouse_manager">مسؤول المخزن والمستودع (Warehouse Manager)</option>
                     <option value="cashier">كاشير (Cashier)</option>
                     <option value="receptionist">موظف استقبال (Receptionist)</option>
@@ -1250,6 +1275,14 @@ export function PermissionsScreen({
                     </optgroup>
                   )}
                 </select>
+                {userForm.role === 'accountant' && (
+                  <div className="mt-2 p-2.5 bg-blue-50 border border-blue-200 rounded-xl text-blue-900 text-xs flex items-start gap-2">
+                    <ShieldCheck size={16} className="text-blue-600 shrink-0 mt-0.5" />
+                    <p className="leading-relaxed">
+                      <strong>صلاحية المحاسب المالي (قراءة فقط + رواتب وسلف):</strong> صلاحيته مقيدة في عرض التقارير والشاشات التي تحتوي ملخصات فقط، ويكون للقراءة فقط في كافة أقسام البرنامج ولا يستطيع تعديل أي شيء ويجب الرجوع للأدمن، ومحجوب عنه شاشات الإعدادات ولا يستطيع إصدار فواتير، مع إمكانية تسجيل وصرف الرواتب والسلف والمكافآت.
+                    </p>
+                  </div>
+                )}
               </div>
 
               <div>

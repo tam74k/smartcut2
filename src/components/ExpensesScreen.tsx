@@ -259,6 +259,11 @@ export function ExpensesScreen({
 
   const confirmDeleteExpense = async () => {
     if (!expenseToDelete) return;
+    if (!canManageExpenses) {
+      alert('عذراً، هذا الحساب مخصص للقراءة فقط ولا يملك صلاحية حذف المصروفات. يرجى الرجوع لمدير النظام (Admin).');
+      setExpenseToDelete(null);
+      return;
+    }
     const idToDelete = expenseToDelete;
 
     // 1. إزالة المصروف فوراً ولحظياً من الجدول دون أي تأخير
@@ -295,6 +300,10 @@ export function ExpensesScreen({
 
   const handleSaveExpense = async () => {
     if (isSubmitting) return;
+    if (!canManageExpenses) {
+      setErrorMsg('عذراً، هذا الحساب مخصص للقراءة فقط ولا يملك صلاحية حفظ أو تعديل المصروفات. يرجى الرجوع لمدير النظام (Admin).');
+      return;
+    }
     if (!amount || amount <= 0) {
       setErrorMsg('الرجاء إدخال مبلغ صحيح');
       return;
@@ -382,6 +391,12 @@ export function ExpensesScreen({
   };
 
   const canManageCategories = AuthService.canDo('manage_expense_categories', currentUser);
+  const canManageExpenses = !currentUser || 
+    currentUser.role === 'admin' || 
+    currentUser.role === 'owner' || 
+    currentUser.role === 'programmer' || 
+    currentUser.actions?.includes('*') || 
+    AuthService.canDo('manage_expenses', currentUser);
 
   const handleOpenCategoriesModal = () => {
     if (!canManageCategories) {
@@ -472,16 +487,23 @@ export function ExpensesScreen({
               </span>
             )}
           </button>
-          <button 
-            onClick={() => {
-              setTransactionDate(shiftData.isOpen ? shiftData.date : new Date().toISOString().split('T')[0]);
-              setShowAddModal(true);
-            }} 
-            className="bg-primary hover:bg-primary-dark text-white px-4 py-2.5 rounded-xl font-black flex items-center gap-2 text-xs md:text-sm shadow-sm transition-all cursor-pointer active:scale-95"
-          >
-            <Plus size={18} />
-            <span>تسجيل مصروف جديد</span>
-          </button>
+          {canManageExpenses ? (
+            <button 
+              onClick={() => {
+                setTransactionDate(shiftData.isOpen ? shiftData.date : new Date().toISOString().split('T')[0]);
+                setShowAddModal(true);
+              }} 
+              className="bg-primary hover:bg-primary-dark text-white px-4 py-2.5 rounded-xl font-black flex items-center gap-2 text-xs md:text-sm shadow-sm transition-all cursor-pointer active:scale-95"
+            >
+              <Plus size={18} />
+              <span>تسجيل مصروف جديد</span>
+            </button>
+          ) : (
+            <div className="bg-slate-100 border border-slate-200 text-slate-400 px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-not-allowed" title="حساب للقراءة فقط - لا يملك صلاحية تسجيل المصروفات">
+              <Lock size={13} />
+              <span>تسجيل المصروفات (للقراءة فقط)</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -823,20 +845,24 @@ export function ExpensesScreen({
                         >
                           <Printer size={15} />
                         </button>
-                        <button 
-                          onClick={() => handleEditClick(exp)} 
-                          className="text-blue-600 hover:bg-blue-50 p-2 rounded-lg transition-colors cursor-pointer" 
-                          title="تعديل المصروف"
-                        >
-                          <Edit2 size={15} />
-                        </button>
-                        <button 
-                          onClick={() => handleDeleteExpense(exp.id)} 
-                          className="text-rose-600 hover:bg-rose-50 p-2 rounded-lg transition-colors cursor-pointer" 
-                          title="حذف المصروف"
-                        >
-                          <Trash2 size={15} />
-                        </button>
+                        {canManageExpenses && (
+                          <button 
+                            onClick={() => handleEditClick(exp)} 
+                            className="text-blue-600 hover:bg-blue-50 p-2 rounded-lg transition-colors cursor-pointer" 
+                            title="تعديل المصروف"
+                          >
+                            <Edit2 size={15} />
+                          </button>
+                        )}
+                        {canManageExpenses && (
+                          <button 
+                            onClick={() => handleDeleteExpense(exp.id)} 
+                            className="text-rose-600 hover:bg-rose-50 p-2 rounded-lg transition-colors cursor-pointer" 
+                            title="حذف المصروف"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

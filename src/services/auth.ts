@@ -181,8 +181,31 @@ export const DEFAULT_ROLE_PRESETS: Record<UserRole, { screens: string[]; actions
     actions: ['pos_reprint', 'manage_queue', 'manage_clients']
   },
   accountant: {
-    screens: ['dashboard', 'invoices', 'deferred_invoices', 'sales_returns', 'warehouse', 'treasury', 'expenses', 'reports', 'daily_sheet', 'shifts'],
-    actions: ['pos_reprint', 'sales_return', 'treasury_deposit', 'treasury_withdraw', 'treasury_transfer', 'treasury_view_balance', 'manage_expenses', 'manage_expense_categories', 'manage_suppliers', 'manage_purchases', 'manage_inventory', 'manage_salaries', 'view_reports', 'export_excel']
+    screens: [
+      'dashboard',
+      'reports',
+      'invoices',
+      'deferred_invoices',
+      'treasury',
+      'expenses',
+      'hr',
+      'daily_sheet',
+      'shifts'
+    ],
+    actions: [
+      'view_reports',
+      'export_excel',
+      'pos_reprint',
+      'treasury_view_balance',
+      'manage_salaries',
+      'hr_manage_advances',
+      'hr_manage_bonuses',
+      'hr_disburse_payroll',
+      'hr_disburse_salaries',
+      'hr_print_slips',
+      'hr_view_timesheet',
+      'view_past_invoices'
+    ]
   },
   barber: {
     screens: ['barber_portal'],
@@ -215,7 +238,7 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   receptionist: 'موظف استقبال (Receptionist)',
   barber: 'فني / حلاق (Barber)',
   kiosk: 'جهاز حجز الأدوار وطابور الانتظار (Kiosk / تابلت الأرقام)',
-  accountant: 'محاسب مالي (Accountant)',
+  accountant: 'محاسب مالي - تقارير وملخصات ورواتب (Accountant)',
   makeup_artist: 'ميكب ارتست (Makeup Artist)',
   custom: 'دور مخصص (Custom Role)',
   programmer: 'المبرمج والمطور الرئيسي (Master Developer)'
@@ -263,10 +286,31 @@ export class AuthService {
           if (!userActions.includes('manage_bookings_edit')) userActions.push('manage_bookings_edit');
         }
 
+        let userScreens = u.screens || [];
+        if (u.role === 'accountant') {
+          // Strict accountant normalization: read-only summary/reports/hr with payroll & advances only
+          const allowedScreens = new Set(['dashboard', 'reports', 'invoices', 'deferred_invoices', 'treasury', 'expenses', 'hr', 'daily_sheet', 'shifts']);
+          const allowedActions = new Set<ActionPermission>([
+            'view_reports', 'export_excel', 'pos_reprint', 'treasury_view_balance',
+            'manage_salaries', 'hr_manage_advances', 'hr_manage_bonuses',
+            'hr_disburse_payroll', 'hr_disburse_salaries', 'hr_print_slips',
+            'hr_view_timesheet', 'view_past_invoices'
+          ]);
+          userScreens = userScreens.filter(s => allowedScreens.has(s));
+          if (userScreens.length === 0) {
+            userScreens = ['dashboard', 'reports', 'invoices', 'deferred_invoices', 'treasury', 'expenses', 'hr', 'daily_sheet', 'shifts'];
+          }
+          userActions = userActions.filter(a => allowedActions.has(a));
+          if (userActions.length === 0) {
+            userActions = [...DEFAULT_ROLE_PRESETS.accountant.actions];
+          }
+        }
+
         deduped.push({
           ...u,
           id: uId,
           username: uName,
+          screens: userScreens,
           actions: userActions
         });
       }

@@ -361,16 +361,22 @@ export function TreasuryScreen({
     }
   };
 
-  const handleDeleteTransaction = async (trx: Transaction) => {
-    // 1. فحص الصلاحيات
-    const isAuthorized = !currentUser || 
+  const canDeleteTransaction = useMemo(() => {
+    if (!currentUser) return true;
+    return (
       currentUser.role === 'admin' || 
       currentUser.role === 'owner' || 
       currentUser.role === 'programmer' || 
       currentUser.actions?.includes('manage_treasury_delete') || 
       currentUser.actions?.includes('delete_transactions') ||
       currentUser.actions?.includes('*') ||
-      AuthService.canDo('pos_void', currentUser);
+      AuthService.canDo('pos_void', currentUser)
+    );
+  }, [currentUser]);
+
+  const handleDeleteTransaction = async (trx: Transaction) => {
+    // 1. فحص الصلاحيات
+    const isAuthorized = canDeleteTransaction;
 
     if (!isAuthorized) {
       alert('عذراً، حذف الحركات المالية يتطلب صلاحية الإدارة (الأدمن أو المالك).');
@@ -1404,20 +1410,22 @@ export function TreasuryScreen({
                             <Printer size={15} />
                           </button>
                         )}
-                        <button
-                          onClick={() => handleDeleteTransaction(trx)}
-                          disabled={deletingId === trx.id}
-                          className={`text-slate-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition-all cursor-pointer ${
-                            deletingId === trx.id ? 'opacity-50 pointer-events-none' : ''
-                          }`}
-                          title="حذف الحركة المالية"
-                        >
-                          {deletingId === trx.id ? (
-                            <Loader2 size={15} className="animate-spin text-red-600" />
-                          ) : (
-                            <Trash2 size={15} />
-                          )}
-                        </button>
+                        {canDeleteTransaction && (
+                          <button
+                            onClick={() => handleDeleteTransaction(trx)}
+                            disabled={deletingId === trx.id}
+                            className={`text-slate-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition-all cursor-pointer ${
+                              deletingId === trx.id ? 'opacity-50 pointer-events-none' : ''
+                            }`}
+                            title="حذف الحركة المالية"
+                          >
+                            {deletingId === trx.id ? (
+                              <Loader2 size={15} className="animate-spin text-red-600" />
+                            ) : (
+                              <Trash2 size={15} />
+                            )}
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

@@ -3038,8 +3038,16 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
       phone: newUserForm.phone.trim(),
       role: newUserForm.role,
       active: true,
-      screens: newUserForm.role === 'admin' ? ['*'] : ['pos', 'bookings', 'invoices', 'clients'],
-      actions: newUserForm.role === 'admin' ? ['*'] : ['pos_discount', 'manage_shifts', 'export_excel']
+      screens: newUserForm.role === 'admin' 
+        ? ['*'] 
+        : (newUserForm.role === 'accountant' 
+            ? ['dashboard', 'reports', 'invoices', 'deferred_invoices', 'treasury', 'expenses', 'hr', 'daily_sheet', 'shifts']
+            : ['pos', 'bookings', 'invoices', 'clients']),
+      actions: newUserForm.role === 'admin' 
+        ? ['*'] 
+        : (newUserForm.role === 'accountant'
+            ? ['view_reports', 'export_excel', 'pos_reprint', 'treasury_view_balance', 'manage_salaries', 'hr_manage_advances', 'hr_manage_bonuses', 'hr_disburse_payroll', 'hr_disburse_salaries', 'hr_print_slips', 'hr_view_timesheet', 'view_past_invoices']
+            : ['pos_discount', 'manage_shifts', 'export_excel'])
     };
 
     const updated = [...users, newUser];
