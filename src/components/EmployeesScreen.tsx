@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
   AppSettings, Employee, EmployeeFinancialRecord, EmployeeLeaveRecord, 
   Transaction, Invoice, Booking, SalaryHistoryEntry, EmployeePermissionRecord, 
@@ -11,7 +11,7 @@ import {
   BarChart3, Settings, ShieldCheck, History, Award, Calendar, FileText, 
   AlertTriangle, Check, X, Printer, UserX, UserCheck, Sparkles, Sliders, Layers,
   Camera, Image as ImageIcon, HeartHandshake, Fingerprint, Package, CheckCircle2, Eye,
-  Target, Users, Zap, Globe, Unlock, Info, Ban, Lightbulb, CreditCard
+  Target, Users, Zap, Globe, Unlock, Info, Ban, Lightbulb, CreditCard, ChevronDown
 } from 'lucide-react';
 import { processImageFile, MAX_IMAGE_SIZE_KB, compressEmployeeAvatar, compressIdCardImage } from '../utils/imageUpload';
 import { HRScreen } from './HRScreen';
@@ -329,6 +329,18 @@ export function EmployeesScreen({
 
   // Fast Quick Action Modal State (سلفة / مكافأة / خصم سريع)
   const [showQuickActionModal, setShowQuickActionModal] = useState(false);
+  const [showQuickActionMenu, setShowQuickActionMenu] = useState(false);
+  const quickActionMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (quickActionMenuRef.current && !quickActionMenuRef.current.contains(e.target as Node)) {
+        setShowQuickActionMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
   const [quickActionForm, setQuickActionForm] = useState<{
     type: 'advance' | 'bonus' | 'penalty';
     empId: string;
@@ -1203,65 +1215,102 @@ export function EmployeesScreen({
               </p>
             </div>
           </div>
-          {/* Quick Action Buttons */}
-          <div className="flex flex-wrap items-center gap-2 mt-3 sm:mt-0">
+
+          {/* Quick Action Dropdown Menu */}
+          <div className="relative" ref={quickActionMenuRef}>
             <button
-              disabled={!canManageAdvances}
-              onClick={() => {
-                if (!canManageAdvances) {
-                  alert('عذراً، لا تملك صلاحية صرف وإدارة السلف النقدية (hr_manage_advances)');
-                  return;
-                }
-                handleOpenQuickAction('advance');
-              }}
-              className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-all ${
-                canManageAdvances
-                  ? 'bg-amber-500 hover:bg-amber-600 text-white cursor-pointer'
-                  : 'bg-slate-200 text-slate-400 opacity-50 cursor-not-allowed'
-              }`}
-              title={canManageAdvances ? 'صرف سلفة سريعة' : 'ليس لديك صلاحية صرف السلف (hr_manage_advances)'}
+              type="button"
+              onClick={() => setShowQuickActionMenu(prev => !prev)}
+              className="bg-slate-900 hover:bg-slate-800 text-white px-4 py-2.5 rounded-2xl text-xs font-black flex items-center gap-2 shadow-xs transition-all cursor-pointer active:scale-95 border border-slate-800"
+              title="قائمة الإجراءات المالية السريعة للموظفين"
             >
-              <Banknote size={15} />
-              <span>+ سلفة سريعة</span>
+              <Zap size={15} className="text-amber-400" />
+              <span>إجراءات مالية سريعة</span>
+              <ChevronDown size={14} className={`text-slate-400 transition-transform duration-200 ${showQuickActionMenu ? 'rotate-180' : ''}`} />
             </button>
-            <button
-              disabled={!canManageBonuses}
-              onClick={() => {
-                if (!canManageBonuses) {
-                  alert('عذراً، لا تملك صلاحية تسجيل وصرف المكافآت والحوافز (hr_manage_bonuses)');
-                  return;
-                }
-                handleOpenQuickAction('bonus');
-              }}
-              className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-all ${
-                canManageBonuses
-                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer'
-                  : 'bg-slate-200 text-slate-400 opacity-50 cursor-not-allowed'
-              }`}
-              title={canManageBonuses ? 'تسجيل مكافأة سريعة' : 'ليس لديك صلاحية المكافآت (hr_manage_bonuses)'}
-            >
-              <Gift size={15} />
-              <span>+ مكافأة سريعة</span>
-            </button>
-            <button
-              disabled={!canManagePenalties}
-              onClick={() => {
-                if (!canManagePenalties) {
-                  alert('عذراً، لا تملك صلاحية تسجيل وتطبيق الخصومات والجزاءات (hr_manage_penalties)');
-                  return;
-                }
-                handleOpenQuickAction('penalty');
-              }}
-              className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-all ${
-                canManagePenalties
-                  ? 'bg-rose-600 hover:bg-rose-700 text-white cursor-pointer'
-                  : 'bg-slate-200 text-slate-400 opacity-50 cursor-not-allowed'
-              }`}
-              title={canManagePenalties ? 'تسجيل خصم سريع' : 'ليس لديك صلاحية الجزاءات (hr_manage_penalties)'}
-            >
-              <DollarSign size={15} />
-              <span>+ خصم سريع</span>
-            </button>
+
+            {showQuickActionMenu && (
+              <div className="absolute left-0 sm:left-auto sm:right-0 mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-xl p-1.5 z-50 animate-in fade-in zoom-in-95">
+                <div className="px-3 py-2 text-[11px] font-bold text-slate-400 border-b border-slate-100 flex items-center justify-between">
+                  <span>عمليات مالية سريعة</span>
+                  <span className="text-[10px] text-slate-400 font-normal">سلف ومكافآت وخصومات</span>
+                </div>
+
+                <div className="py-1 space-y-1">
+                  <button
+                    type="button"
+                    disabled={!canManageAdvances}
+                    onClick={() => {
+                      setShowQuickActionMenu(false);
+                      if (!canManageAdvances) {
+                        alert('عذراً، لا تملك صلاحية صرف وإدارة السلف النقدية (hr_manage_advances)');
+                        return;
+                      }
+                      handleOpenQuickAction('advance');
+                    }}
+                    className={`w-full text-right px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-2.5 transition-colors ${
+                      canManageAdvances ? 'hover:bg-slate-50 text-slate-800 cursor-pointer' : 'text-slate-400 opacity-50 cursor-not-allowed'
+                    }`}
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0 border border-amber-100">
+                      <Banknote size={16} />
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="font-bold text-slate-900">صرف سلفة سريعة</span>
+                      <span className="text-[10px] text-slate-400 font-normal">سلفة نقدية وخصمها من الراتب</span>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={!canManageBonuses}
+                    onClick={() => {
+                      setShowQuickActionMenu(false);
+                      if (!canManageBonuses) {
+                        alert('عذراً، لا تملك صلاحية تسجيل وصرف المكافآت والحوافز (hr_manage_bonuses)');
+                        return;
+                      }
+                      handleOpenQuickAction('bonus');
+                    }}
+                    className={`w-full text-right px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-2.5 transition-colors ${
+                      canManageBonuses ? 'hover:bg-slate-50 text-slate-800 cursor-pointer' : 'text-slate-400 opacity-50 cursor-not-allowed'
+                    }`}
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 border border-emerald-100">
+                      <Gift size={16} />
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="font-bold text-slate-900">تسجيل مكافأة سريعة</span>
+                      <span className="text-[10px] text-slate-400 font-normal">حافز تشجيعي أو مكافأة فورية</span>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={!canManagePenalties}
+                    onClick={() => {
+                      setShowQuickActionMenu(false);
+                      if (!canManagePenalties) {
+                        alert('عذراً، لا تملك صلاحية تسجيل وتطبيق الخصومات والجزاءات (hr_manage_penalties)');
+                        return;
+                      }
+                      handleOpenQuickAction('penalty');
+                    }}
+                    className={`w-full text-right px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-2.5 transition-colors ${
+                      canManagePenalties ? 'hover:bg-slate-50 text-slate-800 cursor-pointer' : 'text-slate-400 opacity-50 cursor-not-allowed'
+                    }`}
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center shrink-0 border border-rose-100">
+                      <DollarSign size={16} />
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="font-bold text-slate-900">تسجيل خصم أو جزاء</span>
+                      <span className="text-[10px] text-slate-400 font-normal">خصم مالي أو جزاء إداري</span>
+                    </div>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
