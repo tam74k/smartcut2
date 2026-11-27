@@ -139,27 +139,43 @@ export function PermissionsScreen({
   });
 
   const handleRoleSelect = (value: string) => {
+    let newRole: UserRole = 'cashier';
+    let newCustomRoleId = '';
+    let newScreens: string[] = [];
+    let newActions: ActionPermission[] = [];
+
     if (value.startsWith('custom:')) {
       const cId = value.replace('custom:', '');
       const selectedRole = roles.find(r => r.id === cId);
-      setUserForm(prev => ({
-        ...prev,
-        role: 'custom',
-        customRoleId: cId,
-        screens: selectedRole ? [...selectedRole.screens] : [...DEFAULT_ROLE_PRESETS.custom.screens],
-        actions: selectedRole ? [...selectedRole.actions] : [...DEFAULT_ROLE_PRESETS.custom.actions]
-      }));
+      newRole = 'custom';
+      newCustomRoleId = cId;
+      newScreens = selectedRole ? [...selectedRole.screens] : [...DEFAULT_ROLE_PRESETS.custom.screens];
+      newActions = selectedRole ? [...selectedRole.actions] : [...DEFAULT_ROLE_PRESETS.custom.actions];
     } else {
       const selectedRole = value as UserRole;
       const preset = DEFAULT_ROLE_PRESETS[selectedRole] || DEFAULT_ROLE_PRESETS.cashier;
-      setUserForm(prev => ({
-        ...prev,
-        role: selectedRole,
-        customRoleId: '',
-        screens: [...preset.screens],
-        actions: [...preset.actions]
-      }));
+      newRole = selectedRole;
+      newScreens = [...preset.screens];
+      newActions = [...preset.actions];
     }
+
+    setUserForm(prev => {
+      let nextBranchId = prev.branchId;
+      // If switching to a non-admin/non-owner role, ensure a branch is assigned
+      if (newRole !== 'admin' && newRole !== 'owner') {
+        if (!nextBranchId) {
+          nextBranchId = activeBranchId || (branches.length > 0 ? branches[0].id : '');
+        }
+      }
+      return {
+        ...prev,
+        role: newRole,
+        customRoleId: newCustomRoleId,
+        branchId: nextBranchId,
+        screens: newScreens,
+        actions: newActions
+      };
+    });
   };
 
   // Grouped catalogs for convenient UI rendering
@@ -193,26 +209,38 @@ export function PermissionsScreen({
       return true;
     });
 
+    const effectiveBranchFilter = isOwnerOrProgrammer ? selectedBranchFilter : (userBranchId || 'all');
+
     return salonScopedUsers
       .filter(u => {
-        if (selectedBranchFilter === 'all') return true;
+        if (effectiveBranchFilter === 'all') return true;
         if (!u.branchId) {
           const mainBranch = branches.find(b => b.isMain) || branches[0];
-          return selectedBranchFilter === mainBranch?.id || selectedBranchFilter === 'br-1001-main' || selectedBranchFilter === 'b-main';
+          return effectiveBranchFilter === mainBranch?.id || effectiveBranchFilter === 'br-1001-main' || effectiveBranchFilter === 'b-main';
         }
-        return u.branchId === selectedBranchFilter;
+        return u.branchId === effectiveBranchFilter;
       })
       .filter(u => 
         u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         u.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (u.phone && u.phone.includes(searchTerm))
       );
-  }, [users, searchTerm, selectedBranchFilter, branches, currentSalonId]);
+  }, [users, searchTerm, selectedBranchFilter, branches, currentSalonId, isOwnerOrProgrammer, userBranchId]);
 
   // Handle Save User
   const handleSaveUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!userForm.name.trim() || !userForm.username.trim()) return;
+
+    const isSystemAdminOrOwner = userForm.role === 'admin' || userForm.role === 'owner';
+
+    // Strict validation: Non-admin and non-owner users MUST be registered to an exact branch
+    if (!isSystemAdminOrOwner) {
+      if (!userForm.branchId) {
+        alert('تنبيه: يجب اختيار الفرع المخصص لهذا المستخدم. لا يُسمح بتسجيل مستخدم بدون تحديد فرعه إلا لمدير النظام العام أو المالك.');
+        return;
+      }
+    }
 
     const cleanUsername = userForm.username.trim().toLowerCase();
     const isTaken = await AuthService.isUsernameTakenAsync(cleanUsername, editingUser?.id);
@@ -244,13 +272,24 @@ export function PermissionsScreen({
       }
     }
 
+    // Strict enforcement: Non-admin/owner roles can never have multi-branch wildcard access
+    if (!isSystemAdminOrOwner) {
+      finalScreens = finalScreens.filter(s => s !== '*');
+      finalActions = finalActions.filter(a => a !== '*' && a !== 'view_all_branches');
+    }
+
     const targetBranch = branches.find(b => 
       b.id === userForm.branchId || 
       (b.code && b.code === userForm.branchId) || 
       (b.name && b.name.toLowerCase() === (userForm.branchId || '').toLowerCase())
     );
-    const resolvedBranchId = targetBranch?.id || userForm.branchId || undefined;
+    const resolvedBranchId = targetBranch?.id || userForm.branchId || (isSystemAdminOrOwner ? undefined : (branches[0]?.id || undefined));
     const resolvedBranchCode = targetBranch?.code || undefined;
+
+    if (!isSystemAdminOrOwner && !resolvedBranchId) {
+      alert('تنبيه: تعذر تحديد الفرع المخصص لهذا المستخدم. يرجى اختيار فرع صالح من القائمة.');
+      return;
+    }
 
     if (editingUser) {
       const updatedUser: AppUser = {
@@ -1224,11 +1263,12 @@ export function PermissionsScreen({
                       value={userForm.branchId || ''}
                       onChange={e => setUserForm({ ...userForm, branchId: e.target.value })}
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-indigo-500 font-bold text-slate-800"
+                      required={userForm.role !== 'admin' && userForm.role !== 'owner'}
                     >
-                      {userForm.role === 'kiosk' ? (
-                        <option value="" disabled>يرجى اختيار الفرع لجهاز حجز الأدوار</option>
-                      ) : (
+                      {userForm.role === 'admin' || userForm.role === 'owner' ? (
                         <option value="">كافة الفروع (حساب عام / إدارة مالك الصالون)</option>
+                      ) : (
+                        <option value="" disabled>-- يرجى اختيار الفرع لهذا المستخدم (إجباري) --</option>
                       )}
                       {branches.map(b => (
                         <option key={b.id} value={b.id}>
@@ -1237,9 +1277,9 @@ export function PermissionsScreen({
                       ))}
                     </select>
                     <p className="text-[10px] text-slate-400 mt-1">
-                      {userForm.role === 'kiosk' 
-                        ? 'سيتم ربط جهاز التابلت فوراً بهذا الفرع لسحب أرقام الانتظار وطباعتها.'
-                        : (userForm.branchId ? 'سيتم تقييد هذا المستخدم بالعمل والاطلاع فقط على هذا الفرع ومنع الانتقال لفروع أخرى.' : 'هذا المستخدم يملك صلاحية الاطلاع والتنقل بين كافة الفروع (المالك / الإدارة).')}
+                      {userForm.role === 'admin' || userForm.role === 'owner'
+                        ? (userForm.branchId ? 'يمكن تقييد هذا المدير بفرع محدد، أو تركه على "كافة الفروع" لإدارة الصالون وفروعه بالكامل.' : 'هذا الحساب يملك صلاحية الاطلاع والتنقل بين كافة الفروع (إدارة الصالون العامة).')
+                        : 'سيتم تقييد هذا المستخدم بالعمل والاطلاع فقط على هذا الفرع المحدد ومنعه نهائياً من رؤية أو الانتقال لفروع أخرى.'}
                     </p>
                   </>
                 ) : (

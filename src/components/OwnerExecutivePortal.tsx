@@ -1025,7 +1025,8 @@ export function OwnerExecutivePortal({
     username: '',
     phone: '',
     role: 'cashier' as UserRole,
-    password: ''
+    password: '',
+    branchId: ''
   });
   const [userFormError, setUserFormError] = useState('');
   const [userFormSuccess, setUserFormSuccess] = useState('');
@@ -3014,12 +3015,22 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
       return;
     }
 
-    const curBranch = (branches || []).find(b => b.id === activeBranchId);
+    const isSystemAdminOrOwner = newUserForm.role === 'admin' || newUserForm.role === 'owner';
+    const targetBranchId = newUserForm.branchId || activeBranchId || (branches && branches.length > 0 ? branches[0].id : undefined);
+
+    if (!isSystemAdminOrOwner && !targetBranchId) {
+      setUserFormError('الرجاء اختيار الفرع المخصص لهذا المستخدم');
+      return;
+    }
+
+    const curBranch = (branches || []).find(b => b.id === targetBranchId);
+    const resolvedBranchId = isSystemAdminOrOwner ? (newUserForm.branchId || undefined) : (curBranch?.id || targetBranchId);
+
     const newUser: AppUser = {
       id: 'usr-' + Math.random().toString(36).substring(2, 9),
       salonId: targetSalonId,
       salonCode: (settings as any).salonCode,
-      branchId: activeBranchId,
+      branchId: resolvedBranchId,
       branchCode: curBranch?.code || (settings as any).branchCode,
       name: newUserForm.name.trim(),
       username: cleanUsername,
@@ -3041,7 +3052,7 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
     }
 
     setUserFormSuccess(`تمت إضافة المستخدم (${newUser.name}) بنجاح!`);
-    setNewUserForm({ name: '', username: '', phone: '', role: 'cashier', password: '' });
+    setNewUserForm({ name: '', username: '', phone: '', role: 'cashier', password: '', branchId: '' });
     setTimeout(() => {
       setShowAddUserModal(false);
       setUserFormSuccess('');
@@ -5735,15 +5746,36 @@ _تم الاستخراج تلقائياً من منظومة Smart Cut PRO SaaS (
                 </div>
 
                 <div>
-                  <label className="block text-slate-300 font-bold mb-1">رقم الهاتف</label>
-                  <input
-                    type="tel"
-                    placeholder="0500000000"
-                    value={newUserForm.phone}
-                    onChange={e => setNewUserForm({ ...newUserForm, phone: e.target.value })}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono font-bold outline-none focus:border-emerald-500"
-                  />
+                  <label className="block text-slate-300 font-bold mb-1">الفرع المخصص للعمل</label>
+                  <select
+                    value={newUserForm.branchId || activeBranchId || ''}
+                    onChange={e => setNewUserForm({ ...newUserForm, branchId: e.target.value })}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white font-bold outline-none focus:border-emerald-500"
+                    required={newUserForm.role !== 'admin'}
+                  >
+                    {newUserForm.role === 'admin' ? (
+                      <option value="">كافة الفروع (حساب عام)</option>
+                    ) : (
+                      <option value="" disabled>-- يرجى اختيار الفرع (إجباري) --</option>
+                    )}
+                    {(branches || []).map(b => (
+                      <option key={b.id} value={b.id}>
+                        {b.name} ({b.code || b.country}) {b.isMain ? '(رئيسي)' : ''}
+                      </option>
+                    ))}
+                  </select>
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-bold mb-1">رقم الهاتف</label>
+                <input
+                  type="tel"
+                  placeholder="0500000000"
+                  value={newUserForm.phone}
+                  onChange={e => setNewUserForm({ ...newUserForm, phone: e.target.value })}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono font-bold outline-none focus:border-emerald-500"
+                />
               </div>
 
               <div>

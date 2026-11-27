@@ -1788,6 +1788,27 @@ export default function App() {
       setIsDbLoading(false);
     }
   };
+
+  // ── Strict Multi-Branch Security: Only Owner, Admin or Programmer can switch branches ──
+  const handleSelectBranch = useCallback((branchId: string) => {
+    const isOwnerOrProgrammer = currentUser?.role === 'programmer' || 
+                                currentUser?.role === 'owner' || 
+                                (currentUser?.role === 'admin' && !currentUser?.branchId);
+    if (!isOwnerOrProgrammer) {
+      console.warn('[Security Violation] Unauthorized branch switch attempt blocked for user:', currentUser?.username);
+      return;
+    }
+    setActiveBranchId(branchId);
+  }, [currentUser]);
+
+  // Strict branch locking for non-admin/non-owner users (zero leakage between branches)
+  useEffect(() => {
+    if (currentUser && currentUser.role !== 'admin' && currentUser.role !== 'owner' && currentUser.role !== 'programmer') {
+      if (currentUser.branchId && activeBranchId !== currentUser.branchId) {
+        setActiveBranchId(currentUser.branchId);
+      }
+    }
+  }, [currentUser, activeBranchId]);
   // ─────────────────────────────────────────────────────────────────────────
 
   const handleLogout = () => {
@@ -4077,7 +4098,7 @@ export default function App() {
           clients={clients}
           branches={branches}
           activeBranchId={activeBranchId}
-          onSelectBranch={setActiveBranchId}
+          onSelectBranch={handleSelectBranch}
           currentUser={currentUser}
           onNavigateScreen={(screenName) => setActiveTab(screenName)}
           expenses={transactions.filter(t => (t.category === 'expense' || t.type === 'expense') && !isZeroingOrClosingTrx(t))}
@@ -4174,9 +4195,18 @@ export default function App() {
         { id: 'b-main', salonId: salon.id, name: `الفرع الرئيسي (${salon.name})`, code: 'B01', isMain: true, phone: salon.phone, address: salon.country, isActive: true, status: 'active' }
       ]);
       let branchIdToUse = 'b-main';
+      const isOwnerOrAdmin = u.role === 'admin' || u.role === 'owner' || u.role === 'programmer';
       if (u.branchId) {
         branchIdToUse = u.branchId;
         setActiveBranchId(u.branchId);
+      } else if (!isOwnerOrAdmin) {
+        // Enforce strict branch assignment for non-admin/owner users who lack branchId
+        const fallbackBranch = salonBranches.find(b => b.isMain)?.id || salonBranches[0]?.id || 'b-main';
+        branchIdToUse = fallbackBranch;
+        u.branchId = fallbackBranch;
+        setActiveBranchId(fallbackBranch);
+        AuthService.saveUser(u);
+        DB.saveUser(u).catch(() => {});
       } else if (selectedBranch) {
         branchIdToUse = selectedBranch.id;
         setActiveBranchId(selectedBranch.id);
@@ -4558,7 +4588,7 @@ export default function App() {
         subscription={subscription}
         branches={branches}
         activeBranchId={activeBranchId}
-        onSelectBranch={setActiveBranchId}
+        onSelectBranch={handleSelectBranch}
         isCloudConnected={isCloudConnected}
         salonName={settings.salonName}
         currentUser={currentUser}
