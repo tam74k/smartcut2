@@ -17,10 +17,52 @@ const initialKey =
   (import.meta as any).env?.VITE_SUPABASE_ANON_KEY ||
   DEFAULT_SUPABASE_KEY;
 
+// Helper to resolve active tenant salonId for HTTP security header x-salon-id
+function getTenantIdForHeaders(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const session = localStorage.getItem('smartcut_session');
+    if (session) {
+      const parsed = JSON.parse(session);
+      const user = parsed?.user || parsed;
+      const sid = user?.salonId || user?.salon_id || parsed?.salonId;
+      if (sid && sid.length >= 32) return sid;
+    }
+    const cur = localStorage.getItem('smartcut_current_user');
+    if (cur) {
+      const parsed = JSON.parse(cur);
+      const sid = parsed?.salonId || parsed?.salon_id;
+      if (sid && sid.length >= 32) return sid;
+    }
+    const act = localStorage.getItem('smartcut_active_salon_id');
+    if (act && act.length >= 32) return act;
+    
+    // Check URL params for booking portals / kiosks
+    const params = new URLSearchParams(window.location.search);
+    const urlSid = params.get('salon') || params.get('salonId') || params.get('salon_id');
+    if (urlSid && urlSid.length >= 32) return urlSid;
+  } catch (e) {}
+  return null;
+}
+
+// Custom secure fetch wrapper that injects x-salon-id into PostgREST calls automatically
+const secureFetch: typeof fetch = (input, init = {}) => {
+  const tenantId = getTenantIdForHeaders();
+  if (tenantId) {
+    const headers = new Headers(init.headers || {});
+    if (!headers.has('x-salon-id')) {
+      headers.set('x-salon-id', tenantId);
+    }
+    init.headers = headers;
+  }
+  return fetch(input, init);
+};
+
 let supabaseClient: SupabaseClient | null = null;
 try {
   supabaseClient = createClient(initialUrl, initialKey, {
-    auth: { persistSession: false }
+    auth: { persistSession: false },
+    global: { fetch: secureFetch }
   });
 } catch (err) {
   console.error('Failed to init singleton Supabase client:', err);
@@ -49,7 +91,8 @@ export const SupabaseService = {
         localStorage.removeItem('smartcut_supabase_url');
         localStorage.removeItem('smartcut_supabase_key');
         supabaseClient = createClient(DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_KEY, {
-          auth: { persistSession: false }
+          auth: { persistSession: false },
+          global: { fetch: secureFetch }
         });
         return true;
       }
@@ -57,7 +100,8 @@ export const SupabaseService = {
       localStorage.setItem('smartcut_supabase_url', url);
       localStorage.setItem('smartcut_supabase_key', key);
       supabaseClient = createClient(url, key, {
-        auth: { persistSession: false }
+        auth: { persistSession: false },
+        global: { fetch: secureFetch }
       });
       return true;
     } catch (e) {

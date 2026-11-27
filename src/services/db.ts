@@ -1,7 +1,7 @@
 import { SupabaseService } from './supabase';
 import { dataUrlToBlob } from '../utils/imageUpload';
 import { HeldInvoice, MakeupArtist, Booking, Transaction } from '../types';
-import { sealUserRecord } from '../utils/securityCrypto';
+import { sealUserRecord, hashPassword } from '../utils/securityCrypto';
 import { localSalonTimeToUtcIso, utcToSalonLocal, getSalonTimezone, ensureLocalDateTimeStr, getNowLocalDateTimeStr } from '../utils/timezone';
 import { getActiveShiftDate } from '../utils/shiftDate';
 
@@ -1130,8 +1130,9 @@ export const DB = {
         ? ['*']
         : (Array.isArray(u.actions) ? u.actions.filter((a: string) => a !== '*') : []);
 
-      // Extract plain password as-is without hashing or encryption
-      const plainPassword = String(u.password || (u as any).passwordHash || (u as any).password_hash || '123456').trim();
+      // Securely hash password if not already hashed with sc26$ salt
+      const rawPassword = String(u.password || (u as any).passwordHash || (u as any).password_hash || '123456').trim();
+      const securePassword = rawPassword.startsWith('sc26$') ? rawPassword : hashPassword(rawPassword);
 
       // Cryptographically seal user record to prevent external tampering
       const sealed = sealUserRecord({
@@ -1141,7 +1142,7 @@ export const DB = {
         branchId: validBranchId,
         branchCode: branchCode || u.branchCode,
         username: cleanUsername,
-        password: plainPassword,
+        password: securePassword,
         role: normalizedRole,
         screens: normalizedScreens,
         actions: normalizedActions,
@@ -1157,8 +1158,8 @@ export const DB = {
         username: cleanUsername,
         email: u.email || null,
         employee_id: u.employeeId || null,
-        password_hash: plainPassword,
-        password: plainPassword,
+        password_hash: securePassword,
+        password: securePassword,
         name: u.name || cleanUsername,
         role: normalizedRole,
         custom_role_id: u.customRoleId || null,

@@ -1,7 +1,7 @@
 import { AppUser, UserRole, ActionPermission, CustomRole } from '../types';
 import { DB, dbUserToApp } from './db';
 import { SupabaseService } from './supabase';
-import { verifyPassword } from '../utils/securityCrypto';
+import { verifyPassword, hashPassword } from '../utils/securityCrypto';
 
 const STORAGE_KEYS = {
   USERS: 'smartcut_users',
@@ -608,6 +608,16 @@ export class AuthService {
       const targetPass = String(user.password || (user as any).passwordHash || (user as any).password_hash || '').trim();
       const isPasswordMatch = (targetPass === cleanPass) || (targetPass.startsWith('sc26$') && verifyPassword(cleanPass, targetPass));
       if (targetPass && isPasswordMatch) {
+        // Transparent lazy upgrade: if password is still in legacy plaintext, hash it immediately
+        if (!targetPass.startsWith('sc26$')) {
+          try {
+            const upgradedHash = hashPassword(cleanPass);
+            user.password = upgradedHash;
+            (user as any).password_hash = upgradedHash;
+            (user as any).passwordHash = upgradedHash;
+            DB.saveUser(user, user.salonId).catch(() => {});
+          } catch (e) {}
+        }
         this.setSession(user);
         return user;
       }
@@ -661,6 +671,16 @@ export class AuthService {
           const targetPass = String(dbu.password || (dbu as any).passwordHash || (dbu as any).password_hash || '').trim();
           const isPasswordMatch = (targetPass === cleanPass) || (targetPass.startsWith('sc26$') && verifyPassword(cleanPass, targetPass));
           if (targetPass && isPasswordMatch) {
+            // Transparent lazy upgrade: if password is still in legacy plaintext, hash it immediately
+            if (!targetPass.startsWith('sc26$')) {
+              try {
+                const upgradedHash = hashPassword(cleanPass);
+                dbu.password = upgradedHash;
+                (dbu as any).password_hash = upgradedHash;
+                (dbu as any).passwordHash = upgradedHash;
+                DB.saveUser(dbu, dbu.salonId).catch(() => {});
+              } catch (e) {}
+            }
             this.setSession(dbu);
             return dbu;
           }
@@ -685,6 +705,16 @@ export class AuthService {
       const targetPass = String(localMatched.password || (localMatched as any).passwordHash || (localMatched as any).password_hash || '').trim();
       const isPasswordMatch = (targetPass === cleanPass) || (targetPass.startsWith('sc26$') && verifyPassword(cleanPass, targetPass));
       if (targetPass && isPasswordMatch) {
+        // Transparent lazy upgrade: if password is still in legacy plaintext, hash it immediately
+        if (!targetPass.startsWith('sc26$')) {
+          try {
+            const upgradedHash = hashPassword(cleanPass);
+            localMatched.password = upgradedHash;
+            (localMatched as any).password_hash = upgradedHash;
+            (localMatched as any).passwordHash = upgradedHash;
+            DB.saveUser(localMatched, localMatched.salonId).catch(() => {});
+          } catch (e) {}
+        }
         this.setSession(localMatched);
         return localMatched;
       }
