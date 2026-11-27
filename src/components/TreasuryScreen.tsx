@@ -1,9 +1,9 @@
 import { useState, useMemo, useEffect } from 'react';
 import { AppSettings, Transaction, Treasury, Branch, AppUser, Invoice, Booking } from '../types';
-import { Wallet, ArrowDownRight, ArrowUpRight, ArrowRightLeft, XCircle, Download, Building2, Trash2, Loader2, CalendarCheck, Printer, Banknote, CreditCard, Landmark, Coins, User, X, AlertCircle, Search, ChevronRight, ChevronLeft, ChevronsRight, ChevronsLeft } from 'lucide-react';
+import { Wallet, ArrowDownRight, ArrowUpRight, ArrowRightLeft, XCircle, Download, Building2, Trash2, Loader2, CalendarCheck, Printer, Banknote, CreditCard, Landmark, Coins, User, X, AlertCircle, Search, ChevronRight, ChevronLeft, ChevronsRight, ChevronsLeft, RotateCcw } from 'lucide-react';
 import { exportToExcel } from '../utils/exportExcel';
 import { AuthService } from '../services/auth';
-import { DB } from '../services/db';
+import { DB, dbTransactionToApp } from '../services/db';
 import { getBookingAdvances } from './BookingsScreen';
 import { printThermalFinancialVoucher } from './ThermalFinancialVoucher';
 import { resolveMainTreasury, isMatchingTreasury, getTransactionTargetTreasuryId, getTreasuryLabel } from '../utils/treasury';
@@ -52,7 +52,92 @@ export function TreasuryScreen({
   const [fromDate, setFromDate] = useState<string>('');
   const [toDate, setToDate] = useState<string>('');
 
+  // حالة التحديث اللحظي المباشر
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<string>('');
+
   const activeBranch = branches.find(b => b.id === activeBranchId);
+
+  // دالة التحديث الفوري المباشر لجلب كافة حركات الخزينة والفواتير من السيرفر دون أي تأخير
+  const refreshTreasuryData = async (silent: boolean = false) => {
+    if (!settings?.salonId) return;
+    if (!silent) setIsRefreshing(true);
+    try {
+      const [dbTrxs, dbInvs] = await Promise.all([
+        DB.fetchTransactions(settings.salonId),
+        DB.fetchInvoices(settings.salonId)
+      ]);
+      if (dbTrxs && Array.isArray(dbTrxs) && setTransactions) {
+        setTransactions(dbTrxs.map(dbTransactionToApp));
+      }
+      setLastRefreshedAt(new Date().toLocaleTimeString('ar-SA'));
+    } catch (err) {
+      console.error('Error refreshing treasury transactions:', err);
+    } finally {
+      if (!silent) setIsRefreshing(false);
+    }
+  };
+
+  // المزامنة اللحظية الفورية عند فتح الشاشة واستقبال أي حركة جديدة دون انتظار
+  useEffect(() => {
+    refreshTreasuryData(false);
+
+    // فحص دوري سريع كل 6 ثوانٍ أثناء التواجد في الشاشة
+    const interval = setInterval(() => {
+      if (!document.hidden) {
+        refreshTreasuryData(true);
+      }
+    }, 6000);
+
+    // الاستماع الفوري للحركات الجديدة المنشأة محلياً أو من أي تبويب
+    const handleTrxSaved = (e: any) => {
+      const newTrx = e.detail;
+      if (newTrx && setTransactions) {
+        setTransactions((prev: Transaction[]) => [
+          dbTransactionToApp(newTrx),
+          ...(prev || []).filter(t => t.id !== newTrx.id)
+        ]);
+      }
+    };
+
+    const handleBatchSaved = (e: any) => {
+      const list = e.detail;
+      if (Array.isArray(list) && list.length > 0 && setTransactions) {
+        const newIds = new Set(list.map((t: any) => t.id));
+        setTransactions((prev: Transaction[]) => [
+          ...list.map(dbTransactionToApp),
+          ...(prev || []).filter(t => !newIds.has(t.id))
+        ]);
+      }
+    };
+
+    let bc: BroadcastChannel | null = null;
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        bc = new BroadcastChannel('smartcut_transactions_bus');
+        bc.onmessage = (msg) => {
+          if (msg.data?.type === 'TRANSACTION_SAVED' && msg.data.transaction && setTransactions) {
+            const t = dbTransactionToApp(msg.data.transaction);
+            setTransactions((prev: Transaction[]) => [t, ...(prev || []).filter(x => x.id !== t.id)]);
+          } else if (msg.data?.type === 'TRANSACTIONS_BATCH' && Array.isArray(msg.data.transactions) && setTransactions) {
+            const list = msg.data.transactions.map(dbTransactionToApp);
+            const newIds = new Set(list.map((t: any) => t.id));
+            setTransactions((prev: Transaction[]) => [...list, ...(prev || []).filter(x => !newIds.has(x.id))]);
+          }
+        };
+      } catch (e) {}
+    }
+
+    window.addEventListener('smartcut:transaction_saved', handleTrxSaved);
+    window.addEventListener('smartcut:transactions_saved_batch', handleBatchSaved);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('smartcut:transaction_saved', handleTrxSaved);
+      window.removeEventListener('smartcut:transactions_saved_batch', handleBatchSaved);
+      if (bc) bc.close();
+    };
+  }, [settings.salonId, activeBranchId]);
 
   const getTransactionActorName = (trx: any): string => {
     if (!trx) return '-';
@@ -1113,6 +1198,19 @@ export function TreasuryScreen({
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+            {/* Quick Instant Server Refresh Button */}
+            <button
+              type="button"
+              onClick={() => refreshTreasuryData(false)}
+              disabled={isRefreshing}
+              className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer disabled:opacity-50"
+              title="تحديث فوري مباشر لحركات الخزينة من السيرفر"
+            >
+              <RotateCcw size={13} className={isRefreshing ? 'animate-spin text-indigo-600' : 'text-indigo-600'} />
+              <span>{isRefreshing ? 'جاري التحديث...' : 'تحديث فوري'}</span>
+              {lastRefreshedAt && <span className="text-[10px] text-indigo-500 font-normal font-mono">({lastRefreshedAt})</span>}
+            </button>
+
             {/* Search Input */}
             <div className="relative flex items-center min-w-[180px] max-w-xs">
               <Search size={14} className="absolute right-3 text-slate-400 pointer-events-none" />

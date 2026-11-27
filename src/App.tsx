@@ -1352,8 +1352,11 @@ export default function App() {
       }
     });
 
-    // BroadcastChannel for instant local cross-tab / cross-window promo updates
+    // BroadcastChannel for instant local cross-tab / cross-window promo & transaction updates
     let promoBc: BroadcastChannel | null = null;
+    let trxBc: BroadcastChannel | null = null;
+    let supabaseChannel: any = null;
+
     try {
       if (typeof BroadcastChannel !== 'undefined') {
         promoBc = new BroadcastChannel(`smartcut_promos_${sId}`);
@@ -1367,8 +1370,72 @@ export default function App() {
             if (usages && Array.isArray(usages)) setPromoCodeUsages(usages);
           }
         };
+
+        trxBc = new BroadcastChannel('smartcut_transactions_bus');
+        trxBc.onmessage = (msg) => {
+          if (msg.data?.type === 'TRANSACTION_SAVED' && msg.data.transaction) {
+            const t = dbTransactionToApp(msg.data.transaction);
+            setTransactions(prev => [t, ...(prev || []).filter(x => x.id !== t.id)]);
+          } else if (msg.data?.type === 'TRANSACTIONS_BATCH' && Array.isArray(msg.data.transactions)) {
+            const list = msg.data.transactions.map(dbTransactionToApp);
+            const newIds = new Set(list.map((t: any) => t.id));
+            setTransactions(prev => [...list, ...(prev || []).filter(x => !newIds.has(x.id))]);
+          }
+        };
       }
     } catch (e) {}
+
+    const handleWindowTrx = (e: any) => {
+      const t = e.detail;
+      if (t && t.id) {
+        setTransactions(prev => [dbTransactionToApp(t), ...(prev || []).filter(x => x.id !== t.id)]);
+      }
+    };
+    const handleWindowBatch = (e: any) => {
+      const list = e.detail;
+      if (Array.isArray(list) && list.length > 0) {
+        const newIds = new Set(list.map((t: any) => t.id));
+        setTransactions(prev => [...list.map(dbTransactionToApp), ...(prev || []).filter(x => !newIds.has(x.id))]);
+      }
+    };
+    window.addEventListener('smartcut:transaction_saved', handleWindowTrx);
+    window.addEventListener('smartcut:transactions_saved_batch', handleWindowBatch);
+
+    // اشتراك لحظي فوري عبر قنوات Supabase Realtime للحركات المالية والفواتير
+    try {
+      const sbClient = SupabaseService.getClient();
+      if (sbClient) {
+        supabaseChannel = sbClient.channel(`app_realtime_${sId}`)
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, (payload) => {
+            if (payload.eventType === 'DELETE') {
+              const delId = payload.old?.id;
+              if (delId) setTransactions(prev => prev.filter(t => t.id !== delId));
+            } else if (payload.new) {
+              const newTrx = dbTransactionToApp(payload.new);
+              if (!newTrx.salonId || newTrx.salonId === sId) {
+                setTransactions(prev => [newTrx, ...(prev || []).filter(t => t.id !== newTrx.id)]);
+              }
+            }
+          })
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'invoices' }, (payload) => {
+            if (payload.eventType === 'DELETE') {
+              const delId = payload.old?.id;
+              if (delId) {
+                deletedInvoiceIdsRef.current.add(delId);
+                setInvoices(prev => prev.filter(i => i.id !== delId));
+              }
+            } else if (payload.new) {
+              const newInv = dbInvoiceToApp(payload.new);
+              if (!newInv.salonId || newInv.salonId === sId) {
+                setInvoices(prev => [newInv, ...(prev || []).filter(i => i.id !== newInv.id)]);
+              }
+            }
+          })
+          .subscribe();
+      }
+    } catch (sbErr) {
+      console.warn('[Supabase Realtime Channel error]:', sbErr);
+    }
 
     return () => {
       unsubServices();
@@ -1387,6 +1454,14 @@ export default function App() {
       unsubCloudSync();
       if (promoBc) {
         promoBc.close();
+      }
+      if (trxBc) {
+        trxBc.close();
+      }
+      window.removeEventListener('smartcut:transaction_saved', handleWindowTrx);
+      window.removeEventListener('smartcut:transactions_saved_batch', handleWindowBatch);
+      if (supabaseChannel) {
+        try { SupabaseService.getClient()?.removeChannel(supabaseChannel); } catch {}
       }
     };
   }, [settings.salonId, activeBranchId]);
@@ -1458,9 +1533,14 @@ export default function App() {
           });
         }
 
-        // Sync Transactions
+        // Sync Transactions with local recent merge protection
         if (polledTransactions && Array.isArray(polledTransactions)) {
-          setTransactions(polledTransactions.map(dbTransactionToApp));
+          const mapped = polledTransactions.map(dbTransactionToApp);
+          const mappedIdSet = new Set(mapped.map((t: any) => t.id));
+          setTransactions(prev => {
+            const localRecent = (prev || []).filter(t => !mappedIdSet.has(t.id));
+            return localRecent.length > 0 ? [...localRecent, ...mapped] : mapped;
+          });
         }
 
         // Sync Bookings
@@ -1517,16 +1597,16 @@ export default function App() {
     // Immediate poll execution on mount & branch/salon change (full fetch)
     executePoll(true);
 
-    // Optimized Polling: 60s intervals (every 5th poll = 5 mins also refreshes static data)
+    // Fast Reactive Polling: 8s intervals for dynamic data (every 8th poll = ~64s also refreshes static data)
     const intervalId = setInterval(() => {
       pollCount++;
-      const shouldIncludeStatic = pollCount % 5 === 0;
+      const shouldIncludeStatic = pollCount % 8 === 0;
       executePoll(shouldIncludeStatic);
-    }, 60000);
+    }, 8000);
 
-    // Visibility API: Pause polling when hidden, immediately poll when tab becomes active if >30s passed
+    // Visibility API: Pause polling when hidden, immediately poll when tab becomes active if >5s passed
     const handleVisibilityChange = () => {
-      if (!document.hidden && Date.now() - lastPollTime > 30000) {
+      if (!document.hidden && Date.now() - lastPollTime > 5000) {
         executePoll(false);
       }
     };
@@ -3618,6 +3698,7 @@ export default function App() {
           products={branchProducts}
           invoices={salonInvoices}
           transactions={branchTransactions}
+          setTransactions={handleSetTransactions}
           bookings={branchBookings}
           currentUser={currentUser}
           fingerprintLogs={branchFingerprintLogs}
@@ -4456,6 +4537,13 @@ export default function App() {
     if (tabId === 'bookings' && !shiftData?.isOpen) {
       alert('الوردية مغلقة حالياً!\nلا يُسمح بفتح شاشة الحجوزات أو إجراء أي حجز إلا بعد فتح وردية عمل جديدة.');
       return;
+    }
+    if (tabId === 'treasury' && settings.salonId) {
+      DB.fetchTransactions(settings.salonId).then(dbTrxs => {
+        if (dbTrxs && Array.isArray(dbTrxs)) {
+          setTransactions(dbTrxs.map(dbTransactionToApp));
+        }
+      }).catch(() => {});
     }
     setActiveTab(tabId);
   };

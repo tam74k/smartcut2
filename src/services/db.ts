@@ -2379,6 +2379,19 @@ export const DB = {
       }
 
       existingDedupe.set(dedupeSig, { time: nowMs, result: t });
+
+      // بث فوري لحظي للحركة المالية لكافة التبويبات والشاشات المفتوحة
+      try {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('smartcut:transaction_saved', { detail: t }));
+          if (typeof BroadcastChannel !== 'undefined') {
+            const bc = new BroadcastChannel('smartcut_transactions_bus');
+            bc.postMessage({ type: 'TRANSACTION_SAVED', transaction: t });
+            bc.close();
+          }
+        }
+      } catch (bcErr) {}
+
       return t;
     } catch (e) {
       console.error('DB.saveTransaction exception:', e);
@@ -2437,6 +2450,19 @@ export const DB = {
         }
       }
     }
+
+    // بث الحركات المالية المجمعة لحظياً
+    try {
+      if (typeof window !== 'undefined' && list.length > 0) {
+        window.dispatchEvent(new CustomEvent('smartcut:transactions_saved_batch', { detail: list }));
+        if (typeof BroadcastChannel !== 'undefined') {
+          const bc = new BroadcastChannel('smartcut_transactions_bus');
+          bc.postMessage({ type: 'TRANSACTIONS_BATCH', transactions: list });
+          bc.close();
+        }
+      }
+    } catch (bcErr) {}
+
     return true;
   },
 
