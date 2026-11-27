@@ -4047,16 +4047,31 @@ export const DB = {
       if (!sId) return [];
       const validSalonId = toSalonUUID(sId);
       if (!validSalonId) return [];
+
       let q = client.from('work_shifts').select('*').eq('salon_id', validSalonId);
-      const { data, error } = await q.order('opened_at', { ascending: false });
-      if (error) { console.error('DB.fetchWorkShifts:', error.message); return []; }
-      const list = (data || []).map(toCamel);
+      
       if (branchId && branchId !== 'all') {
         const bId = toBranchUUID(branchId) || branchId;
-        const filtered = list.filter((s: any) => s.branchId === bId || !s.branchId || s.branchId === 'b-main');
-        return filtered.length > 0 ? filtered : list;
+        let isMain = bId === 'b-main';
+        try {
+          const raw = typeof localStorage !== 'undefined' ? localStorage.getItem('smartcut_branches') : null;
+          if (raw) {
+            const branches = JSON.parse(raw);
+            const b = branches.find((x: any) => x.id === branchId || x.code === branchId);
+            if (b && b.isMain) isMain = true;
+          }
+        } catch (e) {}
+
+        if (isMain) {
+          q = q.or(toBranchUUID(branchId) ? `branch_id.eq.${toBranchUUID(branchId)},branch_id.is.null,branch_id.eq.b-main` : `branch_id.is.null,branch_id.eq.b-main`);
+        } else {
+          q = q.eq('branch_id', bId);
+        }
       }
-      return list;
+
+      const { data, error } = await q.order('opened_at', { ascending: false });
+      if (error) { console.error('DB.fetchWorkShifts:', error.message); return []; }
+      return (data || []).map(toCamel);
     } catch (e) { return []; }
   },
 
@@ -4069,41 +4084,45 @@ export const DB = {
       const validSalonId = toSalonUUID(sId);
       if (!validSalonId) return null;
 
-      // Single definitive query to fetch latest shifts for the salon
-      const { data: shiftRows, error } = await client
+      const targetBranchUUID = branchId && branchId !== 'all' ? (toBranchUUID(branchId) || branchId) : null;
+      let isMain = !branchId || branchId === 'all' || branchId === 'b-main';
+      try {
+        const raw = typeof localStorage !== 'undefined' ? localStorage.getItem('smartcut_branches') : null;
+        if (raw) {
+          const branches = JSON.parse(raw);
+          const b = branches.find((x: any) => x.id === branchId || x.code === branchId);
+          if (b && b.isMain) isMain = true;
+        }
+      } catch (e) {}
+
+      // 1. استعلام محدد وقاطع للوردية المفتوحة التابعة لهذا الفرع فقط
+      let openQuery = client
         .from('work_shifts')
         .select('*')
         .eq('salon_id', validSalonId)
-        .order('opened_at', { ascending: false })
-        .limit(30);
+        .eq('status', 'open')
+        .is('closed_at', null)
+        .order('opened_at', { ascending: false });
 
-      if (error) {
-        console.error('DB.getActiveWorkShift query error:', error.message);
-        return { error: true, message: error.message };
+      if (targetBranchUUID && !isMain) {
+        openQuery = openQuery.eq('branch_id', targetBranchUUID);
+      } else if (isMain) {
+        openQuery = targetBranchUUID
+          ? openQuery.or(`branch_id.eq.${targetBranchUUID},branch_id.is.null,branch_id.eq.b-main`)
+          : openQuery.or(`branch_id.is.null,branch_id.eq.b-main`);
       }
 
-      if (!shiftRows || !Array.isArray(shiftRows) || shiftRows.length === 0) {
-        return { isOpen: false, isClosed: true, hasDefinitiveProof: true, noShifts: true };
+      const { data: openRows, error: openError } = await openQuery.limit(1);
+
+      if (openError) {
+        console.error('DB.getActiveWorkShift open query error:', openError.message);
+        return { error: true, message: openError.message };
       }
 
-      // Check open shifts
-      const openShifts = shiftRows.filter((s: any) => (s.status === 'open' || !s.closed_at) && s.status !== 'closed');
-      if (openShifts.length > 0) {
-        const targetBranchId = branchId && branchId !== 'all' ? (toBranchUUID(branchId) || branchId) : null;
-        let matchedShift = openShifts[0];
-
-        if (targetBranchId && targetBranchId !== 'b-main') {
-          const exactMatch = openShifts.find((s: any) => s.branch_id === targetBranchId);
-          if (exactMatch) matchedShift = exactMatch;
-        } else {
-          // If branch is 'b-main' or unspecified, match main branch, b-main, or the most recent open shift
-          const mainMatch = openShifts.find((s: any) => !s.branch_id || s.branch_id === 'b-main' || s.branch_id === 'all');
-          if (mainMatch) matchedShift = mainMatch;
-        }
-
+      if (openRows && openRows.length > 0) {
+        const matchedShift = openRows[0];
         const sDate = matchedShift.shift_date || new Date().toISOString().split('T')[0];
         const sCode = matchedShift.shift_code || matchedShift.shiftCode || `SH-${sDate.replace(/-/g, '')}-01`;
-
         return {
           ...toCamel(matchedShift),
           shiftCode: sCode,
@@ -4113,10 +4132,24 @@ export const DB = {
         };
       }
 
-      // If no open shift exists, return the latest closed shift
-      const closedShifts = shiftRows.filter((s: any) => s.status === 'closed' || !!s.closed_at);
-      if (closedShifts.length > 0) {
-        const latestClosed = closedShifts[0];
+      // 2. إذا لم تكن هناك أي وردية مفتوحة لهذا الفرع، نبحث عن آخر وردية مغلقة لهذا الفرع حصراً
+      let closedQuery = client
+        .from('work_shifts')
+        .select('*')
+        .eq('salon_id', validSalonId)
+        .order('opened_at', { ascending: false });
+
+      if (targetBranchUUID && !isMain) {
+        closedQuery = closedQuery.eq('branch_id', targetBranchUUID);
+      } else if (isMain) {
+        closedQuery = targetBranchUUID
+          ? closedQuery.or(`branch_id.eq.${targetBranchUUID},branch_id.is.null,branch_id.eq.b-main`)
+          : closedQuery.or(`branch_id.is.null,branch_id.eq.b-main`);
+      }
+
+      const { data: closedRows } = await closedQuery.limit(1);
+      if (closedRows && closedRows.length > 0) {
+        const latestClosed = closedRows[0];
         const sDate = latestClosed.shift_date || new Date().toISOString().split('T')[0];
         const sCode = latestClosed.shift_code || latestClosed.shiftCode || `SH-${sDate.replace(/-/g, '')}-01`;
         return {
@@ -4129,7 +4162,8 @@ export const DB = {
         };
       }
 
-      return { isOpen: false, isClosed: true, hasDefinitiveProof: true };
+      // 3. لا توجد أي ورديات سابقة لهذا الفرع
+      return { isOpen: false, isClosed: true, hasDefinitiveProof: true, noShifts: true };
     } catch (e: any) {
       console.error('DB.getActiveWorkShift exception:', e);
       return { error: true, message: e?.message };

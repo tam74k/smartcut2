@@ -11,12 +11,17 @@ export function getActiveShiftDate(shiftData?: { isOpen: boolean; date: string }
     const raw = typeof localStorage !== 'undefined' ? localStorage.getItem('smartcut_work_shifts_state') : null;
     if (raw) {
       const branchShifts = JSON.parse(raw);
-      if (fallbackBranchId && branchShifts[fallbackBranchId]?.isOpen && branchShifts[fallbackBranchId]?.date) {
-        return branchShifts[fallbackBranchId].date;
+      if (fallbackBranchId) {
+        if (branchShifts[fallbackBranchId]?.isOpen && branchShifts[fallbackBranchId]?.date) {
+          return branchShifts[fallbackBranchId].date;
+        }
+        if (fallbackBranchId === 'b-main' && branchShifts['b-main']?.isOpen && branchShifts['b-main']?.date) {
+          return branchShifts['b-main'].date;
+        }
+        return null;
       }
-      const openShift = Object.values(branchShifts).find((s: any) => s && s.isOpen && s.date) as any;
-      if (openShift && openShift.date) {
-        return openShift.date;
+      if (branchShifts['b-main']?.isOpen && branchShifts['b-main']?.date) {
+        return branchShifts['b-main'].date;
       }
     }
   } catch (e) {}

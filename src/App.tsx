@@ -443,26 +443,36 @@ export default function App() {
     return {};
   });
   const shiftData = useMemo(() => {
-    // 1. Direct active branch shift
-    const current = branchShifts[activeBranchId];
-    if (current && typeof current.isOpen === 'boolean') return current;
-    // 2. Direct 'b-main' fallback
-    if (branchShifts['b-main'] && typeof branchShifts['b-main'].isOpen === 'boolean') return branchShifts['b-main'];
-    // 3. Main branch UUID fallback from branches list
+    const bId = activeBranchId || 'b-main';
     const mainBranch = branches.find(b => b.isMain);
-    if (mainBranch && branchShifts[mainBranch.id] && typeof branchShifts[mainBranch.id].isOpen === 'boolean') {
-      return branchShifts[mainBranch.id];
+    const isMain = bId === 'b-main' || (mainBranch && bId === mainBranch.id);
+
+    // 1. استخراج حالة الوردية الخاصة بهذا الفرع النشط حصراً
+    if (branchShifts[bId] && typeof branchShifts[bId].isOpen === 'boolean') {
+      return branchShifts[bId];
     }
-    // 4. Any open shift fallback across all branch keys
-    const anyOpen = Object.values(branchShifts).find((s: any) => s && s.isOpen === true);
-    if (anyOpen) return anyOpen;
+
+    // 2. إذا كان الفرع النشط هو الفرع الرئيسي، فحص المعرفات البديلة للفرع الرئيسي فقط
+    if (isMain) {
+      if (branchShifts['b-main'] && typeof branchShifts['b-main'].isOpen === 'boolean') {
+        return branchShifts['b-main'];
+      }
+      if (mainBranch && branchShifts[mainBranch.id] && typeof branchShifts[mainBranch.id].isOpen === 'boolean') {
+        return branchShifts[mainBranch.id];
+      }
+    }
+
+    // 3. عزل تام: لا يتم إطلاقاً استعارة وردية أي فرع آخر! إذا لم تكن هناك وردية مفتوحة لهذا الفرع فهو مغلق
     return { isOpen: false, date: '', initialCash: 0 };
   }, [branchShifts, activeBranchId, branches]);
 
   const setShiftData = (updater: any) => {
     setBranchShifts(prev => {
       const branchKey = activeBranchId || 'b-main';
-      const current = prev[branchKey] || prev['b-main'] || { isOpen: false, date: '', initialCash: 0 };
+      const mainBranch = branches.find(b => b.isMain);
+      const isMain = branchKey === 'b-main' || (mainBranch && branchKey === mainBranch.id);
+
+      const current = prev[branchKey] || (isMain ? prev['b-main'] : undefined) || { isOpen: false, date: '', initialCash: 0 };
       const next = typeof updater === 'function' ? updater(current) : updater;
       const updated = {
         ...prev,
@@ -471,8 +481,12 @@ export default function App() {
       if (next?.branchId && next.branchId !== branchKey) {
         updated[next.branchId] = next;
       }
-      if (branchKey === 'b-main' || !prev['b-main']) {
+      // تحديث b-main فقط وفقط إذا كان الفرع النشط هو الفرع الرئيسي
+      if (isMain) {
         updated['b-main'] = next;
+        if (mainBranch) {
+          updated[mainBranch.id] = next;
+        }
       }
       try { localStorage.setItem('smartcut_work_shifts_state', JSON.stringify(updated)); } catch (e) {}
       return updated;
@@ -486,10 +500,13 @@ export default function App() {
       return;
     }
 
+    const mainBranch = branches.find(b => b.isMain);
+    const isMain = branchId === 'b-main' || (mainBranch && branchId === mainBranch.id);
+
     // 2. الاعتماد على قاعدة البيانات: إذا كان جدول work_shifts يحتوي على وردية مفتوحة لهذا الفرع تحديداً
     if (activeShift.isOpen === true || activeShift.status === 'open' || (!activeShift.closedAt && !activeShift.isClosed && activeShift.shiftDate)) {
       setBranchShifts(prev => {
-        const current = prev[branchId] || prev['b-main'];
+        const current = prev[branchId] || (isMain ? prev['b-main'] : undefined);
         const shiftCode = activeShift.shiftCode || activeShift.shift_code || current?.shiftCode || `SH-${(activeShift.shiftDate || '').replace(/-/g, '')}-01`;
         if (
           current?.isOpen === true &&
@@ -517,14 +534,9 @@ export default function App() {
           ...prev,
           [branchId]: shiftObj
         };
-        if (activeShift.branchId && activeShift.branchId !== branchId) {
-          updated[activeShift.branchId] = shiftObj;
-        }
-        if (activeShift.branch_id && activeShift.branch_id !== branchId) {
-          updated[activeShift.branch_id] = shiftObj;
-        }
-        if (branchId === 'b-main' || !prev['b-main'] || prev['b-main']?.shiftId === activeShift.id) {
+        if (isMain) {
           updated['b-main'] = shiftObj;
+          if (mainBranch) updated[mainBranch.id] = shiftObj;
         }
         try { localStorage.setItem('smartcut_work_shifts_state', JSON.stringify(updated)); } catch (e) {}
         return updated;
@@ -532,10 +544,10 @@ export default function App() {
       return;
     }
 
-    // 3. التحقق القاطع من إغلاق الوردية لهذا الفرع
-    if (activeShift.hasDefinitiveProof && (activeShift.isClosed || activeShift.status === 'closed')) {
+    // 3. التحقق القاطع من إغلاق الوردية لهذا الفرع أو عدم وجود أي ورديات له
+    if (activeShift.hasDefinitiveProof && (activeShift.isClosed || activeShift.status === 'closed' || activeShift.noShifts)) {
       setBranchShifts(prev => {
-        const current = prev[branchId] || prev['b-main'];
+        const current = prev[branchId] || (isMain ? prev['b-main'] : undefined);
         if (current?.isOpen && current.shiftId && activeShift.id && current.shiftId !== activeShift.id) {
           return prev;
         }
@@ -551,20 +563,15 @@ export default function App() {
           ...prev,
           [branchId]: closedShiftObj
         };
-        if (activeShift.branchId && activeShift.branchId !== branchId) {
-          updated[activeShift.branchId] = closedShiftObj;
-        }
-        if (activeShift.branch_id && activeShift.branch_id !== branchId) {
-          updated[activeShift.branch_id] = closedShiftObj;
-        }
-        if (branchId === 'b-main' || !prev['b-main'] || prev['b-main']?.shiftId === activeShift.id) {
+        if (isMain) {
           updated['b-main'] = closedShiftObj;
+          if (mainBranch) updated[mainBranch.id] = closedShiftObj;
         }
         try { localStorage.setItem('smartcut_work_shifts_state', JSON.stringify(updated)); } catch (e) {}
         return updated;
       });
     }
-  }, []);
+  }, [branches]);
 
   // المزامنة التلقائية لوردية الفرع النشط فور التبديل بين الفروع
   useEffect(() => {
@@ -4976,7 +4983,9 @@ export default function App() {
             <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
               <div>
                 <h3 className="font-extrabold text-base text-black">تقرير الوردية المفتوحة حالياً</h3>
-                <p className="text-[11px] text-black mt-0.5">مراجعة أرقام الوردية ومطابقة النقدية بالدرج قبل الإغلاق</p>
+                <p className="text-[11px] text-slate-600 font-bold mt-0.5">
+                  الفرع: <span className="text-indigo-700 font-black">{branches.find(b => b.id === activeBranchId)?.name || 'الفرع الرئيسي'}</span>
+                </p>
               </div>
             </div>
             <div className="p-4 overflow-hidden flex justify-center bg-slate-100 max-h-[60vh] overflow-y-auto">
@@ -4985,22 +4994,22 @@ export default function App() {
                   const activeShiftCode = (shiftData as any)?.shiftCode || (shiftData as any)?.shift_code || branchShifts[activeBranchId]?.shiftCode;
                   const activeShiftId = (shiftData as any)?.shiftId || (shiftData as any)?.id;
                   const shiftTrxs = activeShiftCode 
-                    ? transactions.filter(t => (
+                    ? branchTransactions.filter(t => (
                         t.shiftCode === activeShiftCode || 
                         (t as any).shift_code === activeShiftCode || 
                         (t as any).shiftId === activeShiftCode || 
                         (activeShiftId && ((t as any).shiftId === activeShiftId || (t as any).shift_id === activeShiftId || t.shiftCode === activeShiftId)) ||
                         String(t.description || '').includes(activeShiftCode)
                       ))
-                    : transactions.filter(t => (t.shiftDate && shiftData.date && t.shiftDate === shiftData.date) || t.date.startsWith(shiftData.date));
+                    : branchTransactions.filter(t => (t.shiftDate && shiftData.date && t.shiftDate === shiftData.date) || t.date.startsWith(shiftData.date));
                   const shiftInvs = activeShiftCode
-                    ? invoices.filter(i => (
+                    ? branchInvoices.filter(i => (
                         i.shiftCode === activeShiftCode || 
                         (i as any).shift_code === activeShiftCode || 
                         (i as any).shiftId === activeShiftCode ||
                         (activeShiftId && ((i as any).shiftId === activeShiftId || (i as any).shift_id === activeShiftId || i.shiftCode === activeShiftId))
                       ))
-                    : invoices.filter(i => (i.shiftDate && shiftData.date && i.shiftDate === shiftData.date) || i.date.startsWith(shiftData.date));
+                    : branchInvoices.filter(i => (i.shiftDate && shiftData.date && i.shiftDate === shiftData.date) || i.date.startsWith(shiftData.date));
 
                   return (
                     <ClosingReportReceipt 
@@ -5072,7 +5081,9 @@ export default function App() {
           <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full overflow-hidden">
             <div className="p-5 border-b border-slate-100">
               <h3 className="font-extrabold text-base text-slate-800">فتح وردية جديدة</h3>
-              <p className="text-xs text-slate-400 mt-0.5">تسجيل تاريخ الوردية والعهدة النقدية الأولية</p>
+              <p className="text-xs text-slate-500 font-bold mt-0.5">
+                الفرع: <span className="text-emerald-700 font-black">{branches.find(b => b.id === activeBranchId)?.name || 'الفرع الرئيسي'}</span>
+              </p>
             </div>
             <div className="p-5 space-y-4 text-xs">
               <div>

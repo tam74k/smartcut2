@@ -201,15 +201,18 @@ export function ShiftsScreen({
       const dbShifts = await DB.fetchWorkShifts(settings.salonId, branchFilter !== 'all' ? branchFilter : undefined);
       let merged: WorkShift[] = Array.isArray(dbShifts) ? [...dbShifts] : [];
 
-      // 1. Ensure current active open shift from state is included
-      if (shiftData?.isOpen) {
+      // 1. Ensure current active open shift from state is included (only if it matches branchFilter)
+      const currentShiftBranch = activeBranchId || (shiftData as any)?.branchId;
+      const matchesBranchFilter = branchFilter === 'all' || branchFilter === currentShiftBranch || (branches.find(b => b.id === branchFilter)?.code === currentShiftBranch);
+
+      if (shiftData?.isOpen && matchesBranchFilter) {
         const activeCode = (shiftData as any)?.shiftCode || (shiftData as any)?.shift_code || `SH-${(shiftData.date || '').replace(/-/g, '')}-01`;
         const existingIdx = merged.findIndex(s => s.shiftCode === activeCode || s.id === (shiftData as any).shiftId);
         const openShiftObj: WorkShift = {
           id: (shiftData as any).shiftId || ('SHIFT-' + activeCode),
           shiftCode: activeCode,
           salonId: settings.salonId,
-          branchId: activeBranchId || (shiftData as any).branchId,
+          branchId: currentShiftBranch,
           shiftDate: shiftData.date,
           openedAt: (shiftData as any).openedAt || new Date().toISOString(),
           openedByUserId: (shiftData as any).openedByUserId || currentUser?.id,
