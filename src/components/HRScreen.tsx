@@ -7,7 +7,7 @@ import {
 import { 
   Calendar, Clock, CheckCircle, AlertTriangle, Printer, User, Filter, 
   RotateCcw, Sparkles, Plus, CheckSquare, Square, FileText, Ban, ShieldAlert,
-  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Download, DollarSign, Award, ArrowUpRight, Check, X, Wallet,
+  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ChevronDown, Download, DollarSign, Award, ArrowUpRight, Check, X, Wallet,
   Edit, Trash2, TrendingUp, TrendingDown, History, Percent, Coins, Palmtree, RefreshCw, DoorOpen, Timer,
   ShieldCheck, Briefcase, Maximize2, Minimize2, FileSpreadsheet, Search,
   Moon, Sun, Save, SlidersHorizontal, Banknote, Users
@@ -472,6 +472,20 @@ export function HRScreen({
   const [historyEmpFilter, setHistoryEmpFilter] = useState<string>('all');
   const [historySearchQuery, setHistorySearchQuery] = useState<string>('');
   const [showSalaryHistoryModal, setShowSalaryHistoryModal] = useState(false);
+
+  // Actions Dropdown Menu State
+  const [showActionsDropdown, setShowActionsDropdown] = useState(false);
+  const actionsDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (actionsDropdownRef.current && !actionsDropdownRef.current.contains(e.target as Node)) {
+        setShowActionsDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Auto-Refresh & Manual Refresh State
   const [isRefreshingLogs, setIsRefreshingLogs] = useState(false);
@@ -3868,32 +3882,6 @@ export function HRScreen({
 
         {/* Action Buttons Toolbar */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* Excel Biometric Import */}
-          {canManageAttendance && (
-            <button
-              type="button"
-              onClick={() => setShowBiometricModal(true)}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
-              title="سحب حركات البصمة والتايم شيت من ملف إكسل"
-            >
-              <FileSpreadsheet size={14} />
-              <span>سحب من إكسل</span>
-            </button>
-          )}
-
-          {/* Manual Refresh Button */}
-          {canFingerprintSync && (
-            <button
-              type="button"
-              onClick={() => refreshFingerprintLogs(true)}
-              disabled={isRefreshingLogs}
-              className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 shadow-2xs"
-              title="تحديث فوري للبصمات والبيانات"
-            >
-              <RefreshCw size={14} className={isRefreshingLogs ? 'animate-spin text-indigo-600' : 'text-slate-600'} />
-              <span>{isRefreshingLogs ? 'جارٍ المزامنة...' : 'تحديث الآن'}</span>
-            </button>
-          )}
           {/* View Mode Toggle */}
           <div className="bg-slate-100 p-1 rounded-xl flex gap-1 border border-slate-200">
             <button
@@ -3914,204 +3902,352 @@ export function HRScreen({
             </button>
           </div>
 
-          {/* 1. تسجيل / تعديل حضور */}
-          <button
-            disabled={!canManageAttendance}
-            onClick={() => {
-              if (!canManageAttendance) {
-                alert('عذراً، لا تملك صلاحية تسجيل وتعديل الحضور والانصراف (hr_manage_attendance)');
-                return;
-              }
-              setAttendanceForm({
-                empId: selectedEmpId || activeEmployees[0]?.id || '',
-                date: selectedSingleDay || now.toISOString().split('T')[0],
-                checkIn: '09:00',
-                checkOut: '18:00',
-                isNextDayCheckout: false,
-                status: 'regular',
-                notes: ''
-              });
-              setShowAttendanceModal(true);
-            }}
-            className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-all ${
-              canManageAttendance
-                ? 'bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer'
-                : 'bg-slate-200 text-slate-400 opacity-50 cursor-not-allowed'
-            }`}
-            title={canManageAttendance ? 'تسجيل أو تعديل حضور' : 'لا تملك صلاحية تسجيل وتعديل الحضور (hr_manage_attendance)'}
-          >
-            <Plus size={15} />
-            <span>تسجيل / تعديل حضور</span>
-          </button>
-
-          {/* 2. تسجيل زيادة راتب */}
-          <button
-            disabled={!canSalaryIncrements}
-            onClick={() => {
-              if (!canSalaryIncrements) {
-                alert('عذراً، لا تملك صلاحية إقرار وتطبيق زيادات الرواتب (hr_manage_salary_increments)');
-                return;
-              }
-              setTargetEmpId(selectedEmpId || activeEmployees[0]?.id || '');
-              setSelectedEmpIdsForBulk(activeEmployees.map(e => e.id));
-              setIncrementValue(10);
-              setIncrementType('percentage');
-              setEffectiveDate(now.toISOString().split('T')[0]);
-              setIncrementReason('ترقية / علاوة سنوية');
-              setApprovedBy(currentUser?.name || 'مدير النظام');
-              setShowSalaryIncrementModal(true);
-            }}
-            className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md transition-all ${
-              canSalaryIncrements
-                ? 'bg-purple-600 hover:bg-purple-700 text-white shadow-purple-600/20 cursor-pointer'
-                : 'bg-slate-200 text-slate-400 opacity-50 cursor-not-allowed'
-            }`}
-            title={canSalaryIncrements ? 'تسجيل زيادة راتب' : 'لا تملك صلاحية زيادات الرواتب (hr_manage_salary_increments)'}
-          >
-            <TrendingUp size={15} />
-            <span>تسجيل زيادة راتب</span>
-          </button>
-
-          <button
-            onClick={() => setShowSalaryHistoryModal(true)}
-            className="bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-colors cursor-pointer"
-          >
-            <History size={15} className="text-indigo-600" />
-            <span>سجل الزيادات</span>
-          </button>
-
-          {/* 3. تسجيل إجازة */}
-          <button
-            disabled={!canManageLeaves}
-            onClick={() => {
-              if (!canManageLeaves) {
-                alert('عذراً، لا تملك صلاحية تسجيل واعتماد الإجازات (hr_manage_leaves)');
-                return;
-              }
-              handleOpenLeaveModal();
-            }}
-            className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md transition-all ${
-              canManageLeaves
-                ? 'bg-sky-600 hover:bg-sky-700 text-white shadow-sky-600/20 cursor-pointer'
-                : 'bg-slate-200 text-slate-400 opacity-50 cursor-not-allowed'
-            }`}
-            title={canManageLeaves ? 'تسجيل إجازة' : 'لا تملك صلاحية إدارة الإجازات (hr_manage_leaves)'}
-          >
-            <Palmtree size={15} />
-            <span>تسجيل إجازة</span>
-          </button>
-
-          <button
-            onClick={() => setShowLeavesListModal(true)}
-            className="bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 px-3 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-colors cursor-pointer"
-          >
-            <Calendar size={15} className="text-sky-600" />
-            <span>سجل الإجازات</span>
-          </button>
-
-          {/* 4. تسجيل استئذان */}
-          <button
-            disabled={!canManagePermissions}
-            onClick={() => {
-              if (!canManagePermissions) {
-                alert('عذراً، لا تملك صلاحية تسجيل واعتماد أذونات الاستئذان (hr_manage_permissions)');
-                return;
-              }
-              handleOpenPermissionModal();
-            }}
-            className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md transition-all ${
-              canManagePermissions
-                ? 'bg-teal-600 hover:bg-teal-700 text-white shadow-teal-600/20 cursor-pointer'
-                : 'bg-slate-200 text-slate-400 opacity-50 cursor-not-allowed'
-            }`}
-            title={canManagePermissions ? 'تسجيل استئذان' : 'لا تملك صلاحية إدارة الاستئذانات (hr_manage_permissions)'}
-          >
-            <Timer size={15} />
-            <span>تسجيل استئذان</span>
-          </button>
-
-          <button
-            onClick={() => setShowPermissionsListModal(true)}
-            className="bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 px-3 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-colors cursor-pointer"
-          >
-            <DoorOpen size={15} className="text-teal-600" />
-            <span>سجل الاستئذانات</span>
-          </button>
-
-          {/* 5. تدقيق الاستقطاعات والمسير */}
-          {canDisburseSalaries && (
+          {/* Manual Refresh Button */}
+          {canFingerprintSync && (
             <button
-              onClick={() => setShowPayrollAuditModal(true)}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md shadow-indigo-600/20 transition-all cursor-pointer"
-              title="مراجعة وتدقيق الاستقطاعات وأرصدة الأذونات قبل اعتماد المسير"
+              type="button"
+              onClick={() => refreshFingerprintLogs(true)}
+              disabled={isRefreshingLogs}
+              className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 shadow-2xs"
+              title="تحديث فوري للبصمات والبيانات"
             >
-              <ShieldCheck size={15} />
-              <span>تدقيق الاستقطاعات والمسير</span>
+              <RefreshCw size={14} className={isRefreshingLogs ? 'animate-spin text-indigo-600' : 'text-slate-600'} />
+              <span>{isRefreshingLogs ? 'جارٍ المزامنة...' : 'تحديث الآن'}</span>
             </button>
           )}
 
-          {/* 6. صرف عمولة - زر بارز ومميز */}
-          <button
-            disabled={!canDisburseCommissions}
-            onClick={() => {
-              if (!canDisburseCommissions) {
-                alert('عذراً، لا تملك صلاحية اعتماد وصرف العمولات (hr_manage_commissions)');
-                return;
-              }
-              handleOpenCommissionModal();
-            }}
-            className={`px-4 py-2 rounded-xl text-xs font-black flex items-center gap-2 shadow-lg transition-all transform active:scale-95 ${
-              canDisburseCommissions
-                ? 'bg-gradient-to-r from-amber-500 via-amber-600 to-amber-700 hover:from-amber-600 hover:to-amber-800 text-white shadow-amber-500/30 ring-2 ring-amber-400/40 cursor-pointer'
-                : 'bg-slate-200 text-slate-400 opacity-50 cursor-not-allowed'
-            }`}
-            title={canDisburseCommissions ? 'صرف عمولة نقدية للموظف فوراً' : 'لا تملك صلاحية صرف العمولات (hr_manage_commissions)'}
-          >
-            <Coins size={16} className="text-amber-100" />
-            <span className="text-[13px] font-black">صرف عمولة</span>
-          </button>
+          {/* Unified Actions & Records Dropdown */}
+          <div className="relative" ref={actionsDropdownRef}>
+            <button
+              type="button"
+              onClick={() => setShowActionsDropdown(prev => !prev)}
+              className="bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-xl text-xs font-black flex items-center gap-2 shadow-xs transition-all cursor-pointer active:scale-95 border border-slate-800"
+              title="قائمة إجراءات وعمليات وسجلات الدوام والرواتب"
+            >
+              <SlidersHorizontal size={14} className="text-indigo-400" />
+              <span>إجراءات وسجلات الدوام والرواتب</span>
+              <ChevronDown size={14} className={`text-slate-400 transition-transform duration-200 ${showActionsDropdown ? 'rotate-180' : ''}`} />
+            </button>
 
-          {/* 7. صرف مسير الرواتب */}
-          <button
-            disabled={!canDisburseSalaries}
-            onClick={() => {
-              if (!canDisburseSalaries) {
-                alert('عذراً، لا تملك صلاحية فتح واعتماد وصرف مسير الرواتب (hr_disburse_payroll)');
-                return;
-              }
-              handleOpenDisbursementModal();
-            }}
-            className={`px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md transition-all ${
-              canDisburseSalaries
-                ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20 cursor-pointer'
-                : 'bg-slate-200 text-slate-400 opacity-50 cursor-not-allowed'
-            }`}
-            title={canDisburseSalaries ? 'صرف مسير الرواتب' : 'لا تملك صلاحية صرف مسير الرواتب (hr_disburse_payroll)'}
-          >
-            <DollarSign size={16} />
-            <span>صرف مسير الرواتب</span>
-          </button>
+            {showActionsDropdown && (
+              <div className="absolute left-0 mt-2 w-72 sm:w-80 bg-white border border-slate-200 rounded-2xl shadow-2xl p-1.5 z-50 animate-in fade-in zoom-in-95 max-h-[75vh] overflow-y-auto">
+                <div className="px-3.5 py-2 bg-slate-50 border-b border-slate-100 rounded-t-xl flex items-center justify-between">
+                  <span className="text-xs font-black text-slate-800">إجراءات وسجلات الدوام والرواتب</span>
+                  <span className="text-[10px] text-slate-400 font-bold">12 عملية متاحة</span>
+                </div>
 
-          {/* 8. قسيمة الراتب */}
-          <button
-            disabled={!canPrintSlips}
-            onClick={() => {
-              if (!canPrintSlips) {
-                alert('عذراً، لا تملك صلاحية طباعة قسائم الرواتب (hr_print_slips)');
-                return;
-              }
-              handleOpenSalarySlip();
-            }}
-            className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-colors ${
-              canPrintSlips
-                ? 'bg-slate-900 hover:bg-slate-800 text-white cursor-pointer'
-                : 'bg-slate-200 text-slate-400 opacity-50 cursor-not-allowed'
-            }`}
-            title={canPrintSlips ? 'قسيمة الراتب' : 'لا تملك صلاحية طباعة قسيمة الراتب (hr_print_slips)'}
-          >
-            <Printer size={15} />
-            <span>قسيمة الراتب (80mm)</span>
-          </button>
+                {/* Section 1: مسير الرواتب والماليات */}
+                <div className="p-1 space-y-1">
+                  <div className="px-2 pt-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    مسير الرواتب والماليات
+                  </div>
+
+                  {/* 1. صرف مسير الرواتب */}
+                  <button
+                    type="button"
+                    disabled={!canDisburseSalaries}
+                    onClick={() => {
+                      setShowActionsDropdown(false);
+                      if (!canDisburseSalaries) {
+                        alert('عذراً، لا تملك صلاحية فتح واعتماد وصرف مسير الرواتب (hr_disburse_payroll)');
+                        return;
+                      }
+                      handleOpenDisbursementModal();
+                    }}
+                    className={`w-full text-right px-2.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2.5 transition-colors ${
+                      canDisburseSalaries ? 'hover:bg-slate-50 text-slate-800 cursor-pointer' : 'text-slate-400 opacity-50 cursor-not-allowed'
+                    }`}
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 border border-emerald-100">
+                      <DollarSign size={15} />
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="font-bold text-slate-900">صرف مسير الرواتب</span>
+                      <span className="text-[10px] text-slate-400 font-normal">اعتماد وصرف رواتب الشهر وتوليد السندات</span>
+                    </div>
+                  </button>
+
+                  {/* 2. تدقيق الاستقطاعات والمسير */}
+                  {canDisburseSalaries && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowActionsDropdown(false);
+                        setShowPayrollAuditModal(true);
+                      }}
+                      className="w-full text-right px-2.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2.5 hover:bg-slate-50 text-slate-800 cursor-pointer transition-colors"
+                    >
+                      <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 border border-indigo-100">
+                        <ShieldCheck size={15} />
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="font-bold text-slate-900">تدقيق الاستقطاعات والمسير</span>
+                        <span className="text-[10px] text-slate-400 font-normal">مراجعة الخصومات وأرصدة الأذونات قبل الصرف</span>
+                      </div>
+                    </button>
+                  )}
+
+                  {/* 3. صرف عمولة */}
+                  <button
+                    type="button"
+                    disabled={!canDisburseCommissions}
+                    onClick={() => {
+                      setShowActionsDropdown(false);
+                      if (!canDisburseCommissions) {
+                        alert('عذراً، لا تملك صلاحية اعتماد وصرف العمولات (hr_manage_commissions)');
+                        return;
+                      }
+                      handleOpenCommissionModal();
+                    }}
+                    className={`w-full text-right px-2.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2.5 transition-colors ${
+                      canDisburseCommissions ? 'hover:bg-slate-50 text-slate-800 cursor-pointer' : 'text-slate-400 opacity-50 cursor-not-allowed'
+                    }`}
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0 border border-amber-100">
+                      <Coins size={15} />
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="font-bold text-slate-900">صرف عمولة موظف</span>
+                      <span className="text-[10px] text-slate-400 font-normal">تصفية وصرف عمولات الخدمات والمبيعات فوراً</span>
+                    </div>
+                  </button>
+
+                  {/* 4. قسيمة الراتب 80mm */}
+                  <button
+                    type="button"
+                    disabled={!canPrintSlips}
+                    onClick={() => {
+                      setShowActionsDropdown(false);
+                      if (!canPrintSlips) {
+                        alert('عذراً، لا تملك صلاحية طباعة قسائم الرواتب (hr_print_slips)');
+                        return;
+                      }
+                      handleOpenSalarySlip();
+                    }}
+                    className={`w-full text-right px-2.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2.5 transition-colors ${
+                      canPrintSlips ? 'hover:bg-slate-50 text-slate-800 cursor-pointer' : 'text-slate-400 opacity-50 cursor-not-allowed'
+                    }`}
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center shrink-0 border border-slate-200">
+                      <Printer size={15} />
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="font-bold text-slate-900">قسيمة الراتب (80mm)</span>
+                      <span className="text-[10px] text-slate-400 font-normal">طباعة قسيمة الراتب الفردية الحرارية</span>
+                    </div>
+                  </button>
+                </div>
+
+                <div className="border-t border-slate-100 my-1"></div>
+
+                {/* Section 2: الحضور والإجازات والاستئذانات */}
+                <div className="p-1 space-y-1">
+                  <div className="px-2 pt-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    الدوام والحضور والإجازات
+                  </div>
+
+                  {/* 5. تسجيل / تعديل حضور */}
+                  <button
+                    type="button"
+                    disabled={!canManageAttendance}
+                    onClick={() => {
+                      setShowActionsDropdown(false);
+                      if (!canManageAttendance) {
+                        alert('عذراً، لا تملك صلاحية تسجيل وتعديل الحضور والانصراف (hr_manage_attendance)');
+                        return;
+                      }
+                      setAttendanceForm({
+                        empId: selectedEmpId || activeEmployees[0]?.id || '',
+                        date: selectedSingleDay || now.toISOString().split('T')[0],
+                        checkIn: '09:00',
+                        checkOut: '18:00',
+                        isNextDayCheckout: false,
+                        status: 'regular',
+                        notes: ''
+                      });
+                      setShowAttendanceModal(true);
+                    }}
+                    className={`w-full text-right px-2.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2.5 transition-colors ${
+                      canManageAttendance ? 'hover:bg-slate-50 text-slate-800 cursor-pointer' : 'text-slate-400 opacity-50 cursor-not-allowed'
+                    }`}
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 border border-blue-100">
+                      <Plus size={15} />
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="font-bold text-slate-900">تسجيل / تعديل حضور يدوي</span>
+                      <span className="text-[10px] text-slate-400 font-normal">إضافة أو تصحيح دوام وبصمات الموظف</span>
+                    </div>
+                  </button>
+
+                  {/* 6. تسجيل إجازة */}
+                  <button
+                    type="button"
+                    disabled={!canManageLeaves}
+                    onClick={() => {
+                      setShowActionsDropdown(false);
+                      if (!canManageLeaves) {
+                        alert('عذراً، لا تملك صلاحية تسجيل واعتماد الإجازات (hr_manage_leaves)');
+                        return;
+                      }
+                      handleOpenLeaveModal();
+                    }}
+                    className={`w-full text-right px-2.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2.5 transition-colors ${
+                      canManageLeaves ? 'hover:bg-slate-50 text-slate-800 cursor-pointer' : 'text-slate-400 opacity-50 cursor-not-allowed'
+                    }`}
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-sky-50 text-sky-600 flex items-center justify-center shrink-0 border border-sky-100">
+                      <Palmtree size={15} />
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="font-bold text-slate-900">تسجيل إجازة للموظف</span>
+                      <span className="text-[10px] text-slate-400 font-normal">تسجيل إجازة اعتيادية / مرضية / بدون راتب</span>
+                    </div>
+                  </button>
+
+                  {/* 7. سجل الإجازات */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowActionsDropdown(false);
+                      setShowLeavesListModal(true);
+                    }}
+                    className="w-full text-right px-2.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2.5 hover:bg-slate-50 text-slate-800 cursor-pointer transition-colors"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center shrink-0 border border-slate-200">
+                      <Calendar size={15} />
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="font-bold text-slate-900">سجل الإجازات المعتمدة</span>
+                      <span className="text-[10px] text-slate-400 font-normal">استعراض كشف وأرشيف الإجازات</span>
+                    </div>
+                  </button>
+
+                  {/* 8. تسجيل استئذان */}
+                  <button
+                    type="button"
+                    disabled={!canManagePermissions}
+                    onClick={() => {
+                      setShowActionsDropdown(false);
+                      if (!canManagePermissions) {
+                        alert('عذراً، لا تملك صلاحية تسجيل واعتماد أذونات الاستئذان (hr_manage_permissions)');
+                        return;
+                      }
+                      handleOpenPermissionModal();
+                    }}
+                    className={`w-full text-right px-2.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2.5 transition-colors ${
+                      canManagePermissions ? 'hover:bg-slate-50 text-slate-800 cursor-pointer' : 'text-slate-400 opacity-50 cursor-not-allowed'
+                    }`}
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-teal-50 text-teal-600 flex items-center justify-center shrink-0 border border-teal-100">
+                      <Timer size={15} />
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="font-bold text-slate-900">تسجيل إذن استئذان</span>
+                      <span className="text-[10px] text-slate-400 font-normal">إذن خروج مؤقت أو مأمورية عمل رسمية</span>
+                    </div>
+                  </button>
+
+                  {/* 9. سجل الاستئذانات */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowActionsDropdown(false);
+                      setShowPermissionsListModal(true);
+                    }}
+                    className="w-full text-right px-2.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2.5 hover:bg-slate-50 text-slate-800 cursor-pointer transition-colors"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center shrink-0 border border-slate-200">
+                      <DoorOpen size={15} />
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="font-bold text-slate-900">سجل الاستئذانات والأذونات</span>
+                      <span className="text-[10px] text-slate-400 font-normal">استعراض أرصدة وسجلات أذونات الخروج</span>
+                    </div>
+                  </button>
+
+                  {/* 10. سحب من إكسل */}
+                  {canManageAttendance && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowActionsDropdown(false);
+                        setShowBiometricModal(true);
+                      }}
+                      className="w-full text-right px-2.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2.5 hover:bg-slate-50 text-slate-800 cursor-pointer transition-colors"
+                    >
+                      <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 border border-emerald-100">
+                        <FileSpreadsheet size={15} />
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="font-bold text-slate-900">سحب من ملف إكسل</span>
+                        <span className="text-[10px] text-slate-400 font-normal">استيراد حركات البصمة والتايم شيت من Excel</span>
+                      </div>
+                    </button>
+                  )}
+                </div>
+
+                <div className="border-t border-slate-100 my-1"></div>
+
+                {/* Section 3: الزيادات والعلاوات */}
+                <div className="p-1 space-y-1">
+                  <div className="px-2 pt-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    الزيادات والعلاوات
+                  </div>
+
+                  {/* 11. تسجيل زيادة راتب */}
+                  <button
+                    type="button"
+                    disabled={!canSalaryIncrements}
+                    onClick={() => {
+                      setShowActionsDropdown(false);
+                      if (!canSalaryIncrements) {
+                        alert('عذراً، لا تملك صلاحية إقرار وتطبيق زيادات الرواتب (hr_manage_salary_increments)');
+                        return;
+                      }
+                      setTargetEmpId(selectedEmpId || activeEmployees[0]?.id || '');
+                      setSelectedEmpIdsForBulk(activeEmployees.map(e => e.id));
+                      setIncrementValue(10);
+                      setIncrementType('percentage');
+                      setEffectiveDate(now.toISOString().split('T')[0]);
+                      setIncrementReason('ترقية / علاوة سنوية');
+                      setApprovedBy(currentUser?.name || 'مدير النظام');
+                      setShowSalaryIncrementModal(true);
+                    }}
+                    className={`w-full text-right px-2.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2.5 transition-colors ${
+                      canSalaryIncrements ? 'hover:bg-slate-50 text-slate-800 cursor-pointer' : 'text-slate-400 opacity-50 cursor-not-allowed'
+                    }`}
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center shrink-0 border border-purple-100">
+                      <TrendingUp size={15} />
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="font-bold text-slate-900">تسجيل زيادة راتب</span>
+                      <span className="text-[10px] text-slate-400 font-normal">إقرار علاوة أو زيادة سنوية (مبلغ أو نسبة)</span>
+                    </div>
+                  </button>
+
+                  {/* 12. سجل الزيادات */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowActionsDropdown(false);
+                      setShowSalaryHistoryModal(true);
+                    }}
+                    className="w-full text-right px-2.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2.5 hover:bg-slate-50 text-slate-800 cursor-pointer transition-colors"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center shrink-0 border border-slate-200">
+                      <History size={15} />
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="font-bold text-slate-900">سجل الزيادات التاريخية</span>
+                      <span className="text-[10px] text-slate-400 font-normal">أرشيف وكشف الزيادات السابقة للموظفين</span>
+                    </div>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
