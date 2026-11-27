@@ -2070,7 +2070,7 @@ export default function App() {
       const tagged = nextSalonServices.map(s => ({ 
         ...s, 
         salonId: s.salonId || currentSalonId, 
-        branchId: s.branchId || activeBranch?.id || activeBranchId,
+        branchId: s.branchId !== undefined ? (s.branchId || undefined) : (activeBranch?.id || activeBranchId || undefined),
         branchCode: (s as any).branchCode || activeBranch?.code || 'BR-01'
       }));
       const other = prev.filter(s => s.salonId && s.salonId !== currentSalonId && (s as any).salon_id !== currentSalonId);
@@ -3446,7 +3446,7 @@ export default function App() {
           settings={settings} 
           activeBranchId={activeBranchId}
           branches={branches}
-          services={branchServices} 
+          services={salonServices} 
           setServices={handleSetServices} 
           categories={branchCategories} 
           setCategories={handleSetCategories} 

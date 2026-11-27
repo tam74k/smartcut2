@@ -3,7 +3,7 @@ import { Category, ServiceItem, Branch, getServicePrice } from '../types';
 import { 
   Plus, Edit, Trash2, X, Check, Search, FileSpreadsheet, Download, Upload, 
   AlertCircle, Sparkles, Image as ImageIcon, Camera, Loader2, Scissors, 
-  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Target, Zap, Gift, Star, Clock
+  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Target, Zap, Gift, Star, Clock, Building2
 } from 'lucide-react';
 import { downloadServicesTemplate, readExcelFile } from '../utils/excelHelper';
 import { compressServiceImage } from '../utils/imageUpload';
@@ -48,6 +48,7 @@ export function ServicesScreen({
   const [activeTab, setActiveTab] = useState<'services' | 'categories'>('services');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('all');
+  const [selectedBranchFilter, setSelectedBranchFilter] = useState<string>('all');
 
   // Excel Import State
   const [showImportModal, setShowImportModal] = useState(false);
@@ -82,24 +83,42 @@ export function ServicesScreen({
     return categories.filter(c => c.id !== 'all' && (!c.type || c.type === 'service'));
   }, [categories]);
 
-  // Filtered Services based on search and category
+  // Filtered Services based on search, category and branch
   const filteredServices = useMemo(() => {
     return services.filter(service => {
       const matchesSearch = service.name.toLowerCase().includes(searchQuery.toLowerCase());
       if (!matchesSearch) return false;
-      if (selectedCategoryFilter === 'all') return true;
-      const catObj = categories.find(c => c.id === selectedCategoryFilter);
-      return service.categoryId === selectedCategoryFilter || (catObj && service.categoryId === catObj.name);
+      
+      // Category filter
+      if (selectedCategoryFilter !== 'all') {
+        const catObj = categories.find(c => c.id === selectedCategoryFilter);
+        const matchesCat = service.categoryId === selectedCategoryFilter || (catObj && service.categoryId === catObj.name);
+        if (!matchesCat) return false;
+      }
+
+      // Branch filter (when salon has multiple branches)
+      if (branches && branches.length > 1 && selectedBranchFilter !== 'all') {
+        const srvBranch = service.branchId || (service as any).branchCode;
+        if (selectedBranchFilter === 'general') {
+          if (srvBranch) return false;
+        } else {
+          const b = branches.find(br => br.id === selectedBranchFilter || br.code === selectedBranchFilter);
+          const matchesBranch = srvBranch === selectedBranchFilter || (b && (srvBranch === b.id || srvBranch === b.code));
+          if (!matchesBranch) return false;
+        }
+      }
+
+      return true;
     });
-  }, [services, searchQuery, selectedCategoryFilter, categories]);
+  }, [services, searchQuery, selectedCategoryFilter, categories, branches, selectedBranchFilter]);
 
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(20);
 
-  // إعادة ضبط الصفحة إلى 1 عند تغيير البحث أو التصنيف
+  // إعادة ضبط الصفحة إلى 1 عند تغيير البحث أو التصنيف أو الفرع
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, selectedCategoryFilter]);
+  }, [searchQuery, selectedCategoryFilter, selectedBranchFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filteredServices.length / itemsPerPage));
   const safePage = Math.min(currentPage, totalPages);
@@ -256,7 +275,7 @@ export function ServicesScreen({
       commissionableAmount: undefined,
       price2: undefined,
       price3: undefined,
-      branchId: activeBranchId || undefined,
+      branchId: (selectedBranchFilter !== 'all' && selectedBranchFilter !== 'general') ? selectedBranchFilter : (activeBranchId || undefined),
       foreignerPrice: undefined,
       isTargetExempt: false,
       imageUrl: '',
@@ -617,6 +636,54 @@ export function ServicesScreen({
               </div>
             </div>
 
+            {/* Branch Filter Pills (عند تعدد الفروع) */}
+            {branches && branches.length > 1 && (
+              <div className="flex items-center gap-2 px-4 py-2 bg-indigo-50/70 border-b border-indigo-100 overflow-x-auto">
+                <div className="flex items-center gap-1 text-xs font-bold text-indigo-900 whitespace-nowrap">
+                  <Building2 size={14} className="text-indigo-600" />
+                  <span>تصفية بالفرع:</span>
+                </div>
+                <button
+                  onClick={() => setSelectedBranchFilter('all')}
+                  className={`px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer whitespace-nowrap ${
+                    selectedBranchFilter === 'all'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  كافة الفروع ({services.length})
+                </button>
+                <button
+                  onClick={() => setSelectedBranchFilter('general')}
+                  className={`px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer whitespace-nowrap ${
+                    selectedBranchFilter === 'general'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  عام لكل الفروع ({services.filter(s => !s.branchId).length})
+                </button>
+                {branches.map(branch => {
+                  const count = services.filter(s => s.branchId === branch.id || s.branchId === branch.code || (s as any).branchCode === branch.code).length;
+                  return (
+                    <button
+                      key={branch.id}
+                      onClick={() => setSelectedBranchFilter(branch.id)}
+                      className={`px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer whitespace-nowrap flex items-center gap-1 ${
+                        selectedBranchFilter === branch.id
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      <span>{branch.name}</span>
+                      {branch.isMain && <span className="text-[10px] opacity-75">(الرئيسي)</span>}
+                      <span className="text-[11px] font-mono">({count})</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
             {/* Category Filter Pills in Services Tab */}
             <div className="flex items-center gap-2 px-4 py-2.5 bg-slate-50 border-b border-slate-200 overflow-x-auto">
               <span className="text-xs font-bold text-slate-500 whitespace-nowrap">تصفية بالتصنيف:</span>
@@ -711,6 +778,26 @@ export function ServicesScreen({
                                 <Clock size={11} className="text-slate-400" />
                                 <span>{service.durationMinutes} دقيقة</span>
                               </span>
+                            )}
+                            {branches && branches.length > 1 && (
+                              <div className="mt-1">
+                                {(() => {
+                                  const b = branches.find(br => br.id === service.branchId || br.code === service.branchId || br.code === (service as any).branchCode);
+                                  if (b) {
+                                    return (
+                                      <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200">
+                                        <Building2 size={10} />
+                                        <span>فرع: {b.name}</span>
+                                      </span>
+                                    );
+                                  }
+                                  return (
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 border border-slate-200">
+                                      <span>عام لكل الفروع</span>
+                                    </span>
+                                  );
+                                })()}
+                              </div>
                             )}
                           </div>
                         </div>

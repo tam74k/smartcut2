@@ -6,7 +6,7 @@ import {
   Upload, HardDrive, AlertTriangle, FileCheck, RefreshCcw, Landmark, FileSpreadsheet,
   QrCode, Key, Send, CheckCircle2, ShieldCheck, HelpCircle, Building2, Layers, Clock, DollarSign, Coins,
   Printer, Wifi, Laptop, Lock, UserX, CalendarCheck, Calendar, Settings, Smartphone, Copy, Package, Scissors, Crown, Award, MapPin, ExternalLink,
-  Bot, Eye, EyeOff, Zap, AlertCircle, Power, Gift, Bell, User, ChevronDown, ChevronUp, RotateCcw, UserCheck
+  Bot, Eye, EyeOff, Zap, AlertCircle, Power, Gift, Bell, User, ChevronDown, ChevronUp, RotateCcw, UserCheck, Percent
 } from 'lucide-react';
 
 import { AuthService, ROLE_LABELS } from '../services/auth';
@@ -346,6 +346,8 @@ export function SettingsScreen({
   const [selectedCopyServiceIds, setSelectedCopyServiceIds] = useState<string[]>([]);
   const [copyServicesSearch, setCopyServicesSearch] = useState('');
   const [copyServicesCategory, setCopyServicesCategory] = useState('all');
+  const [copySourceBranchId, setCopySourceBranchId] = useState<string>('main');
+  const [customCopyPrices, setCustomCopyPrices] = useState<Record<string, number>>({});
   const [isCopyingServices, setIsCopyingServices] = useState(false);
   const [dbMainBranchServices, setDbMainBranchServices] = useState<ServiceItem[]>([]);
 
@@ -465,9 +467,31 @@ export function SettingsScreen({
     });
   }, [services, dbMainBranchServices, settings.salonId, mainBranch]);
 
+  // الخدمات المتاحة للنسخ للفرع المستهدف بناءً على مصدر النسخ المحدد
   const availableMainServicesForCopy = useMemo(() => {
-    return dbMainBranchServices.length > 0 ? dbMainBranchServices : mainBranchServices;
-  }, [dbMainBranchServices, mainBranchServices]);
+    const currentSalonId = settings.salonId || (SubscriptionService.getSalons()[0]?.id || '');
+    const pool = dbMainBranchServices.length > 0 ? dbMainBranchServices : (services || []);
+    const mb = mainBranch;
+    const targetBranch = newlyCreatedBranch;
+
+    return pool.filter(s => {
+      const matchesSalon = !s.salonId || s.salonId === currentSalonId || (s as any).salon_id === currentSalonId;
+      if (!matchesSalon) return false;
+
+      // استبعاد الخدمات المسجلة بالفعل على نفس هذا الفرع المستهدف
+      if (targetBranch && (s.branchId === targetBranch.id || s.branchId === targetBranch.code)) {
+        return false;
+      }
+
+      if (copySourceBranchId === 'all') return true;
+      if (copySourceBranchId === 'main') {
+        if (!s.branchId) return true;
+        if (mb && (s.branchId === mb.id || s.branchId === mb.code)) return true;
+        return false;
+      }
+      return s.branchId === copySourceBranchId || (s as any).branchCode === copySourceBranchId;
+    });
+  }, [dbMainBranchServices, services, settings.salonId, mainBranch, copySourceBranchId, newlyCreatedBranch]);
 
   const filteredCopyServices = useMemo(() => {
     const q = copyServicesSearch.trim().toLowerCase();
@@ -477,6 +501,69 @@ export function SettingsScreen({
       return matchesSearch && matchesCat;
     });
   }, [availableMainServicesForCopy, copyServicesSearch, copyServicesCategory]);
+
+  // فتح نافذة نسخ وتخصيص الخدمات لفرع معين (سواء جديد أو تم إنشاؤه مسبقاً)
+  const openCopyServicesModalForBranch = async (targetBranch: Branch) => {
+    const targetSalonId = settings.salonId || (SubscriptionService.getSalons()[0]?.id || '');
+    let allPool: ServiceItem[] = (services && services.length > 0) ? services : [];
+    try {
+      const cloudServices = await DB.fetchServices(targetSalonId);
+      if (cloudServices && cloudServices.length > 0) {
+        const mapped = cloudServices.map(dbServiceToApp);
+        setDbMainBranchServices(mapped);
+        allPool = mapped;
+      }
+    } catch (err) {
+      console.warn('Failed to fetch services for copy modal:', err);
+    }
+
+    setNewlyCreatedBranch(targetBranch);
+    const defaultSource = targetBranch.isMain ? 'all' : 'main';
+    setCopySourceBranchId(defaultSource);
+
+    const mb = salonBranches.find(b => b.isMain) || salonBranches[0];
+    const initialServices = allPool.filter(s => {
+      const matchesSalon = !s.salonId || s.salonId === targetSalonId || (s as any).salon_id === targetSalonId;
+      if (!matchesSalon) return false;
+      if (s.branchId === targetBranch.id || s.branchId === targetBranch.code) return false;
+      if (defaultSource === 'main') {
+        if (!s.branchId) return true;
+        if (mb && (s.branchId === mb.id || s.branchId === mb.code)) return true;
+        return false;
+      }
+      return true;
+    });
+
+    setSelectedCopyServiceIds(initialServices.map(s => s.id));
+    setCustomCopyPrices({});
+    setCopyServicesSearch('');
+    setCopyServicesCategory('all');
+    setShowCopyServicesModal(true);
+  };
+
+  const handleSourceBranchChange = (newSourceId: string) => {
+    setCopySourceBranchId(newSourceId);
+    const targetSalonId = settings.salonId || (SubscriptionService.getSalons()[0]?.id || '');
+    const pool = dbMainBranchServices.length > 0 ? dbMainBranchServices : (services || []);
+    const mb = mainBranch;
+    const targetBranch = newlyCreatedBranch;
+
+    const sourceServices = pool.filter(s => {
+      const matchesSalon = !s.salonId || s.salonId === targetSalonId || (s as any).salon_id === targetSalonId;
+      if (!matchesSalon) return false;
+      if (targetBranch && (s.branchId === targetBranch.id || s.branchId === targetBranch.code)) return false;
+
+      if (newSourceId === 'all') return true;
+      if (newSourceId === 'main') {
+        if (!s.branchId) return true;
+        if (mb && (s.branchId === mb.id || s.branchId === mb.code)) return true;
+        return false;
+      }
+      return s.branchId === newSourceId || (s as any).branchCode === newSourceId;
+    });
+
+    setSelectedCopyServiceIds(sourceServices.map(s => s.id));
+  };
 
   const handleCreateBranch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -498,34 +585,7 @@ export function SettingsScreen({
         address: '' 
       });
 
-      // جلب خدمات الفرع الرئيسي فوراً من قاعدة البيانات للتأكد من حداثتها
-      let mbServices = mainBranchServices;
-      try {
-        const cloudServices = await DB.fetchServices(targetSalonId);
-        if (cloudServices && cloudServices.length > 0) {
-          const mapped = cloudServices.map(dbServiceToApp);
-          const mb = salonBranches.find(b => b.isMain) || salonBranches[0];
-          const filteredMb = mapped.filter(s => {
-            const matchesSalon = !s.salonId || s.salonId === targetSalonId || (s as any).salon_id === targetSalonId;
-            if (!matchesSalon) return false;
-            if (!s.branchId) return true;
-            if (mb && (s.branchId === mb.id || s.branchId === mb.code)) return true;
-            return false;
-          });
-          if (filteredMb.length > 0) {
-            setDbMainBranchServices(filteredMb);
-            mbServices = filteredMb;
-          }
-        }
-      } catch (err) {
-        console.warn('Failed to fetch services for copy modal:', err);
-      }
-
-      setNewlyCreatedBranch(res.branch);
-      setSelectedCopyServiceIds(mbServices.map(s => s.id));
-      setCopyServicesSearch('');
-      setCopyServicesCategory('all');
-      setShowCopyServicesModal(true);
+      await openCopyServicesModalForBranch(res.branch);
     } else {
       alert(res.message);
     }
@@ -558,12 +618,18 @@ export function SettingsScreen({
 
       for (const orig of servicesToCopy) {
         const newId = generateUUID();
+        const customPrice = customCopyPrices[orig.id];
+        const finalPrice = (customPrice !== undefined && customPrice !== null && !isNaN(customPrice) && customPrice >= 0)
+          ? customPrice
+          : orig.price;
+
         const copy: ServiceItem = {
           ...orig,
           id: newId,
           salonId: targetSalonId,
           branchId: newlyCreatedBranch.id,
           branchCode: newlyCreatedBranch.code,
+          price: finalPrice,
           isActive: true
         };
         await DB.saveService(copy, targetSalonId);
@@ -575,7 +641,7 @@ export function SettingsScreen({
       }
 
       setShowCopyServicesModal(false);
-      setSuccessMsg(`تم إنشاء الفرع بنجاح وتم نسخ (${copiedList.length}) خدمة من الفرع الرئيسي إلى الفرع الجديد (${newlyCreatedBranch.name}) بنجاح!`);
+      setSuccessMsg(`تم نسخ (${copiedList.length}) خدمة وتخصيصها للفرع (${newlyCreatedBranch.name}) بنجاح كخدمات مستقلة!`);
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 6000);
     } catch (err: any) {
@@ -1571,6 +1637,16 @@ export function SettingsScreen({
                             <span>{syncingBranchId === branch.id ? 'جاري الفحص...' : 'فحص الحجم'}</span>
                           </button>
                         </div>
+
+                        {/* زر نسخ وتخصيص الخدمات لهذا الفرع */}
+                        <button
+                          type="button"
+                          onClick={() => openCopyServicesModalForBranch(branch)}
+                          className="mt-2.5 w-full py-1.5 px-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border border-indigo-200 transition-colors cursor-pointer"
+                        >
+                          <Copy size={13} />
+                          <span>نسخ وتخصيص خدمات لهذا الفرع</span>
+                        </button>
                       </div>
                     );
                   })()}
@@ -4908,10 +4984,10 @@ export function SettingsScreen({
           </div>
         )}
 
-        {/* Modal: Copy Main Branch Services to New Branch */}
+        {/* Modal: Copy & Customize Services to Branch */}
         {showCopyServicesModal && newlyCreatedBranch && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-3 sm:p-4 animate-in fade-in">
-            <div className="bg-white rounded-3xl max-w-2xl sm:max-w-3xl w-full shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden">
+            <div className="bg-white rounded-3xl max-w-2xl sm:max-w-4xl w-full shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden">
               
               {/* Header */}
               <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/80">
@@ -4921,10 +4997,10 @@ export function SettingsScreen({
                   </div>
                   <div>
                     <h3 className="font-extrabold text-sm sm:text-base text-slate-800">
-                      نسخ خدمات الفرع الرئيسي إلى الفرع الجديد
+                      نسخ وتخصيص الخدمات للفرع
                     </h3>
                     <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-500 font-semibold">
-                      <span>الفرع الجديد:</span>
+                      <span>الفرع المستهدف:</span>
                       <span className="font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-200">
                         {newlyCreatedBranch.name} ({newlyCreatedBranch.code})
                       </span>
@@ -4943,22 +5019,108 @@ export function SettingsScreen({
               </div>
 
               {/* Instructions Banner */}
-              <div className="px-4 sm:px-6 py-2.5 bg-indigo-50/60 border-b border-indigo-100 flex items-center justify-between text-xs text-indigo-950 font-medium">
+              <div className="px-4 sm:px-6 py-2.5 bg-indigo-50/60 border-b border-indigo-100 flex flex-wrap items-center justify-between gap-2 text-xs text-indigo-950 font-medium">
                 <p>
-                  حدد الخدمات المراد نسخها وإتاحتها في الفرع الجديد. سيتم نسخها وحفظها بكود الصالون وكود الفرع الجديد مباشرة.
+                  الخدمات المنسوخة ستصبح <strong className="text-indigo-700 font-black">مستقلة تماماً</strong> عن الفرع الأصلي ويمكنك تعديل أسعارها الآن مباشرة أو لاحقاً.
                 </p>
                 <span className="shrink-0 bg-indigo-600 text-white font-bold px-2.5 py-0.5 rounded-full text-[11px]">
                   محدد: {selectedCopyServiceIds.length} من {availableMainServicesForCopy.length}
                 </span>
               </div>
 
-              {/* Toolbar: Search, Categories, Select All */}
-              <div className="p-3 sm:p-4 border-b border-slate-100 space-y-2.5 bg-white">
+              {/* Source Branch & Bulk Pricing Toolbar */}
+              <div className="p-3 sm:p-4 border-b border-slate-100 space-y-3 bg-white">
+                
+                {/* Source Branch Selector */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 bg-slate-50 rounded-2xl border border-slate-200">
+                  <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
+                    <Building2 size={16} className="text-indigo-600 shrink-0" />
+                    <span>نسخ الخدمات من مصدر:</span>
+                  </div>
+                  <select
+                    value={copySourceBranchId}
+                    onChange={e => handleSourceBranchChange(e.target.value)}
+                    className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 outline-none focus:border-indigo-600 cursor-pointer shadow-2xs"
+                  >
+                    <option value="main">الفرع الرئيسي {mainBranch ? `(${mainBranch.name})` : ''}</option>
+                    {salonBranches.filter(b => !b.isMain && b.id !== newlyCreatedBranch.id).map(b => (
+                      <option key={b.id} value={b.id}>فرع: {b.name} ({b.code})</option>
+                    ))}
+                    <option value="all">كافة خدمات الصالون (من جميع الفروع)</option>
+                  </select>
+                </div>
+
+                {/* Bulk Pricing Tools */}
+                <div className="flex flex-wrap items-center justify-between gap-2 p-2 bg-indigo-50/50 rounded-xl border border-indigo-100 text-xs">
+                  <span className="text-indigo-950 font-bold flex items-center gap-1.5 text-[11px]">
+                    <DollarSign size={13} className="text-indigo-600" />
+                    <span>تعديل سريع لأسعار الخدمات المحددة:</span>
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const pct = prompt('أدخل نسبة التعديل بالـ % (مثال: 10 لزيادة الأسعار 10%، أو -10 لتخفيضها 10%):');
+                        if (pct === null) return;
+                        const num = parseFloat(pct);
+                        if (isNaN(num)) return;
+                        setCustomCopyPrices(prev => {
+                          const next = { ...prev };
+                          for (const s of availableMainServicesForCopy) {
+                            if (selectedCopyServiceIds.includes(s.id)) {
+                              const base = prev[s.id] !== undefined ? prev[s.id] : s.price;
+                              next[s.id] = Math.max(0, Math.round(base * (1 + num / 100)));
+                            }
+                          }
+                          return next;
+                        });
+                      }}
+                      className="px-2.5 py-1 bg-white hover:bg-indigo-50 text-indigo-700 font-bold rounded-lg border border-indigo-200 text-[11px] cursor-pointer shadow-2xs flex items-center gap-1"
+                    >
+                      <Percent size={11} />
+                      <span>تطبيق نسبة %</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const val = prompt(`أدخل المبلغ المطلوب إضافته أو خصمه لكل خدمة بـ (${settings.currency}) (مثال: 15 أو -10):`);
+                        if (val === null) return;
+                        const num = parseFloat(val);
+                        if (isNaN(num)) return;
+                        setCustomCopyPrices(prev => {
+                          const next = { ...prev };
+                          for (const s of availableMainServicesForCopy) {
+                            if (selectedCopyServiceIds.includes(s.id)) {
+                              const base = prev[s.id] !== undefined ? prev[s.id] : s.price;
+                              next[s.id] = Math.max(0, base + num);
+                            }
+                          }
+                          return next;
+                        });
+                      }}
+                      className="px-2.5 py-1 bg-white hover:bg-indigo-50 text-indigo-700 font-bold rounded-lg border border-indigo-200 text-[11px] cursor-pointer shadow-2xs"
+                    >
+                      <span>مبلغ ثابت (+ / -)</span>
+                    </button>
+                    {Object.keys(customCopyPrices).length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setCustomCopyPrices({})}
+                        className="px-2 py-1 text-rose-600 hover:text-rose-700 text-[11px] font-bold cursor-pointer"
+                        title="إلغاء التعديلات والعودة للأسعار الأصلية"
+                      >
+                        استعادة الأسعار الأصلية
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Search & Selection Controls */}
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
                   <div className="relative flex-1">
                     <input
                       type="text"
-                      placeholder="البحث في خدمات الفرع الرئيسي باسم الخدمة..."
+                      placeholder="البحث باسم الخدمة..."
                       value={copyServicesSearch}
                       onChange={e => setCopyServicesSearch(e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 focus:border-indigo-600 outline-none pr-8"
@@ -5020,7 +5182,7 @@ export function SettingsScreen({
                 {availableMainServicesForCopy.length === 0 ? (
                   <div className="py-12 text-center text-slate-400">
                     <Scissors size={32} className="mx-auto mb-2 opacity-40" />
-                    <p className="text-xs font-bold">لا توجد خدمات مسجلة في الفرع الرئيسي حالياً لنسخها.</p>
+                    <p className="text-xs font-bold">لا توجد خدمات في هذا المصدر لنسخها.</p>
                   </div>
                 ) : filteredCopyServices.length === 0 ? (
                   <div className="py-12 text-center text-slate-400">
@@ -5031,6 +5193,9 @@ export function SettingsScreen({
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     {filteredCopyServices.map(srv => {
                       const isSelected = selectedCopyServiceIds.includes(srv.id);
+                      const currentPrice = customCopyPrices[srv.id] !== undefined ? customCopyPrices[srv.id] : srv.price;
+                      const isPriceModified = customCopyPrices[srv.id] !== undefined && customCopyPrices[srv.id] !== srv.price;
+
                       return (
                         <div
                           key={srv.id}
@@ -5038,7 +5203,7 @@ export function SettingsScreen({
                           className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 select-none ${
                             isSelected
                               ? 'bg-indigo-50/90 border-indigo-400 shadow-xs ring-1 ring-indigo-200'
-                              : 'bg-white border-slate-200/90 hover:border-slate-300'
+                              : 'bg-white border-slate-200/90 hover:border-slate-300 opacity-70'
                           }`}
                         >
                           <div className="flex items-center gap-2.5 min-w-0">
@@ -5066,14 +5231,36 @@ export function SettingsScreen({
                             </div>
                           </div>
 
-                          <div className="flex flex-col items-end shrink-0 gap-0.5">
-                            <span className="text-xs font-black text-indigo-700 font-mono">
-                              {srv.price} {settings.currency}
-                            </span>
-                            {(srv.price2 || srv.price3) && (
-                              <div className="flex items-center gap-1 text-[10px] font-bold text-slate-500 font-mono">
-                                {srv.price2 && <span>س2: {srv.price2}</span>}
-                                {srv.price3 && <span>س3: {srv.price3}</span>}
+                          {/* Editable Price Input for Target Branch */}
+                          <div 
+                            className="flex flex-col items-end shrink-0 gap-1"
+                            onClick={e => e.stopPropagation()}
+                          >
+                            <div className="flex items-center gap-1">
+                              <span className="text-[10px] font-bold text-slate-400">السعر للفرع:</span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="1"
+                                value={currentPrice}
+                                onChange={e => {
+                                  const val = Number(e.target.value);
+                                  setCustomCopyPrices(prev => ({
+                                    ...prev,
+                                    [srv.id]: isNaN(val) ? 0 : val
+                                  }));
+                                }}
+                                className={`w-20 px-2 py-1 text-xs font-black rounded-lg text-center outline-none border font-mono transition-all shadow-2xs ${
+                                  isPriceModified 
+                                    ? 'bg-amber-50 border-amber-300 text-amber-900 focus:border-amber-500' 
+                                    : 'bg-white border-slate-200 text-indigo-700 focus:border-indigo-600'
+                                }`}
+                              />
+                              <span className="text-[10px] font-bold text-slate-500">{settings.currency}</span>
+                            </div>
+                            {isPriceModified && (
+                              <div className="text-[10px] font-bold text-amber-700 bg-amber-50/80 px-1.5 py-0.2 rounded border border-amber-200 font-mono">
+                                الأصلي: {srv.price}
                               </div>
                             )}
                           </div>
@@ -5092,7 +5279,7 @@ export function SettingsScreen({
                   disabled={isCopyingServices}
                   className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer"
                 >
-                  تخطي دون نسخ خدمات
+                  إلغاء / تخطي
                 </button>
 
                 <button
@@ -5104,12 +5291,12 @@ export function SettingsScreen({
                   {isCopyingServices ? (
                     <>
                       <RefreshCw size={14} className="animate-spin" />
-                      <span>جاري النسخ والحفظ...</span>
+                      <span>جاري النسخ والحفظ المستقل...</span>
                     </>
                   ) : (
                     <>
                       <Copy size={14} />
-                      <span>نسخ الخدمات المحددة ({selectedCopyServiceIds.length}) للفرع الجديد</span>
+                      <span>حفظ ونسخ ({selectedCopyServiceIds.length}) خدمة مستقلة للفرع</span>
                     </>
                   )}
                 </button>
